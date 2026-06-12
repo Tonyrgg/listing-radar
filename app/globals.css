@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --surface-canvas: oklch(0.97 0.008 85);
+  --surface-panel: oklch(0.985 0.004 85);
+  --surface-muted: oklch(0.94 0.008 85);
+  --surface-strong: oklch(0.22 0.01 210);
+  --surface-accent: oklch(0.4 0.045 150);
+  --surface-accent-soft: oklch(0.92 0.03 150);
+  --ink-strong: oklch(0.25 0.015 220);
+  --ink-soft: oklch(0.48 0.015 220);
+  --ink-subtle: oklch(0.62 0.012 220);
+  --line-soft: oklch(0.88 0.008 85);
+  --line-strong: oklch(0.8 0.01 85);
+  --shadow-panel: 0 16px 48px -24px color-mix(in srgb, var(--ink-strong) 24%, transparent);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--surface-canvas);
+  --color-foreground: var(--ink-strong);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--surface-canvas);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--surface-canvas);
+  color: var(--ink-strong);
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--surface-accent) 28%, white);
+}
+
+.text-balance {
+  text-wrap: balance;
 }
