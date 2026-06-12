@@ -17,6 +17,7 @@ import type {
   ListingSnapshot,
   ListingSource,
   Report,
+  ScrapeRun,
   SellerType,
 } from "@/types";
 
@@ -93,6 +94,18 @@ type ReportRow = {
   price_drops_count: number;
   hot_old_count: number;
   content: string | null;
+  created_at: string | null;
+};
+
+type ScrapeRunRow = {
+  id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  total_found: number;
+  total_inserted: number;
+  total_updated: number;
+  error_count: number;
   created_at: string | null;
 };
 
@@ -194,6 +207,20 @@ function mapReportRow(row: ReportRow): Report {
     priceDropsCount: row.price_drops_count,
     hotOldCount: row.hot_old_count,
     content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+function mapScrapeRunRow(row: ScrapeRunRow): ScrapeRun {
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    status: row.status,
+    totalFound: row.total_found,
+    totalInserted: row.total_inserted,
+    totalUpdated: row.total_updated,
+    errorCount: row.error_count,
     createdAt: row.created_at,
   };
 }
@@ -330,4 +357,28 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 
 export async function getReports() {
   return (await loadReportsFromSupabase()) ?? (await getMockReports());
+}
+
+export async function getLastScrapeRun() {
+  if (!hasSupabaseReadConfig()) {
+    return null;
+  }
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("scrape_runs")
+      .select("*")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return mapScrapeRunRow(data as ScrapeRunRow);
+  } catch {
+    return null;
+  }
 }

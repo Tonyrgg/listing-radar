@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import { generateReport } from "@/lib/reports/generate-report";
-import { getProvider } from "@/lib/scrapers/providers";
+import { getProvidersForRun } from "@/lib/scrapers/providers";
+import type {
+  ListingsProvider,
+  ProviderRunIssue,
+} from "@/lib/scrapers/providers/types";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import type { Listing, NormalizedListing } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +32,158 @@ async function finalizeRun(
       finished_at: new Date().toISOString(),
     })
     .eq("id", runId);
+}
+
+function issueFromError(
+  type: ProviderRunIssue["type"],
+  message: string,
+  error: unknown,
+): ProviderRunIssue {
+  return {
+    type,
+    message,
+    details:
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack ?? null,
+          }
+        : {
+            message: String(error),
+          },
+  };
+}
+
+async function logScrapeIssues(
+  runId: string,
+  provider: string,
+  issues: ProviderRunIssue[],
+) {
+  if (issues.length === 0) {
+    return;
+  }
+
+  const supabase = getSupabaseServiceClient();
+  const { error } = await supabase.from("scrape_errors").insert(
+    issues.map((issue) => ({
+      scrape_run_id: runId,
+      source: provider,
+      message: issue.message,
+      details: {
+        type: issue.type,
+        url: issue.url ?? null,
+        ...(issue.details ?? {}),
+      },
+    })),
+  );
+
+  if (error) {
+    console.warn("[cron] unable to persist scrape issues", {
+      provider,
+      error: error.message,
+    });
+  }
+}
+
+type ProviderCronResult = {
+  provider: string;
+  ok: boolean;
+  totalFound: number;
+  inserted: number;
+  updated: number;
+  snapshots: number;
+  searchUrls: string[];
+  foundUrls: number;
+  detailPagesRead: number;
+  errors: ProviderRunIssue[];
+  listings: Listing[];
+};
+
+async function runProvider(
+  provider: ListingsProvider,
+  runId: string,
+): Promise<ProviderCronResult> {
+  let normalizedListings: NormalizedListing[] = [];
+  const errors: ProviderRunIssue[] = [];
+  let inserted = 0;
+  let updated = 0;
+  let snapshots = 0;
+  let listings: Listing[] = [];
+
+  try {
+    normalizedListings = await provider.fetchListings();
+  } catch (error) {
+    errors.push(
+      issueFromError(
+        "fetch",
+        `Provider ${provider.name} failed before returning listings.`,
+        error,
+      ),
+    );
+  }
+
+  const runLog = provider.getLastRunLog?.();
+  errors.push(...(runLog?.errors ?? []));
+
+  if (normalizedListings.length > 0) {
+    try {
+      const upsertResult = await upsertListings(normalizedListings);
+      inserted = upsertResult.inserted;
+      updated = upsertResult.updated;
+      snapshots = upsertResult.snapshots;
+      listings = upsertResult.listings;
+    } catch (error) {
+      errors.push(
+        issueFromError(
+          "upsert",
+          `Unable to persist listings from provider ${provider.name}.`,
+          error,
+        ),
+      );
+    }
+  }
+
+  const result = {
+    provider: provider.name,
+    ok: errors.length === 0,
+    totalFound: normalizedListings.length,
+    inserted,
+    updated,
+    snapshots,
+    searchUrls: runLog?.searchUrls ?? [],
+    foundUrls: runLog?.foundUrls ?? normalizedListings.length,
+    detailPagesRead: runLog?.detailPagesRead ?? 0,
+    errors,
+    listings,
+  };
+
+  console.info("[cron] provider run completed", {
+    provider: result.provider,
+    totalFound: result.totalFound,
+    inserted: result.inserted,
+    updated: result.updated,
+    snapshots: result.snapshots,
+    searchUrls: result.searchUrls,
+    foundUrls: result.foundUrls,
+    detailPagesRead: result.detailPagesRead,
+    errors: result.errors.length,
+  });
+
+  await logScrapeIssues(runId, provider.name, errors);
+
+  return result;
+}
+
+function buildProviderReport(results: ProviderCronResult[]) {
+  return [
+    "",
+    "Provider eseguiti:",
+    ...results.map(
+      (result) =>
+        `${result.provider}: ${result.totalFound} annunci, ${result.foundUrls} URL trovati, ${result.detailPagesRead} detail pages lette, ${result.inserted} inseriti, ${result.updated} aggiornati, ${result.errors.length} errori, search ${result.searchUrls.join(", ") || "n/d"}`,
+    ),
+  ].join("\n");
 }
 
 async function handleCronRequest(request: NextRequest) {
@@ -54,11 +211,18 @@ async function handleCronRequest(request: NextRequest) {
     }
 
     runId = runRow.id;
+    const activeRunId = runRow.id;
 
-    const provider = getProvider("mock");
-    const normalizedListings = await provider.fetchListings();
-    const upsertResult = await upsertListings(normalizedListings);
-    const report = generateReport(upsertResult.listings);
+    const providers = getProvidersForRun(process.env.SCRAPER_PROVIDER);
+    const providerResults: ProviderCronResult[] = [];
+
+    for (const provider of providers) {
+      providerResults.push(await runProvider(provider, activeRunId));
+    }
+
+    const persistedListings = providerResults.flatMap((result) => result.listings);
+    const report = generateReport(persistedListings);
+    const reportContent = `${report.content}${buildProviderReport(providerResults)}`;
 
     const { data: reportRow, error: reportError } = await supabase
       .from("reports")
@@ -71,7 +235,7 @@ async function handleCronRequest(request: NextRequest) {
         unknown_count: report.unknownCount,
         price_drops_count: report.priceDropsCount,
         hot_old_count: report.hotOldCount,
-        content: report.content,
+        content: reportContent,
       })
       .select("id")
       .single();
@@ -80,27 +244,59 @@ async function handleCronRequest(request: NextRequest) {
       throw new Error("Unable to save report.");
     }
 
-    const activeRunId = runId;
-
-    if (!activeRunId) {
-      throw new Error("Missing scrape run identifier.");
-    }
+    const totalFound = providerResults.reduce(
+      (sum, result) => sum + result.totalFound,
+      0,
+    );
+    const totalInserted = providerResults.reduce(
+      (sum, result) => sum + result.inserted,
+      0,
+    );
+    const totalUpdated = providerResults.reduce(
+      (sum, result) => sum + result.updated,
+      0,
+    );
+    const totalSnapshots = providerResults.reduce(
+      (sum, result) => sum + result.snapshots,
+      0,
+    );
+    const errorCount = providerResults.reduce(
+      (sum, result) => sum + result.errors.length,
+      0,
+    );
 
     await finalizeRun(activeRunId, {
-      status: "success",
-      total_found: normalizedListings.length,
-      total_inserted: upsertResult.inserted,
-      total_updated: upsertResult.updated,
-      error_count: 0,
+      status: errorCount > 0 ? "completed_with_errors" : "success",
+      total_found: totalFound,
+      total_inserted: totalInserted,
+      total_updated: totalUpdated,
+      error_count: errorCount,
     });
 
     return NextResponse.json({
       ok: true,
       runId: activeRunId,
       reportId: reportRow?.id ?? null,
-      inserted: upsertResult.inserted,
-      updated: upsertResult.updated,
-      snapshots: upsertResult.snapshots,
+      provider: process.env.SCRAPER_PROVIDER ?? "mock",
+      providers: providerResults.map((result) => ({
+        provider: result.provider,
+        ok: result.ok,
+        totalFound: result.totalFound,
+        inserted: result.inserted,
+        updated: result.updated,
+        snapshots: result.snapshots,
+        searchUrls: result.searchUrls,
+        foundUrls: result.foundUrls,
+        detailPagesRead: result.detailPagesRead,
+        errors: result.errors.map((error) => ({
+          type: error.type,
+          message: error.message,
+          url: error.url ?? null,
+        })),
+      })),
+      inserted: totalInserted,
+      updated: totalUpdated,
+      snapshots: totalSnapshots,
     });
   } catch (error) {
     const message =
@@ -109,7 +305,7 @@ async function handleCronRequest(request: NextRequest) {
     if (runId) {
       await supabase.from("scrape_errors").insert({
         scrape_run_id: runId,
-        source: "mock",
+        source: "system",
         message,
         details:
           error instanceof Error

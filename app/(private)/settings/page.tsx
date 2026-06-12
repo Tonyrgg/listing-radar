@@ -1,11 +1,33 @@
-import { Badge } from "@/components/badge";
-import {
-  LISTING_SOURCE_OPTIONS,
-  MONITORED_ZONE,
-  REPORT_SCHEDULE,
-} from "@/lib/constants";
+import type { ReactNode } from "react";
 
-export default function SettingsPage() {
+import { Badge } from "@/components/badge";
+import { LISTING_SOURCE_OPTIONS, REPORT_SCHEDULE } from "@/lib/constants";
+import { getLastScrapeRun } from "@/lib/data/repository";
+import { formatDateTime, formatNumber } from "@/lib/formatting";
+import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+
+export const dynamic = "force-dynamic";
+
+function ConfigRow({
+  label,
+  value,
+}: Readonly<{
+  label: string;
+  value: ReactNode;
+}>) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+        {label}
+      </p>
+      <div className="mt-2 text-sm font-medium text-[var(--ink-strong)]">{value}</div>
+    </div>
+  );
+}
+
+export default async function SettingsPage() {
+  const runtimeConfig = getScraperRuntimeConfig();
+  const lastScrapeRun = await getLastScrapeRun();
   const telegramEnabled = Boolean(
     process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID,
   );
@@ -27,35 +49,69 @@ export default function SettingsPage() {
             Monitoraggio
           </p>
           <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-                Zona monitorata
-              </p>
-              <p className="mt-2 text-sm font-medium text-[var(--ink-strong)]">
-                {MONITORED_ZONE}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-                Orario report
-              </p>
-              <p className="mt-2 text-sm font-medium text-[var(--ink-strong)]">
-                {REPORT_SCHEDULE}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-                Telegram
-              </p>
-              <div className="mt-2">
-                <Badge tone={telegramEnabled ? "green" : "amber"}>
-                  {telegramEnabled ? "enabled" : "disabled"}
+            <ConfigRow
+              label="Provider attivo"
+              value={
+                <Badge tone={runtimeConfig.provider === "mock" ? "amber" : "green"}>
+                  {runtimeConfig.provider}
                 </Badge>
-              </div>
-            </div>
+              }
+            />
+            <ConfigRow label="Citta monitorata" value={SCRAPER_CONFIG.monitoredCity} />
+            <ConfigRow
+              label="Provincia / Regione"
+              value={`${SCRAPER_CONFIG.monitoredProvince} / ${SCRAPER_CONFIG.monitoredRegion}`}
+            />
+            <ConfigRow
+              label="Categoria / contratto"
+              value={`${SCRAPER_CONFIG.category} / ${SCRAPER_CONFIG.contractType}`}
+            />
+            <ConfigRow label="Orario report" value={REPORT_SCHEDULE} />
           </div>
         </article>
 
+        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+            Runtime scraper
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <ConfigRow
+              label="Limite pagine ricerca"
+              value={formatNumber(runtimeConfig.maxSearchPages)}
+            />
+            <ConfigRow
+              label="Limite annunci dettaglio"
+              value={formatNumber(runtimeConfig.maxDetailPages)}
+            />
+            <ConfigRow
+              label="Delay richieste"
+              value={`${formatNumber(runtimeConfig.detailDelayMs)} ms`}
+            />
+            <ConfigRow
+              label="Telegram"
+              value={
+                <Badge tone={telegramEnabled ? "green" : "amber"}>
+                  {telegramEnabled ? "enabled" : "disabled"}
+                </Badge>
+              }
+            />
+            <ConfigRow
+              label="Ultimo scrape_run"
+              value={
+                lastScrapeRun ? (
+                  <span>
+                    {lastScrapeRun.status} - {formatDateTime(lastScrapeRun.startedAt)}
+                  </span>
+                ) : (
+                  "n/d"
+                )
+              }
+            />
+          </div>
+        </article>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
             Fonti predisposte
@@ -66,6 +122,16 @@ export default function SettingsPage() {
                 {source}
               </Badge>
             ))}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+            Stato fonti
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge tone="green">mock default</Badge>
+            <Badge tone="amber">subito opt-in</Badge>
           </div>
         </article>
       </section>

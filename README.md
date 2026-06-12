@@ -9,10 +9,10 @@ Current MVP scope:
 - Supabase schema and service clients
 - protected cron endpoint
 - mock report generation
+- opt-in Subito.it provider for public real-estate listing pages
 
 Out of scope in this phase:
 
-- real estate portal scrapers
 - automatic contact workflows
 - public listing publication
 - automatic outbound messaging
@@ -47,14 +47,22 @@ SUPABASE_SERVICE_ROLE_KEY=
 CRON_SECRET=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+SCRAPER_PROVIDER=mock
 SCRAPER_USER_AGENT=
+SCRAPER_MAX_SEARCH_PAGES=1
+SCRAPER_MAX_DETAIL_PAGES=10
+SCRAPER_DETAIL_DELAY_MS=1500
 ```
 
 Notes:
 
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only.
 - `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are optional.
-- `SCRAPER_USER_AGENT` is optional and reserved for future real providers.
+- `SCRAPER_PROVIDER=mock` is the safe development default.
+- `SCRAPER_PROVIDER=subito` enables the Subito.it provider.
+- `SCRAPER_PROVIDER=all` runs mock and Subito in the same cron run.
+- `SCRAPER_USER_AGENT` is optional. When omitted, the scraper sends a normal declarative user agent.
+- Detail requests are capped at 10 per run and delayed by at least 1500 ms.
 
 ## Local development
 
@@ -105,6 +113,15 @@ Authorization: Bearer <CRON_SECRET>
 PowerShell example:
 
 ```powershell
+$env:SCRAPER_PROVIDER = "mock"
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
+```
+
+To exercise the Subito provider locally:
+
+```powershell
+$env:SCRAPER_PROVIDER = "subito"
 $headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
 Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
 ```
@@ -112,12 +129,23 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Hea
 What it does:
 
 1. creates a `scrape_runs` record
-2. loads the mock provider
+2. loads the provider selected by `SCRAPER_PROVIDER`
 3. upserts listings
 4. stores `listing_snapshots`
 5. generates and saves a report
-6. closes the run as `success` or `error`
-7. stores `scrape_errors` on failure
+6. closes the run as `success`, `completed_with_errors`, or `error`
+7. returns JSON results per provider
+8. stores provider fetch/search/parse/upsert issues in `scrape_errors`
+
+## Subito provider limits
+
+The first Subito implementation only reads public search and detail pages for:
+
+```text
+https://www.subito.it/annunci-puglia/vendita/immobili/bari/bitonto/
+```
+
+It does not contact sellers, reveal hidden phone numbers, send messages, or republish content. If Subito blocks the request or the search markup changes, the provider logs a clear issue, returns an empty array, and lets the cron complete with `completed_with_errors`.
 
 ## Deploy on Vercel
 

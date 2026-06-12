@@ -1,8 +1,12 @@
 import { MONITORED_ZONE } from "@/lib/constants";
+import type { ProviderRunLog } from "@/lib/scrapers/providers/types";
 import type { NormalizedListing } from "@/types";
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
+const MINUTE = 60 * 1000;
+
+let lastRunLog: ProviderRunLog | null = null;
 
 function isoFromNow(offsetMs: number) {
   return new Date(Date.now() - offsetMs).toISOString();
@@ -11,7 +15,7 @@ function isoFromNow(offsetMs: number) {
 export const mockProvider = {
   name: "mock",
   async fetchListings(): Promise<NormalizedListing[]> {
-    return [
+    const listings: NormalizedListing[] = [
       {
         id: "fbb16567-5c33-44e8-a5b2-6b714cb8a001",
         source: "Subito",
@@ -237,7 +241,18 @@ export const mockProvider = {
         rawPayload: { label: "cheap-independent-house", mock: true },
       },
     ];
+
+    lastRunLog = {
+      provider: "mock",
+      searchUrls: [],
+      foundUrls: listings.length,
+      detailPagesRead: 0,
+      errors: [],
+    };
+
+    return listings;
+  },
+  getLastRunLog() {
+    return lastRunLog;
   },
 };
-
-const MINUTE = 60 * 1000;

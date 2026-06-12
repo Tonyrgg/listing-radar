@@ -1,9 +1,11 @@
 import type { SellerType } from "@/types";
+import { SCRAPER_CONFIG } from "@/lib/scrapers/config";
 
-export const MONITORED_ZONE = "Bitonto";
+export const MONITORED_ZONE = SCRAPER_CONFIG.monitoredCity;
 export const REPORT_SCHEDULE = "09:00";
 
 export const LISTING_SOURCE_OPTIONS = [
+  "subito",
   "Subito",
   "Casa.it",
   "Idealista",
