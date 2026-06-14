@@ -88,6 +88,7 @@ export async function getMockListings() {
         sellerType: normalized.sellerType,
         sellerName: normalized.sellerName ?? null,
         phone: normalized.phone ?? null,
+        imageUrls: normalized.imageUrls ?? [],
         portalDeclaredDate: normalized.portalDeclaredDate ?? null,
         metadataDatePublished: normalized.metadataDatePublished ?? null,
         metadataDateModified: normalized.metadataDateModified ?? null,

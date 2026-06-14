@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import { generateReport } from "@/lib/reports/generate-report";
 import { getProvidersForRun } from "@/lib/scrapers/providers";
@@ -198,6 +199,7 @@ async function handleCronRequest(request: NextRequest) {
   let runId: string | null = null;
 
   try {
+    const emailAlerts = await ingestEmailAlerts();
     const { data: runRow, error: runError } = await supabase
       .from("scrape_runs")
       .insert({
@@ -278,6 +280,7 @@ async function handleCronRequest(request: NextRequest) {
       runId: activeRunId,
       reportId: reportRow?.id ?? null,
       provider: process.env.SCRAPER_PROVIDER ?? "mock",
+      emailAlerts,
       providers: providerResults.map((result) => ({
         provider: result.provider,
         ok: result.ok,

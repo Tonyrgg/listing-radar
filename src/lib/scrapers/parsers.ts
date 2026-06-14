@@ -26,7 +26,7 @@ export function parsePrice(text: string | null | undefined) {
   }
 
   const amountWithCurrency = value.match(
-    /(?:€\s*)?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:€|euro)/i,
+    /(?:\u20ac\s*)?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)/i,
   );
   const amount = amountWithCurrency?.[1] ?? null;
 
@@ -35,7 +35,7 @@ export function parsePrice(text: string | null | undefined) {
 
 export function parseSqm(text: string | null | undefined) {
   const value = cleanText(text);
-  const match = value.match(/(\d+(?:[,.]\d+)?)\s*(?:m²|mq|m2|metri\s+quadri)/i);
+  const match = value.match(/(\d+(?:[,.]\d+)?)\s*(?:m\u00b2|mq|m2|metri\s+quadri)/i);
   const parsed = match?.[1] ? parseNumber(match[1]) : null;
 
   return parsed == null ? null : Math.round(parsed);

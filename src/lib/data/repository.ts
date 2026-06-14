@@ -17,6 +17,7 @@ import type {
   ListingSnapshot,
   ListingSource,
   Report,
+  ScrapeError,
   ScrapeRun,
   SellerType,
 } from "@/types";
@@ -109,6 +110,15 @@ type ScrapeRunRow = {
   created_at: string | null;
 };
 
+type ScrapeErrorRow = {
+  id: string;
+  scrape_run_id: string;
+  source: string | null;
+  message: string;
+  details: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
 function hasSupabaseReadConfig() {
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -146,7 +156,74 @@ function mapSourceRow(row: ListingSourceRow): ListingSource {
   };
 }
 
+function normalizeImageUrl(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractImageUrlsFromPayload(
+  value: unknown,
+  depth = 0,
+): string[] {
+  if (depth > 5 || !value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const urls: string[] = [];
+  const add = (candidate: unknown) => {
+    const values = Array.isArray(candidate) ? candidate : [candidate];
+
+    for (const item of values) {
+      const url = normalizeImageUrl(item);
+
+      if (url && !urls.includes(url)) {
+        urls.push(url);
+      }
+    }
+  };
+
+  [
+    "imageUrls",
+    "image_urls",
+    "images",
+    "photos",
+    "foto",
+    "imageUrl",
+    "image_url",
+    "image",
+  ].forEach((key) => add(record[key]));
+
+  ["row", "rawPayload", "raw_payload", "pageMetadata", "meta"].forEach(
+    (key) => {
+      for (const url of extractImageUrlsFromPayload(record[key], depth + 1)) {
+        if (!urls.includes(url)) {
+          urls.push(url);
+        }
+      }
+    },
+  );
+
+  return urls;
+}
+
 function mapListingRow(row: ListingRow): Listing {
+  const snapshots = (row.listing_snapshots ?? [])
+    .map(mapSnapshotRow)
+    .sort((left, right) => right.checkedAt.localeCompare(left.checkedAt));
+  const imageUrls = snapshots
+    .flatMap((snapshot) => extractImageUrlsFromPayload(snapshot.rawPayload))
+    .filter((url, index, values) => values.indexOf(url) === index)
+    .slice(0, 30);
+
   return {
     id: row.id,
     source: row.source,
@@ -165,6 +242,7 @@ function mapListingRow(row: ListingRow): Listing {
     sellerType: row.seller_type,
     sellerName: row.seller_name,
     phone: row.phone,
+    imageUrls,
     portalDeclaredDate: row.portal_declared_date,
     metadataDatePublished: row.metadata_date_published,
     metadataDateModified: row.metadata_date_modified,
@@ -188,9 +266,7 @@ function mapListingRow(row: ListingRow): Listing {
         .sort((left, right) =>
           (right.created_at ?? "").localeCompare(left.created_at ?? ""),
         )[0]?.note ?? null,
-    snapshots: (row.listing_snapshots ?? []).map(mapSnapshotRow).sort((left, right) =>
-      right.checkedAt.localeCompare(left.checkedAt),
-    ),
+    snapshots,
     sources: (row.listing_sources ?? []).map(mapSourceRow),
   };
 }
@@ -221,6 +297,17 @@ function mapScrapeRunRow(row: ScrapeRunRow): ScrapeRun {
     totalInserted: row.total_inserted,
     totalUpdated: row.total_updated,
     errorCount: row.error_count,
+    createdAt: row.created_at,
+  };
+}
+
+function mapScrapeErrorRow(row: ScrapeErrorRow): ScrapeError {
+  return {
+    id: row.id,
+    scrapeRunId: row.scrape_run_id,
+    source: row.source,
+    message: row.message,
+    details: row.details,
     createdAt: row.created_at,
   };
 }
@@ -380,5 +467,51 @@ export async function getLastScrapeRun() {
     return mapScrapeRunRow(data as ScrapeRunRow);
   } catch {
     return null;
+  }
+}
+
+export async function getRecentScrapeRuns(limit = 5) {
+  if (!hasSupabaseReadConfig()) {
+    return [];
+  }
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("scrape_runs")
+      .select("*")
+      .order("started_at", { ascending: false })
+      .limit(limit);
+
+    if (error || !data?.length) {
+      return [];
+    }
+
+    return (data as ScrapeRunRow[]).map(mapScrapeRunRow);
+  } catch {
+    return [];
+  }
+}
+
+export async function getRecentScrapeErrors(limit = 8) {
+  if (!hasSupabaseReadConfig()) {
+    return [];
+  }
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("scrape_errors")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error || !data?.length) {
+      return [];
+    }
+
+    return (data as ScrapeErrorRow[]).map(mapScrapeErrorRow);
+  } catch {
+    return [];
   }
 }

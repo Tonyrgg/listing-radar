@@ -1,4 +1,12 @@
-export type ScraperProviderName = "mock" | "subito" | "all";
+export type ScraperProviderName =
+  | "mock"
+  | "subito"
+  | "admaiora"
+  | "futura"
+  | "immobiliaririunite"
+  | "import"
+  | "feed"
+  | "all";
 
 const MIN_DETAIL_DELAY_MS = 1500;
 
@@ -29,6 +37,22 @@ export const SCRAPER_CONFIG = {
     subito: {
       enabledByDefault: false,
     },
+    admaiora: {
+      enabledByDefault: true,
+    },
+    futura: {
+      enabledByDefault: true,
+    },
+    immobiliaririunite: {
+      enabledByDefault: true,
+    },
+    import: {
+      enabledByDefault: false,
+      defaultPath: "data/import/listings.json",
+    },
+    feed: {
+      enabledByDefault: false,
+    },
   },
   limits: {
     maxSearchPages: 1,
@@ -39,14 +63,43 @@ export const SCRAPER_CONFIG = {
     baseUrl: "https://www.subito.it",
     searchPath: "/annunci-puglia/vendita/immobili/bari/bitonto/",
   },
+  admaiora: {
+    baseUrl: "https://www.admaioraimmobiliare.it",
+    searchUrl: "https://www.admaioraimmobiliare.it/property-status/vendita/",
+  },
+  futura: {
+    baseUrl: "https://www.futurabitonto.it",
+    searchUrl:
+      "https://www.futurabitonto.it/web/immobili.asp?language=ita&pagref=88306&tipo_contratto=V",
+  },
+  immobiliaririunite: {
+    baseUrl: "https://www.immobiliaririunite.it",
+    searchUrl:
+      "https://www.immobiliaririunite.it/web/immobili.asp?cod_comune=719&cod_provincia=9&cod_regione=13&language=ita&link=1",
+  },
 } as const;
+
+export const ALL_WEB_PROVIDER_NAMES = [
+  "admaiora",
+  "futura",
+  "immobiliaririunite",
+] as const;
 
 export function normalizeProviderName(
   value: string | undefined,
 ): ScraperProviderName {
   const normalized = value?.trim().toLowerCase();
 
-  if (normalized === "subito" || normalized === "all" || normalized === "mock") {
+  if (
+    normalized === "subito" ||
+    normalized === "admaiora" ||
+    normalized === "futura" ||
+    normalized === "immobiliaririunite" ||
+    normalized === "import" ||
+    normalized === "feed" ||
+    normalized === "all" ||
+    normalized === "mock"
+  ) {
     return normalized;
   }
 

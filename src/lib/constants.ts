@@ -5,6 +5,11 @@ export const MONITORED_ZONE = SCRAPER_CONFIG.monitoredCity;
 export const REPORT_SCHEDULE = "09:00";
 
 export const LISTING_SOURCE_OPTIONS = [
+  "admaiora",
+  "futura",
+  "immobiliaririunite",
+  "feed",
+  "import",
   "subito",
   "Subito",
   "Casa.it",

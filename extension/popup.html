@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Listing Radar</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Listing Radar</p>
+          <h1>Importa annuncio</h1>
+        </div>
+        <button id="edit-connection" type="button" class="text-button hidden">
+          Configura
+        </button>
+      </header>
+
+      <section id="connection" class="panel">
+        <label>
+          <span>URL applicazione</span>
+          <input id="base-url" type="url" placeholder="http://localhost:3000" />
+        </label>
+        <label>
+          <span>Token estensione</span>
+          <input id="api-token" type="password" autocomplete="off" />
+        </label>
+        <button id="save-connection" type="button" class="secondary">
+          Salva connessione
+        </button>
+      </section>
+
+      <section id="preview" class="panel hidden" aria-live="polite">
+        <div class="preview-heading">
+          <span id="source" class="badge"></span>
+          <span id="field-count" class="muted"></span>
+        </div>
+        <h2 id="title"></h2>
+        <p id="facts" class="facts"></p>
+        <button id="import-listing" type="button">Importa</button>
+      </section>
+
+      <section id="result" class="panel hidden" aria-live="polite">
+        <p id="result-message"></p>
+        <button id="open-listing" type="button" class="secondary hidden">
+          Apri scheda
+        </button>
+      </section>
+
+      <p id="status" class="status" aria-live="polite"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,6 +1,11 @@
 import type { NormalizedListing } from "@/types";
 
-export type ProviderRunIssueType = "fetch" | "parse" | "search" | "upsert";
+export type ProviderRunIssueType =
+  | "config"
+  | "fetch"
+  | "parse"
+  | "search"
+  | "upsert";
 
 export interface ProviderRunIssue {
   type: ProviderRunIssueType;

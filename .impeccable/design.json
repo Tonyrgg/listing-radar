@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-14T13:55:00+02:00",
+  "title": "Design System: Listing Radar",
+  "extensions": {
+    "colorMeta": {
+      "operations-canvas": {
+        "role": "neutral",
+        "displayName": "Grafite profonda",
+        "canonical": "oklch(0.135 0.009 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.009 155)",
+          "oklch(0.25 0.009 155)",
+          "oklch(0.35 0.009 155)",
+          "oklch(0.45 0.009 155)",
+          "oklch(0.55 0.009 155)",
+          "oklch(0.68 0.009 155)",
+          "oklch(0.82 0.009 155)",
+          "oklch(0.95 0.009 155)"
+        ]
+      },
+      "sage-action": {
+        "role": "primary",
+        "displayName": "Salvia operativa",
+        "canonical": "oklch(0.74 0.105 145)",
+        "tonalRamp": [
+          "oklch(0.15 0.04 145)",
+          "oklch(0.25 0.06 145)",
+          "oklch(0.35 0.075 145)",
+          "oklch(0.48 0.09 145)",
+          "oklch(0.6 0.1 145)",
+          "oklch(0.72 0.105 145)",
+          "oklch(0.84 0.08 145)",
+          "oklch(0.95 0.03 145)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Titolo pagina, massimo due righe su mobile."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Dati operativi e descrizioni brevi."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-change",
+        "value": "color 150ms ease",
+        "purpose": "Feedback sobrio per hover e stati attivi."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Azione operativa principale con target tattile di 44 pixel.",
+      "html": "<button class=\"ds-btn-primary\">Completa</button>",
+      "css": ".ds-btn-primary { height: 44px; padding: 0 16px; border: 0; border-radius: 6px; background: var(--surface-accent); color: var(--button-ink); font: 600 14px Geist, Arial, sans-serif; transition: background-color 150ms ease; } .ds-btn-primary:hover { background: var(--surface-accent-hover); } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Comando secondario per navigazione e filtri.",
+      "html": "<button class=\"ds-btn-secondary\">Vedi tutta la coda</button>",
+      "css": ".ds-btn-secondary { height: 44px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-panel); color: var(--ink-strong); font: 600 14px Geist, Arial, sans-serif; transition: background-color 150ms ease; } .ds-btn-secondary:hover { background: var(--surface-muted); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Etichetta compatta per fonte e stato.",
+      "html": "<span class=\"ds-chip\">PENDING</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: 9999px; background: var(--surface-accent-soft); color: var(--surface-accent); font: 600 11px Geist, Arial, sans-serif; letter-spacing: 0.08em; }"
+    },
+    {
+      "name": "Operational Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Contenitore piatto per code, stato acquisizione e opportunita.",
+      "html": "<section class=\"ds-panel\"><h3>Nuovi arrivi</h3><p>Apri il portale e completa la scheda.</p></section>",
+      "css": ".ds-panel { padding: 20px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-panel); color: var(--ink-strong); font-family: Geist, Arial, sans-serif; } .ds-panel h3 { margin: 0; font-size: 18px; line-height: 1.5; } .ds-panel p { margin: 4px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.5; }"
+    },
+    {
+      "name": "Active Navigation Item",
+      "kind": "nav",
+      "description": "Destinazione corrente nella navigazione laterale o mobile.",
+      "html": "<a class=\"ds-nav-active\" href=\"#\">Dashboard</a>",
+      "css": ".ds-nav-active { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-accent-soft); color: var(--surface-accent); font: 500 14px Geist, Arial, sans-serif; text-decoration: none; } .ds-nav-active:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "La Sala Operativa",
+    "overview": "Listing Radar deve sembrare uno spazio di lavoro privato, calmo e sempre sotto controllo. La densita serve a ridurre i passaggi: la coda corrente domina, i segnali di acquisizione restano visibili e le statistiche non competono con la prossima azione.",
+    "keyCharacteristics": [
+      "Tema scuro grafite con un solo accento salvia operativo.",
+      "Layout full width, gerarchia asimmetrica e alta densita controllata.",
+      "Azioni esplicite, foto reali e motivazioni comprensibili.",
+      "Target interattivi di almeno 44 pixel e focus sempre visibile."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "L'accento salvia deve restare raro e funzionale; non deve diventare un colore decorativo di superficie.",
+        "section": "colors"
+      },
+      {
+        "name": "The Operational Type Rule",
+        "body": "Il testo piu grande appartiene solo alla pagina; card, pannelli e righe usano titoli compatti adatti alla scansione ripetuta.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat By Default Rule",
+        "body": "Ogni superficie resta piatta; hover e focus cambiano colore o bordo senza sollevare fisicamente il componente.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do mettere la coda da completare prima delle statistiche.",
+      "Do usare tutta la larghezza disponibile sui monitor desktop.",
+      "Do spiegare ogni opportunita con una motivazione comprensibile."
+    ],
+    "donts": [
+      "Don't creare griglie di metriche tutte equivalenti e prive di una priorita operativa.",
+      "Don't usare dashboard decorative con gradienti, bagliori, vetro o colori neon.",
+      "Don't introdurre layout stretti che sprecano spazio disponibile su monitor desktop."
+    ]
+  }
+}

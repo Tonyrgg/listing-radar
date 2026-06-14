@@ -10,6 +10,11 @@ Current MVP scope:
 - protected cron endpoint
 - mock report generation
 - opt-in Subito.it provider for public real-estate listing pages
+- Ad Maiora local agency provider for Bitonto listings
+- Futura Immobiliare and Immobiliari Riunite live providers
+- local import and authorized feed providers for complete real listing data
+- automatic email-alert inbox for large portals
+- private Chrome extension for one-click listing enrichment
 
 Out of scope in this phase:
 
@@ -28,11 +33,14 @@ Out of scope in this phase:
 ## Routes
 
 - `/dashboard`
+- `/incoming`
 - `/listings`
 - `/listings/[id]`
 - `/reports`
 - `/settings`
 - `/api/cron/scrape`
+- `/api/cron/email-alerts`
+- `/api/import/browser`
 
 The UI falls back to realistic mock data when Supabase is not configured yet or the tables are still empty. The cron endpoint persists mock listings into Supabase when the required env vars are present.
 
@@ -52,6 +60,23 @@ SCRAPER_USER_AGENT=
 SCRAPER_MAX_SEARCH_PAGES=1
 SCRAPER_MAX_DETAIL_PAGES=10
 SCRAPER_DETAIL_DELAY_MS=1500
+SCRAPER_IMPORT_PATH=data/import/listings.json
+SCRAPER_FEED_URL=
+SCRAPER_FEED_TOKEN=
+SCRAPER_FEED_AUTH_HEADER=Authorization
+SCRAPER_FEED_AUTH_PREFIX=Bearer
+EMAIL_ALERTS_ENABLED=false
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_SECURE=true
+EMAIL_IMAP_USER=
+EMAIL_IMAP_PASSWORD=
+EMAIL_IMAP_MAILBOX=INBOX
+EMAIL_ALERT_LOOKBACK_DAYS=7
+EMAIL_ALERT_MAX_MESSAGES=50
+EMAIL_MARK_SEEN=false
+ALLOW_MANUAL_EMAIL_REFRESH_WITHOUT_AUTH=false
+EXTENSION_API_TOKEN=
 ```
 
 Notes:
@@ -59,10 +84,19 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only.
 - `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are optional.
 - `SCRAPER_PROVIDER=mock` is the safe development default.
+- `SCRAPER_PROVIDER=admaiora` reads public Bitonto sale listings from Ad Maiora Immobiliare.
+- `SCRAPER_PROVIDER=futura` reads Futura Immobiliare sale listings.
+- `SCRAPER_PROVIDER=immobiliaririunite` reads Immobiliari Riunite Bitonto listings.
+- `SCRAPER_PROVIDER=import` reads a local JSON/CSV/TSV file.
+- `SCRAPER_PROVIDER=feed` reads an authorized remote JSON/CSV/TSV feed.
 - `SCRAPER_PROVIDER=subito` enables the Subito.it provider.
-- `SCRAPER_PROVIDER=all` runs mock and Subito in the same cron run.
+- `SCRAPER_PROVIDER=all` runs all enabled live website providers: Ad Maiora, Futura, and Immobiliari Riunite.
 - `SCRAPER_USER_AGENT` is optional. When omitted, the scraper sends a normal declarative user agent.
 - Detail requests are capped at 10 per run and delayed by at least 1500 ms.
+- `EMAIL_ALERTS_ENABLED=false` keeps mailbox access disabled by default.
+- `EMAIL_IMAP_PASSWORD` must be a mailbox-specific password or app password, not a shared application secret.
+- `ALLOW_MANUAL_EMAIL_REFRESH_WITHOUT_AUTH=false` prevents the manual mailbox action on an unauthenticated production deployment.
+- `EXTENSION_API_TOKEN` is a private random token used only by the Chrome extension.
 
 ## Local development
 
@@ -77,7 +111,10 @@ Open `http://localhost:3000`.
 
 ## Supabase migration
 
-The initial schema is in [supabase/migrations/001_initial_schema.sql](/abs/path/c:/Users/ruggi/listing-radar/supabase/migrations/001_initial_schema.sql).
+The schema is split into:
+
+- `supabase/migrations/001_initial_schema.sql`
+- `supabase/migrations/002_incoming_listings.sql`
 
 Apply it with the Supabase CLI if you use local or linked database workflows:
 
@@ -97,6 +134,8 @@ The migration creates:
 - `reports`
 - `scrape_runs`
 - `scrape_errors`
+- `incoming_listings`
+- `email_ingestion_messages`
 
 All tables have RLS enabled. Policies allow authenticated users to `select`, `insert`, `update`, and `delete`. Anonymous public access is not enabled.
 
@@ -126,6 +165,48 @@ $headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
 Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
 ```
 
+To exercise the Ad Maiora local provider:
+
+```powershell
+$env:SCRAPER_PROVIDER = "admaiora"
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
+```
+
+To scrape all enabled local websites:
+
+```powershell
+$env:SCRAPER_PROVIDER = "all"
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
+```
+
+`all` intentionally excludes:
+
+- `mock`, because it would mix test data with real listings
+- `import` and `feed`, because they require explicit input configuration
+- `subito`, because the public site currently returns `Access Denied`
+
+To import a local data file:
+
+```powershell
+Copy-Item data/import/listings.example.json data/import/listings.json
+$env:SCRAPER_PROVIDER = "import"
+$env:SCRAPER_IMPORT_PATH = "data/import/listings.json"
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
+```
+
+To import an authorized remote feed:
+
+```powershell
+$env:SCRAPER_PROVIDER = "feed"
+$env:SCRAPER_FEED_URL = "https://example.com/authorized-listings.json"
+$env:SCRAPER_FEED_TOKEN = "optional-token"
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/scrape" -Headers $headers
+```
+
 What it does:
 
 1. creates a `scrape_runs` record
@@ -137,6 +218,141 @@ What it does:
 7. returns JSON results per provider
 8. stores provider fetch/search/parse/upsert issues in `scrape_errors`
 
+When email alerts are enabled, `/api/cron/scrape` also checks the mailbox before
+running the selected website providers. A dedicated endpoint is available for a
+more frequent schedule:
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:3000/api/cron/email-alerts" -Headers $headers
+```
+
+## Email alerts and browser enrichment
+
+The large-portal workflow is:
+
+```text
+portal alert email -> /incoming pending item -> open portal -> Chrome extension
+-> complete listing in /listings
+```
+
+Configure one mailbox that receives saved-search alerts from Idealista,
+Immobiliare.it, Subito, and Casa.it. For Gmail use:
+
+```text
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_SECURE=true
+EMAIL_IMAP_USER=your-address@example.com
+EMAIL_IMAP_PASSWORD=your-app-password
+```
+
+The ingestion process reads recent messages, extracts supported detail links,
+and stores preliminary entries in `/incoming`. Processed message IDs are saved
+so the same email is not imported again. Messages are not marked as read unless
+`EMAIL_MARK_SEEN=true`.
+
+Generate a long random value for `EXTENSION_API_TOKEN`, restart the app, then:
+
+1. Open `chrome://extensions`.
+2. Enable developer mode.
+3. Choose **Load unpacked** and select the `extension` directory.
+4. Open the extension and enter the Listing Radar URL plus
+   `EXTENSION_API_TOKEN`.
+5. Open an item from `/incoming`, then click the extension and **Importa**.
+
+The extension reads JSON-LD, Open Graph metadata, and visible page content. It
+does not reveal hidden phone numbers, bypass login or CAPTCHA, contact sellers,
+or run automatic browsing.
+
+The importer also collects up to 30 public listing image URLs. They are stored
+with the listing snapshot and displayed in the archive and listing detail
+gallery. Reload the unpacked extension from `chrome://extensions` after an
+extension update.
+
+To reprocess recent alert emails after a parser update:
+
+```powershell
+$headers = @{ Authorization = "Bearer $env:CRON_SECRET" }
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:3000/api/cron/email-alerts?reprocess=true" `
+  -Headers $headers
+```
+
+## Windows automation
+
+Listing Radar includes local Windows Task Scheduler scripts in
+`scripts/windows`.
+
+The default automation installs:
+
+- `Listing Radar - Start`: starts the app at Windows logon
+- `Listing Radar - Email Alerts`: checks Gmail every 10 minutes
+
+Local agency scraping remains available through `/api/cron/scrape`, but it is
+not scheduled automatically.
+
+Install or update the tasks from PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File ".\scripts\windows\Install-ListingRadarTasks.ps1"
+```
+
+The scheduled tasks do not contain Supabase, Gmail, extension, or cron secrets.
+They read `CRON_SECRET` from `.env.local` at runtime.
+
+Check their status:
+
+```powershell
+Get-ScheduledTask -TaskName "Listing Radar*" |
+  Select-Object TaskName, State
+
+Get-ScheduledTaskInfo -TaskName "Listing Radar - Email Alerts"
+```
+
+Runtime logs and the most recent JSON responses are stored in the ignored
+`.runtime` directory:
+
+```text
+.runtime/server.log
+.runtime/email-alerts.log
+.runtime/email-alerts.latest.json
+.runtime/scrape.log
+.runtime/scrape.latest.json
+```
+
+Remove the scheduled tasks:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File ".\scripts\windows\Uninstall-ListingRadarTasks.ps1"
+```
+
+The automation runs only while the Windows user is logged in. If the email task
+starts while the app is stopped, it starts Listing Radar first.
+
+The **Controlla nuove email** button in `/incoming` runs the same mailbox check
+on demand and refreshes the page. It is intentionally disabled in production
+until application authentication is configured.
+
+### Running without the Windows PC
+
+The Task Scheduler integration is only a local fallback. Turning the PC off
+also stops the IMAP polling.
+
+The production design for near-real-time ingestion is:
+
+```text
+Gmail watch -> Google Cloud Pub/Sub -> hosted webhook
+-> parse new messages -> Supabase incoming_listings
+```
+
+This keeps the private dashboard local while a small cloud endpoint receives
+mailbox-change notifications and persists new arrivals in Supabase. It requires
+Gmail OAuth credentials, a Google Cloud Pub/Sub topic and subscription, and a
+public HTTPS webhook. Gmail watches must also be renewed periodically.
+
 ## Subito provider limits
 
 The first Subito implementation only reads public search and detail pages for:
@@ -146,6 +362,48 @@ https://www.subito.it/annunci-puglia/vendita/immobili/bari/bitonto/
 ```
 
 It does not contact sellers, reveal hidden phone numbers, send messages, or republish content. If Subito blocks the request or the search markup changes, the provider logs a clear issue, returns an empty array, and lets the cron complete with `completed_with_errors`.
+
+## Import and feed formats
+
+`SCRAPER_PROVIDER=import` and `SCRAPER_PROVIDER=feed` accept either:
+
+- JSON array: `[{ ...listing }]`
+- JSON object with `listings`: `{ "listings": [{ ...listing }] }`
+- CSV or TSV with a header row
+
+Supported field names include camelCase, snake_case, and Italian labels for the common listing fields:
+
+```text
+source, source_listing_id, url, title, description, price, sqm, rooms,
+floor, zone, address_raw, seller_type, seller_name, phone,
+portal_declared_date, metadata_date_published, metadata_date_modified,
+first_seen_at, last_seen_at, status, note, previous_price
+```
+
+The sample template is in `data/import/listings.example.json`.
+
+## Source strategy
+
+The next real source should be an authorized feed/export/API rather than a blocked public scraper. Public checks show:
+
+- Ad Maiora Immobiliare exposes public Bitonto sale listings and its `robots.txt` has no disallow for `User-agent: *`, so it is the first live local provider.
+- Futura Immobiliare and Immobiliari Riunite use public Agesta listing pages; their robots files only disallow internal `/include/` and `/templates/` paths.
+- Subito exposes business/gestionale paths, but the public site blocks automated scraping unless authorized.
+- Immobiliare.it publishes a robots file with disallowed search/list/detail-related endpoints.
+- Idealista publishes a broad robots file with many disallowed property/search variations and anti-bot-sensitive paths.
+
+The Ad Maiora provider is the first live website provider. The import/feed providers remain the preferred path for complete real data from agency CRMs, portal integrations, paid data providers, or any source that grants explicit permission.
+
+## Large portal strategy
+
+For the largest boards, the production path is an official data product rather than bypassing anti-bot controls:
+
+- idealista offers an official Search API and accepts access requests at `https://developers.idealista.com/access-request`
+- Immobiliare.it offers data APIs through `https://www.immobiliare.it/insights/dati-api/`
+- Immobiliare.it also documents professional listing feeds at `https://feed.immobiliare.it/integration/ii/docs/import/get-start`
+- Subito lists authorized management partners at `https://info.subito.it/gestionali-autorizzati.htm`
+
+Once credentials or an authorized export are available, they can be connected through a dedicated API provider or the existing `feed` provider.
 
 ## Deploy on Vercel
 
@@ -162,12 +420,20 @@ The current implementation keeps all privileged Supabase writes on the server si
 ```text
 app/
   (private)/
+    incoming/
   api/cron/scrape/
+  api/cron/email-alerts/
+  api/import/browser/
+extension/
+scripts/
+  windows/
 src/
   components/
   lib/
     data/
     listings/
+    incoming/
+    email-alerts/
     notifications/
     reports/
     scrapers/providers/

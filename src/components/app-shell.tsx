@@ -8,8 +8,8 @@ export function AppShell({
 }>) {
   return (
     <div className="min-h-screen bg-[var(--surface-canvas)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col lg:flex-row">
-        <aside className="border-b border-[var(--line-soft)] bg-[var(--surface-panel)] px-5 py-5 lg:w-72 lg:border-b-0 lg:border-r">
+      <div className="flex min-h-screen w-full flex-col lg:flex-row">
+        <aside className="min-w-0 overflow-hidden border-b border-[var(--line-soft)] bg-[var(--surface-panel)] px-4 py-4 lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
           <div className="flex items-center justify-between gap-4 lg:block">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
@@ -21,13 +21,13 @@ export function AppShell({
               <p className="mt-1 text-sm text-[var(--ink-soft)]">{MONITORED_ZONE}</p>
             </div>
           </div>
-          <div className="mt-6">
+          <div className="mt-5 lg:mt-8">
             <SidebarNav />
           </div>
         </aside>
 
-        <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <main id="main-content" className="min-w-0 w-full flex-1 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 lg:py-7 xl:px-10">
+          <div className="w-full">{children}</div>
         </main>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
+import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 import { getListingById } from "@/lib/data/repository";
 import {
   formatCurrency,
@@ -73,6 +74,11 @@ export default async function ListingDetailPage({
           Apri annuncio originale
         </a>
       </header>
+
+      <ListingPhotoGallery
+        title={listing.title}
+        imageUrls={listing.imageUrls}
+      />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">

@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Listing Radar Importer",
+  "version": "0.2.0",
+  "description": "Importa in Listing Radar i dati visibili della pagina corrente.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_title": "Importa in Listing Radar",
+    "default_popup": "popup.html"
+  }
+}

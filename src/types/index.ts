@@ -70,6 +70,7 @@ export interface Listing {
   sellerType: SellerType;
   sellerName: string | null;
   phone: string | null;
+  imageUrls: string[];
   portalDeclaredDate: string | null;
   metadataDatePublished: string | null;
   metadataDateModified: string | null;
@@ -114,6 +115,46 @@ export interface ScrapeRun {
   totalUpdated: number;
   errorCount: number;
   createdAt: string | null;
+  errors?: ScrapeError[];
+}
+
+export interface ScrapeError {
+  id: string;
+  scrapeRunId: string;
+  source: string | null;
+  message: string;
+  details: Record<string, unknown> | null;
+  createdAt: string | null;
+}
+
+export type IncomingListingStatus =
+  | "pending"
+  | "enriched"
+  | "dismissed"
+  | "error";
+
+export interface IncomingListing {
+  id: string;
+  source: string;
+  sourceListingId: string | null;
+  url: string;
+  canonicalUrl: string | null;
+  title: string;
+  description: string | null;
+  price: number | null;
+  sqm: number | null;
+  rooms: number | null;
+  zone: string | null;
+  imageUrl: string | null;
+  emailMessageId: string | null;
+  emailSubject: string | null;
+  emailSender: string | null;
+  emailReceivedAt: string | null;
+  status: IncomingListingStatus;
+  listingId: string | null;
+  rawPayload: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface NormalizedListing {
@@ -133,6 +174,7 @@ export interface NormalizedListing {
   sellerType: SellerType;
   sellerName?: string | null;
   phone?: string | null;
+  imageUrls?: string[];
   portalDeclaredDate?: string | null;
   metadataDatePublished?: string | null;
   metadataDateModified?: string | null;

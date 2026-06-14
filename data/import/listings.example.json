@@ -1,0 +1,22 @@
+[
+  {
+    "source": "agenzia-feed",
+    "source_listing_id": "BIT-001",
+    "url": "https://example.com/listings/bit-001",
+    "title": "Trilocale luminoso in centro a Bitonto",
+    "description": "Appartamento ristrutturato con balcone e prezzo trattabile.",
+    "price": 165000,
+    "sqm": 96,
+    "rooms": 3,
+    "floor": "2",
+    "zone": "Bitonto - Centro",
+    "address_raw": "Via Example, Bitonto",
+    "seller_type": "agency",
+    "seller_name": "Agenzia Example",
+    "phone": "0800000000",
+    "portal_declared_date": "2026-06-10",
+    "metadata_date_published": "2026-06-10",
+    "metadata_date_modified": "2026-06-12",
+    "status": "new"
+  }
+]

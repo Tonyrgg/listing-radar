@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Image as ImageIcon } from "lucide-react";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
 import {
@@ -173,6 +174,7 @@ export default async function ListingsPage({
           <table className="min-w-full text-left text-sm">
             <thead className="bg-[var(--surface-muted)] text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
               <tr>
+                <th className="px-4 py-3 font-semibold">Foto</th>
                 <th className="px-4 py-3 font-semibold">Titolo</th>
                 <th className="px-4 py-3 font-semibold">Fonte</th>
                 <th className="px-4 py-3 font-semibold">Prezzo</th>
@@ -191,6 +193,27 @@ export default async function ListingsPage({
             <tbody className="divide-y divide-[var(--line-soft)]">
               {listings.map((listing) => (
                 <tr key={listing.id} className="align-top">
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/listings/${listing.id}`}
+                      className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
+                      style={
+                        listing.imageUrls[0]
+                          ? {
+                              backgroundImage: `url("${listing.imageUrls[0]}")`,
+                            }
+                          : undefined
+                      }
+                      aria-label={`Apri ${listing.title}`}
+                    >
+                      {!listing.imageUrls[0] ? (
+                        <ImageIcon
+                          aria-hidden="true"
+                          className="size-5 text-[var(--ink-subtle)]"
+                        />
+                      ) : null}
+                    </Link>
+                  </td>
                   <td className="px-4 py-4">
                     <Link
                       href={`/listings/${listing.id}`}

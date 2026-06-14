@@ -102,6 +102,7 @@ function toListingPreview(
     sellerType: normalized.sellerType,
     sellerName: normalized.sellerName ?? null,
     phone: normalized.phone ?? null,
+    imageUrls: normalized.imageUrls ?? [],
     portalDeclaredDate: normalized.portalDeclaredDate ?? null,
     metadataDatePublished: normalized.metadataDatePublished ?? null,
     metadataDateModified: normalized.metadataDateModified ?? null,
@@ -229,7 +230,10 @@ export async function upsertListings(
       title: normalized.title,
       description_hash: hashDescription(normalized.description),
       is_available: normalized.isAvailable ?? true,
-      raw_payload: normalized.rawPayload ?? null,
+      raw_payload: {
+        ...(normalized.rawPayload ?? {}),
+        imageUrls: normalized.imageUrls ?? [],
+      },
     };
 
     const { error: snapshotError } = await supabase
