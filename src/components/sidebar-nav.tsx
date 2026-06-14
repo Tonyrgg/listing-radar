@@ -5,25 +5,28 @@ import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
 import {
   Building2,
-  FileText,
+  CalendarRange,
   Inbox,
-  LayoutDashboard,
-  Settings,
+  House,
+  Settings2,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/incoming", label: "Nuovi arrivi", icon: Inbox },
-  { href: "/listings", label: "Annunci", icon: Building2 },
-  { href: "/reports", label: "Report", icon: FileText },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", label: "Inizio", icon: House },
+  { href: "/incoming", label: "Da completare", icon: Inbox },
+  { href: "/listings", label: "Archivio", icon: Building2 },
+  { href: "/reports", label: "Riepiloghi", icon: CalendarRange },
+  { href: "/settings", label: "Impostazioni", icon: Settings2 },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex w-full min-w-0 gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+    <nav
+      className="grid w-full min-w-0 grid-cols-3 gap-1.5 lg:flex lg:flex-col"
+      aria-label="Navigazione principale"
+    >
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive =
@@ -35,7 +38,7 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             className={clsx(
-              "inline-flex h-11 shrink-0 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+              "inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-2 text-center text-sm font-medium transition-colors lg:justify-start lg:gap-3 lg:px-3 lg:text-left",
               isActive
                 ? "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
                 : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",

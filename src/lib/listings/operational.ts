@@ -5,20 +5,47 @@ export function getOperationalSuggestion(listing: Pick<
   "sellerType" | "minimumDaysOnline" | "isPriceDropped" | "priorityScore"
 >) {
   if (listing.sellerType === "private" && listing.minimumDaysOnline <= 7) {
-    return "Privato fresco: verificare subito coerenza foto, prezzo e recapito. Se i dati reggono, conviene procedere rapidamente con un contatto manuale.";
+    return "L'annuncio e recente e sembra pubblicato da un privato. Controlla prezzo, foto e recapito prima di decidere il prossimo passo.";
   }
 
   if (listing.isPriceDropped) {
-    return "Ribasso rilevato: verificare il nuovo posizionamento e preparare una chiamata manuale orientata alla flessibilità sul prezzo.";
+    return "Il prezzo e sceso. Controlla il nuovo valore e valuta se il venditore potrebbe essere piu disponibile a trattare.";
   }
 
   if (listing.sellerType === "private" && listing.minimumDaysOnline >= 60) {
-    return "Privato datato: probabile stanchezza del venditore. Valutare ricontrollo dell'annuncio e contatto manuale con proposta ben calibrata.";
+    return "L'annuncio di un privato e online da molto tempo. Potrebbe esserci piu disponibilita a trattare.";
   }
 
   if (listing.sellerType === "agency" && listing.minimumDaysOnline >= 60) {
-    return "Agenzia con incarico maturo: utile per leggere il mercato locale e capire se si sta aprendo una finestra negoziale.";
+    return "L'annuncio dell'agenzia e online da molto tempo. Controlla se prezzo o condizioni sono cambiati.";
   }
 
-  return "Monitorare nuovi segnali su tempi online, ribassi e modifiche testuali prima di pianificare il prossimo passaggio manuale.";
+  return "La scheda e completa. Controlla i dati principali e tieni l'annuncio sotto osservazione.";
+}
+
+export function getListingAttentionReason(listing: Pick<
+  Listing,
+  "sellerType" | "minimumDaysOnline" | "isPriceDropped" | "isNewToday" | "phone"
+>) {
+  if (listing.isPriceDropped) {
+    return "Il prezzo e sceso";
+  }
+
+  if (listing.sellerType === "private") {
+    return "Sembra pubblicato da un privato";
+  }
+
+  if (listing.minimumDaysOnline >= 60) {
+    return `Online da almeno ${listing.minimumDaysOnline} giorni`;
+  }
+
+  if (listing.isNewToday) {
+    return "Pubblicato oggi";
+  }
+
+  if (listing.phone) {
+    return "Recapito disponibile";
+  }
+
+  return "Scheda completa";
 }

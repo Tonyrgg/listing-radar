@@ -1,8 +1,4 @@
 (function initializeGenericParser() {
-  if (globalThis.ListingRadarGenericParser) {
-    return;
-  }
-
   function clean(value) {
     return String(value || "")
       .replace(/\s+/g, " ")
@@ -369,9 +365,11 @@
 
   globalThis.ListingRadarGenericParser = {
     clean,
+    numberFrom,
     parsePrice,
     parseSqm,
     parseRooms,
+    visiblePhone,
     extract,
   };
 })();

@@ -15,10 +15,16 @@ export function AppShell({
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
                 Listing Radar
               </p>
-              <h1 className="mt-2 text-xl font-semibold text-[var(--ink-strong)]">
-                CRM privato
-              </h1>
-              <p className="mt-1 text-sm text-[var(--ink-soft)]">{MONITORED_ZONE}</p>
+              <p className="mt-2 text-xl font-semibold text-[var(--ink-strong)]">
+                Radar immobili
+              </p>
+              <p className="mt-1 flex items-center gap-2 text-sm text-[var(--ink-soft)]">
+                <span
+                  aria-hidden="true"
+                  className="size-2 rounded-full bg-[var(--surface-accent)]"
+                />
+                Zona {MONITORED_ZONE}
+              </p>
             </div>
           </div>
           <div className="mt-5 lg:mt-8">

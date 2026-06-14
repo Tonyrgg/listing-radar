@@ -1,26 +1,34 @@
 import Link from "next/link";
-import { Image as ImageIcon } from "lucide-react";
+import { ArrowRight, Image as ImageIcon } from "lucide-react";
+import type { Metadata } from "next";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import { PageHeader } from "@/components/page-header";
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import { getIncomingListings } from "@/lib/incoming/repository";
 import {
   formatCurrency,
   formatDateTime,
   formatNumber,
-  formatPlainText,
 } from "@/lib/formatting";
+import {
+  getIncomingStatusLabel,
+  getSourceLabel,
+} from "@/lib/labels";
 import type { IncomingListing, IncomingListingStatus } from "@/types";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Annunci da completare",
+};
 
 const FILTERS: Array<{
   value: IncomingListingStatus | "all";
   label: string;
 }> = [
-  { value: "pending", label: "Da completare" },
+  { value: "pending", label: "In attesa" },
   { value: "enriched", label: "Completati" },
-  { value: "dismissed", label: "Archiviati" },
+  { value: "dismissed", label: "Messi da parte" },
   { value: "all", label: "Tutti" },
 ];
 
@@ -83,8 +91,10 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
 
       <div className="min-w-0 p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="blue">{listing.source}</Badge>
-          <Badge tone={getIncomingTone(listing.status)}>{listing.status}</Badge>
+          <Badge tone="blue">{getSourceLabel(listing.source)}</Badge>
+          <Badge tone={getIncomingTone(listing.status)}>
+            {getIncomingStatusLabel(listing.status)}
+          </Badge>
           <span className="text-xs text-[var(--ink-subtle)]">
             {formatDateTime(listing.emailReceivedAt ?? listing.createdAt)}
           </span>
@@ -96,13 +106,17 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
           <span className="font-semibold text-[var(--ink-strong)]">
             {formatCurrency(listing.price)}
           </span>
-          <span>{formatNumber(listing.sqm)} mq</span>
-          <span>{formatNumber(listing.rooms)} locali</span>
-          <span>{formatPlainText(listing.zone)}</span>
+          {listing.sqm != null ? (
+            <span>{formatNumber(listing.sqm)} mq</span>
+          ) : null}
+          {listing.rooms != null ? (
+            <span>{formatNumber(listing.rooms)} locali</span>
+          ) : null}
+          {listing.zone ? <span>{listing.zone}</span> : null}
         </div>
         {listing.emailSubject ? (
-          <p className="mt-4 truncate text-xs text-[var(--ink-subtle)]">
-            {listing.emailSubject}
+          <p className="mt-4 line-clamp-2 text-xs leading-5 text-[var(--ink-subtle)]">
+            Segnalazione ricevuta: {listing.emailSubject}
           </p>
         ) : null}
       </div>
@@ -111,18 +125,20 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
         {isEnriched ? (
           <Link
             href={`/listings/${listing.listingId}`}
-            className="inline-flex h-11 items-center rounded-md bg-[var(--surface-strong)] px-4 text-sm font-medium text-white"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] md:w-auto"
           >
-            Apri scheda
+            Vedi scheda completa
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         ) : (
           <a
             href={getPortalImportUrl(listing)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-11 items-center rounded-md bg-[var(--surface-strong)] px-4 text-sm font-medium text-white"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] md:w-auto"
           >
-            Apri e completa
+            Apri e completa la scheda
+            <ArrowRight aria-hidden="true" className="size-4" />
           </a>
         )}
       </div>
@@ -141,21 +157,13 @@ export default async function IncomingPage({
 
   return (
     <div className="space-y-8">
-      <header className="space-y-5">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-              Inbox immobili
-            </p>
-            <h2 className="text-3xl font-semibold text-[var(--ink-strong)]">
-              Nuovi arrivi
-            </h2>
-            <p className="text-sm text-[var(--ink-soft)]">
-              {listings.length} segnalazioni nel filtro corrente.
-            </p>
-          </div>
-          <RefreshEmailButton />
-        </div>
+      <div className="space-y-5">
+        <PageHeader
+          eyebrow="Passaggio 1"
+          title="Annunci da completare"
+          description={`${listings.length} annunci nella sezione selezionata. Aprine uno, controlla i dati e salvalo con l'estensione.`}
+          actions={<RefreshEmailButton />}
+        />
 
         <nav
           className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap"
@@ -167,7 +175,7 @@ export default async function IncomingPage({
               href={`/incoming?status=${filter.value}`}
               className={
                 status === filter.value
-                  ? "rounded-md bg-[var(--surface-strong)] px-3 py-2 text-center text-sm font-medium text-white"
+                  ? "rounded-md bg-[var(--surface-accent-soft)] px-3 py-2 text-center text-sm font-medium text-[var(--surface-accent)]"
                   : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 py-2 text-center text-sm font-medium text-[var(--ink-soft)]"
               }
             >
@@ -175,7 +183,7 @@ export default async function IncomingPage({
             </Link>
           ))}
         </nav>
-      </header>
+      </div>
 
       <section className="space-y-4">
         {listings.length ? (
@@ -185,10 +193,10 @@ export default async function IncomingPage({
         ) : (
           <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-6 py-14 text-center">
             <p className="text-sm font-medium text-[var(--ink-strong)]">
-              Nessun nuovo arrivo
+              Non ci sono annunci in questa sezione
             </p>
             <p className="mt-2 text-sm text-[var(--ink-soft)]">
-              Le segnalazioni email compariranno qui al prossimo controllo.
+              Prova un&apos;altra sezione oppure cerca nuovi annunci.
             </p>
           </div>
         )}

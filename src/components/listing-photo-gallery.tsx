@@ -3,7 +3,7 @@
 /* External portal images must be requested directly because their hosts are dynamic. */
 /* eslint-disable @next/next/no-img-element */
 
-import { ImageOff } from "lucide-react";
+import { ImageOff, Maximize2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function ListingPhotoGallery({
@@ -32,7 +32,7 @@ export function ListingPhotoGallery({
 
   if (!activeUrl) {
     return (
-      <section className="flex aspect-[16/7] min-h-56 items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)]">
+      <section className="flex h-60 items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] sm:h-80 xl:h-[430px]">
         <div className="text-center text-[var(--ink-subtle)]">
           <ImageOff aria-hidden="true" className="mx-auto size-7" />
           <p className="mt-3 text-sm font-medium">Nessuna foto acquisita</p>
@@ -43,14 +43,14 @@ export function ListingPhotoGallery({
 
   return (
     <section
-      className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_112px]"
+      className="space-y-3"
       aria-label={`Foto di ${title}`}
     >
       <a
         href={activeUrl}
         target="_blank"
         rel="noreferrer"
-        className="relative block aspect-[16/9] min-h-64 overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-muted)]"
+        className="group relative block h-60 overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-80 xl:h-[430px]"
       >
         <img
           src={activeUrl}
@@ -59,10 +59,14 @@ export function ListingPhotoGallery({
           referrerPolicy="no-referrer"
           onError={() => markFailed(activeUrl)}
         />
+        <span className="absolute bottom-3 right-3 inline-flex size-10 items-center justify-center rounded-md bg-[var(--surface-canvas)] text-[var(--ink-strong)] opacity-90 transition-opacity group-hover:opacity-100">
+          <Maximize2 aria-hidden="true" className="size-4" />
+          <span className="sr-only">Apri la foto originale</span>
+        </span>
       </a>
 
       {availableUrls.length > 1 ? (
-        <div className="grid grid-cols-4 gap-2 lg:max-h-[min(34rem,56vw)] lg:grid-cols-1 lg:overflow-y-auto lg:pr-1">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {availableUrls.map((url, index) => (
             <button
               key={url}
@@ -70,8 +74,8 @@ export function ListingPhotoGallery({
               onClick={() => setSelectedUrl(url)}
               className={
                 url === activeUrl
-                  ? "aspect-[4/3] overflow-hidden rounded-md border-2 border-[var(--surface-accent)] bg-[var(--surface-muted)]"
-                  : "aspect-[4/3] overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)]"
+                  ? "h-16 w-24 shrink-0 overflow-hidden rounded-md border-2 border-[var(--surface-accent)] bg-[var(--surface-muted)] sm:h-20 sm:w-28"
+                  : "h-16 w-24 shrink-0 overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-20 sm:w-28"
               }
               aria-label={`Mostra foto ${index + 1}`}
             >

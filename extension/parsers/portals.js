@@ -1,13 +1,5 @@
 (function initializePortalParsers() {
-  if (globalThis.ListingRadarPortalParser) {
-    return;
-  }
-
   const generic = globalThis.ListingRadarGenericParser;
-
-  function text(selector) {
-    return generic.clean(document.querySelector(selector)?.textContent);
-  }
 
   function sourceFromHost() {
     const host = location.hostname.toLowerCase();
@@ -29,58 +21,60 @@
     return patterns[source]?.exec(value)?.[1] || null;
   }
 
-  function firstText(selectors) {
-    for (const selector of selectors) {
-      const value = text(selector);
-      if (value) return value;
-    }
-    return "";
+  function mergeListing(base, specific) {
+    const merged = { ...base };
+
+    Object.entries(specific || {}).forEach(([key, value]) => {
+      if (key === "rawPayload") {
+        return;
+      }
+
+      if (
+        value !== null &&
+        value !== undefined &&
+        value !== "" &&
+        (!Array.isArray(value) || value.length)
+      ) {
+        merged[key] = value;
+      }
+    });
+
+    merged.rawPayload = {
+      ...(base.rawPayload || {}),
+      ...(specific?.rawPayload || {}),
+    };
+
+    return merged;
   }
 
   function extract() {
-    const listing = generic.extract();
+    const base = generic.extract();
     const source = sourceFromHost();
-    const visibleDetails = firstText([
-      ".details-property_features",
-      "[data-testid='features']",
-      ".feature-list",
-      ".main-features",
-    ]);
-    const specificTitle = firstText([
-      "h1",
-      "[data-testid='title']",
-      ".heading__title",
-    ]);
-    const specificPrice = firstText([
-      ".info-data-price",
-      "[data-testid='price']",
-      ".price",
-      ".heading__price",
-    ]);
-    const specificDescription = firstText([
-      ".comment",
-      "[data-testid='description']",
-      ".description",
-      ".detail-description",
-    ]);
-    const sellerName = firstText([
-      ".professional-name",
-      "[data-testid='agency-name']",
-      ".advertiser-name",
-      ".agency-name",
-    ]);
+    const adapter = globalThis.ListingRadarPortalAdapters?.[source];
+    let listing = base;
+
+    if (adapter) {
+      try {
+        listing = mergeListing(base, adapter.extract(base));
+      } catch (error) {
+        listing.rawPayload = {
+          ...(base.rawPayload || {}),
+          portalAdapter: source,
+          adapterError:
+            error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
 
     return {
       ...listing,
       source,
       sourceListingId: idFromUrl(source, listing.canonicalUrl),
-      title: specificTitle || listing.title,
-      description: specificDescription || listing.description,
-      price: generic.parsePrice(specificPrice) || listing.price,
-      sqm: generic.parseSqm(visibleDetails) || listing.sqm,
-      rooms: generic.parseRooms(visibleDetails) || listing.rooms,
-      sellerType: sellerName ? "agency" : listing.sellerType,
-      sellerName: sellerName || listing.sellerName,
+      rawPayload: {
+        ...(listing.rawPayload || {}),
+        parserMode: adapter ? "portal-specific" : "generic-fallback",
+        parserSource: source,
+      },
     };
   }
 

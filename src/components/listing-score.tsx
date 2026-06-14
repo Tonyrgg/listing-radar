@@ -1,0 +1,150 @@
+import { CircleMinus, CirclePlus, Gauge } from "lucide-react";
+
+import {
+  getPriorityScoreBreakdown,
+  getPriorityScoreLevel,
+} from "@/lib/listings/scoring";
+import type { Listing } from "@/types";
+
+type ScoreListing = Pick<
+  Listing,
+  | "sellerType"
+  | "isNewToday"
+  | "phone"
+  | "minimumDaysOnline"
+  | "isPriceDropped"
+  | "description"
+>;
+
+function scoreInput(listing: ScoreListing) {
+  return {
+    sellerType: listing.sellerType,
+    isNewToday: listing.isNewToday,
+    hasPhone: Boolean(listing.phone),
+    minimumDaysOnline: listing.minimumDaysOnline,
+    isPriceDropped: listing.isPriceDropped,
+    description: listing.description,
+  };
+}
+
+export function ListingScoreSummary({
+  listing,
+}: Readonly<{ listing: ScoreListing }>) {
+  const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
+
+  return (
+    <div className="inline-flex items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 py-2">
+      <Gauge
+        aria-hidden="true"
+        className="size-4 shrink-0 text-[var(--surface-accent)]"
+      />
+      <span className="text-xs text-[var(--ink-soft)]">Appetibilita</span>
+      <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
+        {breakdown.total} punti
+      </strong>
+      <span className="text-xs font-medium text-[var(--surface-accent)]">
+        {getPriorityScoreLevel(breakdown.total)}
+      </span>
+    </div>
+  );
+}
+
+export function ListingScoreBreakdown({
+  listing,
+}: Readonly<{ listing: ScoreListing }>) {
+  const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
+
+  return (
+    <section className="border-y border-[var(--line-soft)] py-5">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+            Indice di appetibilita
+          </p>
+          <p className="mt-2 text-sm text-[var(--ink-soft)]">
+            Quanto conviene controllare questo immobile prima degli altri.
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-3xl font-semibold tabular-nums text-[var(--ink-strong)]">
+            {breakdown.total}
+          </p>
+          <p className="text-xs font-semibold text-[var(--surface-accent)]">
+            {getPriorityScoreLevel(breakdown.total)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {breakdown.awarded.length ? (
+          breakdown.awarded.map((factor) => (
+            <div
+              key={factor.id}
+              className="grid grid-cols-[20px_minmax(0,1fr)_auto] gap-2"
+            >
+              <CirclePlus
+                aria-hidden="true"
+                className="mt-0.5 size-4 text-[var(--surface-accent)]"
+              />
+              <div>
+                <p className="text-sm font-medium text-[var(--ink-strong)]">
+                  {factor.label}
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-[var(--ink-subtle)]">
+                  {factor.explanation}
+                </p>
+              </div>
+              <strong className="text-sm tabular-nums text-[var(--surface-accent)]">
+                +{factor.points}
+              </strong>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-[var(--ink-soft)]">
+            Nessun criterio di appetibilita e stato ancora rilevato.
+          </p>
+        )}
+      </div>
+
+      <details className="mt-5 border-t border-[var(--line-soft)] pt-4">
+        <summary className="cursor-pointer text-xs font-semibold text-[var(--ink-soft)]">
+          Vedi criteri non maturati ({breakdown.notAwarded.length})
+        </summary>
+        <div className="mt-3 space-y-2">
+          {breakdown.notAwarded.map((factor) => (
+            <div
+              key={factor.id}
+              className="flex items-start justify-between gap-3 text-xs text-[var(--ink-subtle)]"
+            >
+              <span>{factor.label}</span>
+              <span className="shrink-0">0 / +{factor.points}</span>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      <div className="mt-4 flex gap-2 text-xs leading-5 text-[var(--ink-subtle)]">
+        <CircleMinus aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          {breakdown.deductions.length ? (
+            <div className="space-y-2">
+              {breakdown.deductions.map((factor) => (
+                <div
+                  key={factor.id}
+                  className="flex items-start justify-between gap-3"
+                >
+                  <span>{factor.label}</span>
+                  <strong className="shrink-0 tabular-nums text-[var(--status-error)]">
+                    {factor.points}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            "Nessuna detrazione: il modello attuale assegna punti, ma non ne sottrae."
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

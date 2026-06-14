@@ -32,7 +32,7 @@ export function RefreshEmailButton() {
             aria-hidden="true"
             className={clsx("size-4", pending && "animate-spin")}
           />
-          {pending ? "Controllo in corso" : "Controlla nuove email"}
+          {pending ? "Ricerca in corso" : "Cerca nuovi annunci"}
         </button>
       </form>
       {state.message ? (

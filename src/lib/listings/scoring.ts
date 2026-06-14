@@ -4,6 +4,30 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export const HIGH_PRIORITY_THRESHOLD = 80;
 
+export interface PriorityScoreFactor {
+  id: string;
+  label: string;
+  explanation: string;
+  points: number;
+  active: boolean;
+}
+
+export interface PriorityScoreBreakdown {
+  total: number;
+  awarded: PriorityScoreFactor[];
+  deductions: PriorityScoreFactor[];
+  notAwarded: PriorityScoreFactor[];
+}
+
+type PriorityScoreInput = {
+  sellerType: SellerType;
+  isNewToday: boolean;
+  hasPhone: boolean;
+  minimumDaysOnline: number;
+  isPriceDropped: boolean;
+  description?: string | null;
+};
+
 function parseDate(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -57,52 +81,114 @@ export function isToday(value: string | null | undefined) {
   return date.toDateString() === now.toDateString();
 }
 
-export function calculatePriorityScore(input: {
-  sellerType: SellerType;
-  isNewToday: boolean;
-  hasPhone: boolean;
-  minimumDaysOnline: number;
-  isPriceDropped: boolean;
-  description?: string | null;
-}) {
-  let score = 0;
+export function getPriorityScoreBreakdown(
+  input: PriorityScoreInput,
+): PriorityScoreBreakdown {
   const description = (input.description ?? "").toLowerCase();
+  const onlinePoints =
+    input.minimumDaysOnline >= 120
+      ? 35
+      : input.minimumDaysOnline >= 60
+        ? 20
+        : 0;
+  const factors: PriorityScoreFactor[] = [
+    {
+      id: "private-seller",
+      label: "Venditore privato",
+      explanation: "Il contatto sembra diretto, senza agenzia.",
+      points: 40,
+      active: input.sellerType === "private",
+    },
+    {
+      id: "new-today",
+      label: "Nuovo arrivo",
+      explanation: "L'annuncio e stato rilevato oggi.",
+      points: 25,
+      active: input.isNewToday,
+    },
+    {
+      id: "phone-visible",
+      label: "Telefono disponibile",
+      explanation: "E presente un recapito utilizzabile.",
+      points: 20,
+      active: input.hasPhone,
+    },
+    {
+      id: "days-online",
+      label:
+        input.minimumDaysOnline >= 120
+          ? "Online da almeno 120 giorni"
+          : "Online da almeno 60 giorni",
+      explanation:
+        onlinePoints > 0
+          ? "La permanenza prolungata puo indicare maggiore apertura alla trattativa."
+          : "Servono almeno 60 giorni online per ottenere questo punteggio.",
+      points: onlinePoints || 20,
+      active: onlinePoints > 0,
+    },
+    {
+      id: "price-drop",
+      label: "Prezzo ridotto",
+      explanation: "Il prezzo attuale e inferiore a una rilevazione precedente.",
+      points: 20,
+      active: input.isPriceDropped,
+    },
+    {
+      id: "negotiable-price",
+      label: "Prezzo trattabile",
+      explanation: "La descrizione dichiara esplicitamente una trattativa possibile.",
+      points: 10,
+      active: description.includes("prezzo trattabile"),
+    },
+    {
+      id: "no-agencies",
+      label: "Nessuna agenzia richiesta",
+      explanation: "La descrizione contiene l'indicazione no agenzie.",
+      points: 10,
+      active: description.includes("no agenzie"),
+    },
+    {
+      id: "seller-to-verify",
+      label: "Venditore da verificare",
+      explanation: "Il tipo di venditore non e chiaro e richiede un controllo.",
+      points: 10,
+      active: input.sellerType === "unknown",
+    },
+  ];
+  const awarded = factors.filter((factor) => factor.active && factor.points > 0);
+  const deductions = factors.filter(
+    (factor) => factor.active && factor.points < 0,
+  );
 
-  if (input.sellerType === "private") {
-    score += 40;
+  return {
+    total: [...awarded, ...deductions].reduce(
+      (score, factor) => score + factor.points,
+      0,
+    ),
+    awarded,
+    deductions,
+    notAwarded: factors.filter((factor) => !factor.active),
+  };
+}
+
+export function calculatePriorityScore(input: PriorityScoreInput) {
+  return getPriorityScoreBreakdown(input).total;
+}
+
+export function getPriorityScoreLevel(score: number) {
+  if (score >= 120) {
+    return "Molto alta";
   }
 
-  if (input.isNewToday) {
-    score += 25;
+  if (score >= HIGH_PRIORITY_THRESHOLD) {
+    return "Alta";
   }
 
-  if (input.hasPhone) {
-    score += 20;
+  if (score >= 50) {
+    return "Media";
   }
 
-  if (input.minimumDaysOnline >= 120) {
-    score += 35;
-  } else if (input.minimumDaysOnline >= 60) {
-    score += 20;
-  }
-
-  if (input.isPriceDropped) {
-    score += 20;
-  }
-
-  if (description.includes("prezzo trattabile")) {
-    score += 10;
-  }
-
-  if (description.includes("no agenzie")) {
-    score += 10;
-  }
-
-  if (input.sellerType === "unknown") {
-    score += 10;
-  }
-
-  return score;
+  return "Bassa";
 }
 
 export function calculateSellerFatigueScore(input: {

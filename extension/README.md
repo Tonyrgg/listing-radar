@@ -17,5 +17,13 @@ L'estensione usa solo la scheda attiva, salva la configurazione in
 `chrome.storage.local` e invia i dati a `POST /api/import/browser`.
 
 Raccoglie fino a 30 URL di foto pubbliche da metadati strutturati, immagini
-responsive, lazy loading e gallerie visibili. Dopo un aggiornamento dei file,
-premere **Ricarica** sulla scheda dell'estensione in `chrome://extensions`.
+responsive, lazy loading e gallerie visibili.
+
+Per Idealista, Immobiliare.it, Subito e Casa.it usa un adattatore dedicato alla
+struttura della pagina. Se un portale cambia markup o non viene riconosciuto,
+l'estensione continua con il parser generico e registra in `raw_payload` quale
+parser e stato usato.
+
+Dopo un aggiornamento dei file, premere **Ricarica** sulla scheda
+dell'estensione in `chrome://extensions`, poi aggiornare la pagina
+dell'annuncio prima di importarla.

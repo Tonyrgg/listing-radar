@@ -107,6 +107,11 @@ async function extractCurrentPage() {
       target: { tabId: tab.id },
       files: [
         "parsers/generic.js",
+        "parsers/shared.js",
+        "parsers/idealista.js",
+        "parsers/immobiliare.js",
+        "parsers/subito.js",
+        "parsers/casa.js",
         "parsers/portals.js",
         "content.js",
       ],

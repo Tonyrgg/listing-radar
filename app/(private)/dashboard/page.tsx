@@ -8,10 +8,12 @@ import {
   Target,
   TrendingDown,
 } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import { Badge, getSellerTypeTone } from "@/components/badge";
+import { PageHeader } from "@/components/page-header";
 import {
   getDashboardSummary,
   getLastScrapeRun,
@@ -24,10 +26,18 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import { getIncomingDashboardData } from "@/lib/incoming/repository";
+import {
+  getRunStatusLabel,
+  getSellerTypeLabel,
+  getSourceLabel,
+} from "@/lib/labels";
 import { getScraperRuntimeConfig } from "@/lib/scrapers/config";
 import type { IncomingListing, Listing } from "@/types";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Inizio",
+};
 
 function getPortalImportUrl(listing: IncomingListing) {
   const value = listing.canonicalUrl ?? listing.url;
@@ -114,7 +124,7 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
 
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="blue">{listing.source}</Badge>
+          <Badge tone="blue">{getSourceLabel(listing.source)}</Badge>
           <span className="text-xs text-[var(--ink-subtle)]">
             {formatDateTime(listing.emailReceivedAt ?? listing.createdAt)}
           </span>
@@ -126,9 +136,13 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
           <span className="font-semibold text-[var(--ink-strong)]">
             {formatCurrency(listing.price)}
           </span>
-          <span>{formatNumber(listing.sqm)} mq</span>
-          <span>{formatNumber(listing.rooms)} locali</span>
-          <span>{formatPlainText(listing.zone)}</span>
+          {listing.sqm != null ? (
+            <span>{formatNumber(listing.sqm)} mq</span>
+          ) : null}
+          {listing.rooms != null ? (
+            <span>{formatNumber(listing.rooms)} locali</span>
+          ) : null}
+          {listing.zone ? <span>{listing.zone}</span> : null}
         </div>
       </div>
 
@@ -138,10 +152,40 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
         rel="noreferrer"
         className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] sm:col-span-1"
       >
-        Completa
+        Apri e completa
         <ArrowRight aria-hidden="true" className="size-4" />
       </a>
     </article>
+  );
+}
+
+function WorkflowStep({
+  number,
+  title,
+  detail,
+  active = false,
+}: Readonly<{
+  number: number;
+  title: string;
+  detail: string;
+  active?: boolean;
+}>) {
+  return (
+    <div className="flex min-w-0 gap-3 px-4 py-4 first:pl-0 last:pr-0">
+      <span
+        className={
+          active
+            ? "flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-accent)] text-sm font-semibold text-[var(--button-ink)]"
+            : "flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-muted)] text-sm font-semibold text-[var(--ink-soft)]"
+        }
+      >
+        {number}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-[var(--ink-strong)]">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--ink-subtle)]">{detail}</p>
+      </div>
+    </div>
   );
 }
 
@@ -157,45 +201,33 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-7">
-      <header className="flex flex-col gap-5 border-b border-[var(--line-soft)] pb-6 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-            Quadro operativo
-          </p>
-          <h2 className="mt-2 max-w-full text-3xl font-semibold leading-tight text-[var(--ink-strong)]">
-            Completa prima i nuovi arrivi
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
-            La coda email viene prima delle opportunita gia archiviate.
-          </p>
-        </div>
-        <RefreshEmailButton />
-      </header>
+      <PageHeader
+        eyebrow="Il tuo lavoro"
+        title="Da qui inizi"
+        description="Prima completa gli annunci ricevuti. Poi passa alle occasioni che meritano attenzione."
+        actions={<RefreshEmailButton />}
+      />
 
-      <section className="grid divide-y divide-[var(--line-soft)] border-b border-[var(--line-soft)] md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
-        <Metric
-          icon={Inbox}
-          label="da completare"
-          value={incoming.pendingCount}
-          detail="Coda aperta"
+      <section
+        className="grid divide-y divide-[var(--line-soft)] border-b border-[var(--line-soft)] lg:grid-cols-3 lg:divide-x lg:divide-y-0"
+        aria-label="Percorso di lavoro"
+      >
+        <WorkflowStep
+          number={1}
+          title="Cerca le novita"
+          detail="Il controllo email raccoglie le nuove segnalazioni."
         />
-        <Metric
-          icon={Clock3}
-          label="nelle ultime 24 ore"
-          value={incoming.recentCount}
-          detail="Nuove segnalazioni"
+        <WorkflowStep
+          number={2}
+          title="Completa le schede"
+          detail={`${formatNumber(incoming.pendingCount)} annunci aspettano i dati completi.`}
+          active={incoming.pendingCount > 0}
         />
-        <Metric
-          icon={TrendingDown}
-          label="ribassi"
-          value={summary.priceDrops}
-          detail="Da rivalutare"
-        />
-        <Metric
-          icon={Target}
-          label="priorita alta"
-          value={summary.highPriority}
-          detail="Opportunita selezionate"
+        <WorkflowStep
+          number={3}
+          title="Valuta le occasioni"
+          detail={`${formatNumber(summary.highPriority)} annunci sono in evidenza.`}
+          active={incoming.pendingCount === 0 && summary.highPriority > 0}
         />
       </section>
 
@@ -203,23 +235,23 @@ export default async function DashboardPage() {
         <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
           <div className="flex flex-col gap-4 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
-                  Nuovi arrivi
+                  1. Annunci da completare
                 </h2>
                 <Badge tone={incoming.pendingCount ? "amber" : "green"}>
-                  {incoming.pendingCount} pending
+                  {incoming.pendingCount} in attesa
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                Apri il portale e completa la scheda con l&apos;estensione.
+                Parti dal primo annuncio e procedi in ordine.
               </p>
             </div>
             <Link
               href="/incoming"
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
             >
-              Vedi tutta la coda
+              Vedi tutti
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           </div>
@@ -249,10 +281,10 @@ export default async function DashboardPage() {
         <aside className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
           <div className="border-b border-[var(--line-soft)] px-5 py-5">
             <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
-              Stato acquisizione
+              Tutto funziona?
             </h2>
             <p className="mt-1 text-sm text-[var(--ink-soft)]">
-              Ultimi segnali dai canali automatici.
+              Stato dei controlli automatici.
             </p>
           </div>
 
@@ -264,14 +296,14 @@ export default async function DashboardPage() {
               />
               <div>
                 <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Email
+                  Controllo email
                 </dt>
                 <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
                   {emailConfig.enabled
                     ? incoming.lastEmailCheck
-                      ? `Controllata ${formatDateTime(incoming.lastEmailCheck.processedAt)}`
-                      : "Configurata, nessun controllo registrato"
-                    : "Non configurata"}
+                      ? `Ultimo controllo: ${formatDateTime(incoming.lastEmailCheck.processedAt)}`
+                      : "Pronto, in attesa del primo controllo"
+                    : "Da configurare nelle impostazioni"}
                 </dd>
               </div>
             </div>
@@ -283,12 +315,12 @@ export default async function DashboardPage() {
               />
               <div>
                 <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Ultimo scraping
+                  Controllo siti locali
                 </dt>
                 <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
                   {lastScrapeRun
-                    ? `${lastScrapeRun.status}, ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
-                    : "Nessun run registrato"}
+                    ? `${getRunStatusLabel(lastScrapeRun.status)}: ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
+                    : "Nessun controllo registrato"}
                 </dd>
               </div>
             </div>
@@ -300,12 +332,12 @@ export default async function DashboardPage() {
               />
               <div>
                 <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Provider
+                  Fonti attive
                 </dt>
                 <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
                   {scraperConfig.provider === "all"
-                    ? "3 siti locali attivi"
-                    : scraperConfig.provider}
+                    ? "Email e 3 siti locali"
+                    : getSourceLabel(scraperConfig.provider)}
                 </dd>
               </div>
             </div>
@@ -321,12 +353,14 @@ export default async function DashboardPage() {
               />
               <div>
                 <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Errori ultimo run
+                  Ultimo risultato
                 </dt>
                 <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
                   {lastScrapeRun
-                    ? `${formatNumber(lastScrapeRun.errorCount)} errori`
-                    : "Dato non disponibile"}
+                    ? lastScrapeRun.errorCount
+                      ? `${formatNumber(lastScrapeRun.errorCount)} problemi da controllare`
+                      : "Tutto regolare"
+                    : "In attesa del primo controllo"}
                 </dd>
               </div>
             </div>
@@ -337,28 +371,55 @@ export default async function DashboardPage() {
               href="/settings"
               className="inline-flex items-center gap-2 text-sm font-medium text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--focus-ring)]"
             >
-              Apri diagnostica
+              Apri impostazioni
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           </div>
         </aside>
       </div>
 
+      <section className="grid divide-y divide-[var(--line-soft)] border-b border-[var(--line-soft)] md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
+        <Metric
+          icon={Inbox}
+          label="annunci da completare"
+          value={incoming.pendingCount}
+          detail="Il lavoro da fare ora"
+        />
+        <Metric
+          icon={Clock3}
+          label="arrivati oggi"
+          value={incoming.recentCount}
+          detail="Nelle ultime 24 ore"
+        />
+        <Metric
+          icon={TrendingDown}
+          label="prezzi scesi"
+          value={summary.priceDrops}
+          detail="Da ricontrollare"
+        />
+        <Metric
+          icon={Target}
+          label="in evidenza"
+          value={summary.highPriority}
+          detail="Occasioni da valutare"
+        />
+      </section>
+
       <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
         <div className="flex flex-col gap-3 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
-              Opportunita da valutare
+              2. Occasioni da valutare
             </h2>
             <p className="mt-1 text-sm text-[var(--ink-soft)]">
-              Annunci gia completi ordinati per rilevanza operativa.
+              Schede complete con segnali che meritano attenzione.
             </p>
           </div>
           <Link
             href="/listings?onlyHighPriority=on"
             className="inline-flex items-center gap-2 text-sm font-medium text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--focus-ring)]"
           >
-            Apri archivio filtrato
+            Vedi tutte le occasioni
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         </div>
@@ -372,7 +433,7 @@ export default async function DashboardPage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone={getSellerTypeTone(listing.sellerType)}>
-                    {listing.sellerType}
+                    {getSellerTypeLabel(listing.sellerType)}
                   </Badge>
                   <span className="text-xs font-medium text-[var(--status-warning)]">
                     {getOpportunityReason(listing)}
@@ -398,7 +459,7 @@ export default async function DashboardPage() {
                 href={`/listings/${listing.id}`}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-3 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
               >
-                Valuta
+                Apri scheda
                 <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
             </article>

@@ -1,7 +1,21 @@
+import {
+  ArrowLeft,
+  Clock3,
+  ExternalLink,
+  Layers3,
+  MapPin,
+  Phone,
+  Ruler,
+  UserRound,
+} from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
+import { ListingScoreBreakdown } from "@/components/listing-score";
 import { getListingById } from "@/lib/data/repository";
 import {
   formatCurrency,
@@ -10,7 +24,16 @@ import {
   formatNumber,
   formatPlainText,
 } from "@/lib/formatting";
+import {
+  getListingStatusLabel,
+  getSellerTypeLabel,
+  getSourceLabel,
+} from "@/lib/labels";
 import { getOperationalSuggestion } from "@/lib/listings/operational";
+
+export const metadata: Metadata = {
+  title: "Scheda annuncio",
+};
 
 function DetailItem({
   label,
@@ -21,10 +44,34 @@ function DetailItem({
 }>) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-        {label}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-[var(--ink-strong)]">{value}</p>
+      <dt className="text-xs font-medium text-[var(--ink-subtle)]">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold leading-6 text-[var(--ink-strong)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function KeyFact({
+  icon,
+  label,
+  value,
+}: Readonly<{
+  icon: ReactNode;
+  label: string;
+  value: string;
+}>) {
+  return (
+    <div className="flex min-w-0 gap-3">
+      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--surface-accent)]">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-xs text-[var(--ink-subtle)]">{label}</p>
+        <p className="mt-1 text-sm font-semibold leading-5 text-[var(--ink-strong)]">
+          {value}
+        </p>
+      </div>
     </div>
   );
 }
@@ -44,196 +91,241 @@ export default async function ListingDetailPage({
   const operationalSuggestion = getOperationalSuggestion(listing);
 
   return (
-    <div className="space-y-8">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={getSellerTypeTone(listing.sellerType)}>
-            {listing.sellerType}
-          </Badge>
-          <Badge tone={getStatusTone(listing.status)}>{listing.status}</Badge>
-          {listing.isPriceDropped ? <Badge tone="red">ribasso</Badge> : null}
-        </div>
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-            Dettaglio annuncio
-          </p>
-          <h2 className="text-3xl font-semibold text-[var(--ink-strong)]">
-            {listing.title}
-          </h2>
-          <p className="text-sm leading-6 text-[var(--ink-soft)]">
-            {listing.source} · {formatPlainText(listing.zone)} · score{" "}
-            {formatNumber(listing.priorityScore)}
-          </p>
-        </div>
-        <a
-          href={listing.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex text-sm font-medium text-[var(--surface-accent)] hover:underline"
-        >
-          Apri annuncio originale
-        </a>
-      </header>
+    <div className="space-y-6">
+      <Link
+        href="/listings"
+        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-[var(--ink-soft)] transition-colors hover:text-[var(--ink-strong)]"
+      >
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Torna all&apos;archivio
+      </Link>
 
-      <ListingPhotoGallery
-        title={listing.title}
-        imageUrls={listing.imageUrls}
-      />
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+        <div className="order-2 min-w-0 space-y-6 xl:order-1">
+          <ListingPhotoGallery
+            title={listing.title}
+            imageUrls={listing.imageUrls}
+          />
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            <DetailItem label="Prezzo" value={formatCurrency(listing.price)} />
-            <DetailItem label="MQ" value={formatNumber(listing.sqm)} />
-            <DetailItem
-              label="Prezzo/MQ"
-              value={formatCurrency(listing.pricePerSqm)}
-            />
-            <DetailItem label="Zona" value={formatPlainText(listing.zone)} />
-            <DetailItem label="Locali" value={formatNumber(listing.rooms)} />
-            <DetailItem label="Piano" value={formatPlainText(listing.floor)} />
-            <DetailItem label="Fonte" value={listing.source} />
-            <DetailItem
-              label="Seller name"
-              value={formatPlainText(listing.sellerName)}
-            />
-            <DetailItem label="Telefono" value={formatPlainText(listing.phone)} />
-            <DetailItem
-              label="First seen at"
-              value={formatDateTime(listing.firstSeenAt)}
-            />
-            <DetailItem
-              label="Last seen at"
-              value={formatDateTime(listing.lastSeenAt)}
-            />
-            <DetailItem
-              label="Portal declared date"
-              value={formatDate(listing.portalDeclaredDate)}
-            />
-            <DetailItem
-              label="Metadata date published"
-              value={formatDate(listing.metadataDatePublished)}
-            />
-            <DetailItem
-              label="Metadata date modified"
-              value={formatDate(listing.metadataDateModified)}
-            />
-            <DetailItem
-              label="Giorni online minimi"
-              value={formatNumber(listing.minimumDaysOnline)}
-            />
-            <DetailItem
-              label="Priority score"
-              value={formatNumber(listing.priorityScore)}
-            />
-            <DetailItem
-              label="Seller fatigue score"
-              value={formatNumber(listing.sellerFatigueScore)}
-            />
-          </div>
-        </article>
-
-        <aside className="space-y-4">
-          <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Suggerimento operativo
-            </p>
-            <p className="mt-3 text-sm leading-7 text-[var(--ink-strong)]">
-              {operationalSuggestion}
+          <article className="border-t border-[var(--line-soft)] pt-5">
+            <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
+              Descrizione
+            </h2>
+            <p className="mt-4 max-w-4xl whitespace-pre-wrap text-sm leading-7 text-[var(--ink-soft)]">
+              {formatPlainText(listing.description)}
             </p>
           </article>
+        </div>
 
-          <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Note
+        <article className="order-1 min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] xl:sticky xl:top-7 xl:order-2 xl:self-start">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={getSellerTypeTone(listing.sellerType)}>
+                {getSellerTypeLabel(listing.sellerType)}
+              </Badge>
+              <Badge tone={getStatusTone(listing.status)}>
+                {getListingStatusLabel(listing.status)}
+              </Badge>
+              {listing.isPriceDropped ? (
+                <Badge tone="red">Prezzo ridotto</Badge>
+              ) : null}
+            </div>
+
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
+              {getSourceLabel(listing.source)}
             </p>
-            <p className="mt-3 text-sm leading-7 text-[var(--ink-strong)]">
-              {formatPlainText(listing.note)}
-            </p>
-          </article>
-        </aside>
-      </section>
+            <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--ink-strong)]">
+              {listing.title}
+            </h1>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-            Descrizione
-          </p>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--ink-strong)]">
-            {formatPlainText(listing.description)}
-          </p>
-        </article>
+            <div className="mt-5 border-y border-[var(--line-soft)] py-5">
+              <p className="text-3xl font-semibold tabular-nums text-[var(--ink-strong)]">
+                {formatCurrency(listing.price)}
+              </p>
+              {listing.pricePerSqm != null ? (
+                <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                  {formatCurrency(listing.pricePerSqm)} al mq
+                </p>
+              ) : null}
+            </div>
 
-        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-            Storico fonti
-          </p>
-          <div className="mt-4 space-y-3">
-            {(listing.sources ?? []).map((source) => (
-              <div
-                key={source.id}
-                className="rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] p-3"
-              >
-                <p className="text-sm font-medium text-[var(--ink-strong)]">
-                  {source.source}
-                </p>
-                <p className="mt-1 text-sm text-[var(--ink-soft)]">{source.url}</p>
-                <p className="mt-2 text-xs text-[var(--ink-subtle)]">
-                  First seen {formatDateTime(source.firstSeenAt)} · Last seen{" "}
-                  {formatDateTime(source.lastSeenAt)}
-                </p>
+            <ListingScoreBreakdown listing={listing} />
+
+            <div className="grid grid-cols-2 gap-5 py-5 xl:grid-cols-1 2xl:grid-cols-2">
+              <KeyFact
+                icon={<Ruler aria-hidden="true" className="size-4" />}
+                label="Superficie"
+                value={
+                  listing.sqm != null
+                    ? `${formatNumber(listing.sqm)} mq`
+                    : "Non disponibile"
+                }
+              />
+              <KeyFact
+                icon={<Layers3 aria-hidden="true" className="size-4" />}
+                label="Locali e piano"
+                value={[
+                  listing.rooms != null
+                    ? `${formatNumber(listing.rooms)} locali`
+                    : null,
+                  listing.floor,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "Non disponibile"}
+              />
+              <KeyFact
+                icon={<MapPin aria-hidden="true" className="size-4" />}
+                label="Zona"
+                value={formatPlainText(listing.zone)}
+              />
+              <KeyFact
+                icon={<Clock3 aria-hidden="true" className="size-4" />}
+                label="Online da almeno"
+                value={`${formatNumber(listing.minimumDaysOnline)} giorni`}
+              />
+            </div>
+
+            <div className="rounded-md bg-[var(--surface-accent-soft)] p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--surface-accent)]">
+                Perche merita attenzione
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--ink-strong)]">
+                {operationalSuggestion}
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <div className="flex gap-3">
+                <UserRound
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
+                />
+                <div>
+                  <p className="text-xs text-[var(--ink-subtle)]">Venditore</p>
+                  <p className="mt-1 text-sm font-medium text-[var(--ink-strong)]">
+                    {formatPlainText(listing.sellerName)}
+                  </p>
+                </div>
               </div>
-            ))}
+              <div className="flex gap-3">
+                <Phone
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
+                />
+                <div>
+                  <p className="text-xs text-[var(--ink-subtle)]">Telefono</p>
+                  <p className="mt-1 text-sm font-medium text-[var(--ink-strong)]">
+                    {formatPlainText(listing.phone)}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
+
+          <a
+            href={listing.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex min-h-14 items-center justify-center gap-2 border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
+          >
+            Vedi annuncio originale
+            <ExternalLink aria-hidden="true" className="size-4" />
+          </a>
         </article>
       </section>
 
-      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
-        <div className="border-b border-[var(--line-soft)] px-5 py-4">
-          <h3 className="text-lg font-semibold text-[var(--ink-strong)]">
-            Storico snapshots
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--surface-muted)] text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Checked at</th>
-                <th className="px-4 py-3 font-semibold">Fonte</th>
-                <th className="px-4 py-3 font-semibold">Prezzo</th>
-                <th className="px-4 py-3 font-semibold">Disponibile</th>
-                <th className="px-4 py-3 font-semibold">URL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--line-soft)]">
+      {listing.note ? (
+        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
+          <h2 className="text-base font-semibold text-[var(--ink-strong)]">
+            Note personali
+          </h2>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--ink-soft)]">
+            {formatPlainText(listing.note)}
+          </p>
+        </article>
+      ) : null}
+
+      <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
+          Altri dati della scheda
+          <span className="text-xs font-normal text-[var(--ink-subtle)]">
+            Facoltativo
+          </span>
+        </summary>
+        <dl className="grid gap-5 border-t border-[var(--line-soft)] p-5 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="Fonte" value={getSourceLabel(listing.source)} />
+          <DetailItem
+            label="Prima segnalazione"
+            value={formatDateTime(listing.firstSeenAt)}
+          />
+          <DetailItem
+            label="Ultimo controllo"
+            value={formatDateTime(listing.lastSeenAt)}
+          />
+          <DetailItem
+            label="Data dichiarata dal portale"
+            value={formatDate(listing.portalDeclaredDate)}
+          />
+          <DetailItem
+            label="Data di pubblicazione"
+            value={formatDate(listing.metadataDatePublished)}
+          />
+          <DetailItem
+            label="Ultima modifica"
+            value={formatDate(listing.metadataDateModified)}
+          />
+          <DetailItem
+            label="Punteggio anzianita"
+            value={formatNumber(listing.sellerFatigueScore)}
+          />
+          <DetailItem
+            label="Indirizzo rilevato"
+            value={formatPlainText(listing.addressRaw)}
+          />
+        </dl>
+      </details>
+
+      <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
+          Cronologia dei controlli
+          <span className="text-xs font-normal text-[var(--ink-subtle)]">
+            {listing.snapshots?.length ?? 0} controlli
+          </span>
+        </summary>
+        <div className="border-t border-[var(--line-soft)]">
+          {(listing.snapshots ?? []).length ? (
+            <div className="divide-y divide-[var(--line-soft)]">
               {(listing.snapshots ?? []).map((snapshot) => (
-                <tr key={snapshot.id}>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatDateTime(snapshot.checkedAt)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">{snapshot.source}</td>
-                  <td className="px-4 py-4 text-[var(--ink-strong)]">
-                    {formatCurrency(snapshot.price)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {snapshot.isAvailable ? "true" : "false"}
-                  </td>
-                  <td className="px-4 py-4">
-                    <a
-                      href={snapshot.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[var(--surface-accent)] hover:underline"
-                    >
-                      Apri
-                    </a>
-                  </td>
-                </tr>
+                <article
+                  key={snapshot.id}
+                  className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(170px,0.6fr)_minmax(0,1fr)_auto]"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-[var(--ink-strong)]">
+                      {formatDateTime(snapshot.checkedAt)}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--ink-subtle)]">
+                      {getSourceLabel(snapshot.source)}
+                    </p>
+                  </div>
+                  <p className="text-sm text-[var(--ink-soft)]">
+                    Prezzo rilevato: {formatCurrency(snapshot.price)}
+                  </p>
+                  <span className="text-sm text-[var(--ink-soft)]">
+                    {snapshot.isAvailable
+                      ? "Annuncio disponibile"
+                      : "Non disponibile"}
+                  </span>
+                </article>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <p className="px-5 py-5 text-sm text-[var(--ink-soft)]">
+              Non ci sono ancora controlli precedenti.
+            </p>
+          )}
         </div>
-      </section>
+      </details>
     </div>
   );
 }

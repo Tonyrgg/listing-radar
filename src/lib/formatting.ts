@@ -1,6 +1,6 @@
 export function formatCurrency(value: number | null | undefined) {
   if (value == null) {
-    return "—";
+    return "Non disponibile";
   }
 
   return new Intl.NumberFormat("it-IT", {
@@ -12,7 +12,7 @@ export function formatCurrency(value: number | null | undefined) {
 
 export function formatNumber(value: number | null | undefined) {
   if (value == null) {
-    return "—";
+    return "Non disponibile";
   }
 
   return new Intl.NumberFormat("it-IT").format(value);
@@ -20,13 +20,13 @@ export function formatNumber(value: number | null | undefined) {
 
 export function formatDateTime(value: string | null | undefined) {
   if (!value) {
-    return "—";
+    return "Non disponibile";
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "—";
+    return "Non disponibile";
   }
 
   return new Intl.DateTimeFormat("it-IT", {
@@ -37,13 +37,13 @@ export function formatDateTime(value: string | null | undefined) {
 
 export function formatDate(value: string | null | undefined) {
   if (!value) {
-    return "—";
+    return "Non disponibile";
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "—";
+    return "Non disponibile";
   }
 
   return new Intl.DateTimeFormat("it-IT", {
@@ -53,7 +53,7 @@ export function formatDate(value: string | null | undefined) {
 
 export function formatPlainText(value: string | null | undefined) {
   if (!value) {
-    return "—";
+    return "Non disponibile";
   }
 
   return value;

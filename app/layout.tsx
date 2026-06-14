@@ -13,7 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Listing Radar",
+  title: {
+    default: "Listing Radar",
+    template: "%s | Listing Radar",
+  },
   description: "CRM privato per monitorare, archiviare e qualificare annunci immobiliari a Bitonto.",
   robots: {
     index: false,

@@ -1,7 +1,14 @@
+import {
+  ArrowRight,
+  Image as ImageIcon,
+  SlidersHorizontal,
+} from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { Image as ImageIcon } from "lucide-react";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
+import { ListingScoreSummary } from "@/components/listing-score";
+import { PageHeader } from "@/components/page-header";
 import {
   LISTING_SOURCE_OPTIONS,
   LISTING_STATUS_OPTIONS,
@@ -14,7 +21,17 @@ import {
   formatNumber,
   formatPlainText,
 } from "@/lib/formatting";
-import type { ListingFilters, SellerType } from "@/types";
+import {
+  getListingStatusLabel,
+  getSellerTypeLabel,
+  getSourceLabel,
+} from "@/lib/labels";
+import { getListingAttentionReason } from "@/lib/listings/operational";
+import type { Listing, ListingFilters, SellerType } from "@/types";
+
+export const metadata: Metadata = {
+  title: "Archivio annunci",
+};
 
 function readSearchParam(
   value: string | string[] | undefined,
@@ -25,6 +42,89 @@ function readSearchParam(
   }
 
   return value ?? fallback;
+}
+
+function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
+  return (
+    <article className="grid grid-cols-[104px_minmax(0,1fr)] gap-3 border-b border-[var(--line-soft)] px-4 py-5 last:border-b-0 sm:px-5 md:grid-cols-[148px_minmax(0,1fr)_auto] md:items-center md:gap-4">
+      <Link
+        href={`/listings/${listing.id}`}
+        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
+        style={
+          listing.imageUrls[0]
+            ? { backgroundImage: `url("${listing.imageUrls[0]}")` }
+            : undefined
+        }
+        aria-label={`Apri la scheda di ${listing.title}`}
+      >
+        {!listing.imageUrls[0] ? (
+          <ImageIcon
+            aria-hidden="true"
+            className="size-6 text-[var(--ink-subtle)]"
+          />
+        ) : null}
+      </Link>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={getSellerTypeTone(listing.sellerType)}>
+            {getSellerTypeLabel(listing.sellerType)}
+          </Badge>
+          <Badge tone={getStatusTone(listing.status)}>
+            {getListingStatusLabel(listing.status)}
+          </Badge>
+          <span className="text-xs text-[var(--ink-subtle)]">
+            {getSourceLabel(listing.source)}
+          </span>
+        </div>
+
+        <Link
+          href={`/listings/${listing.id}`}
+          className="mt-2 line-clamp-2 block text-sm font-semibold leading-5 text-[var(--ink-strong)] transition-colors hover:text-[var(--surface-accent)] md:mt-3 md:text-base md:leading-6"
+        >
+          {listing.title}
+        </Link>
+
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--ink-soft)] md:mt-3 md:gap-x-5 md:gap-y-2">
+          <span className="font-semibold text-[var(--ink-strong)]">
+            {formatCurrency(listing.price)}
+          </span>
+          <span>{formatNumber(listing.sqm)} mq</span>
+          <span>{formatNumber(listing.rooms)} locali</span>
+          <span>{formatPlainText(listing.zone)}</span>
+        </div>
+
+        <div className="mt-3">
+          <ListingScoreSummary listing={listing} />
+        </div>
+
+        <p className="col-span-2 mt-3 text-sm font-medium text-[var(--status-warning)] md:col-span-1">
+          {getListingAttentionReason(listing)}
+        </p>
+        <p className="col-span-2 mt-1 text-xs text-[var(--ink-subtle)] md:col-span-1">
+          Ultimo controllo: {formatDateTime(listing.lastSeenAt)}
+        </p>
+      </div>
+
+      <div className="col-span-2 flex flex-col gap-2 sm:flex-row md:col-span-1 md:w-40 md:flex-col">
+        <Link
+          href={`/listings/${listing.id}`}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
+        >
+          Apri scheda
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </Link>
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+        >
+          Vedi originale
+        </a>
+      </div>
+    </article>
+  );
 }
 
 export default async function ListingsPage({
@@ -49,9 +149,13 @@ export default async function ListingsPage({
     )
       ? status
       : "all",
-    source: source === "all" || LISTING_SOURCE_OPTIONS.includes(source as (typeof LISTING_SOURCE_OPTIONS)[number])
-      ? source
-      : "all",
+    source:
+      source === "all" ||
+      LISTING_SOURCE_OPTIONS.includes(
+        source as (typeof LISTING_SOURCE_OPTIONS)[number],
+      )
+        ? source
+        : "all",
     minDaysOnline:
       typeof minDaysOnline === "number" && !Number.isNaN(minDaysOnline)
         ? minDaysOnline
@@ -60,224 +164,158 @@ export default async function ListingsPage({
   };
 
   const listings = await getListings(filters);
+  const hasActiveFilters =
+    filters.sellerType !== "all" ||
+    filters.status !== "all" ||
+    filters.source !== "all" ||
+    filters.minDaysOnline !== null ||
+    filters.onlyHighPriority;
 
   return (
-    <div className="space-y-8">
-      <header className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-          Archivio annunci
-        </p>
-        <h2 className="text-3xl font-semibold text-[var(--ink-strong)]">
-          Elenco operativo
-        </h2>
-        <p className="text-sm leading-6 text-[var(--ink-soft)]">
-          {listings.length} risultati nel perimetro corrente.
-        </p>
-      </header>
+    <div className="space-y-7">
+      <PageHeader
+        eyebrow="Passaggio 2"
+        title="Archivio annunci"
+        description={`${listings.length} schede complete. Apri un annuncio per vedere foto, contatti, storico e motivo di interesse.`}
+      />
 
-      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[var(--shadow-panel)]">
-        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+      <details
+        className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]"
+        open={hasActiveFilters}
+      >
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
+          <span className="flex items-center gap-3">
+            <SlidersHorizontal
+              aria-hidden="true"
+              className="size-4 text-[var(--surface-accent)]"
+            />
+            Filtra gli annunci
+          </span>
+          <span className="text-xs font-normal text-[var(--ink-subtle)]">
+            {hasActiveFilters ? "Filtri attivi" : "Facoltativo"}
+          </span>
+        </summary>
+
+        <form className="grid gap-4 border-t border-[var(--line-soft)] p-5 md:grid-cols-2 xl:grid-cols-5">
           <label className="space-y-2 text-sm text-[var(--ink-soft)]">
-            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Seller type
+            <span className="block font-medium text-[var(--ink-strong)]">
+              Pubblicato da
             </span>
             <select
               name="sellerType"
               defaultValue={filters.sellerType}
-              className="h-11 w-full rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
+              className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
             >
               {SELLER_TYPE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {getSellerTypeLabel(option)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="space-y-2 text-sm text-[var(--ink-soft)]">
-            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Status
+            <span className="block font-medium text-[var(--ink-strong)]">
+              Situazione
             </span>
             <select
               name="status"
               defaultValue={filters.status}
-              className="h-11 w-full rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
+              className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
             >
               {LISTING_STATUS_OPTIONS.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {getListingStatusLabel(option)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="space-y-2 text-sm text-[var(--ink-soft)]">
-            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Fonte
+            <span className="block font-medium text-[var(--ink-strong)]">
+              Sito di origine
             </span>
             <select
               name="source"
               defaultValue={filters.source}
-              className="h-11 w-full rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
+              className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
             >
-              <option value="all">all</option>
+              <option value="all">Tutti</option>
               {LISTING_SOURCE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {getSourceLabel(option)}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="space-y-2 text-sm text-[var(--ink-soft)]">
-            <span className="block text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              Min days online
+            <span className="block font-medium text-[var(--ink-strong)]">
+              Online da almeno
             </span>
-            <input
-              type="number"
-              name="minDaysOnline"
-              min="0"
-              defaultValue={filters.minDaysOnline ?? ""}
-              className="h-11 w-full rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                name="minDaysOnline"
+                min="0"
+                placeholder="es. 30"
+                defaultValue={filters.minDaysOnline ?? ""}
+                className="h-11 min-w-0 flex-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-[var(--ink-strong)]"
+              />
+              <span className="text-sm text-[var(--ink-soft)]">giorni</span>
+            </div>
           </label>
 
-          <label className="flex items-end gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 py-3 text-sm text-[var(--ink-soft)]">
-            <input
-              type="checkbox"
-              name="onlyHighPriority"
-              defaultChecked={filters.onlyHighPriority}
-              className="size-4 rounded border-[var(--line-strong)]"
-            />
-            <span>Only high priority</span>
-          </label>
+          <div className="flex flex-col justify-end gap-3">
+            <label className="flex min-h-11 items-center gap-3 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-sm text-[var(--ink-strong)]">
+              <input
+                type="checkbox"
+                name="onlyHighPriority"
+                defaultChecked={filters.onlyHighPriority}
+                className="size-4"
+              />
+              Solo annunci in evidenza
+            </label>
+          </div>
 
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-3 md:col-span-2 md:flex-row xl:col-span-5">
             <button
               type="submit"
-              className="h-11 rounded-md bg-[var(--surface-strong)] px-4 text-sm font-medium text-white"
+              className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
             >
-              Applica filtri
+              Mostra risultati
             </button>
             <Link
               href="/listings"
-              className="h-11 rounded-md border border-[var(--line-soft)] px-4 text-sm font-medium leading-[44px] text-[var(--ink-soft)]"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
             >
-              Reset
+              Azzera filtri
             </Link>
           </div>
         </form>
-      </section>
+      </details>
 
-      <section className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--surface-muted)] text-xs uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Foto</th>
-                <th className="px-4 py-3 font-semibold">Titolo</th>
-                <th className="px-4 py-3 font-semibold">Fonte</th>
-                <th className="px-4 py-3 font-semibold">Prezzo</th>
-                <th className="px-4 py-3 font-semibold">MQ</th>
-                <th className="px-4 py-3 font-semibold">Prezzo/MQ</th>
-                <th className="px-4 py-3 font-semibold">Zona</th>
-                <th className="px-4 py-3 font-semibold">Seller type</th>
-                <th className="px-4 py-3 font-semibold">Giorni online minimi</th>
-                <th className="px-4 py-3 font-semibold">Priority score</th>
-                <th className="px-4 py-3 font-semibold">Seller fatigue</th>
-                <th className="px-4 py-3 font-semibold">Stato</th>
-                <th className="px-4 py-3 font-semibold">Ultimo controllo</th>
-                <th className="px-4 py-3 font-semibold">Link dettaglio</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--line-soft)]">
-              {listings.map((listing) => (
-                <tr key={listing.id} className="align-top">
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/listings/${listing.id}`}
-                      className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
-                      style={
-                        listing.imageUrls[0]
-                          ? {
-                              backgroundImage: `url("${listing.imageUrls[0]}")`,
-                            }
-                          : undefined
-                      }
-                      aria-label={`Apri ${listing.title}`}
-                    >
-                      {!listing.imageUrls[0] ? (
-                        <ImageIcon
-                          aria-hidden="true"
-                          className="size-5 text-[var(--ink-subtle)]"
-                        />
-                      ) : null}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-4">
-                    <Link
-                      href={`/listings/${listing.id}`}
-                      className="font-medium text-[var(--ink-strong)] hover:underline"
-                    >
-                      {listing.title}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">{listing.source}</td>
-                  <td className="px-4 py-4 text-[var(--ink-strong)]">
-                    {formatCurrency(listing.price)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatNumber(listing.sqm)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatCurrency(listing.pricePerSqm)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatPlainText(listing.zone)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <Badge tone={getSellerTypeTone(listing.sellerType)}>
-                      {listing.sellerType}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatNumber(listing.minimumDaysOnline)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-strong)]">
-                    {formatNumber(listing.priorityScore)}
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatNumber(listing.sellerFatigueScore)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <Badge tone={getStatusTone(listing.status)}>{listing.status}</Badge>
-                  </td>
-                  <td className="px-4 py-4 text-[var(--ink-soft)]">
-                    {formatDateTime(listing.lastSeenAt)}
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex flex-col gap-2">
-                      <Link
-                        href={`/listings/${listing.id}`}
-                        className="font-medium text-[var(--surface-accent)] hover:underline"
-                      >
-                        Apri scheda
-                      </Link>
-                      <a
-                        href={listing.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[var(--ink-soft)] hover:underline"
-                      >
-                        Fonte
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <section className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        {listings.length ? (
+          listings.map((listing) => (
+            <ListingRow key={listing.id} listing={listing} />
+          ))
+        ) : (
+          <div className="px-6 py-16 text-center">
+            <p className="text-base font-semibold text-[var(--ink-strong)]">
+              Nessun annuncio con questi filtri
+            </p>
+            <p className="mt-2 text-sm text-[var(--ink-soft)]">
+              Azzera i filtri per tornare a vedere tutto l&apos;archivio.
+            </p>
+            <Link
+              href="/listings"
+              className="mt-5 inline-flex h-11 items-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)]"
+            >
+              Mostra tutti gli annunci
+            </Link>
+          </div>
+        )}
       </section>
     </div>
   );
