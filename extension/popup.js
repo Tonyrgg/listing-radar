@@ -15,18 +15,6 @@ const elements = {
   facts: document.querySelector("#facts"),
   missingFields: document.querySelector("#missing-fields"),
   missingList: document.querySelector("#missing-list"),
-  editFields: document.querySelector("#edit-fields"),
-  editTitle: document.querySelector("#edit-title"),
-  editPrice: document.querySelector("#edit-price"),
-  editSqm: document.querySelector("#edit-sqm"),
-  editRooms: document.querySelector("#edit-rooms"),
-  editFloor: document.querySelector("#edit-floor"),
-  editZone: document.querySelector("#edit-zone"),
-  editAddress: document.querySelector("#edit-address"),
-  editSellerType: document.querySelector("#edit-seller-type"),
-  editSellerName: document.querySelector("#edit-seller-name"),
-  editDescription: document.querySelector("#edit-description"),
-  editImages: document.querySelector("#edit-images"),
   importListing: document.querySelector("#import-listing"),
   result: document.querySelector("#result"),
   resultMessage: document.querySelector("#result-message"),
@@ -46,65 +34,8 @@ function normalizeBaseUrl(value) {
   return url.toString().replace(/\/$/, "");
 }
 
-function numberOrNull(value) {
-  const text = String(value || "").trim();
-
-  if (!text) {
-    return null;
-  }
-
-  const parsed = Number(text.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function textOrNull(value) {
-  const text = String(value || "").trim();
-  return text || null;
-}
-
-function imageLines(value) {
-  return String(value || "")
-    .split(/\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function setInputValue(element, value) {
-  element.value = value == null ? "" : String(value);
-}
-
-function renderEditor(listing) {
-  setInputValue(elements.editTitle, listing.title);
-  setInputValue(elements.editPrice, listing.price);
-  setInputValue(elements.editSqm, listing.sqm);
-  setInputValue(elements.editRooms, listing.rooms);
-  setInputValue(elements.editFloor, listing.floor);
-  setInputValue(elements.editZone, listing.zone);
-  setInputValue(elements.editAddress, listing.addressRaw);
-  elements.editSellerType.value = listing.sellerType || "unknown";
-  setInputValue(elements.editSellerName, listing.sellerName);
-  setInputValue(elements.editDescription, listing.description);
-  elements.editImages.value = (listing.imageUrls || []).join("\n");
-}
-
-function readEditorListing() {
-  return {
-    ...state.listing,
-    title: textOrNull(elements.editTitle.value),
-    price: numberOrNull(elements.editPrice.value),
-    sqm: numberOrNull(elements.editSqm.value),
-    rooms: numberOrNull(elements.editRooms.value),
-    floor: textOrNull(elements.editFloor.value),
-    zone: textOrNull(elements.editZone.value),
-    addressRaw: textOrNull(elements.editAddress.value),
-    sellerType: elements.editSellerType.value || "unknown",
-    sellerName: textOrNull(elements.editSellerName.value),
-    description: textOrNull(elements.editDescription.value),
-    imageUrls: imageLines(elements.editImages.value),
-  };
-}
-
-function renderQuality(listing) {
+function renderPreview(listing) {
+  state.listing = listing;
   const facts = [
     listing.price ? `${Number(listing.price).toLocaleString("it-IT")} EUR` : null,
     listing.sqm ? `${listing.sqm} mq` : null,
@@ -143,12 +74,6 @@ function renderQuality(listing) {
     }),
   );
   elements.missingFields.classList.toggle("hidden", missing.length === 0);
-}
-
-function renderPreview(listing) {
-  state.listing = listing;
-  renderQuality(listing);
-  renderEditor(listing);
   elements.preview.classList.remove("hidden");
   setStatus("");
 }
@@ -218,7 +143,6 @@ async function importListing() {
   elements.importListing.disabled = true;
   setStatus("Importazione...");
   try {
-    state.listing = readEditorListing();
     if (!state.listing.title) {
       throw new Error("Inserisci un titolo prima di importare.");
     }
@@ -275,9 +199,4 @@ elements.editConnection.addEventListener("click", () =>
 );
 elements.importListing.addEventListener("click", importListing);
 elements.openListing.addEventListener("click", openListing);
-elements.editFields.addEventListener("input", () => {
-  if (!state.listing) return;
-  state.listing = readEditorListing();
-  renderQuality(state.listing);
-});
 initialize();

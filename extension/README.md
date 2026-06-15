@@ -29,9 +29,9 @@ Dopo un aggiornamento dei file, premere **Ricarica** sulla scheda
 dell'estensione in `chrome://extensions`, poi aggiornare la pagina
 dell'annuncio prima di importarla.
 
-La versione 0.6.0 aggiunge la modifica dei campi prima dell'import. Puoi
-correggere titolo, prezzo, superficie, locali, piano, zona, venditore,
-descrizione e foto prima di salvare l'annuncio.
+La versione 0.6.1 mantiene l'estensione focalizzata sull'import automatico:
+estrae i dati dalla pagina e li invia al CRM senza compilazioni manuali.
+Le correzioni si fanno nella scheda immobile dentro Listing Radar.
 
 La versione 0.5.0 aggiunge parser piu robusti per Idealista, Immobiliare.it,
 Casa.it e Subito, usando anche le sezioni testuali della pagina quando il markup

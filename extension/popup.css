@@ -99,27 +99,15 @@ label span {
   line-height: 1.4;
 }
 
-input,
-select,
-textarea {
+input {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
   color: var(--ink);
   font: inherit;
-}
-
-input,
-select {
   height: 40px;
   padding: 0 10px;
-}
-
-textarea {
-  min-height: 76px;
-  resize: vertical;
-  padding: 9px 10px;
 }
 
 button {
@@ -193,23 +181,6 @@ button.text-button {
 .missing ul {
   margin: 6px 0 0;
   padding-left: 18px;
-}
-
-.edit-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 12px 0 14px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-
-.edit-grid label {
-  margin: 0;
-}
-
-.edit-grid .wide {
-  grid-column: 1 / -1;
 }
 
 .status {
