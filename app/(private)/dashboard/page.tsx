@@ -1,8 +1,10 @@
 import {
   ArrowRight,
   Building2,
+  CheckSquare,
   Clock3,
   Database,
+  Flag,
   Inbox,
   MailCheck,
   Target,
@@ -90,20 +92,91 @@ function Metric({
   detail: string;
 }>) {
   return (
-    <div className="flex min-w-0 items-center gap-3 px-4 py-4 first:pl-0 last:pr-0">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-        <Icon aria-hidden="true" className="size-4" />
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-semibold tabular-nums text-[var(--ink-strong)]">
-            {formatNumber(value)}
-          </span>
-          <span className="truncate text-sm font-medium text-[var(--ink-strong)]">
+    <div className="relative min-h-28 overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)]">
+      <div className="absolute inset-y-0 left-0 w-1 bg-[var(--surface-accent)]" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-[var(--ink-soft)]">
             {label}
-          </span>
+          </p>
+          <p className="mt-4 text-4xl font-semibold tabular-nums text-[var(--surface-accent)]">
+            {formatNumber(value)}
+          </p>
         </div>
-        <p className="truncate text-xs text-[var(--ink-subtle)]">{detail}</p>
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]">
+          <Icon aria-hidden="true" className="size-5" />
+        </div>
+      </div>
+      <p className="mt-3 truncate text-xs text-[var(--ink-subtle)]">{detail}</p>
+      <div className="pointer-events-none absolute bottom-3 right-3 h-9 w-24 opacity-20">
+        <div className="absolute bottom-0 left-0 h-1 w-full rounded-full bg-[var(--ink-soft)]" />
+        <div className="absolute bottom-2 left-2 h-1 w-16 rounded-full bg-[var(--ink-soft)]" />
+        <div className="absolute bottom-4 left-2 h-1 w-20 rounded-full bg-[var(--ink-soft)]" />
+      </div>
+    </div>
+  );
+}
+
+function ModuleIllustration({
+  variant,
+}: Readonly<{ variant: "map" | "checklist" | "flag" }>) {
+  return (
+    <div className="pointer-events-none absolute bottom-4 right-4 hidden h-28 w-36 opacity-70 md:block">
+      <div className="absolute bottom-0 right-0 size-24 rounded-full bg-[var(--surface-accent-soft)]" />
+      {variant === "map" ? (
+        <>
+          <div className="absolute bottom-6 right-8 size-16 rounded-full border-4 border-[var(--ink-subtle)]" />
+          <div className="absolute bottom-2 right-4 h-14 w-2 rotate-[-42deg] rounded-full bg-[var(--ink-subtle)]" />
+          <div className="absolute bottom-12 right-16 size-3 rounded-full bg-[var(--status-warning)]" />
+          <div className="absolute bottom-11 right-14 size-7 rounded-full border-2 border-[var(--status-warning)]" />
+        </>
+      ) : variant === "checklist" ? (
+        <>
+          <div className="absolute bottom-4 right-7 h-24 w-20 rounded-md border-4 border-[var(--ink-subtle)] bg-[var(--surface-panel)]" />
+          <div className="absolute bottom-[5.4rem] right-[3.25rem] h-3 w-10 rounded-full bg-[oklch(0.78_0.12_60)]" />
+          <CheckSquare className="absolute bottom-[4.5rem] right-20 size-4 text-[var(--surface-accent)]" />
+          <CheckSquare className="absolute bottom-12 right-20 size-4 text-[var(--surface-accent)]" />
+          <div className="absolute bottom-[4.75rem] right-10 h-1 w-8 rounded-full bg-[var(--ink-subtle)]" />
+          <div className="absolute bottom-[3.25rem] right-10 h-1 w-8 rounded-full bg-[var(--ink-subtle)]" />
+        </>
+      ) : (
+        <>
+          <Flag className="absolute bottom-12 right-[4.75rem] size-12 text-[var(--surface-accent)]" />
+          <div className="absolute bottom-4 right-20 h-16 w-1 rounded-full bg-[var(--ink-subtle)]" />
+          <div className="absolute bottom-4 right-8 h-16 w-20 rounded-md border border-[var(--line-strong)] bg-[var(--surface-panel)]" />
+          <div className="absolute bottom-14 right-[3.25rem] h-1 w-10 rounded-full bg-[var(--ink-subtle)]" />
+          <div className="absolute bottom-10 right-[3.25rem] h-1 w-8 rounded-full bg-[var(--ink-subtle)]" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SystemTile({
+  icon: Icon,
+  title,
+  detail,
+  healthy = true,
+}: Readonly<{
+  icon: typeof Inbox;
+  title: string;
+  detail: string;
+  healthy?: boolean;
+}>) {
+  return (
+    <div className="flex gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] p-3">
+      <span
+        className={
+          healthy
+            ? "flex size-9 shrink-0 items-center justify-center rounded-md bg-[var(--surface-accent)] text-[var(--button-ink)]"
+            : "flex size-9 shrink-0 items-center justify-center rounded-md bg-[oklch(0.27_0.06_24)] text-[var(--status-error)]"
+        }
+      >
+        <Icon aria-hidden="true" className="size-4" />
+      </span>
+      <div>
+        <p className="text-sm font-semibold text-[var(--ink-strong)]">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--ink-subtle)]">{detail}</p>
       </div>
     </div>
   );
@@ -172,7 +245,7 @@ function WorkflowStep({
   active?: boolean;
 }>) {
   return (
-    <div className="flex min-w-0 gap-3 px-4 py-4 first:pl-0 last:pr-0">
+    <div className="flex min-w-0 gap-3 rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)]">
       <span
         className={
           active
@@ -201,16 +274,16 @@ export default async function DashboardPage() {
   const opportunities = summary.watchlist.slice(0, 5);
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Il tuo lavoro"
-        title="Da qui inizi"
-        description="Prima completa gli annunci ricevuti. Poi passa alle occasioni che meritano attenzione."
+        title="Pannello operativo"
+        description="Una vista semplice per controllare arrivi, import e opportunita senza cercare tra menu tecnici."
         actions={<RefreshEmailButton />}
       />
 
       <section
-        className="grid divide-y divide-[var(--line-soft)] border-b border-[var(--line-soft)] lg:grid-cols-3 lg:divide-x lg:divide-y-0"
+        className="grid gap-3 lg:grid-cols-3"
         aria-label="Percorso di lavoro"
       >
         <WorkflowStep
@@ -232,9 +305,37 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.65fr)]">
-        <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-          <div className="flex flex-col gap-4 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          icon={Inbox}
+          label="Annunci da completare"
+          value={incoming.pendingCount}
+          detail="Il lavoro da fare ora"
+        />
+        <Metric
+          icon={Clock3}
+          label="Arrivati oggi"
+          value={incoming.recentCount}
+          detail="Nelle ultime 24 ore"
+        />
+        <Metric
+          icon={TrendingDown}
+          label="Prezzi scesi"
+          value={summary.priceDrops}
+          detail="Da ricontrollare"
+        />
+        <Metric
+          icon={Target}
+          label="In evidenza"
+          value={summary.highPriority}
+          detail="Occasioni da valutare"
+        />
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.65fr)]">
+        <section className="relative overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
+          <ModuleIllustration variant="map" />
+          <div className="relative flex flex-col gap-4 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
@@ -257,17 +358,15 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          <div className="px-5 py-5">
+          <div className="relative px-5 py-5">
             {incoming.pendingListings.length ? (
               incoming.pendingListings.map((listing) => (
                 <IncomingRow key={listing.id} listing={listing} />
               ))
             ) : (
               <div className="flex min-h-48 flex-col items-center justify-center text-center">
-                <MailCheck
-                  aria-hidden="true"
-                  className="size-7 text-[var(--surface-accent)]"
-                />
+                <ModuleIllustration variant="checklist" />
+                <MailCheck aria-hidden="true" className="size-7 text-[var(--surface-accent)]" />
                 <p className="mt-4 text-sm font-semibold text-[var(--ink-strong)]">
                   Coda completata
                 </p>
@@ -279,7 +378,7 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        <aside className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <aside className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)]">
           <div className="border-b border-[var(--line-soft)] px-5 py-5">
             <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
               Tutto funziona?
@@ -289,83 +388,50 @@ export default async function DashboardPage() {
             </p>
           </div>
 
-          <dl className="divide-y divide-[var(--line-soft)] px-5">
-            <div className="flex gap-3 py-4">
-              <MailCheck
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-              />
-              <div>
-                <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Controllo email
-                </dt>
-                <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
-                  {emailConfig.enabled
-                    ? incoming.lastEmailCheck
-                      ? `Ultimo controllo: ${formatDateTime(incoming.lastEmailCheck.processedAt)}`
-                      : "Pronto, in attesa del primo controllo"
-                    : "Da configurare nelle impostazioni"}
-                </dd>
-              </div>
-            </div>
-
-            <div className="flex gap-3 py-4">
-              <Database
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-              />
-              <div>
-                <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Controllo siti locali
-                </dt>
-                <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
-                  {lastScrapeRun
-                    ? `${getRunStatusLabel(lastScrapeRun.status)}: ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
-                    : "Nessun controllo registrato"}
-                </dd>
-              </div>
-            </div>
-
-            <div className="flex gap-3 py-4">
-              <Building2
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-              />
-              <div>
-                <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Fonti attive
-                </dt>
-                <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
-                  {scraperConfig.provider === "all"
-                    ? "Email e 3 siti locali"
-                    : getSourceLabel(scraperConfig.provider)}
-                </dd>
-              </div>
-            </div>
-
-            <div className="flex gap-3 py-4">
-              <Target
-                aria-hidden="true"
-                className={
-                  lastScrapeRun?.errorCount
-                    ? "mt-0.5 size-4 shrink-0 text-[var(--status-error)]"
-                    : "mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-                }
-              />
-              <div>
-                <dt className="text-sm font-medium text-[var(--ink-strong)]">
-                  Ultimo risultato
-                </dt>
-                <dd className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
-                  {lastScrapeRun
-                    ? lastScrapeRun.errorCount
-                      ? `${formatNumber(lastScrapeRun.errorCount)} problemi da controllare`
-                      : "Tutto regolare"
-                    : "In attesa del primo controllo"}
-                </dd>
-              </div>
-            </div>
-          </dl>
+          <div className="grid gap-3 pt-4">
+            <SystemTile
+              icon={MailCheck}
+              title="Controllo email"
+              healthy={emailConfig.enabled}
+              detail={
+                emailConfig.enabled
+                  ? incoming.lastEmailCheck
+                    ? `Ultimo controllo: ${formatDateTime(incoming.lastEmailCheck.processedAt)}`
+                    : "Pronto, in attesa del primo controllo"
+                  : "Da configurare nelle impostazioni"
+              }
+            />
+            <SystemTile
+              icon={Database}
+              title="Controllo siti locali"
+              detail={
+                lastScrapeRun
+                  ? `${getRunStatusLabel(lastScrapeRun.status)}: ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
+                  : "Nessun controllo registrato"
+              }
+            />
+            <SystemTile
+              icon={Building2}
+              title="Fonti attive"
+              detail={
+                scraperConfig.provider === "all"
+                  ? "Email e 3 siti locali"
+                  : getSourceLabel(scraperConfig.provider)
+              }
+            />
+            <SystemTile
+              icon={Target}
+              title="Ultimo risultato"
+              healthy={!lastScrapeRun?.errorCount}
+              detail={
+                lastScrapeRun
+                  ? lastScrapeRun.errorCount
+                    ? `${formatNumber(lastScrapeRun.errorCount)} problemi da controllare`
+                    : "Tutto regolare"
+                  : "In attesa del primo controllo"
+              }
+            />
+          </div>
 
           <div className="border-t border-[var(--line-soft)] px-5 py-4">
             <Link
@@ -379,35 +445,9 @@ export default async function DashboardPage() {
         </aside>
       </div>
 
-      <section className="grid divide-y divide-[var(--line-soft)] border-b border-[var(--line-soft)] md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
-        <Metric
-          icon={Inbox}
-          label="annunci da completare"
-          value={incoming.pendingCount}
-          detail="Il lavoro da fare ora"
-        />
-        <Metric
-          icon={Clock3}
-          label="arrivati oggi"
-          value={incoming.recentCount}
-          detail="Nelle ultime 24 ore"
-        />
-        <Metric
-          icon={TrendingDown}
-          label="prezzi scesi"
-          value={summary.priceDrops}
-          detail="Da ricontrollare"
-        />
-        <Metric
-          icon={Target}
-          label="in evidenza"
-          value={summary.highPriority}
-          detail="Occasioni da valutare"
-        />
-      </section>
-
-      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <div className="flex flex-col gap-3 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-end sm:justify-between">
+      <section className="relative overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
+        <ModuleIllustration variant="flag" />
+        <div className="relative flex flex-col gap-3 border-b border-[var(--line-soft)] px-5 py-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
               2. Occasioni da valutare

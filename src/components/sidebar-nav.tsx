@@ -24,7 +24,7 @@ export function SidebarNav() {
 
   return (
     <nav
-      className="grid w-full min-w-0 grid-cols-3 gap-1.5 lg:flex lg:flex-col"
+      className="flex w-full min-w-0 gap-1.5 overflow-x-auto"
       aria-label="Navigazione principale"
     >
       {navItems.map((item) => {
@@ -38,14 +38,14 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             className={clsx(
-              "inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-2 text-center text-sm font-medium transition-colors lg:justify-start lg:gap-3 lg:px-3 lg:text-left",
+              "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-center text-xs font-semibold transition-colors",
               isActive
-                ? "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
+                ? "bg-[var(--surface-accent)] text-[var(--button-ink)]"
                 : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
             )}
           >
             <Icon aria-hidden="true" className="size-4" />
-            {item.label}
+            <span className="hidden md:inline">{item.label}</span>
           </Link>
         );
       })}

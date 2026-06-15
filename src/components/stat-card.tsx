@@ -12,7 +12,7 @@ export function StatCard({
       <p className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
         {label}
       </p>
-      <p className="mt-3 text-3xl font-semibold text-[var(--ink-strong)]">{value}</p>
+      <p className="mt-3 text-3xl font-semibold text-[var(--surface-accent)]">{value}</p>
       {hint ? (
         <p className="mt-2 text-sm text-[var(--ink-soft)]">{hint}</p>
       ) : null}
