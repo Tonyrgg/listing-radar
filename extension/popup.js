@@ -1,3 +1,5 @@
+const DEFAULT_BASE_URL = "https://listing-radar-mu.vercel.app";
+
 const state = { config: null, listing: null, detailUrl: null };
 const elements = {
   connection: document.querySelector("#connection"),
@@ -176,7 +178,7 @@ async function initialize() {
   const stored = await chrome.storage.local.get("listingRadarConfig");
   state.config = stored.listingRadarConfig || null;
   if (!state.config) {
-    elements.baseUrl.value = "http://localhost:3000";
+    elements.baseUrl.value = DEFAULT_BASE_URL;
     setStatus("Configura la connessione.");
     return;
   }

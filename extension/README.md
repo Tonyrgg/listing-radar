@@ -10,8 +10,9 @@ attualmente aperta.
 3. Selezionare **Carica estensione non pacchettizzata**.
 4. Scegliere la cartella `extension`.
 
-Al primo avvio inserire l'URL di Listing Radar e lo stesso valore configurato in
-`EXTENSION_API_TOKEN`.
+Al primo avvio l'URL proposto e
+`https://listing-radar-mu.vercel.app`. Inserire come token lo stesso valore
+configurato in `EXTENSION_API_TOKEN` su Vercel.
 
 L'estensione usa solo la scheda attiva, salva la configurazione in
 `chrome.storage.local` e invia i dati a `POST /api/import/browser`.
@@ -28,7 +29,7 @@ Dopo un aggiornamento dei file, premere **Ricarica** sulla scheda
 dell'estensione in `chrome://extensions`, poi aggiornare la pagina
 dell'annuncio prima di importarla.
 
-La versione 0.4 mostra i campi principali non rilevati. Nella configurazione si
+La versione 0.4.1 mostra i campi principali non rilevati. Nella configurazione si
 puo inoltre attivare l'import automatico: viene eseguito soltanto quando la
 pagina e stata aperta da **Nuovi arrivi** e contiene l'identificativo
 `listing-radar` nel frammento URL.
