@@ -3,20 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import {
-  Building2,
-  CalendarRange,
-  Inbox,
-  House,
-  Settings2,
-} from "lucide-react";
-
 const navItems = [
-  { href: "/dashboard", label: "Inizio", icon: House },
-  { href: "/incoming", label: "Da completare", icon: Inbox },
-  { href: "/listings", label: "Archivio", icon: Building2 },
-  { href: "/reports", label: "Riepiloghi", icon: CalendarRange },
-  { href: "/settings", label: "Impostazioni", icon: Settings2 },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/incoming", label: "Nuovi arrivi" },
+  { href: "/listings", label: "Immobili" },
+  { href: "/reports", label: "Report" },
+  { href: "/settings", label: "Impostazioni" },
 ];
 
 export function SidebarNav() {
@@ -28,7 +20,6 @@ export function SidebarNav() {
       aria-label="Navigazione principale"
     >
       {navItems.map((item) => {
-        const Icon = item.icon;
         const isActive =
           pathname === item.href ||
           (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
@@ -40,12 +31,11 @@ export function SidebarNav() {
             className={clsx(
               "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-center text-xs font-semibold transition-colors",
               isActive
-                ? "bg-[var(--surface-accent)] text-[var(--button-ink)]"
-                : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
+                ? "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
+                : "text-[var(--ink-soft)] hover:text-[var(--ink-strong)]",
             )}
           >
-            <Icon aria-hidden="true" className="size-4" />
-            <span className="hidden md:inline">{item.label}</span>
+            {item.label}
           </Link>
         );
       })}
