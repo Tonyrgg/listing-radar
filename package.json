@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:email-parser": "tsx scripts/smoke-email-parser.ts"
+    "test:email-parser": "tsx scripts/smoke-email-parser.ts",
+    "backup:data": "node --env-file=.env.local scripts/backup-data.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

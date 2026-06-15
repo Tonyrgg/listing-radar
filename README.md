@@ -429,6 +429,32 @@ All privileged Supabase writes remain server-side through
 production; cron and browser-import routes continue to use dedicated bearer
 tokens.
 
+## Monitoring and backups
+
+`GET /api/health` performs a lightweight application and Supabase connectivity
+check. It returns `200` when both are available and `503` when the database
+cannot be reached. It does not expose credentials, records, or configuration.
+Use it for an external uptime monitor every 10 or 15 minutes.
+
+cron-job.org should also keep failure and recovery notifications enabled for
+the email ingestion job. The Settings page lists recent provider runs and
+scrape errors for operational diagnosis.
+
+Create a private local JSON backup with:
+
+```powershell
+npm.cmd run backup:data
+```
+
+The command exports all Listing Radar application tables and Supabase Auth user
+metadata to `.backups/`, together with a SHA-256 checksum. The directory is
+ignored by Git and must not be committed or uploaded to a public repository.
+Keep at least one additional encrypted copy outside the project directory.
+
+This JSON export is intended as an application-data safety copy. For a complete
+Postgres backup and restoration workflow, use `supabase db dump`; Supabase
+recommends regular off-site CLI exports for Free plan projects.
+
 ## Appetite scoring
 
 The score is calculated at read and write time. Positive and negative factors

@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 /.runtime/
+/.backups/
 
 # debug
 npm-debug.log*
