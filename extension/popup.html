@@ -51,6 +51,56 @@
           <strong>Dati da controllare</strong>
           <ul id="missing-list"></ul>
         </div>
+        <div id="edit-fields" class="edit-grid">
+          <label class="wide">
+            <span>Titolo</span>
+            <input id="edit-title" type="text" />
+          </label>
+          <label>
+            <span>Prezzo</span>
+            <input id="edit-price" type="number" min="0" step="1" />
+          </label>
+          <label>
+            <span>Superficie</span>
+            <input id="edit-sqm" type="number" min="0" step="1" />
+          </label>
+          <label>
+            <span>Locali</span>
+            <input id="edit-rooms" type="number" min="0" step="0.5" />
+          </label>
+          <label>
+            <span>Piano</span>
+            <input id="edit-floor" type="text" />
+          </label>
+          <label class="wide">
+            <span>Zona</span>
+            <input id="edit-zone" type="text" />
+          </label>
+          <label class="wide">
+            <span>Indirizzo</span>
+            <input id="edit-address" type="text" />
+          </label>
+          <label>
+            <span>Venditore</span>
+            <select id="edit-seller-type">
+              <option value="unknown">Da verificare</option>
+              <option value="private">Privato</option>
+              <option value="agency">Agenzia</option>
+            </select>
+          </label>
+          <label>
+            <span>Nome venditore</span>
+            <input id="edit-seller-name" type="text" />
+          </label>
+          <label class="wide">
+            <span>Descrizione</span>
+            <textarea id="edit-description" rows="4"></textarea>
+          </label>
+          <label class="wide">
+            <span>Foto, una per riga</span>
+            <textarea id="edit-images" rows="3"></textarea>
+          </label>
+        </div>
         <button id="import-listing" type="button">Importa</button>
       </section>
 

@@ -70,7 +70,24 @@ async function findExistingListing(normalized: NormalizedListing) {
     .eq("url", normalized.url)
     .maybeSingle();
 
-  return (data as ExistingListingRow | null) ?? null;
+  if (data) {
+    return data as ExistingListingRow;
+  }
+
+  if (normalized.canonicalUrl) {
+    const { data: canonicalData } = await supabase
+      .from("listings")
+      .select("*")
+      .eq("source", normalized.source)
+      .eq("canonical_url", normalized.canonicalUrl)
+      .maybeSingle();
+
+    if (canonicalData) {
+      return canonicalData as ExistingListingRow;
+    }
+  }
+
+  return null;
 }
 
 function toListingPreview(
