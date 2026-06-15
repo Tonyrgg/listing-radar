@@ -411,9 +411,50 @@ Once credentials or an authorized export are available, they can be connected th
 2. Import the project into Vercel.
 3. Add all required environment variables in the Vercel project settings.
 4. Apply the Supabase migration against the production database.
-5. Trigger `/api/cron/scrape` from a scheduler that can send the `Authorization: Bearer <CRON_SECRET>` header.
+5. Create the only allowed user in Supabase Authentication, using email and password.
+6. Set `AUTH_REQUIRED=true` and `AUTH_ALLOWED_EMAIL` to that user's email.
+7. Deploy. `vercel.json` schedules the complete provider run every day at
+   06:15 UTC.
+8. On cron-job.org create a job every five minutes for
+   `https://<dominio>/api/cron/email-alerts`, using `GET` and the custom header
+   `Authorization: Bearer <CRON_SECRET>`.
 
-The current implementation keeps all privileged Supabase writes on the server side through `SUPABASE_SERVICE_ROLE_KEY`.
+Vercel sends `Authorization: Bearer <CRON_SECRET>` to its daily cron route when
+`CRON_SECRET` is configured. Vercel Hobby supports only daily schedules, so the
+frequent email check is delegated to cron-job.org. The same application can be
+deployed with the included `Dockerfile` on any persistent Node.js host.
+
+All privileged Supabase writes remain server-side through
+`SUPABASE_SERVICE_ROLE_KEY`. Dashboard routes require a Supabase session in
+production; cron and browser-import routes continue to use dedicated bearer
+tokens.
+
+## Appetite scoring
+
+The score is calculated at read and write time. Positive and negative factors
+are shown in each listing detail. Every weight can be overridden through the
+`SCORE_*` variables documented in `.env.example`, without changing code.
+
+Default deductions include agency listings, unidentified sellers, missing
+price, missing surface, insufficient descriptions, and auctions. The archive
+can be filtered by score and sorted by appetite, date, or price.
+
+## Listing management
+
+The listing detail supports manual editing, notes, workflow status, and
+archiving. A manual price change creates a snapshot, preserving price history.
+New imports are compared with existing listings using address, title, zone,
+surface, and price; likely matches share a `duplicate_group_id`.
+
+## Tests
+
+Run:
+
+```powershell
+npm.cmd test
+npm.cmd run lint
+npm.cmd run build
+```
 
 ## Project structure
 

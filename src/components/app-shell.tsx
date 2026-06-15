@@ -1,5 +1,8 @@
 import { MONITORED_ZONE } from "@/lib/constants";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { LogOut } from "lucide-react";
+import { logout } from "@/app/login/actions";
+import { isAuthRequired } from "@/lib/auth";
 
 export function AppShell({
   children,
@@ -30,6 +33,14 @@ export function AppShell({
           <div className="mt-5 lg:mt-8">
             <SidebarNav />
           </div>
+          {isAuthRequired() ? (
+            <form action={logout} className="mt-5 border-t border-[var(--line-soft)] pt-4 lg:mt-auto">
+              <button type="submit" className="inline-flex min-h-11 w-full items-center gap-2 text-sm font-medium text-[var(--ink-soft)] hover:text-[var(--ink-strong)]">
+                <LogOut aria-hidden="true" className="size-4" />
+                Esci
+              </button>
+            </form>
+          ) : null}
         </aside>
 
         <main id="main-content" className="min-w-0 w-full flex-1 overflow-hidden px-4 py-5 sm:px-6 lg:px-8 lg:py-7 xl:px-10">

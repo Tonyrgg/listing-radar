@@ -14,6 +14,8 @@ type ScoreListing = Pick<
   | "minimumDaysOnline"
   | "isPriceDropped"
   | "description"
+  | "price"
+  | "sqm"
 >;
 
 function scoreInput(listing: ScoreListing) {
@@ -24,6 +26,8 @@ function scoreInput(listing: ScoreListing) {
     minimumDaysOnline: listing.minimumDaysOnline,
     isPriceDropped: listing.isPriceDropped,
     description: listing.description,
+    price: listing.price,
+    sqm: listing.sqm,
   };
 }
 
@@ -117,7 +121,9 @@ export function ListingScoreBreakdown({
               className="flex items-start justify-between gap-3 text-xs text-[var(--ink-subtle)]"
             >
               <span>{factor.label}</span>
-              <span className="shrink-0">0 / +{factor.points}</span>
+              <span className="shrink-0">
+                0 / {factor.points > 0 ? `+${factor.points}` : factor.points}
+              </span>
             </div>
           ))}
         </div>

@@ -30,6 +30,10 @@
         <button id="save-connection" type="button" class="secondary">
           Salva connessione
         </button>
+        <label class="toggle-row">
+          <input id="auto-import" type="checkbox" />
+          <span>Importa automaticamente gli annunci aperti da Nuovi arrivi</span>
+        </label>
       </section>
 
       <section id="preview" class="panel hidden" aria-live="polite">
@@ -39,6 +43,10 @@
         </div>
         <h2 id="title"></h2>
         <p id="facts" class="facts"></p>
+        <div id="missing-fields" class="missing hidden">
+          <strong>Dati da controllare</strong>
+          <ul id="missing-list"></ul>
+        </div>
         <button id="import-listing" type="button">Importa</button>
       </section>
 

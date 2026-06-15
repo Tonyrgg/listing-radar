@@ -27,3 +27,8 @@ parser e stato usato.
 Dopo un aggiornamento dei file, premere **Ricarica** sulla scheda
 dell'estensione in `chrome://extensions`, poi aggiornare la pagina
 dell'annuncio prima di importarla.
+
+La versione 0.4 mostra i campi principali non rilevati. Nella configurazione si
+puo inoltre attivare l'import automatico: viene eseguito soltanto quando la
+pagina e stata aperta da **Nuovi arrivi** e contiene l'identificativo
+`listing-radar` nel frammento URL.

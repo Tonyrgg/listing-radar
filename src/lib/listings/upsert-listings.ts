@@ -8,6 +8,7 @@ import {
   isToday,
 } from "@/lib/listings/scoring";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { assignDuplicateGroup } from "@/lib/listings/duplicates";
 import type { Listing, NormalizedListing, UpsertListingsResult } from "@/types";
 
 type ExistingListingRow = {
@@ -160,6 +161,8 @@ export async function upsertListings(
       minimumDaysOnline,
       isPriceDropped,
       description: normalized.description,
+      price: normalized.price,
+      sqm: normalized.sqm,
     });
     const sellerFatigueScore = calculateSellerFatigueScore({
       minimumDaysOnline,
@@ -220,6 +223,15 @@ export async function upsertListings(
     }
 
     const listingId = (savedRow as ExistingListingRow).id;
+    await assignDuplicateGroup({
+      id: listingId,
+      title: normalized.title,
+      address_raw: normalized.addressRaw ?? null,
+      zone: normalized.zone ?? null,
+      price: normalized.price ?? null,
+      sqm: normalized.sqm ?? null,
+      duplicate_group_id: existing?.duplicate_group_id ?? null,
+    });
 
     const snapshotPayload = {
       listing_id: listingId,

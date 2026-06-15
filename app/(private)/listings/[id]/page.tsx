@@ -5,6 +5,8 @@ import {
   Layers3,
   MapPin,
   Phone,
+  Pencil,
+  Archive,
   Ruler,
   UserRound,
 } from "lucide-react";
@@ -16,7 +18,7 @@ import type { ReactNode } from "react";
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 import { ListingScoreBreakdown } from "@/components/listing-score";
-import { getListingById } from "@/lib/data/repository";
+import { getDuplicateListings, getListingById } from "@/lib/data/repository";
 import {
   formatCurrency,
   formatDate,
@@ -30,6 +32,8 @@ import {
   getSourceLabel,
 } from "@/lib/labels";
 import { getOperationalSuggestion } from "@/lib/listings/operational";
+import { archiveListing, updateListing } from "@/app/(private)/listings/[id]/actions";
+import { LISTING_STATUS_OPTIONS } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Scheda annuncio",
@@ -88,7 +92,16 @@ export default async function ListingDetailPage({
     notFound();
   }
 
+  const duplicateListings = await getDuplicateListings(listing);
+  const priceHistory = (listing.snapshots ?? [])
+    .filter((snapshot) => snapshot.price != null)
+    .filter(
+      (snapshot, index, values) =>
+        index === values.length - 1 || snapshot.price !== values[index + 1]?.price,
+    );
   const operationalSuggestion = getOperationalSuggestion(listing);
+  const updateAction = updateListing.bind(null, listing.id);
+  const archiveAction = archiveListing.bind(null, listing.id);
 
   return (
     <div className="space-y-6">
@@ -128,6 +141,9 @@ export default async function ListingDetailPage({
               </Badge>
               {listing.isPriceDropped ? (
                 <Badge tone="red">Prezzo ridotto</Badge>
+              ) : null}
+              {listing.duplicateGroupId ? (
+                <Badge tone="amber">Possibile duplicato</Badge>
               ) : null}
             </div>
 
@@ -244,6 +260,126 @@ export default async function ListingDetailPage({
           </p>
         </article>
       ) : null}
+
+      {duplicateListings.length ? (
+        <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+          <div className="border-b border-[var(--line-soft)] px-5 py-4">
+            <h2 className="text-base font-semibold text-[var(--ink-strong)]">
+              Possibili duplicati
+            </h2>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Lo stesso immobile potrebbe essere pubblicato da piu fonti.
+            </p>
+          </div>
+          <div className="divide-y divide-[var(--line-soft)]">
+            {duplicateListings.map((duplicate) => (
+              <Link key={duplicate.id} href={`/listings/${duplicate.id}`} className="flex min-h-14 items-center justify-between gap-4 px-5 py-3 hover:bg-[var(--surface-muted)]">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-[var(--ink-strong)]">{duplicate.title}</span>
+                  <span className="mt-1 block text-xs text-[var(--ink-subtle)]">{getSourceLabel(duplicate.source)}</span>
+                </span>
+                <span className="shrink-0 text-sm font-semibold text-[var(--ink-strong)]">{formatCurrency(duplicate.price)}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {priceHistory.length > 1 ? (
+        <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+          <div className="border-b border-[var(--line-soft)] px-5 py-4">
+            <h2 className="text-base font-semibold text-[var(--ink-strong)]">
+              Storico prezzi
+            </h2>
+          </div>
+          <div className="divide-y divide-[var(--line-soft)]">
+            {priceHistory.map((snapshot) => (
+              <div key={snapshot.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                <span className="text-sm text-[var(--ink-soft)]">{formatDateTime(snapshot.checkedAt)}</span>
+                <strong className="text-sm tabular-nums text-[var(--ink-strong)]">{formatCurrency(snapshot.price)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
+          <Pencil aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+          Modifica scheda
+        </summary>
+        <form action={updateAction} className="grid gap-4 border-t border-[var(--line-soft)] p-5 md:grid-cols-2 xl:grid-cols-4">
+          <label className="space-y-2 text-sm md:col-span-2">
+            <span className="font-medium text-[var(--ink-strong)]">Titolo</span>
+            <input name="title" defaultValue={listing.title} required className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Prezzo</span>
+            <input name="price" type="number" defaultValue={listing.price ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Superficie mq</span>
+            <input name="sqm" type="number" defaultValue={listing.sqm ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Locali</span>
+            <input name="rooms" type="number" step="0.5" defaultValue={listing.rooms ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Piano</span>
+            <input name="floor" defaultValue={listing.floor ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Zona</span>
+            <input name="zone" defaultValue={listing.zone ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Indirizzo</span>
+            <input name="addressRaw" defaultValue={listing.addressRaw ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Venditore</span>
+            <select name="sellerType" defaultValue={listing.sellerType} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3">
+              <option value="private">Privato</option>
+              <option value="agency">Agenzia</option>
+              <option value="unknown">Da verificare</option>
+            </select>
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Nome venditore</span>
+            <input name="sellerName" defaultValue={listing.sellerName ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Telefono</span>
+            <input name="phone" defaultValue={listing.phone ?? ""} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3" />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Stato</span>
+            <select name="status" defaultValue={listing.status} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3">
+              {LISTING_STATUS_OPTIONS.filter((value) => value !== "all").map((value) => (
+                <option key={value} value={value}>{getListingStatusLabel(value)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-2 text-sm md:col-span-2 xl:col-span-4">
+            <span className="font-medium text-[var(--ink-strong)]">Descrizione</span>
+            <textarea name="description" defaultValue={listing.description ?? ""} rows={8} className="w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] p-3" />
+          </label>
+          <label className="space-y-2 text-sm md:col-span-2 xl:col-span-4">
+            <span className="font-medium text-[var(--ink-strong)]">Nuova nota</span>
+            <textarea name="note" rows={3} placeholder="Aggiungi una nota senza cancellare le precedenti" className="w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] p-3" />
+          </label>
+          <div className="flex flex-col gap-3 md:col-span-2 md:flex-row xl:col-span-4">
+            <button type="submit" className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)]">
+              Salva modifiche
+            </button>
+            <button formAction={archiveAction} type="submit" className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)]">
+              <Archive aria-hidden="true" className="size-4" />
+              Archivia
+            </button>
+          </div>
+        </form>
+      </details>
 
       <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">

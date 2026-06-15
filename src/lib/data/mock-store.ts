@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { createDerivedListingValues, HIGH_PRIORITY_THRESHOLD, isHotOldListing } from "@/lib/listings/scoring";
+import { createDerivedListingValues, getHighPriorityThreshold, isHotOldListing } from "@/lib/listings/scoring";
 import { generateReport } from "@/lib/reports/generate-report";
 import { mockProvider } from "@/lib/scrapers/providers/mock";
 import type { Listing, ListingSource, ListingSnapshot, Report } from "@/types";
@@ -131,7 +131,7 @@ export async function getMockReports() {
   const reportInputs = [
     listings,
     listings.filter((listing) => listing.minimumDaysOnline >= 10),
-    listings.filter((listing) => listing.priorityScore >= HIGH_PRIORITY_THRESHOLD || listing.isPriceDropped),
+    listings.filter((listing) => listing.priorityScore >= getHighPriorityThreshold() || listing.isPriceDropped),
   ];
 
   return reportInputs.map((currentListings, index) => {
@@ -167,7 +167,7 @@ export async function getMockDashboardSummary() {
     ).length,
     priceDrops: listings.filter((listing) => listing.isPriceDropped).length,
     hotOld: listings.filter(isHotOldListing).length,
-    highPriority: listings.filter((listing) => listing.priorityScore >= HIGH_PRIORITY_THRESHOLD).length,
+    highPriority: listings.filter((listing) => listing.priorityScore >= getHighPriorityThreshold()).length,
     watchlist: listings.slice(0, 5),
   };
 }

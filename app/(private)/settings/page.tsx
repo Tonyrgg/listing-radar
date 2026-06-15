@@ -23,6 +23,7 @@ import { formatDateTime, formatNumber } from "@/lib/formatting";
 import { getRunStatusLabel, getSourceLabel } from "@/lib/labels";
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
 import type { ScrapeRun } from "@/types";
+import { getScoringConfig } from "@/lib/listings/scoring-config";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -134,6 +135,7 @@ export default async function SettingsPage() {
     process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID,
   );
   const extensionEnabled = Boolean(process.env.EXTENSION_API_TOKEN);
+  const scoring = getScoringConfig();
   const sourcesReady = runtimeConfig.provider !== "mock";
   const lastRunHealthy = !lastScrapeRun || lastScrapeRun.errorCount === 0;
 
@@ -264,6 +266,30 @@ export default async function SettingsPage() {
             label="Email controllate"
             value={`${formatNumber(emailConfig.lookbackDays)} giorni, massimo ${formatNumber(emailConfig.maxMessages)} messaggi`}
           />
+        </dl>
+      </details>
+
+      <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
+          <span className="text-sm font-semibold text-[var(--ink-strong)]">
+            Regole di appetibilita
+          </span>
+          <span className="text-xs text-[var(--ink-subtle)]">
+            Configurabili da ambiente
+          </span>
+        </summary>
+        <dl className="grid gap-5 border-t border-[var(--line-soft)] p-5 sm:grid-cols-2 xl:grid-cols-4">
+          <ConfigRow label="Venditore privato" value={`+${scoring.privateSeller}`} />
+          <ConfigRow label="Annuncio di agenzia" value={scoring.agencySeller} />
+          <ConfigRow label="Venditore sconosciuto" value={scoring.unknownSeller} />
+          <ConfigRow label="Nuovo oggi" value={`+${scoring.newToday}`} />
+          <ConfigRow label="Telefono visibile" value={`+${scoring.visiblePhone}`} />
+          <ConfigRow label="Ribasso" value={`+${scoring.priceDrop}`} />
+          <ConfigRow label="Prezzo mancante" value={scoring.missingPrice} />
+          <ConfigRow label="Superficie mancante" value={scoring.missingSqm} />
+          <ConfigRow label="Descrizione insufficiente" value={scoring.missingDescription} />
+          <ConfigRow label="Asta" value={scoring.auction} />
+          <ConfigRow label="Soglia alta appetibilita" value={scoring.highPriorityThreshold} />
         </dl>
       </details>
 

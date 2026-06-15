@@ -74,5 +74,21 @@ export function getSourceLabel(value: string) {
     return "Dati di prova";
   }
 
+  if (normalized === "immobiliare" || normalized === "immobiliare.it") {
+    return "Immobiliare.it";
+  }
+
+  if (normalized === "idealista") {
+    return "Idealista";
+  }
+
+  if (normalized === "casa" || normalized === "casa.it") {
+    return "Casa.it";
+  }
+
+  if (normalized === "subito") {
+    return "Subito";
+  }
+
   return value;
 }

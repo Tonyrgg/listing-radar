@@ -1,5 +1,6 @@
 import {
-  HIGH_PRIORITY_THRESHOLD,
+  calculatePriorityScore,
+  getHighPriorityThreshold,
   getMinimumDaysOnline,
   isHotOldListing,
 } from "@/lib/listings/scoring";
@@ -223,6 +224,21 @@ function mapListingRow(row: ListingRow): Listing {
     .flatMap((snapshot) => extractImageUrlsFromPayload(snapshot.rawPayload))
     .filter((url, index, values) => values.indexOf(url) === index)
     .slice(0, 30);
+  const minimumDaysOnline = getMinimumDaysOnline({
+    firstSeenAt: row.first_seen_at,
+    portalDeclaredDate: row.portal_declared_date,
+    metadataDatePublished: row.metadata_date_published,
+  });
+  const priorityScore = calculatePriorityScore({
+    sellerType: row.seller_type,
+    isNewToday: row.is_new_today,
+    hasPhone: Boolean(row.phone),
+    minimumDaysOnline,
+    isPriceDropped: row.is_price_dropped,
+    description: row.description,
+    price: row.price,
+    sqm: row.sqm,
+  });
 
   return {
     id: row.id,
@@ -249,18 +265,14 @@ function mapListingRow(row: ListingRow): Listing {
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     status: row.status,
-    priorityScore: row.priority_score,
+    priorityScore,
     sellerFatigueScore: row.seller_fatigue_score,
     duplicateGroupId: row.duplicate_group_id,
     isPriceDropped: row.is_price_dropped,
     isNewToday: row.is_new_today,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    minimumDaysOnline: getMinimumDaysOnline({
-      firstSeenAt: row.first_seen_at,
-      portalDeclaredDate: row.portal_declared_date,
-      metadataDatePublished: row.metadata_date_published,
-    }),
+    minimumDaysOnline,
     note:
       [...(row.listing_notes ?? [])]
         .sort((left, right) =>
@@ -313,7 +325,7 @@ function mapScrapeErrorRow(row: ScrapeErrorRow): ScrapeError {
 }
 
 function applyListingFilters(listings: Listing[], filters: ListingFilters) {
-  return listings.filter((listing) => {
+  const filtered = listings.filter((listing) => {
     if (filters.sellerType !== "all" && listing.sellerType !== filters.sellerType) {
       return false;
     }
@@ -333,11 +345,36 @@ function applyListingFilters(listings: Listing[], filters: ListingFilters) {
       return false;
     }
 
-    if (filters.onlyHighPriority && listing.priorityScore < HIGH_PRIORITY_THRESHOLD) {
+    if (filters.onlyHighPriority && listing.priorityScore < getHighPriorityThreshold()) {
+      return false;
+    }
+
+    if (filters.minScore != null && listing.priorityScore < filters.minScore) {
+      return false;
+    }
+
+    if (filters.maxScore != null && listing.priorityScore > filters.maxScore) {
       return false;
     }
 
     return true;
+  });
+
+  return filtered.sort((left, right) => {
+    switch (filters.sortBy) {
+      case "score_asc":
+        return left.priorityScore - right.priorityScore;
+      case "newest":
+        return right.firstSeenAt.localeCompare(left.firstSeenAt);
+      case "oldest":
+        return left.firstSeenAt.localeCompare(right.firstSeenAt);
+      case "price_asc":
+        return (left.price ?? Number.MAX_SAFE_INTEGER) - (right.price ?? Number.MAX_SAFE_INTEGER);
+      case "price_desc":
+        return (right.price ?? -1) - (left.price ?? -1);
+      default:
+        return right.priorityScore - left.priorityScore;
+    }
   });
 }
 
@@ -358,7 +395,9 @@ async function loadListingsFromSupabase() {
       return null;
     }
 
-    return (data as ListingRow[]).map(mapListingRow);
+    return (data as ListingRow[])
+      .map(mapListingRow)
+      .sort((left, right) => right.priorityScore - left.priorityScore);
   } catch {
     return null;
   }
@@ -417,26 +456,47 @@ export async function getListingById(id: string) {
   return getMockListingById(id);
 }
 
+export async function getDuplicateListings(listing: Listing) {
+  if (!listing.duplicateGroupId || !hasSupabaseReadConfig()) return [];
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("*, listing_snapshots(*), listing_notes(note, created_at), listing_sources(*)")
+      .eq("duplicate_group_id", listing.duplicateGroupId)
+      .neq("id", listing.id);
+
+    if (error || !data) return [];
+    return (data as ListingRow[]).map(mapListingRow);
+  } catch {
+    return [];
+  }
+}
+
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const storedListings = await loadListingsFromSupabase();
 
   if (!storedListings) {
     return getMockDashboardSummary();
   }
+  const activeListings = storedListings.filter(
+    (listing) => listing.status !== "archived",
+  );
 
   return {
-    newToday: storedListings.filter((listing) => listing.isNewToday).length,
-    probablePrivate: storedListings.filter((listing) => listing.sellerType === "private").length,
-    agencies: storedListings.filter((listing) => listing.sellerType === "agency").length,
-    toVerify: storedListings.filter((listing) =>
+    newToday: activeListings.filter((listing) => listing.isNewToday).length,
+    probablePrivate: activeListings.filter((listing) => listing.sellerType === "private").length,
+    agencies: activeListings.filter((listing) => listing.sellerType === "agency").length,
+    toVerify: activeListings.filter((listing) =>
       ["new", "review"].includes(listing.status),
     ).length,
-    priceDrops: storedListings.filter((listing) => listing.isPriceDropped).length,
-    hotOld: storedListings.filter(isHotOldListing).length,
-    highPriority: storedListings.filter(
-      (listing) => listing.priorityScore >= HIGH_PRIORITY_THRESHOLD,
+    priceDrops: activeListings.filter((listing) => listing.isPriceDropped).length,
+    hotOld: activeListings.filter(isHotOldListing).length,
+    highPriority: activeListings.filter(
+      (listing) => listing.priorityScore >= getHighPriorityThreshold(),
     ).length,
-    watchlist: [...storedListings]
+    watchlist: [...activeListings]
       .sort((left, right) => right.priorityScore - left.priorityScore)
       .slice(0, 5),
   };

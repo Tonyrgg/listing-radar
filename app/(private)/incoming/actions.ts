@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
+import { requireUser } from "@/lib/auth";
 
 export type RefreshEmailState = {
   ok: boolean | null;
@@ -14,15 +15,7 @@ export async function refreshIncomingEmails(
 ): Promise<RefreshEmailState> {
   void _previousState;
 
-  if (
-    process.env.NODE_ENV === "production" &&
-    process.env.ALLOW_MANUAL_EMAIL_REFRESH_WITHOUT_AUTH !== "true"
-  ) {
-    return {
-      ok: false,
-      message: "Controllo manuale disabilitato finche non viene configurato il login.",
-    };
-  }
+  await requireUser();
 
   const result = await ingestEmailAlerts();
   revalidatePath("/incoming");

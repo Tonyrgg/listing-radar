@@ -1,4 +1,4 @@
-import { HIGH_PRIORITY_THRESHOLD, isHotOldListing } from "@/lib/listings/scoring";
+import { getHighPriorityThreshold, isHotOldListing } from "@/lib/listings/scoring";
 import { toIsoDate } from "@/lib/formatting";
 import type { Listing, Report } from "@/types";
 
@@ -18,7 +18,7 @@ export function generateReport(
   const priceDropsCount = listings.filter((listing) => listing.isPriceDropped).length;
   const hotOldCount = listings.filter(isHotOldListing).length;
   const highPriorityCount = listings.filter(
-    (listing) => listing.priorityScore >= HIGH_PRIORITY_THRESHOLD,
+    (listing) => listing.priorityScore >= getHighPriorityThreshold(),
   ).length;
 
   const lines = [

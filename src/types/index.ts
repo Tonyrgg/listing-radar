@@ -196,6 +196,15 @@ export interface ListingFilters {
   source: string;
   minDaysOnline: number | null;
   onlyHighPriority: boolean;
+  minScore: number | null;
+  maxScore: number | null;
+  sortBy:
+    | "score_desc"
+    | "score_asc"
+    | "newest"
+    | "oldest"
+    | "price_asc"
+    | "price_desc";
 }
 
 export interface DashboardSummary {

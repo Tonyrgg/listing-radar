@@ -33,6 +33,7 @@ import {
 } from "@/lib/labels";
 import { getScraperRuntimeConfig } from "@/lib/scrapers/config";
 import type { IncomingListing, Listing } from "@/types";
+import { ListingScoreSummary } from "@/components/listing-score";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -438,6 +439,7 @@ export default async function DashboardPage() {
                   <span className="text-xs font-medium text-[var(--status-warning)]">
                     {getOpportunityReason(listing)}
                   </span>
+                  <ListingScoreSummary listing={listing} />
                 </div>
                 <Link
                   href={`/listings/${listing.id}`}

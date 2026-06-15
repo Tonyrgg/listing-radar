@@ -1,20 +1,18 @@
-const state = {
-  config: null,
-  listing: null,
-  detailUrl: null,
-};
-
+const state = { config: null, listing: null, detailUrl: null };
 const elements = {
   connection: document.querySelector("#connection"),
   editConnection: document.querySelector("#edit-connection"),
   baseUrl: document.querySelector("#base-url"),
   token: document.querySelector("#api-token"),
+  autoImport: document.querySelector("#auto-import"),
   saveConnection: document.querySelector("#save-connection"),
   preview: document.querySelector("#preview"),
   source: document.querySelector("#source"),
   fieldCount: document.querySelector("#field-count"),
   title: document.querySelector("#title"),
   facts: document.querySelector("#facts"),
+  missingFields: document.querySelector("#missing-fields"),
+  missingList: document.querySelector("#missing-list"),
   importListing: document.querySelector("#import-listing"),
   result: document.querySelector("#result"),
   resultMessage: document.querySelector("#result-message"),
@@ -37,7 +35,7 @@ function normalizeBaseUrl(value) {
 function renderPreview(listing) {
   state.listing = listing;
   const facts = [
-    listing.price ? `${Number(listing.price).toLocaleString("it-IT")} €` : null,
+    listing.price ? `${Number(listing.price).toLocaleString("it-IT")} EUR` : null,
     listing.sqm ? `${listing.sqm} mq` : null,
     listing.rooms ? `${listing.rooms} locali` : null,
     listing.zone,
@@ -46,23 +44,41 @@ function renderPreview(listing) {
   const fields = Object.values(listing).filter(
     (value) => value !== null && value !== "" && value !== undefined,
   ).length;
+  const required = [
+    ["title", "Titolo"],
+    ["price", "Prezzo"],
+    ["sqm", "Superficie"],
+    ["rooms", "Locali"],
+    ["zone", "Zona"],
+    ["description", "Descrizione"],
+    ["sellerType", "Tipo venditore"],
+    ["imageUrls", "Fotografie"],
+  ];
+  const missing = required.filter(([key]) => {
+    const value = listing[key];
+    return value == null || value === "" || value === "unknown" ||
+      (Array.isArray(value) && value.length === 0);
+  });
 
   elements.source.textContent = listing.source || "browser";
   elements.fieldCount.textContent = `${fields} campi`;
   elements.title.textContent = listing.title || "Titolo non rilevato";
-  elements.facts.textContent = facts.join(" · ") || "Dati principali non rilevati";
+  elements.facts.textContent = facts.join(" | ") || "Dati principali non rilevati";
+  elements.missingList.replaceChildren(
+    ...missing.map(([, label]) => {
+      const item = document.createElement("li");
+      item.textContent = label;
+      return item;
+    }),
+  );
+  elements.missingFields.classList.toggle("hidden", missing.length === 0);
   elements.preview.classList.remove("hidden");
   setStatus("");
 }
 
 async function requestOriginPermission(baseUrl) {
   const origin = `${new URL(baseUrl).origin}/*`;
-  const alreadyGranted = await chrome.permissions.contains({ origins: [origin] });
-
-  if (alreadyGranted) {
-    return true;
-  }
-
+  if (await chrome.permissions.contains({ origins: [origin] })) return true;
   return chrome.permissions.request({ origins: [origin] });
 }
 
@@ -70,18 +86,11 @@ async function saveConnection() {
   try {
     const baseUrl = normalizeBaseUrl(elements.baseUrl.value.trim());
     const token = elements.token.value.trim();
-
-    if (!token) {
-      throw new Error("Inserisci il token dell'estensione.");
-    }
-
-    const granted = await requestOriginPermission(baseUrl);
-
-    if (!granted) {
+    if (!token) throw new Error("Inserisci il token dell'estensione.");
+    if (!(await requestOriginPermission(baseUrl))) {
       throw new Error("Permesso di connessione non concesso.");
     }
-
-    state.config = { baseUrl, token };
+    state.config = { baseUrl, token, autoImport: elements.autoImport.checked };
     await chrome.storage.local.set({ listingRadarConfig: state.config });
     elements.connection.classList.add("hidden");
     elements.editConnection.classList.remove("hidden");
@@ -94,9 +103,7 @@ async function saveConnection() {
 
 async function extractCurrentPage() {
   setStatus("Analisi pagina...");
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs[0];
-
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !/^https?:/i.test(tab.url || "")) {
     setStatus("Apri una pagina annuncio in una scheda web.");
     return;
@@ -119,43 +126,33 @@ async function extractCurrentPage() {
     const response = await chrome.tabs.sendMessage(tab.id, {
       type: "LISTING_RADAR_EXTRACT",
     });
-
-    if (!response?.ok) {
-      throw new Error(response?.error || "Estrazione non riuscita.");
-    }
-
+    if (!response?.ok) throw new Error(response?.error || "Estrazione non riuscita.");
     renderPreview(response.data);
+    if (state.config?.autoImport && response.data.incomingId) {
+      await importListing();
+    }
   } catch (error) {
     setStatus(error.message);
   }
 }
 
 async function importListing() {
-  if (!state.config || !state.listing) {
-    return;
-  }
-
+  if (!state.config || !state.listing) return;
   elements.importListing.disabled = true;
   setStatus("Importazione...");
-
   try {
-    const response = await fetch(
-      `${state.config.baseUrl}/api/import/browser`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${state.config.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(state.listing),
+    const response = await fetch(`${state.config.baseUrl}/api/import/browser`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${state.config.token}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify(state.listing),
+    });
     const payload = await response.json();
-
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || `Errore ${response.status}`);
     }
-
     state.detailUrl = `${state.config.baseUrl}${payload.detailUrl}`;
     elements.resultMessage.textContent = payload.inserted
       ? "Annuncio creato."
@@ -172,35 +169,29 @@ async function importListing() {
 }
 
 async function openListing() {
-  if (state.detailUrl) {
-    await chrome.tabs.create({ url: state.detailUrl });
-  }
-}
-
-function editConnection() {
-  elements.connection.classList.toggle("hidden");
+  if (state.detailUrl) await chrome.tabs.create({ url: state.detailUrl });
 }
 
 async function initialize() {
   const stored = await chrome.storage.local.get("listingRadarConfig");
   state.config = stored.listingRadarConfig || null;
-
   if (!state.config) {
     elements.baseUrl.value = "http://localhost:3000";
     setStatus("Configura la connessione.");
     return;
   }
-
   elements.baseUrl.value = state.config.baseUrl;
   elements.token.value = state.config.token;
+  elements.autoImport.checked = Boolean(state.config.autoImport);
   elements.connection.classList.add("hidden");
   elements.editConnection.classList.remove("hidden");
   await extractCurrentPage();
 }
 
 elements.saveConnection.addEventListener("click", saveConnection);
-elements.editConnection.addEventListener("click", editConnection);
+elements.editConnection.addEventListener("click", () =>
+  elements.connection.classList.toggle("hidden"),
+);
 elements.importListing.addEventListener("click", importListing);
 elements.openListing.addEventListener("click", openListing);
-
 initialize();

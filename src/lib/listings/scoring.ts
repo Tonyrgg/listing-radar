@@ -1,8 +1,13 @@
 import type { Listing, NormalizedListing, SellerType } from "@/types";
+import { getScoringConfig } from "@/lib/listings/scoring-config";
 
 const DAY = 24 * 60 * 60 * 1000;
 
 export const HIGH_PRIORITY_THRESHOLD = 80;
+
+export function getHighPriorityThreshold() {
+  return getScoringConfig().highPriorityThreshold;
+}
 
 export interface PriorityScoreFactor {
   id: string;
@@ -26,6 +31,8 @@ type PriorityScoreInput = {
   minimumDaysOnline: number;
   isPriceDropped: boolean;
   description?: string | null;
+  price?: number | null;
+  sqm?: number | null;
 };
 
 function parseDate(value: string | null | undefined) {
@@ -85,32 +92,33 @@ export function getPriorityScoreBreakdown(
   input: PriorityScoreInput,
 ): PriorityScoreBreakdown {
   const description = (input.description ?? "").toLowerCase();
+  const config = getScoringConfig();
   const onlinePoints =
     input.minimumDaysOnline >= 120
-      ? 35
+      ? config.online120Days
       : input.minimumDaysOnline >= 60
-        ? 20
+        ? config.online60Days
         : 0;
   const factors: PriorityScoreFactor[] = [
     {
       id: "private-seller",
       label: "Venditore privato",
       explanation: "Il contatto sembra diretto, senza agenzia.",
-      points: 40,
+      points: config.privateSeller,
       active: input.sellerType === "private",
     },
     {
       id: "new-today",
       label: "Nuovo arrivo",
       explanation: "L'annuncio e stato rilevato oggi.",
-      points: 25,
+      points: config.newToday,
       active: input.isNewToday,
     },
     {
       id: "phone-visible",
       label: "Telefono disponibile",
       explanation: "E presente un recapito utilizzabile.",
-      points: 20,
+      points: config.visiblePhone,
       active: input.hasPhone,
     },
     {
@@ -123,36 +131,71 @@ export function getPriorityScoreBreakdown(
         onlinePoints > 0
           ? "La permanenza prolungata puo indicare maggiore apertura alla trattativa."
           : "Servono almeno 60 giorni online per ottenere questo punteggio.",
-      points: onlinePoints || 20,
+      points: onlinePoints || config.online60Days,
       active: onlinePoints > 0,
     },
     {
       id: "price-drop",
       label: "Prezzo ridotto",
       explanation: "Il prezzo attuale e inferiore a una rilevazione precedente.",
-      points: 20,
+      points: config.priceDrop,
       active: input.isPriceDropped,
     },
     {
       id: "negotiable-price",
       label: "Prezzo trattabile",
       explanation: "La descrizione dichiara esplicitamente una trattativa possibile.",
-      points: 10,
+      points: config.negotiablePrice,
       active: description.includes("prezzo trattabile"),
     },
     {
       id: "no-agencies",
       label: "Nessuna agenzia richiesta",
       explanation: "La descrizione contiene l'indicazione no agenzie.",
-      points: 10,
+      points: config.noAgencies,
       active: description.includes("no agenzie"),
     },
     {
       id: "seller-to-verify",
-      label: "Venditore da verificare",
-      explanation: "Il tipo di venditore non e chiaro e richiede un controllo.",
-      points: 10,
+      label: "Venditore non identificato",
+      explanation: "Non e ancora chiaro se il venditore sia un privato o un'agenzia.",
+      points: config.unknownSeller,
       active: input.sellerType === "unknown",
+    },
+    {
+      id: "agency-seller",
+      label: "Annuncio di agenzia",
+      explanation: "Il contatto non sembra diretto con il proprietario.",
+      points: config.agencySeller,
+      active: input.sellerType === "agency",
+    },
+    {
+      id: "missing-price",
+      label: "Prezzo non rilevato",
+      explanation: "Senza prezzo e piu difficile confrontare l'opportunita.",
+      points: config.missingPrice,
+      active: input.price == null,
+    },
+    {
+      id: "missing-sqm",
+      label: "Superficie non rilevata",
+      explanation: "Manca il dato necessario per calcolare il prezzo al mq.",
+      points: config.missingSqm,
+      active: input.sqm == null,
+    },
+    {
+      id: "missing-description",
+      label: "Descrizione insufficiente",
+      explanation: "La scheda contiene poche informazioni utili.",
+      points: config.missingDescription,
+      active: description.length < 40,
+    },
+    {
+      id: "auction",
+      label: "Vendita all'asta",
+      explanation: "L'annuncio richiede un processo diverso dalla normale acquisizione.",
+      points: config.auction,
+      active: /\b(?:asta|tribunale|procedura esecutiva)\b/i.test(description),
     },
   ];
   const awarded = factors.filter((factor) => factor.active && factor.points > 0);
@@ -167,7 +210,7 @@ export function getPriorityScoreBreakdown(
     ),
     awarded,
     deductions,
-    notAwarded: factors.filter((factor) => !factor.active),
+    notAwarded: factors.filter((factor) => !factor.active && factor.points > 0),
   };
 }
 
@@ -180,7 +223,7 @@ export function getPriorityScoreLevel(score: number) {
     return "Molto alta";
   }
 
-  if (score >= HIGH_PRIORITY_THRESHOLD) {
+  if (score >= getHighPriorityThreshold()) {
     return "Alta";
   }
 
@@ -222,7 +265,7 @@ export function calculateSellerFatigueScore(input: {
 }
 
 export function isHotOldListing(listing: Pick<Listing, "minimumDaysOnline" | "priorityScore">) {
-  return listing.minimumDaysOnline >= 60 && listing.priorityScore >= HIGH_PRIORITY_THRESHOLD;
+  return listing.minimumDaysOnline >= 60 && listing.priorityScore >= getHighPriorityThreshold();
 }
 
 export function createDerivedListingValues(input: Pick<
@@ -261,6 +304,8 @@ export function createDerivedListingValues(input: Pick<
       minimumDaysOnline,
       isPriceDropped,
       description: input.description,
+      price: input.price,
+      sqm: input.sqm,
     }),
     sellerFatigueScore: calculateSellerFatigueScore({
       minimumDaysOnline,
