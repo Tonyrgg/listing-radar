@@ -391,15 +391,19 @@ async function loadListingsFromSupabase() {
       .order("priority_score", { ascending: false })
       .order("last_seen_at", { ascending: false });
 
-    if (error || !data?.length) {
-      return null;
+    if (error) {
+      return [];
+    }
+
+    if (!data?.length) {
+      return [];
     }
 
     return (data as ListingRow[])
       .map(mapListingRow)
       .sort((left, right) => right.priorityScore - left.priorityScore);
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -416,13 +420,17 @@ async function loadReportsFromSupabase() {
       .order("report_date", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (error || !data?.length) {
-      return null;
+    if (error) {
+      return [];
+    }
+
+    if (!data?.length) {
+      return [];
     }
 
     return (data as ReportRow[]).map(mapReportRow);
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -449,8 +457,10 @@ export async function getListingById(id: string) {
         return mapListingRow(data as ListingRow);
       }
     } catch {
-      // Fall through to mock data below.
+      return null;
     }
+
+    return null;
   }
 
   return getMockListingById(id);
