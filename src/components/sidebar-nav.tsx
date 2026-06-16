@@ -29,10 +29,10 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             className={clsx(
-              "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-center text-xs font-semibold transition-colors",
+              "inline-flex h-10 shrink-0 items-center justify-center rounded-[6px] px-4 text-center text-xs font-semibold transition-colors",
               isActive
-                ? "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
-                : "text-[var(--ink-soft)] hover:text-[var(--ink-strong)]",
+                ? "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)] shadow-[inset_0_0_0_1px_oklch(0.55_0.07_147_/_0.45)]"
+                : "text-[var(--ink-soft)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
             )}
           >
             {item.label}

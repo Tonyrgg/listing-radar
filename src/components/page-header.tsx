@@ -18,7 +18,7 @@ export function PageHeader({
   backLabel?: string;
 }>) {
   return (
-    <header className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] px-5 py-5 shadow-[var(--shadow-panel)]">
+    <header className="rounded-[7px] border border-[var(--line-soft)] bg-[linear-gradient(180deg,var(--surface-panel),oklch(0.225_0.019_154))] px-5 py-5 shadow-[var(--shadow-panel)]">
       {backHref && backLabel ? (
         <Link
           href={backHref}
@@ -31,10 +31,10 @@ export function PageHeader({
 
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--surface-accent)]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--surface-accent)]">
             {eyebrow}
           </p>
-          <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--ink-strong)] lg:text-3xl">
+          <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--ink-strong)] lg:text-[32px]">
             {title}
           </h1>
           {description ? (

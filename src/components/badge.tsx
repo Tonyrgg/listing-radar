@@ -5,9 +5,9 @@ export type BadgeTone = "slate" | "green" | "amber" | "blue" | "red";
 
 const toneClasses: Record<BadgeTone, string> = {
   slate:
-    "border-[var(--line-strong)] bg-[var(--surface-muted)] text-[var(--ink-soft)]",
+    "border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)]",
   green:
-    "border-[oklch(0.38_0.05_145)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
+    "border-[oklch(0.52_0.07_147)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
   amber:
     "border-[oklch(0.4_0.07_80)] bg-[oklch(0.23_0.035_80)] text-[var(--status-warning)]",
   blue:
@@ -26,7 +26,7 @@ export function Badge({
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.04em]",
+        "inline-flex items-center rounded-[6px] border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em]",
         toneClasses[tone],
       )}
     >

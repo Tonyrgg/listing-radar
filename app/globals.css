@@ -2,24 +2,24 @@
 
 :root {
   color-scheme: dark;
-  --surface-canvas: oklch(0.17 0.015 160);
-  --surface-panel: oklch(0.235 0.018 160);
-  --surface-muted: oklch(0.285 0.018 160);
-  --surface-elevated: oklch(0.32 0.02 160);
-  --surface-strong: oklch(0.37 0.028 158);
-  --surface-accent: oklch(0.72 0.14 148);
-  --surface-accent-hover: oklch(0.78 0.145 148);
-  --surface-accent-soft: oklch(0.34 0.055 148);
-  --button-ink: oklch(0.16 0.02 160);
-  --ink-strong: oklch(0.94 0.012 128);
-  --ink-soft: oklch(0.78 0.015 145);
-  --ink-subtle: oklch(0.63 0.014 150);
-  --line-soft: oklch(0.38 0.022 160);
-  --line-strong: oklch(0.47 0.026 160);
-  --status-warning: oklch(0.78 0.11 80);
-  --status-error: oklch(0.72 0.14 24);
-  --focus-ring: oklch(0.8 0.11 145);
-  --shadow-panel: 0 12px 28px oklch(0.08 0.018 160 / 0.26);
+  --surface-canvas: oklch(0.18 0.018 154);
+  --surface-panel: oklch(0.245 0.021 154);
+  --surface-muted: oklch(0.295 0.022 154);
+  --surface-elevated: oklch(0.335 0.026 154);
+  --surface-strong: oklch(0.39 0.032 154);
+  --surface-accent: oklch(0.73 0.145 147);
+  --surface-accent-hover: oklch(0.79 0.15 147);
+  --surface-accent-soft: oklch(0.38 0.062 147);
+  --button-ink: oklch(0.165 0.024 154);
+  --ink-strong: oklch(0.965 0.01 116);
+  --ink-soft: oklch(0.79 0.018 142);
+  --ink-subtle: oklch(0.64 0.017 148);
+  --line-soft: oklch(0.435 0.025 154);
+  --line-strong: oklch(0.53 0.03 154);
+  --status-warning: oklch(0.78 0.12 78);
+  --status-error: oklch(0.72 0.15 26);
+  --focus-ring: oklch(0.78 0.15 147);
+  --shadow-panel: 0 14px 28px oklch(0.07 0.02 154 / 0.18);
 }
 
 @theme inline {
@@ -39,7 +39,9 @@ html {
 
 body {
   margin: 0;
-  background: var(--surface-canvas);
+  background:
+    linear-gradient(180deg, oklch(0.205 0.02 154) 0, var(--surface-canvas) 220px),
+    var(--surface-canvas);
   color: var(--ink-strong);
   font-family: var(--font-geist-sans), sans-serif;
   font-variant-numeric: tabular-nums;
@@ -59,6 +61,16 @@ body {
 ::selection {
   background: var(--surface-accent-soft);
   color: var(--ink-strong);
+}
+
+@layer components {
+  details {
+    box-shadow: var(--shadow-panel);
+  }
+
+  summary {
+    border-radius: 6px;
+  }
 }
 
 .text-balance {
