@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Image as ImageIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge, type BadgeTone } from "@/components/badge";
@@ -70,26 +70,8 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
   const isEnriched = listing.status === "enriched" && listing.listingId;
 
   return (
-    <article className="grid overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)] md:grid-cols-[180px_minmax(0,1fr)_auto]">
-      <div
-        className="flex min-h-40 items-center justify-center bg-[var(--surface-muted)] bg-cover bg-center bg-no-repeat md:min-h-full"
-        style={
-          listing.imageUrl
-            ? { backgroundImage: `url("${listing.imageUrl}")` }
-            : undefined
-        }
-        role={listing.imageUrl ? "img" : undefined}
-        aria-label={listing.imageUrl ? listing.title : undefined}
-      >
-        {!listing.imageUrl ? (
-          <ImageIcon
-            aria-hidden="true"
-            className="size-6 text-[var(--ink-subtle)]"
-          />
-        ) : null}
-      </div>
-
-      <div className="min-w-0 p-5">
+    <article className="grid gap-4 border-b border-[var(--line-soft)] py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="blue">{getSourceLabel(listing.source)}</Badge>
           <Badge tone={getIncomingTone(listing.status)}>
@@ -99,7 +81,7 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
             {formatDateTime(listing.emailReceivedAt ?? listing.createdAt)}
           </span>
         </div>
-        <h3 className="mt-3 text-lg font-semibold text-[var(--ink-strong)]">
+        <h3 className="mt-2 text-base font-semibold text-[var(--ink-strong)]">
           {listing.title}
         </h3>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--ink-soft)]">
@@ -121,11 +103,11 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
         ) : null}
       </div>
 
-      <div className="flex items-center border-t border-[var(--line-soft)] p-5 md:border-l md:border-t-0">
+      <div className="flex items-center">
         {isEnriched ? (
           <Link
             href={`/listings/${listing.listingId}`}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] md:w-auto"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] md:w-auto"
           >
             Vedi scheda completa
             <ArrowRight aria-hidden="true" className="size-4" />
@@ -135,7 +117,7 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
             href={getPortalImportUrl(listing)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] md:w-auto"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] md:w-auto"
           >
             Apri e completa la scheda
             <ArrowRight aria-hidden="true" className="size-4" />
@@ -156,12 +138,12 @@ export default async function IncomingPage({
   const listings = await getIncomingListings(status);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="space-y-5">
         <PageHeader
           eyebrow="Passaggio 1"
           title="Annunci da completare"
-          description={`${listings.length} annunci nella sezione selezionata. Aprine uno, controlla i dati e salvalo con l'estensione.`}
+          description={`${listings.length} annunci nella sezione selezionata.`}
           actions={<RefreshEmailButton />}
         />
 
@@ -185,13 +167,13 @@ export default async function IncomingPage({
         </nav>
       </div>
 
-      <section className="space-y-4">
+      <section className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-4 shadow-[var(--shadow-panel)]">
         {listings.length ? (
           listings.map((listing) => (
             <IncomingCard key={listing.id} listing={listing} />
           ))
         ) : (
-          <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-6 py-14 text-center">
+          <div className="px-6 py-14 text-center">
             <p className="text-sm font-medium text-[var(--ink-strong)]">
               Non ci sono annunci in questa sezione
             </p>

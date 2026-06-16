@@ -1,12 +1,3 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Globe2,
-  Mail,
-  MapPin,
-  Puzzle,
-  Settings2,
-} from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
@@ -63,27 +54,16 @@ function getRunTone(status: string): BadgeTone {
 }
 
 function SystemCheck({
-  icon: Icon,
   title,
   detail,
   ready,
 }: Readonly<{
-  icon: typeof Mail;
   title: string;
   detail: string;
   ready: boolean;
 }>) {
   return (
-    <article className="flex gap-4 border-b border-[var(--line-soft)] py-5 last:border-b-0 md:border-b-0 md:border-r md:px-5 md:first:pl-0 md:last:border-r-0 md:last:pr-0">
-      <span
-        className={
-          ready
-            ? "flex size-10 shrink-0 items-center justify-center rounded-md bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
-            : "flex size-10 shrink-0 items-center justify-center rounded-md bg-[oklch(0.23_0.035_80)] text-[var(--status-warning)]"
-        }
-      >
-        <Icon aria-hidden="true" className="size-5" />
-      </span>
+    <article className="border-b border-[var(--line-soft)] py-5 last:border-b-0 md:border-b-0 md:border-r md:px-5 md:first:pl-0 md:last:border-r-0 md:last:pr-0">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--ink-strong)]">
@@ -149,7 +129,6 @@ export default async function SettingsPage() {
 
       <section className="grid border-b border-[var(--line-soft)] md:grid-cols-2 xl:grid-cols-4">
         <SystemCheck
-          icon={Mail}
           title="Ricezione email"
           detail={
             emailConfig.enabled
@@ -159,7 +138,6 @@ export default async function SettingsPage() {
           ready={emailConfig.enabled}
         />
         <SystemCheck
-          icon={Puzzle}
           title="Estensione Chrome"
           detail={
             extensionEnabled
@@ -169,7 +147,6 @@ export default async function SettingsPage() {
           ready={extensionEnabled}
         />
         <SystemCheck
-          icon={Globe2}
           title="Siti monitorati"
           detail={
             sourcesReady
@@ -181,7 +158,6 @@ export default async function SettingsPage() {
           ready={sourcesReady}
         />
         <SystemCheck
-          icon={lastRunHealthy ? CheckCircle2 : AlertTriangle}
           title="Ultimo controllo"
           detail={
             lastScrapeRun
@@ -194,15 +170,9 @@ export default async function SettingsPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
-          <div className="flex items-center gap-3">
-            <MapPin
-              aria-hidden="true"
-              className="size-5 text-[var(--surface-accent)]"
-            />
-            <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
-              Ricerca monitorata
-            </h2>
-          </div>
+          <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
+            Ricerca monitorata
+          </h2>
           <dl className="mt-5 grid gap-5 sm:grid-cols-2">
             <ConfigRow label="Citta" value={SCRAPER_CONFIG.monitoredCity} />
             <ConfigRow
@@ -234,11 +204,7 @@ export default async function SettingsPage() {
 
       <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
-          <span className="flex items-center gap-3 text-sm font-semibold text-[var(--ink-strong)]">
-            <Settings2
-              aria-hidden="true"
-              className="size-4 text-[var(--surface-accent)]"
-            />
+          <span className="text-sm font-semibold text-[var(--ink-strong)]">
             Impostazioni avanzate
           </span>
           <span className="text-xs text-[var(--ink-subtle)]">

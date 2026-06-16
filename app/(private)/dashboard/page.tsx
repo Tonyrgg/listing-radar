@@ -1,10 +1,4 @@
-import {
-  Activity,
-  ArrowRight,
-  Inbox,
-  Settings2,
-  Target,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -81,28 +75,23 @@ function SummaryCard({
   detail: string;
 }>) {
   return (
-    <article className="grid min-h-28 grid-cols-[56px_minmax(0,1fr)] overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
-      <div className="flex items-center justify-center bg-[var(--surface-accent)] text-3xl font-semibold text-[var(--button-ink)]">
+    <article className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)]">
+      <p className="text-3xl font-semibold text-[var(--surface-accent)]">
         {formatNumber(value)}
-      </div>
-      <div className="min-w-0 p-4">
+      </p>
+      <div className="mt-3 min-w-0">
         <p className="text-sm font-semibold text-[var(--ink-strong)]">{label}</p>
         <p className="mt-1 text-xs text-[var(--surface-accent)]">{detail}</p>
-        <div className="mt-4 max-w-56">
-          <TextLines />
-        </div>
       </div>
     </article>
   );
 }
 
 function SectionCard({
-  icon: Icon,
   title,
   action,
   children,
 }: Readonly<{
-  icon: typeof Inbox;
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
@@ -110,12 +99,7 @@ function SectionCard({
   return (
     <section className="overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
       <div className="flex min-h-14 items-center justify-between gap-4 border-b border-[var(--line-soft)] px-4">
-        <div className="flex items-center gap-3">
-          <span className="flex size-8 items-center justify-center rounded-[5px] bg-[var(--surface-accent)] text-[var(--button-ink)]">
-            <Icon aria-hidden="true" className="size-4" />
-          </span>
-          <h2 className="text-sm font-semibold text-[var(--ink-strong)]">{title}</h2>
-        </div>
+        <h2 className="text-sm font-semibold text-[var(--ink-strong)]">{title}</h2>
         {action}
       </div>
       <div className="p-4">{children}</div>
@@ -128,7 +112,7 @@ function EmptyState({ text }: Readonly<{ text: string }>) {
     <div className="min-h-36 rounded-[6px] bg-[var(--surface-muted)] p-4">
       <div className="max-w-xs">
         <p className="text-sm font-medium text-[var(--ink-strong)]">{text}</p>
-        <div className="mt-5">
+        <div className="mt-5 max-w-64">
           <TextLines rows={5} />
         </div>
       </div>
@@ -154,8 +138,8 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
       </Link>
       <p className="text-xs text-[var(--ink-soft)]">
         {formatCurrency(listing.price)}
-        {listing.sqm ? ` · ${formatNumber(listing.sqm)} mq` : ""}
-        {listing.zone ? ` · ${listing.zone}` : ""}
+        {listing.sqm ? ` - ${formatNumber(listing.sqm)} mq` : ""}
+        {listing.zone ? ` - ${listing.zone}` : ""}
       </p>
     </article>
   );
@@ -233,7 +217,7 @@ export default async function DashboardPage() {
       <PageHeader
         eyebrow="Dashboard"
         title="Pannello operativo"
-        description="Le cose da controllare oggi, senza moduli dimostrativi."
+        description="Solo lavoro aperto, automazioni e opportunita da valutare."
         actions={<RefreshEmailButton />}
       />
 
@@ -251,13 +235,12 @@ export default async function DashboardPage() {
         <SummaryCard
           value={summary.highPriority}
           label="Occasioni in evidenza"
-          detail="priorità alta"
+          detail="priorita alta"
         />
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
         <SectionCard
-          icon={Inbox}
           title="Nuovi arrivi da completare"
           action={
             <Link
@@ -279,7 +262,6 @@ export default async function DashboardPage() {
         </SectionCard>
 
         <SectionCard
-          icon={Activity}
           title="Stato automazioni"
           action={
             <Link
@@ -287,7 +269,6 @@ export default async function DashboardPage() {
               className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
             >
               Dettagli
-              <Settings2 aria-hidden="true" className="size-3.5" />
             </Link>
           }
         >
@@ -306,7 +287,7 @@ export default async function DashboardPage() {
             label="Siti locali"
             value={
               lastScrapeRun
-                ? `${getRunStatusLabel(lastScrapeRun.status)} · ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
+                ? `${getRunStatusLabel(lastScrapeRun.status)} - ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
                 : "Nessun controllo registrato"
             }
           />
@@ -331,7 +312,6 @@ export default async function DashboardPage() {
       </div>
 
       <SectionCard
-        icon={Target}
         title="Occasioni da valutare"
         action={
           <Link

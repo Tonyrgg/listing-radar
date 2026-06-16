@@ -3,7 +3,7 @@
 /* External portal images must be requested directly because their hosts are dynamic. */
 /* eslint-disable @next/next/no-img-element */
 
-import { ImageOff, Maximize2 } from "lucide-react";
+import { ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function ListingPhotoGallery({
@@ -32,7 +32,7 @@ export function ListingPhotoGallery({
 
   if (!activeUrl) {
     return (
-      <section className="flex h-60 items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] sm:h-80 xl:h-[430px]">
+      <section className="flex h-56 items-center justify-center rounded-[7px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] sm:h-72 xl:h-[360px]">
         <div className="text-center text-[var(--ink-subtle)]">
           <ImageOff aria-hidden="true" className="mx-auto size-7" />
           <p className="mt-3 text-sm font-medium">Nessuna foto acquisita</p>
@@ -50,7 +50,7 @@ export function ListingPhotoGallery({
         href={activeUrl}
         target="_blank"
         rel="noreferrer"
-        className="group relative block h-60 overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-80 xl:h-[430px]"
+        className="group relative block h-56 overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-72 xl:h-[360px]"
       >
         <img
           src={activeUrl}
@@ -59,8 +59,8 @@ export function ListingPhotoGallery({
           referrerPolicy="no-referrer"
           onError={() => markFailed(activeUrl)}
         />
-        <span className="absolute bottom-3 right-3 inline-flex size-10 items-center justify-center rounded-md bg-[var(--surface-canvas)] text-[var(--ink-strong)] opacity-90 transition-opacity group-hover:opacity-100">
-          <Maximize2 aria-hidden="true" className="size-4" />
+        <span className="absolute bottom-3 right-3 rounded-md bg-[var(--surface-canvas)] px-3 py-2 text-xs font-medium text-[var(--ink-strong)] opacity-90 transition-opacity group-hover:opacity-100">
+          Apri foto
           <span className="sr-only">Apri la foto originale</span>
         </span>
       </a>

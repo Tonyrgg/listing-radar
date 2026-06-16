@@ -1,4 +1,3 @@
-import { CalendarDays } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/badge";
@@ -29,16 +28,11 @@ export default async function ReportsPage() {
               className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]"
             >
               <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-                    <CalendarDays aria-hidden="true" className="size-5" />
-                  </span>
-                  <div>
-                    <p className="text-xs text-[var(--ink-subtle)]">Giornata</p>
-                    <h2 className="mt-1 text-xl font-semibold text-[var(--ink-strong)]">
-                      {formatDate(report.reportDate)}
-                    </h2>
-                  </div>
+                <div>
+                  <p className="text-xs text-[var(--ink-subtle)]">Giornata</p>
+                  <h2 className="mt-1 text-xl font-semibold text-[var(--ink-strong)]">
+                    {formatDate(report.reportDate)}
+                  </h2>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -77,11 +71,7 @@ export default async function ReportsPage() {
           ))
         ) : (
           <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-6 py-16 text-center">
-            <CalendarDays
-              aria-hidden="true"
-              className="mx-auto size-7 text-[var(--surface-accent)]"
-            />
-            <p className="mt-4 text-base font-semibold text-[var(--ink-strong)]">
+            <p className="text-base font-semibold text-[var(--ink-strong)]">
               Nessun riepilogo disponibile
             </p>
             <p className="mt-2 text-sm text-[var(--ink-soft)]">

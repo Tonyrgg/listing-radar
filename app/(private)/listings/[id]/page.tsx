@@ -1,19 +1,6 @@
-import {
-  ArrowLeft,
-  Clock3,
-  ExternalLink,
-  Layers3,
-  MapPin,
-  Phone,
-  Pencil,
-  Archive,
-  Ruler,
-  UserRound,
-} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
@@ -56,30 +43,6 @@ function DetailItem({
   );
 }
 
-function KeyFact({
-  icon,
-  label,
-  value,
-}: Readonly<{
-  icon: ReactNode;
-  label: string;
-  value: string;
-}>) {
-  return (
-    <div className="flex min-w-0 gap-3">
-      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="text-xs text-[var(--ink-subtle)]">{label}</p>
-        <p className="mt-1 text-sm font-semibold leading-5 text-[var(--ink-strong)]">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export default async function ListingDetailPage({
   params,
 }: {
@@ -107,9 +70,8 @@ export default async function ListingDetailPage({
     <div className="space-y-6">
       <Link
         href="/listings"
-        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-[var(--ink-soft)] transition-colors hover:text-[var(--ink-strong)]"
+        className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--ink-soft)] transition-colors hover:text-[var(--ink-strong)]"
       >
-        <ArrowLeft aria-hidden="true" className="size-4" />
         Torna all&apos;archivio
       </Link>
 
@@ -167,9 +129,8 @@ export default async function ListingDetailPage({
 
             <ListingScoreBreakdown listing={listing} />
 
-            <div className="grid grid-cols-2 gap-5 py-5 xl:grid-cols-1 2xl:grid-cols-2">
-              <KeyFact
-                icon={<Ruler aria-hidden="true" className="size-4" />}
+            <dl className="grid grid-cols-2 gap-5 py-5 xl:grid-cols-1 2xl:grid-cols-2">
+              <DetailItem
                 label="Superficie"
                 value={
                   listing.sqm != null
@@ -177,8 +138,7 @@ export default async function ListingDetailPage({
                     : "Non disponibile"
                 }
               />
-              <KeyFact
-                icon={<Layers3 aria-hidden="true" className="size-4" />}
+              <DetailItem
                 label="Locali e piano"
                 value={[
                   listing.rooms != null
@@ -189,17 +149,15 @@ export default async function ListingDetailPage({
                   .filter(Boolean)
                   .join(", ") || "Non disponibile"}
               />
-              <KeyFact
-                icon={<MapPin aria-hidden="true" className="size-4" />}
+              <DetailItem
                 label="Zona"
                 value={formatPlainText(listing.zone)}
               />
-              <KeyFact
-                icon={<Clock3 aria-hidden="true" className="size-4" />}
+              <DetailItem
                 label="Online da almeno"
                 value={`${formatNumber(listing.minimumDaysOnline)} giorni`}
               />
-            </div>
+            </dl>
 
             <div className="rounded-md bg-[var(--surface-accent-soft)] p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--surface-accent)]">
@@ -210,42 +168,25 @@ export default async function ListingDetailPage({
               </p>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <div className="flex gap-3">
-                <UserRound
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-                />
-                <div>
-                  <p className="text-xs text-[var(--ink-subtle)]">Venditore</p>
-                  <p className="mt-1 text-sm font-medium text-[var(--ink-strong)]">
-                    {formatPlainText(listing.sellerName)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <Phone
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-[var(--surface-accent)]"
-                />
-                <div>
-                  <p className="text-xs text-[var(--ink-subtle)]">Telefono</p>
-                  <p className="mt-1 text-sm font-medium text-[var(--ink-strong)]">
-                    {formatPlainText(listing.phone)}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <dl className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <DetailItem
+                label="Venditore"
+                value={formatPlainText(listing.sellerName)}
+              />
+              <DetailItem
+                label="Telefono"
+                value={formatPlainText(listing.phone)}
+              />
+            </dl>
           </div>
 
           <a
             href={listing.url}
             target="_blank"
             rel="noreferrer"
-            className="flex min-h-14 items-center justify-center gap-2 border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
+            className="flex min-h-14 items-center justify-center border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
           >
             Vedi annuncio originale
-            <ExternalLink aria-hidden="true" className="size-4" />
           </a>
         </article>
       </section>
@@ -304,8 +245,7 @@ export default async function ListingDetailPage({
       ) : null}
 
       <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
-          <Pencil aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+        <summary className="flex min-h-14 cursor-pointer list-none items-center px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
           Modifica scheda
         </summary>
         <form action={updateAction} className="grid gap-4 border-t border-[var(--line-soft)] p-5 md:grid-cols-2 xl:grid-cols-4">
@@ -373,8 +313,7 @@ export default async function ListingDetailPage({
             <button type="submit" className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)]">
               Salva modifiche
             </button>
-            <button formAction={archiveAction} type="submit" className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)]">
-              <Archive aria-hidden="true" className="size-4" />
+            <button formAction={archiveAction} type="submit" className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)]">
               Archivia
             </button>
           </div>

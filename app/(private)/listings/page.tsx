@@ -1,12 +1,8 @@
-import {
-  ArrowRight,
-  Image as ImageIcon,
-  SlidersHorizontal,
-} from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
+import { Badge, getSellerTypeTone } from "@/components/badge";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -46,10 +42,10 @@ function readSearchParam(
 
 function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
   return (
-    <article className="grid grid-cols-[104px_minmax(0,1fr)] gap-3 border-b border-[var(--line-soft)] px-4 py-5 last:border-b-0 sm:px-5 md:grid-cols-[148px_minmax(0,1fr)_auto] md:items-center md:gap-4">
+    <article className="grid grid-cols-[84px_minmax(0,1fr)] gap-3 border-b border-[var(--line-soft)] px-4 py-4 last:border-b-0 sm:px-5 md:grid-cols-[120px_minmax(0,1fr)_auto] md:items-center md:gap-4">
       <Link
         href={`/listings/${listing.id}`}
-        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
+        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
         style={
           listing.imageUrls[0]
             ? { backgroundImage: `url("${listing.imageUrls[0]}")` }
@@ -57,12 +53,6 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
         }
         aria-label={`Apri la scheda di ${listing.title}`}
       >
-        {!listing.imageUrls[0] ? (
-          <ImageIcon
-            aria-hidden="true"
-            className="size-6 text-[var(--ink-subtle)]"
-          />
-        ) : null}
       </Link>
 
       <div className="min-w-0">
@@ -70,11 +60,8 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
           <Badge tone={getSellerTypeTone(listing.sellerType)}>
             {getSellerTypeLabel(listing.sellerType)}
           </Badge>
-          <Badge tone={getStatusTone(listing.status)}>
-            {getListingStatusLabel(listing.status)}
-          </Badge>
           <span className="text-xs text-[var(--ink-subtle)]">
-            {getSourceLabel(listing.source)}
+            {getListingStatusLabel(listing.status)} - {getSourceLabel(listing.source)}
           </span>
         </div>
 
@@ -94,11 +81,7 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
           <span>{formatPlainText(listing.zone)}</span>
         </div>
 
-        <div className="mt-3">
-          <ListingScoreSummary listing={listing} />
-        </div>
-
-        <p className="col-span-2 mt-3 text-sm font-medium text-[var(--status-warning)] md:col-span-1">
+        <p className="col-span-2 mt-3 text-xs font-medium text-[var(--status-warning)] md:col-span-1">
           {getListingAttentionReason(listing)}
         </p>
         <p className="col-span-2 mt-1 text-xs text-[var(--ink-subtle)] md:col-span-1">
@@ -106,21 +89,21 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
         </p>
       </div>
 
-      <div className="col-span-2 flex flex-col gap-2 sm:flex-row md:col-span-1 md:w-40 md:flex-col">
+      <div className="col-span-2 flex flex-col items-start gap-2 sm:flex-row md:col-span-1 md:w-40 md:flex-col">
+        <ListingScoreSummary listing={listing} />
         <Link
           href={`/listings/${listing.id}`}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
+          className="inline-flex h-10 w-full items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
         >
           Apri scheda
-          <ArrowRight aria-hidden="true" className="size-4" />
         </Link>
         <a
           href={listing.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+          className="inline-flex h-10 w-full items-center justify-center rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
         >
-          Vedi originale
+          Originale
         </a>
       </div>
     </article>
@@ -196,11 +179,11 @@ export default async function ListingsPage({
     filters.onlyHighPriority;
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow="Passaggio 2"
+        eyebrow="Archivio"
         title="Archivio annunci"
-        description={`${listings.length} schede complete. Apri un annuncio per vedere foto, contatti, storico e motivo di interesse.`}
+        description={`${listings.length} schede complete.`}
       />
 
       <details

@@ -1,5 +1,3 @@
-import { CircleMinus, CirclePlus, Gauge } from "lucide-react";
-
 import {
   getPriorityScoreBreakdown,
   getPriorityScoreLevel,
@@ -38,10 +36,6 @@ export function ListingScoreSummary({
 
   return (
     <div className="inline-flex items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 py-2">
-      <Gauge
-        aria-hidden="true"
-        className="size-4 shrink-0 text-[var(--surface-accent)]"
-      />
       <span className="text-xs text-[var(--ink-soft)]">Appetibilita</span>
       <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
         {breakdown.total} punti
@@ -84,12 +78,8 @@ export function ListingScoreBreakdown({
           breakdown.awarded.map((factor) => (
             <div
               key={factor.id}
-              className="grid grid-cols-[20px_minmax(0,1fr)_auto] gap-2"
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"
             >
-              <CirclePlus
-                aria-hidden="true"
-                className="mt-0.5 size-4 text-[var(--surface-accent)]"
-              />
               <div>
                 <p className="text-sm font-medium text-[var(--ink-strong)]">
                   {factor.label}
@@ -129,9 +119,8 @@ export function ListingScoreBreakdown({
         </div>
       </details>
 
-      <div className="mt-4 flex gap-2 text-xs leading-5 text-[var(--ink-subtle)]">
-        <CircleMinus aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
+      <div className="mt-4 text-xs leading-5 text-[var(--ink-subtle)]">
+        <div className="min-w-0">
           {breakdown.deductions.length ? (
             <div className="space-y-2">
               {breakdown.deductions.map((factor) => (
