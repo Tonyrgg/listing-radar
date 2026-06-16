@@ -2,24 +2,24 @@
 
 :root {
   color-scheme: dark;
-  --surface-canvas: oklch(0.145 0.018 164);
-  --surface-panel: oklch(0.205 0.019 164);
-  --surface-muted: oklch(0.255 0.022 164);
-  --surface-elevated: oklch(0.295 0.024 164);
-  --surface-strong: oklch(0.34 0.032 164);
-  --surface-accent: oklch(0.75 0.15 148);
-  --surface-accent-hover: oklch(0.82 0.16 148);
-  --surface-accent-soft: oklch(0.27 0.06 148);
-  --button-ink: oklch(0.16 0.025 160);
-  --ink-strong: oklch(0.94 0.014 126);
-  --ink-soft: oklch(0.76 0.018 142);
-  --ink-subtle: oklch(0.61 0.018 152);
-  --line-soft: oklch(0.31 0.025 164);
-  --line-strong: oklch(0.4 0.03 164);
+  --surface-canvas: oklch(0.17 0.015 160);
+  --surface-panel: oklch(0.235 0.018 160);
+  --surface-muted: oklch(0.285 0.018 160);
+  --surface-elevated: oklch(0.32 0.02 160);
+  --surface-strong: oklch(0.37 0.028 158);
+  --surface-accent: oklch(0.72 0.14 148);
+  --surface-accent-hover: oklch(0.78 0.145 148);
+  --surface-accent-soft: oklch(0.34 0.055 148);
+  --button-ink: oklch(0.16 0.02 160);
+  --ink-strong: oklch(0.94 0.012 128);
+  --ink-soft: oklch(0.78 0.015 145);
+  --ink-subtle: oklch(0.63 0.014 150);
+  --line-soft: oklch(0.38 0.022 160);
+  --line-strong: oklch(0.47 0.026 160);
   --status-warning: oklch(0.78 0.11 80);
   --status-error: oklch(0.72 0.14 24);
   --focus-ring: oklch(0.8 0.11 145);
-  --shadow-panel: 0 18px 50px oklch(0.05 0.02 160 / 0.22);
+  --shadow-panel: 0 12px 28px oklch(0.08 0.018 160 / 0.26);
 }
 
 @theme inline {
@@ -39,9 +39,7 @@ html {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 12% 0%, oklch(0.24 0.05 148 / 0.55), transparent 30rem),
-    linear-gradient(180deg, oklch(0.17 0.02 164), var(--surface-canvas) 18rem);
+  background: var(--surface-canvas);
   color: var(--ink-strong);
   font-family: var(--font-geist-sans), sans-serif;
   font-variant-numeric: tabular-nums;
