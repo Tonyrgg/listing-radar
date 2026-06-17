@@ -214,45 +214,43 @@ export function ScoringRulesEditor({
 
   return (
     <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-[var(--line-soft)] px-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-[var(--ink-strong)]">
-              Regole di appetibilita
-            </h2>
-            <button
-              type="button"
-              onClick={() => setIsEditing(true)}
-              className="inline-flex size-8 items-center justify-center rounded-md border border-[var(--line-strong)] text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isEditing}
-              aria-label="Modifica regole di appetibilita"
-            >
-              <Pencil aria-hidden="true" className="size-3.5" />
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-[var(--ink-subtle)]">
+      <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h2 className="shrink-0 text-sm font-semibold text-[var(--ink-strong)]">
+            Regole di appetibilita
+          </h2>
+          <span className="truncate text-[11px] font-medium text-[var(--ink-subtle)]">
             {isEditing ? "Modifica attiva" : "Lettura"}
             {isDirty ? " - modifiche non salvate" : ""}
-          </p>
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-[var(--line-strong)] text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isEditing}
+            aria-label="Modifica regole di appetibilita"
+          >
+            <Pencil aria-hidden="true" className="size-3.5" />
+          </button>
         </div>
-        <span className="text-xs text-[var(--ink-subtle)]">
+        <span className="shrink-0 text-[11px] text-[var(--ink-subtle)]">
           Salvate in database
         </span>
       </div>
 
-      <div className="p-5">
+      <div className="p-3.5">
         {isEditing ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {scoringRows.map((row) => (
               <label
                 key={row.key}
-                className="grid gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4"
+                className="grid gap-2 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 py-2.5"
               >
-                <span>
-                  <span className="block text-sm font-semibold text-[var(--ink-strong)]">
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-semibold text-[var(--ink-strong)]">
                     {row.label}
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-[var(--ink-subtle)]">
+                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ink-subtle)]">
                     {row.help}
                   </span>
                 </span>
@@ -260,28 +258,26 @@ export function ScoringRulesEditor({
                   type="number"
                   value={draftConfig[row.key]}
                   onChange={(event) => updateDraft(row.key, event.target.value)}
-                  className="h-10 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-sm font-semibold text-[var(--ink-strong)]"
+                  className="h-8 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-2.5 text-sm font-semibold text-[var(--ink-strong)]"
                 />
               </label>
             ))}
           </div>
         ) : (
-          <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {scoringRows.map((row) => (
               <div
                 key={row.key}
-                className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 py-2.5"
               >
-                <dt className="text-sm font-semibold text-[var(--ink-strong)]">
+                <dt className="truncate text-xs font-semibold text-[var(--ink-strong)]">
                   {row.label}
                 </dt>
-                <dd className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-xs leading-5 text-[var(--ink-subtle)]">
-                    {row.help}
-                  </span>
-                  <strong className="shrink-0 rounded-md border border-[var(--line-soft)] px-2 py-1.5 text-sm tabular-nums text-[var(--ink-strong)]">
-                    {formatScoreValue(savedConfig[row.key])}
-                  </strong>
+                <strong className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-xs tabular-nums text-[var(--ink-strong)]">
+                  {formatScoreValue(savedConfig[row.key])}
+                </strong>
+                <dd className="col-span-2 truncate text-[11px] leading-4 text-[var(--ink-subtle)]">
+                  {row.help}
                 </dd>
               </div>
             ))}
@@ -289,18 +285,18 @@ export function ScoringRulesEditor({
         )}
 
         {error ? (
-          <p className="mt-4 text-sm font-medium text-[var(--status-error)]">
+          <p className="mt-3 text-sm font-medium text-[var(--status-error)]">
             {error}
           </p>
         ) : null}
 
         {isEditing ? (
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               onClick={() => saveChanges()}
               disabled={isPending}
-              className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isPending ? "Salvataggio..." : "Salva modifiche"}
             </button>
@@ -308,7 +304,7 @@ export function ScoringRulesEditor({
               type="button"
               onClick={cancelEditing}
               disabled={isPending}
-              className="h-11 rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Annulla
             </button>
