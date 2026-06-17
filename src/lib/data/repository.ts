@@ -2,7 +2,8 @@ import {
   calculatePriorityScore,
   getHighPriorityThreshold,
   getMinimumDaysOnline,
-  isHotOldListing,
+  getHighPriorityThresholdFromConfig,
+  isHotOldListingWithConfig,
 } from "@/lib/listings/scoring";
 import {
   getMockDashboardSummary,
@@ -11,6 +12,8 @@ import {
   getMockReports,
 } from "@/lib/data/mock-store";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
 import type {
   DashboardSummary,
   Listing,
@@ -216,7 +219,7 @@ function extractImageUrlsFromPayload(
   return urls;
 }
 
-function mapListingRow(row: ListingRow): Listing {
+function mapListingRow(row: ListingRow, scoringConfig?: ScoringConfig): Listing {
   const snapshots = (row.listing_snapshots ?? [])
     .map(mapSnapshotRow)
     .sort((left, right) => right.checkedAt.localeCompare(left.checkedAt));
@@ -229,16 +232,19 @@ function mapListingRow(row: ListingRow): Listing {
     portalDeclaredDate: row.portal_declared_date,
     metadataDatePublished: row.metadata_date_published,
   });
-  const priorityScore = calculatePriorityScore({
-    sellerType: row.seller_type,
-    isNewToday: row.is_new_today,
-    hasPhone: Boolean(row.phone),
-    minimumDaysOnline,
-    isPriceDropped: row.is_price_dropped,
-    description: row.description,
-    price: row.price,
-    sqm: row.sqm,
-  });
+  const priorityScore = calculatePriorityScore(
+    {
+      sellerType: row.seller_type,
+      isNewToday: row.is_new_today,
+      hasPhone: Boolean(row.phone),
+      minimumDaysOnline,
+      isPriceDropped: row.is_price_dropped,
+      description: row.description,
+      price: row.price,
+      sqm: row.sqm,
+    },
+    scoringConfig,
+  );
 
   return {
     id: row.id,
@@ -324,7 +330,14 @@ function mapScrapeErrorRow(row: ScrapeErrorRow): ScrapeError {
   };
 }
 
-function applyListingFilters(listings: Listing[], filters: ListingFilters) {
+function applyListingFilters(
+  listings: Listing[],
+  filters: ListingFilters,
+  scoringConfig?: ScoringConfig,
+) {
+  const highPriorityThreshold = scoringConfig
+    ? getHighPriorityThresholdFromConfig(scoringConfig)
+    : getHighPriorityThreshold();
   const filtered = listings.filter((listing) => {
     if (filters.sellerType !== "all" && listing.sellerType !== filters.sellerType) {
       return false;
@@ -345,7 +358,7 @@ function applyListingFilters(listings: Listing[], filters: ListingFilters) {
       return false;
     }
 
-    if (filters.onlyHighPriority && listing.priorityScore < getHighPriorityThreshold()) {
+    if (filters.onlyHighPriority && listing.priorityScore < highPriorityThreshold) {
       return false;
     }
 
@@ -385,6 +398,7 @@ async function loadListingsFromSupabase() {
 
   try {
     const supabase = getSupabaseServiceClient();
+    const scoringConfig = await getPersistedScoringConfig();
     const { data, error } = await supabase
       .from("listings")
       .select("*, listing_snapshots(*), listing_notes(note, created_at), listing_sources(*)")
@@ -400,7 +414,7 @@ async function loadListingsFromSupabase() {
     }
 
     return (data as ListingRow[])
-      .map(mapListingRow)
+      .map((row) => mapListingRow(row, scoringConfig))
       .sort((left, right) => right.priorityScore - left.priorityScore);
   } catch {
     return [];
@@ -435,8 +449,9 @@ async function loadReportsFromSupabase() {
 }
 
 export async function getListings(filters: ListingFilters) {
+  const scoringConfig = await getPersistedScoringConfig();
   const storedListings = (await loadListingsFromSupabase()) ?? (await getMockListings());
-  return applyListingFilters(storedListings, filters);
+  return applyListingFilters(storedListings, filters, scoringConfig);
 }
 
 export async function getAllListings() {
@@ -454,7 +469,8 @@ export async function getListingById(id: string) {
         .maybeSingle();
 
       if (!error && data) {
-        return mapListingRow(data as ListingRow);
+        const scoringConfig = await getPersistedScoringConfig();
+        return mapListingRow(data as ListingRow, scoringConfig);
       }
     } catch {
       return null;
@@ -478,7 +494,8 @@ export async function getDuplicateListings(listing: Listing) {
       .neq("id", listing.id);
 
     if (error || !data) return [];
-    return (data as ListingRow[]).map(mapListingRow);
+    const scoringConfig = await getPersistedScoringConfig();
+    return (data as ListingRow[]).map((row) => mapListingRow(row, scoringConfig));
   } catch {
     return [];
   }
@@ -486,6 +503,7 @@ export async function getDuplicateListings(listing: Listing) {
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const storedListings = await loadListingsFromSupabase();
+  const scoringConfig = await getPersistedScoringConfig();
 
   if (!storedListings) {
     return getMockDashboardSummary();
@@ -502,9 +520,12 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       ["new", "review"].includes(listing.status),
     ).length,
     priceDrops: activeListings.filter((listing) => listing.isPriceDropped).length,
-    hotOld: activeListings.filter(isHotOldListing).length,
+    hotOld: activeListings.filter((listing) =>
+      isHotOldListingWithConfig(listing, scoringConfig),
+    ).length,
     highPriority: activeListings.filter(
-      (listing) => listing.priorityScore >= getHighPriorityThreshold(),
+      (listing) =>
+        listing.priorityScore >= getHighPriorityThresholdFromConfig(scoringConfig),
     ).length,
     watchlist: [...activeListings]
       .sort((left, right) => right.priorityScore - left.priorityScore)

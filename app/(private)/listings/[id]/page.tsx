@@ -21,6 +21,7 @@ import {
 import { getOperationalSuggestion } from "@/lib/listings/operational";
 import { archiveListing, updateListing } from "@/app/(private)/listings/[id]/actions";
 import { LISTING_STATUS_OPTIONS } from "@/lib/constants";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 
 export const metadata: Metadata = {
   title: "Scheda annuncio",
@@ -55,7 +56,10 @@ export default async function ListingDetailPage({
     notFound();
   }
 
-  const duplicateListings = await getDuplicateListings(listing);
+  const [duplicateListings, scoringConfig] = await Promise.all([
+    getDuplicateListings(listing),
+    getPersistedScoringConfig(),
+  ]);
   const priceHistory = (listing.snapshots ?? [])
     .filter((snapshot) => snapshot.price != null)
     .filter(
@@ -127,7 +131,7 @@ export default async function ListingDetailPage({
               ) : null}
             </div>
 
-            <ListingScoreBreakdown listing={listing} />
+            <ListingScoreBreakdown listing={listing} scoringConfig={scoringConfig} />
 
             <dl className="grid grid-cols-2 gap-5 py-5 xl:grid-cols-1 2xl:grid-cols-2">
               <DetailItem

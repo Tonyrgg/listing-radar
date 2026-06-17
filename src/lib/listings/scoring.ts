@@ -1,5 +1,8 @@
 import type { Listing, NormalizedListing, SellerType } from "@/types";
-import { getScoringConfig } from "@/lib/listings/scoring-config";
+import {
+  getScoringConfig,
+  type ScoringConfig,
+} from "@/lib/listings/scoring-config";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -7,6 +10,10 @@ export const HIGH_PRIORITY_THRESHOLD = 80;
 
 export function getHighPriorityThreshold() {
   return getScoringConfig().highPriorityThreshold;
+}
+
+export function getHighPriorityThresholdFromConfig(config: ScoringConfig) {
+  return config.highPriorityThreshold;
 }
 
 export interface PriorityScoreFactor {
@@ -90,9 +97,10 @@ export function isToday(value: string | null | undefined) {
 
 export function getPriorityScoreBreakdown(
   input: PriorityScoreInput,
+  scoringConfig?: ScoringConfig,
 ): PriorityScoreBreakdown {
   const description = (input.description ?? "").toLowerCase();
-  const config = getScoringConfig();
+  const config = scoringConfig ?? getScoringConfig();
   const onlinePoints =
     input.minimumDaysOnline >= 120
       ? config.online120Days
@@ -214,16 +222,19 @@ export function getPriorityScoreBreakdown(
   };
 }
 
-export function calculatePriorityScore(input: PriorityScoreInput) {
-  return getPriorityScoreBreakdown(input).total;
+export function calculatePriorityScore(
+  input: PriorityScoreInput,
+  scoringConfig?: ScoringConfig,
+) {
+  return getPriorityScoreBreakdown(input, scoringConfig).total;
 }
 
-export function getPriorityScoreLevel(score: number) {
+export function getPriorityScoreLevel(score: number, scoringConfig?: ScoringConfig) {
   if (score >= 120) {
     return "Molto alta";
   }
 
-  if (score >= getHighPriorityThreshold()) {
+  if (score >= (scoringConfig?.highPriorityThreshold ?? getHighPriorityThreshold())) {
     return "Alta";
   }
 
@@ -268,6 +279,16 @@ export function isHotOldListing(listing: Pick<Listing, "minimumDaysOnline" | "pr
   return listing.minimumDaysOnline >= 60 && listing.priorityScore >= getHighPriorityThreshold();
 }
 
+export function isHotOldListingWithConfig(
+  listing: Pick<Listing, "minimumDaysOnline" | "priorityScore">,
+  scoringConfig: ScoringConfig,
+) {
+  return (
+    listing.minimumDaysOnline >= 60 &&
+    listing.priorityScore >= scoringConfig.highPriorityThreshold
+  );
+}
+
 export function createDerivedListingValues(input: Pick<
   NormalizedListing,
   | "sellerType"
@@ -280,7 +301,7 @@ export function createDerivedListingValues(input: Pick<
   | "sqm"
   | "previousPrice"
   | "isRepublishedSuspected"
->) {
+>, scoringConfig?: ScoringConfig) {
   const minimumDaysOnline = getMinimumDaysOnline({
     firstSeenAt: input.firstSeenAt,
     portalDeclaredDate: input.portalDeclaredDate,
@@ -297,16 +318,19 @@ export function createDerivedListingValues(input: Pick<
     minimumDaysOnline,
     isNewToday,
     isPriceDropped,
-    priorityScore: calculatePriorityScore({
-      sellerType: input.sellerType,
-      isNewToday,
-      hasPhone: Boolean(input.phone),
-      minimumDaysOnline,
-      isPriceDropped,
-      description: input.description,
-      price: input.price,
-      sqm: input.sqm,
-    }),
+    priorityScore: calculatePriorityScore(
+      {
+        sellerType: input.sellerType,
+        isNewToday,
+        hasPhone: Boolean(input.phone),
+        minimumDaysOnline,
+        isPriceDropped,
+        description: input.description,
+        price: input.price,
+        sqm: input.sqm,
+      },
+      scoringConfig,
+    ),
     sellerFatigueScore: calculateSellerFatigueScore({
       minimumDaysOnline,
       isPriceDropped,

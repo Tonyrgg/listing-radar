@@ -3,6 +3,7 @@ import {
   getPriorityScoreLevel,
 } from "@/lib/listings/scoring";
 import { ListingScorePopover } from "@/components/listing-score-popover";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
 import type { Listing } from "@/types";
 
 type ScoreListing = Pick<
@@ -32,9 +33,10 @@ function scoreInput(listing: ScoreListing) {
 
 export function ListingScoreSummary({
   listing,
-}: Readonly<{ listing: ScoreListing }>) {
-  const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
-  const level = getPriorityScoreLevel(breakdown.total);
+  scoringConfig,
+}: Readonly<{ listing: ScoreListing; scoringConfig?: ScoringConfig }>) {
+  const breakdown = getPriorityScoreBreakdown(scoreInput(listing), scoringConfig);
+  const level = getPriorityScoreLevel(breakdown.total, scoringConfig);
   const progress = Math.max(0, Math.min(100, breakdown.total));
 
   return (
@@ -50,8 +52,9 @@ export function ListingScoreSummary({
 
 export function ListingScoreBreakdown({
   listing,
-}: Readonly<{ listing: ScoreListing }>) {
-  const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
+  scoringConfig,
+}: Readonly<{ listing: ScoreListing; scoringConfig?: ScoringConfig }>) {
+  const breakdown = getPriorityScoreBreakdown(scoreInput(listing), scoringConfig);
 
   return (
     <section className="border-y border-[var(--line-soft)] py-5">
@@ -69,7 +72,7 @@ export function ListingScoreBreakdown({
             {breakdown.total}
           </p>
           <p className="text-xs font-semibold text-[var(--surface-accent)]">
-            {getPriorityScoreLevel(breakdown.total)}
+            {getPriorityScoreLevel(breakdown.total, scoringConfig)}
           </p>
         </div>
       </div>

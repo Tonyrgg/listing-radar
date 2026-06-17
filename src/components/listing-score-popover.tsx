@@ -85,7 +85,7 @@ export function ListingScorePopover({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="w-full rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 text-left shadow-[inset_0_1px_0_oklch(1_0_0/0.04)] transition-colors hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+        className="w-full cursor-pointer rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 text-left shadow-[inset_0_1px_0_oklch(1_0_0/0.04)] transition-colors hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
         aria-haspopup="dialog"
       >
         <span className="block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">

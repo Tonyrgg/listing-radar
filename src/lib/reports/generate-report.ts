@@ -1,10 +1,17 @@
-import { getHighPriorityThreshold, isHotOldListing } from "@/lib/listings/scoring";
+import {
+  getHighPriorityThreshold,
+  getHighPriorityThresholdFromConfig,
+  isHotOldListing,
+  isHotOldListingWithConfig,
+} from "@/lib/listings/scoring";
 import { toIsoDate } from "@/lib/formatting";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
 import type { Listing, Report } from "@/types";
 
 export function generateReport(
   listings: Listing[],
   reportDate = new Date(),
+  scoringConfig?: ScoringConfig,
 ): Omit<Report, "id" | "createdAt"> {
   const sortedTopListings = [...listings]
     .sort((left, right) => right.priorityScore - left.priorityScore)
@@ -16,9 +23,16 @@ export function generateReport(
   const agencyCount = listings.filter((listing) => listing.sellerType === "agency").length;
   const unknownCount = listings.filter((listing) => listing.sellerType === "unknown").length;
   const priceDropsCount = listings.filter((listing) => listing.isPriceDropped).length;
-  const hotOldCount = listings.filter(isHotOldListing).length;
+  const hotOldCount = scoringConfig
+    ? listings.filter((listing) =>
+        isHotOldListingWithConfig(listing, scoringConfig),
+      ).length
+    : listings.filter(isHotOldListing).length;
+  const highPriorityThreshold = scoringConfig
+    ? getHighPriorityThresholdFromConfig(scoringConfig)
+    : getHighPriorityThreshold();
   const highPriorityCount = listings.filter(
-    (listing) => listing.priorityScore >= getHighPriorityThreshold(),
+    (listing) => listing.priorityScore >= highPriorityThreshold,
   ).length;
 
   const lines = [

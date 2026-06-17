@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
 import { calculatePricePerSqm, calculatePriorityScore, getMinimumDaysOnline } from "@/lib/listings/scoring";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type { SellerType } from "@/types";
 
@@ -23,6 +24,7 @@ function optionalNumber(value: FormDataEntryValue | null) {
 export async function updateListing(id: string, formData: FormData) {
   await requireUser();
   const supabase = getSupabaseServiceClient();
+  const scoringConfig = await getPersistedScoringConfig();
   const { data: current, error } = await supabase.from("listings").select("*").eq("id", id).single();
   if (error || !current) throw new Error("Annuncio non trovato.");
 
@@ -52,16 +54,19 @@ export async function updateListing(id: string, formData: FormData) {
     phone,
     status: optionalString(formData.get("status")) ?? current.status,
     is_price_dropped: current.is_price_dropped || isPriceDropped,
-    priority_score: calculatePriorityScore({
-      sellerType,
-      isNewToday: current.is_new_today,
-      hasPhone: Boolean(phone),
-      minimumDaysOnline,
-      isPriceDropped: current.is_price_dropped || isPriceDropped,
-      description,
-      price,
-      sqm,
-    }),
+    priority_score: calculatePriorityScore(
+      {
+        sellerType,
+        isNewToday: current.is_new_today,
+        hasPhone: Boolean(phone),
+        minimumDaysOnline,
+        isPriceDropped: current.is_price_dropped || isPriceDropped,
+        description,
+        price,
+        sqm,
+      },
+      scoringConfig,
+    ),
   };
 
   if (current.price !== price) {

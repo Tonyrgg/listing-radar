@@ -20,7 +20,9 @@ import {
   getSellerTypeLabel,
   getSourceLabel,
 } from "@/lib/labels";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
 import { getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { IncomingListing, Listing } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -145,7 +147,10 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
   );
 }
 
-function OpportunityRow({ listing }: Readonly<{ listing: Listing }>) {
+function OpportunityRow({
+  listing,
+  scoringConfig,
+}: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
   return (
     <article className="grid gap-3 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <div className="min-w-0">
@@ -171,7 +176,7 @@ function OpportunityRow({ listing }: Readonly<{ listing: Listing }>) {
           <span>{formatPlainText(listing.zone)}</span>
         </div>
       </div>
-      <ListingScoreSummary listing={listing} />
+      <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
     </article>
   );
 }
@@ -203,10 +208,11 @@ function SystemRow({
 }
 
 export default async function DashboardPage() {
-  const [summary, incoming, lastScrapeRun] = await Promise.all([
+  const [summary, incoming, lastScrapeRun, scoringConfig] = await Promise.all([
     getDashboardSummary(),
     getIncomingDashboardData(),
     getLastScrapeRun(),
+    getPersistedScoringConfig(),
   ]);
   const emailConfig = getEmailAlertsConfig();
   const scraperConfig = getScraperRuntimeConfig();
@@ -325,7 +331,11 @@ export default async function DashboardPage() {
       >
         {opportunities.length ? (
           opportunities.map((listing) => (
-            <OpportunityRow key={listing.id} listing={listing} />
+            <OpportunityRow
+              key={listing.id}
+              listing={listing}
+              scoringConfig={scoringConfig}
+            />
           ))
         ) : (
           <EmptyState text="Nessuna occasione in evidenza al momento." />

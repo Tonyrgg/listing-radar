@@ -9,6 +9,7 @@ import {
 } from "@/lib/listings/scoring";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { assignDuplicateGroup } from "@/lib/listings/duplicates";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { Listing, NormalizedListing, UpsertListingsResult } from "@/types";
 
 type ExistingListingRow = {
@@ -145,6 +146,7 @@ export async function upsertListings(
 ): Promise<UpsertListingsResult> {
   const supabase = getSupabaseServiceClient();
   const now = new Date().toISOString();
+  const scoringConfig = await getPersistedScoringConfig();
 
   let inserted = 0;
   let updated = 0;
@@ -171,16 +173,19 @@ export async function upsertListings(
         normalized.price != null &&
         normalized.price < normalized.previousPrice);
     const isNewToday = isToday(firstSeenAt);
-    const priorityScore = calculatePriorityScore({
-      sellerType: normalized.sellerType,
-      isNewToday,
-      hasPhone: Boolean(normalized.phone),
-      minimumDaysOnline,
-      isPriceDropped,
-      description: normalized.description,
-      price: normalized.price,
-      sqm: normalized.sqm,
-    });
+    const priorityScore = calculatePriorityScore(
+      {
+        sellerType: normalized.sellerType,
+        isNewToday,
+        hasPhone: Boolean(normalized.phone),
+        minimumDaysOnline,
+        isPriceDropped,
+        description: normalized.description,
+        price: normalized.price,
+        sqm: normalized.sqm,
+      },
+      scoringConfig,
+    );
     const sellerFatigueScore = calculateSellerFatigueScore({
       minimumDaysOnline,
       isPriceDropped,

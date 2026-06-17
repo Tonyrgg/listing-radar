@@ -4,6 +4,7 @@ import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import { generateReport } from "@/lib/reports/generate-report";
 import { getProvidersForRun } from "@/lib/scrapers/providers";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type {
   ListingsProvider,
   ProviderRunIssue,
@@ -223,7 +224,8 @@ async function handleCronRequest(request: NextRequest) {
     }
 
     const persistedListings = providerResults.flatMap((result) => result.listings);
-    const report = generateReport(persistedListings);
+    const scoringConfig = await getPersistedScoringConfig();
+    const report = generateReport(persistedListings, new Date(), scoringConfig);
     const reportContent = `${report.content}${buildProviderReport(providerResults)}`;
 
     const { data: reportRow, error: reportError } = await supabase

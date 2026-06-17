@@ -22,6 +22,8 @@ import {
   getSourceLabel,
 } from "@/lib/labels";
 import { getListingAttentionReason } from "@/lib/listings/operational";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { Listing, ListingFilters, SellerType } from "@/types";
 
 export const metadata: Metadata = {
@@ -39,7 +41,10 @@ function readSearchParam(
   return value ?? fallback;
 }
 
-function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
+function ListingRow({
+  listing,
+  scoringConfig,
+}: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
   const mainFacts = [
     formatCurrency(listing.price),
     listing.sqm != null ? `${formatNumber(listing.sqm)} mq` : null,
@@ -104,7 +109,7 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
       </div>
 
       <div className="flex flex-col gap-2 sm:col-start-2 sm:flex-row lg:col-start-auto lg:w-full lg:flex-col">
-        <ListingScoreSummary listing={listing} />
+        <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
         <Link
           href={`/listings/${listing.id}`}
           className="inline-flex h-10 items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] sm:min-w-32 lg:w-full"
@@ -181,7 +186,10 @@ export default async function ListingsPage({
       : "score_desc",
   };
 
-  const listings = await getListings(filters);
+  const [listings, scoringConfig] = await Promise.all([
+    getListings(filters),
+    getPersistedScoringConfig(),
+  ]);
   const hasActiveFilters =
     filters.sellerType !== "all" ||
     filters.status !== "all" ||
@@ -355,7 +363,11 @@ export default async function ListingsPage({
       <section className="space-y-3">
         {listings.length ? (
           listings.map((listing) => (
-            <ListingRow key={listing.id} listing={listing} />
+            <ListingRow
+              key={listing.id}
+              listing={listing}
+              scoringConfig={scoringConfig}
+            />
           ))
         ) : (
           <div className="px-6 py-16 text-center">

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Pencil } from "lucide-react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
@@ -14,7 +15,9 @@ import { formatDateTime, formatNumber } from "@/lib/formatting";
 import { getRunStatusLabel, getSourceLabel } from "@/lib/labels";
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
 import type { ScrapeRun } from "@/types";
-import { getScoringConfig } from "@/lib/listings/scoring-config";
+import type { ScoringConfig } from "@/lib/listings/scoring-config";
+import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
+import { saveScoringConfig } from "@/app/(private)/settings/actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -103,6 +106,80 @@ function ScrapeRunRow({ run }: Readonly<{ run: ScrapeRun }>) {
   );
 }
 
+const scoringRows: Array<{
+  key: keyof ScoringConfig;
+  label: string;
+  help: string;
+}> = [
+  {
+    key: "privateSeller",
+    label: "Venditore privato",
+    help: "Premia gli annunci con contatto diretto.",
+  },
+  {
+    key: "agencySeller",
+    label: "Annuncio di agenzia",
+    help: "Penalizza quando il contatto non e diretto.",
+  },
+  {
+    key: "unknownSeller",
+    label: "Venditore sconosciuto",
+    help: "Penalita quando il tipo venditore non e chiaro.",
+  },
+  { key: "newToday", label: "Nuovo oggi", help: "Premio per annunci appena rilevati." },
+  {
+    key: "visiblePhone",
+    label: "Telefono visibile",
+    help: "Premio quando e presente un recapito.",
+  },
+  {
+    key: "online60Days",
+    label: "Online da 60 giorni",
+    help: "Premio per annunci online da almeno 60 giorni.",
+  },
+  {
+    key: "online120Days",
+    label: "Online da 120 giorni",
+    help: "Premio per annunci online da almeno 120 giorni.",
+  },
+  { key: "priceDrop", label: "Ribasso", help: "Premio quando il prezzo e sceso." },
+  {
+    key: "negotiablePrice",
+    label: "Prezzo trattabile",
+    help: "Premio se la descrizione dichiara trattabilita.",
+  },
+  {
+    key: "noAgencies",
+    label: "No agenzie",
+    help: "Premio se il venditore esclude intermediari.",
+  },
+  {
+    key: "missingPrice",
+    label: "Prezzo mancante",
+    help: "Penalita quando manca il prezzo.",
+  },
+  {
+    key: "missingSqm",
+    label: "Superficie mancante",
+    help: "Penalita quando manca la superficie.",
+  },
+  {
+    key: "missingDescription",
+    label: "Descrizione insufficiente",
+    help: "Penalita per schede poco informative.",
+  },
+  { key: "auction", label: "Asta", help: "Penalita per aste o procedure." },
+  {
+    key: "highPriorityThreshold",
+    label: "Soglia alta appetibilita",
+    help: "Da questo valore un annuncio diventa prioritario.",
+  },
+];
+
+function formatScoreValue(value: number) {
+  return value > 0 ? `+${value}` : String(value);
+}
+
 export default async function SettingsPage() {
   const runtimeConfig = getScraperRuntimeConfig();
   const emailConfig = getEmailAlertsConfig();
@@ -115,7 +192,7 @@ export default async function SettingsPage() {
     process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID,
   );
   const extensionEnabled = Boolean(process.env.EXTENSION_API_TOKEN);
-  const scoring = getScoringConfig();
+  const scoring = await getPersistedScoringConfig();
   const sourcesReady = runtimeConfig.provider !== "mock";
   const lastRunHealthy = !lastScrapeRun || lastScrapeRun.errorCount === 0;
 
@@ -237,26 +314,58 @@ export default async function SettingsPage() {
 
       <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
-          <span className="text-sm font-semibold text-[var(--ink-strong)]">
+          <span className="flex items-center gap-2 text-sm font-semibold text-[var(--ink-strong)]">
             Regole di appetibilita
+            <span className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--line-strong)] text-[var(--surface-accent)]">
+              <Pencil aria-hidden="true" className="size-3.5" />
+            </span>
           </span>
           <span className="text-xs text-[var(--ink-subtle)]">
-            Configurabili da ambiente
+            Salvate in database
           </span>
         </summary>
-        <dl className="grid gap-5 border-t border-[var(--line-soft)] p-5 sm:grid-cols-2 xl:grid-cols-4">
-          <ConfigRow label="Venditore privato" value={`+${scoring.privateSeller}`} />
-          <ConfigRow label="Annuncio di agenzia" value={scoring.agencySeller} />
-          <ConfigRow label="Venditore sconosciuto" value={scoring.unknownSeller} />
-          <ConfigRow label="Nuovo oggi" value={`+${scoring.newToday}`} />
-          <ConfigRow label="Telefono visibile" value={`+${scoring.visiblePhone}`} />
-          <ConfigRow label="Ribasso" value={`+${scoring.priceDrop}`} />
-          <ConfigRow label="Prezzo mancante" value={scoring.missingPrice} />
-          <ConfigRow label="Superficie mancante" value={scoring.missingSqm} />
-          <ConfigRow label="Descrizione insufficiente" value={scoring.missingDescription} />
-          <ConfigRow label="Asta" value={scoring.auction} />
-          <ConfigRow label="Soglia alta appetibilita" value={scoring.highPriorityThreshold} />
-        </dl>
+        <form action={saveScoringConfig} className="border-t border-[var(--line-soft)] p-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {scoringRows.map((row) => (
+              <label
+                key={row.key}
+                className="grid gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-[var(--ink-strong)]">
+                    {row.label}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-[var(--ink-subtle)]">
+                    {row.help}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    name={row.key}
+                    defaultValue={scoring[row.key]}
+                    className="h-10 min-w-0 flex-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3 text-sm font-semibold text-[var(--ink-strong)]"
+                  />
+                  <span className="min-w-12 rounded-md border border-[var(--line-soft)] px-2 py-2 text-center text-xs font-semibold text-[var(--ink-soft)]">
+                    {formatScoreValue(scoring[row.key])}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="submit"
+              className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
+            >
+              Salva regole
+            </button>
+            <p className="text-xs leading-5 text-[var(--ink-subtle)] sm:self-center">
+              Le nuove regole vengono usate da dashboard, archivio, import e modifiche manuali.
+            </p>
+          </div>
+        </form>
       </details>
 
       <details className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">

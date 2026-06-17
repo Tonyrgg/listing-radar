@@ -3,7 +3,7 @@ function numberValue(name: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function getScoringConfig() {
+export function getDefaultScoringConfig() {
   return {
     privateSeller: numberValue("SCORE_PRIVATE_SELLER", 40),
     agencySeller: numberValue("SCORE_AGENCY_SELLER", -15),
@@ -21,4 +21,23 @@ export function getScoringConfig() {
     auction: numberValue("SCORE_AUCTION", -30),
     highPriorityThreshold: numberValue("SCORE_HIGH_PRIORITY_THRESHOLD", 80),
   };
+}
+
+export type ScoringConfig = ReturnType<typeof getDefaultScoringConfig>;
+
+export function getScoringConfig(): ScoringConfig {
+  return getDefaultScoringConfig();
+}
+
+export function normalizeScoringConfig(
+  value: Partial<Record<keyof ScoringConfig, unknown>> | null | undefined,
+): ScoringConfig {
+  const defaults = getDefaultScoringConfig();
+
+  return Object.fromEntries(
+    Object.entries(defaults).map(([key, fallback]) => {
+      const parsed = Number(value?.[key as keyof ScoringConfig]);
+      return [key, Number.isFinite(parsed) ? parsed : fallback];
+    }),
+  ) as ScoringConfig;
 }
