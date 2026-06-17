@@ -18,6 +18,10 @@ import {
   getSellerTypeLabel,
   getSourceLabel,
 } from "@/lib/labels";
+import {
+  getListingCompletenessScore,
+  getMissingListingFields,
+} from "@/lib/listings/completeness";
 import { getOperationalSuggestion } from "@/lib/listings/operational";
 import { archiveListing, updateListing } from "@/app/(private)/listings/[id]/actions";
 import { LISTING_STATUS_OPTIONS } from "@/lib/constants";
@@ -67,6 +71,8 @@ export default async function ListingDetailPage({
         index === values.length - 1 || snapshot.price !== values[index + 1]?.price,
     );
   const operationalSuggestion = getOperationalSuggestion(listing);
+  const missingFields = getMissingListingFields(listing);
+  const completenessScore = getListingCompletenessScore(listing);
   const updateAction = updateListing.bind(null, listing.id);
   const archiveAction = archiveListing.bind(null, listing.id);
 
@@ -170,6 +176,43 @@ export default async function ListingDetailPage({
               <p className="mt-2 text-sm leading-6 text-[var(--ink-strong)]">
                 {operationalSuggestion}
               </p>
+            </div>
+
+            <div className="mt-4 rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+                  Completezza scheda
+                </p>
+                <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
+                  {completenessScore}%
+                </strong>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
+                <div
+                  className="h-full rounded-full bg-[var(--surface-accent)]"
+                  style={{ width: `${completenessScore}%` }}
+                />
+              </div>
+              {missingFields.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {missingFields.map((field) => (
+                    <span
+                      key={field.key}
+                      className={
+                        field.severity === "required"
+                          ? "rounded-md border border-[oklch(0.4_0.07_24)] bg-[oklch(0.23_0.035_24)] px-2 py-1 text-[11px] font-semibold text-[var(--status-error)]"
+                          : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-panel)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-soft)]"
+                      }
+                    >
+                      {field.label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[var(--ink-soft)]">
+                  Tutti i dati principali sono presenti.
+                </p>
+              )}
             </div>
 
             <dl className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">

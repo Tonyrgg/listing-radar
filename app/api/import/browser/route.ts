@@ -6,6 +6,11 @@ import {
   findIncomingListing,
   markIncomingListingEnriched,
 } from "@/lib/incoming/repository";
+import {
+  getListingCompletenessScore,
+  getMissingListingFields,
+  hasRequiredListingGaps,
+} from "@/lib/listings/completeness";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import {
   normalizeImportedRows,
@@ -144,6 +149,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const listingToSave = normalized.listings[0];
+    const missingFields = getMissingListingFields(listingToSave);
+    const completenessScore = getListingCompletenessScore(listingToSave);
+
+    if (hasRequiredListingGaps(listingToSave)) {
+      listingToSave.status = "review";
+      listingToSave.note = [
+        listingToSave.note,
+        `Campi da completare dopo import: ${missingFields
+          .map((field) => field.label)
+          .join(", ")}.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
     const result = await upsertListings(normalized.listings);
     const savedListing = result.listings[0];
 
@@ -163,6 +184,8 @@ export async function POST(request: NextRequest) {
         inserted: result.inserted,
         updated: result.updated,
         detailUrl: `/listings/${savedListing.id}`,
+        completenessScore,
+        missingFields,
       },
       { headers: CORS_HEADERS },
     );

@@ -48,4 +48,27 @@ describe("duplicate detection", () => {
 
     expect(confidence).toBeLessThan(6);
   });
+
+  it("matches listings with partial address and close metrics", () => {
+    const confidence = duplicateConfidence(
+      {
+        title: "Appartamento tre vani ristrutturato zona stazione",
+        address_raw: "Viale Giovanni XXIII, 195, Bitonto, BA",
+        zone: "Stazione",
+        price: 128000,
+        sqm: 100,
+      },
+      {
+        id: "candidate",
+        title: "Trivani ristrutturato con posto auto",
+        address_raw: "Viale Giovanni XXIII Bitonto",
+        zone: "Stazione",
+        price: 126000,
+        sqm: 98,
+        duplicate_group_id: null,
+      },
+    );
+
+    expect(confidence).toBeGreaterThanOrEqual(6);
+  });
 });

@@ -61,9 +61,13 @@ function renderPreview(listing) {
     return value == null || value === "" || value === "unknown" ||
       (Array.isArray(value) && value.length === 0);
   });
+  const completeness = Math.max(
+    0,
+    Math.round(((required.length - missing.length) / required.length) * 100),
+  );
 
   elements.source.textContent = listing.source || "browser";
-  elements.fieldCount.textContent = `${fields} campi`;
+  elements.fieldCount.textContent = `${fields} campi - ${completeness}%`;
   elements.title.textContent = listing.title || "Titolo non rilevato";
   elements.facts.textContent = facts.join(" | ") || "Dati principali non rilevati";
   elements.missingList.replaceChildren(
@@ -159,9 +163,16 @@ async function importListing() {
       throw new Error(payload.error || `Errore ${response.status}`);
     }
     state.detailUrl = `${state.config.baseUrl}${payload.detailUrl}`;
+    const missingLabels = Array.isArray(payload.missingFields)
+      ? payload.missingFields.map((field) => field.label).filter(Boolean)
+      : [];
     elements.resultMessage.textContent = payload.inserted
-      ? "Annuncio creato."
-      : "Annuncio aggiornato.";
+      ? missingLabels.length
+        ? `Annuncio creato. Da completare: ${missingLabels.join(", ")}.`
+        : "Annuncio creato e completo."
+      : missingLabels.length
+        ? `Annuncio aggiornato. Da completare: ${missingLabels.join(", ")}.`
+        : "Annuncio aggiornato e completo.";
     elements.result.classList.remove("hidden");
     elements.openListing.classList.remove("hidden");
     elements.preview.classList.add("hidden");

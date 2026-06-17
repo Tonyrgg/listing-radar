@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { upsertListings } from "@/lib/listings/upsert-listings";
+import { sendTelegramMessage } from "@/lib/notifications/telegram";
 import { generateReport } from "@/lib/reports/generate-report";
 import { getProvidersForRun } from "@/lib/scrapers/providers";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
@@ -188,6 +189,52 @@ function buildProviderReport(results: ProviderCronResult[]) {
   ].join("\n");
 }
 
+function escapeTelegramHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+async function sendCronTelegramSummary(
+  results: ProviderCronResult[],
+  totals: {
+    inserted: number;
+    updated: number;
+    errors: number;
+  },
+) {
+  const topListings = results
+    .flatMap((result) => result.listings)
+    .sort((left, right) => right.priorityScore - left.priorityScore)
+    .slice(0, 3);
+  const providerLine =
+    results.map((result) => `${result.provider}: ${result.totalFound}`).join(" - ") ||
+    "nessuna fonte";
+  const topLine = topListings.length
+    ? topListings
+        .map(
+          (listing) =>
+            `${escapeTelegramHtml(listing.title)} (${listing.priorityScore} pt)`,
+        )
+        .join("\n")
+    : "Nessuna scheda prioritaria.";
+  const delivery = await sendTelegramMessage(
+    [
+      "<b>Listing Radar</b>",
+      `Nuovi: ${totals.inserted} - Aggiornati: ${totals.updated} - Errori: ${totals.errors}`,
+      `Fonti: ${providerLine}`,
+      "",
+      "<b>Top opportunita</b>",
+      topLine,
+    ].join("\n"),
+  );
+
+  if (!delivery.delivered && !delivery.skipped) {
+    console.warn("[cron] telegram notification failed", delivery);
+  }
+}
+
 async function handleCronRequest(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
@@ -268,6 +315,12 @@ async function handleCronRequest(request: NextRequest) {
       (sum, result) => sum + result.errors.length,
       0,
     );
+
+    await sendCronTelegramSummary(providerResults, {
+      inserted: totalInserted,
+      updated: totalUpdated,
+      errors: errorCount,
+    });
 
     await finalizeRun(activeRunId, {
       status: errorCount > 0 ? "completed_with_errors" : "success",

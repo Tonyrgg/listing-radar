@@ -16,11 +16,36 @@ function normalize(value: string | null | undefined) {
     .replace(/\s+/g, " ").trim();
 }
 
+function words(value: string | null | undefined, minimumLength = 2) {
+  return normalize(value)
+    .split(" ")
+    .filter((word) => word.length >= minimumLength);
+}
+
 function titleSimilarity(left: string, right: string) {
-  const leftWords = new Set(normalize(left).split(" ").filter((word) => word.length > 2));
-  const rightWords = new Set(normalize(right).split(" ").filter((word) => word.length > 2));
+  const leftWords = new Set(words(left, 3));
+  const rightWords = new Set(words(right, 3));
   const union = new Set([...leftWords, ...rightWords]);
   if (!union.size) return 0;
+  return [...leftWords].filter((word) => rightWords.has(word)).length / union.size;
+}
+
+function addressSimilarity(left: string | null | undefined, right: string | null | undefined) {
+  const leftAddress = normalize(left);
+  const rightAddress = normalize(right);
+
+  if (!leftAddress || !rightAddress) return 0;
+  if (leftAddress === rightAddress) return 1;
+  if (leftAddress.includes(rightAddress) || rightAddress.includes(leftAddress)) {
+    return 0.85;
+  }
+
+  const leftWords = new Set(words(leftAddress, 2));
+  const rightWords = new Set(words(rightAddress, 2));
+  const union = new Set([...leftWords, ...rightWords]);
+
+  if (!union.size) return 0;
+
   return [...leftWords].filter((word) => rightWords.has(word)).length / union.size;
 }
 
@@ -29,12 +54,25 @@ export function duplicateConfidence(
   candidate: DuplicateCandidate,
 ) {
   let confidence = 0;
-  const address = normalize(listing.address_raw);
-  if (address && address === normalize(candidate.address_raw)) confidence += 4;
-  if (titleSimilarity(listing.title, candidate.title) >= 0.65) confidence += 3;
+  const addressScore = addressSimilarity(listing.address_raw, candidate.address_raw);
+  const titleScore = titleSimilarity(listing.title, candidate.title);
+  if (addressScore >= 0.85) confidence += 4;
+  else if (addressScore >= 0.55) confidence += 2;
+  if (titleScore >= 0.65) confidence += 3;
+  else if (titleScore >= 0.45) confidence += 1;
   if (listing.sqm && candidate.sqm && Math.abs(listing.sqm - candidate.sqm) <= 5) confidence += 2;
   if (listing.price && candidate.price && Math.abs(listing.price - candidate.price) / listing.price <= 0.05) confidence += 1;
   if (normalize(listing.zone) && normalize(listing.zone) === normalize(candidate.zone)) confidence += 1;
+  if (
+    listing.price &&
+    candidate.price &&
+    listing.sqm &&
+    candidate.sqm &&
+    Math.abs(listing.price - candidate.price) / listing.price <= 0.03 &&
+    Math.abs(listing.sqm - candidate.sqm) <= 2
+  ) {
+    confidence += 1;
+  }
   return confidence;
 }
 
