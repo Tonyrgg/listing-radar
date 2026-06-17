@@ -34,24 +34,31 @@ export function ListingScoreSummary({
 }: Readonly<{ listing: ScoreListing }>) {
   const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
   const level = getPriorityScoreLevel(breakdown.total);
+  const progress = Math.max(0, Math.min(100, breakdown.total));
 
   return (
-    <div className="grid w-full gap-2 rounded-[7px] border border-[color-mix(in_oklch,var(--surface-accent)_24%,var(--line-soft))] bg-[linear-gradient(135deg,color-mix(in_oklch,var(--surface-accent)_10%,var(--surface-muted)),var(--surface-muted))] p-2.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-          Indice
+    <div className="w-full rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <span className="pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
+          Appetibilita
         </span>
-        <span className="rounded-full bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none text-[var(--surface-accent)]">
+        <span className="rounded-full border border-[color-mix(in_oklch,var(--surface-accent)_35%,transparent)] bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none text-[var(--surface-accent)]">
           {level}
         </span>
       </div>
-      <div className="flex items-end gap-1">
-        <strong className="text-2xl font-semibold leading-none tabular-nums text-[var(--ink-strong)]">
+      <div className="mt-2 flex items-end gap-1">
+        <strong className="text-[32px] font-semibold leading-none tabular-nums text-[var(--ink-strong)]">
           {breakdown.total}
         </strong>
-        <span className="pb-0.5 text-[11px] font-semibold text-[var(--ink-soft)]">
+        <span className="pb-1 text-xs font-semibold text-[var(--ink-soft)]">
           pt
         </span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
+        <span
+          className="block h-full rounded-full bg-[var(--surface-accent)]"
+          style={{ width: `${progress}%` }}
+        />
       </div>
     </div>
   );
