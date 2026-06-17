@@ -153,27 +153,46 @@ function OpportunityRow({
 }: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
   return (
     <article className="grid gap-3 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={getSellerTypeTone(listing.sellerType)}>
-            {getSellerTypeLabel(listing.sellerType)}
-          </Badge>
-          <span className="text-xs font-medium text-[var(--status-warning)]">
-            {getOpportunityReason(listing)}
-          </span>
-        </div>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
         <Link
           href={`/listings/${listing.id}`}
-          className="mt-2 block truncate text-sm font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
+          className="block h-24 overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] transition-colors hover:border-[var(--line-strong)]"
+          aria-label={`Apri scheda ${listing.title}`}
         >
-          {listing.title}
+          {listing.imageUrls[0] ? (
+            <span
+              className="block size-full bg-cover bg-center"
+              style={{ backgroundImage: `url("${listing.imageUrls[0]}")` }}
+            />
+          ) : (
+            <span className="flex size-full items-center justify-center px-3 text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)]">
+              Foto non disponibile
+            </span>
+          )}
         </Link>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-soft)]">
-          <span className="font-semibold text-[var(--ink-strong)]">
-            {formatCurrency(listing.price)}
-          </span>
-          <span>{formatNumber(listing.sqm)} mq</span>
-          <span>{formatPlainText(listing.zone)}</span>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={getSellerTypeTone(listing.sellerType)}>
+              {getSellerTypeLabel(listing.sellerType)}
+            </Badge>
+            <span className="text-xs font-medium text-[var(--status-warning)]">
+              {getOpportunityReason(listing)}
+            </span>
+          </div>
+          <Link
+            href={`/listings/${listing.id}`}
+            className="mt-2 block truncate text-sm font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
+          >
+            {listing.title}
+          </Link>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-soft)]">
+            <span className="font-semibold text-[var(--ink-strong)]">
+              {formatCurrency(listing.price)}
+            </span>
+            <span>{formatNumber(listing.sqm)} mq</span>
+            <span>{formatPlainText(listing.zone)}</span>
+          </div>
         </div>
       </div>
       <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
