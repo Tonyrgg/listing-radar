@@ -40,4 +40,6 @@ export async function saveScoringConfig(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/listings");
   revalidatePath("/dashboard");
+
+  return config;
 }
