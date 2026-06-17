@@ -33,15 +33,21 @@ export function ListingScoreSummary({
   listing,
 }: Readonly<{ listing: ScoreListing }>) {
   const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
+  const level = getPriorityScoreLevel(breakdown.total);
 
   return (
-    <div className="flex h-10 min-w-0 items-center justify-between gap-3 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3">
-      <span className="text-xs font-medium text-[var(--ink-soft)]">Indice</span>
-      <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
-        {breakdown.total} pt
+    <div className="flex h-12 min-w-0 items-center justify-between gap-2 rounded-[7px] border border-[color-mix(in_oklch,var(--surface-accent)_28%,var(--line-soft))] bg-[linear-gradient(135deg,color-mix(in_oklch,var(--surface-accent)_13%,var(--surface-muted)),var(--surface-muted))] px-2.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
+        Indice
+      </span>
+      <strong className="inline-flex min-w-12 items-baseline justify-center rounded-[5px] bg-[var(--surface-canvas)] px-2 py-1 text-base font-bold leading-none tabular-nums text-[var(--ink-strong)]">
+        {breakdown.total}
+        <span className="ml-1 text-[10px] font-semibold text-[var(--ink-soft)]">
+          pt
+        </span>
       </strong>
-      <span className="text-xs font-semibold text-[var(--surface-accent)]">
-        {getPriorityScoreLevel(breakdown.total)}
+      <span className="rounded-full bg-[var(--surface-accent-soft)] px-2 py-1 text-[11px] font-bold leading-none text-[var(--surface-accent)]">
+        {level}
       </span>
     </div>
   );
