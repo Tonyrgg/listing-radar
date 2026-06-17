@@ -50,6 +50,7 @@ type ListingRow = {
   first_seen_at: string;
   last_seen_at: string;
   status: string;
+  crm_status?: "untreated" | "treated";
   priority_score: number;
   seller_fatigue_score: number;
   duplicate_group_id: string | null;
@@ -271,6 +272,7 @@ function mapListingRow(row: ListingRow, scoringConfig?: ScoringConfig): Listing 
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,
     status: row.status,
+    crmStatus: row.crm_status ?? "untreated",
     priorityScore,
     sellerFatigueScore: row.seller_fatigue_score,
     duplicateGroupId: row.duplicate_group_id,

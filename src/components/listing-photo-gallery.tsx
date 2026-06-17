@@ -3,7 +3,7 @@
 /* External portal images must be requested directly because their hosts are dynamic. */
 /* eslint-disable @next/next/no-img-element */
 
-import { ImageOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function ListingPhotoGallery({
@@ -30,6 +30,15 @@ export function ListingPhotoGallery({
     );
   }
 
+  function selectAdjacent(direction: -1 | 1) {
+    if (!activeUrl || availableUrls.length < 2) return;
+
+    const currentIndex = availableUrls.indexOf(activeUrl);
+    const nextIndex =
+      (currentIndex + direction + availableUrls.length) % availableUrls.length;
+    setSelectedUrl(availableUrls[nextIndex]);
+  }
+
   if (!activeUrl) {
     return (
       <section className="flex h-56 items-center justify-center rounded-[7px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] sm:h-72 xl:h-[360px]">
@@ -43,7 +52,7 @@ export function ListingPhotoGallery({
 
   return (
     <section
-      className="space-y-3"
+      className="relative space-y-3"
       aria-label={`Foto di ${title}`}
     >
       <a
@@ -64,6 +73,33 @@ export function ListingPhotoGallery({
           <span className="sr-only">Apri la foto originale</span>
         </span>
       </a>
+
+      {availableUrls.length > 1 ? (
+        <div className="pointer-events-none absolute inset-x-3 top-1/2 flex -translate-y-1/2 justify-between">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              selectAdjacent(-1);
+            }}
+            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-canvas)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+            aria-label="Foto precedente"
+          >
+            <ChevronLeft aria-hidden="true" className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              selectAdjacent(1);
+            }}
+            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-canvas)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+            aria-label="Foto successiva"
+          >
+            <ChevronRight aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+      ) : null}
 
       {availableUrls.length > 1 ? (
         <div className="flex gap-2 overflow-x-auto pb-1">

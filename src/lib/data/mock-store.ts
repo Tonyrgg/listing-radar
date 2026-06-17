@@ -95,6 +95,7 @@ export async function getMockListings() {
         firstSeenAt,
         lastSeenAt,
         status: normalized.status ?? "new",
+        crmStatus: "untreated",
         priorityScore: derived.priorityScore,
         sellerFatigueScore: derived.sellerFatigueScore,
         duplicateGroupId: null,

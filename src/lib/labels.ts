@@ -1,4 +1,5 @@
 import type {
+  ListingCrmStatus,
   IncomingListingStatus,
   ListingStatus,
   SellerType,
@@ -21,6 +22,11 @@ const LISTING_STATUS_LABELS: Record<ListingStatus | "all", string> = {
   archived: "Archiviato",
 };
 
+const LISTING_CRM_STATUS_LABELS: Record<ListingCrmStatus, string> = {
+  untreated: "Non trattato",
+  treated: "Trattato",
+};
+
 const INCOMING_STATUS_LABELS: Record<IncomingListingStatus, string> = {
   pending: "Da completare",
   enriched: "Completato",
@@ -41,6 +47,10 @@ export function getSellerTypeLabel(value: SellerType | "all") {
 
 export function getListingStatusLabel(value: string) {
   return LISTING_STATUS_LABELS[value as ListingStatus | "all"] ?? value;
+}
+
+export function getListingCrmStatusLabel(value: ListingCrmStatus) {
+  return LISTING_CRM_STATUS_LABELS[value];
 }
 
 export function getIncomingStatusLabel(value: IncomingListingStatus) {

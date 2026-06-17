@@ -64,10 +64,6 @@ body {
 }
 
 @layer components {
-  details {
-    box-shadow: var(--shadow-panel);
-  }
-
   summary {
     border-radius: 6px;
   }

@@ -14,6 +14,7 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import {
+  getListingCrmStatusLabel,
   getListingStatusLabel,
   getSellerTypeLabel,
   getSourceLabel,
@@ -23,7 +24,11 @@ import {
   getMissingListingFields,
 } from "@/lib/listings/completeness";
 import { getOperationalSuggestion } from "@/lib/listings/operational";
-import { archiveListing, updateListing } from "@/app/(private)/listings/[id]/actions";
+import {
+  archiveListing,
+  updateListing,
+  updateListingCrmStatus,
+} from "@/app/(private)/listings/[id]/actions";
 import { LISTING_STATUS_OPTIONS } from "@/lib/constants";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 
@@ -44,6 +49,64 @@ function DetailItem({
       <dd className="mt-1 text-sm font-semibold leading-6 text-[var(--ink-strong)]">
         {value}
       </dd>
+    </div>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  detail,
+}: Readonly<{
+  label: string;
+  value: string;
+  detail?: string;
+}>) {
+  return (
+    <div className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+        {label}
+      </p>
+      <p className="mt-2 truncate text-lg font-semibold leading-none text-[var(--ink-strong)]">
+        {value}
+      </p>
+      {detail ? (
+        <p className="mt-1 truncate text-xs text-[var(--ink-soft)]">{detail}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CrmStatusControls({
+  listingId,
+  crmStatus,
+}: Readonly<{
+  listingId: string;
+  crmStatus: "untreated" | "treated";
+}>) {
+  const markUntreated = updateListingCrmStatus.bind(null, listingId, "untreated");
+  const markTreated = updateListingCrmStatus.bind(null, listingId, "treated");
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <form action={markUntreated}>
+        <button
+          type="submit"
+          disabled={crmStatus === "untreated"}
+          className="h-9 rounded-md border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-default disabled:border-[var(--surface-accent-soft)] disabled:bg-[var(--surface-accent-soft)] disabled:text-[var(--surface-accent)]"
+        >
+          Non trattato
+        </button>
+      </form>
+      <form action={markTreated}>
+        <button
+          type="submit"
+          disabled={crmStatus === "treated"}
+          className="h-9 rounded-md border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-default disabled:border-[var(--surface-accent-soft)] disabled:bg-[var(--surface-accent-soft)] disabled:text-[var(--surface-accent)]"
+        >
+          Trattato
+        </button>
+      </form>
     </div>
   );
 }
@@ -85,25 +148,9 @@ export default async function ListingDetailPage({
         Torna all&apos;archivio
       </Link>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-        <div className="order-2 min-w-0 space-y-6 xl:order-1">
-          <ListingPhotoGallery
-            title={listing.title}
-            imageUrls={listing.imageUrls}
-          />
-
-          <article className="border-t border-[var(--line-soft)] pt-5">
-            <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
-              Descrizione
-            </h2>
-            <p className="mt-4 max-w-4xl whitespace-pre-wrap text-sm leading-7 text-[var(--ink-soft)]">
-              {formatPlainText(listing.description)}
-            </p>
-          </article>
-        </div>
-
-        <article className="order-1 min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] xl:sticky xl:top-7 xl:order-2 xl:self-start">
-          <div className="p-5 sm:p-6">
+      <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+        <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(520px,0.9fr)]">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={getSellerTypeTone(listing.sellerType)}>
                 {getSellerTypeLabel(listing.sellerType)}
@@ -111,9 +158,10 @@ export default async function ListingDetailPage({
               <Badge tone={getStatusTone(listing.status)}>
                 {getListingStatusLabel(listing.status)}
               </Badge>
-              {listing.isPriceDropped ? (
-                <Badge tone="red">Prezzo ridotto</Badge>
-              ) : null}
+              <Badge tone={listing.crmStatus === "treated" ? "green" : "amber"}>
+                {getListingCrmStatusLabel(listing.crmStatus)}
+              </Badge>
+              {listing.isPriceDropped ? <Badge tone="red">Prezzo ridotto</Badge> : null}
               {listing.duplicateGroupId ? (
                 <Badge tone="amber">Possibile duplicato</Badge>
               ) : null}
@@ -122,24 +170,47 @@ export default async function ListingDetailPage({
             <p className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
               {getSourceLabel(listing.source)}
             </p>
-            <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--ink-strong)]">
+            <h1 className="mt-2 max-w-5xl text-2xl font-semibold leading-tight text-[var(--ink-strong)]">
               {listing.title}
             </h1>
+            <p className="mt-4 max-w-3xl text-sm leading-6 text-[var(--ink-soft)]">
+              {operationalSuggestion}
+            </p>
+          </div>
 
-            <div className="mt-5 border-y border-[var(--line-soft)] py-5">
-              <p className="text-3xl font-semibold tabular-nums text-[var(--ink-strong)]">
-                {formatCurrency(listing.price)}
-              </p>
-              {listing.pricePerSqm != null ? (
-                <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                  {formatCurrency(listing.pricePerSqm)} al mq
-                </p>
-              ) : null}
+          <div className="grid content-start gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SummaryMetric
+                label="Prezzo"
+                value={formatCurrency(listing.price)}
+                detail={
+                  listing.pricePerSqm != null
+                    ? `${formatCurrency(listing.pricePerSqm)} al mq`
+                    : undefined
+                }
+              />
+              <SummaryMetric
+                label="Appetibilita"
+                value={`${formatNumber(listing.priorityScore)} pt`}
+                detail="Priorita di controllo"
+              />
+              <SummaryMetric
+                label="Completezza"
+                value={`${completenessScore}%`}
+                detail={
+                  missingFields.length
+                    ? `${formatNumber(missingFields.length)} campi da rivedere`
+                    : "Scheda completa"
+                }
+              />
+              <SummaryMetric
+                label="CRM"
+                value={getListingCrmStatusLabel(listing.crmStatus)}
+                detail="Trasferimento interno"
+              />
             </div>
 
-            <ListingScoreBreakdown listing={listing} scoringConfig={scoringConfig} />
-
-            <dl className="grid grid-cols-2 gap-5 py-5 xl:grid-cols-1 2xl:grid-cols-2">
+            <dl className="grid gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 sm:grid-cols-4">
               <DetailItem
                 label="Superficie"
                 value={
@@ -159,82 +230,111 @@ export default async function ListingDetailPage({
                   .filter(Boolean)
                   .join(", ") || "Non disponibile"}
               />
+              <DetailItem label="Zona" value={formatPlainText(listing.zone)} />
               <DetailItem
-                label="Zona"
-                value={formatPlainText(listing.zone)}
-              />
-              <DetailItem
-                label="Online da almeno"
+                label="Online"
                 value={`${formatNumber(listing.minimumDaysOnline)} giorni`}
               />
             </dl>
 
-            <div className="rounded-md bg-[var(--surface-accent-soft)] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--surface-accent)]">
-                Perche merita attenzione
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[var(--ink-strong)]">
-                {operationalSuggestion}
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-                  Completezza scheda
+            <div className="flex flex-col gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[var(--ink-strong)]">
+                  Stato trattamento
                 </p>
-                <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
-                  {completenessScore}%
-                </strong>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
-                <div
-                  className="h-full rounded-full bg-[var(--surface-accent)]"
-                  style={{ width: `${completenessScore}%` }}
-                />
-              </div>
-              {missingFields.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {missingFields.map((field) => (
-                    <span
-                      key={field.key}
-                      className={
-                        field.severity === "required"
-                          ? "rounded-md border border-[oklch(0.4_0.07_24)] bg-[oklch(0.23_0.035_24)] px-2 py-1 text-[11px] font-semibold text-[var(--status-error)]"
-                          : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-panel)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-soft)]"
-                      }
-                    >
-                      {field.label}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-xs text-[var(--ink-soft)]">
-                  Tutti i dati principali sono presenti.
+                <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                  Segna se l&apos;annuncio e gia stato riportato nel CRM personale.
                 </p>
-              )}
+              </div>
+              <CrmStatusControls
+                listingId={listing.id}
+                crmStatus={listing.crmStatus}
+              />
             </div>
-
-            <dl className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <DetailItem
-                label="Venditore"
-                value={formatPlainText(listing.sellerName)}
-              />
-              <DetailItem
-                label="Telefono"
-                value={formatPlainText(listing.phone)}
-              />
-            </dl>
           </div>
+        </div>
 
-          <a
-            href={listing.url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex min-h-14 items-center justify-center border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
-          >
-            Vedi annuncio originale
-          </a>
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex min-h-12 items-center justify-center border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
+        >
+          Vedi annuncio originale
+        </a>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="min-w-0">
+          <ListingPhotoGallery title={listing.title} imageUrls={listing.imageUrls} />
+        </div>
+
+        <article className="min-w-0 rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--ink-strong)]">
+            Descrizione
+          </h2>
+          <p className="mt-4 max-h-[560px] overflow-auto whitespace-pre-wrap pr-2 text-sm leading-7 text-[var(--ink-soft)]">
+            {formatPlainText(listing.description)}
+          </p>
+        </article>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
+          <ListingScoreBreakdown listing={listing} scoringConfig={scoringConfig} />
+        </article>
+
+        <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-[var(--ink-strong)]">
+              Completezza scheda
+            </h2>
+            <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
+              {completenessScore}%
+            </strong>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
+            <div
+              className="h-full rounded-full bg-[var(--surface-accent)]"
+              style={{ width: `${completenessScore}%` }}
+            />
+          </div>
+          {missingFields.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {missingFields.map((field) => (
+                <span
+                  key={field.key}
+                  className={
+                    field.severity === "required"
+                      ? "rounded-md border border-[oklch(0.4_0.07_24)] bg-[oklch(0.23_0.035_24)] px-2 py-1 text-[11px] font-semibold text-[var(--status-error)]"
+                      : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-soft)]"
+                  }
+                >
+                  {field.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--ink-soft)]">
+              Tutti i dati principali sono presenti.
+            </p>
+          )}
+
+          <dl className="mt-6 grid gap-5 sm:grid-cols-2">
+            <DetailItem
+              label="Venditore"
+              value={formatPlainText(listing.sellerName)}
+            />
+            <DetailItem label="Telefono" value={formatPlainText(listing.phone)} />
+            <DetailItem
+              label="Prima segnalazione"
+              value={formatDateTime(listing.firstSeenAt)}
+            />
+            <DetailItem
+              label="Ultimo controllo"
+              value={formatDateTime(listing.lastSeenAt)}
+            />
+          </dl>
         </article>
       </section>
 
@@ -346,6 +446,13 @@ export default async function ListingDetailPage({
               {LISTING_STATUS_OPTIONS.filter((value) => value !== "all").map((value) => (
                 <option key={value} value={value}>{getListingStatusLabel(value)}</option>
               ))}
+            </select>
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium text-[var(--ink-strong)]">Trattamento CRM</span>
+            <select name="crmStatus" defaultValue={listing.crmStatus} className="h-11 w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-3">
+              <option value="untreated">Non trattato</option>
+              <option value="treated">Trattato</option>
             </select>
           </label>
           <label className="space-y-2 text-sm md:col-span-2 xl:col-span-4">

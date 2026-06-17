@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { calculatePricePerSqm, calculatePriorityScore, getMinimumDaysOnline } from "@/lib/listings/scoring";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
-import type { SellerType } from "@/types";
+import type { ListingCrmStatus, SellerType } from "@/types";
 
 function optionalString(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
@@ -33,6 +33,9 @@ export async function updateListing(id: string, formData: FormData) {
   const description = optionalString(formData.get("description"));
   const phone = optionalString(formData.get("phone"));
   const sellerType = String(formData.get("sellerType") ?? "unknown") as SellerType;
+  const crmStatus = String(
+    formData.get("crmStatus") ?? current.crm_status ?? "untreated",
+  ) as ListingCrmStatus;
   const isPriceDropped = current.price != null && price != null && price < current.price;
   const minimumDaysOnline = getMinimumDaysOnline({
     firstSeenAt: current.first_seen_at,
@@ -53,6 +56,7 @@ export async function updateListing(id: string, formData: FormData) {
     seller_name: optionalString(formData.get("sellerName")),
     phone,
     status: optionalString(formData.get("status")) ?? current.status,
+    crm_status: crmStatus,
     is_price_dropped: current.is_price_dropped || isPriceDropped,
     priority_score: calculatePriorityScore(
       {
@@ -100,4 +104,22 @@ export async function archiveListing(id: string) {
   revalidatePath("/listings");
   revalidatePath("/dashboard");
   redirect("/listings");
+}
+
+export async function updateListingCrmStatus(
+  id: string,
+  crmStatus: ListingCrmStatus,
+) {
+  await requireUser();
+  const supabase = getSupabaseServiceClient();
+  const { error } = await supabase
+    .from("listings")
+    .update({ crm_status: crmStatus })
+    .eq("id", id);
+
+  if (error) throw new Error("Aggiornamento stato CRM non riuscito.");
+
+  revalidatePath(`/listings/${id}`);
+  revalidatePath("/listings");
+  revalidatePath("/dashboard");
 }

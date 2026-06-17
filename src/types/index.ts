@@ -1,5 +1,7 @@
 export type SellerType = "private" | "agency" | "unknown";
 
+export type ListingCrmStatus = "untreated" | "treated";
+
 export type ListingStatus =
   | "new"
   | "watch"
@@ -77,6 +79,7 @@ export interface Listing {
   firstSeenAt: string;
   lastSeenAt: string;
   status: string;
+  crmStatus: ListingCrmStatus;
   priorityScore: number;
   sellerFatigueScore: number;
   duplicateGroupId: string | null;

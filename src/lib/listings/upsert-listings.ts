@@ -35,6 +35,7 @@ type ExistingListingRow = {
   first_seen_at: string;
   last_seen_at: string;
   status: string;
+  crm_status?: "untreated" | "treated";
   priority_score: number;
   seller_fatigue_score: number;
   duplicate_group_id: string | null;
@@ -128,6 +129,7 @@ function toListingPreview(
     firstSeenAt: row.first_seen_at,
     lastSeenAt: normalized.lastSeenAt ?? normalized.checkedAt ?? new Date().toISOString(),
     status: normalized.status ?? row.status,
+    crmStatus: row.crm_status ?? "untreated",
     priorityScore: derived.priorityScore,
     sellerFatigueScore: derived.sellerFatigueScore,
     duplicateGroupId: row.duplicate_group_id,
