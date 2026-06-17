@@ -1,4 +1,3 @@
-import { SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -41,11 +40,18 @@ function readSearchParam(
 }
 
 function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
+  const mainFacts = [
+    formatCurrency(listing.price),
+    listing.sqm != null ? `${formatNumber(listing.sqm)} mq` : null,
+    listing.rooms != null ? `${formatNumber(listing.rooms)} locali` : null,
+    formatPlainText(listing.zone),
+  ].filter(Boolean);
+
   return (
-    <article className="grid grid-cols-[84px_minmax(0,1fr)] gap-3 border-b border-[var(--line-soft)] px-4 py-4 last:border-b-0 sm:px-5 md:grid-cols-[120px_minmax(0,1fr)_auto] md:items-center md:gap-4">
+    <article className="group grid gap-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] sm:grid-cols-[136px_minmax(0,1fr)] lg:grid-cols-[148px_minmax(0,1fr)_132px] lg:items-center">
       <Link
         href={`/listings/${listing.id}`}
-        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center"
+        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:h-[102px]"
         style={
           listing.imageUrls[0]
             ? { backgroundImage: `url("${listing.imageUrls[0]}")` }
@@ -53,47 +59,55 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
         }
         aria-label={`Apri la scheda di ${listing.title}`}
       >
+        {listing.imageUrls[0] ? null : "Foto non disponibile"}
       </Link>
 
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="min-w-0 self-start lg:self-center">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Badge tone={getSellerTypeTone(listing.sellerType)}>
             {getSellerTypeLabel(listing.sellerType)}
           </Badge>
+          <span className="text-xs font-medium text-[var(--ink-subtle)]">
+            {getListingStatusLabel(listing.status)}
+          </span>
           <span className="text-xs text-[var(--ink-subtle)]">
-            {getListingStatusLabel(listing.status)} - {getSourceLabel(listing.source)}
+            {getSourceLabel(listing.source)}
           </span>
         </div>
 
         <Link
           href={`/listings/${listing.id}`}
-          className="mt-2 line-clamp-2 block text-sm font-semibold leading-5 text-[var(--ink-strong)] transition-colors hover:text-[var(--surface-accent)] md:mt-3 md:text-base md:leading-6"
+          className="mt-2 line-clamp-2 block text-base font-semibold leading-6 text-[var(--ink-strong)] transition-colors group-hover:text-[var(--surface-accent)]"
         >
           {listing.title}
         </Link>
 
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--ink-soft)] md:mt-3 md:gap-x-5 md:gap-y-2">
-          <span className="font-semibold text-[var(--ink-strong)]">
-            {formatCurrency(listing.price)}
-          </span>
-          <span>{formatNumber(listing.sqm)} mq</span>
-          <span>{formatNumber(listing.rooms)} locali</span>
-          <span>{formatPlainText(listing.zone)}</span>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--ink-soft)]">
+          {mainFacts.map((fact, index) => (
+            <span
+              key={`${listing.id}-${fact}`}
+              className={index === 0 ? "font-semibold text-[var(--ink-strong)]" : ""}
+            >
+              {fact}
+            </span>
+          ))}
         </div>
 
-        <p className="col-span-2 mt-3 text-xs font-medium text-[var(--status-warning)] md:col-span-1">
-          {getListingAttentionReason(listing)}
-        </p>
-        <p className="col-span-2 mt-1 text-xs text-[var(--ink-subtle)] md:col-span-1">
-          Ultimo controllo: {formatDateTime(listing.lastSeenAt)}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="text-xs font-semibold text-[var(--status-warning)]">
+            {getListingAttentionReason(listing)}
+          </p>
+          <p className="text-xs text-[var(--ink-subtle)]">
+            Controllato {formatDateTime(listing.lastSeenAt)}
+          </p>
+        </div>
       </div>
 
-      <div className="col-span-2 flex flex-col items-start gap-2 sm:flex-row md:col-span-1 md:w-40 md:flex-col">
+      <div className="flex flex-col gap-2 sm:col-start-2 sm:flex-row lg:col-start-auto lg:w-full lg:flex-col">
         <ListingScoreSummary listing={listing} />
         <Link
           href={`/listings/${listing.id}`}
-          className="inline-flex h-10 w-full items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
+          className="inline-flex h-10 items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] sm:min-w-32 lg:w-full"
         >
           Apri scheda
         </Link>
@@ -101,7 +115,7 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
           href={listing.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-10 w-full items-center justify-center rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+          className="inline-flex h-10 items-center justify-center rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] sm:min-w-32 lg:w-full"
         >
           Originale
         </a>
@@ -187,17 +201,11 @@ export default async function ListingsPage({
       />
 
       <details
-        className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]"
+        className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)]"
         open={hasActiveFilters}
       >
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
-          <span className="flex items-center gap-3">
-            <SlidersHorizontal
-              aria-hidden="true"
-              className="size-4 text-[var(--surface-accent)]"
-            />
-            Filtra gli annunci
-          </span>
+          <span>Filtra gli annunci</span>
           <span className="text-xs font-normal text-[var(--ink-subtle)]">
             {hasActiveFilters ? "Filtri attivi" : "Facoltativo"}
           </span>
@@ -344,7 +352,7 @@ export default async function ListingsPage({
         </form>
       </details>
 
-      <section className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+      <section className="space-y-3">
         {listings.length ? (
           listings.map((listing) => (
             <ListingRow key={listing.id} listing={listing} />

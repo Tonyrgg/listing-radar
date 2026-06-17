@@ -35,12 +35,12 @@ export function ListingScoreSummary({
   const breakdown = getPriorityScoreBreakdown(scoreInput(listing));
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-md border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 py-2">
-      <span className="text-xs text-[var(--ink-soft)]">Appetibilita</span>
+    <div className="flex h-10 min-w-0 items-center justify-between gap-3 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3">
+      <span className="text-xs font-medium text-[var(--ink-soft)]">Indice</span>
       <strong className="text-sm tabular-nums text-[var(--ink-strong)]">
-        {breakdown.total} punti
+        {breakdown.total} pt
       </strong>
-      <span className="text-xs font-medium text-[var(--surface-accent)]">
+      <span className="text-xs font-semibold text-[var(--surface-accent)]">
         {getPriorityScoreLevel(breakdown.total)}
       </span>
     </div>
