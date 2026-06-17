@@ -48,10 +48,10 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
   ].filter(Boolean);
 
   return (
-    <article className="group grid gap-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] sm:grid-cols-[136px_minmax(0,1fr)] lg:grid-cols-[148px_minmax(0,1fr)_156px] lg:items-center">
+    <article className="group grid gap-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] sm:grid-cols-[170px_minmax(0,1fr)] lg:grid-cols-[220px_minmax(0,1fr)_156px] lg:items-stretch">
       <Link
         href={`/listings/${listing.id}`}
-        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:h-[102px]"
+        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[154px]"
         style={
           listing.imageUrls[0]
             ? { backgroundImage: `url("${listing.imageUrls[0]}")` }

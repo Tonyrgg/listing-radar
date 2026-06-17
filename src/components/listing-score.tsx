@@ -38,26 +38,24 @@ export function ListingScoreSummary({
 
   return (
     <div className="w-full rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <span className="pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
-          Appetibilita
-        </span>
-        <span className="rounded-full border border-[color-mix(in_oklch,var(--surface-accent)_35%,transparent)] bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none text-[var(--surface-accent)]">
-          {level}
-        </span>
-      </div>
-      <div className="mt-2 flex items-end gap-1">
+      <p className="text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
+        Appetibilita
+      </p>
+      <div className="mt-2 flex items-end justify-center gap-2">
         <strong className="text-[32px] font-semibold leading-none tabular-nums text-[var(--ink-strong)]">
           {breakdown.total}
         </strong>
         <span className="pb-1 text-xs font-semibold text-[var(--ink-soft)]">
           pt
         </span>
+        <span className="mb-1 rounded-full border border-[color-mix(in_oklch,var(--surface-accent)_35%,transparent)] bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none text-[var(--surface-accent)]">
+          {level}
+        </span>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
+      <div className="relative mt-3 h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.17_26)_0%,oklch(0.62_0.17_26)_33%,oklch(0.78_0.14_82)_33%,oklch(0.78_0.14_82)_66%,var(--surface-accent)_66%,var(--surface-accent)_100%)]">
         <span
-          className="block h-full rounded-full bg-[var(--surface-accent)]"
-          style={{ width: `${progress}%` }}
+          className="absolute top-0 h-full w-1 rounded-full bg-[var(--ink-strong)] shadow-[0_0_0_1px_var(--surface-canvas)]"
+          style={{ left: `calc(${progress}% - 2px)` }}
         />
       </div>
     </div>
