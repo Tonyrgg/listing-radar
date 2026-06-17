@@ -36,19 +36,23 @@ export function ListingScoreSummary({
   const level = getPriorityScoreLevel(breakdown.total);
 
   return (
-    <div className="flex h-12 min-w-0 items-center justify-between gap-2 rounded-[7px] border border-[color-mix(in_oklch,var(--surface-accent)_28%,var(--line-soft))] bg-[linear-gradient(135deg,color-mix(in_oklch,var(--surface-accent)_13%,var(--surface-muted)),var(--surface-muted))] px-2.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
-        Indice
-      </span>
-      <strong className="inline-flex min-w-12 items-baseline justify-center rounded-[5px] bg-[var(--surface-canvas)] px-2 py-1 text-base font-bold leading-none tabular-nums text-[var(--ink-strong)]">
-        {breakdown.total}
-        <span className="ml-1 text-[10px] font-semibold text-[var(--ink-soft)]">
+    <div className="grid w-full gap-2 rounded-[7px] border border-[color-mix(in_oklch,var(--surface-accent)_24%,var(--line-soft))] bg-[linear-gradient(135deg,color-mix(in_oklch,var(--surface-accent)_10%,var(--surface-muted)),var(--surface-muted))] p-2.5 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
+          Indice
+        </span>
+        <span className="rounded-full bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none text-[var(--surface-accent)]">
+          {level}
+        </span>
+      </div>
+      <div className="flex items-end gap-1">
+        <strong className="text-2xl font-semibold leading-none tabular-nums text-[var(--ink-strong)]">
+          {breakdown.total}
+        </strong>
+        <span className="pb-0.5 text-[11px] font-semibold text-[var(--ink-soft)]">
           pt
         </span>
-      </strong>
-      <span className="rounded-full bg-[var(--surface-accent-soft)] px-2 py-1 text-[11px] font-bold leading-none text-[var(--surface-accent)]">
-        {level}
-      </span>
+      </div>
     </div>
   );
 }
