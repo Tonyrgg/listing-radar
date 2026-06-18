@@ -138,6 +138,58 @@ function extractPhone(text: string) {
   return match?.[0]?.replace(/[^\d+]/g, "") ?? null;
 }
 
+function extractImageUrls(
+  html: string,
+  meta: Record<string, string>,
+  config: AgestaProviderConfig,
+) {
+  const urls = new Set<string>();
+  const mainPhotoHtml =
+    html.match(
+      /<div\b[^>]*id=["']mainfoto["'][^>]*>[\s\S]*?(?:<div\b[^>]*class=["'][^"']*\bimm-det-des\b|<div\b[^>]*class=["'][^"']*\bmap-tab\b|<div\b[^>]*class=["'][^"']*\bcontatti\b)/i,
+    )?.[0] ?? html;
+  const urlPatterns = [
+    /\b(?:href|src|data-src)=["']([^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/gi,
+    /background-image\s*:\s*url\(["']?([^"')]+\.(?:jpe?g|png|webp)(?:\?[^"')]+)?)["']?\)/gi,
+  ];
+
+  function add(value: string | undefined) {
+    if (
+      !value ||
+      /(?:logo|favicon|icon|facebook|instagram|youtube|whatsapp|linkedin|captcha|marker|flag|watermark)/i.test(
+        value,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const url = new URL(value.replace(/&amp;/gi, "&"), config.baseUrl);
+
+      if (
+        /(?:agestanet\.risorseimmobiliari\.it|media\.agestaweb\.it|futurabitonto\.it)/i.test(
+          url.hostname,
+        )
+      ) {
+        urls.add(url.toString());
+      }
+    } catch {
+      // Ignore malformed image URLs from legacy markup.
+    }
+  }
+
+  add(meta["og:image"]);
+  add(meta["twitter:image"]);
+
+  for (const pattern of urlPatterns) {
+    for (const match of mainPhotoHtml.matchAll(pattern)) {
+      add(match[1]);
+    }
+  }
+
+  return [...urls].slice(0, 40);
+}
+
 function buildAddress(html: string) {
   const address = getValueTextById(html, "det_indirizzo");
   const city = getValueTextById(html, "det_comune");
@@ -196,6 +248,7 @@ function normalizeDetail(
     sellerType: "agency",
     sellerName: config.agencyName,
     phone: extractPhone(stripHtml(html)),
+    imageUrls: extractImageUrls(html, meta, config),
     portalDeclaredDate: null,
     metadataDatePublished: null,
     metadataDateModified: null,
@@ -207,6 +260,7 @@ function normalizeDetail(
       provider: config.name,
       extractedAt: now,
       meta,
+      imageUrls: extractImageUrls(html, meta, config),
       descriptionHash: hashDescription(description),
     },
   };

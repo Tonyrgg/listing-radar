@@ -345,6 +345,10 @@ function applyListingFilters(
       return false;
     }
 
+    if (filters.status === "all" && listing.status === "archived") {
+      return false;
+    }
+
     if (filters.status !== "all" && listing.status !== filters.status) {
       return false;
     }

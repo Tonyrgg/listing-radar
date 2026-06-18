@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { clsx } from "clsx";
-import { RotateCcw } from "lucide-react";
+import { Archive, RotateCcw } from "lucide-react";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { Badge, getSellerTypeTone } from "@/components/badge";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
-import { updateListingCrmStatus } from "@/app/(private)/listings/[id]/actions";
+import {
+  archiveListing,
+  updateListingCrmStatus,
+} from "@/app/(private)/listings/[id]/actions";
 import {
   LISTING_SOURCE_OPTIONS,
   LISTING_STATUS_OPTIONS,
@@ -71,6 +74,7 @@ function ListingRow({
     listing.id,
     isTreated ? "untreated" : "treated",
   );
+  const archiveAction = archiveListing.bind(null, listing.id);
   const mainFacts = [
     { label: formatCurrency(listing.price), strong: true },
     listing.sqm != null ? { label: `${formatNumber(listing.sqm)} mq` } : null,
@@ -225,6 +229,15 @@ function ListingRow({
         >
           Originale
         </a>
+        <form action={archiveAction} className="sm:min-w-32 lg:w-full">
+          <button
+            type="submit"
+            className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[6px] border border-[oklch(0.46_0.05_80)] bg-[oklch(0.18_0.025_80)] px-4 text-sm font-semibold text-[oklch(0.82_0.08_80)] transition-colors hover:bg-[oklch(0.24_0.04_80)]"
+          >
+            <Archive className="size-4" aria-hidden="true" />
+            Archivia
+          </button>
+        </form>
       </div>
     </article>
   );
