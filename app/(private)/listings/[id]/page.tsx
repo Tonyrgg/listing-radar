@@ -77,37 +77,41 @@ function SummaryMetric({
   );
 }
 
-function CrmStatusControls({
+function CrmStatusMetric({
   listingId,
   crmStatus,
 }: Readonly<{
   listingId: string;
   crmStatus: "untreated" | "treated";
 }>) {
-  const markUntreated = updateListingCrmStatus.bind(null, listingId, "untreated");
-  const markTreated = updateListingCrmStatus.bind(null, listingId, "treated");
+  const isTreated = crmStatus === "treated";
+  const toggleCrmStatus = updateListingCrmStatus.bind(
+    null,
+    listingId,
+    isTreated ? "untreated" : "treated",
+  );
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <form action={markUntreated}>
-        <button
-          type="submit"
-          disabled={crmStatus === "untreated"}
-          className="h-9 rounded-md border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-default disabled:border-[var(--surface-accent-soft)] disabled:bg-[var(--surface-accent-soft)] disabled:text-[var(--surface-accent)]"
-        >
-          Non trattato
-        </button>
-      </form>
-      <form action={markTreated}>
-        <button
-          type="submit"
-          disabled={crmStatus === "treated"}
-          className="h-9 rounded-md border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-default disabled:border-[var(--surface-accent-soft)] disabled:bg-[var(--surface-accent-soft)] disabled:text-[var(--surface-accent)]"
-        >
-          Trattato
-        </button>
-      </form>
-    </div>
+    <form action={toggleCrmStatus}>
+      <button
+        type="submit"
+        className={
+          isTreated
+            ? "block w-full cursor-pointer rounded-[7px] border border-[oklch(0.56_0.1_150)] bg-[oklch(0.31_0.055_150)] px-4 py-3 text-left transition-colors hover:bg-[oklch(0.36_0.065_150)]"
+            : "block w-full cursor-pointer rounded-[7px] border border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] px-4 py-3 text-left transition-colors hover:bg-[oklch(0.28_0.05_28)]"
+        }
+      >
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+          CRM
+        </span>
+        <span className="mt-2 block truncate text-lg font-semibold leading-none text-[var(--ink-strong)]">
+          {getListingCrmStatusLabel(crmStatus)}
+        </span>
+        <span className="mt-1 block truncate text-xs text-[var(--ink-soft)]">
+          Clicca per segnare {isTreated ? "non trattato" : "trattato"}
+        </span>
+      </button>
+    </form>
   );
 }
 
@@ -149,7 +153,7 @@ export default async function ListingDetailPage({
       </Link>
 
       <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(520px,0.9fr)]">
+        <div className="grid gap-5 p-5">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={getSellerTypeTone(listing.sellerType)}>
@@ -157,9 +161,6 @@ export default async function ListingDetailPage({
               </Badge>
               <Badge tone={getStatusTone(listing.status)}>
                 {getListingStatusLabel(listing.status)}
-              </Badge>
-              <Badge tone={listing.crmStatus === "treated" ? "green" : "amber"}>
-                {getListingCrmStatusLabel(listing.crmStatus)}
               </Badge>
               {listing.isPriceDropped ? <Badge tone="red">Prezzo ridotto</Badge> : null}
               {listing.duplicateGroupId ? (
@@ -179,7 +180,7 @@ export default async function ListingDetailPage({
           </div>
 
           <div className="grid content-start gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryMetric
                 label="Prezzo"
                 value={formatCurrency(listing.price)}
@@ -203,10 +204,9 @@ export default async function ListingDetailPage({
                     : "Scheda completa"
                 }
               />
-              <SummaryMetric
-                label="CRM"
-                value={getListingCrmStatusLabel(listing.crmStatus)}
-                detail="Trasferimento interno"
+              <CrmStatusMetric
+                listingId={listing.id}
+                crmStatus={listing.crmStatus}
               />
             </div>
 
@@ -236,21 +236,6 @@ export default async function ListingDetailPage({
                 value={`${formatNumber(listing.minimumDaysOnline)} giorni`}
               />
             </dl>
-
-            <div className="flex flex-col gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-[var(--ink-strong)]">
-                  Stato trattamento
-                </p>
-                <p className="mt-1 text-xs text-[var(--ink-soft)]">
-                  Segna se l&apos;annuncio e gia stato riportato nel CRM personale.
-                </p>
-              </div>
-              <CrmStatusControls
-                listingId={listing.id}
-                crmStatus={listing.crmStatus}
-              />
-            </div>
           </div>
         </div>
 

@@ -19,7 +19,6 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import {
-  getListingCrmStatusLabel,
   getListingStatusLabel,
   getSellerTypeLabel,
   getSourceLabel,
@@ -84,22 +83,30 @@ function ListingRow({
   return (
     <article
       className={clsx(
-        "group grid gap-4 rounded-[10px] border bg-[var(--surface-panel)] p-4 transition-colors sm:grid-cols-[190px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_156px] lg:items-stretch",
+        "group relative grid gap-4 rounded-[10px] border p-4 transition-colors sm:grid-cols-[190px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_156px] lg:items-stretch",
         isTreated
-          ? "border-[oklch(0.62_0.09_150)] hover:border-[var(--surface-accent)]"
-          : "border-[var(--line-soft)] hover:border-[var(--line-strong)]",
+          ? "border-[oklch(0.66_0.11_150)] bg-[color-mix(in_oklch,var(--surface-panel)_64%,var(--surface-accent-soft))] shadow-[inset_0_0_0_2px_oklch(0.58_0.09_150/0.24)] hover:border-[var(--surface-accent)]"
+          : "border-[var(--line-soft)] bg-[var(--surface-panel)] hover:border-[var(--line-strong)]",
       )}
     >
       <Link
         href={`/listings/${listing.id}`}
-        className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[174px]"
+        className={clsx(
+          "relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[8px] border bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[174px]",
+          isTreated
+            ? "border-[oklch(0.52_0.08_150)] bg-[oklch(0.245_0.03_150)]"
+            : "border-[var(--line-soft)]",
+        )}
         aria-label={`Apri la scheda di ${listing.title}`}
       >
         {listing.imageUrls[0] ? (
           <img
             src={listing.imageUrls[0]}
             alt=""
-            className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.015]"
+            className={clsx(
+              "size-full object-cover transition-transform duration-200 group-hover:scale-[1.015]",
+              isTreated && "saturate-[0.45] contrast-[0.88] opacity-70",
+            )}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
@@ -111,30 +118,34 @@ function ListingRow({
 
       <div className="min-w-0 self-start lg:self-center">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Badge tone={getSellerTypeTone(listing.sellerType)}>
-            {getSellerTypeLabel(listing.sellerType)}
-          </Badge>
-          {shouldShowStatus ? (
-            <Badge tone={listing.status === "new" ? "green" : "slate"}>
-              {getListingStatusLabel(listing.status)}
-            </Badge>
+          {!isTreated ? (
+            <>
+              <Badge tone={getSellerTypeTone(listing.sellerType)}>
+                {getSellerTypeLabel(listing.sellerType)}
+              </Badge>
+              {shouldShowStatus ? (
+                <Badge tone={listing.status === "new" ? "green" : "slate"}>
+                  {getListingStatusLabel(listing.status)}
+                </Badge>
+              ) : null}
+              <Badge tone="slate">
+                {getSourceLabel(listing.source)}
+              </Badge>
+            </>
           ) : null}
-          <Badge tone="slate">
-            {getSourceLabel(listing.source)}
-          </Badge>
-          <Badge tone={isTreated ? "green" : "amber"}>
-            {getListingCrmStatusLabel(listing.crmStatus)}
-          </Badge>
         </div>
 
         <Link
           href={`/listings/${listing.id}`}
-          className="mt-2 block text-base font-semibold leading-6 text-[var(--ink-strong)] transition-colors group-hover:text-[var(--surface-accent)]"
+          className={clsx(
+            "mt-2 block text-base font-semibold leading-6 transition-colors group-hover:text-[var(--surface-accent)]",
+            isTreated ? "text-[oklch(0.88_0.08_150)]" : "text-[var(--ink-strong)]",
+          )}
         >
           <span className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
             <span className="line-clamp-2 min-w-0">{listing.title}</span>
             {isTreated ? (
-              <span className="inline-flex shrink-0 rounded-full border border-[oklch(0.5_0.08_150)] bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none uppercase tracking-[0.06em] text-[var(--surface-accent)]">
+              <span className="inline-flex shrink-0 rounded-full border border-[oklch(0.62_0.11_150)] bg-[oklch(0.42_0.09_150)] px-3 py-1.5 text-[10px] font-bold leading-none uppercase tracking-[0.08em] text-[oklch(0.9_0.11_150)]">
                 Trattato
               </span>
             ) : null}
@@ -142,23 +153,31 @@ function ListingRow({
         </Link>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {mainFacts.map((fact) => (
-            <span
-              key={`${listing.id}-${fact.label}`}
-              className={clsx(
-                "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--ink-soft)]",
-                fact.strong && "font-semibold text-[var(--ink-strong)]",
-              )}
-            >
-              {fact.label}
+          {isTreated ? (
+            <span className="rounded-full border border-[oklch(0.45_0.065_150)] bg-[oklch(0.285_0.045_150)] px-2.5 py-1 text-xs text-[oklch(0.82_0.055_150)]">
+              {formatPlainText(listing.addressRaw ?? listing.zone)}
             </span>
-          ))}
+          ) : (
+            mainFacts.map((fact) => (
+              <span
+                key={`${listing.id}-${fact.label}`}
+                className={clsx(
+                  "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--ink-soft)]",
+                  fact.strong && "font-semibold text-[var(--ink-strong)]",
+                )}
+              >
+                {fact.label}
+              </span>
+            ))
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <p className="text-xs font-semibold text-[var(--status-warning)]">
-            {getListingAttentionReason(listing)}
-          </p>
+          {!isTreated ? (
+            <p className="text-xs font-semibold text-[var(--status-warning)]">
+              {getListingAttentionReason(listing)}
+            </p>
+          ) : null}
           <p className="text-xs text-[var(--ink-subtle)]">
             Controllato {formatDateTime(listing.lastSeenAt)}
           </p>
@@ -173,7 +192,7 @@ function ListingRow({
             className={clsx(
               "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border px-4 text-sm font-semibold transition-colors",
               isTreated
-                ? "border-[oklch(0.5_0.08_150)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)] hover:bg-[oklch(0.36_0.065_150)]"
+                ? "border-[oklch(0.62_0.11_150)] bg-[oklch(0.42_0.09_150)] text-[oklch(0.92_0.1_150)] hover:bg-[oklch(0.48_0.1_150)]"
                 : "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)] hover:bg-[oklch(0.28_0.05_28)]",
             )}
           >
@@ -182,7 +201,12 @@ function ListingRow({
         </form>
         <Link
           href={`/listings/${listing.id}`}
-          className="inline-flex h-10 items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] sm:min-w-32 lg:w-full"
+          className={clsx(
+            "inline-flex h-10 items-center justify-center rounded-[6px] px-4 text-sm font-semibold transition-colors sm:min-w-32 lg:w-full",
+            isTreated
+              ? "border border-[oklch(0.5_0.07_150)] bg-transparent text-[oklch(0.86_0.08_150)] hover:bg-[oklch(0.3_0.055_150)]"
+              : "bg-[var(--surface-accent)] text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)]",
+          )}
         >
           Apri scheda
         </Link>
