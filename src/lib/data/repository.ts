@@ -513,6 +513,9 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const activeListings = storedListings.filter(
     (listing) => listing.status !== "archived",
   );
+  const openOpportunityListings = activeListings.filter(
+    (listing) => listing.crmStatus !== "treated",
+  );
 
   return {
     newToday: activeListings.filter((listing) => listing.isNewToday).length,
@@ -525,12 +528,18 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     hotOld: activeListings.filter((listing) =>
       isHotOldListingWithConfig(listing, scoringConfig),
     ).length,
-    highPriority: activeListings.filter(
+    highPriority: openOpportunityListings.filter(
       (listing) =>
         listing.priorityScore >= getHighPriorityThresholdFromConfig(scoringConfig),
     ).length,
-    watchlist: [...activeListings]
-      .sort((left, right) => right.priorityScore - left.priorityScore)
+    watchlist: [...openOpportunityListings]
+      .sort((left, right) => {
+        if (right.priorityScore !== left.priorityScore) {
+          return right.priorityScore - left.priorityScore;
+        }
+
+        return right.lastSeenAt.localeCompare(left.lastSeenAt);
+      })
       .slice(0, 5),
   };
 }

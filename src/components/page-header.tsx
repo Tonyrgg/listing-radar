@@ -18,11 +18,11 @@ export function PageHeader({
   backLabel?: string;
 }>) {
   return (
-    <header className="border-b border-[var(--line-soft)] pb-5">
+    <header className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-5 py-5">
       {backHref && backLabel ? (
         <Link
           href={backHref}
-          className="mb-5 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-[var(--ink-soft)] transition-colors hover:text-[var(--ink-strong)]"
+          className="mb-5 inline-flex min-h-9 items-center gap-2 text-sm font-semibold text-[var(--ink-soft)] transition-colors hover:text-[var(--ink-strong)]"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
           {backLabel}
@@ -31,10 +31,10 @@ export function PageHeader({
 
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--surface-accent)]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--surface-accent)]">
             {eyebrow}
           </p>
-          <h1 className="mt-2 text-2xl font-semibold leading-tight text-[var(--ink-strong)]">
+          <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--ink-strong)]">
             {title}
           </h1>
           {description ? (

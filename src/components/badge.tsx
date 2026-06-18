@@ -7,13 +7,13 @@ const toneClasses: Record<BadgeTone, string> = {
   slate:
     "border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)]",
   green:
-    "border-[oklch(0.52_0.07_147)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
+    "border-[oklch(0.44_0.07_150)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
   amber:
-    "border-[oklch(0.4_0.07_80)] bg-[oklch(0.23_0.035_80)] text-[var(--status-warning)]",
+    "border-[oklch(0.42_0.07_80)] bg-[oklch(0.235_0.035_80)] text-[var(--status-warning)]",
   blue:
-    "border-[oklch(0.39_0.045_225)] bg-[oklch(0.23_0.025_225)] text-[oklch(0.76_0.07_225)]",
+    "border-[oklch(0.42_0.045_230)] bg-[oklch(0.235_0.025_230)] text-[oklch(0.76_0.06_230)]",
   red:
-    "border-[oklch(0.4_0.07_24)] bg-[oklch(0.23_0.035_24)] text-[var(--status-error)]",
+    "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)]",
 };
 
 export function Badge({
@@ -26,7 +26,7 @@ export function Badge({
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded-[6px] border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.04em]",
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.06em]",
         toneClasses[tone],
       )}
     >

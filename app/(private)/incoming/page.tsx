@@ -167,7 +167,7 @@ export default async function IncomingPage({
         </nav>
       </div>
 
-      <section className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-4 shadow-[var(--shadow-panel)]">
+      <section className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-4">
         {listings.length ? (
           listings.map((listing) => (
             <IncomingCard key={listing.id} listing={listing} />

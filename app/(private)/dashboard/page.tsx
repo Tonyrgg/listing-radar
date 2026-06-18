@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import { Badge, getSellerTypeTone } from "@/components/badge";
@@ -77,13 +78,15 @@ function SummaryCard({
   detail: string;
 }>) {
   return (
-    <article className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)]">
-      <p className="text-3xl font-semibold text-[var(--surface-accent)]">
+    <article className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4">
+      <p className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ink-strong)]">
         {formatNumber(value)}
       </p>
       <div className="mt-3 min-w-0">
         <p className="text-sm font-semibold text-[var(--ink-strong)]">{label}</p>
-        <p className="mt-1 text-xs text-[var(--surface-accent)]">{detail}</p>
+        <p className="mt-1 text-xs font-medium text-[var(--surface-accent)]">
+          {detail}
+        </p>
       </div>
     </article>
   );
@@ -99,8 +102,8 @@ function SectionCard({
   children: React.ReactNode;
 }>) {
   return (
-    <section className="overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
-      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-[var(--line-soft)] px-4">
+    <section className="overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+      <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--line-soft)] px-4">
         <h2 className="text-sm font-semibold text-[var(--ink-strong)]">{title}</h2>
         {action}
       </div>
@@ -193,6 +196,9 @@ function OpportunityRow({
             <span>{formatNumber(listing.sqm)} mq</span>
             <span>{formatPlainText(listing.zone)}</span>
           </div>
+          <p className="mt-1 text-xs text-[var(--ink-subtle)]">
+            Aggiunto il {formatDateTime(listing.firstSeenAt)}
+          </p>
         </div>
       </div>
       <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
@@ -227,6 +233,8 @@ function SystemRow({
 }
 
 export default async function DashboardPage() {
+  await connection();
+
   const [summary, incoming, lastScrapeRun, scoringConfig] = await Promise.all([
     getDashboardSummary(),
     getIncomingDashboardData(),

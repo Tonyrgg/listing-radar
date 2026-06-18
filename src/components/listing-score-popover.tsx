@@ -85,7 +85,7 @@ export function ListingScorePopover({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="w-full cursor-pointer rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 text-left shadow-[inset_0_1px_0_oklch(1_0_0/0.04)] transition-colors hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+        className="w-full cursor-pointer rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 text-left transition-colors hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
         aria-haspopup="dialog"
       >
         <span className="block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
@@ -122,7 +122,7 @@ export function ListingScorePopover({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] shadow-[0_24px_70px_oklch(0.05_0.02_154/0.55)]"
+            className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="border-b border-[var(--line-soft)] p-5">

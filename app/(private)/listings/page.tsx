@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { clsx } from "clsx";
 
 import { Badge, getSellerTypeTone } from "@/components/badge";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
+import { updateListingCrmStatus } from "@/app/(private)/listings/[id]/actions";
 import {
   LISTING_SOURCE_OPTIONS,
   LISTING_STATUS_OPTIONS,
@@ -17,6 +19,7 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import {
+  getListingCrmStatusLabel,
   getListingStatusLabel,
   getSellerTypeLabel,
   getSourceLabel,
@@ -30,6 +33,9 @@ export const metadata: Metadata = {
   title: "Archivio annunci",
 };
 
+/* External listing images come from dynamic portal hosts. */
+/* eslint-disable @next/next/no-img-element */
+
 function readSearchParam(
   value: string | string[] | undefined,
   fallback: string,
@@ -41,30 +47,66 @@ function readSearchParam(
   return value ?? fallback;
 }
 
+function isRecentListing(value: string) {
+  const firstSeenAt = new Date(value).getTime();
+
+  if (Number.isNaN(firstSeenAt)) {
+    return false;
+  }
+
+  const threeDays = 1000 * 60 * 60 * 24 * 3;
+  return Date.now() - firstSeenAt <= threeDays;
+}
+
 function ListingRow({
   listing,
   scoringConfig,
 }: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
+  const isTreated = listing.crmStatus === "treated";
+  const shouldShowStatus =
+    listing.status !== "new" || listing.isNewToday || isRecentListing(listing.firstSeenAt);
+  const toggleCrmStatus = updateListingCrmStatus.bind(
+    null,
+    listing.id,
+    isTreated ? "untreated" : "treated",
+  );
   const mainFacts = [
-    formatCurrency(listing.price),
-    listing.sqm != null ? `${formatNumber(listing.sqm)} mq` : null,
-    listing.rooms != null ? `${formatNumber(listing.rooms)} locali` : null,
-    formatPlainText(listing.zone),
-  ].filter(Boolean);
+    { label: formatCurrency(listing.price), strong: true },
+    listing.sqm != null ? { label: `${formatNumber(listing.sqm)} mq` } : null,
+    listing.rooms != null
+      ? { label: `${formatNumber(listing.rooms)} locali` }
+      : null,
+    { label: formatPlainText(listing.zone) },
+  ].filter(
+    (fact): fact is { label: string; strong?: boolean } => Boolean(fact),
+  );
 
   return (
-    <article className="group grid gap-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4 shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] sm:grid-cols-[170px_minmax(0,1fr)] lg:grid-cols-[220px_minmax(0,1fr)_156px] lg:items-stretch">
+    <article
+      className={clsx(
+        "group grid gap-4 rounded-[10px] border bg-[var(--surface-panel)] p-4 transition-colors sm:grid-cols-[190px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_156px] lg:items-stretch",
+        isTreated
+          ? "border-[oklch(0.62_0.09_150)] hover:border-[var(--surface-accent)]"
+          : "border-[var(--line-soft)] hover:border-[var(--line-strong)]",
+      )}
+    >
       <Link
         href={`/listings/${listing.id}`}
-        className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] bg-cover bg-center text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[154px]"
-        style={
-          listing.imageUrls[0]
-            ? { backgroundImage: `url("${listing.imageUrls[0]}")` }
-            : undefined
-        }
+        className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[174px]"
         aria-label={`Apri la scheda di ${listing.title}`}
       >
-        {listing.imageUrls[0] ? null : "Foto non disponibile"}
+        {listing.imageUrls[0] ? (
+          <img
+            src={listing.imageUrls[0]}
+            alt=""
+            className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.015]"
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          "Foto non disponibile"
+        )}
       </Link>
 
       <div className="min-w-0 self-start lg:self-center">
@@ -72,28 +114,43 @@ function ListingRow({
           <Badge tone={getSellerTypeTone(listing.sellerType)}>
             {getSellerTypeLabel(listing.sellerType)}
           </Badge>
-          <span className="text-xs font-medium text-[var(--ink-subtle)]">
-            {getListingStatusLabel(listing.status)}
-          </span>
-          <span className="text-xs text-[var(--ink-subtle)]">
+          {shouldShowStatus ? (
+            <Badge tone={listing.status === "new" ? "green" : "slate"}>
+              {getListingStatusLabel(listing.status)}
+            </Badge>
+          ) : null}
+          <Badge tone="slate">
             {getSourceLabel(listing.source)}
-          </span>
+          </Badge>
+          <Badge tone={isTreated ? "green" : "amber"}>
+            {getListingCrmStatusLabel(listing.crmStatus)}
+          </Badge>
         </div>
 
         <Link
           href={`/listings/${listing.id}`}
-          className="mt-2 line-clamp-2 block text-base font-semibold leading-6 text-[var(--ink-strong)] transition-colors group-hover:text-[var(--surface-accent)]"
+          className="mt-2 block text-base font-semibold leading-6 text-[var(--ink-strong)] transition-colors group-hover:text-[var(--surface-accent)]"
         >
-          {listing.title}
+          <span className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+            <span className="line-clamp-2 min-w-0">{listing.title}</span>
+            {isTreated ? (
+              <span className="inline-flex shrink-0 rounded-full border border-[oklch(0.5_0.08_150)] bg-[var(--surface-accent-soft)] px-2 py-1 text-[10px] font-bold leading-none uppercase tracking-[0.06em] text-[var(--surface-accent)]">
+                Trattato
+              </span>
+            ) : null}
+          </span>
         </Link>
 
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--ink-soft)]">
-          {mainFacts.map((fact, index) => (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {mainFacts.map((fact) => (
             <span
-              key={`${listing.id}-${fact}`}
-              className={index === 0 ? "font-semibold text-[var(--ink-strong)]" : ""}
+              key={`${listing.id}-${fact.label}`}
+              className={clsx(
+                "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--ink-soft)]",
+                fact.strong && "font-semibold text-[var(--ink-strong)]",
+              )}
             >
-              {fact}
+              {fact.label}
             </span>
           ))}
         </div>
@@ -110,6 +167,19 @@ function ListingRow({
 
       <div className="flex flex-col gap-2 sm:col-start-2 sm:flex-row lg:col-start-auto lg:w-full lg:flex-col">
         <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
+        <form action={toggleCrmStatus} className="sm:min-w-32 lg:w-full">
+          <button
+            type="submit"
+            className={clsx(
+              "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border px-4 text-sm font-semibold transition-colors",
+              isTreated
+                ? "border-[oklch(0.5_0.08_150)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)] hover:bg-[oklch(0.36_0.065_150)]"
+                : "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)] hover:bg-[oklch(0.28_0.05_28)]",
+            )}
+          >
+            {isTreated ? "Trattato" : "Non trattato"}
+          </button>
+        </form>
         <Link
           href={`/listings/${listing.id}`}
           className="inline-flex h-10 items-center justify-center rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] sm:min-w-32 lg:w-full"

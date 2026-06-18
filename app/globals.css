@@ -2,24 +2,24 @@
 
 :root {
   color-scheme: dark;
-  --surface-canvas: oklch(0.18 0.018 154);
-  --surface-panel: oklch(0.245 0.021 154);
-  --surface-muted: oklch(0.295 0.022 154);
-  --surface-elevated: oklch(0.335 0.026 154);
-  --surface-strong: oklch(0.39 0.032 154);
-  --surface-accent: oklch(0.73 0.145 147);
-  --surface-accent-hover: oklch(0.79 0.15 147);
-  --surface-accent-soft: oklch(0.38 0.062 147);
-  --button-ink: oklch(0.165 0.024 154);
-  --ink-strong: oklch(0.965 0.01 116);
-  --ink-soft: oklch(0.79 0.018 142);
-  --ink-subtle: oklch(0.64 0.017 148);
-  --line-soft: oklch(0.435 0.025 154);
-  --line-strong: oklch(0.53 0.03 154);
-  --status-warning: oklch(0.78 0.12 78);
-  --status-error: oklch(0.72 0.15 26);
-  --focus-ring: oklch(0.78 0.15 147);
-  --shadow-panel: 0 14px 28px oklch(0.07 0.02 154 / 0.18);
+  --surface-canvas: oklch(0.155 0.012 160);
+  --surface-panel: oklch(0.215 0.014 160);
+  --surface-muted: oklch(0.265 0.015 160);
+  --surface-elevated: oklch(0.315 0.016 160);
+  --surface-strong: oklch(0.38 0.02 160);
+  --surface-accent: oklch(0.71 0.13 150);
+  --surface-accent-hover: oklch(0.77 0.14 150);
+  --surface-accent-soft: oklch(0.31 0.052 150);
+  --button-ink: oklch(0.15 0.018 160);
+  --ink-strong: oklch(0.965 0.006 135);
+  --ink-soft: oklch(0.78 0.014 150);
+  --ink-subtle: oklch(0.61 0.014 155);
+  --line-soft: oklch(0.36 0.015 160);
+  --line-strong: oklch(0.48 0.018 160);
+  --status-warning: oklch(0.76 0.12 82);
+  --status-error: oklch(0.7 0.15 28);
+  --focus-ring: oklch(0.76 0.14 150);
+  --shadow-panel: 0 1px 0 oklch(1 0 0 / 0.03), 0 12px 30px oklch(0.04 0.012 160 / 0.16);
 }
 
 @theme inline {
@@ -40,7 +40,9 @@ html {
 body {
   margin: 0;
   background:
-    linear-gradient(180deg, oklch(0.205 0.02 154) 0, var(--surface-canvas) 220px),
+    radial-gradient(circle at top right, oklch(0.24 0.035 150 / 0.45), transparent 360px),
+    linear-gradient(180deg, oklch(0.19 0.014 160) 0, var(--surface-canvas) 240px),
+    linear-gradient(90deg, oklch(0.145 0.012 160) 0, oklch(0.17 0.014 160) 100%),
     var(--surface-canvas);
   color: var(--ink-strong);
   font-family: var(--font-geist-sans), sans-serif;
@@ -55,6 +57,20 @@ body {
   :where(a, button, input, select, textarea):focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
+  }
+
+  :where(input, select, textarea) {
+    color: var(--ink-strong);
+  }
+
+  :where(input, select, textarea) {
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  :where(input, select, textarea):hover {
+    border-color: var(--line-strong);
   }
 }
 
@@ -71,4 +87,19 @@ body {
 
 .text-balance {
   text-wrap: balance;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-canvas);
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid var(--surface-canvas);
+  border-radius: 999px;
+  background: var(--surface-strong);
 }
