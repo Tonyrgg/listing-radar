@@ -8,6 +8,8 @@
     if (host.includes("immobiliare.")) return "immobiliare";
     if (host.includes("subito.")) return "subito";
     if (host.includes("casa.")) return "casa";
+    if (host.includes("wikicasa.")) return "wikicasa";
+    if (host.includes("casadaprivato.")) return "casadaprivato";
     return "browser";
   }
 
@@ -17,6 +19,8 @@
       immobiliare: /\/annunci\/(\d+)/i,
       subito: /-(\d+)\.htm/i,
       casa: /\/immobili\/(\d+)/i,
+      wikicasa: /\/annuncio\/(\d+)/i,
+      casadaprivato: /-(\d+)(?:$|[/?#])/i,
     };
     return patterns[source]?.exec(value)?.[1] || null;
   }

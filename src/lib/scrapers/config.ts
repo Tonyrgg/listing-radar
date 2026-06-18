@@ -1,9 +1,13 @@
 export type ScraperProviderName =
   | "mock"
-  | "subito"
   | "admaiora"
   | "futura"
+  | "iconacasa"
+  | "ingegnericolapinto"
   | "immobiliaririunite"
+  | "puntocasa"
+  | "studisanti"
+  | "vistocasa"
   | "import"
   | "feed"
   | "all";
@@ -34,16 +38,28 @@ export const SCRAPER_CONFIG = {
     mock: {
       enabledByDefault: true,
     },
-    subito: {
-      enabledByDefault: false,
-    },
     admaiora: {
       enabledByDefault: true,
     },
     futura: {
       enabledByDefault: true,
     },
+    iconacasa: {
+      enabledByDefault: true,
+    },
+    ingegnericolapinto: {
+      enabledByDefault: true,
+    },
     immobiliaririunite: {
+      enabledByDefault: true,
+    },
+    puntocasa: {
+      enabledByDefault: true,
+    },
+    studisanti: {
+      enabledByDefault: true,
+    },
+    vistocasa: {
       enabledByDefault: true,
     },
     import: {
@@ -59,10 +75,6 @@ export const SCRAPER_CONFIG = {
     maxDetailPages: 10,
     minDetailDelayMs: MIN_DETAIL_DELAY_MS,
   },
-  subito: {
-    baseUrl: "https://www.subito.it",
-    searchPath: "/annunci-puglia/vendita/immobili/bari/bitonto/",
-  },
   admaiora: {
     baseUrl: "https://www.admaioraimmobiliare.it",
     searchUrl: "https://www.admaioraimmobiliare.it/property-status/vendita/",
@@ -72,17 +84,43 @@ export const SCRAPER_CONFIG = {
     searchUrl:
       "https://www.futurabitonto.it/web/immobili.asp?language=ita&pagref=88306&tipo_contratto=V",
   },
+  iconacasa: {
+    baseUrl: "https://www.iconacasa.com",
+    searchUrl:
+      "https://www.iconacasa.com/index.php/agenzie/companyproperties/13-iconacasa-bitonto-piazza-aldo-moro",
+  },
+  ingegnericolapinto: {
+    baseUrl: "https://www.ingegnericolapinto.it",
+    searchUrl: "https://www.ingegnericolapinto.it/sitemap_blog.xml",
+  },
   immobiliaririunite: {
     baseUrl: "https://www.immobiliaririunite.it",
     searchUrl:
       "https://www.immobiliaririunite.it/web/immobili.asp?cod_comune=719&cod_provincia=9&cod_regione=13&language=ita&link=1",
+  },
+  puntocasa: {
+    baseUrl: "https://www.puntocasagroup.it",
+    searchUrl: "https://www.puntocasagroup.it/acquista-la-tua-casa-2/",
+  },
+  studisanti: {
+    baseUrl: "https://studisantiimmobiliare.it",
+    searchUrl: "https://studisantiimmobiliare.it/sitemap.xml",
+  },
+  vistocasa: {
+    baseUrl: "https://www.vistocasa.com/it/",
+    searchUrl: "https://www.vistocasa.com/it/ricerca.aspx?catalogoproduttoriid=56",
   },
 } as const;
 
 export const ALL_WEB_PROVIDER_NAMES = [
   "admaiora",
   "futura",
+  "iconacasa",
+  "ingegnericolapinto",
   "immobiliaririunite",
+  "puntocasa",
+  "studisanti",
+  "vistocasa",
 ] as const;
 
 export function normalizeProviderName(
@@ -91,10 +129,14 @@ export function normalizeProviderName(
   const normalized = value?.trim().toLowerCase();
 
   if (
-    normalized === "subito" ||
     normalized === "admaiora" ||
     normalized === "futura" ||
+    normalized === "iconacasa" ||
+    normalized === "ingegnericolapinto" ||
     normalized === "immobiliaririunite" ||
+    normalized === "puntocasa" ||
+    normalized === "studisanti" ||
+    normalized === "vistocasa" ||
     normalized === "import" ||
     normalized === "feed" ||
     normalized === "all" ||
@@ -135,14 +177,4 @@ export function getScraperRuntimeConfig() {
     maxDetailPages,
     detailDelayMs,
   };
-}
-
-export function getSubitoSearchUrl(page = 1) {
-  const url = new URL(SCRAPER_CONFIG.subito.searchPath, SCRAPER_CONFIG.subito.baseUrl);
-
-  if (page > 1) {
-    url.searchParams.set("o", String(page));
-  }
-
-  return url.toString();
 }

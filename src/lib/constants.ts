@@ -7,7 +7,12 @@ export const REPORT_SCHEDULE = "09:00";
 export const LISTING_SOURCE_OPTIONS = [
   "admaiora",
   "futura",
+  "iconacasa",
+  "ingegnericolapinto",
   "immobiliaririunite",
+  "puntocasa",
+  "studisanti",
+  "vistocasa",
   "feed",
   "import",
   "subito",
@@ -15,6 +20,8 @@ export const LISTING_SOURCE_OPTIONS = [
   "Casa.it",
   "Idealista",
   "Immobiliare.it",
+  "Wikicasa",
+  "CasaDaPrivato",
   "Bakeca",
 ] as const;
 

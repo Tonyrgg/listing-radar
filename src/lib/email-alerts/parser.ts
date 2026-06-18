@@ -8,6 +8,8 @@ const PORTAL_HOSTS: Record<Exclude<AlertSource, "unknown">, string[]> = {
   immobiliare: ["immobiliare.it"],
   subito: ["subito.it"],
   casa: ["casa.it"],
+  wikicasa: ["wikicasa.it"],
+  casadaprivato: ["casadaprivato.it"],
 };
 
 const GENERIC_LINK_LABELS = new Set([
@@ -99,6 +101,10 @@ function isDetailUrl(source: AlertSource, value: string) {
       );
     case "casa":
       return /casa\.it\/immobili\//.test(lowered);
+    case "wikicasa":
+      return /wikicasa\.it\/annuncio\/\d+/.test(lowered);
+    case "casadaprivato":
+      return /casadaprivato\.it\/.+-\d+/.test(lowered);
     default:
       return false;
   }
@@ -110,6 +116,8 @@ function extractSourceListingId(source: AlertSource, value: string) {
     immobiliare: /\/annunci\/(\d+)/i,
     subito: /-(\d+)\.htm/i,
     casa: /\/immobili\/(\d+)/i,
+    wikicasa: /\/annuncio\/(\d+)/i,
+    casadaprivato: /-(\d+)(?:$|[/?#])/i,
   };
   const pattern = patterns[source];
 

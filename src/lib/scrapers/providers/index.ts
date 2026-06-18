@@ -6,20 +6,28 @@ import {
 import { admaioraProvider } from "@/lib/scrapers/providers/admaiora";
 import { feedProvider } from "@/lib/scrapers/providers/feed";
 import { futuraProvider } from "@/lib/scrapers/providers/futura";
+import { iconacasaProvider } from "@/lib/scrapers/providers/iconacasa";
+import { ingegneriColapintoProvider } from "@/lib/scrapers/providers/ingegnericolapinto";
 import { importFileProvider } from "@/lib/scrapers/providers/import-file";
 import { immobiliariRiuniteProvider } from "@/lib/scrapers/providers/immobiliaririunite";
 import { mockProvider } from "@/lib/scrapers/providers/mock";
-import { subitoProvider } from "@/lib/scrapers/providers/subito";
+import { puntocasaProvider } from "@/lib/scrapers/providers/puntocasa";
+import { studiSantiProvider } from "@/lib/scrapers/providers/studisanti";
 import type { ListingsProvider } from "@/lib/scrapers/providers/types";
+import { vistocasaProvider } from "@/lib/scrapers/providers/vistocasa";
 
 const providers: Record<string, ListingsProvider> = {
   admaiora: admaioraProvider,
   feed: feedProvider,
   futura: futuraProvider,
+  iconacasa: iconacasaProvider,
+  ingegnericolapinto: ingegneriColapintoProvider,
   import: importFileProvider,
   immobiliaririunite: immobiliariRiuniteProvider,
   mock: mockProvider,
-  subito: subitoProvider,
+  puntocasa: puntocasaProvider,
+  studisanti: studiSantiProvider,
+  vistocasa: vistocasaProvider,
 };
 
 export function getProvider(name = "mock") {
@@ -40,9 +48,13 @@ export {
   admaioraProvider,
   feedProvider,
   futuraProvider,
+  iconacasaProvider,
+  ingegneriColapintoProvider,
   importFileProvider,
   immobiliariRiuniteProvider,
   mockProvider,
+  puntocasaProvider,
   providers,
-  subitoProvider,
+  studiSantiProvider,
+  vistocasaProvider,
 };

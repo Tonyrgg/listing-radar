@@ -1,4 +1,4 @@
-(function registerSubitoParser() {
+(function registerWikicasaParser() {
   const generic = globalThis.ListingRadarGenericParser;
   const utils = globalThis.ListingRadarPortalAdapterUtils;
 
@@ -28,7 +28,7 @@
     }
   }
 
-  function collectSubitoImages() {
+  function collectWikicasaImages() {
     const urls = [];
 
     function add(value) {
@@ -36,7 +36,7 @@
 
       if (
         normalized &&
-        /(?:subito|subitoimg|cloudfront|img)/i.test(normalized) &&
+        /(?:wikicasa|cloudfront|img|image)/i.test(normalized) &&
         !urls.includes(normalized)
       ) {
         urls.push(normalized);
@@ -80,173 +80,157 @@
   function extractTitle(pageText) {
     return (
       utils.firstText([
-        "[data-testid='ad-title']",
-        "[data-testid='title']",
+        "[data-testid='listing-title']",
+        "[data-testid='property-title']",
+        ".detail-title",
+        ".property-title",
         "h1",
       ]) ||
-      utils.firstMatch(pageText, [/^#####\s+(.+)$/m]) ||
+      utils.firstMatch(pageText, [/^#\s+(.+)$/m]) ||
       null
+    );
+  }
+
+  function extractDescription() {
+    return utils.cleanDescription(
+      utils.firstText([
+        "[data-testid='description']",
+        "[data-testid='property-description']",
+        ".description",
+        ".property-description",
+      ]) ||
+        utils.sectionText(
+          [/^Descrizione$/i],
+          [/^(Leggi tutto|Informazioni principali|Spese e catasto|Energia e riscaldamento|Altre caratteristiche|Edificio|Posizione immobile)$/i],
+        ),
     );
   }
 
   function extractDetailsText() {
     return [
       utils.joinedText([
-        "[data-testid='ad-properties']",
         "[data-testid='features']",
+        "[data-testid='property-features']",
         ".feature-list",
-        ".main-features",
+        ".features",
       ]),
       utils.sectionText(
-        [/^Dati principali$/i],
-        [/^(Descrizione|Caratteristiche|Dettagli|Energia e riscaldamento)$/i],
+        [/^Informazioni principali$/i],
+        [/^(Spese e catasto|Energia e riscaldamento|Altre caratteristiche|Edificio|Posizione immobile)$/i],
       ),
       utils.sectionText(
-        [/^Caratteristiche$/i],
-        [/^(Dettagli|Energia e riscaldamento|Venditore|Inserzionista|Localit.|Mappa)$/i],
+        [/^Spese e catasto$/i],
+        [/^(Energia e riscaldamento|Altre caratteristiche|Edificio|Posizione immobile)$/i],
       ),
       utils.sectionText(
-        [/^Dettagli$/i],
-        [/^(Energia e riscaldamento|Venditore|Inserzionista|Localit.|Mappa)$/i],
+        [/^Edificio$/i],
+        [/^(Posizione immobile|Vicino a|Real estate POI)$/i],
       ),
     ]
       .filter(Boolean)
       .join(" ");
   }
 
-  function extractDescription() {
-    return utils.cleanDescription(
+  function extractAddress(pageText) {
+    return (
       utils.firstText([
-        "[data-testid='ad-description']",
-        "[data-testid='description']",
-        ".description",
+        "[data-testid='address']",
+        "[data-testid='location']",
+        ".address",
+        ".location",
       ]) ||
-        utils.sectionText(
-          [/^Descrizione$/i],
-          [/^(Caratteristiche|Dettagli|Energia e riscaldamento|Venditore|Inserzionista|Localit.|Mappa|Pubblicato)$/i],
-        ),
+      utils.firstMatch(pageText, [
+        /^#\s+.+?,\s+(.+?Bitonto.*?)$/im,
+        /(?:^|\n)((?:Via|Viale|Corso|Piazza|Strada|Contrada|Vico)[^\n€#]+?Bitonto)(?:\n|$)/i,
+        /(?:^|\n)(Bitonto[^\n€#]+?(?:Via|Viale|Corso|Piazza|Strada|Contrada|Vico)[^\n€#]+?)(?:\n|$)/i,
+      ]) ||
+      utils.sectionText(
+        [/^Posizione immobile$/i],
+        [/^(Vicino a|Real estate POI|Servizi)$/i],
+      )
     );
   }
 
-  function extractSellerName(pageText) {
+  function extractSellerName(description, pageText) {
     return (
       utils.firstText([
-        "[data-testid='user-name']",
-        "[data-testid='seller-name']",
+        "[data-testid='agency-name']",
         "[data-testid='advertiser-name']",
+        ".agency-name",
         ".advertiser-name",
-        ".seller-name",
       ]) ||
-      utils.lineAfter([/^Venditore$/i, /^Inserzionista$/i], {
-        skip: [
-          /^Nessuna recensione$/i,
-          /^Ultimo accesso/i,
-          /^Appartamenti$/i,
-          /^Privato$/i,
-          /^Professionista$/i,
-        ],
+      utils.lineAfter([/^Contatta$/i, /^Agenzia$/i, /^Inserzionista$/i], {
+        skip: [/^Telefono$/i, /^Image/i, /^Contatta$/i],
       }) ||
+      utils.firstMatch(description, [
+        /^([^.,]+?Tecnocasa[^.,]*?)\s+propone/i,
+        /^([^.,]+?Immobiliare[^.,]*?)\s+propone/i,
+        /^([^.,]+?RE\/MAX[^.,]*?)\s+propone/i,
+        /(?:proposto da|agenzia)\s+([^.,\n]+)/i,
+      ]) ||
       utils.firstMatch(pageText, [
-        /######\s+([A-ZÀ-Üa-zà-ü][^#\n]{1,60})\s+Nessuna recensione/i,
-        /(?:^|\n)([A-ZÀ-Üa-zà-ü][^#\n]{1,60})\s+Nessuna recensione/i,
+        /(?:Gruppo|Studio)\s+([^#\n]{2,80}?)(?:\s+propone|\s+vende)/i,
       ])
     );
   }
 
-  function extractSellerContext(pageText) {
+  function extractSellerContext(sellerName, description, pageText) {
     return (
       utils.firstText([
-        "[data-testid='seller-card']",
-        "[data-testid='user-info']",
-        ".seller-info",
-      ]) ||
-      utils.sectionText(
-        [/^(Venditore|Inserzionista)$/i],
-        [/^(Ricerche consigliate|Tutte le categorie|ID:)$/i],
-      ) ||
-      pageText
+        "[data-testid='agency-card']",
+        "[data-testid='advertiser-card']",
+        ".agency-card",
+        ".advertiser-card",
+      ]) || `${sellerName || ""} ${description || ""} ${pageText.slice(0, 2000)}`
     );
   }
 
   function extractSellerType(sellerName, sellerContext, description) {
     const text = `${sellerName || ""} ${sellerContext || ""} ${description || ""}`;
 
-    if (/\b(?:privato|proprietario|no agenzie|non voglio essere contattato da agenzie)\b/i.test(text)) {
+    if (/\b(?:privato|proprietario|no agenzie|vendita diretta)\b/i.test(text)) {
       return "private";
     }
 
     return utils.sellerTypeFrom(sellerName, text) || "unknown";
   }
 
-  function extractAddress(pageText) {
-    return (
-      utils.firstText([
-        "[data-testid='location']",
-        "[data-testid='ad-location']",
-        ".location",
-      ]) ||
-      utils.sectionText(
-        [/^Localit.|^Mappa$/i],
-        [/^(Venditore|Inserzionista|Pubblicato|ID:)$/i],
-      ) ||
-      utils.firstMatch(pageText, [
-        /(?:^|\n)(Bitonto\s*\(BA\)|Bitonto\s+\(Bari\)|Bitonto[^#\n]*Bari[^#\n]*)(?:\n|$)/i,
-        /(?:^|\n)((?:Via|Viale|Corso|Piazza|Strada|Contrada)[^#\n]+Bitonto[^#\n]*)(?:\n|$)/i,
-        /(?:zona|precisamente in)\s+([^.,\n]+?Bitonto[^.,\n]*)/i,
-      ])
-    );
-  }
-
-  function extractPrice(pageText) {
-    return (
-      generic.parsePrice(
-        utils.firstText([
-          "[data-testid='ad-price']",
-          "[data-testid='price']",
-          ".price",
-        ]),
-      ) ||
-      generic.parsePrice(
-        utils.firstMatch(pageText, [
-          /(?:^|\n)(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\s*(?:€|eur|euro))(?:\n|$)/i,
-        ]),
-      ) ||
-      utils.textPrice()
-    );
-  }
-
   function extractDeclaredDate(pageText) {
     return (
       utils.dateText([
-        "[data-testid='ad-date']",
-        "[data-testid='publication-date']",
+        "[data-testid='listing-date']",
         ".date",
+        ".publication-date",
       ]) ||
       utils.firstLineMatch([
-        /Pubblicato il\s+(.+)$/i,
-        /Inserito il\s+(.+)$/i,
-        /Aggiornato il\s+(.+)$/i,
-        /^(\d{1,2}\s+\w+\s+alle\s+\d{1,2}:\d{2})$/i,
+        /Pubblicato\s+(.+)$/i,
+        /Aggiornato\s+(.+)$/i,
+        /Inserito\s+(.+)$/i,
       ]) ||
       utils.firstMatch(pageText, [
-        /(?:^|\n)(\d{1,2}\s+\w+\s+alle\s+\d{1,2}:\d{2})(?:\n|$)/i,
+        /Published:\s*(.+?)(?:;|\n|$)/i,
+        /(\d+\s+(?:giorni|mesi|settimane)\s+fa)/i,
+        /(last\s+(?:week|month)|\d+\s+days?\s+ago)/i,
       ])
     );
   }
 
-  globalThis.ListingRadarPortalAdapters.subito = {
+  globalThis.ListingRadarPortalAdapters.wikicasa = {
     extract() {
       const pageText = utils.pageText();
       const details = extractDetailsText();
       const description = extractDescription();
-      const sellerName = extractSellerName(pageText);
-      const sellerContext = extractSellerContext(pageText);
+      const sellerName = extractSellerName(description, pageText);
+      const sellerContext = extractSellerContext(sellerName, description, pageText);
       const addressRaw = extractAddress(pageText);
-      const imageUrls = collectSubitoImages();
+      const imageUrls = collectWikicasaImages();
       const extracted = {
         title: extractTitle(pageText),
         description,
-        price: extractPrice(pageText),
+        price:
+          generic.parsePrice(utils.fieldValue(["Prezzo"]) || details) ||
+          generic.parsePrice(pageText) ||
+          utils.textPrice(),
         sqm:
           generic.parseSqm(utils.fieldValue(["Superficie"]) || details) ||
           generic.parseSqm(pageText.match(/\b\d+\s*m[\u00b2 2q]\b/i)?.[0]) ||
@@ -268,8 +252,8 @@
       return {
         ...extracted,
         rawPayload: {
-          portalAdapter: "subito",
-          adapterVersion: "3",
+          portalAdapter: "wikicasa",
+          adapterVersion: "1",
           extractedFields: utils.fieldNames(extracted),
           detailsText: details.slice(0, 3000),
           sellerContext: sellerContext.slice(0, 1500),

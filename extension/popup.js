@@ -125,6 +125,8 @@ async function extractCurrentPage() {
         "parsers/immobiliare.js",
         "parsers/subito.js",
         "parsers/casa.js",
+        "parsers/wikicasa.js",
+        "parsers/casadaprivato.js",
         "parsers/portals.js",
         "content.js",
       ],

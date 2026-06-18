@@ -3,6 +3,8 @@ export type AlertSource =
   | "immobiliare"
   | "subito"
   | "casa"
+  | "wikicasa"
+  | "casadaprivato"
   | "unknown";
 
 export interface ParsedEmailAlert {

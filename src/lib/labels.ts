@@ -72,6 +72,26 @@ export function getSourceLabel(value: string) {
     return "Ad Maiora";
   }
 
+  if (normalized === "puntocasa") {
+    return "PuntoCasa Group";
+  }
+
+  if (normalized === "iconacasa") {
+    return "Iconacasa Bitonto";
+  }
+
+  if (normalized === "ingegnericolapinto") {
+    return "Ingegneri Colapinto";
+  }
+
+  if (normalized === "vistocasa") {
+    return "Vistocasa Bitonto";
+  }
+
+  if (normalized === "studisanti") {
+    return "Studi Santi Immobiliare";
+  }
+
   if (normalized === "import") {
     return "Importato dal browser";
   }
@@ -94,6 +114,14 @@ export function getSourceLabel(value: string) {
 
   if (normalized === "casa" || normalized === "casa.it") {
     return "Casa.it";
+  }
+
+  if (normalized === "wikicasa" || normalized === "wikicasa.it") {
+    return "Wikicasa";
+  }
+
+  if (normalized === "casadaprivato" || normalized === "casadaprivato.it") {
+    return "CasaDaPrivato";
   }
 
   if (normalized === "subito") {

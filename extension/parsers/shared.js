@@ -202,6 +202,34 @@
     return match ? generic.clean(match[1]) : value || null;
   }
 
+  function lineAfter(patterns, options = {}) {
+    const lines = pageLines();
+    const skip = options.skip || [];
+    const maxLookAhead = options.maxLookAhead || 8;
+
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!patterns.some((pattern) => pattern.test(lines[index]))) {
+        continue;
+      }
+
+      for (
+        let next = index + 1;
+        next < Math.min(lines.length, index + maxLookAhead + 1);
+        next += 1
+      ) {
+        const line = lines[next];
+
+        if (!line || skip.some((pattern) => pattern.test(line))) {
+          continue;
+        }
+
+        return line;
+      }
+    }
+
+    return null;
+  }
+
   function fieldNames(value) {
     return Object.entries(value)
       .filter(([, field]) => field !== null && field !== undefined && field !== "")
@@ -226,6 +254,7 @@
     sellerTypeFrom,
     sellerNameFromText,
     dateText,
+    lineAfter,
     fieldNames,
   };
 })();
