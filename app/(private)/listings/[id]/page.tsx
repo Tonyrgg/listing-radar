@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
+import { ListingCompletenessPopover } from "@/components/listing-completeness-popover";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 import { ListingScoreBreakdown } from "@/components/listing-score";
 import { getDuplicateListings, getListingById } from "@/lib/data/repository";
@@ -39,13 +41,31 @@ export const metadata: Metadata = {
 function DetailItem({
   label,
   value,
+  tone = "default",
 }: Readonly<{
   label: string;
   value: string;
+  tone?: "default" | "warning";
 }>) {
+  const isUnavailable = tone === "warning" || value === "Non disponibile";
+
   return (
-    <div>
-      <dt className="text-xs font-medium text-[var(--ink-subtle)]">{label}</dt>
+    <div
+      className={
+        isUnavailable
+          ? "rounded-[7px] border border-[oklch(0.42_0.07_80)] bg-[oklch(0.235_0.035_80)] px-3 py-2"
+          : undefined
+      }
+    >
+      <dt
+        className={
+          isUnavailable
+            ? "text-xs font-medium text-[var(--status-warning)]"
+            : "text-xs font-medium text-[var(--ink-subtle)]"
+        }
+      >
+        {label}
+      </dt>
       <dd className="mt-1 text-sm font-semibold leading-6 text-[var(--ink-strong)]">
         {value}
       </dd>
@@ -53,17 +73,29 @@ function DetailItem({
   );
 }
 
+function formatMissingFieldsReviewLabel(count: number) {
+  return count === 1 ? "1 campo da rivedere" : `${formatNumber(count)} campi da rivedere`;
+}
+
 function SummaryMetric({
   label,
   value,
   detail,
+  tone = "default",
 }: Readonly<{
   label: string;
   value: string;
-  detail?: string;
+  detail?: ReactNode;
+  tone?: "default" | "warning";
 }>) {
   return (
-    <div className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-4 py-3">
+    <div
+      className={
+        tone === "warning"
+          ? "rounded-[7px] border border-[oklch(0.42_0.07_80)] bg-[oklch(0.235_0.035_80)] px-4 py-3"
+          : "rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-4 py-3"
+      }
+    >
       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
         {label}
       </p>
@@ -71,7 +103,15 @@ function SummaryMetric({
         {value}
       </p>
       {detail ? (
-        <p className="mt-1 truncate text-xs text-[var(--ink-soft)]">{detail}</p>
+        <div
+          className={
+            tone === "warning"
+              ? "mt-1 min-w-0 text-xs text-[var(--status-warning)]"
+              : "mt-1 min-w-0 text-xs text-[var(--ink-soft)]"
+          }
+        >
+          {detail}
+        </div>
       ) : null}
     </div>
   );
@@ -140,6 +180,10 @@ export default async function ListingDetailPage({
   const operationalSuggestion = getOperationalSuggestion(listing);
   const missingFields = getMissingListingFields(listing);
   const completenessScore = getListingCompletenessScore(listing);
+  const hasMissingFields = missingFields.length > 0;
+  const missingFieldsReviewLabel = formatMissingFieldsReviewLabel(
+    missingFields.length,
+  );
   const updateAction = updateListing.bind(null, listing.id);
   const archiveAction = archiveListing.bind(null, listing.id);
 
@@ -184,6 +228,7 @@ export default async function ListingDetailPage({
               <SummaryMetric
                 label="Prezzo"
                 value={formatCurrency(listing.price)}
+                tone={listing.price == null ? "warning" : "default"}
                 detail={
                   listing.pricePerSqm != null
                     ? `${formatCurrency(listing.pricePerSqm)} al mq`
@@ -198,10 +243,17 @@ export default async function ListingDetailPage({
               <SummaryMetric
                 label="Completezza"
                 value={`${completenessScore}%`}
+                tone={hasMissingFields ? "warning" : "default"}
                 detail={
-                  missingFields.length
-                    ? `${formatNumber(missingFields.length)} campi da rivedere`
-                    : "Scheda completa"
+                  hasMissingFields ? (
+                    <ListingCompletenessPopover
+                      score={completenessScore}
+                      fields={missingFields}
+                      triggerLabel={missingFieldsReviewLabel}
+                    />
+                  ) : (
+                    "Scheda completa"
+                  )
                 }
               />
               <CrmStatusMetric
@@ -213,6 +265,7 @@ export default async function ListingDetailPage({
             <dl className="grid gap-3 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 sm:grid-cols-4">
               <DetailItem
                 label="Superficie"
+                tone={listing.sqm == null ? "warning" : "default"}
                 value={
                   listing.sqm != null
                     ? `${formatNumber(listing.sqm)} mq`
@@ -221,6 +274,7 @@ export default async function ListingDetailPage({
               />
               <DetailItem
                 label="Locali e piano"
+                tone={listing.rooms == null ? "warning" : "default"}
                 value={[
                   listing.rooms != null
                     ? `${formatNumber(listing.rooms)} locali`
@@ -230,7 +284,11 @@ export default async function ListingDetailPage({
                   .filter(Boolean)
                   .join(", ") || "Non disponibile"}
               />
-              <DetailItem label="Zona" value={formatPlainText(listing.zone)} />
+              <DetailItem
+                label="Zona"
+                tone={listing.zone?.trim() ? "default" : "warning"}
+                value={formatPlainText(listing.zone)}
+              />
               <DetailItem
                 label="Online"
                 value={`${formatNumber(listing.minimumDaysOnline)} giorni`}
@@ -280,11 +338,15 @@ export default async function ListingDetailPage({
           </div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-canvas)]">
             <div
-              className="h-full rounded-full bg-[var(--surface-accent)]"
+              className={
+                hasMissingFields
+                  ? "h-full rounded-full bg-[var(--status-warning)]"
+                  : "h-full rounded-full bg-[var(--surface-accent)]"
+              }
               style={{ width: `${completenessScore}%` }}
             />
           </div>
-          {missingFields.length ? (
+          {hasMissingFields ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {missingFields.map((field) => (
                 <span
@@ -292,7 +354,7 @@ export default async function ListingDetailPage({
                   className={
                     field.severity === "required"
                       ? "rounded-md border border-[oklch(0.4_0.07_24)] bg-[oklch(0.23_0.035_24)] px-2 py-1 text-[11px] font-semibold text-[var(--status-error)]"
-                      : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-soft)]"
+                      : "rounded-md border border-[oklch(0.42_0.07_80)] bg-[oklch(0.235_0.035_80)] px-2 py-1 text-[11px] font-semibold text-[var(--status-warning)]"
                   }
                 >
                   {field.label}

@@ -32,6 +32,9 @@ describe("listing completeness", () => {
         "sellerType",
       ]),
     );
+    expect(missing.find((field) => field.key === "price")?.reason).toContain(
+      "prezzo e assente",
+    );
     expect(hasRequiredListingGaps(listing)).toBe(true);
     expect(getListingCompletenessScore(listing)).toBeLessThan(70);
   });

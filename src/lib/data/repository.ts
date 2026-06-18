@@ -349,6 +349,10 @@ function applyListingFilters(
       return false;
     }
 
+    if (filters.crmStatus !== "all" && listing.crmStatus !== filters.crmStatus) {
+      return false;
+    }
+
     if (filters.source !== "all" && listing.source !== filters.source) {
       return false;
     }

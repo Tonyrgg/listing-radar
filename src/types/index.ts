@@ -196,6 +196,7 @@ export interface NormalizedListing {
 export interface ListingFilters {
   sellerType: "all" | SellerType;
   status: string;
+  crmStatus: "all" | ListingCrmStatus;
   source: string;
   minDaysOnline: number | null;
   onlyHighPriority: boolean;

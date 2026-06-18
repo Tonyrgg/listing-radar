@@ -3,6 +3,7 @@ import type { Listing, NormalizedListing } from "@/types";
 export type ListingCompletenessField = {
   key: string;
   label: string;
+  reason: string;
   severity: "required" | "recommended";
 };
 
@@ -24,36 +25,49 @@ type CompletenessInput = Pick<
 const requiredFields: Array<{
   key: keyof CompletenessInput;
   label: string;
+  reason: string;
   isMissing: (listing: CompletenessInput) => boolean;
 }> = [
   {
     key: "title",
     label: "Titolo",
+    reason:
+      "Il titolo e vuoto o non acquisito. Serve per riconoscere subito la scheda in archivio.",
     isMissing: (listing) => !hasText(listing.title),
   },
   {
     key: "price",
     label: "Prezzo",
+    reason:
+      "Il prezzo e assente o non acquisito. Serve per confrontare valore, prezzo al mq e ribassi.",
     isMissing: (listing) => listing.price == null,
   },
   {
     key: "sqm",
     label: "Superficie",
+    reason:
+      "La superficie e assente. Serve per calcolare il prezzo al mq e confrontare immobili simili.",
     isMissing: (listing) => listing.sqm == null,
   },
   {
     key: "rooms",
     label: "Locali",
+    reason:
+      "Il numero di locali e assente. Serve per confrontare correttamente taglio e distribuzione.",
     isMissing: (listing) => listing.rooms == null,
   },
   {
     key: "zone",
     label: "Zona",
+    reason:
+      "La zona e vuota o non acquisita. Serve per localizzare l'immobile e raggruppare annunci vicini.",
     isMissing: (listing) => !hasText(listing.zone),
   },
   {
     key: "description",
     label: "Descrizione",
+    reason:
+      "La descrizione e assente o troppo breve. Serve per valutare condizioni, lavori e segnali operativi.",
     isMissing: (listing) => !hasText(listing.description, 80),
   },
 ];
@@ -61,31 +75,42 @@ const requiredFields: Array<{
 const recommendedFields: Array<{
   key: keyof CompletenessInput;
   label: string;
+  reason: string;
   isMissing: (listing: CompletenessInput) => boolean;
 }> = [
   {
     key: "imageUrls",
     label: "Fotografie",
+    reason:
+      "Non ci sono foto acquisite. Le immagini aiutano a verificare stato, qualita e coerenza dell'annuncio.",
     isMissing: (listing) => !listing.imageUrls?.length,
   },
   {
     key: "sellerType",
     label: "Tipo venditore",
+    reason:
+      "Il venditore e ancora da verificare. Incide sulla priorita e sul flusso di controllo.",
     isMissing: (listing) => listing.sellerType === "unknown",
   },
   {
     key: "sellerName",
     label: "Nome venditore",
+    reason:
+      "Il nome venditore e vuoto o non acquisito. Aiuta a riconoscere duplicati e contatti gia trattati.",
     isMissing: (listing) => !hasText(listing.sellerName),
   },
   {
     key: "addressRaw",
     label: "Indirizzo",
+    reason:
+      "L'indirizzo rilevato e vuoto. Serve per localizzare meglio l'immobile e riconoscere possibili duplicati.",
     isMissing: (listing) => !hasText(listing.addressRaw),
   },
   {
     key: "phone",
     label: "Telefono",
+    reason:
+      "Il recapito e vuoto o non acquisito. Serve per capire se il venditore e contattabile senza passaggi aggiuntivi.",
     isMissing: (listing) => !hasText(listing.phone),
   },
 ];
@@ -103,6 +128,7 @@ export function getMissingListingFields(
       .map((field) => ({
         key: String(field.key),
         label: field.label,
+        reason: field.reason,
         severity: "required" as const,
       })),
     ...recommendedFields
@@ -110,6 +136,7 @@ export function getMissingListingFields(
       .map((field) => ({
         key: String(field.key),
         label: field.label,
+        reason: field.reason,
         severity: "recommended" as const,
       })),
   ];

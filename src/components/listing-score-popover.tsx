@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 type ScoreFactor = {
   id: string;
@@ -112,67 +113,70 @@ export function ListingScorePopover({
         </span>
       </button>
 
-      {isOpen ? (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center bg-[oklch(0.08_0.02_154/0.72)] px-4 py-6"
-          role="presentation"
-          onMouseDown={() => setIsOpen(false)}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="border-b border-[var(--line-soft)] p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
-                    Appetibilita
-                  </p>
-                  <h2
-                    id={titleId}
-                    className="mt-2 text-xl font-semibold text-[var(--ink-strong)]"
-                  >
-                    {total} pt
-                    <span
-                      className={`ml-2 align-middle rounded-full border px-2 py-1 text-[10px] font-bold ${pillToneClasses[tone]}`}
+      {isOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] grid place-items-center bg-[oklch(0.08_0.02_154/0.72)] px-4 py-6"
+              role="presentation"
+              onMouseDown={() => setIsOpen(false)}
+            >
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="border-b border-[var(--line-soft)] p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
+                        Appetibilita
+                      </p>
+                      <h2
+                        id={titleId}
+                        className="mt-2 text-xl font-semibold text-[var(--ink-strong)]"
+                      >
+                        {total} pt
+                        <span
+                          className={`ml-2 align-middle rounded-full border px-2 py-1 text-[10px] font-bold ${pillToneClasses[tone]}`}
+                        >
+                          {level}
+                        </span>
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsOpen(false)}
+                      className="rounded-md border border-[var(--line-strong)] px-3 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-muted)]"
                     >
-                      {level}
-                    </span>
-                  </h2>
+                      Chiudi
+                    </button>
+                  </div>
+                  <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.17_26)_0%,oklch(0.62_0.17_26)_33%,oklch(0.78_0.14_82)_33%,oklch(0.78_0.14_82)_66%,var(--surface-accent)_66%,var(--surface-accent)_100%)]">
+                    <span
+                      className="absolute top-0 block h-full w-1 rounded-full bg-[var(--ink-strong)] shadow-[0_0_0_1px_var(--surface-canvas)]"
+                      style={{ left: `calc(${progress}% - 2px)` }}
+                    />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="rounded-md border border-[var(--line-strong)] px-3 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-muted)]"
-                >
-                  Chiudi
-                </button>
-              </div>
-              <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.17_26)_0%,oklch(0.62_0.17_26)_33%,oklch(0.78_0.14_82)_33%,oklch(0.78_0.14_82)_66%,var(--surface-accent)_66%,var(--surface-accent)_100%)]">
-                <span
-                  className="absolute top-0 block h-full w-1 rounded-full bg-[var(--ink-strong)] shadow-[0_0_0_1px_var(--surface-canvas)]"
-                  style={{ left: `calc(${progress}% - 2px)` }}
-                />
-              </div>
-            </div>
 
-            <div className="max-h-[52vh] overflow-y-auto p-5">
-              {activeFactors.length ? (
-                activeFactors.map((factor) => (
-                  <FactorRow key={factor.id} factor={factor} />
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-[var(--ink-soft)]">
-                  Nessuna voce ha ancora contribuito al punteggio.
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
-      ) : null}
+                <div className="max-h-[52vh] overflow-y-auto p-5">
+                  {activeFactors.length ? (
+                    activeFactors.map((factor) => (
+                      <FactorRow key={factor.id} factor={factor} />
+                    ))
+                  ) : (
+                    <p className="text-sm leading-6 text-[var(--ink-soft)]">
+                      Nessuna voce ha ancora contribuito al punteggio.
+                    </p>
+                  )}
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
