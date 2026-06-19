@@ -14,11 +14,18 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  const priceAmountPattern = String.raw`\d{1,3}(?:\s*\.\s*\d{3})+|\d{4,}`;
+  const notPropertyUnitPattern = String.raw`(?!\s*(?:m\u00b2|mq|m2|metri\s+quadri|locali?|vani?|stanze?|bagni?)\b)`;
+  const pricePattern = new RegExp(
+    String.raw`(?:\u20ac|eur|euro)\s*(${priceAmountPattern})${notPropertyUnitPattern}(?:,\d{1,2})?|\b(${priceAmountPattern})(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)`,
+    "i",
+  );
+
   function parsePrice(value) {
-    const match = clean(value).match(
-      /(?:\u20ac\s*)?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)/i,
-    );
-    return match ? Math.round(numberFrom(match[1])) : null;
+    const match = clean(value).match(pricePattern);
+    const amount = match?.[1] || match?.[2];
+    const parsed = amount ? numberFrom(amount) : null;
+    return parsed == null ? null : Math.round(parsed);
   }
 
   function parseSqm(value) {

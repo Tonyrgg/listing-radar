@@ -1,4 +1,5 @@
 import { parseItalianDate } from "@/lib/scrapers/date-parser";
+import { resolveListingSource } from "@/lib/listing-sources";
 import {
   cleanText,
   normalizeUrl,
@@ -265,10 +266,12 @@ export function normalizeImportedRows(
       return;
     }
 
-    const source =
-      toStringValue(getValue(row, ["source", "fonte", "portal"])) ??
-      options.defaultSource ??
-      options.provider;
+    const source = resolveListingSource({
+      source: toStringValue(getValue(row, ["source", "fonte", "portal"])),
+      url,
+      defaultSource: options.defaultSource,
+      provider: options.provider,
+    });
     const description = toStringValue(
       getValue(row, ["description", "descrizione", "body"]),
     );

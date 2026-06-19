@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { clsx } from "clsx";
-import { Archive, RotateCcw } from "lucide-react";
+import { Archive, ExternalLink, LayoutGrid, List, RotateCcw } from "lucide-react";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { Badge, getSellerTypeTone } from "@/components/badge";
@@ -19,6 +19,7 @@ import {
 import { getListings } from "@/lib/data/repository";
 import {
   formatCurrency,
+  formatDate,
   formatDateTime,
   formatNumber,
   formatPlainText,
@@ -28,6 +29,7 @@ import {
   getSellerTypeLabel,
   getSourceLabel,
 } from "@/lib/labels";
+import { normalizeListingSource } from "@/lib/listing-sources";
 import { getListingAttentionReason } from "@/lib/listings/operational";
 import type { ScoringConfig } from "@/lib/listings/scoring-config";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
@@ -36,6 +38,8 @@ import type { Listing, ListingFilters, SellerType } from "@/types";
 export const metadata: Metadata = {
   title: "Archivio annunci",
 };
+
+type ListingViewMode = "list" | "grid";
 
 /* External listing images come from dynamic portal hosts. */
 /* eslint-disable @next/next/no-img-element */
@@ -62,6 +66,174 @@ function isRecentListing(value: string) {
   return Date.now() - firstSeenAt <= threeDays;
 }
 
+function buildViewHref(
+  params: Record<string, string | string[] | undefined>,
+  view: ListingViewMode,
+) {
+  const nextParams = new URLSearchParams();
+
+  for (const [key, rawValue] of Object.entries(params)) {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+    for (const value of values) {
+      if (value != null && value !== "" && key !== "view") {
+        nextParams.append(key, value);
+      }
+    }
+  }
+
+  if (view !== "list") {
+    nextParams.set("view", view);
+  }
+
+  const query = nextParams.toString();
+  return query ? `/listings?${query}` : "/listings";
+}
+
+function listingMainFacts(listing: Listing) {
+  return [
+    { label: formatCurrency(listing.price), strong: true },
+    listing.sqm != null ? { label: `${formatNumber(listing.sqm)} mq` } : null,
+    listing.rooms != null
+      ? { label: `${formatNumber(listing.rooms)} locali` }
+      : null,
+  ].filter(
+    (fact): fact is { label: string; strong?: boolean } => Boolean(fact),
+  );
+}
+
+function listingLocationText(listing: Listing) {
+  const location = listing.addressRaw?.trim() || listing.zone?.trim();
+  return location ? formatPlainText(location) : null;
+}
+
+function checkedDateKey(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "unknown";
+  }
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function groupListingsByCheckedDate(listings: Listing[]) {
+  const groups: Array<{
+    key: string;
+    label: string;
+    listings: Listing[];
+  }> = [];
+  const groupByKey = new Map<string, (typeof groups)[number]>();
+
+  for (const listing of listings) {
+    const key = checkedDateKey(listing.lastSeenAt);
+    let group = groupByKey.get(key);
+
+    if (!group) {
+      group = {
+        key,
+        label: formatDate(listing.lastSeenAt),
+        listings: [],
+      };
+      groupByKey.set(key, group);
+      groups.push(group);
+    }
+
+    group.listings.push(listing);
+  }
+
+  return groups;
+}
+
+function ListingDateSeparator({
+  label,
+  count,
+}: Readonly<{ label: string; count: number }>) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <div className="h-px min-w-6 flex-1 bg-[var(--line-soft)]" aria-hidden="true" />
+      <p className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-subtle)]">
+        Controllo: {label}
+      </p>
+      <span className="shrink-0 text-[11px] text-[var(--ink-subtle)]">
+        {count === 1 ? "1 annuncio" : `${count} annunci`}
+      </span>
+      <div className="h-px min-w-6 flex-1 bg-[var(--line-soft)]" aria-hidden="true" />
+    </div>
+  );
+}
+
+function ListingActions({
+  listing,
+  isTreated,
+  compact = false,
+}: Readonly<{
+  listing: Listing;
+  isTreated: boolean;
+  compact?: boolean;
+}>) {
+  const toggleCrmStatus = updateListingCrmStatus.bind(
+    null,
+    listing.id,
+    isTreated ? "untreated" : "treated",
+  );
+  const archiveAction = archiveListing.bind(null, listing.id);
+
+  return (
+    <>
+      <form action={toggleCrmStatus} className={compact ? "" : "sm:min-w-32 lg:w-full"}>
+        <button
+          type="submit"
+          className={clsx(
+            "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border px-4 text-sm font-semibold transition-colors",
+            isTreated
+              ? "border-[oklch(0.62_0.11_150)] bg-[oklch(0.42_0.09_150)] text-[oklch(0.92_0.1_150)] hover:bg-[oklch(0.48_0.1_150)]"
+              : "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)] hover:bg-[oklch(0.28_0.05_28)]",
+          )}
+        >
+          {isTreated ? "Trattato" : "Non trattato"}
+        </button>
+      </form>
+      <Link
+        href={`/listings/${listing.id}`}
+        className={clsx(
+          "inline-flex h-10 items-center justify-center rounded-[6px] px-4 text-sm font-semibold transition-colors",
+          compact ? "w-full" : "sm:min-w-32 lg:w-full",
+          isTreated
+            ? "border border-[oklch(0.5_0.07_150)] bg-transparent text-[oklch(0.86_0.08_150)] hover:bg-[oklch(0.3_0.055_150)]"
+            : "bg-[var(--surface-accent)] text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)]",
+        )}
+      >
+        Apri scheda
+      </Link>
+      <div className={clsx("grid grid-cols-2 gap-2", compact ? "" : "sm:min-w-32 lg:w-full")}>
+        <a
+          href={listing.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Apri annuncio originale"
+          title="Apri annuncio originale"
+          className="inline-flex h-10 items-center justify-center rounded-[6px] border border-[var(--line-strong)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--surface-accent)]"
+        >
+          <ExternalLink className="size-4" aria-hidden="true" />
+        </a>
+        <form action={archiveAction}>
+          <button
+            type="submit"
+            aria-label="Archivia annuncio"
+            title="Archivia annuncio"
+            className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border border-[oklch(0.46_0.05_80)] bg-[oklch(0.18_0.025_80)] text-[oklch(0.82_0.08_80)] transition-colors hover:bg-[oklch(0.24_0.04_80)] focus:outline-none focus:ring-2 focus:ring-[var(--surface-accent)]"
+          >
+            <Archive className="size-4" aria-hidden="true" />
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
 function ListingRow({
   listing,
   scoringConfig,
@@ -69,22 +241,8 @@ function ListingRow({
   const isTreated = listing.crmStatus === "treated";
   const shouldShowStatus =
     listing.status !== "new" || listing.isNewToday || isRecentListing(listing.firstSeenAt);
-  const toggleCrmStatus = updateListingCrmStatus.bind(
-    null,
-    listing.id,
-    isTreated ? "untreated" : "treated",
-  );
-  const archiveAction = archiveListing.bind(null, listing.id);
-  const mainFacts = [
-    { label: formatCurrency(listing.price), strong: true },
-    listing.sqm != null ? { label: `${formatNumber(listing.sqm)} mq` } : null,
-    listing.rooms != null
-      ? { label: `${formatNumber(listing.rooms)} locali` }
-      : null,
-    { label: formatPlainText(listing.zone) },
-  ].filter(
-    (fact): fact is { label: string; strong?: boolean } => Boolean(fact),
-  );
+  const mainFacts = listingMainFacts(listing);
+  const locationText = listingLocationText(listing);
 
   return (
     <article
@@ -163,24 +321,32 @@ function ListingRow({
           </span>
         </Link>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {isTreated ? (
-            <span className="rounded-full border border-[oklch(0.45_0.065_150)] bg-[oklch(0.285_0.045_150)] px-2.5 py-1 text-xs text-[oklch(0.82_0.055_150)]">
-              {formatPlainText(listing.addressRaw ?? listing.zone)}
-            </span>
-          ) : (
-            mainFacts.map((fact) => (
-              <span
-                key={`${listing.id}-${fact.label}`}
-                className={clsx(
-                  "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--ink-soft)]",
-                  fact.strong && "font-semibold text-[var(--ink-strong)]",
-                )}
-              >
-                {fact.label}
-              </span>
-            ))
-          )}
+        <div className="mt-3 space-y-2">
+          {!isTreated && mainFacts.length ? (
+            <div className="flex flex-wrap gap-2">
+              {mainFacts.map((fact) => (
+                <span
+                  key={`${listing.id}-${fact.label}`}
+                  className={clsx(
+                    "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--ink-soft)]",
+                    fact.strong && "font-semibold text-[var(--ink-strong)]",
+                  )}
+                >
+                  {fact.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {locationText ? (
+            <p
+              className={clsx(
+                "line-clamp-2 max-w-[76ch] text-xs leading-5 text-[var(--ink-soft)]",
+                isTreated && "text-[oklch(0.8_0.05_150)]",
+              )}
+            >
+              {locationText}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -197,47 +363,138 @@ function ListingRow({
 
       <div className="relative z-10 flex flex-col gap-2 sm:col-start-2 sm:flex-row lg:col-start-auto lg:w-full lg:flex-col">
         <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
-        <form action={toggleCrmStatus} className="sm:min-w-32 lg:w-full">
-          <button
-            type="submit"
+        <ListingActions listing={listing} isTreated={isTreated} />
+      </div>
+    </article>
+  );
+}
+
+function ListingGridCard({
+  listing,
+  scoringConfig,
+}: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
+  const isTreated = listing.crmStatus === "treated";
+  const shouldShowStatus =
+    listing.status !== "new" || listing.isNewToday || isRecentListing(listing.firstSeenAt);
+  const mainFacts = listingMainFacts(listing);
+  const locationText = listingLocationText(listing);
+
+  return (
+    <article
+      className={clsx(
+        "group relative flex min-h-[520px] cursor-pointer flex-col overflow-hidden rounded-[10px] border transition-colors",
+        isTreated
+          ? "border-[oklch(0.66_0.11_150)] bg-[color-mix(in_oklch,var(--surface-panel)_64%,var(--surface-accent-soft))] shadow-[inset_0_0_0_2px_oklch(0.58_0.09_150/0.24)] hover:border-[var(--surface-accent)]"
+          : "border-[var(--line-soft)] bg-[var(--surface-panel)] hover:border-[var(--line-strong)]",
+      )}
+    >
+      <Link
+        href={`/listings/${listing.id}`}
+        className="absolute inset-0 z-0 rounded-[10px]"
+        aria-label={`Apri la scheda di ${listing.title}`}
+      />
+
+      <Link
+        href={`/listings/${listing.id}`}
+        className={clsx(
+          "relative z-10 flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)]",
+          isTreated
+            ? "border-[oklch(0.52_0.08_150)] bg-[oklch(0.245_0.03_150)]"
+            : "border-[var(--line-soft)]",
+        )}
+        aria-label={`Apri la scheda di ${listing.title}`}
+      >
+        {listing.imageUrls[0] ? (
+          <img
+            src={listing.imageUrls[0]}
+            alt=""
             className={clsx(
-              "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border px-4 text-sm font-semibold transition-colors",
-              isTreated
-                ? "border-[oklch(0.62_0.11_150)] bg-[oklch(0.42_0.09_150)] text-[oklch(0.92_0.1_150)] hover:bg-[oklch(0.48_0.1_150)]"
-                : "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)] hover:bg-[oklch(0.28_0.05_28)]",
+              "size-full object-cover transition-transform duration-200 group-hover:scale-[1.015]",
+              isTreated && "saturate-[0.45] contrast-[0.88] opacity-70",
             )}
-          >
-            {isTreated ? "Trattato" : "Non trattato"}
-          </button>
-        </form>
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          "Foto non disponibile"
+        )}
+      </Link>
+
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isTreated ? (
+            <>
+              <Badge tone={getSellerTypeTone(listing.sellerType)}>
+                {getSellerTypeLabel(listing.sellerType)}
+              </Badge>
+              {shouldShowStatus ? (
+                <Badge tone={listing.status === "new" ? "green" : "slate"}>
+                  {getListingStatusLabel(listing.status)}
+                </Badge>
+              ) : null}
+              <Badge tone="slate">{getSourceLabel(listing.source)}</Badge>
+            </>
+          ) : (
+            <span className="inline-flex rounded-full border border-[oklch(0.62_0.11_150)] bg-[oklch(0.42_0.09_150)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[oklch(0.9_0.11_150)]">
+              Trattato
+            </span>
+          )}
+        </div>
+
         <Link
           href={`/listings/${listing.id}`}
           className={clsx(
-            "inline-flex h-10 items-center justify-center rounded-[6px] px-4 text-sm font-semibold transition-colors sm:min-w-32 lg:w-full",
-            isTreated
-              ? "border border-[oklch(0.5_0.07_150)] bg-transparent text-[oklch(0.86_0.08_150)] hover:bg-[oklch(0.3_0.055_150)]"
-              : "bg-[var(--surface-accent)] text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)]",
+            "mt-3 line-clamp-2 min-h-11 text-[15px] font-semibold leading-[22px] transition-colors group-hover:text-[var(--surface-accent)]",
+            isTreated ? "text-[oklch(0.88_0.08_150)]" : "text-[var(--ink-strong)]",
           )}
         >
-          Apri scheda
+          {listing.title}
         </Link>
-        <a
-          href={listing.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-10 items-center justify-center rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] sm:min-w-32 lg:w-full"
-        >
-          Originale
-        </a>
-        <form action={archiveAction} className="sm:min-w-32 lg:w-full">
-          <button
-            type="submit"
-            className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[6px] border border-[oklch(0.46_0.05_80)] bg-[oklch(0.18_0.025_80)] px-4 text-sm font-semibold text-[oklch(0.82_0.08_80)] transition-colors hover:bg-[oklch(0.24_0.04_80)]"
-          >
-            <Archive className="size-4" aria-hidden="true" />
-            Archivia
-          </button>
-        </form>
+
+        <div className="mt-4 space-y-2">
+          {!isTreated && mainFacts.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {mainFacts.map((fact) => (
+                <span
+                  key={`${listing.id}-grid-${fact.label}`}
+                  className={clsx(
+                    "rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] text-[var(--ink-soft)]",
+                    fact.strong && "font-semibold text-[var(--ink-strong)]",
+                  )}
+                >
+                  {fact.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {locationText ? (
+            <p
+              className={clsx(
+                "line-clamp-2 text-xs leading-[18px] text-[var(--ink-soft)]",
+                isTreated && "text-[oklch(0.8_0.05_150)]",
+              )}
+            >
+              {locationText}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 space-y-1">
+          {!isTreated ? (
+            <p className="line-clamp-1 text-xs font-semibold text-[var(--status-warning)]">
+              {getListingAttentionReason(listing)}
+            </p>
+          ) : null}
+          <p className="text-xs text-[var(--ink-subtle)]">
+            Controllato {formatDateTime(listing.lastSeenAt)}
+          </p>
+        </div>
+
+        <div className="mt-auto space-y-2 pt-4">
+          <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
+          <ListingActions listing={listing} isTreated={isTreated} compact />
+        </div>
       </div>
     </article>
   );
@@ -258,6 +515,10 @@ export default async function ListingsPage({
   const minScoreRaw = readSearchParam(params.minScore, "");
   const maxScoreRaw = readSearchParam(params.maxScore, "");
   const sortBy = readSearchParam(params.sortBy, "score_desc");
+  const viewMode: ListingViewMode =
+    readSearchParam(params.view, "list") === "grid" ? "grid" : "list";
+  const normalizedSource =
+    source === "all" ? "all" : normalizeListingSource(source);
   const minDaysOnline =
     minDaysOnlineRaw.trim() === "" ? null : Number(minDaysOnlineRaw);
 
@@ -277,11 +538,11 @@ export default async function ListingsPage({
           ? "treated"
           : "untreated",
     source:
-      source === "all" ||
+      normalizedSource === "all" ||
       LISTING_SOURCE_OPTIONS.includes(
-        source as (typeof LISTING_SOURCE_OPTIONS)[number],
+        normalizedSource as (typeof LISTING_SOURCE_OPTIONS)[number],
       )
-        ? source
+        ? normalizedSource
         : "all",
     minDaysOnline:
       typeof minDaysOnline === "number" && !Number.isNaN(minDaysOnline)
@@ -312,6 +573,7 @@ export default async function ListingsPage({
     getListings(filters),
     getPersistedScoringConfig(),
   ]);
+  const checkedDateGroups = groupListingsByCheckedDate(listings);
   const hasActiveFilters =
     filters.sellerType !== "all" ||
     filters.status !== "all" ||
@@ -351,6 +613,8 @@ export default async function ListingsPage({
         </div>
 
         <AutoSubmitFiltersForm className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <input type="hidden" name="view" value={viewMode} />
+
           <label className="grid h-[68px] rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-canvas)_72%,transparent)] px-3 py-2 transition-colors focus-within:border-[var(--surface-accent)] hover:border-[var(--line-strong)]">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
               Pubblicato da
@@ -513,7 +777,7 @@ export default async function ListingsPage({
       </section>
 
       <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4 border-t border-[var(--line-soft)] pt-5">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-t border-[var(--line-soft)] pt-5">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-subtle)]">
               Risultati
@@ -522,16 +786,76 @@ export default async function ListingsPage({
               {listings.length} schede complete
             </p>
           </div>
+          <div className="relative z-10 grid grid-cols-2 gap-1 rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-1">
+            <Link
+              href={buildViewHref(params, "list")}
+              aria-label="Vista lista"
+              title="Vista lista"
+              className={clsx(
+                "inline-flex size-9 items-center justify-center rounded-[6px] text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
+                viewMode === "list" &&
+                  "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
+              )}
+            >
+              <List className="size-4" aria-hidden="true" />
+            </Link>
+            <Link
+              href={buildViewHref(params, "grid")}
+              aria-label="Vista griglia"
+              title="Vista griglia"
+              className={clsx(
+                "inline-flex size-9 items-center justify-center rounded-[6px] text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
+                viewMode === "grid" &&
+                  "bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
+              )}
+            >
+              <LayoutGrid className="size-4" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
 
         {listings.length ? (
-          listings.map((listing) => (
-            <ListingRow
-              key={listing.id}
-              listing={listing}
-              scoringConfig={scoringConfig}
-            />
-          ))
+          viewMode === "grid" ? (
+            <div className="space-y-5">
+              {checkedDateGroups.map((group) => (
+                <section key={group.key} className="space-y-3">
+                  <ListingDateSeparator
+                    label={group.label}
+                    count={group.listings.length}
+                  />
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {group.listings.map((listing) => (
+                      <ListingGridCard
+                        key={listing.id}
+                        listing={listing}
+                        scoringConfig={scoringConfig}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {checkedDateGroups.map((group) => (
+                <section key={group.key} className="space-y-3">
+                  <ListingDateSeparator
+                    label={group.label}
+                    count={group.listings.length}
+                  />
+                  <div className="space-y-4">
+                    {group.listings.map((listing) => (
+                      <ListingRow
+                        key={listing.id}
+                        listing={listing}
+                        scoringConfig={scoringConfig}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )
         ) : (
           <div className="px-6 py-16 text-center">
             <p className="text-base font-semibold text-[var(--ink-strong)]">

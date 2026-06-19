@@ -311,10 +311,19 @@ function getTitle(
 
 function getZone(context: string) {
   const bitontoMatch = context.match(
-    /(?:zona|quartiere|comune|localit(?:a|\u00e0))?\s*[:\-]?\s*([^|,;\n]{0,60}\bBitonto\b[^|,;\n]{0,40})/i,
+    /(?:zona|quartiere|comune|localit(?:a|\u00e0))?\s*[:\-]?\s*([^|,;\n\u20ac]{0,60}\bBitonto\b[^|,;\n\u20ac]{0,40})/i,
   );
 
-  return bitontoMatch?.[1] ? cleanText(bitontoMatch[1]) : null;
+  if (!bitontoMatch?.[1]) {
+    return null;
+  }
+
+  const zone = cleanText(bitontoMatch[1])
+    .replace(/\s*(?:\u20ac\s*|(?:eur|euro)\b).*$/i, "")
+    .replace(/\s+(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)\b.*$/i, "")
+    .replace(/\s+\d+(?:[,.]\d+)?\s*(?:m\u00b2|mq|m2|metri\s+quadri|locali|locale|vani|vano|stanze|stanza|bagni|bagno)\b.*$/i, "");
+
+  return zone || null;
 }
 
 export function parseAlertEmail(input: {

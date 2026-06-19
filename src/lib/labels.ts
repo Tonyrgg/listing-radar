@@ -4,6 +4,7 @@ import type {
   ListingStatus,
   SellerType,
 } from "@/types";
+import { normalizeListingSource } from "@/lib/listing-sources";
 
 const SELLER_TYPE_LABELS: Record<SellerType | "all", string> = {
   all: "Tutti",
@@ -41,6 +42,26 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   running: "In corso",
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  immobiliaririunite: "Immobiliari Riunite",
+  admaiora: "Ad Maiora",
+  puntocasa: "PuntoCasa Group",
+  iconacasa: "Iconacasa Bitonto",
+  ingegnericolapinto: "Ingegneri Colapinto",
+  vistocasa: "Vistocasa Bitonto",
+  studisanti: "Studi Santi Immobiliare",
+  import: "Importato dal browser",
+  feed: "Feed autorizzato",
+  mock: "Dati di prova",
+  immobiliare: "Immobiliare.it",
+  idealista: "Idealista",
+  casa: "Casa.it",
+  wikicasa: "Wikicasa",
+  casadaprivato: "CasaDaPrivato",
+  subito: "Subito",
+  bakeca: "Bakeca",
+};
+
 export function getSellerTypeLabel(value: SellerType | "all") {
   return SELLER_TYPE_LABELS[value] ?? value;
 }
@@ -62,71 +83,5 @@ export function getRunStatusLabel(value: string) {
 }
 
 export function getSourceLabel(value: string) {
-  const normalized = value.toLowerCase();
-
-  if (normalized === "immobiliaririunite") {
-    return "Immobiliari Riunite";
-  }
-
-  if (normalized === "admaiora") {
-    return "Ad Maiora";
-  }
-
-  if (normalized === "puntocasa") {
-    return "PuntoCasa Group";
-  }
-
-  if (normalized === "iconacasa") {
-    return "Iconacasa Bitonto";
-  }
-
-  if (normalized === "ingegnericolapinto") {
-    return "Ingegneri Colapinto";
-  }
-
-  if (normalized === "vistocasa") {
-    return "Vistocasa Bitonto";
-  }
-
-  if (normalized === "studisanti") {
-    return "Studi Santi Immobiliare";
-  }
-
-  if (normalized === "import") {
-    return "Importato dal browser";
-  }
-
-  if (normalized === "feed") {
-    return "Feed autorizzato";
-  }
-
-  if (normalized === "mock") {
-    return "Dati di prova";
-  }
-
-  if (normalized === "immobiliare" || normalized === "immobiliare.it") {
-    return "Immobiliare.it";
-  }
-
-  if (normalized === "idealista") {
-    return "Idealista";
-  }
-
-  if (normalized === "casa" || normalized === "casa.it") {
-    return "Casa.it";
-  }
-
-  if (normalized === "wikicasa" || normalized === "wikicasa.it") {
-    return "Wikicasa";
-  }
-
-  if (normalized === "casadaprivato" || normalized === "casadaprivato.it") {
-    return "CasaDaPrivato";
-  }
-
-  if (normalized === "subito") {
-    return "Subito";
-  }
-
-  return value;
+  return SOURCE_LABELS[normalizeListingSource(value)] ?? value;
 }

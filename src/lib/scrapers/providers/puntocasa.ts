@@ -115,11 +115,21 @@ function extractDescription(html: string, fallback: string | null) {
 }
 
 function extractPrice(html: string) {
-  const priceMatch = html.match(
-    /<span\b[^>]*class=["'][^"']*\bproperty-page-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
-  );
+  const meta = extractMetaTags(html);
+  const priceMatch =
+    html.match(
+      /<span\b[^>]*class=["'][^"']*\bproperty-page-price\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    ) ??
+    html.match(
+      /<[^>]+\bclass=["'][^"']*(?:\bproperty-price\b|\bprice\b)[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i,
+    ) ??
+    html.match(/(\u20ac\s*\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?(?:\s*\/\s*\w+)?)/i);
 
-  return parsePrice(priceMatch?.[1] ? stripHtml(priceMatch[1]) : null);
+  return (
+    parsePrice(priceMatch?.[1] ? stripHtml(priceMatch[1]) : null) ??
+    parsePrice(meta["product:price:amount"] ? `${meta["product:price:amount"]} euro` : null) ??
+    parsePrice(meta["og:price:amount"] ? `${meta["og:price:amount"]} euro` : null)
+  );
 }
 
 function extractInfoValue(html: string, label: string) {

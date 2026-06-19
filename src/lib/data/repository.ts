@@ -11,6 +11,7 @@ import {
   getMockListings,
   getMockReports,
 } from "@/lib/data/mock-store";
+import { normalizeListingSource } from "@/lib/listing-sources";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { ScoringConfig } from "@/lib/listings/scoring-config";
@@ -340,6 +341,8 @@ function applyListingFilters(
   const highPriorityThreshold = scoringConfig
     ? getHighPriorityThresholdFromConfig(scoringConfig)
     : getHighPriorityThreshold();
+  const filterSource =
+    filters.source === "all" ? "all" : normalizeListingSource(filters.source);
   const filtered = listings.filter((listing) => {
     if (filters.sellerType !== "all" && listing.sellerType !== filters.sellerType) {
       return false;
@@ -357,7 +360,10 @@ function applyListingFilters(
       return false;
     }
 
-    if (filters.source !== "all" && listing.source !== filters.source) {
+    if (
+      filterSource !== "all" &&
+      normalizeListingSource(listing.source) !== filterSource
+    ) {
       return false;
     }
 

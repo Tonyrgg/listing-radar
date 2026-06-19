@@ -63,6 +63,16 @@ body {
     color: var(--ink-strong);
   }
 
+  select {
+    color-scheme: dark;
+  }
+
+  select option,
+  select optgroup {
+    background: var(--surface-panel);
+    color: var(--ink-strong);
+  }
+
   :where(input, select, textarea) {
     transition:
       border-color 140ms ease,

@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge, type BadgeTone } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
+import {
+  dismissIncomingListing,
+  restoreIncomingListing,
+} from "@/app/(private)/incoming/actions";
 import { getIncomingListings } from "@/lib/incoming/repository";
 import {
   formatCurrency,
@@ -68,6 +72,8 @@ function getPortalImportUrl(listing: IncomingListing) {
 
 function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
   const isEnriched = listing.status === "enriched" && listing.listingId;
+  const canDismiss = listing.status !== "dismissed" && !isEnriched;
+  const canRestore = listing.status === "dismissed";
 
   return (
     <article className="grid gap-4 border-b border-[var(--line-soft)] py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
@@ -103,25 +109,51 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
         ) : null}
       </div>
 
-      <div className="flex items-center">
+      <div className="grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 md:w-[230px] md:grid-cols-1">
         {isEnriched ? (
           <Link
             href={`/listings/${listing.listingId}`}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] md:w-auto"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
           >
             Vedi scheda completa
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
         ) : (
-          <a
-            href={getPortalImportUrl(listing)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] md:w-auto"
-          >
-            Apri e completa la scheda
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </a>
+          <>
+            <a
+              href={getPortalImportUrl(listing)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+            >
+              Apri e completa la scheda
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </a>
+            {canDismiss ? (
+              <form action={dismissIncomingListing} className="w-full">
+                <input type="hidden" name="incomingId" value={listing.id} />
+                <button
+                  type="submit"
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+                >
+                  Metti da parte
+                  <Archive aria-hidden="true" className="size-4" />
+                </button>
+              </form>
+            ) : null}
+            {canRestore ? (
+              <form action={restoreIncomingListing} className="w-full">
+                <input type="hidden" name="incomingId" value={listing.id} />
+                <button
+                  type="submit"
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+                >
+                  Rimetti in attesa
+                  <ArchiveRestore aria-hidden="true" className="size-4" />
+                </button>
+              </form>
+            ) : null}
+          </>
         )}
       </div>
     </article>

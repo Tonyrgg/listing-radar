@@ -9,6 +9,7 @@ import {
 } from "@/lib/listings/scoring";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { assignDuplicateGroup } from "@/lib/listings/duplicates";
+import { getListingSourceStorageAliases } from "@/lib/listing-sources";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { Listing, NormalizedListing, UpsertListingsResult } from "@/types";
 
@@ -51,13 +52,16 @@ function hashDescription(value: string | null | undefined) {
 
 async function findExistingListing(normalized: NormalizedListing) {
   const supabase = getSupabaseServiceClient();
+  const sourceAliases = getListingSourceStorageAliases(normalized.source);
 
   if (normalized.sourceListingId) {
     const { data } = await supabase
       .from("listings")
       .select("*")
-      .eq("source", normalized.source)
+      .in("source", sourceAliases)
       .eq("source_listing_id", normalized.sourceListingId)
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .limit(1)
       .maybeSingle();
 
     if (data) {
@@ -68,8 +72,10 @@ async function findExistingListing(normalized: NormalizedListing) {
   const { data } = await supabase
     .from("listings")
     .select("*")
-    .eq("source", normalized.source)
+    .in("source", sourceAliases)
     .eq("url", normalized.url)
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .limit(1)
     .maybeSingle();
 
   if (data) {
@@ -80,8 +86,10 @@ async function findExistingListing(normalized: NormalizedListing) {
     const { data: canonicalData } = await supabase
       .from("listings")
       .select("*")
-      .eq("source", normalized.source)
+      .in("source", sourceAliases)
       .eq("canonical_url", normalized.canonicalUrl)
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .limit(1)
       .maybeSingle();
 
     if (canonicalData) {
@@ -286,14 +294,16 @@ export async function upsertListings(
       .from("listing_sources")
       .select("id")
       .eq("listing_id", listingId)
-      .eq("source", normalized.source)
+      .in("source", getListingSourceStorageAliases(normalized.source))
       .eq("url", normalized.url)
+      .limit(1)
       .maybeSingle();
 
     if (existingSource?.id) {
       await supabase
         .from("listing_sources")
         .update({
+          source: normalized.source,
           source_listing_id: normalized.sourceListingId ?? null,
           seller_name: normalized.sellerName ?? null,
           last_seen_at: lastSeenAt,

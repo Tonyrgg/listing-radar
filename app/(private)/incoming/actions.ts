@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { requireUser } from "@/lib/auth";
+import { updateIncomingListingStatus } from "@/lib/incoming/repository";
 
 export type RefreshEmailState = {
   ok: boolean | null;
@@ -40,4 +41,32 @@ export async function refreshIncomingEmails(
     ok: true,
     message: `${result.messagesChecked} email controllate, ${result.incomingInserted} nuovi arrivi aggiunti.`,
   };
+}
+
+export async function dismissIncomingListing(formData: FormData) {
+  await requireUser();
+
+  const incomingId = formData.get("incomingId");
+
+  if (typeof incomingId !== "string" || !incomingId.trim()) {
+    throw new Error("Annuncio non valido.");
+  }
+
+  await updateIncomingListingStatus(incomingId, "dismissed");
+  revalidatePath("/incoming");
+  revalidatePath("/dashboard");
+}
+
+export async function restoreIncomingListing(formData: FormData) {
+  await requireUser();
+
+  const incomingId = formData.get("incomingId");
+
+  if (typeof incomingId !== "string" || !incomingId.trim()) {
+    throw new Error("Annuncio non valido.");
+  }
+
+  await updateIncomingListingStatus(incomingId, "pending");
+  revalidatePath("/incoming");
+  revalidatePath("/dashboard");
 }

@@ -2,6 +2,7 @@ import "server-only";
 
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type { ParsedEmailAlert } from "@/lib/email-alerts/types";
+import { cleanText, parsePrice } from "@/lib/scrapers/parsers";
 import type { IncomingListing, IncomingListingStatus } from "@/types";
 
 type IncomingListingRow = {
@@ -28,6 +29,44 @@ type IncomingListingRow = {
   updated_at: string | null;
 };
 
+function recoverIncomingPrice(row: IncomingListingRow) {
+  const rawPayloadContext =
+    typeof row.raw_payload?.context === "string" ? row.raw_payload.context : null;
+  const rawPayloadAnchors = Array.isArray(row.raw_payload?.anchorTexts)
+    ? row.raw_payload.anchorTexts.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  const recoveredPrice =
+    parsePrice([rawPayloadContext, ...rawPayloadAnchors].filter(Boolean).join(" ")) ??
+    parsePrice(
+      [row.description, row.zone, row.title].filter(Boolean).join(" "),
+    );
+
+  if (row.price != null) {
+    if (row.price > 0 && row.price < 1000 && recoveredPrice != null) {
+      return recoveredPrice;
+    }
+
+    return row.price;
+  }
+
+  return recoveredPrice;
+}
+
+function normalizeIncomingZone(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const zone = cleanText(value)
+    .replace(/\s*(?:\u20ac\s*|(?:eur|euro)\b).*$/i, "")
+    .replace(/\s+(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)\b.*$/i, "")
+    .replace(/\s+\d+(?:[,.]\d+)?\s*(?:m\u00b2|mq|m2|metri\s+quadri|locali|locale|vani|vano|stanze|stanza|bagni|bagno)\b.*$/i, "");
+
+  return zone || null;
+}
+
 function mapIncomingListing(row: IncomingListingRow): IncomingListing {
   return {
     id: row.id,
@@ -37,10 +76,10 @@ function mapIncomingListing(row: IncomingListingRow): IncomingListing {
     canonicalUrl: row.canonical_url,
     title: row.title,
     description: row.description,
-    price: row.price,
+    price: recoverIncomingPrice(row),
     sqm: row.sqm,
     rooms: row.rooms,
-    zone: row.zone,
+    zone: normalizeIncomingZone(row.zone),
     imageUrl: row.image_url,
     emailMessageId: row.email_message_id,
     emailSubject: row.email_subject,
@@ -231,7 +270,10 @@ export async function upsertIncomingAlerts(
       email_subject: email.subject,
       email_sender: email.sender,
       email_received_at: email.receivedAt,
-      status: existing?.status === "enriched" ? "enriched" : "pending",
+      status:
+        existing?.status === "enriched" || existing?.status === "dismissed"
+          ? existing.status
+          : "pending",
       listing_id: existing?.listing_id ?? null,
       raw_payload: {
         ...alert.rawPayload,
@@ -322,5 +364,20 @@ export async function markIncomingListingEnriched(
 
   if (error) {
     throw new Error(`Unable to update incoming listing: ${error.message}`);
+  }
+}
+
+export async function updateIncomingListingStatus(
+  incomingId: string,
+  status: IncomingListingStatus,
+) {
+  const supabase = getSupabaseServiceClient();
+  const { error } = await supabase
+    .from("incoming_listings")
+    .update({ status })
+    .eq("id", incomingId);
+
+  if (error) {
+    throw new Error(`Unable to update incoming listing status: ${error.message}`);
   }
 }

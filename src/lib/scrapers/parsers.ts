@@ -18,17 +18,26 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const priceAmountPattern = String.raw`\d{1,3}(?:\s*\.\s*\d{3})+|\d{4,}`;
+const notPropertyUnitPattern = String.raw`(?!\s*(?:m\u00b2|mq|m2|metri\s+quadri|locali?|vani?|stanze?|bagni?)\b)`;
+const pricePattern = new RegExp(
+  String.raw`(?:\u20ac|eur|euro)\s*(${priceAmountPattern})${notPropertyUnitPattern}(?:,\d{1,2})?|\b(${priceAmountPattern})(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)`,
+  "i",
+);
+
 export function parsePrice(text: string | null | undefined) {
   const value = cleanText(text);
 
-  if (!value || /prezzo\s+su\s+richiesta/i.test(value)) {
+  if (!value) {
     return null;
   }
 
-  const amountWithCurrency = value.match(
-    /(?:\u20ac\s*)?(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:,\d{1,2})?\s*(?:\u20ac|eur|euro)/i,
-  );
-  const amount = amountWithCurrency?.[1] ?? null;
+  const amountWithCurrency = value.match(pricePattern);
+  const amount = amountWithCurrency?.[1] ?? amountWithCurrency?.[2] ?? null;
+
+  if (!amount && /prezzo\s+su\s+richiesta/i.test(value)) {
+    return null;
+  }
 
   return amount ? parseNumber(amount) : null;
 }

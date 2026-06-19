@@ -11,6 +11,11 @@ import {
   getMissingListingFields,
   hasRequiredListingGaps,
 } from "@/lib/listings/completeness";
+import {
+  inferListingSourceFromUrl,
+  isGenericListingSource,
+  normalizeListingSource,
+} from "@/lib/listing-sources";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import {
   normalizeImportedRows,
@@ -91,13 +96,20 @@ export async function POST(request: NextRequest) {
     }
 
     const incomingId = readOptionalString(body.incomingId);
-    const source = readOptionalString(body.source)?.toLowerCase() ?? null;
+    const rawSource = readOptionalString(body.source);
     const sourceListingId = readOptionalString(body.sourceListingId);
     const canonicalUrlValue =
       readOptionalString(body.canonicalUrl) ?? readOptionalString(body.url);
     const canonicalUrl = canonicalUrlValue
       ? normalizeUrl(canonicalUrlValue)
       : null;
+    const normalizedSource = rawSource
+      ? normalizeListingSource(rawSource)
+      : null;
+    const source =
+      normalizedSource && !isGenericListingSource(normalizedSource)
+        ? normalizedSource
+        : inferListingSourceFromUrl(canonicalUrl);
     const incoming = await findIncomingListing({
       incomingId,
       source,
@@ -106,7 +118,7 @@ export async function POST(request: NextRequest) {
     });
     const mergedRow = {
       ...body,
-      source: source ?? incoming?.source ?? "browser",
+      source: source ?? incoming?.source ?? rawSource ?? "browser",
       sourceListingId: sourceListingId ?? incoming?.sourceListingId,
       url: canonicalUrl ?? incoming?.canonicalUrl ?? incoming?.url,
       canonicalUrl: canonicalUrl ?? incoming?.canonicalUrl ?? incoming?.url,
@@ -136,7 +148,7 @@ export async function POST(request: NextRequest) {
     };
     const normalized = normalizeImportedRows([mergedRow], {
       provider: "browser-extension",
-      defaultSource: source ?? incoming?.source ?? "browser",
+      defaultSource: source ?? incoming?.source ?? rawSource ?? "browser",
     });
 
     if (!normalized.listings.length) {

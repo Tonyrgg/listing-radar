@@ -1,29 +1,11 @@
 import type { SellerType } from "@/types";
+import { FILTERABLE_LISTING_SOURCE_OPTIONS } from "@/lib/listing-sources";
 import { SCRAPER_CONFIG } from "@/lib/scrapers/config";
 
 export const MONITORED_ZONE = SCRAPER_CONFIG.monitoredCity;
 export const REPORT_SCHEDULE = "09:00";
 
-export const LISTING_SOURCE_OPTIONS = [
-  "admaiora",
-  "futura",
-  "iconacasa",
-  "ingegnericolapinto",
-  "immobiliaririunite",
-  "puntocasa",
-  "studisanti",
-  "vistocasa",
-  "feed",
-  "import",
-  "subito",
-  "Subito",
-  "Casa.it",
-  "Idealista",
-  "Immobiliare.it",
-  "Wikicasa",
-  "CasaDaPrivato",
-  "Bakeca",
-] as const;
+export const LISTING_SOURCE_OPTIONS = FILTERABLE_LISTING_SOURCE_OPTIONS;
 
 export const SELLER_TYPE_OPTIONS: Array<"all" | SellerType> = [
   "all",

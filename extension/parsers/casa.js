@@ -131,25 +131,105 @@
     );
   }
 
-  function extractSellerName(description) {
+  function cleanSellerName(value) {
+    const text = generic
+      .clean(value)
+      .replace(/^logo\s+(?:agenzia\s+)?/i, "")
+      .replace(/^agenzia\s+verificata\s+/i, "")
+      .replace(/^(?:gestit[ao]|curat[ao]|pubblicat[ao]|propost[ao])\s+da\s+/i, "")
+      .split(
+        /\b(?:chiama|contatta|richiedi|telefono|messaggio|invia|data ultimo)\b/i,
+      )[0]
+      .replace(/\b(?:n\.?\s*)?telefono\s*:?\s*$/i, "")
+      .trim();
+
+    return text || null;
+  }
+
+  function isSellerNameCandidate(value) {
+    const text = cleanSellerName(value);
+
+    if (
+      !text ||
+      text.length < 3 ||
+      text.length > 90 ||
+      /\d{4,}/.test(text) ||
+      /(?:casa\.it|annunci immobiliari|case e appartamenti|case a|appartamenti|prezzo|mutuo|mappa|streetview|servizi|strumenti|data ultimo|classe energetica|valuta|condividi|salva|segnala|privacy|copyright|pubblica annuncio|trova agenzia)/i.test(
+        text,
+      )
+    ) {
+      return false;
+    }
+
+    return /\b(?:agenzia|immobiliare|tecnocasa|re\/max|remax|real estate|casa)\b/i.test(
+      text,
+    );
+  }
+
+  function firstSellerNameCandidate(values) {
+    for (const value of values) {
+      const cleaned = cleanSellerName(value);
+
+      if (isSellerNameCandidate(cleaned)) {
+        return cleaned;
+      }
+    }
+
+    return null;
+  }
+
+  function extractSellerName(description, pageText) {
     return (
-      utils.firstText([
-        "[data-testid='agency-name']",
-        "[data-testid='advertiser-name']",
-        ".agency-name",
-        ".advertiser-name",
-        ".detail-agency-name",
-      ]) ||
-      utils.lineAfter([/^Inserzionista$/i, /^Agenzia$/i], {
-        skip: [/^Contatta$/i, /^Chiama$/i, /^Invia/i],
-      }) ||
-      utils.firstMatch(description, [
-        /(?:Contattate|Contatta)\s+(?:l'agenzia\s+)?([^.,]+?)\s+per/i,
-        /^([^.,]+?Immobiliare[^.,]*?)\s+propone/i,
-        /^([^.,]+?Tecnocasa[^.,]*?)\s+propone/i,
-        /^([^.,]+?RE\/MAX[^.,]*?)\s+propone/i,
-      ]) ||
-      null
+      firstSellerNameCandidate([
+        utils.firstText([
+          "[data-testid='agency-name']",
+          "[data-testid='advertiser-name']",
+          "[data-testid='agency-card']",
+          "[data-testid='advertiser-card']",
+          "[data-testid*='agency' i]",
+          "[data-testid*='advertiser' i]",
+          "[href*='/agenzie/']",
+          "[href*='/agenzia/']",
+          "[href*='/professionisti/']",
+          ".agency-name",
+          ".advertiser-name",
+          ".detail-agency-name",
+          ".agency-card",
+          ".advertiser-card",
+        ]),
+        utils.firstAttribute(
+          [
+            "img[alt*='logo agenzia' i]",
+            "img[alt*='agenzia' i]",
+            "img[alt*='immobiliare' i]",
+          ],
+          "alt",
+        ),
+        utils.lineAfter(
+          [
+            /^Inserzionista$/i,
+            /^Agenzia$/i,
+            /^Gestit[ao] da$/i,
+            /^Annuncio gestito da$/i,
+            /^Pubblicat[ao] da$/i,
+          ],
+          {
+            skip: [/^Contatta$/i, /^Chiama/i, /^Invia/i, /^Richiedi/i],
+          },
+        ),
+        ...utils.pageLines(),
+        utils.firstMatch(pageText, [
+          /(?:gestit[ao]|curat[ao]|pubblicat[ao]|propost[ao])\s+da\s+([^#]+?)(?:\s+(?:chiama|contatta|richiedi|telefono)|$)/i,
+          /(?:agenzia|inserzionista)\s+([^#]+?(?:Immobiliare|Tecnocasa|RE\/MAX|Remax|Real Estate|Casa)[^#]*?)(?:\s+(?:chiama|contatta|richiedi|telefono)|$)/i,
+          /([^#]{1,90}?(?:Immobiliare|Tecnocasa|RE\/MAX|Remax|Real Estate|Casa)[^#]{0,40})\s+Data ultimo/i,
+        ]),
+        utils.firstMatch(description, [
+          /(?:Contattate|Contatta)\s+(?:l'agenzia\s+)?([^.,]+?)\s+per/i,
+          /^([^.,]+?Immobiliare[^.,]*?)\s+propone/i,
+          /^([^.,]+?Tecnocasa[^.,]*?)\s+propone/i,
+          /^([^.,]+?RE\/MAX[^.,]*?)\s+propone/i,
+        ]),
+      ]) || null
     );
   }
 
@@ -158,6 +238,12 @@
       utils.firstText([
         "[data-testid='agency-card']",
         "[data-testid='advertiser-card']",
+        "[data-testid*='contact' i]",
+        "[data-testid*='agency' i]",
+        "[data-testid*='advertiser' i]",
+        "[class*='contact' i]",
+        "[class*='agency' i]",
+        "[class*='advertiser' i]",
         ".detail-agency",
         ".advertiser-card",
       ]) || `${sellerName || ""} ${description || ""}`
@@ -172,6 +258,106 @@
     }
 
     return utils.sellerTypeFrom(sellerName, text) || "unknown";
+  }
+
+  function normalizePhone(value) {
+    const text = generic.clean(value);
+    const phoneMatch = text.match(
+      /(?:\+?39[\s./-]*)?(?:(?:0\d{1,4}|3\d{2})[\s./-]?\d[\d\s./-]{5,10}\d)/,
+    );
+
+    if (!phoneMatch?.[0]) {
+      return null;
+    }
+
+    const digits = phoneMatch[0].replace(/\D/g, "");
+
+    if (digits.length < 8 || digits.length > 13) {
+      return null;
+    }
+
+    return digits.startsWith("39") && digits.length > 10
+      ? `+${digits}`
+      : digits;
+  }
+
+  function extractPhoneFromText(value) {
+    const text = generic.clean(value);
+
+    if (
+      !/(?:tel:|telefono|cellulare|chiama|contatta|mostra numero|\+39|\b0\d{1,4}[\s./-]?\d|\b3\d{2}[\s./-]?\d)/i.test(
+        text,
+      )
+    ) {
+      return null;
+    }
+
+    return normalizePhone(text);
+  }
+
+  function extractPhone(sellerContext) {
+    const visiblePhone = normalizePhone(generic.visiblePhone());
+
+    if (visiblePhone) {
+      return visiblePhone;
+    }
+
+    const candidates = [];
+    const selectors = [
+      "a[href^='tel:']",
+      "button",
+      "a",
+      "[role='button']",
+      "[data-phone]",
+      "[data-telephone]",
+      "[data-contact-phone]",
+      "[data-agent-phone]",
+      "[data-testid*='phone' i]",
+      "[data-testid*='call' i]",
+      "[data-testid*='contact' i]",
+      "[class*='phone' i]",
+      "[class*='call' i]",
+      "[class*='contact' i]",
+      "[aria-label*='telefono' i]",
+      "[aria-label*='chiama' i]",
+      "[title*='telefono' i]",
+      "[title*='chiama' i]",
+    ];
+
+    document.querySelectorAll(selectors.join(",")).forEach((element) => {
+      [
+        element.textContent,
+        element.getAttribute("href"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("title"),
+        element.getAttribute("data-phone"),
+        element.getAttribute("data-telephone"),
+        element.getAttribute("data-contact-phone"),
+        element.getAttribute("data-agent-phone"),
+        element.getAttribute("data-value"),
+        element.getAttribute("value"),
+      ].forEach((value) => {
+        if (value) {
+          candidates.push(value);
+        }
+      });
+    });
+
+    candidates.push(sellerContext);
+    utils
+      .pageLines()
+      .filter((line) => /(?:chiama|telefono|cellulare|mostra numero)/i.test(line))
+      .forEach((line) => candidates.push(line));
+
+    for (const candidate of candidates) {
+      const phone = extractPhoneFromText(candidate);
+
+      if (phone) {
+        return phone;
+      }
+    }
+
+    return null;
   }
 
   function extractAddress(pageText) {
@@ -214,7 +400,7 @@
       const pageText = utils.pageText();
       const details = extractDetailsText();
       const description = extractDescription();
-      const sellerName = extractSellerName(description);
+      const sellerName = extractSellerName(description, pageText);
       const sellerContext = extractSellerContext(sellerName, description);
       const addressRaw = extractAddress(pageText);
       const imageUrls = collectCasaImages();
@@ -245,7 +431,7 @@
         addressRaw,
         sellerName,
         sellerType: extractSellerType(sellerName, sellerContext, description),
-        phone: generic.visiblePhone(),
+        phone: extractPhone(sellerContext),
         imageUrl: imageUrls[0] || null,
         imageUrls,
         portalDeclaredDate: extractDeclaredDate(),
@@ -259,6 +445,7 @@
           extractedFields: utils.fieldNames(extracted),
           detailsText: details.slice(0, 3000),
           sellerContext: sellerContext.slice(0, 1500),
+          contactParser: "casa-contact-v2",
         },
       };
     },

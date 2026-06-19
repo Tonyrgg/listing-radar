@@ -190,6 +190,73 @@ function extractDescription(html: string, fallback: string | null) {
   return description || fallback;
 }
 
+function extractImageUrls(html: string, meta: Record<string, string>) {
+  const urls = new Set<string>();
+  const galleryHtml =
+    html.match(
+      /<div\b[^>]*id=["']property-detail-slider-two["'][^>]*>[\s\S]*?(?:<div\b[^>]*id=["']property-detail-slider-carousel-nav["']|<div\b[^>]*class=["'][^"']*\brh_property__meta_wrap\b)/i,
+    )?.[0] ??
+    html.match(
+      /<div\b[^>]*class=["'][^"']*\bproperty-detail-slider-wrapper\b[^"']*["'][^>]*>[\s\S]*?(?:<div\b[^>]*class=["'][^"']*\brh_property__meta_wrap\b|<section\b[^>]*id=["']property-content-section["'])/i,
+    )?.[0] ??
+    "";
+  const urlPatterns = [
+    /\b(?:href|src|data-src)=["']([^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/gi,
+    /\bsrcset=["']([^"']+)["']/gi,
+    /background-image\s*:\s*url\(["']?([^"')]+\.(?:jpe?g|png|webp)(?:\?[^"')]+)?)["']?\)/gi,
+  ];
+
+  function add(value: string | undefined) {
+    if (
+      !value ||
+      /(?:logo|banner|cropped|favicon|icon|facebook|instagram|youtube|whatsapp|linkedin|emoji|schema\/logo)/i.test(
+        value,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const url = new URL(value.replace(/&amp;/gi, "&"), SCRAPER_CONFIG.admaiora.baseUrl);
+
+      if (
+        url.hostname === "www.admaioraimmobiliare.it" &&
+        /\/wp-content\/uploads\//i.test(url.pathname)
+      ) {
+        url.pathname = url.pathname.replace(
+          /-\d+x\d+(\.(?:jpe?g|png|webp))$/i,
+          "$1",
+        );
+        urls.add(url.toString());
+      }
+    } catch {
+      // Ignore malformed image URLs from theme markup.
+    }
+  }
+
+  for (const pattern of urlPatterns) {
+    for (const match of galleryHtml.matchAll(pattern)) {
+      if (pattern.source.includes("srcset")) {
+        const candidates = (match[1] ?? "")
+          .split(",")
+          .map((candidate) => candidate.trim().split(/\s+/)[0])
+          .filter(Boolean);
+
+        for (const candidate of candidates) {
+          add(candidate);
+        }
+      } else {
+        add(match[1]);
+      }
+    }
+  }
+
+  add(meta["og:image"]);
+  add(meta["twitter:image"]);
+
+  return [...urls].slice(0, 50);
+}
+
 function extractPhone(visibleText: string) {
   const match = visibleText.match(
     /(?:\+39\s*)?(?:3\d{2}[\s.-]?\d{3}[\s.-]?\d{3,4}|0\d{1,3}[\s.-]?\d{5,8})/,
@@ -228,6 +295,7 @@ function normalizeListingFromDetail(url: string, html: string) {
   const addressRaw = extractAddress(html);
   const rooms = extractMetaNumber(html, "prop_bedrooms") ?? parseRooms(title);
   const sqm = extractMetaNumber(html, "prop_area") ?? parseSqm(description);
+  const imageUrls = extractImageUrls(html, meta);
   const now = new Date().toISOString();
 
   return {
@@ -248,6 +316,7 @@ function normalizeListingFromDetail(url: string, html: string) {
     sellerType: "agency",
     sellerName: "Ad Maiora Immobiliare",
     phone: extractPhone(visibleText),
+    imageUrls,
     portalDeclaredDate: metadataDatePublished,
     metadataDatePublished,
     metadataDateModified,
@@ -260,6 +329,7 @@ function normalizeListingFromDetail(url: string, html: string) {
       extractedAt: now,
       meta,
       jsonLd,
+      imageUrls,
       descriptionHash: hashDescription(description),
     },
   } satisfies NormalizedListing;
