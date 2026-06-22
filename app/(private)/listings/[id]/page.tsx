@@ -4,6 +4,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge, getSellerTypeTone, getStatusTone } from "@/components/badge";
+import {
+  LoadingAnchor,
+  PendingSubmitButton,
+} from "@/components/loading-controls";
 import { ListingCompletenessPopover } from "@/components/listing-completeness-popover";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 import { ListingScoreBreakdown } from "@/components/listing-score";
@@ -133,8 +137,9 @@ function CrmStatusMetric({
 
   return (
     <form action={toggleCrmStatus}>
-      <button
+      <PendingSubmitButton
         type="submit"
+        pendingLabel="Aggiorno CRM"
         className={
           isTreated
             ? "block w-full cursor-pointer rounded-[7px] border border-[oklch(0.56_0.1_150)] bg-[oklch(0.31_0.055_150)] px-4 py-3 text-left transition-colors hover:bg-[oklch(0.36_0.065_150)]"
@@ -150,7 +155,7 @@ function CrmStatusMetric({
         <span className="mt-1 block truncate text-xs text-[var(--ink-soft)]">
           Clicca per segnare {isTreated ? "non trattato" : "trattato"}
         </span>
-      </button>
+      </PendingSubmitButton>
     </form>
   );
 }
@@ -297,14 +302,15 @@ export default async function ListingDetailPage({
           </div>
         </div>
 
-        <a
+        <LoadingAnchor
           href={listing.url}
           target="_blank"
           rel="noreferrer"
-          className="flex min-h-12 items-center justify-center border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
+          className="flex min-h-12 items-center justify-center gap-2 border-t border-[var(--line-soft)] px-5 text-sm font-semibold text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)]"
+          pendingLabel="Apertura annuncio"
         >
           Vedi annuncio originale
-        </a>
+        </LoadingAnchor>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
@@ -511,12 +517,12 @@ export default async function ListingDetailPage({
             <textarea name="note" rows={3} placeholder="Aggiungi una nota senza cancellare le precedenti" className="w-full rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] p-3" />
           </label>
           <div className="flex flex-col gap-3 md:col-span-2 md:flex-row xl:col-span-4">
-            <button type="submit" className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)]">
+            <PendingSubmitButton type="submit" pendingLabel="Salvo" className="h-11 rounded-md bg-[var(--surface-accent)] px-5 text-sm font-semibold text-[var(--button-ink)]">
               Salva modifiche
-            </button>
-            <button formAction={archiveAction} type="submit" className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)]">
+            </PendingSubmitButton>
+            <PendingSubmitButton formAction={archiveAction} type="submit" pendingLabel="Archivio" className="inline-flex h-11 items-center justify-center rounded-md border border-[var(--line-strong)] px-5 text-sm font-medium text-[var(--ink-strong)]">
               Archivia
-            </button>
+            </PendingSubmitButton>
           </div>
         </form>
       </details>

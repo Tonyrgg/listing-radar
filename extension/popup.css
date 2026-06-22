@@ -127,6 +127,23 @@ button:disabled {
   opacity: 0.55;
 }
 
+button.is-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+button.is-loading::before {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  content: "";
+  animation: spin 0.75s linear infinite;
+}
+
 button.secondary {
   border: 1px solid var(--line);
   background: #fff;
@@ -191,4 +208,10 @@ button.text-button {
 
 .hidden {
   display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

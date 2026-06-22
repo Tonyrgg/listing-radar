@@ -95,6 +95,33 @@ export function isToday(value: string | null | undefined) {
   return date.toDateString() === now.toDateString();
 }
 
+export function getPublicationReferenceDate(input: {
+  firstSeenAt?: string | null;
+  portalDeclaredDate?: string | null;
+  metadataDatePublished?: string | null;
+}) {
+  return (
+    parseDate(input.portalDeclaredDate) ??
+    parseDate(input.metadataDatePublished) ??
+    parseDate(input.firstSeenAt)
+  );
+}
+
+export function isPublishedToday(input: {
+  firstSeenAt?: string | null;
+  portalDeclaredDate?: string | null;
+  metadataDatePublished?: string | null;
+}) {
+  const date = getPublicationReferenceDate(input);
+
+  if (!date) {
+    return false;
+  }
+
+  const now = new Date();
+  return date.toDateString() === now.toDateString();
+}
+
 export function getPriorityScoreBreakdown(
   input: PriorityScoreInput,
   scoringConfig?: ScoringConfig,
@@ -118,7 +145,7 @@ export function getPriorityScoreBreakdown(
     {
       id: "new-today",
       label: "Nuovo arrivo",
-      explanation: "L'annuncio e stato rilevato oggi.",
+      explanation: "L'annuncio risulta pubblicato o rilevato oggi.",
       points: config.newToday,
       active: input.isNewToday,
     },
@@ -307,7 +334,11 @@ export function createDerivedListingValues(input: Pick<
     portalDeclaredDate: input.portalDeclaredDate,
     metadataDatePublished: input.metadataDatePublished,
   });
-  const isNewToday = isToday(input.firstSeenAt);
+  const isNewToday = isPublishedToday({
+    firstSeenAt: input.firstSeenAt,
+    portalDeclaredDate: input.portalDeclaredDate,
+    metadataDatePublished: input.metadataDatePublished,
+  });
   const isPriceDropped =
     input.previousPrice != null &&
     input.price != null &&

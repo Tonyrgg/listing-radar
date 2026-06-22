@@ -26,6 +26,14 @@ function setStatus(message) {
   elements.status.textContent = message;
 }
 
+function setButtonPending(element, pending, label) {
+  if (!element) return;
+  element.dataset.idleText ||= element.textContent;
+  element.disabled = pending;
+  element.classList.toggle("is-loading", pending);
+  element.textContent = pending ? label : element.dataset.idleText;
+}
+
 function normalizeBaseUrl(value) {
   const url = new URL(value);
   url.pathname = url.pathname.replace(/\/+$/, "");
@@ -89,6 +97,7 @@ async function requestOriginPermission(baseUrl) {
 }
 
 async function saveConnection() {
+  setButtonPending(elements.saveConnection, true, "Salvataggio...");
   try {
     const baseUrl = normalizeBaseUrl(elements.baseUrl.value.trim());
     const token = elements.token.value.trim();
@@ -104,6 +113,8 @@ async function saveConnection() {
     await extractCurrentPage();
   } catch (error) {
     setStatus(error.message);
+  } finally {
+    setButtonPending(elements.saveConnection, false, "");
   }
 }
 
@@ -146,7 +157,7 @@ async function extractCurrentPage() {
 
 async function importListing() {
   if (!state.config || !state.listing) return;
-  elements.importListing.disabled = true;
+  setButtonPending(elements.importListing, true, "Importazione...");
   setStatus("Importazione...");
   try {
     if (!state.listing.title) {
@@ -182,12 +193,18 @@ async function importListing() {
   } catch (error) {
     setStatus(error.message);
   } finally {
-    elements.importListing.disabled = false;
+    setButtonPending(elements.importListing, false, "");
   }
 }
 
 async function openListing() {
-  if (state.detailUrl) await chrome.tabs.create({ url: state.detailUrl });
+  if (!state.detailUrl) return;
+  setButtonPending(elements.openListing, true, "Apertura...");
+  try {
+    await chrome.tabs.create({ url: state.detailUrl });
+  } finally {
+    setButtonPending(elements.openListing, false, "");
+  }
 }
 
 async function initialize() {

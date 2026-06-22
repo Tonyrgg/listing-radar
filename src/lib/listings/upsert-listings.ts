@@ -5,7 +5,7 @@ import {
   calculatePriorityScore,
   calculateSellerFatigueScore,
   getMinimumDaysOnline,
-  isToday,
+  isPublishedToday,
 } from "@/lib/listings/scoring";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { assignDuplicateGroup } from "@/lib/listings/duplicates";
@@ -131,9 +131,11 @@ function toListingPreview(
     sellerName: normalized.sellerName ?? null,
     phone: normalized.phone ?? null,
     imageUrls: normalized.imageUrls ?? [],
-    portalDeclaredDate: normalized.portalDeclaredDate ?? null,
-    metadataDatePublished: normalized.metadataDatePublished ?? null,
-    metadataDateModified: normalized.metadataDateModified ?? null,
+    portalDeclaredDate: normalized.portalDeclaredDate ?? row.portal_declared_date ?? null,
+    metadataDatePublished:
+      normalized.metadataDatePublished ?? row.metadata_date_published ?? null,
+    metadataDateModified:
+      normalized.metadataDateModified ?? row.metadata_date_modified ?? null,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: normalized.lastSeenAt ?? normalized.checkedAt ?? new Date().toISOString(),
     status: normalized.status ?? row.status,
@@ -167,13 +169,17 @@ export async function upsertListings(
     const existing = await findExistingListing(normalized);
     const firstSeenAt = existing?.first_seen_at ?? normalized.firstSeenAt ?? now;
     const lastSeenAt = normalized.lastSeenAt ?? normalized.checkedAt ?? now;
+    const portalDeclaredDate =
+      normalized.portalDeclaredDate ?? existing?.portal_declared_date ?? null;
+    const metadataDatePublished =
+      normalized.metadataDatePublished ?? existing?.metadata_date_published ?? null;
+    const metadataDateModified =
+      normalized.metadataDateModified ?? existing?.metadata_date_modified ?? null;
     const pricePerSqm = calculatePricePerSqm(normalized.price ?? null, normalized.sqm ?? null);
     const minimumDaysOnline = getMinimumDaysOnline({
       firstSeenAt,
-      portalDeclaredDate:
-        normalized.portalDeclaredDate ?? existing?.portal_declared_date ?? null,
-      metadataDatePublished:
-        normalized.metadataDatePublished ?? existing?.metadata_date_published ?? null,
+      portalDeclaredDate,
+      metadataDatePublished,
     });
     const isPriceDropped =
       (existing?.price != null &&
@@ -182,7 +188,11 @@ export async function upsertListings(
       (normalized.previousPrice != null &&
         normalized.price != null &&
         normalized.price < normalized.previousPrice);
-    const isNewToday = isToday(firstSeenAt);
+    const isNewToday = isPublishedToday({
+      firstSeenAt,
+      portalDeclaredDate,
+      metadataDatePublished,
+    });
     const priorityScore = calculatePriorityScore(
       {
         sellerType: normalized.sellerType,
@@ -221,9 +231,9 @@ export async function upsertListings(
       seller_type: normalized.sellerType,
       seller_name: normalized.sellerName ?? null,
       phone: normalized.phone ?? null,
-      portal_declared_date: normalized.portalDeclaredDate ?? null,
-      metadata_date_published: normalized.metadataDatePublished ?? null,
-      metadata_date_modified: normalized.metadataDateModified ?? null,
+      portal_declared_date: portalDeclaredDate,
+      metadata_date_published: metadataDatePublished,
+      metadata_date_modified: metadataDateModified,
       first_seen_at: firstSeenAt,
       last_seen_at: lastSeenAt,
       status: normalized.status ?? existing?.status ?? "new",

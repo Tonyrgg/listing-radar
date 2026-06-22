@@ -85,6 +85,25 @@ describe("email alert parsing", () => {
     expect(parsePrice("150 euro 110 mq 4 locali")).toBeNull();
     expect(parsePrice("\u20ac 150.000 110 m\u00b2")).toBe(150000);
   });
+
+  it("ignores Idealista alerts outside Bitonto even when the search subject mentions Bitonto", () => {
+    const html = `
+      <article>
+        <a href="https://www.idealista.it/immobile/99887766/">
+          Quadrilocale in vendita a Terlizzi
+        </a>
+        <p>Terlizzi (BA) 120.000 euro 90 m\u00b2 3 locali</p>
+      </article>
+    `;
+
+    const rows = parseAlertEmail({
+      sender: "idealista <alert@idealista.it>",
+      subject: "Nuovi immobili per la tua ricerca Bitonto",
+      html,
+    });
+
+    expect(rows).toHaveLength(0);
+  });
 });
 
 describe("extension generic parser", () => {

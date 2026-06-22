@@ -29,6 +29,49 @@ type IncomingListingRow = {
   updated_at: string | null;
 };
 
+const MONITORED_CITY_PATTERN = /\bBitonto\b/i;
+
+function incomingRawPayloadText(rawPayload: Record<string, unknown> | null) {
+  if (!rawPayload) {
+    return "";
+  }
+
+  const values: string[] = [];
+  const anchorTexts = rawPayload.anchorTexts;
+
+  if (Array.isArray(anchorTexts)) {
+    values.push(
+      ...anchorTexts.filter((value): value is string => typeof value === "string"),
+    );
+  }
+
+  return values.join(" ");
+}
+
+function isMonitoredIncomingRow(row: IncomingListingRow) {
+  return MONITORED_CITY_PATTERN.test(
+    [
+      row.title,
+      row.zone,
+      incomingRawPayloadText(row.raw_payload),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function isMonitoredIncomingAlert(alert: ParsedEmailAlert) {
+  return MONITORED_CITY_PATTERN.test(
+    [
+      alert.title,
+      alert.zone,
+      incomingRawPayloadText(alert.rawPayload ?? null),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 function recoverIncomingPrice(row: IncomingListingRow) {
   const rawPayloadContext =
     typeof row.raw_payload?.context === "string" ? row.raw_payload.context : null;
@@ -114,7 +157,9 @@ export async function getIncomingListings(
       return [];
     }
 
-    return (data as IncomingListingRow[]).map(mapIncomingListing);
+    return (data as IncomingListingRow[])
+      .filter(isMonitoredIncomingRow)
+      .map(mapIncomingListing);
   } catch {
     return [];
   }
@@ -138,14 +183,13 @@ export async function getIncomingDashboardData(limit = 4) {
     const [pendingResult, recentResult, lastEmailResult] = await Promise.all([
       supabase
         .from("incoming_listings")
-        .select("*", { count: "exact" })
+        .select("*")
         .eq("status", "pending")
         .order("email_received_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .limit(limit),
+        .order("created_at", { ascending: false }),
       supabase
         .from("incoming_listings")
-        .select("id", { count: "exact", head: true })
+        .select("*")
         .gte("email_received_at", since),
       supabase
         .from("email_ingestion_messages")
@@ -155,14 +199,21 @@ export async function getIncomingDashboardData(limit = 4) {
         .maybeSingle(),
     ]);
 
+    const pendingRows = pendingResult.error
+      ? []
+      : ((pendingResult.data ?? []) as IncomingListingRow[]).filter(
+          isMonitoredIncomingRow,
+        );
+    const recentRows = recentResult.error
+      ? []
+      : ((recentResult.data ?? []) as IncomingListingRow[]).filter(
+          isMonitoredIncomingRow,
+        );
+
     return {
-      pendingCount: pendingResult.count ?? 0,
-      recentCount: recentResult.count ?? 0,
-      pendingListings: pendingResult.error
-        ? []
-        : ((pendingResult.data ?? []) as IncomingListingRow[]).map(
-            mapIncomingListing,
-          ),
+      pendingCount: pendingRows.length,
+      recentCount: recentRows.length,
+      pendingListings: pendingRows.slice(0, limit).map(mapIncomingListing),
       lastEmailCheck:
         lastEmailResult.error || !lastEmailResult.data
           ? null
@@ -253,6 +304,10 @@ export async function upsertIncomingAlerts(
   let updated = 0;
 
   for (const alert of alerts) {
+    if (!isMonitoredIncomingAlert(alert)) {
+      continue;
+    }
+
     const existing = await findExistingIncoming(alert);
     const payload = {
       source: alert.source,

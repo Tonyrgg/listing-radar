@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
-import { calculatePricePerSqm, calculatePriorityScore, getMinimumDaysOnline } from "@/lib/listings/scoring";
+import {
+  calculatePricePerSqm,
+  calculatePriorityScore,
+  getMinimumDaysOnline,
+  isPublishedToday,
+} from "@/lib/listings/scoring";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type { ListingCrmStatus, SellerType } from "@/types";
@@ -42,6 +47,11 @@ export async function updateListing(id: string, formData: FormData) {
     portalDeclaredDate: current.portal_declared_date,
     metadataDatePublished: current.metadata_date_published,
   });
+  const isNewToday = isPublishedToday({
+    firstSeenAt: current.first_seen_at,
+    portalDeclaredDate: current.portal_declared_date,
+    metadataDatePublished: current.metadata_date_published,
+  });
   const payload = {
     title: optionalString(formData.get("title")) ?? current.title,
     description,
@@ -58,10 +68,11 @@ export async function updateListing(id: string, formData: FormData) {
     status: optionalString(formData.get("status")) ?? current.status,
     crm_status: crmStatus,
     is_price_dropped: current.is_price_dropped || isPriceDropped,
+    is_new_today: isNewToday,
     priority_score: calculatePriorityScore(
       {
         sellerType,
-        isNewToday: current.is_new_today,
+        isNewToday,
         hasPhone: Boolean(phone),
         minimumDaysOnline,
         isPriceDropped: current.is_price_dropped || isPriceDropped,

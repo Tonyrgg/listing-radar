@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { upsertListings } from "@/lib/listings/upsert-listings";
@@ -329,6 +330,11 @@ async function handleCronRequest(request: NextRequest) {
       total_updated: totalUpdated,
       error_count: errorCount,
     });
+
+    revalidatePath("/listings");
+    revalidatePath("/incoming");
+    revalidatePath("/dashboard");
+    revalidatePath("/reports");
 
     return NextResponse.json({
       ok: true,

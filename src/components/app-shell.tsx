@@ -1,4 +1,5 @@
 import { MONITORED_ZONE } from "@/lib/constants";
+import { PendingSubmitButton } from "@/components/loading-controls";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { LogOut, Radar } from "lucide-react";
 import { logout } from "@/app/login/actions";
@@ -36,10 +37,9 @@ export function AppShell({
 
         {isAuthRequired() ? (
           <form action={logout} className="mt-6">
-            <button type="submit" className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]">
-              <LogOut aria-hidden="true" className="size-4" />
+            <PendingSubmitButton type="submit" pendingLabel="Esco" icon={<LogOut aria-hidden="true" className="size-4" />} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]">
               Esci
-            </button>
+            </PendingSubmitButton>
           </form>
         ) : null}
       </aside>
@@ -57,10 +57,9 @@ export function AppShell({
 
           {isAuthRequired() ? (
             <form action={logout} className="ml-auto shrink-0">
-              <button type="submit" className="inline-flex h-9 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]">
-                <LogOut aria-hidden="true" className="size-4" />
+              <PendingSubmitButton type="submit" pendingLabel="Esco" icon={<LogOut aria-hidden="true" className="size-4" />} className="inline-flex h-9 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]">
                 Esci
-              </button>
+              </PendingSubmitButton>
             </form>
           ) : null}
         </div>

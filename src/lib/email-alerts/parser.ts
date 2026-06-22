@@ -24,6 +24,8 @@ const GENERIC_LINK_LABELS = new Set([
   "vedi annuncio",
 ]);
 
+const MONITORED_CITY_PATTERN = /\bBitonto\b/i;
+
 type CheerioElement = ReturnType<cheerio.CheerioAPI>;
 
 function unwrapTrackingUrl(value: string) {
@@ -326,6 +328,10 @@ function getZone(context: string) {
   return zone || null;
 }
 
+function isMonitoredAreaCandidate(values: Array<string | null | undefined>) {
+  return MONITORED_CITY_PATTERN.test(values.filter(Boolean).join(" "));
+}
+
 export function parseAlertEmail(input: {
   html?: string | false;
   text?: string;
@@ -417,6 +423,11 @@ export function parseAlertEmail(input: {
     const imageAlt = imageElement.attr("alt") ?? "";
     const anchorTexts = candidate.anchors.map((anchor) => anchor.text());
     const title = getTitle(anchorTexts, imageAlt, text, input.subject);
+    const zone = getZone(text);
+
+    if (!zone && !isMonitoredAreaCandidate([imageAlt, ...anchorTexts])) {
+      continue;
+    }
 
     alerts.push({
       source: candidate.source,
@@ -428,7 +439,7 @@ export function parseAlertEmail(input: {
       price: parsePrice(text),
       sqm: parseSqm(text),
       rooms: parseRooms(text),
-      zone: getZone(text),
+      zone,
       imageUrl: imageUrls[0] ?? null,
       rawPayload: {
         anchorTexts: anchorTexts.map(cleanText).filter(Boolean),

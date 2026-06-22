@@ -2,22 +2,51 @@
   const generic = globalThis.ListingRadarGenericParser;
   const utils = globalThis.ListingRadarPortalAdapterUtils;
 
-  function normalizeImageUrl(value) {
+  function isNoiseImageUrl(url, context = "") {
+    const searchable =
+      `${url.hostname} ${url.pathname} ${url.search} ${context}`.toLowerCase();
+
+    return (
+      /\.(?:svg|gif)(?:$|\?)/i.test(searchable) ||
+      /(?:logo|badge|icon|sprite|avatar|spacer|pixel|tracking|captcha|map-static|static-map|placeholder|translate|language|locale|idioma|country-flag|bandera|\/toto)/i.test(
+        searchable,
+      ) ||
+      /(?:^|[\/_.-])flags?(?:[\/_.-]|$)/i.test(searchable)
+    );
+  }
+
+  function elementLooksTooSmall(element) {
+    const width =
+      Number(element?.getAttribute?.("width")) ||
+      Number(element?.width) ||
+      Number(element?.naturalWidth);
+    const height =
+      Number(element?.getAttribute?.("height")) ||
+      Number(element?.height) ||
+      Number(element?.naturalHeight);
+
+    return (
+      (Number.isFinite(width) && width > 0 && width < 120) ||
+      (Number.isFinite(height) && height > 0 && height < 90) ||
+      (Number.isFinite(width) &&
+        Number.isFinite(height) &&
+        width > 0 &&
+        height > 0 &&
+        width * height < 12000)
+    );
+  }
+
+  function normalizeImageUrl(value, context = "") {
     if (!value || /^(?:data:|blob:|javascript:)/i.test(value)) {
       return null;
     }
 
     try {
       const url = new URL(value, location.href);
-      const searchable =
-        `${url.hostname} ${url.pathname} ${url.search}`.toLowerCase();
 
       if (
         !["http:", "https:"].includes(url.protocol) ||
-        /\.(?:svg|gif)(?:$|\?)/i.test(searchable) ||
-        /(?:logo|badge|icon|sprite|avatar|spacer|pixel|tracking|captcha|map-static)/i.test(
-          searchable,
-        )
+        isNoiseImageUrl(url, context)
       ) {
         return null;
       }
@@ -31,8 +60,8 @@
   function collectIdealistaImages() {
     const urls = [];
 
-    function add(value) {
-      const normalized = normalizeImageUrl(value);
+    function add(value, context = "") {
+      const normalized = normalizeImageUrl(value, context);
 
       if (
         normalized &&
@@ -48,6 +77,14 @@
         "picture source[srcset], img[src], img[srcset], img[data-src], img[data-srcset]",
       )
       .forEach((element) => {
+        const context = [
+          element.getAttribute("alt"),
+          element.getAttribute("title"),
+          element.getAttribute("class"),
+          element.getAttribute("aria-label"),
+        ]
+          .filter(Boolean)
+          .join(" ");
         const srcset =
           element.getAttribute("srcset") || element.getAttribute("data-srcset");
         const src =
@@ -55,15 +92,19 @@
           element.getAttribute("data-src") ||
           element.currentSrc;
 
+        if (elementLooksTooSmall(element)) {
+          return;
+        }
+
         if (srcset) {
           srcset
             .split(",")
             .map((candidate) => candidate.trim().split(/\s+/)[0])
             .filter(Boolean)
-            .forEach(add);
+            .forEach((candidate) => add(candidate, context));
         }
 
-        add(src);
+        add(src, context);
       });
 
     document.querySelectorAll("script").forEach((script) => {

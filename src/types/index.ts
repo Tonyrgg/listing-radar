@@ -206,9 +206,17 @@ export interface ListingFilters {
     | "score_desc"
     | "score_asc"
     | "newest"
+    | "checked_oldest"
+    | "first_seen_desc"
     | "oldest"
     | "price_asc"
-    | "price_desc";
+    | "price_desc"
+    | "price_per_sqm_asc"
+    | "price_per_sqm_desc"
+    | "private_first"
+    | "price_drop_first"
+    | "phone_first"
+    | "incomplete_first";
 }
 
 export interface DashboardSummary {

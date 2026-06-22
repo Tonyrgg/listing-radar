@@ -1,6 +1,7 @@
 import { Radar } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { PendingSubmitButton } from "@/components/loading-controls";
 import { login } from "@/app/login/actions";
 import { getCurrentUser, isAuthRequired } from "@/lib/auth";
 
@@ -43,9 +44,9 @@ export default async function LoginPage({
               {error === "account" ? "Questo account non e autorizzato." : "Email o password non corrette."}
             </p>
           ) : null}
-          <button type="submit" className="h-11 w-full rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)]">
+          <PendingSubmitButton type="submit" pendingLabel="Accesso" className="h-11 w-full rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)]">
             Entra
-          </button>
+          </PendingSubmitButton>
         </form>
       </section>
     </main>

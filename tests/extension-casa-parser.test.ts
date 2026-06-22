@@ -169,4 +169,95 @@ describe("Casa.it extension parser", () => {
     expect(listing.sellerType).toBe("agency");
     expect(listing.phone).toBe("0801234567");
   });
+
+  it("extracts agency names that do not contain real-estate keywords", () => {
+    const bodyText = [
+      "Bilocale in vendita a Bitonto",
+      "Professionista",
+      "Studio Tre",
+      "Chiama ora 080 7654321",
+    ].join("\n");
+    const listing = runCasaParser(
+      new FakeDocument(bodyText, [
+        new FakeElement(["[data-testid='listing-title']"], "Bilocale in vendita a Bitonto"),
+        new FakeElement(["[data-testid='description']"], "Soluzione in buone condizioni."),
+        new FakeElement(["[data-testid='features']"], "70 m\u00b2 2 locali"),
+        new FakeElement(["[data-testid='price']"], "\u20ac 110.000"),
+        new FakeElement(["[data-testid='contact-card']"], "Professionista Studio Tre Chiama ora", {
+          "data-testid": "contact-card",
+        }),
+        new FakeElement(["button"], "Chiama ora 080 7654321", {
+          "aria-label": "Chiama ora 080 7654321",
+        }),
+      ]),
+    );
+
+    expect(listing.sellerName).toBe("Studio Tre");
+    expect(listing.sellerType).toBe("agency");
+    expect(listing.phone).toBe("0807654321");
+  });
+
+  it("reads seller details from Casa.it structured page data", () => {
+    const listing = runCasaParser(
+      new FakeDocument("Trilocale in vendita a Bitonto", [
+        new FakeElement(["[data-testid='listing-title']"], "Trilocale in vendita a Bitonto"),
+        new FakeElement(["[data-testid='description']"], "Appartamento con balcone."),
+        new FakeElement(["[data-testid='features']"], "95 m\u00b2 3 locali"),
+        new FakeElement(["[data-testid='price']"], "\u20ac 175.000"),
+        new FakeElement(
+          ["script"],
+          JSON.stringify({
+            props: {
+              pageProps: {
+                listing: {
+                  advertiser: {
+                    name: "Studio Bitonto",
+                    type: "agency",
+                  },
+                },
+              },
+            },
+          }),
+        ),
+      ]),
+    );
+
+    expect(listing.sellerName).toBe("Studio Bitonto");
+    expect(listing.sellerType).toBe("agency");
+  });
+
+  it("extracts private seller names when the advertiser section declares a private owner", () => {
+    const bodyText = [
+      "Casa indipendente in vendita a Bitonto",
+      "Inserzionista",
+      "Privato",
+      "Mario Rossi",
+      "Chiama ora 333 1234567",
+    ].join("\n");
+    const listing = runCasaParser(
+      new FakeDocument(bodyText, [
+        new FakeElement(
+          ["[data-testid='listing-title']"],
+          "Casa indipendente in vendita a Bitonto",
+        ),
+        new FakeElement(["[data-testid='description']"], "Vendita diretta da privato."),
+        new FakeElement(["[data-testid='features']"], "120 m\u00b2 4 locali"),
+        new FakeElement(["[data-testid='price']"], "\u20ac 210.000"),
+        new FakeElement(
+          ["[data-testid='advertiser-card']"],
+          "Inserzionista Privato Mario Rossi Chiama ora",
+          {
+            "data-testid": "advertiser-card",
+          },
+        ),
+        new FakeElement(["button"], "Chiama ora 333 1234567", {
+          "aria-label": "Chiama ora 333 1234567",
+        }),
+      ]),
+    );
+
+    expect(listing.sellerName).toBe("Mario Rossi");
+    expect(listing.sellerType).toBe("private");
+    expect(listing.phone).toBe("3331234567");
+  });
 });

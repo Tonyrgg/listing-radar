@@ -4,24 +4,8 @@
 
 ▲ Next.js 16.2.9 (Turbopack)
 - Local:         http://localhost:3000
-- Network:       http://192.168.0.23:3000
+- Network:       http://192.168.0.21:3000
 - Environments: .env.local
-✓ Ready in 305ms
+✓ Ready in 353ms
 Creating turbopack project { dir: 'C:\\Users\\ruggi\\listing-radar', testMode: true }
 
- GET /api/cron/scrape 500 in 268ms (next.js: 253ms, application-code: 15ms)
- GET /reports 200 in 1276ms (next.js: 1058ms, application-code: 218ms)
- GET /settings 200 in 504ms (next.js: 442ms, application-code: 62ms)
- GET /dashboard 200 in 450ms (next.js: 244ms, application-code: 206ms)
- GET /listings 200 in 458ms (next.js: 193ms, application-code: 265ms)
- GET /listings/fbb16567-5c33-44e8-a5b2-6b714cb8a001 200 in 641ms (next.js: 531ms, application-code: 110ms)
- GET /listings/fbb16567-5c33-44e8-a5b2-6b714cb8a001 200 in 108ms (next.js: 36ms, application-code: 72ms)
- GET /listings 200 in 54ms (next.js: 5ms, application-code: 49ms)
- GET /settings 200 in 32ms (next.js: 5ms, application-code: 27ms)
- GET /api/cron/scrape 401 in 24ms (next.js: 22ms, application-code: 3ms)
- GET /reports 200 in 37ms (next.js: 5ms, application-code: 32ms)
- GET /dashboard 200 in 46ms (next.js: 6ms, application-code: 41ms)
- GET / 307 in 280ms (next.js: 202ms, application-code: 79ms)
- GET /dashboard 200 in 45ms (next.js: 1363µs, application-code: 43ms)
- GET /listings/fbb16567-5c33-44e8-a5b2-6b714cb8a004 200 in 23ms (next.js: 6ms, application-code: 17ms)
- GET /dashboard 200 in 18ms (next.js: 1453µs, application-code: 17ms)

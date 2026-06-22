@@ -5,6 +5,11 @@ import { Archive, ExternalLink, LayoutGrid, List, RotateCcw } from "lucide-react
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { Badge, getSellerTypeTone } from "@/components/badge";
+import {
+  LoadingAnchor,
+  LoadingLink,
+  PendingSubmitButton,
+} from "@/components/loading-controls";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -40,6 +45,23 @@ export const metadata: Metadata = {
 };
 
 type ListingViewMode = "list" | "grid";
+
+const LISTING_SORT_OPTIONS = [
+  "score_desc",
+  "score_asc",
+  "newest",
+  "checked_oldest",
+  "first_seen_desc",
+  "oldest",
+  "price_asc",
+  "price_desc",
+  "price_per_sqm_asc",
+  "price_per_sqm_desc",
+  "private_first",
+  "price_drop_first",
+  "phone_first",
+  "incomplete_first",
+] satisfies ListingFilters["sortBy"][];
 
 /* External listing images come from dynamic portal hosts. */
 /* eslint-disable @next/next/no-img-element */
@@ -147,6 +169,10 @@ function groupListingsByCheckedDate(listings: Listing[]) {
   return groups;
 }
 
+function shouldGroupByCheckedDate(sortBy: ListingFilters["sortBy"]) {
+  return sortBy === "newest" || sortBy === "checked_oldest";
+}
+
 function ListingDateSeparator({
   label,
   count,
@@ -184,8 +210,9 @@ function ListingActions({
   return (
     <>
       <form action={toggleCrmStatus} className={compact ? "" : "sm:min-w-32 lg:w-full"}>
-        <button
+        <PendingSubmitButton
           type="submit"
+          pendingLabel="Aggiorno"
           className={clsx(
             "inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border px-4 text-sm font-semibold transition-colors",
             isTreated
@@ -194,12 +221,13 @@ function ListingActions({
           )}
         >
           {isTreated ? "Trattato" : "Non trattato"}
-        </button>
+        </PendingSubmitButton>
       </form>
-      <Link
+      <LoadingLink
         href={`/listings/${listing.id}`}
+        pendingLabel="Apertura"
         className={clsx(
-          "inline-flex h-10 items-center justify-center rounded-[6px] px-4 text-sm font-semibold transition-colors",
+          "inline-flex h-10 items-center justify-center gap-2 rounded-[6px] px-4 text-sm font-semibold transition-colors",
           compact ? "w-full" : "sm:min-w-32 lg:w-full",
           isTreated
             ? "border border-[oklch(0.5_0.07_150)] bg-transparent text-[oklch(0.86_0.08_150)] hover:bg-[oklch(0.3_0.055_150)]"
@@ -207,27 +235,30 @@ function ListingActions({
         )}
       >
         Apri scheda
-      </Link>
+      </LoadingLink>
       <div className={clsx("grid grid-cols-2 gap-2", compact ? "" : "sm:min-w-32 lg:w-full")}>
-        <a
+        <LoadingAnchor
           href={listing.url}
           target="_blank"
           rel="noreferrer"
           aria-label="Apri annuncio originale"
           title="Apri annuncio originale"
+          pendingLabel=""
           className="inline-flex h-10 items-center justify-center rounded-[6px] border border-[var(--line-strong)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--surface-accent)]"
         >
           <ExternalLink className="size-4" aria-hidden="true" />
-        </a>
+        </LoadingAnchor>
         <form action={archiveAction}>
-          <button
+          <PendingSubmitButton
             type="submit"
             aria-label="Archivia annuncio"
             title="Archivia annuncio"
+            pendingLabel=""
+            icon={<Archive className="size-4" aria-hidden="true" />}
             className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-[6px] border border-[oklch(0.46_0.05_80)] bg-[oklch(0.18_0.025_80)] text-[oklch(0.82_0.08_80)] transition-colors hover:bg-[oklch(0.24_0.04_80)] focus:outline-none focus:ring-2 focus:ring-[var(--surface-accent)]"
           >
-            <Archive className="size-4" aria-hidden="true" />
-          </button>
+            <span className="sr-only">Archivia</span>
+          </PendingSubmitButton>
         </form>
       </div>
     </>
@@ -514,7 +545,7 @@ export default async function ListingsPage({
   const minDaysOnlineRaw = readSearchParam(params.minDaysOnline, "");
   const minScoreRaw = readSearchParam(params.minScore, "");
   const maxScoreRaw = readSearchParam(params.maxScore, "");
-  const sortBy = readSearchParam(params.sortBy, "score_desc");
+  const sortBy = readSearchParam(params.sortBy, "newest");
   const viewMode: ListingViewMode =
     readSearchParam(params.view, "list") === "grid" ? "grid" : "list";
   const normalizedSource =
@@ -557,23 +588,19 @@ export default async function ListingsPage({
       maxScoreRaw !== "" && Number.isFinite(Number(maxScoreRaw))
         ? Number(maxScoreRaw)
         : null,
-    sortBy: [
-      "score_desc",
-      "score_asc",
-      "newest",
-      "oldest",
-      "price_asc",
-      "price_desc",
-    ].includes(sortBy)
+    sortBy: LISTING_SORT_OPTIONS.includes(sortBy as ListingFilters["sortBy"])
       ? (sortBy as ListingFilters["sortBy"])
-      : "score_desc",
+      : "newest",
   };
 
   const [listings, scoringConfig] = await Promise.all([
     getListings(filters),
     getPersistedScoringConfig(),
   ]);
-  const checkedDateGroups = groupListingsByCheckedDate(listings);
+  const groupByCheckedDate = shouldGroupByCheckedDate(filters.sortBy);
+  const listingGroups = groupByCheckedDate
+    ? groupListingsByCheckedDate(listings)
+    : [{ key: "all", label: "", listings }];
   const hasActiveFilters =
     filters.sellerType !== "all" ||
     filters.status !== "all" ||
@@ -582,7 +609,7 @@ export default async function ListingsPage({
     filters.minDaysOnline !== null ||
     filters.minScore !== null ||
     filters.maxScore !== null ||
-    filters.sortBy !== "score_desc" ||
+    filters.sortBy !== "newest" ||
     filters.onlyHighPriority ||
     onlyTreated ||
     onlyUntreated;
@@ -764,12 +791,26 @@ export default async function ListingsPage({
               defaultValue={filters.sortBy}
               className="h-8 w-full bg-transparent text-sm font-semibold text-[var(--ink-strong)] outline-none"
             >
-              <option value="score_desc">Appetibilita, piu alta</option>
-              <option value="score_asc">Appetibilita, piu bassa</option>
-              <option value="newest">Piu recenti</option>
-              <option value="oldest">Online da piu tempo</option>
-              <option value="price_asc">Prezzo crescente</option>
-              <option value="price_desc">Prezzo decrescente</option>
+              <optgroup label="Operativo">
+                <option value="newest">Ultimo controllo, recente</option>
+                <option value="checked_oldest">Da ricontrollare</option>
+                <option value="incomplete_first">Dati mancanti prima</option>
+                <option value="private_first">Privati prima</option>
+                <option value="price_drop_first">Ribassi prima</option>
+                <option value="phone_first">Telefono disponibile</option>
+              </optgroup>
+              <optgroup label="Valore">
+                <option value="score_desc">Appetibilita, piu alta</option>
+                <option value="score_asc">Appetibilita, piu bassa</option>
+                <option value="price_asc">Prezzo crescente</option>
+                <option value="price_desc">Prezzo decrescente</option>
+                <option value="price_per_sqm_asc">Prezzo/mq crescente</option>
+                <option value="price_per_sqm_desc">Prezzo/mq decrescente</option>
+              </optgroup>
+              <optgroup label="Tempo">
+                <option value="first_seen_desc">Prima segnalazione recente</option>
+                <option value="oldest">Online da piu tempo</option>
+              </optgroup>
             </select>
           </label>
 
@@ -817,12 +858,14 @@ export default async function ListingsPage({
         {listings.length ? (
           viewMode === "grid" ? (
             <div className="space-y-5">
-              {checkedDateGroups.map((group) => (
+              {listingGroups.map((group) => (
                 <section key={group.key} className="space-y-3">
-                  <ListingDateSeparator
-                    label={group.label}
-                    count={group.listings.length}
-                  />
+                  {groupByCheckedDate ? (
+                    <ListingDateSeparator
+                      label={group.label}
+                      count={group.listings.length}
+                    />
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     {group.listings.map((listing) => (
                       <ListingGridCard
@@ -837,12 +880,14 @@ export default async function ListingsPage({
             </div>
           ) : (
             <div className="space-y-5">
-              {checkedDateGroups.map((group) => (
+              {listingGroups.map((group) => (
                 <section key={group.key} className="space-y-3">
-                  <ListingDateSeparator
-                    label={group.label}
-                    count={group.listings.length}
-                  />
+                  {groupByCheckedDate ? (
+                    <ListingDateSeparator
+                      label={group.label}
+                      count={group.listings.length}
+                    />
+                  ) : null}
                   <div className="space-y-4">
                     {group.listings.map((listing) => (
                       <ListingRow

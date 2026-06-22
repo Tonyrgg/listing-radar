@@ -3,6 +3,11 @@ import { Archive, ArchiveRestore, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Badge, type BadgeTone } from "@/components/badge";
+import {
+  LoadingAnchor,
+  LoadingLink,
+  PendingSubmitButton,
+} from "@/components/loading-controls";
 import { PageHeader } from "@/components/page-header";
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import {
@@ -111,46 +116,50 @@ function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
 
       <div className="grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 md:w-[230px] md:grid-cols-1">
         {isEnriched ? (
-          <Link
+          <LoadingLink
             href={`/listings/${listing.listingId}`}
             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+            pendingLabel="Apertura scheda"
           >
             Vedi scheda completa
             <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          </LoadingLink>
         ) : (
           <>
-            <a
+            <LoadingAnchor
               href={getPortalImportUrl(listing)}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+              pendingLabel="Apertura portale"
             >
               Apri e completa la scheda
               <ArrowRight aria-hidden="true" className="size-4" />
-            </a>
+            </LoadingAnchor>
             {canDismiss ? (
               <form action={dismissIncomingListing} className="w-full">
                 <input type="hidden" name="incomingId" value={listing.id} />
-                <button
+                <PendingSubmitButton
                   type="submit"
                   className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+                  pendingLabel="Sposto"
+                  icon={<Archive aria-hidden="true" className="size-4" />}
                 >
                   Metti da parte
-                  <Archive aria-hidden="true" className="size-4" />
-                </button>
+                </PendingSubmitButton>
               </form>
             ) : null}
             {canRestore ? (
               <form action={restoreIncomingListing} className="w-full">
                 <input type="hidden" name="incomingId" value={listing.id} />
-                <button
+                <PendingSubmitButton
                   type="submit"
                   className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+                  pendingLabel="Ripristino"
+                  icon={<ArchiveRestore aria-hidden="true" className="size-4" />}
                 >
                   Rimetti in attesa
-                  <ArchiveRestore aria-hidden="true" className="size-4" />
-                </button>
+                </PendingSubmitButton>
               </form>
             ) : null}
           </>

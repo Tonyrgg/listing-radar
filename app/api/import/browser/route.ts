@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
       sourceListingId,
       canonicalUrl,
     });
+    const capturedAt = new Date().toISOString();
     const mergedRow = {
       ...body,
       source: source ?? incoming?.source ?? rawSource ?? "browser",
@@ -138,11 +140,13 @@ export async function POST(request: NextRequest) {
             ? [incoming.imageUrl]
             : []),
       firstSeenAt: incoming?.emailReceivedAt ?? incoming?.createdAt,
+      lastSeenAt: capturedAt,
+      checkedAt: capturedAt,
       status: "new",
       rawPayload: {
         provider: "browser-extension",
         incomingId: incoming?.id ?? incomingId,
-        capturedAt: new Date().toISOString(),
+        capturedAt,
         pageMetadata: asRecord(body.rawPayload),
       },
     };
@@ -187,6 +191,11 @@ export async function POST(request: NextRequest) {
     if (incoming) {
       await markIncomingListingEnriched(incoming.id, savedListing.id);
     }
+
+    revalidatePath("/listings");
+    revalidatePath(`/listings/${savedListing.id}`);
+    revalidatePath("/incoming");
+    revalidatePath("/dashboard");
 
     return NextResponse.json(
       {

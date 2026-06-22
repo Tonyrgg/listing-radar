@@ -1,14 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   calculatePriorityScore,
   getPriorityScoreBreakdown,
+  isPublishedToday,
 } from "@/lib/listings/scoring";
 
 const originalEnv = { ...process.env };
 
 afterEach(() => {
   process.env = { ...originalEnv };
+  vi.useRealTimers();
 });
 
 describe("priority scoring", () => {
@@ -46,5 +48,23 @@ describe("priority scoring", () => {
     });
 
     expect(breakdown.awarded.find((factor) => factor.id === "private-seller")?.points).toBe(55);
+  });
+
+  it("uses the portal publication date before the first seen date for today badges", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-22T10:00:00+02:00"));
+
+    expect(
+      isPublishedToday({
+        firstSeenAt: "2026-06-22T08:00:00+02:00",
+        portalDeclaredDate: "2026-06-21T09:00:00+02:00",
+      }),
+    ).toBe(false);
+    expect(
+      isPublishedToday({
+        firstSeenAt: "2026-06-18T08:00:00+02:00",
+        portalDeclaredDate: "2026-06-22T09:00:00+02:00",
+      }),
+    ).toBe(true);
   });
 });

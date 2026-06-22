@@ -4,7 +4,9 @@ import {
   getMinimumDaysOnline,
   getHighPriorityThresholdFromConfig,
   isHotOldListingWithConfig,
+  isPublishedToday,
 } from "@/lib/listings/scoring";
+import { getListingCompletenessScore } from "@/lib/listings/completeness";
 import {
   getMockDashboardSummary,
   getMockListingById,
@@ -234,10 +236,15 @@ function mapListingRow(row: ListingRow, scoringConfig?: ScoringConfig): Listing 
     portalDeclaredDate: row.portal_declared_date,
     metadataDatePublished: row.metadata_date_published,
   });
+  const isNewToday = isPublishedToday({
+    firstSeenAt: row.first_seen_at,
+    portalDeclaredDate: row.portal_declared_date,
+    metadataDatePublished: row.metadata_date_published,
+  });
   const priorityScore = calculatePriorityScore(
     {
       sellerType: row.seller_type,
-      isNewToday: row.is_new_today,
+      isNewToday,
       hasPhone: Boolean(row.phone),
       minimumDaysOnline,
       isPriceDropped: row.is_price_dropped,
@@ -278,7 +285,7 @@ function mapListingRow(row: ListingRow, scoringConfig?: ScoringConfig): Listing 
     sellerFatigueScore: row.seller_fatigue_score,
     duplicateGroupId: row.duplicate_group_id,
     isPriceDropped: row.is_price_dropped,
-    isNewToday: row.is_new_today,
+    isNewToday,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     minimumDaysOnline,
@@ -389,20 +396,96 @@ function applyListingFilters(
     return true;
   });
 
+  function byLastSeenDesc(left: Listing, right: Listing) {
+    return (
+      right.lastSeenAt.localeCompare(left.lastSeenAt) ||
+      right.firstSeenAt.localeCompare(left.firstSeenAt)
+    );
+  }
+
+  function byPriorityDesc(left: Listing, right: Listing) {
+    return right.priorityScore - left.priorityScore || byLastSeenDesc(left, right);
+  }
+
+  function byPriceAsc(left: Listing, right: Listing) {
+    return (
+      (left.price ?? Number.MAX_SAFE_INTEGER) -
+        (right.price ?? Number.MAX_SAFE_INTEGER) ||
+      byPriorityDesc(left, right)
+    );
+  }
+
+  function byPriceDesc(left: Listing, right: Listing) {
+    return (right.price ?? -1) - (left.price ?? -1) || byPriorityDesc(left, right);
+  }
+
+  function byPricePerSqmAsc(left: Listing, right: Listing) {
+    return (
+      (left.pricePerSqm ?? Number.MAX_SAFE_INTEGER) -
+        (right.pricePerSqm ?? Number.MAX_SAFE_INTEGER) ||
+      byPriceAsc(left, right)
+    );
+  }
+
+  function byPricePerSqmDesc(left: Listing, right: Listing) {
+    return (
+      (right.pricePerSqm ?? -1) - (left.pricePerSqm ?? -1) ||
+      byPriceDesc(left, right)
+    );
+  }
+
   return filtered.sort((left, right) => {
     switch (filters.sortBy) {
       case "score_asc":
-        return left.priorityScore - right.priorityScore;
+        return left.priorityScore - right.priorityScore || byLastSeenDesc(left, right);
       case "newest":
-        return right.firstSeenAt.localeCompare(left.firstSeenAt);
+        return byLastSeenDesc(left, right);
+      case "checked_oldest":
+        return (
+          left.lastSeenAt.localeCompare(right.lastSeenAt) ||
+          right.priorityScore - left.priorityScore
+        );
+      case "first_seen_desc":
+        return (
+          right.firstSeenAt.localeCompare(left.firstSeenAt) ||
+          byLastSeenDesc(left, right)
+        );
       case "oldest":
-        return left.firstSeenAt.localeCompare(right.firstSeenAt);
+        return (
+          right.minimumDaysOnline - left.minimumDaysOnline ||
+          left.firstSeenAt.localeCompare(right.firstSeenAt)
+        );
       case "price_asc":
-        return (left.price ?? Number.MAX_SAFE_INTEGER) - (right.price ?? Number.MAX_SAFE_INTEGER);
+        return byPriceAsc(left, right);
       case "price_desc":
-        return (right.price ?? -1) - (left.price ?? -1);
+        return byPriceDesc(left, right);
+      case "price_per_sqm_asc":
+        return byPricePerSqmAsc(left, right);
+      case "price_per_sqm_desc":
+        return byPricePerSqmDesc(left, right);
+      case "private_first":
+        return (
+          Number(right.sellerType === "private") -
+            Number(left.sellerType === "private") ||
+          byPriorityDesc(left, right)
+        );
+      case "price_drop_first":
+        return (
+          Number(right.isPriceDropped) - Number(left.isPriceDropped) ||
+          byPriorityDesc(left, right)
+        );
+      case "phone_first":
+        return (
+          Number(Boolean(right.phone)) - Number(Boolean(left.phone)) ||
+          byPriorityDesc(left, right)
+        );
+      case "incomplete_first":
+        return (
+          getListingCompletenessScore(left) - getListingCompletenessScore(right) ||
+          byPriorityDesc(left, right)
+        );
       default:
-        return right.priorityScore - left.priorityScore;
+        return byPriorityDesc(left, right);
     }
   });
 }
