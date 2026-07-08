@@ -156,7 +156,12 @@ export type CreateMapActivityLogInput = {
 
 export type MapElementType = "pin" | "area" | "street";
 
-export type MapDrawMode = "select" | "pin" | "area" | "street";
+export type MapDrawMode = "select" | "pin" | "area" | "street" | "street_snap";
+
+export type MapSnapPoint = {
+  latitude: number;
+  longitude: number;
+};
 
 export type SelectedMapElement =
   | { type: "pin"; id: string }

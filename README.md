@@ -43,6 +43,7 @@ Out of scope in this phase:
 - `/api/cron/scrape`
 - `/api/cron/email-alerts`
 - `/api/import/browser`
+- `/api/map/route-snap`
 
 The UI falls back to realistic mock data when Supabase is not configured yet or the tables are still empty. The cron endpoint persists mock listings into Supabase when the required env vars are present.
 
@@ -79,6 +80,7 @@ EMAIL_ALERT_MAX_MESSAGES=50
 EMAIL_MARK_SEEN=false
 ALLOW_MANUAL_EMAIL_REFRESH_WITHOUT_AUTH=false
 EXTENSION_API_TOKEN=
+MAP_OVERPASS_URL=https://overpass-api.de/api/interpreter
 ```
 
 Notes:
@@ -99,6 +101,7 @@ Notes:
 - `EMAIL_IMAP_PASSWORD` must be a mailbox-specific password or app password, not a shared application secret.
 - `ALLOW_MANUAL_EMAIL_REFRESH_WITHOUT_AUTH=false` prevents the manual mailbox action on an unauthenticated production deployment.
 - `EXTENSION_API_TOKEN` is a private random token used only by the Chrome extension.
+- `MAP_OVERPASS_URL` is optional and controls the server-side OpenStreetMap road-network source used by Mappa Zone's guided street drawing.
 
 ## Local development
 
@@ -152,7 +155,8 @@ All tables have RLS enabled. Policies allow authenticated users to `select`, `in
 ## Mappa Zone
 
 The internal territory map is available at `/map`. It uses Leaflet,
-React Leaflet, and Leaflet Draw, all loaded client-side so the Next.js build
+React Leaflet, Leaflet Draw, and server-side OpenStreetMap graph routing for guided
+street drawing. Map-only libraries are loaded client-side so the Next.js build
 does not touch browser APIs during SSR.
 
 Map dependencies are already in `package.json`. To reinstall them manually:
@@ -177,10 +181,11 @@ Operational use:
 
 1. Open `/map`.
 2. Use **Area** to draw and save a polygon.
-3. Use **Strada** to draw and save a line.
-4. Use **Pin** and click the map to save an operational note.
-5. Filter by agent, visibility, status, category, priority, and follow-up date.
-6. Use the sidebar tabs for Pin, Aree, Strade, and Attivita.
+3. Use **Guidata** to click street start/end/curve/intersection points and save the road-snapped line. Area polygons are hidden while this mode is active.
+4. Use **Libera** only when you need a manual line that does not follow routable roads.
+5. Use **Pin** and click the map to save an operational note.
+6. Filter by agent, visibility, status, category, priority, and follow-up date.
+7. Use the sidebar tabs for Pin, Aree, Strade, and Attivita.
 
 Pin categories:
 
@@ -221,6 +226,8 @@ Privacy and source limits:
 - no real-time user location storage
 - no map scraping
 - no bulk tile downloads
+- guided street drawing sends a bounded area query to the configured OpenStreetMap network source
+- guided street drawing routes through every clicked point in order on an undirected street graph, so one-way car restrictions are ignored
 - no automatic contact or messaging workflow
 - no public data exposure; RLS policies are authenticated-only
 

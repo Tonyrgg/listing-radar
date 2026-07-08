@@ -146,6 +146,18 @@ body {
     box-shadow: var(--shadow-panel);
   }
 
+  .leaflet-tooltip.map-snap-point-label {
+    border-color: oklch(0.18 0.012 155);
+    border-radius: 9999px;
+    padding: 1px 6px;
+    background: oklch(0.92 0.12 88);
+    color: oklch(0.16 0.018 95);
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.25;
+    box-shadow: none;
+  }
+
   .leaflet-draw-tooltip {
     background: var(--surface-panel);
     border: 1px solid var(--line-soft);

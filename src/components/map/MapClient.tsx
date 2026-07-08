@@ -14,7 +14,7 @@ import {
   Shapes,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MapFilters } from "@/components/map/MapFilters";
 import { MapLegend } from "@/components/map/MapLegend";
@@ -53,6 +53,7 @@ import type {
   MapDrawMode,
   MapFiltersState,
   MapPin as MapPinType,
+  MapSnapPoint,
   MapStats,
   MapStatus,
   MapStreet,
@@ -159,6 +160,8 @@ function drawModeHint(mode: MapDrawMode) {
       return "Disegna il perimetro dell'area, poi chiudi il poligono.";
     case "street":
       return "Disegna la strada con una linea, doppio click per finire.";
+    case "street_snap":
+      return "Clicca i punti della strada: ogni punto e un vincolo della linea.";
     default:
       return "Seleziona elementi gia presenti oppure scegli uno strumento.";
   }
@@ -191,6 +194,51 @@ async function fetchMapData() {
   return { agents, areas, streets, pins, activityLogs };
 }
 
+type SnapRoute = {
+  geometry: GeoJsonGeometry;
+  distance: number | null;
+  duration: number | null;
+};
+
+type SnapRouteResponse =
+  | {
+      ok: true;
+      geometry: GeoJsonGeometry;
+      distance: number | null;
+      duration: number | null;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+function formatMeters(value: number | null) {
+  if (value == null) return "";
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} km`;
+  return `${Math.round(value)} m`;
+}
+
+async function requestSnapRoute(points: MapSnapPoint[]): Promise<SnapRoute> {
+  const response = await fetch("/api/map/route-snap", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ points }),
+  });
+  const data = (await response.json()) as SnapRouteResponse;
+
+  if (!response.ok || !data.ok) {
+    throw new Error(data.ok ? "Routing non riuscito." : data.error);
+  }
+
+  return {
+    geometry: data.geometry,
+    distance: data.distance,
+    duration: data.duration,
+  };
+}
+
 export function MapClient() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [areas, setAreas] = useState<MapArea[]>([]);
@@ -205,6 +253,11 @@ export function MapClient() {
   const [error, setError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
+  const [snapPoints, setSnapPoints] = useState<MapSnapPoint[]>([]);
+  const [snapRoute, setSnapRoute] = useState<SnapRoute | null>(null);
+  const [snapLoading, setSnapLoading] = useState(false);
+  const [snapError, setSnapError] = useState<string | null>(null);
+  const snapRequestIdRef = useRef(0);
 
   const applyLoadedData = useCallback(
     (data: Awaited<ReturnType<typeof fetchMapData>>) => {
@@ -264,6 +317,7 @@ export function MapClient() {
   const visibleAreas = useMemo(() => filterAreas(areas, filters), [areas, filters]);
   const visibleStreets = useMemo(() => filterStreets(streets, filters), [streets, filters]);
   const visiblePins = useMemo(() => filterPins(pins, filters), [pins, filters]);
+  const mapAreas = drawMode === "street_snap" ? [] : visibleAreas;
   const stats = useMemo(
     () => getStats(visibleAreas, visibleStreets, visiblePins),
     [visibleAreas, visibleStreets, visiblePins],
@@ -312,6 +366,75 @@ export function MapClient() {
     setSidePanelOpen(true);
     setModal({ type: "street", mode: "create", geometry });
   }, []);
+
+  const routeSnapPoints = useCallback(async (nextPoints: MapSnapPoint[]) => {
+    const requestId = snapRequestIdRef.current + 1;
+    snapRequestIdRef.current = requestId;
+    setSnapError(null);
+    setSnapRoute(null);
+
+    if (nextPoints.length < 2) {
+      setSnapLoading(false);
+      return;
+    }
+
+    setSnapLoading(true);
+    try {
+      const nextRoute = await requestSnapRoute(nextPoints);
+      if (snapRequestIdRef.current === requestId) {
+        setSnapRoute(nextRoute);
+      }
+    } catch (routeError) {
+      if (snapRequestIdRef.current === requestId) {
+        setSnapError(
+          routeError instanceof Error
+            ? routeError.message
+            : "Aggancio strada non riuscito.",
+        );
+      }
+    } finally {
+      if (snapRequestIdRef.current === requestId) {
+        setSnapLoading(false);
+      }
+    }
+  }, []);
+
+  const handleAddSnapPoint = useCallback(
+    (latitude: number, longitude: number) => {
+      const nextPoints = [...snapPoints, { latitude, longitude }];
+      setSnapPoints(nextPoints);
+      void routeSnapPoints(nextPoints);
+    },
+    [routeSnapPoints, snapPoints],
+  );
+
+  const clearSnapDraft = useCallback(() => {
+    snapRequestIdRef.current += 1;
+    setSnapPoints([]);
+    setSnapRoute(null);
+    setSnapError(null);
+    setSnapLoading(false);
+  }, []);
+
+  const removeLastSnapPoint = useCallback(() => {
+    const nextPoints = snapPoints.slice(0, -1);
+    setSnapPoints(nextPoints);
+    void routeSnapPoints(nextPoints);
+  }, [routeSnapPoints, snapPoints]);
+
+  const openSnapStreetModal = useCallback(() => {
+    if (!snapRoute) return;
+    setSidePanelOpen(true);
+    setModal({ type: "street", mode: "create", geometry: snapRoute.geometry });
+  }, [snapRoute]);
+
+  const activateDrawMode = useCallback(
+    (mode: MapDrawMode) => {
+      clearSnapDraft();
+      setDrawMode(mode);
+    },
+    [clearSnapDraft],
+  );
 
   const handleSavePin = useCallback(
     async (id: string | null, input: CreateMapPinInput | UpdateMapPinInput) => {
@@ -408,6 +531,7 @@ export function MapClient() {
       setStreets((current) => [created, ...current]);
       setSelected({ type: "street", id: created.id });
       setModal(null);
+      clearSnapDraft();
       await writeLog({
         agentId: created.agentId,
         areaId: created.areaId,
@@ -416,7 +540,7 @@ export function MapClient() {
         notes: created.name,
       });
     },
-    [writeLog],
+    [clearSnapDraft, writeLog],
   );
 
   const handleSetAreaStatus = useCallback(
@@ -545,13 +669,16 @@ export function MapClient() {
         <MapCanvas
           className="min-h-full rounded-none border-0"
           agents={agents}
-          areas={visibleAreas}
+          areas={mapAreas}
           streets={visibleStreets}
           pins={visiblePins}
           mode={drawMode}
+          snapPoints={snapPoints}
+          snapGeometry={snapRoute?.geometry ?? null}
           selected={selected}
           onModeConsumed={() => setDrawMode("select")}
           onCreatePin={handleCreatePin}
+          onAddSnapPoint={handleAddSnapPoint}
           onCreateArea={handleCreateArea}
           onCreateStreet={handleCreateStreet}
           onSelect={handleSelect}
@@ -572,7 +699,7 @@ export function MapClient() {
             </div>
             <button
               type="button"
-              onClick={() => setDrawMode("select")}
+              onClick={() => activateDrawMode("select")}
               className={modeButtonClass(drawMode === "select")}
             >
               <MousePointer2 className="size-4" aria-hidden="true" />
@@ -580,7 +707,7 @@ export function MapClient() {
             </button>
             <button
               type="button"
-              onClick={() => setDrawMode("pin")}
+              onClick={() => activateDrawMode("pin")}
               className={modeButtonClass(drawMode === "pin")}
             >
               <MapPin className="size-4" aria-hidden="true" />
@@ -588,7 +715,7 @@ export function MapClient() {
             </button>
             <button
               type="button"
-              onClick={() => setDrawMode("area")}
+              onClick={() => activateDrawMode("area")}
               className={modeButtonClass(drawMode === "area")}
             >
               <Shapes className="size-4" aria-hidden="true" />
@@ -596,11 +723,19 @@ export function MapClient() {
             </button>
             <button
               type="button"
-              onClick={() => setDrawMode("street")}
+              onClick={() => activateDrawMode("street")}
               className={modeButtonClass(drawMode === "street")}
             >
               <Route className="size-4" aria-hidden="true" />
-              Strada
+              Libera
+            </button>
+            <button
+              type="button"
+              onClick={() => activateDrawMode("street_snap")}
+              className={modeButtonClass(drawMode === "street_snap")}
+            >
+              <Route className="size-4" aria-hidden="true" />
+              Guidata
             </button>
           </div>
 
@@ -708,6 +843,59 @@ export function MapClient() {
 
         <div className="absolute bottom-3 left-3 z-[830] max-w-[min(520px,calc(100%-24px))] rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] px-3 py-2 shadow-[var(--shadow-panel)]">
           <p className="text-sm font-semibold text-[var(--ink-strong)]">{drawModeHint(drawMode)}</p>
+          {drawMode === "street_snap" || snapPoints.length ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--line-soft)] pt-2">
+              <span className="rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+                Punti {snapPoints.length}
+              </span>
+              <span className="rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+                Aree nascoste
+              </span>
+              {snapLoading ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+                  <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                  Aggancio
+                </span>
+              ) : null}
+              {snapRoute ? (
+                <span className="rounded-full bg-[var(--surface-accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--surface-accent)]">
+                  Pronta {formatMeters(snapRoute.distance)}
+                </span>
+              ) : null}
+              {snapError ? (
+                <span className="text-xs font-semibold text-[var(--status-error)]">
+                  {snapError}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={removeLastSnapPoint}
+                disabled={!snapPoints.length}
+                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--line-strong)] px-2.5 text-xs font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Indietro
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearSnapDraft();
+                  setDrawMode("select");
+                }}
+                disabled={!snapPoints.length && drawMode !== "street_snap"}
+                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--line-strong)] px-2.5 text-xs font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={openSnapStreetModal}
+                disabled={!snapRoute}
+                className="inline-flex h-8 items-center rounded-[6px] bg-[var(--surface-accent)] px-3 text-xs font-semibold text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Salva strada
+              </button>
+            </div>
+          ) : null}
           {!hasAnyVisibleElement && !loading ? (
             <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
               Parti da Area o Pin. I dati restano interni a Listing Radar.

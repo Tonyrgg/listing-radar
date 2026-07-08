@@ -32,6 +32,7 @@ import type {
   GeoJsonGeometry,
   MapArea,
   MapDrawMode,
+  MapSnapPoint,
   MapPin,
   MapStatus,
   MapStreet,
@@ -46,9 +47,12 @@ export type MapCanvasProps = {
   streets: MapStreet[];
   pins: MapPin[];
   mode: MapDrawMode;
+  snapPoints: MapSnapPoint[];
+  snapGeometry: GeoJsonGeometry | null;
   selected: SelectedMapElement;
   onModeConsumed: () => void;
   onCreatePin: (latitude: number, longitude: number) => void;
+  onAddSnapPoint: (latitude: number, longitude: number) => void;
   onCreateArea: (geometry: GeoJsonGeometry) => void;
   onCreateStreet: (geometry: GeoJsonGeometry) => void;
   onSelect: (selected: SelectedMapElement) => void;
@@ -164,14 +168,21 @@ function ResizeController() {
 function ClickController({
   mode,
   onCreatePin,
+  onAddSnapPoint,
 }: Readonly<{
   mode: MapDrawMode;
   onCreatePin: (latitude: number, longitude: number) => void;
+  onAddSnapPoint: (latitude: number, longitude: number) => void;
 }>) {
   useMapEvents({
     click(event) {
       if (mode === "pin") {
         onCreatePin(event.latlng.lat, event.latlng.lng);
+        return;
+      }
+
+      if (mode === "street_snap") {
+        onAddSnapPoint(event.latlng.lat, event.latlng.lng);
       }
     },
   });
@@ -255,9 +266,12 @@ export function MapCanvas({
   streets,
   pins,
   mode,
+  snapPoints,
+  snapGeometry,
   selected,
   onModeConsumed,
   onCreatePin,
+  onAddSnapPoint,
   onCreateArea,
   onCreateStreet,
   onSelect,
@@ -287,6 +301,7 @@ export function MapCanvas({
         ),
     [streets],
   );
+  const snapPositions = useMemo(() => linePositions(snapGeometry), [snapGeometry]);
 
   return (
     <MapContainer
@@ -299,7 +314,11 @@ export function MapCanvas({
       )}
     >
       <ResizeController />
-      <ClickController mode={mode} onCreatePin={onCreatePin} />
+      <ClickController
+        mode={mode}
+        onCreatePin={onCreatePin}
+        onAddSnapPoint={onAddSnapPoint}
+      />
       <DrawController
         mode={mode}
         onCreateArea={onCreateArea}
@@ -393,6 +412,55 @@ export function MapCanvas({
           </Polyline>
         );
       })}
+
+      {snapPositions ? (
+        <Polyline
+          positions={snapPositions}
+          pathOptions={{
+            color: "#22c55e",
+            weight: 6,
+            opacity: 0.92,
+            dashArray: "10 8",
+          }}
+        >
+          <Tooltip sticky>Anteprima strada agganciata</Tooltip>
+        </Polyline>
+      ) : snapPoints.length > 1 ? (
+        <Polyline
+          positions={snapPoints.map(
+            (point) => [point.latitude, point.longitude] as LatLngExpression,
+          )}
+          pathOptions={{
+            color: "#f59e0b",
+            weight: 4,
+            opacity: 0.75,
+            dashArray: "4 7",
+          }}
+        />
+      ) : null}
+
+      {snapPoints.map((point, index) => (
+        <CircleMarker
+          key={`${point.latitude}-${point.longitude}-${index}`}
+          center={[point.latitude, point.longitude]}
+          radius={index === 0 ? 6 : 5}
+          pathOptions={{
+            color: "#111827",
+            fillColor: index === 0 ? "#22c55e" : "#f59e0b",
+            fillOpacity: 0.95,
+            weight: 2,
+          }}
+        >
+          <Tooltip
+            permanent
+            direction="top"
+            offset={[0, -8]}
+            className="map-snap-point-label"
+          >
+            {index + 1}
+          </Tooltip>
+        </CircleMarker>
+      ))}
 
       {pins.map((pin) => {
         const isSelected = selected?.type === "pin" && selected.id === pin.id;
