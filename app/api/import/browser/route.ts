@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
     revalidatePath(`/listings/${savedListing.id}`);
     revalidatePath("/incoming");
     revalidatePath("/dashboard");
+    revalidatePath("/map");
 
     return NextResponse.json(
       {

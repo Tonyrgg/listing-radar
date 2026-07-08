@@ -44,6 +44,9 @@ type ListingRow = {
   floor: string | null;
   zone: string | null;
   address_raw: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  coordinates_source: string | null;
   seller_type: SellerType;
   seller_name: string | null;
   phone: string | null;
@@ -76,6 +79,9 @@ type ListingSnapshotRow = {
   title: string | null;
   description_hash: string | null;
   is_available: boolean;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  coordinates_source: string | null;
   raw_payload: Record<string, unknown> | null;
   created_at: string | null;
 };
@@ -145,6 +151,9 @@ function mapSnapshotRow(row: ListingSnapshotRow): ListingSnapshot {
     title: row.title,
     descriptionHash: row.description_hash,
     isAvailable: row.is_available,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
+    coordinatesSource: row.coordinates_source,
     rawPayload: row.raw_payload,
     createdAt: row.created_at,
   };
@@ -270,6 +279,9 @@ function mapListingRow(row: ListingRow, scoringConfig?: ScoringConfig): Listing 
     floor: row.floor,
     zone: row.zone,
     addressRaw: row.address_raw,
+    latitude: row.latitude == null ? null : Number(row.latitude),
+    longitude: row.longitude == null ? null : Number(row.longitude),
+    coordinatesSource: row.coordinates_source,
     sellerType: row.seller_type,
     sellerName: row.seller_name,
     phone: row.phone,

@@ -49,6 +49,7 @@ function renderPreview(listing) {
     listing.sqm ? `${listing.sqm} mq` : null,
     listing.rooms ? `${listing.rooms} locali` : null,
     listing.zone,
+    listing.latitude && listing.longitude ? "coordinate" : null,
     listing.imageUrls?.length ? `${listing.imageUrls.length} foto` : null,
   ].filter(Boolean);
   const fields = Object.values(listing).filter(

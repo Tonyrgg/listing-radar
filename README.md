@@ -181,9 +181,9 @@ Operational use:
 
 1. Open `/map`.
 2. Use **Area** to draw and save a polygon.
-3. Use **Guidata** to click street start/end/curve/intersection points and save the road-snapped line. Area polygons are hidden while this mode is active.
-4. Use **Libera** only when you need a manual line that does not follow routable roads.
-5. Use **Pin** and click the map to save an operational note.
+3. Use **Strada** to click street start/end/curve/intersection points and save the road-snapped line. Area polygons are hidden while this mode is active.
+4. Use **Pin** and click the map to save an operational note.
+5. Use **Annunci** to show or hide listing pins with exact saved coordinates; scraper and browser-extension imports now persist `latitude`/`longitude`, the badge shows geolocated listings over total listings, and zooming out groups nearby listing pins.
 6. Filter by agent, visibility, status, category, priority, and follow-up date.
 7. Use the sidebar tabs for Pin, Aree, Strade, and Attivita.
 

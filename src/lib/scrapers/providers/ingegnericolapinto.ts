@@ -1,4 +1,5 @@
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { fetchHtml } from "@/lib/scrapers/html";
 import { extractMetaTags } from "@/lib/scrapers/metadata";
 import {
@@ -157,6 +158,11 @@ function normalizeListingFromDetail(
   const addressRaw = description && /(?:via|piazza|strada|corso|viale)\b/i.test(description)
     ? description
     : title;
+  const coordinates = extractListingCoordinates({
+    html,
+    meta,
+    source: "ingegnericolapinto",
+  });
 
   return {
     source: "ingegnericolapinto",
@@ -173,6 +179,9 @@ function normalizeListingFromDetail(
       null,
     zone: SCRAPER_CONFIG.monitoredCity,
     addressRaw,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: "Ingegneri Colapinto",
     phone: "0803745086",
@@ -189,6 +198,7 @@ function normalizeListingFromDetail(
       extractedAt: now,
       meta,
       sitemapLastmod,
+      coordinates,
       descriptionHash: hashDescription(description),
       note: "Flazio page: static HTML exposes only metadata, not the full rendered body.",
     },

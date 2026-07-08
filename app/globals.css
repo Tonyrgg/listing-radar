@@ -99,6 +99,10 @@ body {
     background: var(--surface-panel);
   }
 
+  .leaflet-interactive:focus {
+    outline: none;
+  }
+
   .leaflet-control-zoom a,
   .leaflet-bar a {
     border-color: var(--line-soft);
@@ -155,6 +159,23 @@ body {
     font-size: 11px;
     font-weight: 750;
     line-height: 1.25;
+    box-shadow: none;
+  }
+
+  .leaflet-tooltip.map-snap-point-label::before,
+  .leaflet-tooltip.map-listing-cluster-label::before {
+    display: none;
+  }
+
+  .leaflet-tooltip.map-listing-cluster-label {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: white;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    text-shadow: 0 1px 2px oklch(0.12 0.02 250 / 0.65);
     box-shadow: none;
   }
 

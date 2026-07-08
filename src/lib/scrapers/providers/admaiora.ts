@@ -1,4 +1,5 @@
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { parseItalianDate } from "@/lib/scrapers/date-parser";
 import { fetchHtml, stripHtml } from "@/lib/scrapers/html";
 import { extractJsonLd, extractMetaTags } from "@/lib/scrapers/metadata";
@@ -296,6 +297,12 @@ function normalizeListingFromDetail(url: string, html: string) {
   const rooms = extractMetaNumber(html, "prop_bedrooms") ?? parseRooms(title);
   const sqm = extractMetaNumber(html, "prop_area") ?? parseSqm(description);
   const imageUrls = extractImageUrls(html, meta);
+  const coordinates = extractListingCoordinates({
+    html,
+    jsonLd,
+    meta,
+    source: "admaiora",
+  });
   const now = new Date().toISOString();
 
   return {
@@ -313,6 +320,9 @@ function normalizeListingFromDetail(url: string, html: string) {
     )?.[1] ?? null,
     zone: addressRaw?.includes("Bitonto") ? addressRaw : SCRAPER_CONFIG.monitoredCity,
     addressRaw,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: "Ad Maiora Immobiliare",
     phone: extractPhone(visibleText),
@@ -329,6 +339,7 @@ function normalizeListingFromDetail(url: string, html: string) {
       extractedAt: now,
       meta,
       jsonLd,
+      coordinates,
       imageUrls,
       descriptionHash: hashDescription(description),
     },

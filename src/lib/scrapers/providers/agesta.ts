@@ -1,4 +1,5 @@
 import { getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { fetchHtml, stripHtml } from "@/lib/scrapers/html";
 import { extractMetaTags } from "@/lib/scrapers/metadata";
 import {
@@ -231,6 +232,11 @@ function normalizeDetail(
   const addressRaw = buildAddress(html);
   const now = new Date().toISOString();
   const canonicalUrl = normalizeUrl(meta["og:url"]?.replace(/&amp;/gi, "&") ?? url);
+  const coordinates = extractListingCoordinates({
+    html,
+    meta,
+    source: config.name,
+  });
 
   return {
     source: config.source,
@@ -245,6 +251,9 @@ function normalizeDetail(
     floor,
     zone: getValueTextById(html, "det_comune") ?? "Bitonto",
     addressRaw,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: config.agencyName,
     phone: extractPhone(stripHtml(html)),
@@ -260,6 +269,7 @@ function normalizeDetail(
       provider: config.name,
       extractedAt: now,
       meta,
+      coordinates,
       imageUrls: extractImageUrls(html, meta, config),
       descriptionHash: hashDescription(description),
     },

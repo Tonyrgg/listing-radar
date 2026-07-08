@@ -92,6 +92,24 @@ export interface MapPin {
   updatedAt: string | null;
 }
 
+export interface ListingMapPin {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  price: number | null;
+  sqm: number | null;
+  addressRaw: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+export interface ListingMapData {
+  pins: ListingMapPin[];
+  totalListings: number;
+  streetAddressListings: number;
+}
+
 export interface MapActivityLog {
   id: string;
   agentId: string | null;
@@ -156,7 +174,7 @@ export type CreateMapActivityLogInput = {
 
 export type MapElementType = "pin" | "area" | "street";
 
-export type MapDrawMode = "select" | "pin" | "area" | "street" | "street_snap";
+export type MapDrawMode = "select" | "pin" | "area" | "street_snap";
 
 export type MapSnapPoint = {
   latitude: number;

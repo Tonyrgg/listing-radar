@@ -1,4 +1,5 @@
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { fetchHtml, stripHtml } from "@/lib/scrapers/html";
 import { extractMetaTags } from "@/lib/scrapers/metadata";
 import {
@@ -245,6 +246,11 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
     parseRooms(extractInfoValue(html, "Vani")) ??
     parseRooms(extractInfoValue(html, "Stanze da letto")) ??
     parseRooms(contentForParsers);
+  const coordinates = extractListingCoordinates({
+    html,
+    meta,
+    source: "puntocasa",
+  });
 
   return {
     source: "puntocasa",
@@ -264,6 +270,9 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
       ? "Bitonto"
       : SCRAPER_CONFIG.monitoredCity,
     addressRaw: subtitle,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: "PuntoCasa Group",
     phone: extractPhone(visibleText),
@@ -279,6 +288,7 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
       provider: "puntocasa",
       extractedAt: now,
       meta,
+      coordinates,
       descriptionHash: hashDescription(description),
       subtitle,
     },

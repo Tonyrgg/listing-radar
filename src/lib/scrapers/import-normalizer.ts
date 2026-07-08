@@ -1,4 +1,5 @@
 import { parseItalianDate } from "@/lib/scrapers/date-parser";
+import { normalizeListingCoordinates } from "@/lib/listings/coordinates";
 import { resolveListingSource } from "@/lib/listing-sources";
 import {
   cleanText,
@@ -277,6 +278,13 @@ export function normalizeImportedRows(
     );
     const checkedAt =
       toDateValue(getValue(row, ["checkedAt", "checked_at"])) ?? now;
+    const coordinates = normalizeListingCoordinates({
+      latitude: getValue(row, ["latitude", "lat", "latitudine"]),
+      longitude: getValue(row, ["longitude", "lng", "lon", "longitudine"]),
+      source:
+        toStringValue(getValue(row, ["coordinatesSource", "coordinates_source"])) ??
+        options.provider,
+    });
 
     listings.push({
       source,
@@ -296,6 +304,9 @@ export function normalizeImportedRows(
       addressRaw: toStringValue(
         getValue(row, ["addressRaw", "address_raw", "address", "indirizzo"]),
       ),
+      latitude: coordinates?.latitude ?? null,
+      longitude: coordinates?.longitude ?? null,
+      coordinatesSource: coordinates?.source ?? null,
       sellerType: toSellerType(getValue(row, ["sellerType", "seller_type"])),
       sellerName: toStringValue(getValue(row, ["sellerName", "seller_name"])),
       phone: toStringValue(getValue(row, ["phone", "telefono"])),

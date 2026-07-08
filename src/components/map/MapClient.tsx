@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import {
+  Building2,
   Filter,
   Loader2,
   MapPin,
@@ -32,6 +33,7 @@ import {
   deleteMapPin,
   deleteMapStreet,
   listAgents,
+  listListingMapData,
   listMapActivityLogs,
   listMapAreas,
   listMapPins,
@@ -48,6 +50,7 @@ import type {
   CreateMapPinInput,
   CreateMapStreetInput,
   GeoJsonGeometry,
+  ListingMapData,
   MapActivityLog,
   MapArea,
   MapDrawMode,
@@ -79,6 +82,12 @@ const MapCanvas = dynamic<MapCanvasProps>(
     ),
   },
 );
+
+const EMPTY_LISTING_MAP_DATA: ListingMapData = {
+  pins: [],
+  totalListings: 0,
+  streetAddressListings: 0,
+};
 
 function isOverdue(value: string | null) {
   if (!value) return false;
@@ -158,8 +167,6 @@ function drawModeHint(mode: MapDrawMode) {
       return "Clicca sulla mappa per creare un pin.";
     case "area":
       return "Disegna il perimetro dell'area, poi chiudi il poligono.";
-    case "street":
-      return "Disegna la strada con una linea, doppio click per finire.";
     case "street_snap":
       return "Clicca i punti della strada: ogni punto e un vincolo della linea.";
     default:
@@ -183,15 +190,16 @@ function activeFilterCount(filters: MapFiltersState) {
 }
 
 async function fetchMapData() {
-  const [agents, areas, streets, pins, activityLogs] = await Promise.all([
+  const [agents, areas, streets, pins, activityLogs, listingMapData] = await Promise.all([
     listAgents(),
     listMapAreas(),
     listMapStreets(),
     listMapPins(),
     listMapActivityLogs(20),
+    listListingMapData(),
   ]);
 
-  return { agents, areas, streets, pins, activityLogs };
+  return { agents, areas, streets, pins, activityLogs, listingMapData };
 }
 
 type SnapRoute = {
@@ -244,6 +252,7 @@ export function MapClient() {
   const [areas, setAreas] = useState<MapArea[]>([]);
   const [streets, setStreets] = useState<MapStreet[]>([]);
   const [pins, setPins] = useState<MapPinType[]>([]);
+  const [listingMapData, setListingMapData] = useState<ListingMapData>(EMPTY_LISTING_MAP_DATA);
   const [activityLogs, setActivityLogs] = useState<MapActivityLog[]>([]);
   const [filters, setFilters] = useState<MapFiltersState>(DEFAULT_MAP_FILTERS);
   const [drawMode, setDrawMode] = useState<MapDrawMode>("select");
@@ -253,6 +262,7 @@ export function MapClient() {
   const [error, setError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
+  const [showListingPins, setShowListingPins] = useState(false);
   const [snapPoints, setSnapPoints] = useState<MapSnapPoint[]>([]);
   const [snapRoute, setSnapRoute] = useState<SnapRoute | null>(null);
   const [snapLoading, setSnapLoading] = useState(false);
@@ -265,6 +275,7 @@ export function MapClient() {
       setAreas(data.areas);
       setStreets(data.streets);
       setPins(data.pins);
+      setListingMapData(data.listingMapData);
       setActivityLogs(data.activityLogs);
     },
     [],
@@ -317,14 +328,20 @@ export function MapClient() {
   const visibleAreas = useMemo(() => filterAreas(areas, filters), [areas, filters]);
   const visibleStreets = useMemo(() => filterStreets(streets, filters), [streets, filters]);
   const visiblePins = useMemo(() => filterPins(pins, filters), [pins, filters]);
+  const listingPins = listingMapData.pins;
   const mapAreas = drawMode === "street_snap" ? [] : visibleAreas;
+  const visibleListingPins = useMemo(
+    () => (showListingPins ? listingPins : []),
+    [listingPins, showListingPins],
+  );
   const stats = useMemo(
     () => getStats(visibleAreas, visibleStreets, visiblePins),
     [visibleAreas, visibleStreets, visiblePins],
   );
   const filterCount = activeFilterCount(filters);
   const hasAnyVisibleElement =
-    visibleAreas.length + visibleStreets.length + visiblePins.length > 0;
+    visibleAreas.length + visibleStreets.length + visiblePins.length + visibleListingPins.length >
+    0;
 
   const handleSelect = useCallback((nextSelected: SelectedMapElement) => {
     setSelected(nextSelected);
@@ -360,11 +377,6 @@ export function MapClient() {
   const handleCreateArea = useCallback((geometry: GeoJsonGeometry) => {
     setSidePanelOpen(true);
     setModal({ type: "area", mode: "create", geometry });
-  }, []);
-
-  const handleCreateStreet = useCallback((geometry: GeoJsonGeometry) => {
-    setSidePanelOpen(true);
-    setModal({ type: "street", mode: "create", geometry });
   }, []);
 
   const routeSnapPoints = useCallback(async (nextPoints: MapSnapPoint[]) => {
@@ -672,6 +684,7 @@ export function MapClient() {
           areas={mapAreas}
           streets={visibleStreets}
           pins={visiblePins}
+          listingPins={visibleListingPins}
           mode={drawMode}
           snapPoints={snapPoints}
           snapGeometry={snapRoute?.geometry ?? null}
@@ -680,7 +693,6 @@ export function MapClient() {
           onCreatePin={handleCreatePin}
           onAddSnapPoint={handleAddSnapPoint}
           onCreateArea={handleCreateArea}
-          onCreateStreet={handleCreateStreet}
           onSelect={handleSelect}
           onEdit={openEditModal}
           onDelete={handleDelete}
@@ -723,19 +735,12 @@ export function MapClient() {
             </button>
             <button
               type="button"
-              onClick={() => activateDrawMode("street")}
-              className={modeButtonClass(drawMode === "street")}
-            >
-              <Route className="size-4" aria-hidden="true" />
-              Libera
-            </button>
-            <button
-              type="button"
               onClick={() => activateDrawMode("street_snap")}
               className={modeButtonClass(drawMode === "street_snap")}
+              title="Strada guidata"
             >
               <Route className="size-4" aria-hidden="true" />
-              Guidata
+              Strada
             </button>
           </div>
 
@@ -756,6 +761,25 @@ export function MapClient() {
                 </span>
               ) : null}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowListingPins((current) => !current)}
+              aria-pressed={showListingPins}
+              title={`${listingPins.length} annunci con coordinate precise su ${listingMapData.totalListings} totali`}
+              className={clsx(
+                "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--shadow-panel)] transition-colors",
+                showListingPins
+                  ? "border-[#38bdf8] bg-[oklch(0.22_0.06_235_/_0.96)] text-[#bae6fd]"
+                  : "border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] text-[var(--ink-strong)] hover:border-[var(--line-strong)]",
+              )}
+            >
+              <Building2 className="size-4" aria-hidden="true" />
+              Annunci
+              <span className="rounded-full bg-[var(--surface-canvas)] px-1.5 text-[10px] text-[var(--ink-soft)]">
+                {listingPins.length}/{listingMapData.totalListings}
+              </span>
+            </button>
 
             <button
               type="button"
@@ -895,6 +919,14 @@ export function MapClient() {
                 Salva strada
               </button>
             </div>
+          ) : null}
+          {showListingPins && listingMapData.totalListings > 0 && !listingPins.length ? (
+            <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
+              0 annunci con coordinate precise su {listingMapData.totalListings}.{" "}
+              {listingMapData.streetAddressListings
+                ? `${listingMapData.streetAddressListings} hanno indirizzo con numero civico ma non coordinate salvate.`
+                : "I dati salvati sono solo testuali."}
+            </p>
           ) : null}
           {!hasAnyVisibleElement && !loading ? (
             <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">

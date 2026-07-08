@@ -1,4 +1,5 @@
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { fetchHtml, stripHtml } from "@/lib/scrapers/html";
 import { extractMetaTags } from "@/lib/scrapers/metadata";
 import {
@@ -226,6 +227,11 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
   const contentForParsers = [title, location, description].filter(Boolean).join(" ");
   const rawArea = extractSubnavValue(html, "Area");
   const now = new Date().toISOString();
+  const coordinates = extractListingCoordinates({
+    html,
+    meta,
+    source: "iconacasa",
+  });
 
   return {
     source: "iconacasa",
@@ -240,6 +246,9 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
     floor: extractInfoValue(html, "Piano") ?? contentForParsers.match(/\bpiano\s+([a-z0-9 ]{2,20})/i)?.[1]?.trim() ?? null,
     zone: location || SCRAPER_CONFIG.monitoredCity,
     addressRaw: location,
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: "Iconacasa Bitonto Piazza Aldo Moro",
     phone: extractPhone(visibleText),
@@ -256,6 +265,7 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
       extractedAt: now,
       meta,
       location,
+      coordinates,
       descriptionHash: hashDescription(description),
       extra: {
         area: rawArea,

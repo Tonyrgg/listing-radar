@@ -20,6 +20,9 @@ export interface ListingSnapshot {
   title: string | null;
   descriptionHash: string | null;
   isAvailable: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  coordinatesSource: string | null;
   rawPayload: Record<string, unknown> | null;
   createdAt: string | null;
 }
@@ -69,6 +72,9 @@ export interface Listing {
   floor: string | null;
   zone: string | null;
   addressRaw: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  coordinatesSource: string | null;
   sellerType: SellerType;
   sellerName: string | null;
   phone: string | null;
@@ -174,6 +180,9 @@ export interface NormalizedListing {
   floor?: string | null;
   zone?: string | null;
   addressRaw?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinatesSource?: string | null;
   sellerType: SellerType;
   sellerName?: string | null;
   phone?: string | null;

@@ -44,4 +44,23 @@ describe("normalizeImportedRows", () => {
       "bakeca",
     ]);
   });
+
+  it("keeps valid listing coordinates", () => {
+    const normalized = normalizeImportedRows(
+      [
+        row({
+          latitude: "41.107745",
+          longitude: "16.689233",
+          coordinatesSource: "browser:jsonld",
+        }),
+      ],
+      { provider: "browser-extension", defaultSource: "browser" },
+    );
+
+    expect(normalized.listings[0]).toMatchObject({
+      latitude: 41.107745,
+      longitude: 16.689233,
+      coordinatesSource: "browser:jsonld",
+    });
+  });
 });

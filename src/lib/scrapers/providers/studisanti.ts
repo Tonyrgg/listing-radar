@@ -1,4 +1,5 @@
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { extractListingCoordinates } from "@/lib/listings/coordinates";
 import { fetchHtml, stripHtml } from "@/lib/scrapers/html";
 import { extractMetaTags } from "@/lib/scrapers/metadata";
 import {
@@ -196,6 +197,11 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
       : title,
   );
   const floor = extractDetailValue(detailsText, "Piano");
+  const coordinates = extractListingCoordinates({
+    html,
+    meta,
+    source: "studisanti",
+  });
 
   return {
     source: "studisanti",
@@ -212,6 +218,9 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
     addressRaw: html.match(/<div\b[^>]*class=["'][^"']*\bindirizzo\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1]
       ? stripHtml(html.match(/<div\b[^>]*class=["'][^"']*\bindirizzo\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "")
       : extractZone(detailsText),
+    latitude: coordinates?.latitude ?? null,
+    longitude: coordinates?.longitude ?? null,
+    coordinatesSource: coordinates?.source ?? null,
     sellerType: "agency",
     sellerName: "Studi Santi Immobiliare",
     phone: extractPhone(html),
@@ -228,6 +237,7 @@ function normalizeListingFromDetail(url: string, html: string): NormalizedListin
       extractedAt: now,
       meta,
       detailsText,
+      coordinates,
       descriptionHash: hashDescription(description),
       extra: {
         camere: extractDetailValue(detailsText, "Camere"),

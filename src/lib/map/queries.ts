@@ -1,6 +1,10 @@
 "use server";
 
 import { requireUser } from "@/lib/auth";
+import {
+  extractListingCoordinates,
+  normalizeListingCoordinates,
+} from "@/lib/listings/coordinates";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type {
   Agent,
@@ -9,6 +13,8 @@ import type {
   CreateMapPinInput,
   CreateMapStreetInput,
   GeoJsonGeometry,
+  ListingMapData,
+  ListingMapPin,
   MapActivityLog,
   MapArea,
   MapPin,
@@ -84,6 +90,29 @@ type MapActivityLogRow = {
   action_type: string;
   notes: string | null;
   created_at: string | null;
+};
+
+type ListingSnapshotCoordinateRow = {
+  latitude: number | string | null;
+  longitude: number | string | null;
+  coordinates_source: string | null;
+  raw_payload: Record<string, unknown> | null;
+  checked_at: string | null;
+};
+
+type ListingMapRow = {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  price: number | null;
+  sqm: number | null;
+  address_raw: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  coordinates_source: string | null;
+  status: string | null;
+  listing_snapshots?: ListingSnapshotCoordinateRow[] | null;
 };
 
 function assertNoError(error: { message: string } | null, fallback: string) {
@@ -169,6 +198,71 @@ function mapActivityLog(row: MapActivityLogRow): MapActivityLog {
     notes: row.notes,
     createdAt: row.created_at,
   };
+}
+
+function mapListingMapPin(row: ListingMapRow): ListingMapPin | null {
+  const persistedCoordinates = normalizeListingCoordinates({
+    latitude: row.latitude,
+    longitude: row.longitude,
+    source: row.coordinates_source ?? `${row.source}:listing`,
+  });
+
+  if (persistedCoordinates) {
+    return {
+      id: row.id,
+      title: row.title,
+      source: row.source,
+      url: row.url,
+      price: row.price,
+      sqm: row.sqm,
+      addressRaw: row.address_raw,
+      latitude: persistedCoordinates.latitude,
+      longitude: persistedCoordinates.longitude,
+    };
+  }
+
+  const snapshots = [...(row.listing_snapshots ?? [])].sort((left, right) =>
+    (right.checked_at ?? "").localeCompare(left.checked_at ?? ""),
+  );
+
+  for (const snapshot of snapshots) {
+    const coordinates =
+      normalizeListingCoordinates({
+        latitude: snapshot.latitude,
+        longitude: snapshot.longitude,
+        source: snapshot.coordinates_source ?? `${row.source}:snapshot`,
+      }) ??
+      extractListingCoordinates({
+        rawPayload: snapshot.raw_payload,
+        source: `${row.source}:snapshot`,
+      });
+    if (!coordinates) {
+      continue;
+    }
+
+    return {
+      id: row.id,
+      title: row.title,
+      source: row.source,
+      url: row.url,
+      price: row.price,
+      sqm: row.sqm,
+      addressRaw: row.address_raw,
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+    };
+  }
+
+  return null;
+}
+
+function hasStreetNumberAddress(row: ListingMapRow) {
+  const value = row.address_raw?.trim();
+  if (!value) {
+    return false;
+  }
+
+  return /\b(?:arco|corso|largo|piazza|strada|via|viale|vicolo)\b[^\d]{0,90}\d+/i.test(value);
 }
 
 function areaPayload(input: CreateMapAreaInput | UpdateMapAreaInput) {
@@ -317,6 +411,42 @@ export async function listMapPins() {
 
   assertNoError(error, "Impossibile caricare i pin");
   return ((data ?? []) as MapPinRow[]).map(mapPin);
+}
+
+export async function listListingMapData(): Promise<ListingMapData> {
+  const supabase = await getMapSupabase();
+  const rows: ListingMapRow[] = [];
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("listings")
+      .select(
+        "id,title,source,url,price,sqm,address_raw,latitude,longitude,coordinates_source,status,listing_snapshots(latitude,longitude,coordinates_source,raw_payload,checked_at)",
+      )
+      .neq("status", "archived")
+      .order("last_seen_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    assertNoError(error, "Impossibile caricare gli annunci sulla mappa");
+
+    const pageRows = (data ?? []) as ListingMapRow[];
+    rows.push(...pageRows);
+
+    if (pageRows.length < pageSize) {
+      break;
+    }
+  }
+
+  const pins = rows
+    .map(mapListingMapPin)
+    .filter((pin): pin is ListingMapPin => Boolean(pin));
+
+  return {
+    pins,
+    totalListings: rows.length,
+    streetAddressListings: rows.filter(hasStreetNumberAddress).length,
+  };
 }
 
 export async function createMapPin(input: CreateMapPinInput) {

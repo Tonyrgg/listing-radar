@@ -335,6 +335,7 @@ async function handleCronRequest(request: NextRequest) {
     revalidatePath("/incoming");
     revalidatePath("/dashboard");
     revalidatePath("/reports");
+    revalidatePath("/map");
 
     return NextResponse.json({
       ok: true,

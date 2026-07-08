@@ -9,6 +9,7 @@ import {
 } from "@/lib/listings/scoring";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { assignDuplicateGroup } from "@/lib/listings/duplicates";
+import { normalizeListingCoordinates } from "@/lib/listings/coordinates";
 import { getListingSourceStorageAliases } from "@/lib/listing-sources";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { Listing, NormalizedListing, UpsertListingsResult } from "@/types";
@@ -27,6 +28,9 @@ type ExistingListingRow = {
   floor: string | null;
   zone: string | null;
   address_raw: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  coordinates_source: string | null;
   seller_type: "private" | "agency" | "unknown";
   seller_name: string | null;
   phone: string | null;
@@ -127,6 +131,9 @@ function toListingPreview(
     floor: normalized.floor ?? null,
     zone: normalized.zone ?? null,
     addressRaw: normalized.addressRaw ?? null,
+    latitude: normalized.latitude ?? (row.latitude == null ? null : Number(row.latitude)),
+    longitude: normalized.longitude ?? (row.longitude == null ? null : Number(row.longitude)),
+    coordinatesSource: normalized.coordinatesSource ?? row.coordinates_source ?? null,
     sellerType: normalized.sellerType,
     sellerName: normalized.sellerName ?? null,
     phone: normalized.phone ?? null,
@@ -175,6 +182,19 @@ export async function upsertListings(
       normalized.metadataDatePublished ?? existing?.metadata_date_published ?? null;
     const metadataDateModified =
       normalized.metadataDateModified ?? existing?.metadata_date_modified ?? null;
+    const extractedCoordinates = normalizeListingCoordinates({
+      latitude: normalized.latitude,
+      longitude: normalized.longitude,
+      source: normalized.coordinatesSource ?? `${normalized.source}:scrape`,
+    });
+    const persistedLatitude =
+      extractedCoordinates?.latitude ??
+      (existing?.latitude == null ? null : Number(existing.latitude));
+    const persistedLongitude =
+      extractedCoordinates?.longitude ??
+      (existing?.longitude == null ? null : Number(existing.longitude));
+    const persistedCoordinatesSource =
+      extractedCoordinates?.source ?? existing?.coordinates_source ?? null;
     const pricePerSqm = calculatePricePerSqm(normalized.price ?? null, normalized.sqm ?? null);
     const minimumDaysOnline = getMinimumDaysOnline({
       firstSeenAt,
@@ -228,6 +248,9 @@ export async function upsertListings(
       floor: normalized.floor ?? null,
       zone: normalized.zone ?? null,
       address_raw: normalized.addressRaw ?? null,
+      latitude: persistedLatitude,
+      longitude: persistedLongitude,
+      coordinates_source: persistedCoordinatesSource,
       seller_type: normalized.sellerType,
       seller_name: normalized.sellerName ?? null,
       phone: normalized.phone ?? null,
@@ -284,6 +307,9 @@ export async function upsertListings(
       title: normalized.title,
       description_hash: hashDescription(normalized.description),
       is_available: normalized.isAvailable ?? true,
+      latitude: extractedCoordinates?.latitude ?? null,
+      longitude: extractedCoordinates?.longitude ?? null,
+      coordinates_source: extractedCoordinates?.source ?? null,
       raw_payload: {
         ...(normalized.rawPayload ?? {}),
         imageUrls: normalized.imageUrls ?? [],
