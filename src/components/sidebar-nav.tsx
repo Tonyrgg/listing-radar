@@ -8,6 +8,7 @@ import {
   FileText,
   Inbox,
   LayoutDashboard,
+  MapPinned,
   Settings,
 } from "lucide-react";
 
@@ -15,11 +16,12 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/incoming", label: "Nuovi arrivi", icon: Inbox },
   { href: "/listings", label: "Immobili", icon: Building2 },
+  { href: "/map", label: "Mappa Zone", icon: MapPinned },
   { href: "/reports", label: "Report", icon: FileText },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
   const pathname = usePathname();
 
   return (
@@ -38,15 +40,17 @@ export function SidebarNav() {
           <Link
             key={item.href}
             href={item.href}
+            title={item.label}
             className={clsx(
               "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-[7px] px-3 text-center text-xs font-semibold transition-colors lg:h-11 lg:w-full lg:justify-start lg:px-3.5 lg:text-[13px]",
+              collapsed && "lg:justify-center lg:px-0",
               isActive
                 ? "bg-[var(--surface-panel)] text-[var(--ink-strong)] shadow-[inset_0_0_0_1px_var(--line-soft)]"
                 : "text-[var(--ink-subtle)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]",
             )}
           >
             <Icon aria-hidden="true" className="size-3.5 lg:size-4" />
-            {item.label}
+            <span className={clsx(collapsed && "lg:sr-only")}>{item.label}</span>
           </Link>
         );
       })}

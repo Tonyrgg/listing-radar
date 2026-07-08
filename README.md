@@ -15,6 +15,7 @@ Current MVP scope:
 - local import and authorized feed providers for complete real listing data
 - automatic email-alert inbox for large portals
 - private Chrome extension for one-click listing enrichment
+- internal Mappa Zone for territory areas, streets, pins, and activity history
 
 Out of scope in this phase:
 
@@ -36,6 +37,7 @@ Out of scope in this phase:
 - `/incoming`
 - `/listings`
 - `/listings/[id]`
+- `/map`
 - `/reports`
 - `/settings`
 - `/api/cron/scrape`
@@ -115,6 +117,9 @@ The schema is split into:
 
 - `supabase/migrations/001_initial_schema.sql`
 - `supabase/migrations/002_incoming_listings.sql`
+- `supabase/migrations/002_map_zones.sql`
+- `supabase/migrations/003_app_settings.sql`
+- `supabase/migrations/004_listing_crm_status.sql`
 
 Apply it with the Supabase CLI if you use local or linked database workflows:
 
@@ -136,8 +141,88 @@ The migration creates:
 - `scrape_errors`
 - `incoming_listings`
 - `email_ingestion_messages`
+- `agents`
+- `map_areas`
+- `map_streets`
+- `map_pins`
+- `map_activity_logs`
 
 All tables have RLS enabled. Policies allow authenticated users to `select`, `insert`, `update`, and `delete`. Anonymous public access is not enabled.
+
+## Mappa Zone
+
+The internal territory map is available at `/map`. It uses Leaflet,
+React Leaflet, and Leaflet Draw, all loaded client-side so the Next.js build
+does not touch browser APIs during SSR.
+
+Map dependencies are already in `package.json`. To reinstall them manually:
+
+```powershell
+npm.cmd install leaflet react-leaflet leaflet-draw @types/leaflet @types/leaflet-draw
+```
+
+Apply the map migration with the rest of the schema:
+
+```powershell
+supabase db push
+```
+
+Or run `supabase/migrations/002_map_zones.sql` once in the Supabase SQL editor.
+The migration seeds two agents when missing:
+
+- Tony, `#2563eb`
+- Agente 2, `#16a34a`
+
+Operational use:
+
+1. Open `/map`.
+2. Use **Area** to draw and save a polygon.
+3. Use **Strada** to draw and save a line.
+4. Use **Pin** and click the map to save an operational note.
+5. Filter by agent, visibility, status, category, priority, and follow-up date.
+6. Use the sidebar tabs for Pin, Aree, Strade, and Attivita.
+
+Pin categories:
+
+```text
+sale_lead, empty_house, follow_up, useful_doorman,
+useful_administrator, owner_met, door_knocked,
+interesting_building, not_interested, recheck,
+rental_lead, future_sale, other
+```
+
+Area and street status values:
+
+```text
+not_started, in_progress, completed, to_recheck
+```
+
+Street-only extra status:
+
+```text
+not_useful
+```
+
+Pin status values:
+
+```text
+new, to_verify, hot, contacted, follow_up, closed, discarded
+```
+
+Pin priorities:
+
+```text
+low, medium, high, urgent
+```
+
+Privacy and source limits:
+
+- no live GPS tracking
+- no real-time user location storage
+- no map scraping
+- no bulk tile downloads
+- no automatic contact or messaging workflow
+- no public data exposure; RLS policies are authenticated-only
 
 ## Seed / cron test
 
@@ -488,6 +573,7 @@ npm.cmd run build
 app/
   (private)/
     incoming/
+    map/
   api/cron/scrape/
   api/cron/email-alerts/
   api/import/browser/
@@ -496,10 +582,12 @@ scripts/
   windows/
 src/
   components/
+    map/
   lib/
     data/
     listings/
     incoming/
+    map/
     email-alerts/
     notifications/
     reports/
