@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -40,15 +40,37 @@
   "build": {
     "appId": "it.listingradar.propertyworker",
     "productName": "Property Data Worker",
-    "directories": { "output": "release" },
-    "files": ["dist-desktop/**/*", "package.json"],
-    "extraResources": [
-      { "from": "src/desktop/renderer", "to": "renderer" },
-      { "from": "src/desktop/preload.cjs", "to": "preload.cjs" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-desktop/**/*",
+      "package.json"
     ],
-    "asarUnpack": ["node_modules/playwright-core/**/*", "node_modules/xlsx/**/*"],
-    "electronLanguages": ["it", "en-US"],
-    "win": { "target": ["nsis"], "legalTrademarks": "Listing Radar" },
+    "extraResources": [
+      {
+        "from": "src/desktop/renderer",
+        "to": "renderer"
+      },
+      {
+        "from": "src/desktop/preload.cjs",
+        "to": "preload.cjs"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/playwright-core/**/*",
+      "node_modules/xlsx/**/*"
+    ],
+    "electronLanguages": [
+      "it",
+      "en-US"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "legalTrademarks": "Listing Radar"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

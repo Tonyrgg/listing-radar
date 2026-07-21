@@ -5,7 +5,7 @@ import { canTransition, nextStep, WorkflowStateMachine } from "../src/core/state
 describe("macchina a stati", () => {
   it("riprende dallo step successivo all'ultimo completato", () => {
     const state = WorkflowStateMachine.resume("person_created_or_updated");
-    expect(state.current).toBe("property_searched");
+    expect(state.current).toBe("person_merge_reviewed");
     expect(state.lastCompleted).toBe("person_created_or_updated");
   });
   it("avanza solo in ordine", () => {
@@ -14,7 +14,9 @@ describe("macchina a stati", () => {
     expect(nextStep("completed")).toBe("completed");
   });
   it("segue il flusso nominativo, immobile, attività, recapiti e comproprietari", () => {
-    expect(nextStep("person_created_or_updated")).toBe("property_searched");
+    expect(nextStep("data_normalized")).toBe("acquisition_reviewed");
+    expect(nextStep("person_created_or_updated")).toBe("person_merge_reviewed");
+    expect(nextStep("person_merge_reviewed")).toBe("property_searched");
     expect(nextStep("property_created_or_updated")).toBe("activity_created");
     expect(nextStep("activity_created")).toBe("contacts_matched");
     expect(nextStep("contacts_matched")).toBe("owners_linked");

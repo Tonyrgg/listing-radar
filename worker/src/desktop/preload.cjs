@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
   resumeJob: (jobId) => ipcRenderer.invoke("desktop:resume-job", jobId),
   pauseJob: () => ipcRenderer.invoke("desktop:pause-job"),
+  cancelJob: (jobId) => ipcRenderer.invoke("desktop:cancel-job", jobId),
   answerPrompt: (values) => ipcRenderer.invoke("desktop:answer-prompt", values),
   getJobDetails: (jobId) => ipcRenderer.invoke("desktop:get-job-details", jobId),
   revealFile: (filePath) => ipcRenderer.invoke("desktop:reveal-file", filePath),

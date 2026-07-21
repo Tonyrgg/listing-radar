@@ -16,7 +16,8 @@ import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
 import { WorkerRepository } from "../services/repository.js";
-import type { AssistedDecision } from "../services/prompts.js";
+import { removeDiagnosticScreenshots } from "../services/screenshots.js";
+import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
 
@@ -39,6 +40,8 @@ let preferences: Preferences = defaultPreferences;
 let activePrompts: DesktopPromptController | null = null;
 let activeJobId: string | null = null;
 let active = false;
+let activeRunPromise: Promise<void> | null = null;
+let cancellingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
 let currentStep: string | null = null;
 let lastError: string | null = null;
@@ -101,6 +104,18 @@ function repository(config = workerConfig()) {
   return new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function purgeJob(jobId: string) {
+  const config = workerConfig();
+  const repo = repository(config);
+  const screenshotPaths = await repo.listJobScreenshotPaths(jobId);
+  await repo.deleteJob(jobId);
+  const cleanup = await removeDiagnosticScreenshots(config.ERROR_SCREENSHOT_DIR, screenshotPaths);
+  if (cleanup.failed.length) {
+    pushActivity(`${cleanup.failed.length} screenshot non rimossi; verranno gestiti dalla pulizia automatica`, "warning");
+  }
+  return cleanup;
+}
+
 async function stateSnapshot() {
   let jobs: Awaited<ReturnType<WorkerRepository["listJobs"]>> = [];
   let configError: string | null = null;
@@ -122,6 +137,7 @@ async function stateSnapshot() {
   return {
     active,
     activeJobId,
+    cancellingJobId,
     currentStep,
     prompt,
     lastError,
@@ -160,6 +176,8 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity("Lavorazione completata", "success");
   } else if (event.type === "sister-keepalive") {
     updateKeepAliveState(event.result);
+  } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
+    pushActivity("Arresto del processo completato", "warning");
   } else {
     lastError = event.message;
     pushActivity(event.message, "error");
@@ -227,25 +245,57 @@ async function runDesktopKeepAlive() {
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active) throw new Error("È già presente una lavorazione in esecuzione");
   active = true;
+  cancellingJobId = null;
   lastError = null;
   currentStep = null;
   activeJobId = input.jobId ?? null;
   preferences = { ...preferences, mode: input.mode, dryRun: input.dryRun };
   await persistPreferences();
   activePrompts = new DesktopPromptController(publishPrompt);
-  const runner = new PropertyWorkerRunner(workerConfig(preferences), { prompts: activePrompts, onEvent: handleRunnerEvent, keepAlive: false });
+  const runner = new PropertyWorkerRunner(workerConfig(preferences), {
+    prompts: activePrompts,
+    onEvent: handleRunnerEvent,
+    keepAlive: false,
+    isCancellationRequested: (jobId) => cancellingJobId === jobId,
+  });
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
   await publishState();
-  void runner.run({ mode: input.mode, jobId: input.jobId, createNew: !input.jobId })
+  const runPromise = runner.run({ mode: input.mode, jobId: input.jobId, createNew: !input.jobId })
+    .then(() => undefined)
     .catch((error) => {
+      if (cancellingJobId && cancellingJobId === activeJobId) return;
       lastError = error instanceof Error ? error.message : String(error);
       pushActivity(lastError, "error");
     })
-    .finally(() => {
+    .finally(async () => {
+      const cancelledJobId = cancellingJobId && cancellingJobId === activeJobId ? cancellingJobId : null;
+      if (cancelledJobId) {
+        try {
+          const cleanup = await purgeJob(cancelledJobId);
+          activeJobId = null;
+          currentStep = null;
+          lastError = null;
+          prompt = null;
+          pushActivity(
+            cleanup.removed
+              ? `Lavorazione annullata e rimossa con ${cleanup.removed} screenshot`
+              : "Lavorazione annullata e dati rimossi",
+            "success",
+          );
+        } catch (error) {
+          lastError = `Annullamento non completato: ${error instanceof Error ? error.message : String(error)}`;
+          pushActivity(lastError, "error");
+        } finally {
+          cancellingJobId = null;
+        }
+      }
       active = false;
       activePrompts = null;
-      void publishState();
+      activeRunPromise = null;
+      await publishState();
     });
+  activeRunPromise = runPromise;
+  void runPromise;
 }
 
 async function healthChecks() {
@@ -365,7 +415,35 @@ function registerIpc() {
     await publishState();
     return true;
   });
-  ipcMain.handle("desktop:answer-prompt", (_event, values: { promptId: string; decision?: AssistedDecision }) => {
+  ipcMain.handle("desktop:cancel-job", async (_event, jobId: string) => {
+    if (!jobId) throw new Error("Identificativo lavorazione mancante");
+    if (active) {
+      if (activeJobId !== jobId) throw new Error("Attendi la fine della lavorazione attiva prima di annullarne un'altra");
+      if (cancellingJobId !== jobId) {
+        cancellingJobId = jobId;
+        activePrompts?.cancel("Annullamento definitivo richiesto");
+        pushActivity("Annullamento in corso: arresto sicuro del worker", "warning");
+        await publishState();
+      }
+      const pendingRun = activeRunPromise;
+      if (!pendingRun) return { deleted: false, pending: true };
+      await pendingRun;
+      if (activeJobId === jobId) throw new Error(lastError ?? "Annullamento non completato");
+      return { deleted: true };
+    }
+
+    const cleanup = await purgeJob(jobId);
+    if (activeJobId === jobId) {
+      activeJobId = null;
+      currentStep = null;
+      lastError = null;
+      prompt = null;
+    }
+    pushActivity("Lavorazione annullata e dati rimossi", "success");
+    await publishState();
+    return { deleted: true, screenshotsRemoved: cleanup.removed };
+  });
+  ipcMain.handle("desktop:answer-prompt", (_event, values: { promptId: string; decision?: PromptResponse }) => {
     activePrompts?.respond(values.promptId, values.decision);
     return true;
   });

@@ -2,7 +2,7 @@ import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey, normalizeTaxCode } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
 import { logger } from "../logger.js";
-import type { CadastralProperty, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
+import type { AcquisitionReview, CadastralProperty, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
@@ -64,6 +64,7 @@ export interface RunnerOptions {
   prompts?: PromptController;
   onEvent?: (event: RunnerEvent) => void;
   keepAlive?: boolean;
+  isCancellationRequested?: (jobId: string) => boolean;
 }
 
 export class PropertyWorkerRunner {
@@ -71,12 +72,20 @@ export class PropertyWorkerRunner {
   private readonly prompts: PromptController;
   private readonly onEvent: (event: RunnerEvent) => void;
   private readonly manageKeepAlive: boolean;
+  private readonly isCancellationRequested: (jobId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
     this.prompts = options.prompts ?? new WorkerPrompts();
     this.onEvent = options.onEvent ?? (() => undefined);
     this.manageKeepAlive = options.keepAlive !== false;
+    this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
+  }
+
+  private throwIfCancellationRequested(jobId: string) {
+    if (this.isCancellationRequested(jobId)) {
+      throw new WorkerError("Lavorazione annullata dall'utente", "paused", { cancelled: true });
+    }
   }
 
   async run(input: { mode?: WorkerMode; jobId?: string; createNew?: boolean }) {
@@ -120,6 +129,7 @@ export class PropertyWorkerRunner {
 
     try {
       while (true) {
+        this.throwIfCancellationRequested(job.id);
         job = await this.repository.getJob(job.id);
         if (job.status === "paused") throw new WorkerError("Job messo in pausa", "paused");
         const step = state.current;
@@ -127,6 +137,7 @@ export class PropertyWorkerRunner {
         const stepId = await this.repository.beginStep(job.id, step);
         try {
           const output = await this.executeStep(step, job, sister, crm, contacts);
+          this.throwIfCancellationRequested(job.id);
           const next = state.complete(step);
           await this.repository.completeStep(job.id, stepId, step, next, output);
           this.onEvent({ type: "step-completed", jobId: job.id, step, next, output });
@@ -183,7 +194,9 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         const peopleIds = new Set(graph.people.map((person) => person.id));
         for (const property of graph.properties) {
+          this.throwIfCancellationRequested(job.id);
           for (const owner of await sister.extractOwners(asProperty(property))) {
+            this.throwIfCancellationRequested(job.id);
             peopleIds.add((await this.repository.insertOwner(job.id, property.id, owner)).id);
           }
         }
@@ -208,19 +221,54 @@ export class PropertyWorkerRunner {
         ]);
         return { properties: graph.properties.length, people: graph.people.length };
       }
+      case "acquisition_reviewed": {
+        const graph = await this.repository.loadGraph(job.id);
+        const review: AcquisitionReview = {
+          municipality: job.municipality,
+          street: job.street,
+          civicNumber: job.civic_number,
+          properties: graph.properties.map((property) => ({
+            id: property.id,
+            cadastralKey: property.cadastral_key,
+            address: property.address,
+            category: property.category,
+            class: property.class,
+            consistency: property.consistency,
+            cadastralIncome: property.cadastral_income,
+            owners: graph.ownerships
+              .filter((ownership) => ownership.property_id === property.id)
+              .map((ownership) => graph.people.find((person) => person.id === ownership.person_id))
+              .filter((person): person is PersonRow => Boolean(person))
+              .map((person) => ({
+                id: person.id,
+                fullName: person.full_name,
+                taxCode: person.tax_code,
+                birthPlace: person.birth_place,
+                birthDate: person.birth_date,
+                sharePercentage: graph.ownerships.find((ownership) => ownership.property_id === property.id && ownership.person_id === person.id)?.share_percentage ?? null,
+              })),
+          })),
+        };
+        if (await this.prompts.reviewAcquisition(review) === "cancel") {
+          throw new WorkerError("Acquisizione annullata dal riepilogo. Premi “Riprendi” per controllarla di nuovo.", "paused", { propertyCount: review.properties.length });
+        }
+        return { confirmed: true, propertyCount: review.properties.length, ownerCount: graph.people.length };
+      }
       case "person_searched": {
         const graph = await this.repository.loadGraph(job.id);
         for (const row of graph.people) {
-          if (["matched", "not_found"].includes(row.processing_status) && Array.isArray(row.raw_payload?.crm_matches)) continue;
+          this.throwIfCancellationRequested(job.id);
+          if (["matched", "not_found", "duplicate_candidates"].includes(row.processing_status) && Array.isArray(row.raw_payload?.crm_matches)) continue;
           const person = asPerson(row);
           if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
           const result = await crm.findPerson({ taxCode: person.taxCode, phones: [], fullName: person.fullName, birthDate: person.birthDate });
           if (result.matches.length > 1) {
-            throw new WorkerError(
-              `Il gestionale ha trovato ${result.matches.length} schede per lo stesso codice fiscale. Apri manualmente la scheda cliente corretta nei risultati, poi premi “Riprendi”.`,
-              "needs_review",
-              { personId: row.id, alternatives: result.matches },
-            );
+            await this.repository.updatePersonProcessing(row.id, {
+              crm_record_id: null,
+              processing_status: "duplicate_candidates",
+              raw_payload: { ...(row.raw_payload ?? {}), crm_matches: result.matches, force_new_person: true },
+            });
+            continue;
           }
           const onlyMatch = result.matches[0];
           if (onlyMatch?.confidence === "possible") {
@@ -240,25 +288,110 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         let processed = 0;
         for (const row of graph.people) {
+          this.throwIfCancellationRequested(job.id);
+          if (["synced", "dry_run", "merge_pending", "merge_simulated", "merge_blocked"].includes(row.processing_status)) { processed += 1; continue; }
+          if (row.processing_status === "creation_started") {
+            const inspection = await crm.inspectPersonMerge();
+            if (inspection.status === "completed" && inspection.personId) {
+              await this.repository.updatePersonProcessing(row.id, { crm_record_id: inspection.personId, processing_status: "synced" });
+            } else {
+              await this.repository.updatePersonProcessing(row.id, {
+                processing_status: "merge_pending",
+                raw_payload: { ...(row.raw_payload ?? {}), merge_inspection: inspection },
+              });
+            }
+            processed += 1;
+            continue;
+          }
           const person = asPerson(row);
+          const matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : [];
+          const duplicateCandidateIds = matches.length > 1
+            ? matches.map((match) => match && typeof match === "object" && "id" in match ? String(match.id) : "").filter(Boolean)
+            : [];
+          const forceNewPerson = row.raw_payload?.force_new_person === true;
           if (job.mode === "assisted") {
-            const decision = await this.prompts.confirmSave(`${personSummary(person)}\nModifica prevista: ${row.crm_record_id ? "verifica e aggiornamento nominativo" : "creazione nominativo"}\nCampi: anagrafica SISTER e codice fiscale. I recapiti Excel saranno controllati dopo l'attività.`);
+            const duplicateNotice = duplicateCandidateIds.length
+              ? `\nIl codice fiscale compare in ${duplicateCandidateIds.length} schede. Verrà creato un nuovo nominativo e il merge sarà confermato soltanto dopo l’esito sicuro del Cloud.`
+              : "";
+            const decision = await this.prompts.confirmSave(`${personSummary(person)}\nModifica prevista: ${row.crm_record_id && !forceNewPerson ? "verifica e aggiornamento nominativo" : "creazione nominativo"}${duplicateNotice}\nCampi: anagrafica SISTER e codice fiscale. I recapiti Excel saranno controllati dopo l'attività.`);
             if (decision === "skip") { await this.repository.updatePersonProcessing(row.id, { processing_status: "skipped" }); continue; }
             if (decision === "review") throw new WorkerError("Nominativo segnato da verificare", "needs_review", { personId: row.id });
             if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePersonProcessing(row.id, { processing_status: "manual" }); processed += 1; continue; }
           }
           await this.logPersonChanges(job.id, row, person);
-          if (row.crm_record_id) await crm.updatePerson(row.crm_record_id, person);
-          else await this.repository.updatePersonProcessing(row.id, { crm_record_id: await crm.createPerson(person) });
-          await this.repository.updatePersonProcessing(row.id, { processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
+          if (row.crm_record_id && !forceNewPerson) {
+            await crm.updatePerson(row.crm_record_id, person);
+            await this.repository.updatePersonProcessing(row.id, { processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
+          } else {
+            const creation = await crm.createPerson(
+              person,
+              duplicateCandidateIds,
+              duplicateCandidateIds.length
+                ? () => this.repository.updatePersonProcessing(row.id, { processing_status: "creation_started" })
+                : undefined,
+            );
+            const mergeStatus = duplicateCandidateIds.length && creation.mergeStatus === "not_required" ? "pending" : creation.mergeStatus;
+            await this.repository.updatePersonProcessing(row.id, {
+              crm_record_id: creation.personId,
+              processing_status: mergeStatus === "simulated" ? "merge_simulated" : ["pending", "ready", "blocked"].includes(mergeStatus) ? "merge_pending" : this.config.WORKER_DRY_RUN ? "dry_run" : "synced",
+              raw_payload: { ...(row.raw_payload ?? {}), person_creation: { ...creation, mergeStatus } },
+            });
+          }
           processed += 1;
         }
         await this.repository.updateJob(job.id, { processed_people: processed });
         return { processed, dryRun: this.config.WORKER_DRY_RUN };
       }
+      case "person_merge_reviewed": {
+        const graph = await this.repository.loadGraph(job.id);
+        let reviewed = 0;
+        for (const row of graph.people) {
+          this.throwIfCancellationRequested(job.id);
+          if (row.processing_status === "merge_simulated") {
+            await this.repository.updatePersonProcessing(row.id, { processing_status: "dry_run" });
+            reviewed += 1;
+            continue;
+          }
+          if (!["merge_pending", "merge_blocked"].includes(row.processing_status)) continue;
+          const inspection = await crm.inspectPersonMerge();
+          await this.repository.updatePersonProcessing(row.id, {
+            processing_status: inspection.status === "blocked" ? "merge_blocked" : "merge_pending",
+            raw_payload: { ...(row.raw_payload ?? {}), merge_inspection: inspection },
+          });
+          if (inspection.status === "blocked") {
+            throw new WorkerError(`Il Cloud ha bloccato il merge: ${inspection.message}. Risolvi manualmente il conflitto e premi “Riprendi”.`, "needs_review", { personId: row.id, merge: inspection }, true);
+          }
+          if (inspection.status === "pending") {
+            throw new WorkerError(`Il merge non è ancora confermabile: ${inspection.message}. Controlla la finestra del gestionale e premi “Riprendi”.`, "needs_review", { personId: row.id, merge: inspection }, true);
+          }
+          if (inspection.status === "completed" && inspection.personId) {
+            await this.repository.updatePersonProcessing(row.id, { crm_record_id: inspection.personId, processing_status: "synced" });
+            reviewed += 1;
+            continue;
+          }
+          if (inspection.status !== "ready") {
+            throw new WorkerError("Stato merge non riconosciuto. Non è stata eseguita alcuna conferma.", "needs_review", { personId: row.id, merge: inspection }, true);
+          }
+          if (job.mode === "assisted" && await this.prompts.confirmMerge(`${inspection.message}\nIl gestionale non segnala problemi. Confermare adesso il merge dei nominativi?`) === "manual") {
+            throw new WorkerError("Merge lasciato alla gestione manuale. Completalo nel gestionale e premi “Riprendi”.", "needs_review", { personId: row.id, merge: inspection }, true);
+          }
+          const confirmed = await crm.confirmPersonMerge();
+          if (confirmed.status !== "completed" || !confirmed.personId) {
+            throw new WorkerError(`Il merge non risulta concluso: ${confirmed.message}. Verifica il gestionale e premi “Riprendi”.`, "needs_review", { personId: row.id, merge: confirmed }, true);
+          }
+          await this.repository.updatePersonProcessing(row.id, {
+            crm_record_id: confirmed.personId,
+            processing_status: "synced",
+            raw_payload: { ...(row.raw_payload ?? {}), merge_inspection: inspection, merge_confirmation: confirmed },
+          });
+          reviewed += 1;
+        }
+        return { reviewed, dryRun: this.config.WORKER_DRY_RUN };
+      }
       case "property_searched": {
         const graph = await this.repository.loadGraph(job.id);
         for (const row of graph.properties) {
+          this.throwIfCancellationRequested(job.id);
           if (["matched", "not_found"].includes(row.processing_status) && Object.prototype.hasOwnProperty.call(row.raw_payload ?? {}, "checked_from_people")) continue;
           const owners = graph.ownerships
             .filter((ownership) => ownership.property_id === row.id)
@@ -266,6 +399,7 @@ export class PropertyWorkerRunner {
             .filter((person): person is PersonRow => Boolean(person?.crm_record_id));
           const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
           for (const owner of owners) {
+            this.throwIfCancellationRequested(job.id);
             const result = await crm.findPropertyForPerson(owner.crm_record_id!, asProperty(row));
             if (result.match && !matches.some((match) => match.id === result.match!.id)) matches.push(result.match);
           }
@@ -285,6 +419,7 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         let processed = 0;
         for (const row of graph.properties) {
+          this.throwIfCancellationRequested(job.id);
           const property = asProperty(row);
           const owner = graph.ownerships.find((item) => item.property_id === row.id);
           const person = graph.people.find((item) => item.id === owner?.person_id);
@@ -307,6 +442,7 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         let created = 0;
         for (const property of graph.properties) {
+          this.throwIfCancellationRequested(job.id);
           if (!property.crm_record_id) continue;
           const existingActivities = property.raw_payload?.worker_activities && typeof property.raw_payload.worker_activities === "object"
             ? property.raw_payload.worker_activities as Record<string, Record<string, unknown>>
@@ -314,6 +450,7 @@ export class PropertyWorkerRunner {
           const activities = { ...existingActivities };
           const ownerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
           for (const ownership of ownerships) {
+            this.throwIfCancellationRequested(job.id);
             const person = graph.people.find((candidate) => candidate.id === ownership.person_id);
             if (!person?.crm_record_id || activities[person.id]) continue;
             if (job.mode === "assisted") {
@@ -340,6 +477,7 @@ export class PropertyWorkerRunner {
         let matched = 0;
         let updated = 0;
         for (const row of graph.people) {
+          this.throwIfCancellationRequested(job.id);
           const match = contacts.findByTaxCode(row.tax_code ?? "");
           await this.repository.updateContacts(row.id, match, row.raw_payload);
           if (!match.matchedRows) continue;
@@ -363,6 +501,7 @@ export class PropertyWorkerRunner {
         let linked = 0;
         const linkedOwnersByProperty = new Map<string, Set<string>>();
         for (const ownership of graph.ownerships) {
+          this.throwIfCancellationRequested(job.id);
           if (ownership.crm_link_id) continue;
           const property = graph.properties.find((item) => item.id === ownership.property_id);
           const person = graph.people.find((item) => item.id === ownership.person_id);
@@ -422,6 +561,7 @@ export class PropertyWorkerRunner {
     const match = row.raw_payload?.crm_match && typeof row.raw_payload.crm_match === "object" ? row.raw_payload.crm_match as Record<string, unknown> : {};
     const previous = match.data && typeof match.data === "object" ? match.data as Record<string, unknown> : {};
     const fields: Record<string, unknown> = {
+      sheet: property.sheet, parcel: property.parcel, subaltern: property.subaltern,
       address: property.address, census_zone: property.censusZone, category: property.category,
       class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
     };

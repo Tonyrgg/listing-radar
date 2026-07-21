@@ -35,7 +35,52 @@ describe("adattatori con fixture HTML", () => {
       const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
       expect(await adapter.detectPage()).toBe(true);
       expect((await adapter.findPerson({ taxCode: "CQVMRS49L66A893R", phones: [], fullName: "Maria", birthDate: null })).matches[0]?.id).toBe("P-42");
-      expect((await adapter.findPropertyForPerson("P-42", { municipality: "BITONTO", sheet: "58", parcel: "1234", subaltern: "7" })).match?.id).toBe("I-42");
+      const property = {
+        municipality: "BITONTO", sheet: "58", parcel: "1234", subaltern: "7", address: "Via Roma 12",
+        censusZone: null, category: "A/3", class: "2", consistency: "5 vani", cadastralIncome: 432.1, rawPayload: {},
+      };
+      expect((await adapter.findPropertyForPerson("P-42", property)).match?.id).toBe("I-42");
+      expect((await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match?.data.matchedBy).toBe("street-and-civic");
+    } finally { await browser.close(); }
+  });
+
+  it("conferma il merge soltanto quando la fixture Cloud non segnala problemi", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      const created = await adapter.createPerson({
+        fullName: "ACQUAVIVA MARIA ROSARIA", birthPlace: "Bitonto", birthProvince: "BA", birthDate: "1949-07-26",
+        taxCode: "CQVMRS49L66A893R", rightType: "Proprietà", shareOriginal: "1/1", shareNumerator: 1,
+        shareDenominator: 1, sharePercentage: 100, mobiles: [], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      }, ["P-1", "P-2"]);
+      expect(created.mergeStatus).toBe("ready");
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "completed", personId: "P-99" });
+    } finally { await browser.close(); }
+  });
+
+  it("non conferma un merge quando la fixture Cloud segnala un conflitto", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator('[data-worker-crm="personMergeReady"]').evaluate((element) => element.remove());
+      await page.locator('[data-worker-crm="personMergeDialog"]').evaluate((dialog) => {
+        const blocked = document.createElement("span");
+        blocked.setAttribute("data-worker-crm", "personMergeBlocked");
+        blocked.textContent = "Conflitto Cloud";
+        dialog.append(blocked);
+      });
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      const created = await adapter.createPerson({
+        fullName: "ACQUAVIVA MARIA ROSARIA", birthPlace: "Bitonto", birthProvince: "BA", birthDate: "1949-07-26",
+        taxCode: "CQVMRS49L66A893R", rightType: "Proprietà", shareOriginal: "1/1", shareNumerator: 1,
+        shareDenominator: 1, sharePercentage: 100, mobiles: [], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      }, ["P-1", "P-2"]);
+      expect(created.mergeStatus).toBe("blocked");
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "blocked", personId: null });
+      expect(await page.locator('[data-worker-crm="personMergeDialog"]').isVisible()).toBe(true);
     } finally { await browser.close(); }
   });
 });

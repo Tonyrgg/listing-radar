@@ -1,13 +1,13 @@
 const STEPS = [
-  "ready", "sister_results_acquired", "properties_extracted", "owners_extracted", "data_normalized",
-  "person_searched", "person_created_or_updated", "property_searched", "property_created_or_updated",
+  "ready", "sister_results_acquired", "properties_extracted", "owners_extracted", "data_normalized", "acquisition_reviewed",
+  "person_searched", "person_created_or_updated", "person_merge_reviewed", "property_searched", "property_created_or_updated",
   "activity_created", "contacts_matched", "owners_linked", "verified", "completed",
 ];
 
 const LABELS = {
   ready: "Preparazione", sister_results_acquired: "Risultati SISTER", properties_extracted: "Immobili estratti",
-  owners_extracted: "Proprietari estratti", data_normalized: "Dati normalizzati", contacts_matched: "Recapiti Excel abbinati",
-  person_searched: "Ricerca nominativi", person_created_or_updated: "Nominativi sincronizzati",
+  owners_extracted: "Proprietari estratti", data_normalized: "Dati normalizzati", acquisition_reviewed: "Riepilogo acquisizione", contacts_matched: "Recapiti Excel abbinati",
+  person_searched: "Ricerca nominativi", person_created_or_updated: "Nominativi sincronizzati", person_merge_reviewed: "Merge nominativi verificato",
   property_searched: "Immobili del nominativo", property_created_or_updated: "Immobili sincronizzati",
   activity_created: "Attività da eseguire",
   owners_linked: "Comproprietari collegati", verified: "Verifica finale", completed: "Completato",
@@ -18,6 +18,8 @@ let appState = null;
 let checks = [];
 let selectedMode = "assisted";
 let toastTimer = null;
+let pendingCancelJobId = null;
+let cancelInFlight = false;
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
@@ -66,6 +68,9 @@ function renderSteps() {
 }
 
 function promptButtons(prompt) {
+  if (prompt.kind === "merge") return `
+    <button class="button button-light" data-prompt="confirm">Conferma merge</button>
+    <button class="button button-outline" data-prompt="manual">Risolvo manualmente</button>`;
   if (prompt.kind === "decision") return `
     <button class="button button-light" data-prompt="confirm">Conferma</button>
     <button class="button button-outline" data-prompt="skip">Salta</button>
@@ -74,15 +79,87 @@ function promptButtons(prompt) {
   return `<button class="button button-light" data-prompt="confirm">${prompt.kind === "acquisition" ? "Acquisisci risultati" : "Ho terminato"}</button>`;
 }
 
+function formatMoney(value) {
+  return value == null ? "—" : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(value);
+}
+
+function cancelProcessButton(jobId) {
+  return jobId ? `<button class="button button-destructive" data-cancel-job="${escapeHtml(jobId)}">Annulla processo</button>` : "";
+}
+
+function setCancelDialogBusy(busy) {
+  const dialog = $("cancelProcessDialog");
+  cancelInFlight = busy;
+  dialog.setAttribute("aria-busy", String(busy));
+  dialog.querySelectorAll("button").forEach((button) => { button.disabled = busy; });
+}
+
+function openCancelDialog(jobId) {
+  const knownJob = appState?.jobs?.some((job) => job.id === jobId) || appState?.activeJobId === jobId;
+  if (!jobId || !knownJob) {
+    toast("La lavorazione non è più disponibile");
+    return;
+  }
+  pendingCancelJobId = jobId;
+  setCancelDialogBusy(false);
+  const dialog = $("cancelProcessDialog");
+  if (!dialog.open) dialog.showModal();
+  requestAnimationFrame(() => dialog.querySelector('[data-cancel-dialog="close"]')?.focus());
+}
+
+function renderAcquisitionReview() {
+  const dialog = $("acquisitionReviewDialog");
+  const review = appState?.prompt?.kind === "acquisition-review" ? appState.prompt.review : null;
+  if (!review) {
+    if (dialog.open) dialog.close();
+    return;
+  }
+  const place = [review.municipality, review.street, review.civicNumber].filter(Boolean).join(" · ");
+  $("acquisitionReviewContext").textContent = place || "Contesto acquisito dalla pagina risultati";
+  $("acquisitionReviewCount").textContent = `${review.properties.length} ${review.properties.length === 1 ? "immobile" : "immobili"}`;
+  $("acquisitionReviewContent").innerHTML = review.properties.map((property, index) => `
+    <article class="review-property">
+      <section class="review-property-data">
+        <span class="review-index">${String(index + 1).padStart(2, "0")}</span>
+        <p class="kicker">Immobile</p>
+        <h3>${escapeHtml(property.address ?? "Indirizzo non disponibile")}</h3>
+        <p class="cadastral-key">${escapeHtml(property.cadastralKey)}</p>
+        <dl>
+          <div><dt>Categoria</dt><dd>${escapeHtml(property.category ?? "—")}</dd></div>
+          <div><dt>Classe</dt><dd>${escapeHtml(property.class ?? "—")}</dd></div>
+          <div><dt>Consistenza</dt><dd>${escapeHtml(property.consistency ?? "—")}</dd></div>
+          <div><dt>Rendita</dt><dd>${escapeHtml(formatMoney(property.cadastralIncome))}</dd></div>
+        </dl>
+      </section>
+      <section class="review-owners">
+        <div class="review-owners-heading"><p class="kicker">Proprietari</p><span>${property.owners.length}</span></div>
+        ${property.owners.length ? property.owners.map((owner) => `
+          <div class="review-owner">
+            <div><strong>${escapeHtml(owner.fullName)}</strong><small>${escapeHtml(owner.taxCode ?? "CF mancante")}</small></div>
+            <div><span>${escapeHtml([owner.birthPlace, owner.birthDate].filter(Boolean).join(" · ") || "Nascita non disponibile")}</span><b>${owner.sharePercentage == null ? "Quota n/d" : `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 }).format(owner.sharePercentage)}%`}</b></div>
+          </div>`).join("") : `<p class="review-empty">Nessun proprietario associato.</p>`}
+      </section>
+    </article>`).join("");
+  if (!dialog.open) dialog.showModal();
+}
+
 function renderAction() {
   const panel = $("actionPanel");
   if (appState?.configError) {
     panel.innerHTML = `<div class="action-number">!</div><div class="action-copy"><p class="kicker">Prima configurazione</p><h3>Collega il file worker/.env</h3><p>Seleziona il file locale di configurazione. Il suo contenuto resterà nel processo protetto dell’app.</p></div><div class="action-buttons"><button class="button button-light" data-action="config">Vai alla configurazione</button></div>`;
     return;
   }
+  if (appState?.cancellingJobId) {
+    panel.innerHTML = `<div class="action-number">…</div><div class="action-copy"><p class="kicker">Annullamento in corso</p><h3>Arresto sicuro del worker</h3><p>Attendo che l’operazione già iniziata termini, poi elimino la lavorazione e tutti i dati collegati.</p></div><div class="action-buttons"><button class="button button-outline" disabled>Attendere…</button></div>`;
+    return;
+  }
   if (appState?.prompt) {
+    if (appState.prompt.kind === "acquisition-review") {
+      panel.innerHTML = `<div class="action-number">✓</div><div class="action-copy"><p class="kicker">Raccolta completata</p><h3>Controlla immobili e proprietari</h3><p>I dati SISTER sono pronti. Il confronto con il gestionale inizierà soltanto dopo la tua conferma.</p></div><div class="action-buttons"><button class="button button-light" data-action="open-review">Apri riepilogo</button>${cancelProcessButton(appState.activeJobId)}</div>`;
+      return;
+    }
     panel.classList.remove("is-empty");
-    panel.innerHTML = `<div class="action-number">!</div><div class="action-copy"><p class="kicker">Richiede la tua attenzione</p><h3>${escapeHtml(appState.prompt.title)}</h3><p>${escapeHtml(appState.prompt.summary)}</p></div><div class="action-buttons">${promptButtons(appState.prompt)}</div>`;
+    panel.innerHTML = `<div class="action-number">!</div><div class="action-copy"><p class="kicker">Richiede la tua attenzione</p><h3>${escapeHtml(appState.prompt.title)}</h3><p>${escapeHtml(appState.prompt.summary)}</p></div><div class="action-buttons">${promptButtons(appState.prompt)}${cancelProcessButton(appState.activeJobId)}</div>`;
     return;
   }
   if (appState?.lastError) {
@@ -90,11 +167,11 @@ function renderAction() {
     const completedLabel = LABELS[job?.last_completed_step] ?? "Preparazione";
     const completedIndex = STEPS.indexOf(job?.last_completed_step);
     const nextLabel = LABELS[STEPS[Math.min(Math.max(0, completedIndex + 1), STEPS.length - 1)]] ?? "passaggio successivo";
-    panel.innerHTML = `<div class="action-number">×</div><div class="action-copy"><p class="kicker">Avanzamento salvato</p><h3>La lavorazione si è fermata</h3><p>${escapeHtml(appState.lastError)}\nUltimo passaggio completato: ${escapeHtml(completedLabel)}. La ripresa partirà da ${escapeHtml(nextLabel)}.</p></div><div class="action-buttons">${appState.activeJobId && !appState.active ? `<button class="button button-light" data-action="resume-current">Riprendi lavorazione</button>` : ""}<button class="button button-outline" data-action="checks">Controlla sistema</button></div>`;
+    panel.innerHTML = `<div class="action-number">×</div><div class="action-copy"><p class="kicker">Avanzamento salvato</p><h3>La lavorazione si è fermata</h3><p>${escapeHtml(appState.lastError)}\nUltimo passaggio completato: ${escapeHtml(completedLabel)}. La ripresa partirà da ${escapeHtml(nextLabel)}.</p></div><div class="action-buttons">${appState.activeJobId && !appState.active ? `<button class="button button-light" data-action="resume-current">Riprendi lavorazione</button>` : ""}<button class="button button-outline" data-action="checks">Controlla sistema</button>${cancelProcessButton(appState.activeJobId)}</div>`;
     return;
   }
   if (appState?.active) {
-    panel.innerHTML = `<div class="action-number">→</div><div class="action-copy"><p class="kicker">Worker in esecuzione</p><h3>${escapeHtml(LABELS[appState.currentStep] ?? "Elaborazione in corso")}</h3><p>Puoi continuare a lavorare soltanto quando compare una richiesta di conferma. L’avanzamento viene salvato dopo ogni passaggio.</p></div><div class="action-buttons"><button class="button danger" data-action="pause">Metti in pausa</button></div>`;
+    panel.innerHTML = `<div class="action-number">→</div><div class="action-copy"><p class="kicker">Worker in esecuzione</p><h3>${escapeHtml(LABELS[appState.currentStep] ?? "Elaborazione in corso")}</h3><p>Puoi continuare a lavorare soltanto quando compare una richiesta di conferma. L’avanzamento viene salvato dopo ogni passaggio.</p></div><div class="action-buttons"><button class="button danger" data-action="pause">Metti in pausa</button>${cancelProcessButton(appState.activeJobId)}</div>`;
     return;
   }
   panel.innerHTML = `<div class="action-number">01</div><div class="action-copy"><p class="kicker">Prossima azione</p><h3>Prepara le due schede</h3><p>Apri SISTER e il gestionale nel Chrome dedicato, completa gli accessi e porta SISTER ai risultati.</p></div><div class="action-buttons"><button class="button button-light" data-action="checks">Verifica adesso</button></div>`;
@@ -112,9 +189,10 @@ function renderJobs() {
   $("jobCount").textContent = jobs.length;
   $("jobsList").innerHTML = jobs.length ? jobs.map((job) => {
     const canResume = job.status !== "completed" && (!appState.active || job.id !== appState.activeJobId);
+    const canCancel = job.status !== "completed" && (!appState.active || job.id === appState.activeJobId);
     const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Job ${job.id.slice(0, 8)}`;
     const issue = job.error_message ? `<br><span class="job-issue" title="${escapeHtml(job.error_message)}">${escapeHtml(job.error_message)}</span>` : "";
-    return `<article class="job-item ${jobTone(job.status)}"><span></span><div><b title="${escapeHtml(place)}">${escapeHtml(place)}</b><small>${escapeHtml(job.mode)} · ${escapeHtml(LABELS[job.last_completed_step] ?? "Non avviato")}<br>${dateTime(job.updated_at ?? job.created_at)}${issue}</small></div><div class="job-actions"><button class="text-button" data-detail-job="${job.id}">Dettagli</button>${canResume ? `<button class="text-button" data-resume-job="${job.id}">Riprendi</button>` : ""}</div></article>`;
+    return `<article class="job-item ${jobTone(job.status)}"><span></span><div><b title="${escapeHtml(place)}">${escapeHtml(place)}</b><small>${escapeHtml(job.mode)} · ${escapeHtml(LABELS[job.last_completed_step] ?? "Non avviato")}<br>${dateTime(job.updated_at ?? job.created_at)}${issue}</small></div><div class="job-actions"><button class="text-button" data-detail-job="${job.id}">Dettagli</button>${canResume ? `<button class="text-button" data-resume-job="${job.id}">Riprendi</button>` : ""}${canCancel ? `<button class="text-button is-destructive" data-cancel-job="${job.id}">Annulla</button>` : ""}</div></article>`;
   }).join("") : `<p class="empty-message">Nessuna lavorazione disponibile.</p>`;
 }
 
@@ -140,7 +218,7 @@ function render() {
   $("runBadge").className = `run-badge ${appState.active ? "is-running" : appState.lastError ? "is-error" : appState.currentStep === "completed" ? "is-complete" : "is-idle"}`;
   $("runBadge").innerHTML = `<span></span>${appState.active ? "In esecuzione" : appState.lastError ? "Interrotta, riprendibile" : appState.currentStep === "completed" ? "Completato" : "In attesa"}`;
   $("operationTitle").textContent = appState.active ? (LABELS[appState.currentStep] ?? "Lavorazione in corso") : appState.lastError ? "Lavorazione interrotta · avanzamento salvato" : "Pronto per una nuova acquisizione";
-  renderChecks(); renderSteps(); renderAction(); renderJobs(); renderActivity();
+  renderChecks(); renderSteps(); renderAction(); renderJobs(); renderActivity(); renderAcquisitionReview();
 }
 
 async function runChecks() {
@@ -159,10 +237,33 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target) return;
   try {
-    if (target.dataset.mode) {
+    if (target.dataset.cancelJob) {
+      openCancelDialog(target.dataset.cancelJob);
+    } else if (target.dataset.action === "cancel-current") {
+      openCancelDialog(appState?.activeJobId);
+    } else if (target.dataset.cancelDialog === "close") {
+      if (!cancelInFlight) $("cancelProcessDialog").close();
+    } else if (target.dataset.cancelDialog === "confirm") {
+      if (!pendingCancelJobId || cancelInFlight) return;
+      const jobId = pendingCancelJobId;
+      setCancelDialogBusy(true);
+      try {
+        const result = await window.propertyWorker.cancelJob(jobId);
+        setCancelDialogBusy(false);
+        $("cancelProcessDialog").close();
+        toast(result?.pending ? "Annullamento in corso" : "Lavorazione annullata e dati rimossi");
+      } catch (error) {
+        setCancelDialogBusy(false);
+        toast(error.message ?? String(error));
+      }
+    } else if (target.dataset.mode) {
       selectedMode = target.dataset.mode;
       await window.propertyWorker.savePreferences({ mode: selectedMode });
-    } else if (target.id === "checkButton" || target.id === "actionCheckButton" || target.dataset.action === "checks") await runChecks();
+    } else if (target.dataset.reviewDecision && appState?.prompt?.kind === "acquisition-review") {
+      $("acquisitionReviewDialog").close();
+      await window.propertyWorker.answerPrompt({ promptId: appState.prompt.id, decision: target.dataset.reviewDecision });
+    } else if (target.dataset.action === "open-review") renderAcquisitionReview();
+    else if (target.id === "checkButton" || target.id === "actionCheckButton" || target.dataset.action === "checks") await runChecks();
     else if (target.id === "chromeButton") { await window.propertyWorker.openChrome(); toast("Chrome dedicato avviato"); }
     else if (target.id === "chooseExcelButton") { const result = await window.propertyWorker.chooseExcel(); if (result) toast("File Excel aggiornato"); }
     else if (target.id === "chooseEnvironmentButton") { const result = await window.propertyWorker.chooseEnvironment(); if (result) toast("Configurazione locale aggiornata"); }
@@ -170,7 +271,10 @@ document.addEventListener("click", async (event) => {
     else if (target.id === "pauseButton" || target.dataset.action === "pause") await window.propertyWorker.pauseJob();
     else if (target.dataset.action === "resume-current" && appState.activeJobId) await window.propertyWorker.resumeJob(appState.activeJobId);
     else if (target.dataset.action === "config") document.getElementById("settings")?.scrollIntoView({ behavior: "smooth" });
-    else if (target.dataset.prompt) await window.propertyWorker.answerPrompt({ promptId: appState.prompt.id, decision: target.dataset.prompt === "confirm" && appState.prompt.kind !== "decision" ? undefined : target.dataset.prompt });
+    else if (target.dataset.prompt) await window.propertyWorker.answerPrompt({
+      promptId: appState.prompt.id,
+      decision: target.dataset.prompt === "confirm" && ["acquisition", "manual"].includes(appState.prompt.kind) ? undefined : target.dataset.prompt,
+    });
     else if (target.dataset.resumeJob) await window.propertyWorker.resumeJob(target.dataset.resumeJob);
     else if (target.dataset.detailJob) {
       const detail = await window.propertyWorker.getJobDetails(target.dataset.detailJob);
@@ -191,3 +295,10 @@ $("dryRunToggle").addEventListener("change", async (event) => {
 
 window.propertyWorker.onState((state) => { appState = state; render(); });
 window.propertyWorker.getState().then((state) => { appState = state; render(); }).catch((error) => toast(error.message ?? String(error)));
+$("acquisitionReviewDialog").addEventListener("cancel", (event) => event.preventDefault());
+$("cancelProcessDialog").addEventListener("cancel", (event) => {
+  if (cancelInFlight) event.preventDefault();
+});
+$("cancelProcessDialog").addEventListener("close", () => {
+  if (!cancelInFlight) pendingCancelJobId = null;
+});

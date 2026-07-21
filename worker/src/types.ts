@@ -4,8 +4,10 @@ export const WORKFLOW_STEPS = [
   "properties_extracted",
   "owners_extracted",
   "data_normalized",
+  "acquisition_reviewed",
   "person_searched",
   "person_created_or_updated",
+  "person_merge_reviewed",
   "property_searched",
   "property_created_or_updated",
   "activity_created",
@@ -104,6 +106,44 @@ export interface PropertyMatchResult {
   match: { id: string; data: Record<string, unknown> } | null;
 }
 
+export interface AcquisitionReview {
+  municipality: string | null;
+  street: string | null;
+  civicNumber: string | null;
+  properties: Array<{
+    id: string;
+    cadastralKey: string;
+    address: string | null;
+    category: string | null;
+    class: string | null;
+    consistency: string | null;
+    cadastralIncome: number | null;
+    owners: Array<{
+      id: string;
+      fullName: string;
+      taxCode: string | null;
+      birthPlace: string | null;
+      birthDate: string | null;
+      sharePercentage: number | null;
+    }>;
+  }>;
+}
+
+export type PersonMergeStatus = "not_required" | "pending" | "ready" | "blocked" | "completed" | "simulated";
+
+export interface PersonCreationResult {
+  personId: string | null;
+  mergeStatus: PersonMergeStatus;
+  details: Record<string, unknown>;
+}
+
+export interface PersonMergeResult {
+  status: PersonMergeStatus;
+  personId: string | null;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 export interface CrmActivityInput {
   personId: string;
   propertyId: string;
@@ -121,9 +161,11 @@ export interface SisterAdapter {
 export interface CrmAdapter {
   detectPage(): Promise<boolean>;
   findPerson(input: PersonSearchInput): Promise<PersonMatchResult>;
-  createPerson(person: NormalizedPerson): Promise<string>;
+  createPerson(person: NormalizedPerson, duplicateCandidateIds?: string[], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult>;
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;
-  findPropertyForPerson(personId: string, key: CadastralKey): Promise<PropertyMatchResult>;
+  inspectPersonMerge(): Promise<PersonMergeResult>;
+  confirmPersonMerge(): Promise<PersonMergeResult>;
+  findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;
   createActivity(input: CrmActivityInput): Promise<string>;

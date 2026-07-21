@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCadastralKey, consolidateContacts, formatShareForUi, normalizeTaxCode, parseShare } from "../src/core/normalize.js";
+import { buildCadastralKey, consolidateContacts, formatShareForUi, normalizeTaxCode, parseShare, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -34,3 +34,21 @@ it("costruisce la chiave catastale tecnica", () => {
   expect(buildCadastralKey({ municipality: " bitonto ", sheet: "58", parcel: "1234", subaltern: "7" })).toBe("BITONTO|58|1234|7");
 });
 
+describe("confronto indirizzo immobile", () => {
+  it("riconosce via e civico identici nonostante punteggiatura e maiuscole", () => {
+    expect(sameStreetAndCivic("Via Roma, 12/A", "VIA ROMA 12 A")).toBe(true);
+  });
+
+  it("non considera esatto un civico o una via differente", () => {
+    expect(sameStreetAndCivic("Via Roma 12", "Via Roma 14")).toBe(false);
+    expect(sameStreetAndCivic("Via Roma 12", "Via Dante 12")).toBe(false);
+  });
+});
+
+it("separa nome e cognome usando il codice fiscale come verifica", () => {
+  expect(splitPersonName("ACQUAVIVA MARIA ROSARIA", "CQVMRS49L66A893R")).toEqual({
+    firstName: "MARIA ROSARIA",
+    lastName: "ACQUAVIVA",
+    verified: true,
+  });
+});

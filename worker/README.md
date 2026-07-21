@@ -96,15 +96,21 @@ Lascia `WORKER_DRY_RUN=true` e `WORKER_MODE=assisted`. Porta manualmente SISTER 
 
 Per ogni titolare il flusso operativo è:
 
-1. ricerca del nominativo tramite codice fiscale;
-2. verifica di foglio, particella e subalterno tra gli immobili collegati a quel nominativo;
-3. creazione o aggiornamento dell'immobile soltanto se necessario;
-4. preparazione di un'attività con stato **Da eseguire** e descrizione **Inserire attività**;
-5. matching dei recapiti Excel tramite codice fiscale e aggiunta dei recapiti mancanti;
-6. controllo finale dei soggetti collegati e delle quote di comproprietà.
+1. raccolta completa di immobili e proprietari da SISTER;
+2. riepilogo visuale con immobile a sinistra, proprietari e quote a destra;
+3. ricerca del nominativo tramite codice fiscale;
+4. in presenza di più schede, creazione di un nuovo nominativo e controllo del merge Cloud;
+5. conferma del merge soltanto quando il Cloud non segnala problemi;
+6. verifica degli immobili collegati al nominativo, prima per dati catastali e poi per via e civico identici;
+7. aggiornamento dei dati catastali discordanti usando SISTER come fonte prioritaria;
+8. preparazione di un'attività con stato **Da eseguire** e descrizione **Inserire attività**;
+9. matching dei recapiti Excel tramite codice fiscale e aggiunta dei recapiti mancanti;
+10. controllo finale dei soggetti collegati e delle quote di comproprietà.
 
-Se il gestionale restituisce più schede per lo stesso codice fiscale, il job passa a `needs_review`. Apri manualmente la scheda cliente corretta nei risultati del gestionale e premi **Riprendi lavorazione**: la scheda aperta viene usata come scelta esplicita.
+Se il gestionale restituisce più schede per lo stesso codice fiscale, il worker non chiede più di sceglierne una. Prepara una nuova scheda e tratta il merge come uno step persistente. Un esito Cloud sicuro può essere confermato; un conflitto porta il job in `needs_review` per la correzione manuale. **Riprendi lavorazione** torna direttamente alla verifica del merge senza ripetere SISTER o creare un altro nominativo.
 
 Ogni step viene registrato prima e dopo l'esecuzione. Anche gli elementi già elaborati all'interno di uno step vengono conservati: in caso di arresto, **Riprendi lavorazione** continua dal primo elemento non concluso senza ripetere quelli completati. Pausa e ripresa richieste dalla dashboard modificano solo Supabase: la web app non controlla Chrome.
+
+Nel software desktop, **Annulla processo** arresta il runner in modo cooperativo e poi elimina definitivamente il job con immobili, proprietari, quote, step, log e screenshot diagnostici collegati. **Interrompi e conserva** mantiene invece l'avanzamento per una ripresa successiva. Le operazioni già concluse nel gestionale esterno non possono essere annullate dal worker e la finestra di conferma lo segnala esplicitamente.
 
 Gli screenshot vengono creati solo per pagine non riconosciute, sessioni scadute o messaggi inattesi, e vengono rimossi dopo `ERROR_SCREENSHOT_RETENTION_DAYS`.

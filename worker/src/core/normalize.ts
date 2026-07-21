@@ -53,6 +53,56 @@ export function buildCadastralKey(key: CadastralKey): string {
     .join("|");
 }
 
+export function addressIdentity(value: string | null | undefined): { street: string; civic: string } | null {
+  const normalized = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[.,;:()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const match = normalized.match(/^(.*?\D)\s*(\d+)\s*(?:\/\s*)?([A-Z])?$/);
+  if (!match) return null;
+  const street = match[1]!.trim().replace(/\s+/g, " ");
+  const civic = `${match[2]}${match[3] ?? ""}`;
+  return street && civic ? { street, civic } : null;
+}
+
+export function sameStreetAndCivic(left: string | null | undefined, right: string | null | undefined): boolean {
+  const leftIdentity = addressIdentity(left);
+  const rightIdentity = addressIdentity(right);
+  return Boolean(
+    leftIdentity
+      && rightIdentity
+      && leftIdentity.street === rightIdentity.street
+      && leftIdentity.civic === rightIdentity.civic,
+  );
+}
+
+function fiscalNamePart(value: string, firstName: boolean) {
+  const letters = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z]/g, "");
+  const consonants = letters.replace(/[AEIOU]/g, "");
+  const vowels = letters.replace(/[^AEIOU]/g, "");
+  if (firstName && consonants.length >= 4) return `${consonants[0]}${consonants[2]}${consonants[3]}`;
+  return `${consonants}${vowels}XXX`.slice(0, 3);
+}
+
+export function splitPersonName(fullName: string, taxCode: string | null | undefined): { firstName: string; lastName: string; verified: boolean } {
+  const words = fullName.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  const normalizedTaxCode = normalizeTaxCode(taxCode);
+  if (words.length < 2) return { firstName: "", lastName: fullName.trim(), verified: false };
+  const expectedLastName = normalizedTaxCode.slice(0, 3);
+  const expectedFirstName = normalizedTaxCode.slice(3, 6);
+  for (let index = 1; index < words.length; index += 1) {
+    const lastName = words.slice(0, index).join(" ");
+    const firstName = words.slice(index).join(" ");
+    if (fiscalNamePart(lastName, false) === expectedLastName && fiscalNamePart(firstName, true) === expectedFirstName) {
+      return { firstName, lastName, verified: true };
+    }
+  }
+  return { firstName: words.slice(1).join(" "), lastName: words[0]!, verified: false };
+}
+
 export function consolidateContacts(
   taxCode: string,
   rows: Array<{ mobile?: unknown; landline?: unknown; email?: unknown; whatsapp?: unknown }>,
@@ -74,4 +124,3 @@ export function consolidateContacts(
     notes: allPhones.length > 2 ? [`Recapiti oltre i campi principali: ${allPhones.slice(2).join(", ")}`] : [],
   };
 }
-

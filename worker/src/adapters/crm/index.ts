@@ -1,14 +1,15 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
-import { formatShareForUi } from "../../core/normalize.js";
+import { formatShareForUi, sameStreetAndCivic, splitPersonName } from "../../core/normalize.js";
 import type {
-  CadastralKey,
   CrmActivityInput,
   CrmAdapter,
   NormalizedPerson,
   NormalizedProperty,
+  PersonCreationResult,
   PersonMatchResult,
+  PersonMergeResult,
   PersonSearchInput,
   PropertyMatchResult,
 } from "../../types.js";
@@ -152,13 +153,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   }
 
   private async readPropertyIdentity() {
-    this.require("propertySheetValue", "propertyParcelValue", "propertySubalternValue");
+    this.require("propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue");
     const read = async (selector: string) => (await this.page.locator(selector).first().textContent())?.trim() ?? "";
     return {
       sheet: await read(this.selectors.propertySheetValue),
       parcel: await read(this.selectors.propertyParcelValue),
       subaltern: await read(this.selectors.propertySubalternValue),
+      address: await read(this.selectors.propertyAddressValue),
     };
+  }
+
+  private async currentPersonId() {
+    const fromUrl = recordIdFromHref(this.page.url(), "account");
+    if (fromUrl) return fromUrl;
+    if (!this.selectors.recordId) return "";
+    return (await this.page.locator(this.selectors.recordId).first().textContent())?.trim() ?? "";
   }
 
   async detectPage(): Promise<boolean> {
@@ -169,7 +178,6 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   async findPerson(input: PersonSearchInput): Promise<PersonMatchResult> {
     return this.friendly("person-search", "Non riesco a completare la ricerca del nominativo.", async () => {
-      const manuallySelectedId = recordIdFromHref(this.page.url(), "account");
       this.require("personSearchPage", "personSearchTaxCode", "personSearchSubmit", "personResultRows", "personResultId", "personResultLabel", "personResultOpen");
       await this.page.locator(this.selectors.personSearchPage).first().click({ force: true });
       await this.page.waitForTimeout(700);
@@ -186,33 +194,115 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           }
         }
       }
-      const manuallySelected = manuallySelectedId ? matches.find((match) => match.id === manuallySelectedId) : undefined;
-      return { matches: manuallySelected ? [{ ...manuallySelected, data: { ...manuallySelected.data, manuallySelected: true } }] : matches };
+      return { matches };
     });
   }
 
   private async fillPerson(person: NormalizedPerson) {
+    const name = splitPersonName(person.fullName, person.taxCode);
+    if (this.selectors.personFirstName && this.selectors.personLastName && !name.verified) {
+      throw new WorkerError("Nome e cognome non sono separabili con certezza tramite il codice fiscale. Correggi manualmente l’anagrafica e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "person-name-split" });
+    }
+    const uiBirthDate = person.birthDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      ? person.birthDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3/$2/$1")
+      : person.birthDate ?? "";
     const fields: Array<[keyof CrmSelectors, string]> = [
-      ["personFullName", person.fullName], ["personBirthPlace", person.birthPlace ?? ""],
+      ...(this.selectors.personFirstName && this.selectors.personLastName
+        ? [["personFirstName", name.firstName], ["personLastName", name.lastName]] as Array<[keyof CrmSelectors, string]>
+        : [["personFullName", person.fullName]] as Array<[keyof CrmSelectors, string]>),
+      ["personBirthPlace", person.birthPlace ?? ""],
       ["personBirthProvince", person.birthProvince ?? ""], ["personBirthDate", person.birthDate ?? ""],
       ["personTaxCode", person.taxCode ?? ""], ["personMobile", person.mobiles[0] ?? ""],
       ["personOfficePhone", person.landlines[0] ?? ""],
       ["personOtherPhone", [...person.mobiles.slice(1), ...person.landlines.slice(1)][0] ?? ""],
       ["personEmail", person.emails[0] ?? ""],
     ];
-    this.require(...fields.map(([key]) => key));
-    for (const [key, value] of fields) if (value) await this.page.locator(this.selectors[key]).fill(value);
+    for (const [key, originalValue] of fields) {
+      if (!this.selectors[key] || !originalValue) continue;
+      const value = key === "personBirthDate" ? uiBirthDate : originalValue;
+      const field = this.page.locator(this.selectors[key]).filter({ visible: true }).first();
+      await field.fill(value);
+      if (key === "personBirthPlace") {
+        const option = this.page.locator('[role="option"]:visible').first();
+        if (await option.count()) await option.click();
+      }
+    }
   }
 
-  async createPerson(person: NormalizedPerson): Promise<string> {
-    if (this.dryRun) return `dry-person-${person.taxCode ?? Date.now()}`;
+  async createPerson(person: NormalizedPerson, duplicateCandidateIds: string[] = [], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult> {
+    if (this.dryRun) return {
+      personId: `dry-person-${person.taxCode ?? Date.now()}`,
+      mergeStatus: duplicateCandidateIds.length ? "simulated" : "not_required",
+      details: { duplicateCandidateIds, dryRun: true },
+    };
     return this.friendly("person-create", "Non riesco a creare il nominativo.", async () => {
-      this.require("personCreate", "personSave", "recordId");
+      this.require("personCreate", "personCreateMenuItem", "personSave");
       await this.page.locator(this.selectors.personCreate).click();
+      const menuItem = this.page.locator(this.selectors.personCreateMenuItem).filter({ visible: true }).first();
+      await menuItem.waitFor({ state: "visible", timeout: 8_000 });
+      await menuItem.click();
       await this.fillPerson(person);
+      await onBeforeSave?.();
       await this.page.locator(this.selectors.personSave).click();
       await this.checkSession();
-      return (await this.page.locator(this.selectors.recordId).textContent())?.trim() ?? "";
+      const mergeSelectorsConfigured = ["personMergeDialog", "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage"]
+        .every((key) => Boolean(this.selectors[key as keyof CrmSelectors]));
+      if (duplicateCandidateIds.length && !mergeSelectorsConfigured) {
+        return {
+          personId: null,
+          mergeStatus: "pending",
+          details: { duplicateCandidateIds, calibrationRequired: true, message: "Merge non confermato: controllo manuale richiesto" },
+        };
+      }
+      if (duplicateCandidateIds.length && await this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).count()) {
+        const merge = await this.inspectPersonMerge();
+        return { personId: merge.personId, mergeStatus: merge.status, details: { ...merge.details, duplicateCandidateIds } };
+      }
+      const personId = await this.currentPersonId();
+      if (!personId) throw new WorkerError("Il gestionale ha salvato il nominativo ma non espone il suo identificativo. Apri la scheda creata e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "person-create-record-id" }, true);
+      return { personId, mergeStatus: "not_required", details: { duplicateCandidateIds } };
+    });
+  }
+
+  async inspectPersonMerge(): Promise<PersonMergeResult> {
+    return this.friendly("person-merge-inspect", "Non riesco a verificare l’esito del merge nominativi.", async () => {
+      const required: Array<keyof CrmSelectors> = ["personMergeDialog", "personMergeReady", "personMergeBlocked", "personMergeMessage"];
+      if (required.some((key) => !this.selectors[key])) {
+        const personId = await this.currentPersonId();
+        return personId
+          ? { status: "completed", personId, message: "Merge completato manualmente", details: { source: "crm-current-person", calibrationRequired: true } }
+          : { status: "pending", personId: null, message: "La finestra di merge non è ancora calibrata. Verifica l’esito nel gestionale e completa il merge manualmente", details: { pageUrl: this.page.url(), calibrationRequired: true } };
+      }
+      const dialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).last();
+      if (!(await dialog.count())) {
+        const personId = await this.currentPersonId();
+        return personId
+          ? { status: "completed", personId, message: "Merge completato o risolto manualmente", details: { source: "crm-current-person" } }
+          : { status: "pending", personId: null, message: "La finestra di merge non è riconoscibile", details: { pageUrl: this.page.url() } };
+      }
+      const message = (await dialog.locator(this.selectors.personMergeMessage).first().textContent())?.trim() ?? "";
+      if (await dialog.locator(this.selectors.personMergeBlocked).filter({ visible: true }).count()) {
+        return { status: "blocked", personId: null, message: message || "Il Cloud segnala problemi nel merge", details: { source: "crm-merge-dialog" } };
+      }
+      if (await dialog.locator(this.selectors.personMergeReady).filter({ visible: true }).count()) {
+        return { status: "ready", personId: null, message: message || "Il Cloud non segnala problemi nel merge", details: { source: "crm-merge-dialog" } };
+      }
+      return { status: "pending", personId: null, message: message || "Il Cloud non ha ancora concluso il controllo del merge", details: { source: "crm-merge-dialog" } };
+    });
+  }
+
+  async confirmPersonMerge(): Promise<PersonMergeResult> {
+    return this.friendly("person-merge-confirm", "Non riesco a confermare il merge nominativi.", async () => {
+      const inspection = await this.inspectPersonMerge();
+      if (inspection.status !== "ready") return inspection;
+      this.require("personMergeDialog", "personMergeConfirm");
+      const dialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).last();
+      await dialog.locator(this.selectors.personMergeConfirm).first().click();
+      await dialog.waitFor({ state: "hidden", timeout: 15_000 });
+      await this.checkSession();
+      const personId = await this.currentPersonId();
+      if (!personId) return { status: "pending", personId: null, message: "Merge confermato, identificativo finale non ancora disponibile", details: { source: "crm-merge-confirm" } };
+      return { status: "completed", personId, message: "Merge completato", details: { source: "crm-merge-confirm" } };
     });
   }
 
@@ -227,7 +317,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
-  async findPropertyForPerson(personId: string, key: CadastralKey): Promise<PropertyMatchResult> {
+  async findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult> {
     if (personId.startsWith("dry-person-")) return { match: null };
     return this.friendly("person-property-search", "Non riesco a leggere gli immobili collegati al nominativo.", async () => {
       this.require("personRelatedTab", "personPropertiesCard", "personPropertyLinks");
@@ -247,18 +337,18 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           await this.page.waitForTimeout(650);
         }
         const identity = await this.readPropertyIdentity();
-        if (
-          comparableCadastralValue(identity.sheet) === comparableCadastralValue(key.sheet)
-          && comparableCadastralValue(identity.parcel) === comparableCadastralValue(key.parcel)
-          && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(key.subaltern)
-        ) {
+        const cadastralMatch = comparableCadastralValue(identity.sheet) === comparableCadastralValue(property.sheet)
+          && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
+          && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
+        const addressMatch = sameStreetAndCivic(identity.address, property.address);
+        if (cadastralMatch || addressMatch) {
           const id = isFixture
             ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
             : recordIdFromHref(this.page.url(), "immobile") || recordIdFromHref(href, "immobile");
-          matches.push({ id, data: { source: "crm-person-related-properties", ...identity, href } });
+          matches.push({ id, data: { source: "crm-person-related-properties", matchedBy: cadastralMatch ? "cadastral" : "street-and-civic", ...identity, href } });
         }
       }
-      if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili con gli stessi dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, key, alternatives: matches }, true);
+      if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili compatibili per dati catastali oppure via e civico. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
       if (!matches.length) await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
       return { match: matches[0] ?? null };
     });
@@ -266,7 +356,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   private async fillProperty(property: NormalizedProperty) {
     const fields: Array<[keyof CrmSelectors, string]> = [
-      ["propertyAddress", property.address ?? ""], ["propertyCategory", property.category],
+      ["propertyAddress", property.address ?? ""], ["propertySheet", property.sheet],
+      ["propertyParcel", property.parcel], ["propertySubaltern", property.subaltern], ["propertyCategory", property.category],
       ["propertyClass", property.class ?? ""], ["propertyConsistency", property.consistency ?? ""],
       ["propertyIncome", property.cadastralIncome?.toString().replace(".", ",") ?? ""],
     ];

@@ -36,3 +36,38 @@ export async function pruneDiagnosticScreenshots(directory: string, retentionDay
   return removed;
 }
 
+export function isDiagnosticScreenshotPath(directory: string, candidatePath: string): boolean {
+  if (path.extname(candidatePath).toLowerCase() !== ".png") return false;
+  const root = path.resolve(directory);
+  const candidate = path.resolve(candidatePath);
+  const relative = path.relative(root, candidate);
+  return relative !== ""
+    && relative !== ".."
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+}
+
+export async function removeDiagnosticScreenshots(
+  directory: string,
+  candidatePaths: string[],
+): Promise<{ removed: number; skipped: number; failed: string[] }> {
+  let removed = 0;
+  let skipped = 0;
+  const failed: string[] = [];
+
+  for (const candidatePath of new Set(candidatePaths)) {
+    if (!isDiagnosticScreenshotPath(directory, candidatePath)) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await unlink(path.resolve(candidatePath));
+      removed += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      failed.push(candidatePath);
+    }
+  }
+
+  return { removed, skipped, failed };
+}

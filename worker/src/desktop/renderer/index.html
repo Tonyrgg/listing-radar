@@ -135,6 +135,44 @@
       </main>
     </div>
 
+    <dialog id="acquisitionReviewDialog" class="acquisition-review" aria-labelledby="acquisitionReviewTitle">
+      <div class="review-shell">
+        <header class="review-header">
+          <div>
+            <p class="kicker">Acquisizione SISTER completata</p>
+            <h2 id="acquisitionReviewTitle">Immobili e proprietari rilevati</h2>
+            <p id="acquisitionReviewContext"></p>
+          </div>
+          <span id="acquisitionReviewCount" class="review-count"></span>
+        </header>
+        <div id="acquisitionReviewContent" class="review-content"></div>
+        <footer class="review-footer">
+          <p>Proseguendo inizierà il confronto con il gestionale. Nessun dato verrà salvato senza le conferme previste.</p>
+          <div>
+            <button class="button button-outline" data-review-decision="cancel">Interrompi e conserva</button>
+            <button class="button button-destructive" data-action="cancel-current">Annulla processo</button>
+            <button class="button button-primary" data-review-decision="proceed">Prosegui <span>→</span></button>
+          </div>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="cancelProcessDialog" class="cancel-process-dialog" aria-labelledby="cancelProcessTitle" aria-describedby="cancelProcessDescription">
+      <div class="cancel-process-shell">
+        <p class="kicker">Azione definitiva</p>
+        <h2 id="cancelProcessTitle">Annullare questa lavorazione?</h2>
+        <p id="cancelProcessDescription">Il job e tutti i suoi immobili, proprietari, quote, passaggi e log verranno eliminati da Listing Radar. Saranno rimossi anche gli screenshot diagnostici locali collegati.</p>
+        <div class="cancel-process-warning">
+          <strong>Il gestionale esterno non può essere ripristinato.</strong>
+          <span>Le modifiche già salvate nel gestionale resteranno presenti; anche un’operazione già iniziata potrebbe terminare prima dell’arresto sicuro.</span>
+        </div>
+        <footer class="cancel-process-actions">
+          <button type="button" class="button button-outline" data-cancel-dialog="close" autofocus>Torna indietro</button>
+          <button type="button" class="button button-destructive is-solid" data-cancel-dialog="confirm">Annulla definitivamente</button>
+        </footer>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
   </body>

@@ -1,18 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import { WorkerError } from "../core/errors.js";
-import type { AssistedDecision, PromptController } from "../services/prompts.js";
+import type { AcquisitionReview } from "../types.js";
+import type { AcquisitionReviewDecision, AssistedDecision, MergeDecision, PromptController, PromptResponse } from "../services/prompts.js";
 
 export type DesktopPrompt = {
   id: string;
-  kind: "acquisition" | "decision" | "manual";
+  kind: "acquisition" | "acquisition-review" | "decision" | "merge" | "manual";
   title: string;
   summary: string;
+  review?: AcquisitionReview;
 };
 
 type PendingPrompt = {
   prompt: DesktopPrompt;
-  resolve: (value: void | AssistedDecision) => void;
+  resolve: (value: PromptResponse) => void;
   reject: (error: Error) => void;
 };
 
@@ -21,10 +23,10 @@ export class DesktopPromptController implements PromptController {
 
   constructor(private readonly publish: (prompt: DesktopPrompt | null) => void) {}
 
-  private request(kind: DesktopPrompt["kind"], title: string, summary: string) {
+  private request(kind: DesktopPrompt["kind"], title: string, summary: string, review?: AcquisitionReview) {
     if (this.pending) throw new WorkerError("È già presente una conferma in attesa", "needs_review");
-    return new Promise<void | AssistedDecision>((resolve, reject) => {
-      const prompt = { id: randomUUID(), kind, title, summary } satisfies DesktopPrompt;
+    return new Promise<PromptResponse>((resolve, reject) => {
+      const prompt = { id: randomUUID(), kind, title, summary, ...(review ? { review } : {}) } satisfies DesktopPrompt;
       this.pending = { prompt, resolve, reject };
       this.publish(prompt);
     });
@@ -42,11 +44,24 @@ export class DesktopPromptController implements PromptController {
     return await this.request("decision", "Controlla prima di procedere", summary) as AssistedDecision;
   }
 
+  async reviewAcquisition(review: AcquisitionReview): Promise<AcquisitionReviewDecision> {
+    return await this.request(
+      "acquisition-review",
+      "Controlla i dati acquisiti",
+      `${review.properties.length} immobili pronti per il confronto con il gestionale.`,
+      review,
+    ) as AcquisitionReviewDecision;
+  }
+
+  async confirmMerge(summary: string): Promise<MergeDecision> {
+    return await this.request("merge", "Merge pronto per la conferma", summary) as MergeDecision;
+  }
+
   async waitForManualEdit(): Promise<void> {
     await this.request("manual", "Modifica manuale in corso", "Completa la modifica nel gestionale, poi conferma per continuare.");
   }
 
-  respond(promptId: string, value: void | AssistedDecision) {
+  respond(promptId: string, value: PromptResponse) {
     if (!this.pending || this.pending.prompt.id !== promptId) throw new Error("Conferma non più valida");
     const { resolve } = this.pending;
     this.pending = null;

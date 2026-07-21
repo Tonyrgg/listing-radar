@@ -105,6 +105,28 @@ export class WorkerRepository {
     return data as JobRow[];
   }
 
+  async listJobScreenshotPaths(jobId: string): Promise<string[]> {
+    const { data, error } = await this.client
+      .from("property_worker_steps")
+      .select("screenshot_path")
+      .eq("job_id", jobId);
+    if (error) throw new Error(`Lettura screenshot del job fallita: ${error.message}`);
+    return (data ?? [])
+      .map((row) => row.screenshot_path)
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+  }
+
+  async deleteJob(jobId: string): Promise<void> {
+    const { data, error } = await this.client
+      .from("property_worker_jobs")
+      .delete()
+      .eq("id", jobId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new Error(`Annullamento job fallito: ${error.message}`);
+    if (!data) throw new Error(`Job ${jobId} non trovato o già eliminato`);
+  }
+
   async setJobContext(jobId: string, context: { municipality: string; street: string | null; civicNumber: string | null; sourceUrl: string }) {
     await this.updateJob(jobId, {
       municipality: context.municipality, street: context.street, civic_number: context.civicNumber,

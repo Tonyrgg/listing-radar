@@ -11,7 +11,10 @@ export interface CrmSelectors {
   personResultLabel: string;
   personResultOpen: string;
   personCreate: string;
+  personCreateMenuItem: string;
   personFullName: string;
+  personFirstName: string;
+  personLastName: string;
   personBirthPlace: string;
   personBirthProvince: string;
   personBirthDate: string;
@@ -22,6 +25,11 @@ export interface CrmSelectors {
   personEmail: string;
   personSave: string;
   recordId: string;
+  personMergeDialog: string;
+  personMergeReady: string;
+  personMergeBlocked: string;
+  personMergeConfirm: string;
+  personMergeMessage: string;
   propertySearchPage: string;
   propertyFiltersOpen: string;
   propertySearchSheet: string;
@@ -33,6 +41,9 @@ export interface CrmSelectors {
   propertyResultOpen: string;
   propertyCreate: string;
   propertyAddress: string;
+  propertySheet: string;
+  propertyParcel: string;
+  propertySubaltern: string;
   propertyCategory: string;
   propertyClass: string;
   propertyConsistency: string;
@@ -48,6 +59,7 @@ export interface CrmSelectors {
   propertySheetValue: string;
   propertyParcelValue: string;
   propertySubalternValue: string;
+  propertyAddressValue: string;
   activityCard: string;
   activityCreate: string;
   activityDialog: string;
@@ -64,15 +76,16 @@ export interface CrmSelectors {
 export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "pageMarker", "sessionExpiredMarker", "unexpectedError", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
-  "personResultLabel", "personResultOpen", "personCreate", "personFullName", "personBirthPlace",
+  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
-  "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "propertySearchPage",
+  "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate",
-  "propertyAddress", "propertyCategory", "propertyClass", "propertyConsistency",
+  "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
-  "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "activityCard",
+  "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityRelatedProperty",
   "activityStatus", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
@@ -87,6 +100,17 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personResultLabel: 'a[data-refid="recordId"][data-recordid][href*="/s/account/"]',
   personResultOpen: 'a[data-refid="recordId"][data-recordid][href*="/s/account/"]',
   personResultsReady: 'h1:has-text("Risultati di ricerca")',
+  personCreate: 'c-spotlight .icon_container',
+  personCreateMenuItem: 'c-spotlight li.element:has-text("Nominativo")',
+  personFirstName: '.slds-form-element:has(label:has-text("Nome")) input',
+  personLastName: '.slds-form-element:has(label:has-text("Cognome")) input',
+  personBirthPlace: '.slds-form-element:has-text("Luogo Di Nascita") input',
+  personBirthDate: '.slds-form-element:has-text("Data Di Nascita") input',
+  personTaxCode: '.slds-form-element:has-text("Codice Fiscale") input',
+  personMobile: '.slds-form-element:has-text("Cellulare") input',
+  personOfficePhone: '.slds-form-element:has-text("Telefono fisso") input',
+  personEmail: '.slds-form-element:has-text("Email") input',
+  personSave: 'button:visible:has-text("Salva")',
   personRelatedTab: '[role="tab"]:has-text("Correlati")',
   personPropertiesCard: 'article:visible:has-text("Immobili/Notizie/Incarichi")',
   personPropertyLinks: 'a[href*="/s/immobile/"]',
@@ -120,15 +144,16 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
 export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "pageMarker", "sessionExpiredMarker", "unexpectedError", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
-  "personResultLabel", "personResultOpen", "personCreate", "personFullName", "personBirthPlace",
+  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
-  "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "propertySearchPage",
+  "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate",
-  "propertyAddress", "propertyCategory", "propertyClass", "propertyConsistency",
+  "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
-  "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "activityCard",
+  "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityRelatedProperty",
   "activityStatus", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, `[data-worker-crm="${key}"]`])) as unknown as CrmSelectors;
