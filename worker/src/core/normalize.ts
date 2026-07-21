@@ -53,8 +53,42 @@ export function buildCadastralKey(key: CadastralKey): string {
     .join("|");
 }
 
-export function addressIdentity(value: string | null | undefined): { street: string; civic: string } | null {
-  const normalized = String(value ?? "")
+export type ParsedPropertyAddress = {
+  address: string;
+  internal: string | null;
+  postalCode: string | null;
+  municipality: string | null;
+  province: string | null;
+};
+
+export function parsePropertyAddress(value: string | null | undefined): ParsedPropertyAddress {
+  const raw = String(value ?? "").replace(/\s+/g, " ").trim();
+  const locationMatch = raw.match(/^(.*?)(?:,\s*|\s+)(\d{5})\s+(.+?)\s*\(([A-Z]{2})\)\s*$/i);
+  const addressWithInternal = (locationMatch?.[1] ?? raw).trim().replace(/,$/, "").trim();
+  const bracketInternalMatch = addressWithInternal.match(/\[\s*([^\]]+?)\s*\]\s*$/);
+  const namedInternalMatch = addressWithInternal.match(/\bINTERNO\s+([A-Z0-9/-]+)\b/i);
+  const addressWithoutBracket = (bracketInternalMatch
+    ? addressWithInternal.slice(0, bracketInternalMatch.index)
+    : addressWithInternal).trim();
+  const detailStart = addressWithoutBracket.search(/\s+(?:SCALA|INTERNO|PIANO)\b/i);
+  const address = (detailStart >= 0 ? addressWithoutBracket.slice(0, detailStart) : addressWithoutBracket)
+    .replace(/\s+N(?:\.|°)?\s*(?=\d)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/,$/, "")
+    .trim();
+  return {
+    address,
+    internal: bracketInternalMatch?.[1]?.trim() || namedInternalMatch?.[1]?.trim() || null,
+    postalCode: locationMatch?.[2] ?? null,
+    municipality: locationMatch?.[3]?.trim() ?? null,
+    province: locationMatch?.[4]?.toUpperCase() ?? null,
+  };
+}
+
+export function addressIdentity(value: string | null | undefined): { street: string; civic: string; internal: string | null } | null {
+  const parsed = parsePropertyAddress(value);
+  const normalized = parsed.address
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
@@ -65,7 +99,7 @@ export function addressIdentity(value: string | null | undefined): { street: str
   if (!match) return null;
   const street = match[1]!.trim().replace(/\s+/g, " ");
   const civic = `${match[2]}${match[3] ?? ""}`;
-  return street && civic ? { street, civic } : null;
+  return street && civic ? { street, civic, internal: parsed.internal } : null;
 }
 
 export function sameStreetAndCivic(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -77,6 +111,14 @@ export function sameStreetAndCivic(left: string | null | undefined, right: strin
       && leftIdentity.street === rightIdentity.street
       && leftIdentity.civic === rightIdentity.civic,
   );
+}
+
+export function samePropertyAddress(left: string | null | undefined, right: string | null | undefined): boolean {
+  const leftIdentity = addressIdentity(left);
+  const rightIdentity = addressIdentity(right);
+  if (!leftIdentity || !rightIdentity) return false;
+  if (leftIdentity.street !== rightIdentity.street || leftIdentity.civic !== rightIdentity.civic) return false;
+  return !leftIdentity.internal || !rightIdentity.internal || leftIdentity.internal === rightIdentity.internal;
 }
 
 function fiscalNamePart(value: string, firstName: boolean) {

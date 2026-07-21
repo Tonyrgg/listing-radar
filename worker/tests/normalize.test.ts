@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCadastralKey, consolidateContacts, formatShareForUi, normalizeTaxCode, parseShare, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, formatShareForUi, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -42,6 +42,43 @@ describe("confronto indirizzo immobile", () => {
   it("non considera esatto un civico o una via differente", () => {
     expect(sameStreetAndCivic("Via Roma 12", "Via Roma 14")).toBe(false);
     expect(sameStreetAndCivic("Via Roma 12", "Via Dante 12")).toBe(false);
+  });
+
+  it("separa interno e località dall'indirizzo completo del CRM", () => {
+    expect(parsePropertyAddress("Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)")).toEqual({
+      address: "Via Borgo San Francesco 29",
+      internal: "2",
+      postalCode: "70032",
+      municipality: "BITONTO",
+      province: "BA",
+    });
+    expect(addressIdentity("Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)")).toEqual({
+      street: "VIA BORGO SAN FRANCESCO",
+      civic: "29",
+      internal: "2",
+    });
+  });
+
+  it("confronta soltanto via e civico ignorando interno, CAP e località", () => {
+    expect(sameStreetAndCivic(
+      "Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)",
+      "VIA BORGO SAN FRANCESCO, 29",
+    )).toBe(true);
+  });
+
+  it("riconosce il formato SISTER e usa l'interno quando è presente su entrambi i lati", () => {
+    expect(parsePropertyAddress("VIA BORGO SAN FRANCESCO n. 29 Scala B Interno 2 Piano 1")).toMatchObject({
+      address: "VIA BORGO SAN FRANCESCO 29",
+      internal: "2",
+    });
+    expect(samePropertyAddress(
+      "Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)",
+      "VIA BORGO SAN FRANCESCO n. 29 Scala B Interno 2 Piano 1",
+    )).toBe(true);
+    expect(samePropertyAddress(
+      "Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)",
+      "VIA BORGO SAN FRANCESCO n. 29 Scala B Interno 3 Piano 1",
+    )).toBe(false);
   });
 });
 

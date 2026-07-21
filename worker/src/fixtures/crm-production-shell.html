@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="it"><body>
+  <a href="/CRMImmobiliareLightning/s/account/Account">Nominativi</a>
+  <li class="slds-page-header__detail-block">
+    <div>
+      <div class="slds-text-title slds-truncate">Indirizzo Completo Immobile</div>
+      <div><c-output-field><span class="slds-grow">Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)</span></c-output-field></div>
+    </div>
+  </li>
+  <div class="flex"><div><label>Catasto Foglio</label></div><div class="slds-form-element__static"><span class="slds-grow">50</span></div></div>
+  <div class="flex"><div><label>Catasto Particella</label></div><div class="slds-form-element__static"><span class="slds-grow">1391</span></div></div>
+  <div class="flex"><div><label>Catasto Subalterno</label></div><div class="slds-form-element__static"><span class="slds-grow">27</span></div></div>
+
+  <article><h2>Riepilogo</h2><span>1 Numero attività di ricerca</span></article>
+  <article><h2>Attività e appuntamenti</h2><button>Nuovo</button></article>
+  <article><h2>Soggetti collegati (3)</h2><a href="/CRMImmobiliareLightning/s/account/owner-1">Proprietario</a></article>
+
+  <c-lwc-modal>
+    <section role="dialog">
+      <textarea aria-label="Descrizione"></textarea>
+      <div class="slds-form-element_horizontal"><label>Correlato a</label><input value="Immobile"></div>
+      <div class="slds-form-element_horizontal"><label>Stato</label><input value="Da eseguire"></div>
+      <button>Annulla</button><button>Salva</button>
+    </section>
+  </c-lwc-modal>
+</body></html>

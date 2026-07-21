@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
-import { formatShareForUi, sameStreetAndCivic, splitPersonName } from "../../core/normalize.js";
+import { addressIdentity, formatShareForUi, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
 import type {
   CrmActivityInput,
   CrmAdapter,
@@ -155,11 +155,15 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   private async readPropertyIdentity() {
     this.require("propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue");
     const read = async (selector: string) => (await this.page.locator(selector).first().textContent())?.trim() ?? "";
+    const rawAddress = await read(this.selectors.propertyAddressValue);
+    const parsedAddress = parsePropertyAddress(rawAddress);
     return {
       sheet: await read(this.selectors.propertySheetValue),
       parcel: await read(this.selectors.propertyParcelValue),
       subaltern: await read(this.selectors.propertySubalternValue),
-      address: await read(this.selectors.propertyAddressValue),
+      address: parsedAddress.address,
+      internal: parsedAddress.internal,
+      rawAddress,
     };
   }
 
@@ -340,12 +344,23 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         const cadastralMatch = comparableCadastralValue(identity.sheet) === comparableCadastralValue(property.sheet)
           && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
           && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
-        const addressMatch = sameStreetAndCivic(identity.address, property.address);
+        const addressMatch = samePropertyAddress(identity.rawAddress, property.address);
         if (cadastralMatch || addressMatch) {
           const id = isFixture
             ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
             : recordIdFromHref(this.page.url(), "immobile") || recordIdFromHref(href, "immobile");
-          matches.push({ id, data: { source: "crm-person-related-properties", matchedBy: cadastralMatch ? "cadastral" : "street-and-civic", ...identity, href } });
+          const sisterAddress = addressIdentity(property.address);
+          matches.push({
+            id,
+            data: {
+              source: "crm-person-related-properties",
+              matchedBy: cadastralMatch
+                ? "cadastral"
+                : identity.internal && sisterAddress?.internal ? "street-civic-and-internal" : "street-and-civic",
+              ...identity,
+              href,
+            },
+          });
         }
       }
       if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili compatibili per dati catastali oppure via e civico. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
@@ -407,6 +422,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       }
       if (this.dryRun) {
         await dialog.locator(this.selectors.activityCancel).first().click({ force: true });
+        await dialog.waitFor({ state: "hidden", timeout: 8_000 });
         return `dry-activity-${input.propertyId}`;
       }
       this.require("activityRelatedProperty");

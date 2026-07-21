@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { chromium } from "playwright";
 
 import { PlaywrightCrmAdapter } from "../src/adapters/crm/index.js";
-import { crmFixtureSelectors } from "../src/adapters/crm/selectors.js";
+import { crmFixtureSelectors, crmSelectors } from "../src/adapters/crm/selectors.js";
 import { PlaywrightSisterAdapter } from "../src/adapters/sister/index.js";
 import { sisterFixtureSelectors } from "../src/adapters/sister/selectors.js";
 
@@ -40,7 +40,36 @@ describe("adattatori con fixture HTML", () => {
         censusZone: null, category: "A/3", class: "2", consistency: "5 vani", cadastralIncome: 432.1, rawPayload: {},
       };
       expect((await adapter.findPropertyForPerson("P-42", property)).match?.id).toBe("I-42");
-      expect((await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match?.data.matchedBy).toBe("street-and-civic");
+      const addressMatch = (await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match;
+      expect(addressMatch?.data.matchedBy).toBe("street-and-civic");
+      expect(addressMatch?.data).toMatchObject({ address: "Via Roma 12", internal: "2" });
+    } finally { await browser.close(); }
+  });
+
+  it("mantiene univoci i selettori CRM calibrati sulla struttura reale", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm-production-shell.html"), "utf8"));
+      const expected = {
+        propertySheetValue: "50",
+        propertyParcelValue: "1391",
+        propertySubalternValue: "27",
+        propertyAddressValue: "Via Borgo San Francesco 29 [2], 70032 BITONTO (BA)",
+      } as const;
+      for (const [key, value] of Object.entries(expected)) {
+        const locator = page.locator(crmSelectors[key as keyof typeof expected]);
+        expect(await locator.count(), key).toBe(1);
+        expect((await locator.textContent())?.trim(), key).toBe(value);
+      }
+      expect(await page.locator(crmSelectors.activityCard).count()).toBe(1);
+      const dialog = page.locator(crmSelectors.activityDialog);
+      expect(await dialog.count()).toBe(1);
+      expect(await dialog.locator(crmSelectors.activityDescription).count()).toBe(1);
+      expect(await dialog.locator(crmSelectors.activityStatus).inputValue()).toBe("Da eseguire");
+      expect(await dialog.locator(crmSelectors.activityCancel).count()).toBe(1);
+      expect(await page.locator(crmSelectors.propertyOwnersCard).count()).toBe(1);
+      expect(await page.locator(crmSelectors.propertyOwnersCard).locator(crmSelectors.propertyOwnerLinks).count()).toBe(1);
     } finally { await browser.close(); }
   });
 
