@@ -145,10 +145,18 @@ export interface PersonMergeResult {
 }
 
 export interface CrmActivityInput {
-  personId: string;
   propertyId: string;
+  propertyAddress: string | null;
+  fallbackPersonId?: string;
   description: string;
   status: "Da eseguire";
+}
+
+export interface CrmActivityResult {
+  outcome: "created" | "existing" | "simulated";
+  crmActivityId: string | null;
+  correlatedProperty: string;
+  attempts: number;
 }
 
 export interface SisterAdapter {
@@ -168,7 +176,7 @@ export interface CrmAdapter {
   findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;
-  createActivity(input: CrmActivityInput): Promise<string>;
+  createPropertyActivity(input: CrmActivityInput): Promise<CrmActivityResult>;
   findLinkedOwnerIds(propertyId: string): Promise<string[]>;
   linkOwner(propertyId: string, personId: string, share: number): Promise<string>;
 }

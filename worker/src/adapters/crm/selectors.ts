@@ -2,6 +2,8 @@ export interface CrmSelectors {
   pageMarker: string;
   sessionExpiredMarker: string;
   unexpectedError: string;
+  blockingDialog: string;
+  loadingSpinner: string;
   personSearchPage: string;
   personSearchTaxCode: string;
   personSearchPhone: string;
@@ -64,8 +66,10 @@ export interface CrmSelectors {
   activityCreate: string;
   activityDialog: string;
   activityDescription: string;
+  activityClient: string;
   activityRelatedProperty: string;
   activityStatus: string;
+  activityOption: string;
   activitySave: string;
   activityCancel: string;
   propertyOwnersCard: string;
@@ -74,7 +78,7 @@ export interface CrmSelectors {
 
 /** Selectors verified on the authenticated Tecnocloud Lightning shell. */
 export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
-  "pageMarker", "sessionExpiredMarker", "unexpectedError", "personSearchPage", "personSearchTaxCode",
+  "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
@@ -86,11 +90,13 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
-  "activityCreate", "activityDialog", "activityDescription", "activityRelatedProperty",
-  "activityStatus", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
+  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
+  "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
   pageMarker: 'a[href*="/CRMImmobiliareLightning/s/account/Account"], a[href*="/CRMImmobiliareLightning/s/immobile/Immobile__c"]',
   sessionExpiredMarker: 'input[type="password"]',
+  blockingDialog: '[role="dialog"]',
+  loadingSpinner: 'lightning-spinner',
   personSearchPage: 'a[href*="/CRMImmobiliareLightning/s/account/Account"]',
   personSearchTaxCode: 'input[title="Search..."]',
   personSearchPhone: 'input[title="Search..."]',
@@ -120,10 +126,14 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyAddressValue: 'li.slds-page-header__detail-block:has(.slds-text-title:has-text("Indirizzo Completo Immobile")) c-output-field',
   activityCard: 'article:visible:has-text("Attivit"):has(button:has-text("Nuovo"))',
   activityCreate: 'button:has-text("Nuovo")',
-  activityDialog: 'c-lwc-modal:has([role="dialog"]:visible)',
-  activityDescription: 'textarea',
-  activityRelatedProperty: '.slds-form-element_horizontal:has-text("Correlato a") input',
-  activityStatus: '.slds-form-element_horizontal:has-text("Stato") input',
+  // The custom c-lwc-modal host has a zero-sized box in production. Target the
+  // rendered dialog and keep form controls global + visible in the adapter.
+  activityDialog: '[role="dialog"]:visible',
+  activityDescription: 'c-input-field:has-text("Descrizione") textarea',
+  activityClient: 'c-input-field:has-text("Cliente") input',
+  activityRelatedProperty: 'c-input-field:has-text("Correlato a")',
+  activityStatus: 'c-input-field:has-text("Stato") input',
+  activityOption: '[role="option"]',
   activitySave: 'button:has-text("Salva")',
   activityCancel: 'button:has-text("Annulla")',
   propertyOwnersCard: 'article:visible:has-text("Soggetti collegati (")',
@@ -143,7 +153,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
 });
 
 export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
-  "pageMarker", "sessionExpiredMarker", "unexpectedError", "personSearchPage", "personSearchTaxCode",
+  "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
@@ -155,6 +165,6 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
-  "activityCreate", "activityDialog", "activityDescription", "activityRelatedProperty",
-  "activityStatus", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
+  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
+  "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, `[data-worker-crm="${key}"]`])) as unknown as CrmSelectors;

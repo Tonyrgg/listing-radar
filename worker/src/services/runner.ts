@@ -12,6 +12,14 @@ import { WorkerPrompts, type PromptController } from "./prompts.js";
 import { type JobRow, type PersonRow, type PropertyRow, WorkerRepository } from "./repository.js";
 import { captureDiagnosticScreenshot, pruneDiagnosticScreenshots } from "./screenshots.js";
 import { SisterKeepAliveScheduler, type SisterKeepAliveResult } from "./sister-keepalive.js";
+import {
+  activityCheckpoint,
+  buildPropertyActivityTasks,
+  PROPERTY_ACTIVITY_DESCRIPTION,
+  PROPERTY_ACTIVITY_STATUS,
+  readPropertyActivityCheckpoint,
+  type PropertyActivityCheckpoint,
+} from "./property-activities.js";
 
 function asProperty(row: PropertyRow): CadastralProperty {
   return {
@@ -46,6 +54,16 @@ function personSummary(person: NormalizedPerson, property?: CadastralProperty) {
     property ? `Immobile: ${buildCadastralKey(property)} — ${property.address ?? "indirizzo assente"}` : null,
     `Quota: ${person.sharePercentage ?? "non interpretabile"}%`,
   ].filter(Boolean).join("\n");
+}
+
+function propertyActivitySummary(property: CadastralProperty, ownerNames: string[]) {
+  return [
+    `Immobile: ${buildCadastralKey(property)} — ${property.address ?? "indirizzo assente"}`,
+    `Proprietari collegati: ${ownerNames.join(", ") || "nessuno"}`,
+    "Modifica prevista: una sola attività dalla scheda immobile",
+    `Stato: ${PROPERTY_ACTIVITY_STATUS}`,
+    `Descrizione: ${PROPERTY_ACTIVITY_DESCRIPTION}`,
+  ].join("\n");
 }
 
 function normalizedWords(value: string) {
@@ -420,6 +438,10 @@ export class PropertyWorkerRunner {
         let processed = 0;
         for (const row of graph.properties) {
           this.throwIfCancellationRequested(job.id);
+          if (["synced", "dry_run"].includes(row.processing_status) && row.crm_record_id) {
+            processed += 1;
+            continue;
+          }
           const property = asProperty(row);
           const owner = graph.ownerships.find((item) => item.property_id === row.id);
           const person = graph.people.find((item) => item.id === owner?.person_id);
@@ -440,37 +462,131 @@ export class PropertyWorkerRunner {
       }
       case "activity_created": {
         const graph = await this.repository.loadGraph(job.id);
-        let created = 0;
-        for (const property of graph.properties) {
-          this.throwIfCancellationRequested(job.id);
-          if (!property.crm_record_id) continue;
-          const existingActivities = property.raw_payload?.worker_activities && typeof property.raw_payload.worker_activities === "object"
-            ? property.raw_payload.worker_activities as Record<string, Record<string, unknown>>
-            : {};
-          const activities = { ...existingActivities };
-          const ownerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
-          for (const ownership of ownerships) {
-            this.throwIfCancellationRequested(job.id);
-            const person = graph.people.find((candidate) => candidate.id === ownership.person_id);
-            if (!person?.crm_record_id || activities[person.id]) continue;
-            if (job.mode === "assisted") {
-              const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), asProperty(property))}\nModifica prevista: nuova attività\nStato: Da eseguire\nDescrizione: Inserire attività`);
-              if (decision === "skip") continue;
-              if (decision === "review") throw new WorkerError("Attività segnata da verificare", "needs_review", { propertyId: property.id, personId: person.id });
-              if (decision === "manual") { await this.prompts.waitForManualEdit(); continue; }
-            }
-            const crmActivityId = await crm.createActivity({
-              personId: person.crm_record_id,
-              propertyId: property.crm_record_id,
-              description: "Inserire attività",
-              status: "Da eseguire",
-            });
-            activities[person.id] = { crmActivityId, status: "Da eseguire", description: "Inserire attività", dryRun: this.config.WORKER_DRY_RUN };
-            created += 1;
+        const tasks = buildPropertyActivityTasks(graph).filter((task) => Boolean(task.property.crm_record_id));
+        const metrics = { created: 0, simulated: 0, existing: 0, migrated: 0, skipped: 0 };
+        const prompted = new Set<string>();
+        const persist = async (task: typeof tasks[number], checkpoint: PropertyActivityCheckpoint) => {
+          task.property.raw_payload = { ...(task.property.raw_payload ?? {}), worker_activity: checkpoint };
+          await this.repository.updatePropertyProcessing(task.property.id, { raw_payload: task.property.raw_payload });
+        };
+
+        let pending = [] as typeof tasks;
+        for (const task of tasks) {
+          const checkpoint = readPropertyActivityCheckpoint(
+            task.property.raw_payload,
+            this.config.WORKER_DRY_RUN,
+            task.property.crm_record_id!,
+          );
+          if (!checkpoint) {
+            pending.push(task);
+            continue;
           }
-          await this.repository.updatePropertyProcessing(property.id, { raw_payload: { ...(property.raw_payload ?? {}), worker_activities: activities } });
+          if (checkpoint.source === "legacy-person-flow") {
+            await persist(task, checkpoint);
+            metrics.migrated += 1;
+          }
+          if (checkpoint.state === "simulated") metrics.simulated += 1;
+          else if (checkpoint.state === "created") metrics.created += 1;
+          else if (["existing", "manual"].includes(checkpoint.state)) metrics.existing += 1;
+          else if (checkpoint.state === "skipped") metrics.skipped += 1;
         }
-        return { created, dryRun: this.config.WORKER_DRY_RUN };
+
+        type ActivityFailure = { task: typeof tasks[number]; error: WorkerError };
+        let unresolved: ActivityFailure[] = [];
+        const terminalFailures: ActivityFailure[] = [];
+        for (let pass = 1; pass <= 2 && pending.length; pass += 1) {
+          const failures: ActivityFailure[] = [];
+          for (const task of pending) {
+            this.throwIfCancellationRequested(job.id);
+            const property = asProperty(task.property);
+            const previous = task.property.raw_payload?.worker_activity as Partial<PropertyActivityCheckpoint> | undefined;
+            const attempts = Number(previous?.attempts ?? 0) + 1;
+            if (job.mode === "assisted" && !prompted.has(task.property.id)) {
+              prompted.add(task.property.id);
+              const decision = await this.prompts.confirmSave(propertyActivitySummary(property, task.owners.map((owner) => owner.full_name)));
+              if (decision === "skip") {
+                await persist(task, activityCheckpoint({
+                  state: "skipped", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
+                  crmActivityId: null, correlatedProperty: null, attempts, error: null,
+                }));
+                metrics.skipped += 1;
+                continue;
+              }
+              if (decision === "review") {
+                throw new WorkerError("Attività dell’immobile segnata da verificare", "needs_review", { propertyId: task.property.id });
+              }
+              if (decision === "manual") {
+                await this.prompts.waitForManualEdit();
+                await persist(task, activityCheckpoint({
+                  state: "manual", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
+                  crmActivityId: null, correlatedProperty: null, attempts, error: null,
+                }));
+                metrics.existing += 1;
+                continue;
+              }
+            }
+
+            await persist(task, activityCheckpoint({
+              state: "preparing", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
+              crmActivityId: null, correlatedProperty: null, attempts, error: null,
+            }));
+            try {
+              const result = await crm.createPropertyActivity({
+                propertyId: task.property.crm_record_id!,
+                propertyAddress: task.property.address,
+                fallbackPersonId: task.fallbackPersonId,
+                description: PROPERTY_ACTIVITY_DESCRIPTION,
+                status: PROPERTY_ACTIVITY_STATUS,
+              });
+              await persist(task, activityCheckpoint({
+                state: result.outcome, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
+                crmActivityId: result.crmActivityId, correlatedProperty: result.correlatedProperty,
+                attempts: attempts + result.attempts - 1, error: null,
+              }));
+              metrics[result.outcome] += 1;
+            } catch (error) {
+              const workerError = error instanceof WorkerError
+                ? error
+                : new WorkerError(error instanceof Error ? error.message : String(error), "portal_error", { portal: "CRM" }, true);
+              await persist(task, activityCheckpoint({
+                state: "retryable_error", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
+                crmActivityId: null, correlatedProperty: null, attempts,
+                error: { status: workerError.status, message: workerError.message, details: workerError.details },
+              }));
+              if (["session_expired", "paused", "data_incomplete"].includes(workerError.status)) throw workerError;
+              failures.push({ task, error: workerError });
+            }
+          }
+          if (pass === 1) {
+            const nonRetryable = failures.filter(({ error }) => error.status !== "portal_error");
+            terminalFailures.push(...nonRetryable);
+            pending = failures.filter(({ error }) => error.status === "portal_error").map(({ task }) => task);
+            unresolved = [...terminalFailures, ...failures.filter(({ error }) => error.status === "portal_error")];
+          } else {
+            pending = [];
+            unresolved = [...terminalFailures, ...failures];
+          }
+        }
+        if (unresolved.length) {
+          const reviewRequired = unresolved.some(({ error }) => error.status === "needs_review");
+          throw new WorkerError(
+            `${unresolved.length} attività immobiliari non sono state completate dopo il recupero automatico. Le altre sono state conservate.`,
+            reviewRequired ? "needs_review" : "portal_error",
+            {
+              portal: "CRM",
+              action: "property-activity-batch",
+              unresolved: unresolved.map(({ task, error }) => ({
+                propertyId: task.property.id,
+                cadastralKey: task.property.cadastral_key,
+                status: error.status,
+                message: error.message,
+                details: error.details,
+              })),
+            },
+            true,
+          );
+        }
+        return { ...metrics, totalProperties: tasks.length, dryRun: this.config.WORKER_DRY_RUN };
       }
       case "contacts_matched": {
         const graph = await this.repository.loadGraph(job.id);

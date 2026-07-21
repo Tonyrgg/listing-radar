@@ -103,13 +103,15 @@ Per ogni titolare il flusso operativo è:
 5. conferma del merge soltanto quando il Cloud non segnala problemi;
 6. verifica degli immobili collegati al nominativo, prima per dati catastali e poi per via e civico identici;
 7. aggiornamento dei dati catastali discordanti usando SISTER come fonte prioritaria;
-8. preparazione di un'attività con stato **Da eseguire** e descrizione **Inserire attività**;
+8. preparazione di una sola attività per immobile, aperta dalla scheda immobile, con stato **Da eseguire** e descrizione **Inserire attività**;
 9. matching dei recapiti Excel tramite codice fiscale e aggiunta dei recapiti mancanti;
 10. controllo finale dei soggetti collegati e delle quote di comproprietà.
 
 Se il gestionale restituisce più schede per lo stesso codice fiscale, il worker non chiede più di sceglierne una. Prepara una nuova scheda e tratta il merge come uno step persistente. Un esito Cloud sicuro può essere confermato; un conflitto porta il job in `needs_review` per la correzione manuale. **Riprendi lavorazione** torna direttamente alla verifica del merge senza ripetere SISTER o creare un altro nominativo.
 
 Ogni step viene registrato prima e dopo l'esecuzione. Anche gli elementi già elaborati all'interno di uno step vengono conservati: in caso di arresto, **Riprendi lavorazione** continua dal primo elemento non concluso senza ripetere quelli completati. Pausa e ripresa richieste dalla dashboard modificano solo Supabase: la web app non controlla Chrome.
+
+Lo step attività salva inoltre un checkpoint per ogni immobile. Le modali attività vuote oppure compilate dal worker e rimaste aperte vengono annullate automaticamente; una modale con testo inserito manualmente viene invece lasciata intatta. Navigazione, rendering e preparazione del modulo vengono ritentati automaticamente prima di fermare il job. Dopo un click reale su **Salva** non viene mai eseguito un secondo salvataggio cieco, così da evitare duplicati.
 
 Nel software desktop, **Annulla processo** arresta il runner in modo cooperativo e poi elimina definitivamente il job con immobili, proprietari, quote, step, log e screenshot diagnostici collegati. **Interrompi e conserva** mantiene invece l'avanzamento per una ripresa successiva. Le operazioni già concluse nel gestionale esterno non possono essere annullate dal worker e la finestra di conferma lo segnala esplicitamente.
 

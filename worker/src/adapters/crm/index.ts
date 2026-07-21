@@ -4,6 +4,7 @@ import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { addressIdentity, formatShareForUi, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
 import type {
   CrmActivityInput,
+  CrmActivityResult,
   CrmAdapter,
   NormalizedPerson,
   NormalizedProperty,
@@ -16,6 +17,29 @@ import type {
 import { crmSelectors, type CrmSelectors } from "./selectors.js";
 
 const CRM_PATH = "/CRMImmobiliareLightning/s";
+const ACTIVITY_FORM_TIMEOUT = 20_000;
+const ACTIVITY_PRE_SAVE_ATTEMPTS = 3;
+
+function normalizedUiText(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function activityRelationMatchesProperty(value: string, expectedAddress: string | null) {
+  if (!/^\s*IM\s*-/i.test(value)) return false;
+  if (!expectedAddress) return true;
+  const identity = addressIdentity(expectedAddress);
+  if (!identity) return true;
+  const relation = normalizedUiText(value);
+  const street = normalizedUiText(identity.street);
+  const civic = normalizedUiText(identity.civic);
+  return relation.includes(street) && relation.split(" ").includes(civic);
+}
 
 function comparableCadastralValue(value: string | null | undefined) {
   return (value ?? "").trim().replace(/\s+/g, "").replace(/^0+(?=\d)/, "").toUpperCase();
@@ -65,6 +89,70 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     }
   }
 
+  private visible(selector: string) {
+    return this.page.locator(selector).filter({ visible: true });
+  }
+
+  private async uniqueVisible(key: keyof CrmSelectors, label: string, timeout = 12_000): Promise<Locator> {
+    this.require(key);
+    const locator = this.visible(this.selectors[key]);
+    await locator.first().waitFor({ state: "visible", timeout });
+    const count = await locator.count();
+    if (count !== 1) {
+      throw new WorkerError(
+        `Il gestionale mostra ${count} elementi per “${label}”. Il worker non sceglie un elemento ambiguo.`,
+        "needs_review",
+        { portal: "CRM", action: "unique-visible-element", selectorKey: key, count },
+        true,
+      );
+    }
+    return locator.first();
+  }
+
+  private async isActivityFormOpen() {
+    if (!this.selectors.activityDialog || !this.selectors.activityDescription || !this.selectors.activityCancel) return false;
+    const dialogs = this.visible(this.selectors.activityDialog);
+    if (!(await dialogs.count())) return false;
+    const descriptions = this.visible(this.selectors.activityDescription);
+    if (!(await descriptions.count())) {
+      await descriptions.first().waitFor({ state: "visible", timeout: 4_000 }).catch(() => undefined);
+    }
+    return (await descriptions.count()) > 0 && (await this.visible(this.selectors.activityCancel).count()) > 0;
+  }
+
+  private async closeKnownStaleActivityForm() {
+    if (!(await this.isActivityFormOpen())) return false;
+    const description = await this.uniqueVisible("activityDescription", "Descrizione attività", 5_000);
+    const currentDescription = (await description.inputValue()).trim();
+    if (currentDescription && normalizedUiText(currentDescription) !== normalizedUiText("Inserire attività")) {
+      throw new WorkerError(
+        "È aperta un’attività compilata manualmente. Il worker la lascia intatta: completala o annullala, poi premi “Riprendi”.",
+        "needs_review",
+        { portal: "CRM", action: "dirty-activity-modal" },
+        true,
+      );
+    }
+    const cancel = await this.uniqueVisible("activityCancel", "Annulla attività", 5_000);
+    await cancel.click().catch(async () => this.page.keyboard.press("Escape"));
+    await description.waitFor({ state: "hidden", timeout: 10_000 });
+    return true;
+  }
+
+  private async ensureCrmIdle() {
+    await this.checkSession();
+    await this.closeKnownStaleActivityForm();
+    this.require("blockingDialog");
+    const remainingDialogs = this.visible(this.selectors.blockingDialog);
+    if (await remainingDialogs.count()) {
+      throw new WorkerError(
+        "Nel gestionale è aperta una finestra diversa dall’attività del worker. Per sicurezza non viene chiusa automaticamente.",
+        "needs_review",
+        { portal: "CRM", action: "unknown-blocking-dialog", dialogCount: await remainingDialogs.count() },
+        true,
+      );
+    }
+  }
+
   private async readRecordId(row: Locator, selector: string): Promise<string> {
     const target = row.locator(selector).first();
     return (await target.getAttribute("data-recordid"))
@@ -93,7 +181,9 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     } else await this.page.locator(submitSelector).first().click();
     this.require("personResultsReady");
     await this.page.locator(this.selectors.personResultsReady).first().waitFor({ state: "visible", timeout: 15_000 });
-    await this.page.locator("lightning-spinner:visible").waitFor({ state: "hidden", timeout: 10_000 }).catch(() => undefined);
+    if (this.selectors.loadingSpinner) {
+      await this.visible(this.selectors.loadingSpinner).first().waitFor({ state: "hidden", timeout: 10_000 }).catch(() => undefined);
+    }
     await this.page.waitForTimeout(900);
   }
 
@@ -134,22 +224,35 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   }
 
   private async openPerson(personId: string) {
-    if (this.page.url().includes(`/s/account/${personId}`)) return;
+    await this.ensureCrmIdle();
+    if (this.page.url().includes(`/s/account/${personId}`)) {
+      if (this.selectors.personRelatedTab) {
+        await this.visible(this.selectors.personRelatedTab).first().waitFor({ state: "visible", timeout: 15_000 });
+      }
+      return;
+    }
     const fixtureRow = this.page.locator(this.selectors.personResultRows).filter({ has: this.page.locator(this.selectors.personResultId, { hasText: personId }) });
     if (await fixtureRow.count()) {
       await fixtureRow.first().locator(this.selectors.personResultOpen).first().click();
       return;
     }
     await this.page.goto(new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
-    await this.page.waitForTimeout(900);
     await this.checkSession();
+    if (this.selectors.personRelatedTab) {
+      await this.visible(this.selectors.personRelatedTab).first().waitFor({ state: "visible", timeout: 15_000 });
+    }
   }
 
-  private async openProperty(propertyId: string) {
-    if (this.page.url().includes(`/s/immobile/${propertyId}`)) return;
-    await this.page.goto(new URL(`${CRM_PATH}/immobile/${propertyId}`, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
-    await this.page.waitForTimeout(900);
+  private async openProperty(propertyId: string, refresh = false) {
+    await this.ensureCrmIdle();
+    const alreadyOpen = this.page.url().includes(`/s/immobile/${propertyId}`);
+    if (alreadyOpen && refresh) await this.page.reload({ waitUntil: "domcontentloaded" });
+    else if (!alreadyOpen) {
+      await this.page.goto(new URL(`${CRM_PATH}/immobile/${propertyId}`, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
+    }
     await this.checkSession();
+    this.require("propertyAddressValue");
+    await this.visible(this.selectors.propertyAddressValue).first().waitFor({ state: "visible", timeout: 20_000 });
   }
 
   private async readPropertyIdentity() {
@@ -183,8 +286,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   async findPerson(input: PersonSearchInput): Promise<PersonMatchResult> {
     return this.friendly("person-search", "Non riesco a completare la ricerca del nominativo.", async () => {
       this.require("personSearchPage", "personSearchTaxCode", "personSearchSubmit", "personResultRows", "personResultId", "personResultLabel", "personResultOpen");
-      await this.page.locator(this.selectors.personSearchPage).first().click({ force: true });
-      await this.page.waitForTimeout(700);
+      await this.ensureCrmIdle();
+      const navigation = await this.uniqueVisible("personSearchPage", "sezione Nominativi");
+      const href = await navigation.getAttribute("href");
+      await navigation.click();
+      const navigated = href
+        ? await this.page.waitForURL(/\/s\/account\/Account(?:[/?#]|$)/i, { timeout: 10_000 }).then(() => true).catch(() => false)
+        : true;
+      if (!navigated && href) {
+        await this.page.goto(new URL(href, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
+      }
+      await this.uniqueVisible("personSearchTaxCode", "ricerca nominativi", 15_000);
       await this.enterGlobalSearch(this.selectors.personSearchTaxCode, this.selectors.personSearchSubmit, input.taxCode);
       await this.checkSession();
       const matches = await this.collectPersonMatches("certain", "crm-tax-code-search");
@@ -403,37 +515,150 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
-  async createActivity(input: CrmActivityInput): Promise<string> {
-    if (input.personId.startsWith("dry-") || input.propertyId.startsWith("dry-")) return `dry-activity-${input.propertyId}`;
-    return this.friendly("activity-create", "Non riesco a preparare l’attività da eseguire.", async () => {
-      this.require("personRelatedTab", "activityCard", "activityCreate", "activityDialog", "activityDescription", "activityStatus", "activityCancel", "activitySave");
-      await this.openPerson(input.personId);
-      const relatedTab = this.page.locator(this.selectors.personRelatedTab).first();
-      if (await relatedTab.count()) await relatedTab.click({ force: true });
-      await this.page.waitForTimeout(500);
-      const card = this.page.locator(this.selectors.activityCard).first();
-      await card.locator(this.selectors.activityCreate).first().click({ force: true });
-      const dialog = this.page.locator(this.selectors.activityDialog).last();
-      await dialog.waitFor({ state: "visible" });
-      await dialog.locator(this.selectors.activityDescription).fill(input.description);
-      const status = await dialog.locator(this.selectors.activityStatus).inputValue();
-      if (!status.toLocaleLowerCase("it").includes("da eseguire")) {
-        throw new WorkerError("Il modulo attività non è impostato su “Da eseguire”. Correggilo manualmente e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "activity-status", currentStatus: status }, true);
+  async createPropertyActivity(input: CrmActivityInput): Promise<CrmActivityResult> {
+    if (input.propertyId.startsWith("dry-")) {
+      return {
+        outcome: "simulated",
+        crmActivityId: `dry-activity-${input.propertyId}`,
+        correlatedProperty: input.propertyAddress ?? input.propertyId,
+        attempts: 0,
+      };
+    }
+    return this.friendly("property-activity-create", "Non riesco a preparare l’attività dell’immobile.", async () => {
+      this.require(
+        "activityCard", "activityCreate", "activityDialog", "activityDescription", "activityClient",
+        "activityRelatedProperty", "activityStatus", "activityOption", "activityCancel", "activitySave",
+      );
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= ACTIVITY_PRE_SAVE_ATTEMPTS; attempt += 1) {
+        let saveClicked = false;
+        try {
+          await this.openProperty(input.propertyId, attempt > 1);
+          const card = await this.uniqueVisible("activityCard", "riquadro Attività e appuntamenti", 20_000);
+          const createButtons = card.locator(this.selectors.activityCreate).filter({ visible: true });
+          const createCount = await createButtons.count();
+          if (createCount !== 1) {
+            throw new WorkerError(
+              `Nel riquadro dell’immobile risultano ${createCount} pulsanti “Nuovo”.`,
+              "needs_review",
+              { portal: "CRM", action: "property-activity-create-button", propertyId: input.propertyId, createCount },
+              true,
+            );
+          }
+          await createButtons.first().click();
+
+          // The c-lwc-modal host is zero-sized in production. Wait for the
+          // rendered controls, which appear only after the internal spinner.
+          await this.uniqueVisible("activityDialog", "finestra Attività", ACTIVITY_FORM_TIMEOUT);
+          const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
+          const relatedField = await this.uniqueVisible("activityRelatedProperty", "Correlato a", ACTIVITY_FORM_TIMEOUT);
+          const relatedInputs = relatedField.locator("input").filter({ visible: true });
+          if (await relatedInputs.count() !== 1) {
+            throw new WorkerError(
+              "Il campo “Correlato a” dell’attività non è univoco.",
+              "needs_review",
+              { portal: "CRM", action: "property-activity-related-field", propertyId: input.propertyId },
+              true,
+            );
+          }
+          const relatedInput = relatedInputs.first();
+          let correlatedProperty = (await relatedInput.inputValue()).trim();
+          if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
+            await relatedInput.click();
+            const propertyOptions = this.visible(this.selectors.activityOption).filter({ hasText: "IM -" });
+            await propertyOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
+            const optionCount = await propertyOptions.count();
+            if (optionCount === 1) await propertyOptions.first().click();
+            correlatedProperty = (await relatedInput.inputValue()).trim();
+          }
+          if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
+            throw new WorkerError(
+              "L’attività non risulta correlata all’immobile aperto. Il worker non salva collegamenti incerti.",
+              "needs_review",
+              { portal: "CRM", action: "property-activity-correlation", propertyId: input.propertyId, correlatedProperty },
+              true,
+            );
+          }
+
+          // Cliente remains a mandatory CRM field, but it is not the origin of
+          // the activity: navigation and correlation both stay on the property.
+          const client = await this.uniqueVisible("activityClient", "Cliente dell’attività", ACTIVITY_FORM_TIMEOUT);
+          const clientValue = (await client.inputValue()).trim();
+          if (!clientValue) {
+            throw new WorkerError(
+              "Il gestionale non ha precompilato il Cliente obbligatorio dell’attività. L’immobile resta comunque l’origine e il correlato.",
+              "needs_review",
+              { portal: "CRM", action: "property-activity-client", propertyId: input.propertyId, fallbackPersonId: input.fallbackPersonId ?? null },
+              true,
+            );
+          }
+
+          await description.fill(input.description);
+          const status = await this.uniqueVisible("activityStatus", "Stato attività", ACTIVITY_FORM_TIMEOUT);
+          let currentStatus = (await status.inputValue()).trim();
+          if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
+            await status.click();
+            const desiredOptions = this.visible(this.selectors.activityOption).filter({ hasText: input.status });
+            await desiredOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
+            const desiredCount = await desiredOptions.count();
+            if (desiredCount === 1) await desiredOptions.first().click();
+            currentStatus = (await status.inputValue()).trim();
+          }
+          if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
+            throw new WorkerError(
+              `Il modulo attività non può essere impostato automaticamente su “${input.status}”.`,
+              "needs_review",
+              { portal: "CRM", action: "property-activity-status", propertyId: input.propertyId, currentStatus },
+              true,
+            );
+          }
+
+          if (this.dryRun) {
+            const cancel = await this.uniqueVisible("activityCancel", "Annulla attività", 8_000);
+            await cancel.click().catch(async () => this.page.keyboard.press("Escape"));
+            await description.waitFor({ state: "hidden", timeout: 10_000 });
+            return {
+              outcome: "simulated",
+              crmActivityId: `dry-activity-${input.propertyId}`,
+              correlatedProperty,
+              attempts: attempt,
+            };
+          }
+
+          const save = await this.uniqueVisible("activitySave", "Salva attività", 8_000);
+          saveClicked = true;
+          await save.click();
+          await description.waitFor({ state: "hidden", timeout: 15_000 });
+          await this.checkSession();
+          return { outcome: "created", crmActivityId: null, correlatedProperty, attempts: attempt };
+        } catch (error) {
+          if (saveClicked) {
+            throw new WorkerError(
+              "Il salvataggio dell’attività è stato inviato, ma l’esito non è verificabile. Il worker non ripete il salvataggio per evitare duplicati.",
+              "needs_review",
+              { portal: "CRM", action: "property-activity-save-uncertain", propertyId: input.propertyId, attempt, technicalError: error instanceof Error ? error.message : String(error) },
+              true,
+            );
+          }
+          if (error instanceof WorkerError && error.status !== "portal_error") throw error;
+          lastError = error;
+          await this.closeKnownStaleActivityForm().catch(() => undefined);
+          if (attempt === ACTIVITY_PRE_SAVE_ATTEMPTS) break;
+        }
       }
-      if (this.dryRun) {
-        await dialog.locator(this.selectors.activityCancel).first().click({ force: true });
-        await dialog.waitFor({ state: "hidden", timeout: 8_000 });
-        return `dry-activity-${input.propertyId}`;
-      }
-      this.require("activityRelatedProperty");
-      const related = dialog.locator(this.selectors.activityRelatedProperty).first();
-      await related.fill(input.propertyId);
-      const option = this.page.locator('[role="option"]:visible').first();
-      await option.waitFor({ state: "visible", timeout: 8_000 });
-      await option.click();
-      await dialog.locator(this.selectors.activitySave).first().click();
-      await this.checkSession();
-      return `activity-${Date.now()}`;
+      throw new WorkerError(
+        `Il gestionale non ha preparato l’attività dell’immobile dopo ${ACTIVITY_PRE_SAVE_ATTEMPTS} tentativi automatici.`,
+        "portal_error",
+        {
+          portal: "CRM",
+          action: "property-activity-pre-save-retries-exhausted",
+          propertyId: input.propertyId,
+          attempts: ACTIVITY_PRE_SAVE_ATTEMPTS,
+          technicalError: lastError instanceof Error ? lastError.message : String(lastError),
+          pageUrl: this.page.url(),
+        },
+        true,
+      );
     });
   }
 

@@ -65,11 +65,64 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator(crmSelectors.activityCard).count()).toBe(1);
       const dialog = page.locator(crmSelectors.activityDialog);
       expect(await dialog.count()).toBe(1);
-      expect(await dialog.locator(crmSelectors.activityDescription).count()).toBe(1);
-      expect(await dialog.locator(crmSelectors.activityStatus).inputValue()).toBe("Da eseguire");
-      expect(await dialog.locator(crmSelectors.activityCancel).count()).toBe(1);
+      expect(await page.locator(crmSelectors.activityDescription).count()).toBe(1);
+      expect(await page.locator(crmSelectors.activityClient).inputValue()).toBe("Benedetta Pappapicco");
+      expect(await page.locator(crmSelectors.activityRelatedProperty).locator("input").inputValue()).toContain("Via Borgo San Francesco 29 [2]");
+      expect(await page.locator(crmSelectors.activityStatus).inputValue()).toBe("Da eseguire");
+      expect(await page.locator(crmSelectors.activityCancel).count()).toBe(1);
       expect(await page.locator(crmSelectors.propertyOwnersCard).count()).toBe(1);
       expect(await page.locator(crmSelectors.propertyOwnersCard).locator(crmSelectors.propertyOwnerLinks).count()).toBe(1);
+    } finally { await browser.close(); }
+  });
+
+  it("prepara una sola attività dalla scheda immobile e la annulla in dry-run", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        fallbackPersonId: "P-42",
+        description: "Inserire attività",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "simulated", crmActivityId: "dry-activity-I-42", attempts: 1 });
+      expect(await page.locator('[data-worker-crm="activityDescription"]').inputValue()).toBe("Inserire attività");
+      expect(await page.locator('[data-worker-crm="activityDialog"]').isVisible()).toBe(false);
+      expect(await page.locator("body").getAttribute("data-activity-origin")).toContain("/s/immobile/I-42");
+      expect(await page.locator("body").getAttribute("data-activity-cancelled")).toBe("true");
+      expect(await page.locator("body").getAttribute("data-activity-saved")).toBeNull();
+    } finally { await browser.close(); }
+  });
+
+  it("chiude automaticamente una modale attività vuota rimasta aperta prima della ricerca", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator('[data-worker-crm="activityDialog"]').evaluate((dialog) => { (dialog as HTMLElement).hidden = false; });
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      const result = await adapter.findPerson({ taxCode: "CQVMRS49L66A893R", phones: [], fullName: "Maria", birthDate: null });
+      expect(result.matches[0]?.id).toBe("P-42");
+      expect(await page.locator('[data-worker-crm="activityDialog"]').isVisible()).toBe(false);
+      expect(await page.locator("body").getAttribute("data-activity-cancelled")).toBe("true");
+    } finally { await browser.close(); }
+  });
+
+  it("non scarta automaticamente una modale attività compilata manualmente", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator('[data-worker-crm="activityDialog"]').evaluate((dialog) => { (dialog as HTMLElement).hidden = false; });
+      await page.locator('[data-worker-crm="activityDescription"]').fill("Nota inserita manualmente");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.findPerson({ taxCode: "CQVMRS49L66A893R", phones: [], fullName: "Maria", birthDate: null }))
+        .rejects.toThrow("attività compilata manualmente");
+      expect(await page.locator('[data-worker-crm="activityDialog"]').isVisible()).toBe(true);
     } finally { await browser.close(); }
   });
 

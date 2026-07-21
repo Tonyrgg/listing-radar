@@ -15,11 +15,12 @@
   <article><h2>Attività e appuntamenti</h2><button>Nuovo</button></article>
   <article><h2>Soggetti collegati (3)</h2><a href="/CRMImmobiliareLightning/s/account/owner-1">Proprietario</a></article>
 
-  <c-lwc-modal>
+  <c-lwc-modal style="display: contents">
     <section role="dialog">
-      <textarea aria-label="Descrizione"></textarea>
-      <div class="slds-form-element_horizontal"><label>Correlato a</label><input value="Immobile"></div>
-      <div class="slds-form-element_horizontal"><label>Stato</label><input value="Da eseguire"></div>
+      <c-input-field><label>Descrizione</label><textarea aria-label="Descrizione"></textarea></c-input-field>
+      <c-input-field><label>Cliente</label><input value="Benedetta Pappapicco"></c-input-field>
+      <c-input-field><label>Correlato a</label><input value="IM - Via Borgo San Francesco 29 [2] - Pappapicco"></c-input-field>
+      <c-input-field><label>Stato</label><input value="Da eseguire"><span role="option">Da eseguire</span></c-input-field>
       <button>Annulla</button><button>Salva</button>
     </section>
   </c-lwc-modal>

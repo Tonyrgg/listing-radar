@@ -9,8 +9,16 @@
     <button data-worker-crm="personRelatedTab">Correlati</button>
     <article data-worker-crm="personPropertiesCard"><a data-worker-crm="personPropertyLinks" href="#fixture-property">Immobile</a></article>
     <span data-worker-crm="propertySheetValue">58</span><span data-worker-crm="propertyParcelValue">1234</span><span data-worker-crm="propertySubalternValue">7</span><span data-worker-crm="propertyAddressValue">Via Roma 12 [2], 70032 BITONTO (BA)</span>
-    <article data-worker-crm="activityCard"><button data-worker-crm="activityCreate">Nuovo</button></article>
-    <div role="dialog" data-worker-crm="activityDialog"><textarea data-worker-crm="activityDescription"></textarea><input data-worker-crm="activityRelatedProperty"><input data-worker-crm="activityStatus" value="Da eseguire"><button data-worker-crm="activitySave">Salva</button><button data-worker-crm="activityCancel">Annulla</button></div>
+    <article data-worker-crm="activityCard"><button data-worker-crm="activityCreate" onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector('[data-worker-crm=activityDialog]').hidden=false">Nuovo</button></article>
+    <div role="dialog" data-worker-crm="activityDialog" hidden>
+      <textarea data-worker-crm="activityDescription"></textarea>
+      <input data-worker-crm="activityClient" value="Maria Acquaviva">
+      <div data-worker-crm="activityRelatedProperty"><input value="IM - Via Roma 12 [2]"></div>
+      <input data-worker-crm="activityStatus" value="Da eseguire">
+      <div data-worker-crm="activityOption">Da eseguire</div>
+      <button data-worker-crm="activitySave" onclick="document.body.dataset.activitySaved='true'">Salva</button>
+      <button data-worker-crm="activityCancel" onclick="document.body.dataset.activityCancelled='true';this.closest('[role=dialog]').hidden=true">Annulla</button>
+    </div>
     <article data-worker-crm="propertyOwnersCard"><a data-worker-crm="propertyOwnerLinks" href="#P-42">Proprietario</a></article>
     <button data-worker-crm="personCreate">Nuovo</button><button data-worker-crm="personCreateMenuItem">Nominativo</button>
     <input data-worker-crm="personFullName"><input data-worker-crm="personFirstName"><input data-worker-crm="personLastName"><input data-worker-crm="personBirthPlace"><input data-worker-crm="personBirthProvince">

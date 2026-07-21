@@ -279,7 +279,11 @@ document.addEventListener("click", async (event) => {
     else if (target.dataset.detailJob) {
       const detail = await window.propertyWorker.getJobDetails(target.dataset.detailJob);
       $("detailPanel").classList.remove("is-hidden");
-      const activities = detail.properties.reduce((total, property) => total + Object.keys(property.raw_payload?.worker_activities ?? {}).length, 0);
+      const activities = detail.properties.reduce((total, property) => {
+        const checkpoint = property.raw_payload?.worker_activity;
+        if (checkpoint && !["skipped", "retryable_error", "preparing"].includes(checkpoint.state)) return total + 1;
+        return total + (Object.keys(property.raw_payload?.worker_activities ?? {}).length ? 1 : 0);
+      }, 0);
       const alternatives = Array.isArray(detail.job.error_details?.alternatives) ? detail.job.error_details.alternatives : [];
       const review = detail.job.error_message ? `<div class="detail-error"><b>Intervento richiesto</b><p>${escapeHtml(detail.job.error_message)}</p>${alternatives.length ? `<ul>${alternatives.map((item) => `<li>${escapeHtml(item.label ?? "Scheda cliente")} · ${escapeHtml(String(item.id ?? "").slice(-6))}</li>`).join("")}</ul>` : ""}</div>` : "";
       $("detailContent").innerHTML = `<div class="detail-metrics"><div><b>${detail.properties.length}</b><small>Immobili</small></div><div><b>${detail.people.length}</b><small>Nominativi</small></div><div><b>${detail.ownerships.length}</b><small>Quote</small></div><div><b>${activities}</b><small>Attività</small></div></div>${review}`;
