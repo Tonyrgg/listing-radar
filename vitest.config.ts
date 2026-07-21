@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     environment: "node",
     restoreMocks: true,
+    include: ["tests/**/*.test.ts"],
+    exclude: ["worker/**", "node_modules/**"],
   },
   resolve: {
     alias: {

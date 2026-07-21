@@ -1,0 +1,60 @@
+{
+  "name": "listing-radar-property-worker",
+  "version": "0.3.0",
+  "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
+  "author": "Listing Radar",
+  "private": true,
+  "type": "module",
+  "main": "dist-desktop/desktop/main.js",
+  "scripts": {
+    "start": "tsx src/cli.ts start",
+    "worker:start": "tsx src/cli.ts start",
+    "worker:start:assisted": "tsx src/cli.ts start --mode assisted",
+    "worker:start:auto": "tsx src/cli.ts start --mode automatic",
+    "worker:resume": "tsx src/cli.ts resume",
+    "worker:check": "tsx src/cli.ts check",
+    "desktop:compile": "tsc -p tsconfig.desktop.json",
+    "desktop:dev": "npm run desktop:compile && electron .",
+    "desktop:build": "npm run desktop:compile && electron-builder --win nsis",
+    "desktop:portable": "npm run desktop:compile && electron-builder --win portable",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "dotenv": "^17.2.3",
+    "pino": "^10.3.1",
+    "playwright": "^1.58.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "vitest": "^4.1.0"
+  },
+  "build": {
+    "appId": "it.listingradar.propertyworker",
+    "productName": "Property Data Worker",
+    "directories": { "output": "release" },
+    "files": ["dist-desktop/**/*", "package.json"],
+    "extraResources": [
+      { "from": "src/desktop/renderer", "to": "renderer" },
+      { "from": "src/desktop/preload.cjs", "to": "preload.cjs" }
+    ],
+    "asarUnpack": ["node_modules/playwright-core/**/*", "node_modules/xlsx/**/*"],
+    "electronLanguages": ["it", "en-US"],
+    "win": { "target": ["nsis"], "legalTrademarks": "Listing Radar" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Property Data Worker"
+    }
+  }
+}

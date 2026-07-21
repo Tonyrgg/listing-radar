@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+    <title>Property Data Worker</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail">
+        <div class="brand">
+          <div class="radar-mark" aria-hidden="true"><i></i><i></i><b></b></div>
+          <div><strong>Listing Radar</strong><span>Property Data Worker</span></div>
+        </div>
+
+        <nav class="rail-nav" aria-label="Sezioni">
+          <button class="nav-item is-active" data-scroll="operations"><span>01</span>Operazioni</button>
+          <button class="nav-item" data-scroll="jobs"><span>02</span>Lavorazioni</button>
+          <button class="nav-item" data-scroll="settings"><span>03</span>Configurazione</button>
+        </nav>
+
+        <div class="rail-note">
+          <span class="signal"></span>
+          <p>Locale e protetto</p>
+          <small>Le credenziali non transitano nell’interfaccia.</small>
+        </div>
+      </aside>
+
+      <main class="workspace" id="operations">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Sala operativa · Windows</p>
+            <h1>Una lavorazione alla volta.<br /><em>Sempre sotto controllo.</em></h1>
+          </div>
+          <div class="top-actions">
+            <span id="versionLabel" class="version">v—</span>
+            <button id="checkButton" class="button button-quiet"><span class="button-icon">↻</span>Controlla sistema</button>
+            <button id="chromeButton" class="button button-dark"><span class="button-icon">↗</span>Avvia Chrome</button>
+          </div>
+        </header>
+
+        <section class="readiness" aria-label="Stato collegamenti">
+          <div class="readiness-heading"><span>Stato sistema</span><small id="lastCheckLabel">Controllo non ancora eseguito</small></div>
+          <div id="checksGrid" class="checks-grid">
+            <div class="check-item is-idle"><span></span><div><b>Chrome</b><small>Da controllare</small></div></div>
+            <div class="check-item is-idle"><span></span><div><b>SISTER</b><small>Da controllare</small></div></div>
+            <div class="check-item is-idle"><span></span><div><b>Gestionale</b><small>Da controllare</small></div></div>
+            <div class="check-item is-idle"><span></span><div><b>Excel</b><small>Da controllare</small></div></div>
+            <div class="check-item is-idle"><span></span><div><b>Supabase</b><small>Da controllare</small></div></div>
+          </div>
+        </section>
+
+        <div class="content-grid">
+          <section class="operation-column">
+            <div class="section-heading">
+              <div><p class="kicker">Flusso guidato</p><h2 id="operationTitle">Pronto per una nuova acquisizione</h2></div>
+              <div id="runBadge" class="run-badge is-idle"><span></span>In attesa</div>
+            </div>
+
+            <div class="control-deck">
+              <div class="mode-control">
+                <p>Modalità</p>
+                <div class="segmented" role="group" aria-label="Modalità worker">
+                  <button data-mode="assisted" class="is-selected">Assisted</button>
+                  <button data-mode="automatic">Automatic</button>
+                </div>
+                <small>Assisted richiede conferma prima delle operazioni.</small>
+              </div>
+              <label class="dry-control">
+                <div><p>Dry-run</p><small>Nessun salvataggio finale nel gestionale</small></div>
+                <input id="dryRunToggle" type="checkbox" checked />
+                <span class="switch" aria-hidden="true"></span>
+              </label>
+              <div class="launch-control">
+                <button id="startButton" class="button button-primary">Nuova lavorazione <span>→</span></button>
+                <button id="pauseButton" class="button button-outline" disabled>Pausa</button>
+              </div>
+            </div>
+
+            <section id="actionPanel" class="action-panel is-empty" aria-live="polite">
+              <div class="action-number">01</div>
+              <div class="action-copy">
+                <p class="kicker">Prossima azione</p>
+                <h3>Prepara le due schede</h3>
+                <p>Apri SISTER e il gestionale nel Chrome dedicato, completa gli accessi e porta SISTER ai risultati.</p>
+              </div>
+              <div class="action-buttons"><button id="actionCheckButton" class="button button-light">Verifica adesso</button></div>
+            </section>
+
+            <section class="progress-section">
+              <div class="progress-header"><div><p class="kicker">Avanzamento persistente</p><h3>Pipeline della lavorazione</h3></div><strong id="progressPercent">0%</strong></div>
+              <div class="progress-track"><span id="progressBar"></span></div>
+              <ol id="workflowSteps" class="workflow-steps"></ol>
+            </section>
+
+            <section id="settings" class="settings-section">
+              <div class="section-heading compact"><div><p class="kicker">Configurazione locale</p><h2>Origini e cartelle</h2></div></div>
+              <div class="settings-row">
+                <div><b>Configurazione protetta</b><small id="environmentPath">File worker/.env non selezionato</small></div>
+                <button id="chooseEnvironmentButton" class="button button-outline">Scegli .env</button>
+              </div>
+              <div class="settings-row">
+                <div><b>File Excel recapiti</b><small id="excelPath">Percorso non disponibile</small></div>
+                <button id="chooseExcelButton" class="button button-outline">Scegli file</button>
+              </div>
+              <div class="settings-row">
+                <div><b>Screenshot diagnostici</b><small id="screenshotPath">Percorso non disponibile</small></div>
+              </div>
+              <div class="settings-row">
+                <div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo silenzioso ogni 2-3 minuti</small></div>
+              </div>
+              <p class="security-copy">La chiave Supabase viene letta dal file locale soltanto nel processo principale dell’app e non viene mai inviata a questa schermata.</p>
+            </section>
+          </section>
+
+          <aside class="context-column">
+            <section id="jobs" class="jobs-section">
+              <div class="aside-heading"><div><p class="kicker">Archivio operativo</p><h2>Lavorazioni recenti</h2></div><span id="jobCount">0</span></div>
+              <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna lavorazione disponibile.</p></div>
+            </section>
+
+            <section class="activity-section">
+              <div class="aside-heading"><div><p class="kicker">In tempo reale</p><h2>Registro attività</h2></div></div>
+              <div id="activityList" class="activity-list"><p class="empty-message">Le attività compariranno qui.</p></div>
+            </section>
+
+            <section id="detailPanel" class="detail-section is-hidden">
+              <div class="aside-heading"><div><p class="kicker">Dettaglio</p><h2>Contenuto job</h2></div></div>
+              <div id="detailContent"></div>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

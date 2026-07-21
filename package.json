@@ -10,7 +10,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:email-parser": "tsx scripts/smoke-email-parser.ts",
-    "backup:data": "node --env-file=.env.local scripts/backup-data.mjs"
+    "backup:data": "node --env-file=.env.local scripts/backup-data.mjs",
+    "worker:check": "npm --prefix worker run worker:check",
+    "worker:start": "npm --prefix worker run worker:start",
+    "worker:start:assisted": "npm --prefix worker run worker:start:assisted",
+    "worker:start:auto": "npm --prefix worker run worker:start:auto",
+    "worker:resume": "npm --prefix worker run worker:resume --",
+    "worker:desktop": "npm --prefix worker run desktop:dev",
+    "worker:desktop:build": "npm --prefix worker run desktop:build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

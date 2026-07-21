@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Settings,
+  Workflow,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/listings", label: "Immobili", icon: Building2 },
   { href: "/map", label: "Mappa Zone", icon: MapPinned },
   { href: "/reports", label: "Report", icon: FileText },
+  { href: "/property-worker", label: "Property Worker", icon: Workflow },
   { href: "/settings", label: "Impostazioni", icon: Settings },
 ];
 

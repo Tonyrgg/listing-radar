@@ -2,6 +2,11 @@
 
 # dependencies
 /node_modules
+/worker/node_modules
+/worker/dist
+/worker/dist-desktop
+/worker/release
+/worker/coverage
 /.pnp
 .pnp.*
 .yarn/*
