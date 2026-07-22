@@ -11,6 +11,25 @@ import { sisterFixtureSelectors, sisterSelectors } from "../src/adapters/sister/
 const fixture = (name: string) => fileURLToPath(new URL(`../src/fixtures/${name}`, import.meta.url));
 
 describe("adattatori con fixture HTML", () => {
+  it("salta i record SISTER privi di dati catastali senza perdere l'ordine dei record validi", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("sister-results-empty-records.html"), "utf8"));
+      const adapter = new PlaywrightSisterAdapter(page, sisterSelectors);
+      const properties = await adapter.extractProperties();
+      expect(properties.map(({ subaltern }) => subaltern)).toEqual(["4", "7"]);
+      expect(properties.map(({ category }) => category)).toEqual(["A/3", "C/2"]);
+      expect(properties.map(({ rawPayload }) => rawPayload.sourceOrder)).toEqual([2, 4]);
+      expect(adapter.getIgnoredEmptyProperties()).toEqual([
+        expect.objectContaining({ rowIndex: 0, subaltern: "2" }),
+        expect.objectContaining({ rowIndex: 1, subaltern: "3" }),
+        expect.objectContaining({ rowIndex: 3, subaltern: "6" }),
+      ]);
+      expect(adapter.getIgnoredCategories()).toEqual([]);
+    } finally { await browser.close(); }
+  });
+
   it("mantiene l'ordine esatto delle sedici righe mostrate da SISTER", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

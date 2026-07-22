@@ -70,6 +70,7 @@ async function cellText(row: Locator, index: number): Promise<string> {
 
 export class PlaywrightSisterAdapter implements SisterAdapter {
   private ignoredCategories: Array<{ category: string; rowIndex: number }> = [];
+  private ignoredEmptyProperties: Array<{ rowIndex: number; sheet: string; parcel: string; subaltern: string; address: string }> = [];
   private ignoredRights: Array<{ rightType: string; rowIndex: number }> = [];
 
   constructor(
@@ -160,6 +161,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       : null;
     const properties: CadastralProperty[] = [];
     this.ignoredCategories = [];
+    this.ignoredEmptyProperties = [];
     const rowCount = await rows.count();
     for (let index = 0; index < rowCount; index += 1) {
       const row = rows.nth(index);
@@ -167,7 +169,26 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       const value = (key: string, selector: string) => cells
         ? Promise.resolve(cells[columns![key]!]?.trim() ?? "")
         : text(row, selector);
-      const category = normalizeCategory(await value("category", this.selectors.category));
+      const raw = {
+        sheet: await value("sheet", this.selectors.sheet),
+        parcel: await value("parcel", this.selectors.parcel),
+        subaltern: await value("subaltern", this.selectors.subaltern),
+        address: await value("address", this.selectors.address),
+        censusZone: await value("censusZone", this.selectors.censusZone),
+        category: await value("category", this.selectors.category),
+        class: await value("class", this.selectors.class),
+        consistency: await value("consistency", this.selectors.consistency),
+        cadastralIncome: await value("cadastralIncome", this.selectors.cadastralIncome),
+      };
+      const hasCadastralData = [raw.censusZone, raw.category, raw.class, raw.consistency, raw.cadastralIncome]
+        .some((item) => item.trim().length > 0);
+      if (!hasCadastralData) {
+        const ignored = { rowIndex: index, sheet: raw.sheet, parcel: raw.parcel, subaltern: raw.subaltern, address: raw.address };
+        this.ignoredEmptyProperties.push(ignored);
+        logger.info(ignored, "Record SISTER privo di dati catastali ignorato");
+        continue;
+      }
+      const category = normalizeCategory(raw.category);
       if (!/^[AC]\//i.test(category)) {
         this.ignoredCategories.push({ category, rowIndex: index });
         logger.info({ category, rowIndex: index }, "Categoria catastale ignorata");
@@ -175,15 +196,15 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       }
       properties.push({
         municipality: context.municipality,
-        sheet: await value("sheet", this.selectors.sheet),
-        parcel: await value("parcel", this.selectors.parcel),
-        subaltern: await value("subaltern", this.selectors.subaltern),
-        address: (await value("address", this.selectors.address)) || null,
-        censusZone: (await value("censusZone", this.selectors.censusZone)) || null,
+        sheet: raw.sheet,
+        parcel: raw.parcel,
+        subaltern: raw.subaltern,
+        address: raw.address || null,
+        censusZone: raw.censusZone || null,
         category,
-        class: (await value("class", this.selectors.class)) || null,
-        consistency: (await value("consistency", this.selectors.consistency)) || null,
-        cadastralIncome: parseIncome(await value("cadastralIncome", this.selectors.cadastralIncome)),
+        class: raw.class || null,
+        consistency: raw.consistency || null,
+        cadastralIncome: parseIncome(raw.cadastralIncome),
         sourceRef: String(index),
         rawPayload: { rowIndex: index, sourceOrder: index, searchContext: context },
       });
@@ -256,6 +277,10 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
 
   getIgnoredCategories() {
     return [...this.ignoredCategories];
+  }
+
+  getIgnoredEmptyProperties() {
+    return [...this.ignoredEmptyProperties];
   }
 
   getIgnoredRights() {

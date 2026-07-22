@@ -219,7 +219,12 @@ export class PropertyWorkerRunner {
         const extracted = await sister.extractProperties();
         if (!extracted.length) throw new WorkerError("Nessun immobile A/ o C/ trovato", "data_incomplete", { portal: "SISTER" });
         const properties = await this.repository.insertProperties(job.id, extracted);
-        return { count: properties.length, keys: properties.map((property) => property.cadastral_key), ignoredCategories: sister.getIgnoredCategories() };
+        return {
+          count: properties.length,
+          keys: properties.map((property) => property.cadastral_key),
+          ignoredCategories: sister.getIgnoredCategories(),
+          ignoredEmptyProperties: sister.getIgnoredEmptyProperties(),
+        };
       }
       case "owners_extracted": {
         const graph = await this.repository.loadGraph(job.id);
