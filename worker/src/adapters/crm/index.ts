@@ -2,6 +2,7 @@ import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
+import { propertyFormValues } from "../../core/property-form.js";
 import type {
   CrmActivityInput,
   CrmActivityResult,
@@ -606,6 +607,152 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     for (const [key, value] of fields) if (value) await this.page.locator(this.selectors[key]).fill(value);
   }
 
+  private async propertyPicklist(key: keyof CrmSelectors, label: string, value: string) {
+    this.require(key);
+    const components = this.visible(this.selectors[key]);
+    await components.first().waitFor({ state: "visible", timeout: 15_000 });
+    let component = components.first();
+    for (let index = 0; index < await components.count(); index += 1) {
+      const labels = await components.nth(index).locator("label").allTextContents();
+      if (labels.some((text) => normalizedUiText(text) === normalizedUiText(label))) {
+        component = components.nth(index);
+        break;
+      }
+    }
+    const input = component.locator('input[role="textbox"]').filter({ visible: true }).first();
+    await input.click();
+    const options = component.locator('[role="option"]').filter({ visible: true });
+    await options.first().waitFor({ state: "visible", timeout: 8_000 });
+    const labels = await options.allTextContents();
+    const index = labels.findIndex((text) => normalizedUiText(text) === normalizedUiText(value));
+    if (index < 0) {
+      throw new WorkerError(
+        `Nel campo “${label}” non è disponibile l'opzione “${value}”.`,
+        "needs_review",
+        { portal: "CRM", action: "property-picklist", label, requested: value, alternatives: labels },
+        true,
+      );
+    }
+    await options.nth(index).click();
+  }
+
+  private async selectPropertyMunicipality(municipality: string) {
+    this.require("propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode");
+    const component = await this.uniqueVisible("propertyMunicipality", "Comune immobile", 15_000);
+    const input = component.locator('input[placeholder="Cerca"]').filter({ visible: true }).first();
+    if (await input.getAttribute("readonly") === null) {
+      await input.fill("");
+      await input.pressSequentially(municipality, { delay: 70 });
+      const options = component.locator(this.selectors.propertyMunicipalityOption).filter({ visible: true });
+      await options.first().waitFor({ state: "visible", timeout: 8_000 });
+      const labels = await options.allTextContents();
+      const municipalityText = normalizedUiText(municipality);
+      const index = labels.findIndex((text) => normalizedUiText(text) === municipalityText || normalizedUiText(text).startsWith(`${municipalityText} `));
+      if (index < 0) throw new WorkerError(`Il Comune “${municipality}” non compare nella tendina dell'immobile.`, "needs_review", { portal: "CRM", action: "property-municipality", alternatives: labels }, true);
+      await options.nth(index).click();
+    }
+    const cap = this.visible(this.selectors.propertyPostalCode).first();
+    await cap.waitFor({ state: "visible", timeout: 8_000 });
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      if ((await cap.inputValue()).trim()) return;
+      await this.page.waitForTimeout(150);
+    }
+    throw new WorkerError("Il CAP non è stato compilato automaticamente dopo la scelta del Comune.", "portal_error", { portal: "CRM", action: "property-postal-code" }, true);
+  }
+
+  private async advancePropertyWizard() {
+    this.require("propertyNext");
+    const buttons = this.visible(this.selectors.propertyNext);
+    await buttons.first().waitFor({ state: "visible", timeout: 12_000 });
+    await buttons.last().click();
+  }
+
+  private async fillNewProperty(property: NormalizedProperty) {
+    const values = propertyFormValues(property);
+    await this.propertyPicklist("propertyType", "Tipologia Immobile", values.type);
+    await this.propertyPicklist("propertySubtype", "Sottotipologia Immobile", values.subtype);
+    if (values.floor) await this.propertyPicklist("propertyFloor", "Piano Immobile", values.floor);
+    const fields: Array<[keyof CrmSelectors, string, string]> = [
+      ["propertyFloorNumber", "Numero piano", values.floorNumber],
+      ["propertyAddress", "Indirizzo", values.street],
+      ["propertyCivic", "Civico", values.civicNumber],
+      ["propertyInternal", "Interno", values.internal],
+      ["propertyStaircase", "Lettera", values.staircase],
+    ];
+    for (const [key, label, value] of fields) {
+      if (!value && ["propertyFloorNumber", "propertyStaircase"].includes(key)) continue;
+      this.require(key);
+      const field = await this.uniqueVisible(key, label, 12_000);
+      await field.fill(value);
+    }
+    await this.selectPropertyMunicipality(values.municipality);
+    const postalCode = (await this.visible(this.selectors.propertyPostalCode).first().inputValue()).trim();
+    await this.advancePropertyWizard();
+    return { ...values, postalCode };
+  }
+
+  private async acceptGoogleAddressSuggestion(dialog: Locator, insertedValue: string) {
+    const inserted = dialog.getByText(insertedValue, { exact: true }).filter({ visible: true }).first();
+    if (!(await inserted.count())) return false;
+    let row = inserted.locator("xpath=..");
+    for (let depth = 0; depth < 5; depth += 1) {
+      const text = normalizedUiText(await row.innerText().catch(() => ""));
+      if (text.includes("STESSO VALORE")) return true;
+      const actions = row.locator('button, a, [role="button"], [role="option"], input[type="radio"]').filter({ visible: true });
+      const usable: Locator[] = [];
+      for (let index = 0; index < await actions.count(); index += 1) {
+        const action = actions.nth(index);
+        if (normalizedUiText(await action.innerText().catch(() => "")) !== normalizedUiText(insertedValue)) usable.push(action);
+      }
+      if (usable.length === 1) {
+        await usable[0]!.click();
+        return true;
+      }
+      row = row.locator("xpath=..");
+    }
+    return false;
+  }
+
+  private async finishPropertyMap(values: ReturnType<typeof propertyFormValues> & { postalCode: string }) {
+    this.require("propertyGoogleSameValue", "propertyLocality", "propertyLocalityOption", "propertySave");
+    const save = this.visible(this.selectors.propertySave);
+    await save.first().waitFor({ state: "visible", timeout: 20_000 });
+    const sameValues = this.visible(this.selectors.propertyGoogleSameValue);
+    await sameValues.first().waitFor({ state: "visible", timeout: 12_000 }).catch(() => undefined);
+    if (await sameValues.count() < 3) {
+      const dialog = this.visible(this.selectors.blockingDialog).last();
+      const accepted = [];
+      for (const value of [values.street, values.civicNumber, values.postalCode]) {
+        accepted.push(await this.acceptGoogleAddressSuggestion(dialog, value));
+      }
+      if (accepted.some((result) => !result)) {
+        throw new WorkerError(
+          "Google propone una correzione dell'indirizzo che il worker non riesce a selezionare in modo univoco.",
+          "needs_review",
+          { portal: "CRM", action: "property-google-address", street: values.street, civicNumber: values.civicNumber, postalCode: values.postalCode },
+          true,
+        );
+      }
+    }
+    const locality = await this.uniqueVisible("propertyLocality", "Località", 12_000);
+    const nativeSelect = locality.locator("select").filter({ visible: true });
+    if (await nativeSelect.count()) {
+      const options = await nativeSelect.locator("option").count();
+      if (options < 2) throw new WorkerError("Il menu Località non contiene valori selezionabili.", "portal_error", { portal: "CRM", action: "property-locality" }, true);
+      await nativeSelect.selectOption({ index: 1 });
+    } else {
+      const input = locality.locator('input[role="textbox"]').filter({ visible: true });
+      const trigger = await input.count()
+        ? input.first()
+        : locality.locator('button[aria-haspopup="listbox"], button.slds-combobox__input').filter({ visible: true }).first();
+      await trigger.click();
+      const options = locality.locator(this.selectors.propertyLocalityOption).filter({ visible: true });
+      await options.first().waitFor({ state: "visible", timeout: 8_000 });
+      await options.first().click();
+    }
+    await save.last().click();
+  }
+
   async createProperty(property: NormalizedProperty): Promise<string> {
     if (this.dryRun) return `dry-property-${property.sheet}-${property.parcel}-${property.subaltern}`;
     return this.friendly("property-create", "Non riesco a creare l’immobile.", async () => {
@@ -637,16 +784,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
       await createItem.first().click();
-      const next = this.page.getByRole("button", { name: "Avanti", exact: true }).filter({ visible: true });
-      if (await next.first().waitFor({ state: "visible", timeout: 8_000 }).then(() => true).catch(() => false)) {
-        await next.last().click();
-      }
-      await this.fillProperty(property);
-      this.require("propertySave");
-      await this.page.locator(this.selectors.propertySave).click();
+      await this.advancePropertyWizard();
+      const values = await this.fillNewProperty(property);
+      await this.finishPropertyMap(values);
       await this.checkSession();
-      const propertyId = await this.currentPropertyId();
+      let propertyId = await this.currentPropertyId();
+      if (!propertyId) {
+        await this.page.waitForURL(/\/s\/immobile\//i, { timeout: 20_000 }).catch(() => undefined);
+        propertyId = await this.currentPropertyId();
+      }
       if (!propertyId) throw new WorkerError("L'immobile risulta salvato, ma il gestionale non espone il suo identificativo.", "needs_review", { portal: "CRM", action: "property-create-record-id" }, true);
+      if (values.commercialSquareMeters !== null && this.selectors.propertyCommercialSquareMeters) {
+        const sqm = this.visible(this.selectors.propertyCommercialSquareMeters);
+        if (await sqm.count()) await sqm.first().fill(String(values.commercialSquareMeters));
+      }
       return propertyId;
     });
   }

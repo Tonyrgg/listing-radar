@@ -46,6 +46,21 @@ export interface CrmSelectors {
   propertyResultOpen: string;
   propertyCreate: string;
   propertyCreateMenuItem: string;
+  propertyType: string;
+  propertySubtype: string;
+  propertyFloor: string;
+  propertyFloorNumber: string;
+  propertyCivic: string;
+  propertyInternal: string;
+  propertyStaircase: string;
+  propertyMunicipality: string;
+  propertyMunicipalityOption: string;
+  propertyPostalCode: string;
+  propertyNext: string;
+  propertyGoogleSameValue: string;
+  propertyLocality: string;
+  propertyLocalityOption: string;
+  propertyCommercialSquareMeters: string;
   propertyAddress: string;
   propertySheet: string;
   propertyParcel: string;
@@ -90,6 +105,9 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
+  "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
+  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue",
+  "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
@@ -156,6 +174,23 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyResultOpen: 'a[data-id], a[data-recordid]',
   propertyCreate: 'c-menu button',
   propertyCreateMenuItem: 'c-menu a[role="menuitem"]:has(span[title="Nuovo"])',
+  propertyType: 'c-picklist:has(label:has-text("Tipologia Immobile"))',
+  propertySubtype: 'c-picklist:has(label:has-text("Sottotipologia Immobile"))',
+  propertyFloor: 'c-picklist:has(label:has-text("Piano Immobile"))',
+  propertyFloorNumber: 'lightning-input:has(label:text-is("Numero Piano")) input',
+  propertyAddress: 'lightning-input:has(label:text-is("Indirizzo")) input',
+  propertyCivic: 'lightning-input:has(label:text-is("Civico")) input',
+  propertyInternal: 'lightning-input:has(label:text-is("Interno")) input',
+  propertyStaircase: 'lightning-input:has(label:text-is("Lettera")) input',
+  propertyMunicipality: 'c-lookup:has(label:has-text("Comune"))',
+  propertyMunicipalityOption: '[role="option"].slds-listbox__option_has-meta',
+  propertyPostalCode: 'c-picklist:has(label:has-text("CAP")) input[role="textbox"]',
+  propertyNext: 'button:visible:has-text("Avanti")',
+  propertyGoogleSameValue: 'text="Stesso valore"',
+  propertyLocality: 'c-picklist:has(label:has-text("LOCALIT")), c-picklist:has(label:has-text("Localit")), lightning-combobox:has(label:has-text("LOCALIT")), lightning-combobox:has(label:has-text("Localit"))',
+  propertyLocalityOption: '[role="option"]',
+  propertyCommercialSquareMeters: 'lightning-input:has(label:has-text("Metri Quadri Commerciali")) input',
+  propertySave: 'button:visible:has-text("Salva")',
   ownerPersonId: '.slds-form-element_horizontal:has-text("Cliente") input',
   ownerShare: '.slds-form-element_horizontal:has-text("Quota") input',
   ownerSave: '[role="dialog"] button:has-text("Salva")',
@@ -170,6 +205,9 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
+  "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
+  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue",
+  "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",

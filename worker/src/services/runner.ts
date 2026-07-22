@@ -818,6 +818,14 @@ export class PropertyWorkerRunner {
     if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) return;
     if (!primary.crm_record_id) throw new WorkerError("La scheda del proprietario principale non è disponibile", "data_incomplete", { personId: primary.id, propertyId: row.id });
     const property = asProperty(row);
+    property.rawPayload = {
+      ...property.rawPayload,
+      searchContext: {
+        municipality: job.municipality,
+        street: job.street,
+        civicNumber: job.civic_number,
+      },
+    };
     if (!row.crm_record_id) {
       const result = await crm.findPropertyForPerson(primary.crm_record_id, property);
       row.crm_record_id = result.match?.id ?? null;

@@ -185,7 +185,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         consistency: (await value("consistency", this.selectors.consistency)) || null,
         cadastralIncome: parseIncome(await value("cadastralIncome", this.selectors.cadastralIncome)),
         sourceRef: String(index),
-        rawPayload: { rowIndex: index, sourceOrder: index },
+        rawPayload: { rowIndex: index, sourceOrder: index, searchContext: context },
       });
     }
     return properties;

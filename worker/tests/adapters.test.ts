@@ -184,11 +184,14 @@ describe("adattatori con fixture HTML", () => {
         class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
       })).resolves.toBe("P-99");
       expect(await page.locator("body").getAttribute("data-property-creation-origin")).toBe("person-card");
-      expect(await page.locator("body").getAttribute("data-property-wizard-advanced")).toBe("true");
-      expect(await page.locator(crmFixtureSelectors.propertyAddress).inputValue()).toBe("Via Borgo San Francesco 62");
-      expect(await page.locator(crmFixtureSelectors.propertySheet).inputValue()).toBe("50");
-      expect(await page.locator(crmFixtureSelectors.propertyParcel).inputValue()).toBe("2278");
-      expect(await page.locator(crmFixtureSelectors.propertySubaltern).inputValue()).toBe("20");
+      expect(await page.locator("body").getAttribute("data-property-wizard-advanced")).toBe("2");
+      expect(await page.locator("body").getAttribute("data-property-type")).toBe("Box / posti auto");
+      expect(await page.locator("body").getAttribute("data-property-subtype")).toBe("Box");
+      expect(await page.locator("body").getAttribute("data-property-locality")).toBe("BITONTO");
+      expect(await page.locator(crmFixtureSelectors.propertyAddress).inputValue()).toBe("Via Borgo San Francesco");
+      expect(await page.locator(crmFixtureSelectors.propertyCivic).inputValue()).toBe("62");
+      expect(await page.locator(crmFixtureSelectors.propertyInternal).inputValue()).toBe(".");
+      expect(await page.locator(crmFixtureSelectors.propertyMunicipality).locator("input").inputValue()).toBe("BITONTO");
     } finally { await browser.close(); }
   });
 
