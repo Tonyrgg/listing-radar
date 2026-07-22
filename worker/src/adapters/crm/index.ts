@@ -372,34 +372,52 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     if (!person.birthPlace || !this.selectors.personBirthPlace) return;
     const field = await this.personField("personBirthPlace", "Luogo di nascita");
     const formattedPlace = formatPersonName(person.birthPlace);
-    await field.fill("");
-    await field.pressSequentially(formattedPlace, { delay: 70 });
-    const options = this.visible(this.selectors.personBirthPlaceOption);
-    await options.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
-    const labels = await options.allTextContents();
     const place = normalizedUiText(person.birthPlace);
+    const alreadySelected = await field.getAttribute("readonly") !== null
+      && normalizedUiText(await field.inputValue()).startsWith(place);
+    if (alreadySelected) return;
+
+    const options = this.visible(this.selectors.personBirthPlaceOption);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await field.fill("");
+      await field.pressSequentially(attempt === 0 ? formattedPlace : person.birthPlace.toUpperCase(), { delay: 70 });
+      const appeared = await options.first().waitFor({ state: "visible", timeout: 8_000 }).then(() => true).catch(() => false);
+      if (appeared) break;
+    }
+
+    const labels = await options.allTextContents();
     const province = normalizedUiText(person.birthProvince);
-    const exactIndexes = labels.flatMap((value, index) => normalizedUiText(value) === place ? [index] : []);
     const matchingIndexes = labels.flatMap((value, index) => {
       const normalized = normalizedUiText(value);
-      return normalized.startsWith(`${place} `) ? [index] : [];
+      return normalized === place || normalized.startsWith(`${place} `) || normalized.startsWith(`${place}-`)
+        ? [index]
+        : [];
     });
     const provinceMatch = province
       ? matchingIndexes.find((index) => normalizedUiText(labels[index]).includes(province))
       : undefined;
-    const selectedIndex = exactIndexes[0] ?? provinceMatch ?? matchingIndexes[0] ?? (labels.length === 1 ? 0 : -1);
-    if (selectedIndex >= 0) {
-      await options.nth(selectedIndex).click();
-      return;
+    const selectedIndex = provinceMatch ?? matchingIndexes[0] ?? (labels.length === 1 ? 0 : -1);
+    if (selectedIndex < 0) {
+      throw new WorkerError(
+        `Il gestionale non ha mostrato un risultato selezionabile per il luogo di nascita “${formattedPlace}”.`,
+        "portal_error",
+        { portal: "CRM", action: "person-birth-place-options", birthPlace: person.birthPlace, birthProvince: person.birthProvince, alternatives: labels },
+        true,
+      );
     }
-    await field.press("ArrowDown");
-    await field.press("Enter");
-    await this.page.waitForTimeout(300);
-    if (await this.visible(this.selectors.personBirthPlaceOption).count() === 0) return;
+
+    await options.nth(selectedIndex).click();
+    for (let check = 0; check < 20; check += 1) {
+      const selectedValue = normalizedUiText(await field.inputValue());
+      const readonly = await field.getAttribute("readonly") !== null;
+      if (readonly && (selectedValue === place || selectedValue.startsWith(`${place} `))) return;
+      await this.page.waitForTimeout(150);
+    }
+
     throw new WorkerError(
-      `Non riesco a selezionare automaticamente “${formattedPlace}” nel menu del luogo di nascita.`,
+      `Il risultato “${formattedPlace}” è stato cliccato, ma il gestionale non ha confermato la selezione.`,
       "portal_error",
-      { portal: "CRM", action: "person-birth-place", birthPlace: person.birthPlace, birthProvince: person.birthProvince, alternatives: labels },
+      { portal: "CRM", action: "person-birth-place-confirmation", birthPlace: person.birthPlace, birthProvince: person.birthProvince, alternatives: labels },
       true,
     );
   }
