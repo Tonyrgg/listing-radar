@@ -277,6 +277,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return (await this.page.locator(this.selectors.recordId).first().textContent())?.trim() ?? "";
   }
 
+  private async currentPropertyId() {
+    const fromUrl = recordIdFromHref(this.page.url(), "immobile");
+    if (fromUrl) return fromUrl;
+    if (!this.selectors.recordId) return "";
+    return (await this.page.locator(this.selectors.recordId).first().textContent())?.trim() ?? "";
+  }
+
   async detectPage(): Promise<boolean> {
     this.require("pageMarker");
     await this.checkSession();
@@ -602,12 +609,45 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   async createProperty(property: NormalizedProperty): Promise<string> {
     if (this.dryRun) return `dry-property-${property.sheet}-${property.parcel}-${property.subaltern}`;
     return this.friendly("property-create", "Non riesco a creare l’immobile.", async () => {
-      this.require("propertyCreate", "propertySave", "recordId");
-      await this.page.locator(this.selectors.propertyCreate).click();
+      this.require("personPropertiesCard", "propertyCreate", "propertyCreateMenuItem");
+      const card = await this.uniqueVisible("personPropertiesCard", "Immobili/Notizie/Incarichi", 20_000);
+      const toggle = card.locator(this.selectors.propertyCreate).filter({ visible: true });
+      const toggleCount = await toggle.count();
+      if (toggleCount !== 1) {
+        throw new WorkerError(
+          "Non trovo in modo univoco la freccia della sezione Immobili/Notizie/Incarichi.",
+          "portal_error",
+          { portal: "CRM", action: "person-property-menu-toggle", count: toggleCount },
+          true,
+        );
+      }
+      let createItem = card.locator(this.selectors.propertyCreateMenuItem).filter({ visible: true });
+      if (!(await createItem.count())) {
+        await toggle.first().click();
+        createItem = card.locator(this.selectors.propertyCreateMenuItem).filter({ visible: true });
+        await createItem.first().waitFor({ state: "visible", timeout: 8_000 });
+      }
+      const createItemCount = await createItem.count();
+      if (createItemCount !== 1) {
+        throw new WorkerError(
+          "Il menu Immobili/Notizie/Incarichi non mostra una sola voce Nuovo.",
+          "portal_error",
+          { portal: "CRM", action: "person-property-create-menu-item", count: createItemCount },
+          true,
+        );
+      }
+      await createItem.first().click();
+      const next = this.page.getByRole("button", { name: "Avanti", exact: true }).filter({ visible: true });
+      if (await next.first().waitFor({ state: "visible", timeout: 8_000 }).then(() => true).catch(() => false)) {
+        await next.last().click();
+      }
       await this.fillProperty(property);
+      this.require("propertySave");
       await this.page.locator(this.selectors.propertySave).click();
       await this.checkSession();
-      return (await this.page.locator(this.selectors.recordId).textContent())?.trim() ?? "";
+      const propertyId = await this.currentPropertyId();
+      if (!propertyId) throw new WorkerError("L'immobile risulta salvato, ma il gestionale non espone il suo identificativo.", "needs_review", { portal: "CRM", action: "property-create-record-id" }, true);
+      return propertyId;
     });
   }
 

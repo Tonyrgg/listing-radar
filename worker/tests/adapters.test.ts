@@ -159,6 +159,39 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("distingue Nuovo da Relaziona immobile esistente nella card del nominativo", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm-person-properties-menu.html"), "utf8"));
+      const card = page.locator(crmSelectors.personPropertiesCard);
+      expect(await card.count()).toBe(1);
+      expect(await card.locator(crmSelectors.propertyCreate).count()).toBe(1);
+      expect(await card.locator(crmSelectors.propertyCreateMenuItem).count()).toBe(1);
+      expect((await card.locator(crmSelectors.propertyCreateMenuItem).textContent())?.trim()).toBe("Nuovo");
+    } finally { await browser.close(); }
+  });
+
+  it("crea l'immobile dal menu Immobili/Notizie/Incarichi del nominativo", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.createProperty({
+        municipality: "BITONTO", sheet: "50", parcel: "2278", subaltern: "20",
+        address: "Via Borgo San Francesco 62", censusZone: null, category: "C/2",
+        class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
+      })).resolves.toBe("P-99");
+      expect(await page.locator("body").getAttribute("data-property-creation-origin")).toBe("person-card");
+      expect(await page.locator("body").getAttribute("data-property-wizard-advanced")).toBe("true");
+      expect(await page.locator(crmFixtureSelectors.propertyAddress).inputValue()).toBe("Via Borgo San Francesco 62");
+      expect(await page.locator(crmFixtureSelectors.propertySheet).inputValue()).toBe("50");
+      expect(await page.locator(crmFixtureSelectors.propertyParcel).inputValue()).toBe("2278");
+      expect(await page.locator(crmFixtureSelectors.propertySubaltern).inputValue()).toBe("20");
+    } finally { await browser.close(); }
+  });
+
   it("compila l'anagrafica completa con nomi leggibili e recapiti già disponibili", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

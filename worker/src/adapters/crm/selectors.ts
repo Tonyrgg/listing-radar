@@ -45,6 +45,7 @@ export interface CrmSelectors {
   propertyResultId: string;
   propertyResultOpen: string;
   propertyCreate: string;
+  propertyCreateMenuItem: string;
   propertyAddress: string;
   propertySheet: string;
   propertyParcel: string;
@@ -88,7 +89,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
-  "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate",
+  "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
@@ -153,6 +154,8 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyResultRow: 'tr:has(lightning-input[c-queryviewer_queryviewer][data-id])',
   propertyResultId: 'lightning-input[c-queryviewer_queryviewer][data-id]',
   propertyResultOpen: 'a[data-id], a[data-recordid]',
+  propertyCreate: 'c-menu button',
+  propertyCreateMenuItem: 'c-menu a[role="menuitem"]:has(span[title="Nuovo"])',
   ownerPersonId: '.slds-form-element_horizontal:has-text("Cliente") input',
   ownerShare: '.slds-form-element_horizontal:has-text("Quota") input',
   ownerSave: '[role="dialog"] button:has-text("Salva")',
@@ -166,7 +169,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
-  "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate",
+  "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",

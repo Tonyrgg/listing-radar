@@ -7,7 +7,7 @@
     <h1 data-worker-crm="personResultsReady">Risultati di ricerca</h1>
     <div data-worker-crm="personResultRows"><span data-worker-crm="personResultId">P-42</span><span data-worker-crm="personResultLabel">Maria Acquaviva</span><button data-worker-crm="personResultOpen">Apri</button></div>
     <button data-worker-crm="personRelatedTab">Correlati</button>
-    <article data-worker-crm="personPropertiesCard"><a data-worker-crm="personPropertyLinks" href="#fixture-property">Immobile</a></article>
+    <article data-worker-crm="personPropertiesCard"><a data-worker-crm="personPropertyLinks" href="#fixture-property">Immobile</a><button data-worker-crm="propertyCreate" onclick="document.querySelector('[data-worker-crm=propertyCreateMenuItem]').hidden=false">Apri menu</button><a role="menuitem" data-worker-crm="propertyCreateMenuItem" hidden onclick="document.body.dataset.propertyCreationOrigin='person-card';document.querySelector('[data-worker-crm=propertyWizardNext]').hidden=false">Nuovo</a></article><button data-worker-crm="propertyWizardNext" hidden onclick="document.body.dataset.propertyWizardAdvanced='true';this.hidden=true">Avanti</button>
     <span data-worker-crm="propertySheetValue">58</span><span data-worker-crm="propertyParcelValue">1234</span><span data-worker-crm="propertySubalternValue">7</span><span data-worker-crm="propertyAddressValue">Via Roma 12 [2], 70032 BITONTO (BA)</span>
     <article data-worker-crm="activityCard"><button data-worker-crm="activityCreate" onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector('[data-worker-crm=activityDialog]').hidden=false">Nuovo</button></article>
     <div role="dialog" data-worker-crm="activityDialog" hidden>
@@ -33,7 +33,7 @@
     <button data-worker-crm="propertySearchPage">Ricerca immobili</button><input data-worker-crm="propertySearchSheet"><input data-worker-crm="propertySearchParcel"><input data-worker-crm="propertySearchSubaltern">
     <button data-worker-crm="propertySearchSubmit">Cerca immobile</button>
     <div data-worker-crm="propertyResultRow"><span data-worker-crm="propertyResultId">I-42</span><button data-worker-crm="propertyResultOpen">Apri immobile</button></div>
-    <button data-worker-crm="propertyCreate">Nuovo immobile</button><input data-worker-crm="propertyAddress"><input data-worker-crm="propertySheet"><input data-worker-crm="propertyParcel"><input data-worker-crm="propertySubaltern">
+    <input data-worker-crm="propertyAddress"><input data-worker-crm="propertySheet"><input data-worker-crm="propertyParcel"><input data-worker-crm="propertySubaltern">
     <input data-worker-crm="propertyCategory"><input data-worker-crm="propertyClass"><input data-worker-crm="propertyConsistency"><input data-worker-crm="propertyIncome">
     <button data-worker-crm="propertySave">Salva immobile</button>
     <input data-worker-crm="ownerPersonId"><input data-worker-crm="ownerShare"><button data-worker-crm="ownerSave">Collega</button>
