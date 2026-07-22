@@ -82,6 +82,7 @@ export type RunnerEvent =
   | { type: "property-progress"; jobId: string; propertyId: string; index: number; total: number; address: string | null; stage: string; message: string }
   | { type: "sister-keepalive"; result: SisterKeepAliveResult }
   | { type: "job-completed"; jobId: string }
+  | { type: "job-archived"; jobId: string }
   | { type: "job-failed"; jobId: string; status: string; message: string; details: Record<string, unknown> };
 
 export interface RunnerOptions {
@@ -166,6 +167,12 @@ export class PropertyWorkerRunner {
           await this.repository.completeStep(job.id, stepId, step, next, output);
           this.onEvent({ type: "step-completed", jobId: job.id, step, next, output });
           logger.info({ jobId: job.id, step, next }, "Step completato");
+          if (output.savedForLater === true) {
+            await this.repository.saveAcquisition(job.id);
+            this.onEvent({ type: "job-archived", jobId: job.id });
+            logger.info({ jobId: job.id }, "Acquisizione salvata per un import futuro");
+            return job.id;
+          }
           if (step === "completed") break;
         } catch (error) {
           const workerError = error instanceof WorkerError
@@ -273,10 +280,11 @@ export class PropertyWorkerRunner {
               })),
           })),
         };
-        if (await this.prompts.reviewAcquisition(review) === "cancel") {
+        const decision = await this.prompts.reviewAcquisition(review);
+        if (decision === "cancel") {
           throw new WorkerError("Acquisizione annullata dal riepilogo. Premi “Riprendi” per controllarla di nuovo.", "paused", { propertyCount: review.properties.length });
         }
-        return { confirmed: true, propertyCount: review.properties.length, ownerCount: graph.people.length };
+        return { confirmed: decision === "proceed", savedForLater: decision === "save", propertyCount: review.properties.length, ownerCount: graph.people.length };
       }
       case "properties_processed":
         return this.processPropertiesInOrder(job, crm, contacts);
@@ -747,9 +755,23 @@ export class PropertyWorkerRunner {
     }
     const person = asPerson(row);
     if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
+    const searchInput = { taxCode: person.taxCode, phones: [...person.mobiles, ...person.landlines], fullName: person.fullName, birthDate: person.birthDate };
+    const alreadyOpen = await crm.openExistingPerson(searchInput, row.crm_record_id ?? undefined);
+    if (alreadyOpen) {
+      row.crm_record_id = alreadyOpen.id;
+      row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        crm_matches: [{ id: alreadyOpen.id, label: person.fullName, confidence: "certain", data: alreadyOpen.data }],
+        force_new_person: false,
+        person_flow: { complete: true, existing: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: alreadyOpen.id, updatedAt: new Date().toISOString() },
+      };
+      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+      return;
+    }
     let matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : null;
     if (!matches) {
-      const result = await crm.findPerson({ taxCode: person.taxCode, phones: [...person.mobiles, ...person.landlines], fullName: person.fullName, birthDate: person.birthDate });
+      const result = await crm.findPerson(searchInput);
       matches = result.matches;
       const onlyMatch = result.matches[0];
       if (onlyMatch?.confidence === "possible") {
@@ -763,6 +785,19 @@ export class PropertyWorkerRunner {
       row.processing_status = result.matches.length === 1 ? "matched" : result.matches.length ? "duplicate_candidates" : "not_found";
       await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
     }
+    if (row.crm_record_id && matches.length === 1) {
+      const existing = await crm.openExistingPerson(searchInput, row.crm_record_id);
+      if (!existing) {
+        throw new WorkerError("Il risultato trovato non coincide con certezza con il codice fiscale SISTER. Il worker non creerà un duplicato.", "needs_review", { personId: row.id, crmPersonId: row.crm_record_id }, true);
+      }
+      row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}), force_new_person: false,
+        person_flow: { complete: true, existing: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() },
+      };
+      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+      return;
+    }
     const duplicateIds = matches.length > 1
       ? matches.map((match) => isRecord(match) && typeof match.id === "string" ? match.id : "").filter(Boolean)
       : [];
@@ -774,9 +809,7 @@ export class PropertyWorkerRunner {
       if (decision === "manual") { await this.prompts.waitForManualEdit(); row.processing_status = "manual"; await this.repository.updatePersonProcessing(row.id, { processing_status: "manual" }); return; }
     }
     await this.logPersonChanges(job.id, row, person);
-    if (row.crm_record_id && !forceNew) {
-      await crm.updatePerson(row.crm_record_id, person);
-    } else {
+    if (!row.crm_record_id || forceNew) {
       const creation = await crm.createPerson(person, duplicateIds, duplicateIds.length ? () => this.repository.updatePersonProcessing(row.id, { processing_status: "creation_started" }) : undefined);
       row.crm_record_id = creation.personId;
       row.processing_status = creation.mergeStatus === "simulated" ? "merge_simulated" : ["pending", "ready", "blocked"].includes(creation.mergeStatus) ? "merge_pending" : this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
@@ -839,8 +872,10 @@ export class PropertyWorkerRunner {
       if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); return; }
     }
     await this.logPropertyChanges(job.id, row, property);
-    if (row.crm_record_id) await crm.updateProperty(row.crm_record_id, property);
-    else row.crm_record_id = await crm.createProperty(property);
+    const matchData = isRecord(row.raw_payload?.crm_match) ? row.raw_payload.crm_match : null;
+    const matchDetails = matchData && isRecord(matchData.data) ? matchData.data : null;
+    if (row.crm_record_id && matchDetails?.needsUpdate === true) await crm.updateProperty(row.crm_record_id, property);
+    else if (!row.crm_record_id) row.crm_record_id = await crm.createProperty(property);
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
     row.raw_payload = { ...(row.raw_payload ?? {}), property_sync: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: row.crm_record_id, primaryPersonId: primary.id, updatedAt: new Date().toISOString() } };
     await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });

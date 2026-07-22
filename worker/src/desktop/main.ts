@@ -198,7 +198,7 @@ async function stateSnapshot() {
       sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
       sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
     };
-    jobs = await repository(config).listJobs();
+    jobs = await repository(config).listSavedJobs();
   } catch (error) {
     configError = error instanceof Error ? error.message : String(error);
   }
@@ -285,6 +285,11 @@ function handleRunnerEvent(event: RunnerEvent) {
     currentStep = "completed";
     propertyProgress = null;
     pushActivity("Lavorazione completata", "success");
+  } else if (event.type === "job-archived") {
+    currentStep = "properties_processed";
+    propertyProgress = null;
+    activeJobId = null;
+    pushActivity("Ricerca SISTER salvata nell'archivio", "success");
   } else if (event.type === "sister-keepalive") {
     updateKeepAliveState(event.result);
   } else if (event.type === "property-progress") {
@@ -561,7 +566,9 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:resume-job", async (_event, jobId: string) => {
-    const job = await repository().getJob(jobId);
+    const repo = repository();
+    const job = await repo.getJob(jobId);
+    if (job.saved_at) await repo.markImportStarted(jobId);
     await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
     return true;
   });

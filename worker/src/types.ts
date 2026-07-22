@@ -173,6 +173,7 @@ export interface SisterAdapter {
 
 export interface CrmAdapter {
   detectPage(): Promise<boolean>;
+  openExistingPerson(input: PersonSearchInput, expectedId?: string): Promise<{ id: string; data: Record<string, unknown> } | null>;
   findPerson(input: PersonSearchInput): Promise<PersonMatchResult>;
   createPerson(person: NormalizedPerson, duplicateCandidateIds?: string[], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult>;
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;

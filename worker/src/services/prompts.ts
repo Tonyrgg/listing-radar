@@ -3,7 +3,7 @@ import { stdin, stdout } from "node:process";
 import type { AcquisitionReview } from "../types.js";
 
 export type AssistedDecision = "confirm" | "skip" | "manual" | "review";
-export type AcquisitionReviewDecision = "proceed" | "cancel";
+export type AcquisitionReviewDecision = "proceed" | "save" | "cancel";
 export type MergeDecision = "confirm" | "manual";
 export type PromptResponse = void | AssistedDecision | AcquisitionReviewDecision | MergeDecision;
 
@@ -38,8 +38,10 @@ export class WorkerPrompts implements PromptController {
       stdout.write(`- ${property.cadastralKey} | ${property.address ?? "indirizzo assente"}\n`);
       for (const owner of property.owners) stdout.write(`  ${owner.fullName} | quota ${owner.sharePercentage ?? "?"}%\n`);
     }
-    const answer = (await this.rl.question("[P]rosegui  [A]nnulla: ")).trim().toLowerCase();
-    return answer.startsWith("a") ? "cancel" : "proceed";
+    const answer = (await this.rl.question("[P]rosegui  [S]alva per dopo  [A]nnulla: ")).trim().toLowerCase();
+    if (answer.startsWith("a")) return "cancel";
+    if (answer.startsWith("s")) return "save";
+    return "proceed";
   }
 
   async confirmMerge(summary: string): Promise<MergeDecision> {

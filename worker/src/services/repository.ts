@@ -22,6 +22,8 @@ export type JobRow = {
   started_at?: string | null;
   updated_at?: string;
   completed_at?: string | null;
+  saved_at?: string | null;
+  import_started_at?: string | null;
   created_at?: string;
 };
 
@@ -105,6 +107,30 @@ export class WorkerRepository {
     return data as JobRow[];
   }
 
+  async listSavedJobs(limit = 50): Promise<JobRow[]> {
+    const { data, error } = await this.client
+      .from("property_worker_jobs")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`Lettura archivio acquisizioni fallita: ${error.message}`);
+    return (data as JobRow[]).filter((job) => Boolean(job.saved_at));
+  }
+
+  async saveAcquisition(jobId: string) {
+    await this.updateJob(jobId, {
+      status: "saved",
+      saved_at: new Date().toISOString(),
+      import_started_at: null,
+      error_message: null,
+      error_details: null,
+    });
+  }
+
+  async markImportStarted(jobId: string) {
+    await this.updateJob(jobId, { import_started_at: new Date().toISOString() });
+  }
+
   async listJobScreenshotPaths(jobId: string): Promise<string[]> {
     const { data, error } = await this.client
       .from("property_worker_steps")
@@ -174,7 +200,7 @@ export class WorkerRepository {
         class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
         raw_payload: property.rawPayload, processing_status: "extracted",
       };
-      const { data, error } = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "municipality,sheet,parcel,subaltern" }).select("*").single();
+      const { data, error } = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" }).select("*").single();
       if (error) throw new Error(`Salvataggio immobile fallito: ${error.message}`);
       rows.push(data as PropertyRow);
     }

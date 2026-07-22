@@ -192,6 +192,22 @@
   margin-top: 11px;
 }
 
+.jobs-card > header p {
+  max-width: 680px;
+  margin: 0;
+  color: #627068;
+}
+
+.job-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.review-dialog .dialog-shell > footer > div {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 @media (max-width: 760px) {
   .review-property-data {
     border-left: 0;

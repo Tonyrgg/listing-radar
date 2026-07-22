@@ -54,7 +54,7 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
 
 ## Installazione
 
-1. Applica `supabase/migrations/003_property_worker.sql` allo stesso progetto Supabase usato da Listing Radar.
+1. Applica `supabase/migrations/003_property_worker.sql` e `supabase/migrations/006_property_worker_archives.sql` allo stesso progetto Supabase usato da Listing Radar.
 2. Nell'app installata la configurazione è inclusa nel pacchetto e viene trasferita al primo avvio nel deposito cifrato di Windows. Se una nuova installazione non è stata preconfigurata, apri **Impostazioni → Configurazione avanzata** e inserisci i valori una sola volta: non occorre creare un file `.env`.
 3. Installa il worker:
 
@@ -77,6 +77,8 @@ Il file `.env` resta supportato soltanto per lo sviluppo e per l'uso tecnico del
 
 Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTER e mostra il riepilogo. Dopo la conferma lavora **un immobile alla volta**, nell'ordine in cui è stato acquisito:
 
+Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca resta nell'archivio con immobili, proprietari, quote e ordine SISTER; il pulsante **Importa** riparte direttamente dai dati conservati senza una nuova acquisizione. Le ricerche possono essere eliminate dall'archivio dopo l'importazione.
+
 1. cerca o crea il proprietario principale, scelto in modo deterministico dalla quota più alta;
 2. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
 3. crea una sola attività `Da eseguire` partendo dalla scheda dell'immobile;
@@ -86,6 +88,8 @@ Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTE
 7. salva il checkpoint dell'immobile e passa al successivo.
 
 Persone già elaborate vengono riutilizzate senza duplicarle. Se il processo si interrompe, i checkpoint di persona, immobile, attività, recapiti e collegamenti permettono di riprendere il singolo immobile senza ripetere le operazioni concluse.
+
+Una scheda nominativo già aperta viene riutilizzata soltanto dopo la corrispondenza esatta del codice fiscale e del nome. Prima di creare un immobile, il worker legge sempre la sezione **Immobili/Notizie/Incarichi**: se trova la stessa chiave catastale o lo stesso indirizzo la riutilizza; se la card dichiara immobili ma non permette di leggerli, si ferma prima della creazione per evitare duplicati.
 
 Finché l'app desktop resta aperta, il worker richiama in background una pagina neutra di SISTER tra 120 e 180 secondi. Non automatizza il login e segnala subito una sessione scaduta. L'intervallo e l'eventuale URL sicuro possono essere personalizzati con `SISTER_KEEPALIVE_MIN_SECONDS`, `SISTER_KEEPALIVE_MAX_SECONDS` e `SISTER_KEEPALIVE_URL`.
 

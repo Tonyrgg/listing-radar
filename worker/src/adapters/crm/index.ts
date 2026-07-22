@@ -291,6 +291,25 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return (await this.page.locator(this.selectors.pageMarker).count()) > 0;
   }
 
+  async openExistingPerson(input: PersonSearchInput, expectedId?: string) {
+    return this.friendly("person-existing-check", "Non riesco a verificare la scheda nominativo aperta.", async () => {
+      if (expectedId) await this.openPerson(expectedId);
+      const personId = await this.currentPersonId();
+      if (!personId || (expectedId && personId !== expectedId)) return null;
+      await this.checkSession();
+      const body = normalizedUiText(await this.page.locator("body").innerText());
+      const taxCode = normalizedUiText(input.taxCode).replaceAll(" ", "");
+      const compactBody = body.replaceAll(" ", "");
+      if (!taxCode || !compactBody.includes(taxCode)) return null;
+      const nameWords = normalizedUiText(input.fullName).split(" ").filter((word) => word.length > 1);
+      if (nameWords.length && !nameWords.every((word) => body.includes(word))) return null;
+      return {
+        id: personId,
+        data: { source: "crm-open-person", taxCodeVerified: true, nameVerified: true, pageUrl: this.page.url() },
+      };
+    });
+  }
+
   async findPerson(input: PersonSearchInput): Promise<PersonMatchResult> {
     return this.friendly("person-search", "Non riesco a completare la ricerca del nominativo.", async () => {
       this.require("personSearchPage", "personSearchTaxCode", "personSearchSubmit", "personResultRows", "personResultId", "personResultLabel", "personResultOpen");
@@ -551,15 +570,29 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   async findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult> {
     if (personId.startsWith("dry-person-")) return { match: null };
     return this.friendly("person-property-search", "Non riesco a leggere gli immobili collegati al nominativo.", async () => {
-      this.require("personRelatedTab", "personPropertiesCard", "personPropertyLinks");
+      this.require("personPropertiesCard", "personPropertyLinks");
       await this.openPerson(personId);
-      const relatedTab = this.page.locator(this.selectors.personRelatedTab).first();
-      if (await relatedTab.count()) await relatedTab.click({ force: true });
-      await this.page.waitForTimeout(700);
       const personUrl = this.page.url();
-      const card = this.page.locator(this.selectors.personPropertiesCard).first();
-      if (!(await card.count())) return { match: null };
-      const hrefs = [...new Set((await card.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")))).filter((href): href is string => Boolean(href)))];
+      const card = await this.uniqueVisible("personPropertiesCard", "Immobili/Notizie/Incarichi", 20_000);
+      const cardText = await card.innerText().catch(() => "");
+      const declaredCount = Number(cardText.match(/Immobili\s*\/\s*Notizie\s*\/\s*Incarichi\s*\((\d+)\)/i)?.[1] ?? 0);
+      let hrefs = [...new Set((await card.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")))).filter((href): href is string => Boolean(href)))];
+      if (!hrefs.length && declaredCount > 0 && this.selectors.personPropertiesViewAll) {
+        const viewAll = card.locator(this.selectors.personPropertiesViewAll).filter({ visible: true }).first();
+        if (await viewAll.count()) {
+          await viewAll.click({ force: true });
+          await this.page.waitForTimeout(800);
+          hrefs = [...new Set((await this.page.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")))).filter((href): href is string => Boolean(href)))];
+        }
+      }
+      if (declaredCount > 0 && !hrefs.length) {
+        throw new WorkerError(
+          `La scheda indica ${declaredCount} immobili collegati, ma il gestionale non ne espone l'elenco. Per evitare duplicati il worker non ne crea uno nuovo.`,
+          "needs_review",
+          { portal: "CRM", action: "person-properties-unreadable", personId, declaredCount },
+          true,
+        );
+      }
       const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
       for (const href of hrefs) {
         const isFixture = href.startsWith("#fixture-property");
@@ -585,6 +618,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
                 ? "cadastral"
                 : identity.internal && sisterAddress?.internal ? "street-civic-and-internal" : "street-and-civic",
               ...identity,
+              needsUpdate: cadastralMatch ? !addressMatch : false,
               href,
             },
           });
@@ -667,6 +701,30 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await buttons.last().click();
   }
 
+  private async assertNewPropertyComplete(values: ReturnType<typeof propertyFormValues>) {
+    const required: Array<[keyof CrmSelectors, string, string]> = [
+      ["propertyAddress", "Indirizzo", values.street],
+      ["propertyCivic", "Civico", values.civicNumber],
+      ["propertyInternal", "Interno", values.internal],
+      ["propertyMunicipality", "Comune", values.municipality],
+      ["propertyPostalCode", "CAP", "*"],
+    ];
+    for (const [key, label, expected] of required) {
+      const component = await this.uniqueVisible(key, label, 8_000);
+      const isInput = await component.evaluate((element) => element.matches("input"));
+      const input = isInput ? component : component.locator("input").filter({ visible: true }).first();
+      const value = (await input.inputValue()).trim();
+      if (!value || (expected !== "*" && !normalizedUiText(value).startsWith(normalizedUiText(expected)))) {
+        throw new WorkerError(
+          `Il campo “${label}” non risulta compilato correttamente. Il pulsante Avanti non verrà premuto.`,
+          "data_incomplete",
+          { portal: "CRM", action: "property-before-next", field: label, expected, actual: value },
+          true,
+        );
+      }
+    }
+  }
+
   private async fillNewProperty(property: NormalizedProperty) {
     const values = propertyFormValues(property);
     await this.propertyPicklist("propertyType", "Tipologia Immobile", values.type);
@@ -687,6 +745,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     }
     await this.selectPropertyMunicipality(values.municipality);
     const postalCode = (await this.visible(this.selectors.propertyPostalCode).first().inputValue()).trim();
+    await this.assertNewPropertyComplete(values);
     await this.advancePropertyWizard();
     return { ...values, postalCode };
   }
@@ -734,12 +793,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
     }
+    if (await this.visible(this.selectors.propertyGoogleSameValue).count() < 3) {
+      throw new WorkerError("La conferma Google non è completa per indirizzo, civico e CAP. Il pulsante Salva non verrà premuto.", "data_incomplete", { portal: "CRM", action: "property-google-incomplete" }, true);
+    }
     const locality = await this.uniqueVisible("propertyLocality", "Località", 12_000);
     const nativeSelect = locality.locator("select").filter({ visible: true });
+    let localityValue = "";
     if (await nativeSelect.count()) {
       const options = await nativeSelect.locator("option").count();
       if (options < 2) throw new WorkerError("Il menu Località non contiene valori selezionabili.", "portal_error", { portal: "CRM", action: "property-locality" }, true);
       await nativeSelect.selectOption({ index: 1 });
+      localityValue = await nativeSelect.inputValue();
     } else {
       const input = locality.locator('input[role="textbox"]').filter({ visible: true });
       const trigger = await input.count()
@@ -748,7 +812,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await trigger.click();
       const options = locality.locator(this.selectors.propertyLocalityOption).filter({ visible: true });
       await options.first().waitFor({ state: "visible", timeout: 8_000 });
+      const selectedLabel = (await options.first().innerText()).trim();
       await options.first().click();
+      localityValue = await input.count() ? (await input.first().inputValue()).trim() || selectedLabel : selectedLabel;
+    }
+    if (!localityValue.trim()) {
+      throw new WorkerError("La località non risulta selezionata. Il pulsante Salva non verrà premuto.", "data_incomplete", { portal: "CRM", action: "property-locality-incomplete" }, true);
     }
     await save.last().click();
   }
@@ -784,7 +853,6 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
       await createItem.first().click();
-      await this.advancePropertyWizard();
       const values = await this.fillNewProperty(property);
       await this.finishPropertyMap(values);
       await this.checkSession();

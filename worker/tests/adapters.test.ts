@@ -159,6 +159,36 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("riconosce una scheda nominativo già aperta dal codice fiscale e dal nome", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html.replace("</body>", "<p>Michele Murgolo</p><p>MRGMHL65B09A893K</p></body>") }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.openExistingPerson({ taxCode: "MRGMHL65B09A893K", phones: [], fullName: "MICHELE MURGOLO", birthDate: null }, "P-42"))
+        .resolves.toMatchObject({ id: "P-42", data: { taxCodeVerified: true, nameVerified: true } });
+    } finally { await browser.close(); }
+  });
+
+  it("non crea duplicati se la card dichiara immobili ma non espone i collegamenti", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace('<article data-worker-crm="personPropertiesCard">', '<article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (1)')
+        .replace(/<a[^>]+data-worker-crm="personPropertyLinks"[\s\S]*?<\/a>/g, "");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.findPropertyForPerson("P-42", {
+        municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9", address: "Via Borgo San Francesco 62",
+        censusZone: "U", category: "A/2", class: "3", consistency: "6 vani", cadastralIncome: null, rawPayload: {},
+      })).rejects.toThrow("non ne espone l'elenco");
+    } finally { await browser.close(); }
+  });
+
   it("distingue Nuovo da Relaziona immobile esistente nella card del nominativo", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -184,7 +214,7 @@ describe("adattatori con fixture HTML", () => {
         class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
       })).resolves.toBe("P-99");
       expect(await page.locator("body").getAttribute("data-property-creation-origin")).toBe("person-card");
-      expect(await page.locator("body").getAttribute("data-property-wizard-advanced")).toBe("2");
+      expect(await page.locator("body").getAttribute("data-property-wizard-advanced")).toBe("1");
       expect(await page.locator("body").getAttribute("data-property-type")).toBe("Box / posti auto");
       expect(await page.locator("body").getAttribute("data-property-subtype")).toBe("Box");
       expect(await page.locator("body").getAttribute("data-property-locality")).toBe("BITONTO");

@@ -77,6 +77,7 @@ export interface CrmSelectors {
   personRelatedTab: string;
   personPropertiesCard: string;
   personPropertyLinks: string;
+  personPropertiesViewAll: string;
   propertySheetValue: string;
   propertyParcelValue: string;
   propertySubalternValue: string;
@@ -110,7 +111,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
-  "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
+  "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
@@ -145,6 +146,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personRelatedTab: '[role="tab"]:has-text("Correlati")',
   personPropertiesCard: 'article:visible:has-text("Immobili/Notizie/Incarichi")',
   personPropertyLinks: 'a[href*="/s/immobile/"]',
+  personPropertiesViewAll: 'a:has-text("Visualizza tutto"), button:has-text("Visualizza tutto")',
   propertySheetValue: '.flex:has(> div > label:has-text("Catasto Foglio")) .slds-form-element__static .slds-grow',
   propertyParcelValue: '.flex:has(> div > label:has-text("Catasto Particella")) .slds-form-element__static .slds-grow',
   propertySubalternValue: '.flex:has(> div > label:has-text("Catasto Subalterno")) .slds-form-element__static .slds-grow',
@@ -210,7 +212,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
-  "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks",
+  "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",

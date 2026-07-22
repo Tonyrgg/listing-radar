@@ -61,8 +61,8 @@
         </section>
 
         <section id="jobs" class="jobs-card">
-          <header><div><p class="eyebrow">Lavori salvati</p><h2>Riprendi da dove eri rimasto</h2></div><span id="jobCount" class="count">0</span></header>
-          <div id="jobsList" class="jobs-list"><p class="empty-message">Non ci sono ancora lavorazioni.</p></div>
+          <header><div><p class="eyebrow">Archivio acquisizioni</p><h2>Ricerche SISTER salvate</h2><p>Conserva i dati già raccolti e importali nel gestionale quando vuoi, senza ripetere lo scraping.</p></div><span id="jobCount" class="count">0</span></header>
+          <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div>
         </section>
 
         <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail">×</button></header><div id="detailContent"></div></section>
@@ -83,7 +83,7 @@
       </main>
     </div>
 
-    <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Proseguendo inizierà il confronto con il gestionale.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button primary" data-review-decision="proceed">I dati sono corretti, prosegui</button></div></footer></div></dialog>
+    <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Puoi importare ora oppure conservare questa ricerca nell'archivio.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button secondary" data-review-decision="save">Salva per importarla dopo</button><button class="button primary" data-review-decision="proceed">Importa adesso</button></div></footer></div></dialog>
 
     <dialog id="cancelProcessDialog" class="confirm-dialog"><div class="dialog-shell"><p class="eyebrow danger-text">Azione definitiva</p><h2>Vuoi davvero annullare questo lavoro?</h2><p>Il lavoro e i dati raccolti verranno eliminati. Le modifiche già concluse nel gestionale non possono essere annullate.</p><footer><button class="button secondary" data-cancel-dialog="close">No, torna indietro</button><button class="button danger solid" data-cancel-dialog="confirm">Sì, annulla definitivamente</button></footer></div></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
