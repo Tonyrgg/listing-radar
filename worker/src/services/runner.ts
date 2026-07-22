@@ -228,24 +228,38 @@ export class PropertyWorkerRunner {
       }
       case "owners_extracted": {
         const graph = await this.repository.loadGraph(job.id);
-        const peopleIds = new Set(graph.people.map((person) => person.id));
+        const ignoredBusinessProperties: string[] = [];
         for (const property of graph.properties) {
           this.throwIfCancellationRequested(job.id);
-          for (const owner of await sister.extractOwners(asProperty(property))) {
+          const owners = await sister.extractOwners(asProperty(property));
+          const sourceRow = Number(property.raw_payload?.sourceOrder ?? property.raw_payload?.rowIndex);
+          if (!owners.length && Number.isInteger(sourceRow) && sister.hasIgnoredBusinessOnRow(sourceRow)) {
+            await this.repository.removePropertyFromJob(job.id, property.id);
+            ignoredBusinessProperties.push(property.cadastral_key);
+            continue;
+          }
+          for (const owner of owners) {
             this.throwIfCancellationRequested(job.id);
-            peopleIds.add((await this.repository.insertOwner(job.id, property.id, owner)).id);
+            await this.repository.insertOwner(job.id, property.id, owner);
           }
         }
-        const total = peopleIds.size;
-        await this.repository.updateJob(job.id, { total_people: total });
-        return { count: total, ignoredRights: sister.getIgnoredRights() };
+        const finalGraph = await this.repository.loadGraph(job.id);
+        const total = finalGraph.people.length;
+        await this.repository.updateJob(job.id, { total_people: total, total_properties: finalGraph.properties.length });
+        return {
+          count: total,
+          ignoredRights: sister.getIgnoredRights(),
+          ignoredBusinesses: sister.getIgnoredBusinesses(),
+          ignoredBusinessProperties,
+        };
       }
       case "data_normalized": {
         const graph = await this.repository.loadGraph(job.id);
         const incompleteProperties = graph.properties.filter((item) => !item.sheet || !item.parcel || !item.subaltern);
         const incompletePeople = graph.people.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
         const propertiesWithoutOwners = graph.properties.filter((property) => !graph.ownerships.some((ownership) => ownership.property_id === property.id));
-        if (!graph.people.length || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
+        const nothingToImport = !graph.properties.length && !graph.people.length;
+        if ((!nothingToImport && !graph.people.length) || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
           throw new WorkerError("Dati obbligatori mancanti o quota non interpretabile", "data_incomplete", {
             propertyIds: incompleteProperties.map((item) => item.id), personIds: incompletePeople.map((item) => item.id),
             propertiesWithoutOwners: propertiesWithoutOwners.map((item) => item.id), noOwnersFound: !graph.people.length,
@@ -255,7 +269,7 @@ export class PropertyWorkerRunner {
           ...graph.properties.map((item) => this.repository.updatePropertyProcessing(item.id, { processing_status: "normalized" })),
           ...graph.people.map((item) => this.repository.updatePersonProcessing(item.id, { tax_code: normalizeTaxCode(item.tax_code), processing_status: "normalized" })),
         ]);
-        return { properties: graph.properties.length, people: graph.people.length };
+        return { properties: graph.properties.length, people: graph.people.length, nothingToImport };
       }
       case "acquisition_reviewed": {
         const graph = await this.repository.loadGraph(job.id);

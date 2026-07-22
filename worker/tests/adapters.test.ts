@@ -60,6 +60,9 @@ describe("adattatori con fixture HTML", () => {
       const owners = await adapter.extractOwners(properties[0]!);
       expect(owners).toHaveLength(1);
       expect(owners[0]?.taxCode).toBe("CQVMRS49L66A893R");
+      expect(adapter.getIgnoredBusinesses()).toEqual([
+        expect.objectContaining({ fullName: "EDILE & IMMOBILIARE COCE S.R.L.", taxCode: "075******24", reason: "business-tax-code", rowIndex: 0 }),
+      ]);
     } finally { await browser.close(); }
   });
 
@@ -175,6 +178,26 @@ describe("adattatori con fixture HTML", () => {
       }, ["P-1", "P-2"]);
       expect(created.mergeStatus).toBe("ready");
       await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "completed", personId: "P-99" });
+    } finally { await browser.close(); }
+  });
+
+  it("esclude completamente gli intestatari aziendali senza confonderli con i privati", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body data-worker-page="sister-results">
+        <span data-worker-field="municipality">BITONTO</span><span data-worker-field="street">VIA ROMA</span><span data-worker-field="civic-number">12</span>
+        <table><tr data-worker-row="property">
+          <td data-worker-field="sheet">58</td><td data-worker-field="parcel">2000</td><td data-worker-field="subaltern">8</td>
+          <td data-worker-field="address">Via Roma 12</td><td data-worker-field="census-zone">U</td><td data-worker-field="category">A/3</td>
+          <td data-worker-field="class">4</td><td data-worker-field="consistency">5 vani</td><td data-worker-field="cadastral-income">432,10</td>
+          <td><pre data-worker-owner>EDILE &amp; IMMOBILIARE COCE S.R.L.\n07504350724\nProprietÃ \n1/1</pre></td>
+        </tr></table></body>`);
+      const adapter = new PlaywrightSisterAdapter(page, sisterFixtureSelectors);
+      const [property] = await adapter.extractProperties();
+      expect(await adapter.extractOwners(property!)).toEqual([]);
+      expect(adapter.hasIgnoredBusinessOnRow(0)).toBe(true);
+      expect(adapter.getIgnoredBusinesses()[0]).toMatchObject({ taxCode: "075******24", reason: "business-tax-code" });
     } finally { await browser.close(); }
   });
 

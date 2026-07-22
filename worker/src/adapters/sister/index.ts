@@ -2,6 +2,7 @@ import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { parseOwnerBlock } from "../../core/owner-parser.js";
+import { businessOwnerReason, maskOwnerTaxCode } from "../../core/owner-kind.js";
 import { logger } from "../../logger.js";
 import type { CadastralOwner, CadastralProperty, SearchContext, SisterAdapter } from "../../types.js";
 import { sisterSelectors, type SisterSelectors } from "./selectors.js";
@@ -72,6 +73,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   private ignoredCategories: Array<{ category: string; rowIndex: number }> = [];
   private ignoredEmptyProperties: Array<{ rowIndex: number; sheet: string; parcel: string; subaltern: string; address: string }> = [];
   private ignoredRights: Array<{ rightType: string; rowIndex: number }> = [];
+  private ignoredBusinesses: Array<{ fullName: string; taxCode: string | null; reason: string; rowIndex: number }> = [];
 
   constructor(
     private readonly page: Page,
@@ -268,6 +270,18 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   }
 
   private addOwner(owners: CadastralOwner[], owner: CadastralOwner, rowIndex: number) {
+    const businessReason = businessOwnerReason(owner.fullName, owner.taxCode);
+    if (businessReason) {
+      const ignored = {
+        fullName: owner.fullName,
+        taxCode: maskOwnerTaxCode(owner.taxCode),
+        reason: businessReason,
+        rowIndex,
+      };
+      this.ignoredBusinesses.push(ignored);
+      logger.info(ignored, "Intestatario aziendale escluso dalla raccolta");
+      return;
+    }
     if (/^proprieta'?$/i.test(owner.rightType.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) owners.push(owner);
     else {
       this.ignoredRights.push({ rightType: owner.rightType, rowIndex });
@@ -285,5 +299,13 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
 
   getIgnoredRights() {
     return [...this.ignoredRights];
+  }
+
+  getIgnoredBusinesses() {
+    return [...this.ignoredBusinesses];
+  }
+
+  hasIgnoredBusinessOnRow(rowIndex: number) {
+    return this.ignoredBusinesses.some((owner) => owner.rowIndex === rowIndex);
   }
 }

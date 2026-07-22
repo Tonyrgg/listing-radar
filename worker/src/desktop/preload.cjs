@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   answerPrompt: (values) => ipcRenderer.invoke("desktop:answer-prompt", values),
   getJobDetails: (jobId) => ipcRenderer.invoke("desktop:get-job-details", jobId),
   saveManualCorrections: (values) => ipcRenderer.invoke("desktop:save-manual-corrections", values),
+  removeJobProperty: (values) => ipcRenderer.invoke("desktop:remove-job-property", values),
   revealFile: (filePath) => ipcRenderer.invoke("desktop:reveal-file", filePath),
   checkUpdate: () => ipcRenderer.invoke("desktop:check-update"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),

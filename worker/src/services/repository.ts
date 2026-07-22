@@ -276,6 +276,50 @@ export class WorkerRepository {
     if (error) throw new Error(`Aggiornamento collegamento fallito: ${error.message}`);
   }
 
+  async removePropertyFromJob(jobId: string, propertyId: string) {
+    const [job, graph] = await Promise.all([this.getJob(jobId), this.loadGraph(jobId)]);
+    const property = graph.properties.find((row) => row.id === propertyId);
+    if (!property) throw new Error("Immobile non appartenente alla lavorazione");
+    const relatedPersonIds = [...new Set(graph.ownerships
+      .filter((ownership) => ownership.property_id === propertyId)
+      .map((ownership) => ownership.person_id))];
+
+    const { error: propertyError } = await this.client
+      .from("property_worker_properties")
+      .delete()
+      .eq("id", propertyId)
+      .eq("job_id", jobId);
+    if (propertyError) throw new Error(`Rimozione immobile fallita: ${propertyError.message}`);
+
+    const removedPersonIds: string[] = [];
+    for (const personId of relatedPersonIds) {
+      const { data: remainingOwnerships, error: ownershipError } = await this.client
+        .from("property_worker_ownerships")
+        .select("id")
+        .eq("person_id", personId)
+        .limit(1);
+      if (ownershipError) throw new Error(`Controllo collegamenti nominativo fallito: ${ownershipError.message}`);
+      if (!remainingOwnerships?.length) {
+        const { error: personError } = await this.client
+          .from("property_worker_people")
+          .delete()
+          .eq("id", personId)
+          .eq("job_id", jobId);
+        if (personError) throw new Error(`Rimozione nominativo fallita: ${personError.message}`);
+        removedPersonIds.push(personId);
+      }
+    }
+
+    const remaining = await this.loadGraph(jobId);
+    await this.updateJob(jobId, {
+      total_properties: remaining.properties.length,
+      total_people: remaining.people.length,
+      processed_properties: Math.min(job.processed_properties ?? 0, remaining.properties.length),
+      processed_people: Math.min(job.processed_people ?? 0, remaining.people.length),
+    });
+    return { propertyId, removedPersonIds, remainingProperties: remaining.properties.length };
+  }
+
   async rewindLegacyPropertySearch(jobId: string) {
     const [people, properties, ownerships] = await Promise.all([
       this.client.from("property_worker_people").update({ crm_record_id: null, processing_status: "normalized" }).eq("job_id", jobId),

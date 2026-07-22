@@ -64,6 +64,10 @@ const manualCorrectionSchema = z.object({
   properties: z.array(editablePropertySchema).default([]),
   people: z.array(editablePersonSchema).default([]),
 });
+const removeJobPropertySchema = z.object({
+  jobId: z.string().uuid(),
+  propertyId: z.string().uuid(),
+});
 const internalConfigurationSchema = z.object({
   supabaseUrl: z.string().url(),
   serviceRoleKey: z.string().min(20),
@@ -680,6 +684,28 @@ function registerIpc() {
     pushActivity("Correzioni manuali salvate. La lavorazione può ripartire.", "success");
     await publishState();
     return true;
+  });
+  ipcMain.handle("desktop:remove-job-property", async (_event, rawValues: unknown) => {
+    const values = removeJobPropertySchema.parse(rawValues);
+    if (active && activeJobId === values.jobId) {
+      throw new Error("Metti prima in pausa la lavorazione, poi rimuovi l'immobile.");
+    }
+    const repo = repository();
+    const result = await repo.removePropertyFromJob(values.jobId, values.propertyId);
+    await repo.updateJob(values.jobId, {
+      status: "paused",
+      error_message: null,
+      error_details: { manualRemoval: true, removedPropertyId: values.propertyId },
+    });
+    if (activeJobId === values.jobId) lastError = null;
+    pushActivity(
+      result.removedPersonIds.length
+        ? `Immobile rimosso insieme a ${result.removedPersonIds.length} nominativ${result.removedPersonIds.length === 1 ? "o" : "i"} non collegati ad altri immobili.`
+        : "Immobile rimosso. I nominativi collegati ad altri immobili sono stati conservati.",
+      "success",
+    );
+    await publishState();
+    return result;
   });
   ipcMain.handle("desktop:reveal-file", (_event, filePath: string) => shell.showItemInFolder(filePath));
   ipcMain.handle("desktop:check-update", async () => {

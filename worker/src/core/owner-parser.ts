@@ -2,7 +2,7 @@ import type { CadastralOwner } from "../types.js";
 import { normalizeTaxCode, parseShare } from "./normalize.js";
 
 const PERSON_LINE = /^(.*?)\s+n(?:at[oa]|\.)\s+a\s+(.+?)(?:\s+\(([A-Z]{2})\))?\s+il\s+(\d{2}\/\d{2}\/\d{4})\s*$/i;
-const TAX_CODE_LINE = /^[A-Z0-9]{16}$/i;
+const TAX_CODE_LINE = /^(?:[A-Z0-9]{16}|\d{11})$/i;
 
 function isoDate(value: string): string | null {
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);

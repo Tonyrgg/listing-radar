@@ -50,6 +50,7 @@ await page.addInitScript(({ initialState, details }) => {
     openChrome: async () => true, chooseExcel: async () => null, savePreferences: async () => true,
     startJob: async () => true, resumeJob: async () => true, pauseJob: async () => true, cancelJob: async () => true,
     answerPrompt: async () => true, getJobDetails: async () => details, saveManualCorrections: async () => true,
+    removeJobProperty: async () => ({ propertyId: details.properties[0].id, removedPersonIds: [details.people[0].id], remainingProperties: 0 }),
     saveInternalConfiguration: async () => true, revealFile: async () => true,
     checkUpdate: async () => true, downloadUpdate: async () => true, installUpdate: async () => true,
   };
@@ -90,6 +91,9 @@ const staleErrorVisible = await page.getByText("La pagina del portale è diversa
 await page.evaluate(() => window.__showErrorState());
 await page.getByRole("button", { name: "Correggi dati qui sotto" }).click();
 await page.screenshot({ path: path.join(output, "recovery.png"), fullPage: true });
+await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazione" }).click();
+await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
+const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, recoveryOverflow, successHeading, staleErrorVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();

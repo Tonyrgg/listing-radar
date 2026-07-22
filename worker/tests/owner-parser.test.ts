@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isOwnershipRight, parseOwnerBlock } from "../src/core/owner-parser.js";
+import { businessOwnerReason, isBusinessOwner, maskOwnerTaxCode } from "../src/core/owner-kind.js";
 
 describe("parsing titolare", () => {
   it("estrae anagrafica, CF, diritto e quota", () => {
@@ -28,6 +29,26 @@ Proprietà`);
       sharePercentage: 100,
       rawPayload: { shareDefaulted: true },
     });
+  });
+});
+
+describe("riconoscimento intestatari aziendali", () => {
+  it("riconosce una partita IVA italiana di undici cifre", () => {
+    const owner = parseOwnerBlock(`EDILE & IMMOBILIARE COCE S.R.L.\n07504350724\nProprietÃ \n1/1`);
+    expect(owner.taxCode).toBe("07504350724");
+    expect(businessOwnerReason(owner.fullName, owner.taxCode)).toBe("business-tax-code");
+    expect(maskOwnerTaxCode(owner.taxCode)).toBe("075******24");
+  });
+
+  it("riconosce le forme societarie anche senza partita IVA", () => {
+    expect(isBusinessOwner("Edile & Immobiliare Coce S.R.L.", null)).toBe(true);
+    expect(isBusinessOwner("SocietÃ  Agricola del Levante", null)).toBe(true);
+  });
+
+  it("non scarta un privato con CF valido, mancante o un cognome ambiguo", () => {
+    expect(isBusinessOwner("ROSSI MARIO", "RSSMRA60A01A662X")).toBe(false);
+    expect(isBusinessOwner("ROSSI MARIO", null)).toBe(false);
+    expect(isBusinessOwner("IMMOBILIARE MARIO", null)).toBe(false);
   });
 });
 
