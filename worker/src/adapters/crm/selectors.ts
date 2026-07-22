@@ -116,7 +116,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personGender: 'c-picklist:has(label:text-is("Sesso")) input[role="textbox"]',
   personGenderOption: 'c-picklist:has(label:text-is("Sesso")) [role="option"]',
   personBirthPlace: 'c-lookup:has(label:text-is("Luogo Di Nascita")) input[placeholder="Cerca"]',
-  personBirthPlaceOption: 'c-lookup:has(label:text-is("Luogo Di Nascita")) [role="option"]',
+  personBirthPlaceOption: 'c-lookup:has(label:text-is("Luogo Di Nascita")) [role="option"], c-lookup:has(label:text-is("Luogo Di Nascita")) li.slds-listbox__item',
   personBirthDate: 'c-input-date-time:has(label:text-is("Data Di Nascita")) c-date-picker input',
   personTaxCode: '.slds-form-element:has-text("Codice Fiscale") input',
   personMobile: '.slds-form-element:has-text("Cellulare") input',

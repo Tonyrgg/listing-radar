@@ -371,22 +371,34 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   private async selectPersonBirthPlace(person: NormalizedPerson) {
     if (!person.birthPlace || !this.selectors.personBirthPlace) return;
     const field = await this.personField("personBirthPlace", "Luogo di nascita");
-    await field.fill(formatPersonName(person.birthPlace));
+    const formattedPlace = formatPersonName(person.birthPlace);
+    await field.fill("");
+    await field.pressSequentially(formattedPlace, { delay: 70 });
     const options = this.visible(this.selectors.personBirthPlaceOption);
     await options.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
     const labels = await options.allTextContents();
     const place = normalizedUiText(person.birthPlace);
     const province = normalizedUiText(person.birthProvince);
-    let index = labels.findIndex((value) => {
+    const exactIndexes = labels.flatMap((value, index) => normalizedUiText(value) === place ? [index] : []);
+    const matchingIndexes = labels.flatMap((value, index) => {
       const normalized = normalizedUiText(value);
-      return normalized.includes(place) && (!province || normalized.includes(province));
+      return normalized.startsWith(`${place} `) ? [index] : [];
     });
-    if (index < 0 && labels.length === 1) index = 0;
-    if (index >= 0) await options.nth(index).click();
-    else if (!this.selectors.personBirthPlace.includes("c-lookup")) return;
-    else throw new WorkerError(
-      `Il gestionale non propone “${formatPersonName(person.birthPlace)}” come luogo di nascita.`,
-      "needs_review",
+    const provinceMatch = province
+      ? matchingIndexes.find((index) => normalizedUiText(labels[index]).includes(province))
+      : undefined;
+    const selectedIndex = exactIndexes[0] ?? provinceMatch ?? matchingIndexes[0] ?? (labels.length === 1 ? 0 : -1);
+    if (selectedIndex >= 0) {
+      await options.nth(selectedIndex).click();
+      return;
+    }
+    await field.press("ArrowDown");
+    await field.press("Enter");
+    await this.page.waitForTimeout(300);
+    if (await this.visible(this.selectors.personBirthPlaceOption).count() === 0) return;
+    throw new WorkerError(
+      `Non riesco a selezionare automaticamente “${formattedPlace}” nel menu del luogo di nascita.`,
+      "portal_error",
       { portal: "CRM", action: "person-birth-place", birthPlace: person.birthPlace, birthProvince: person.birthProvince, alternatives: labels },
       true,
     );

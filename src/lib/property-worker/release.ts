@@ -1,7 +1,7 @@
 export const PROPERTY_WORKER_RELEASE = {
-  version: "0.7.2",
+  version: "0.7.3",
   platform: "Windows 10/11 · 64 bit",
-  fileName: "Property Data Worker Setup 0.7.2.exe",
+  fileName: "Property Data Worker Setup 0.7.3.exe",
   downloadUrl:
-    "https://github.com/Tonyrgg/listing-radar/releases/download/property-worker-v0.7.2/Property-Data-Worker-Setup-0.7.2.exe",
+    "https://github.com/Tonyrgg/listing-radar/releases/download/property-worker-v0.7.3/Property-Data-Worker-Setup-0.7.3.exe",
 } as const;

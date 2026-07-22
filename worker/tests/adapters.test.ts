@@ -164,6 +164,12 @@ describe("adattatori con fixture HTML", () => {
     try {
       const page = await browser.newPage();
       await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator(crmFixtureSelectors.personBirthPlaceOption).first().evaluate((exactOption) => {
+        const similarOption = exactOption.cloneNode(true) as HTMLElement;
+        similarOption.textContent = "BITONTO (BA)";
+        similarOption.onclick = () => { document.body.dataset.selectedBirthPlace = "BITONTO (BA)"; };
+        exactOption.parentElement?.insertBefore(similarOption, exactOption);
+      });
       const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
       await adapter.createPerson({
         fullName: "ACQUAVIVA MARIA ROSARIA", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1949-07-26",
@@ -175,6 +181,7 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator(crmFixtureSelectors.personLastName).inputValue()).toBe("Acquaviva");
       expect(await page.locator(crmFixtureSelectors.personGender).inputValue()).toBe("F");
       expect(await page.locator(crmFixtureSelectors.personBirthPlace).inputValue()).toBe("Bitonto");
+      expect(await page.locator("body").getAttribute("data-selected-birth-place")).toBe("BITONTO");
       expect(await page.locator(crmFixtureSelectors.personBirthDate).inputValue()).toBe("26/07/1949");
       expect(await page.locator(crmFixtureSelectors.personTaxCode).inputValue()).toBe("CQVMRS49L66A893R");
       expect(await page.locator(crmFixtureSelectors.personMobile).inputValue()).toBe("3331112222");
