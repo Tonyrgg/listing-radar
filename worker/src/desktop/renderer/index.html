@@ -6,173 +6,81 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
     <title>Property Data Worker</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./layout-fixes.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="rail">
-        <div class="brand">
-          <div class="radar-mark" aria-hidden="true"><i></i><i></i><b></b></div>
-          <div><strong>Listing Radar</strong><span>Property Data Worker</span></div>
-        </div>
+    <header class="app-header">
+      <div class="brand"><span class="brand-mark">LR</span><div><strong>Property Worker</strong><small>Listing Radar</small></div></div>
+      <div class="header-actions">
+        <span id="versionLabel" class="version">v—</span>
+        <button id="checkButton" class="button secondary">Controlla collegamenti</button>
+        <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
+      </div>
+    </header>
 
-        <nav class="rail-nav" aria-label="Sezioni">
-          <button class="nav-item is-active" data-scroll="operations"><span>01</span>Operazioni</button>
-          <button class="nav-item" data-scroll="jobs"><span>02</span>Lavorazioni</button>
-          <button class="nav-item" data-scroll="settings"><span>03</span>Configurazione</button>
-        </nav>
-
-        <div class="rail-note">
-          <span class="signal"></span>
-          <p>Locale e protetto</p>
-          <small>Le credenziali non transitano nell’interfaccia.</small>
-        </div>
-      </aside>
+    <div class="app-layout">
+      <nav class="side-nav" aria-label="Sezioni">
+        <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
+        <button class="nav-item" data-scroll="jobs"><span>2</span><div><b>Cronologia</b><small>Riprendi un lavoro</small></div></button>
+        <button class="nav-item" data-scroll="settings"><span>3</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
+        <div class="privacy-note"><span></span><div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div></div>
+      </nav>
 
       <main class="workspace" id="operations">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Sala operativa · Windows</p>
-            <h1>Una lavorazione alla volta.<br /><em>Sempre sotto controllo.</em></h1>
-          </div>
-          <div class="top-actions">
-            <span id="versionLabel" class="version">v—</span>
-            <button id="checkButton" class="button button-quiet"><span class="button-icon">↻</span>Controlla sistema</button>
-            <button id="chromeButton" class="button button-dark"><span class="button-icon">↗</span>Avvia Chrome</button>
-          </div>
-        </header>
+        <section class="page-intro">
+          <div><p class="eyebrow">Assistente di acquisizione</p><h1>Cosa vuoi fare?</h1><p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p></div>
+          <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
+        </section>
 
-        <section class="readiness" aria-label="Stato collegamenti">
-          <div class="readiness-heading"><span>Stato sistema</span><small id="lastCheckLabel">Controllo non ancora eseguito</small></div>
-          <div id="checksGrid" class="checks-grid">
-            <div class="check-item is-idle"><span></span><div><b>Chrome</b><small>Da controllare</small></div></div>
-            <div class="check-item is-idle"><span></span><div><b>SISTER</b><small>Da controllare</small></div></div>
-            <div class="check-item is-idle"><span></span><div><b>Gestionale</b><small>Da controllare</small></div></div>
-            <div class="check-item is-idle"><span></span><div><b>Excel</b><small>Da controllare</small></div></div>
-            <div class="check-item is-idle"><span></span><div><b>Supabase</b><small>Da controllare</small></div></div>
+        <section class="start-card">
+          <div class="start-copy"><span class="step-number">1</span><div><h2>Prepara una nuova lavorazione</h2><p>Prima apri SISTER sui risultati e lascia aperto il gestionale. Il programma controllerà tutto prima di partire.</p></div></div>
+          <div class="start-options">
+            <fieldset><legend>Come deve lavorare?</legend><div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div><small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small></fieldset>
+            <label class="toggle-row"><input id="dryRunToggle" type="checkbox" checked /><span class="toggle"></span><span><b>Prova senza salvare</b><small>Consigliato per il primo test</small></span></label>
+            <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
         </section>
 
-        <div class="content-grid">
-          <section class="operation-column">
-            <div class="section-heading">
-              <div><p class="kicker">Flusso guidato</p><h2 id="operationTitle">Pronto per una nuova acquisizione</h2></div>
-              <div id="runBadge" class="run-badge is-idle"><span></span>In attesa</div>
-            </div>
+        <section id="actionPanel" class="now-card" aria-live="polite"></section>
 
-            <div class="control-deck">
-              <div class="mode-control">
-                <p>Modalità</p>
-                <div class="segmented" role="group" aria-label="Modalità worker">
-                  <button data-mode="assisted" class="is-selected">Assisted</button>
-                  <button data-mode="automatic">Automatic</button>
-                </div>
-                <small>Assisted richiede conferma prima delle operazioni.</small>
-              </div>
-              <label class="dry-control">
-                <div><p>Dry-run</p><small>Nessun salvataggio finale nel gestionale</small></div>
-                <input id="dryRunToggle" type="checkbox" checked />
-                <span class="switch" aria-hidden="true"></span>
-              </label>
-              <div class="launch-control">
-                <button id="startButton" class="button button-primary">Nuova lavorazione <span>→</span></button>
-                <button id="pauseButton" class="button button-outline" disabled>Pausa</button>
-              </div>
-            </div>
+        <section id="manualCorrectionPanel" class="correction-card is-hidden" aria-live="polite">
+          <header><div><p class="eyebrow">Soluzione sicura</p><h2>Correggi i dati direttamente qui</h2><p>Compila solo ciò che manca. Salverò la correzione nel lavoro e ripartirò dal punto giusto.</p></div><button class="icon-button" data-action="close-corrections" aria-label="Chiudi">×</button></header>
+          <form id="manualCorrectionForm"><div id="manualCorrectionFields"></div><footer><button type="button" class="button secondary" data-action="close-corrections">Chiudi</button><button type="submit" class="button primary">Salva correzioni</button></footer></form>
+        </section>
 
-            <section id="actionPanel" class="action-panel is-empty" aria-live="polite">
-              <div class="action-number">01</div>
-              <div class="action-copy">
-                <p class="kicker">Prossima azione</p>
-                <h3>Prepara le due schede</h3>
-                <p>Apri SISTER e il gestionale nel Chrome dedicato, completa gli accessi e porta SISTER ai risultati.</p>
-              </div>
-              <div class="action-buttons"><button id="actionCheckButton" class="button button-light">Verifica adesso</button></div>
-            </section>
+        <section class="system-card">
+          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
+          <div id="checksGrid" class="checks-grid"></div>
+        </section>
 
-            <section class="progress-section">
-              <div class="progress-header"><div><p class="kicker">Avanzamento persistente</p><h3>Pipeline della lavorazione</h3></div><strong id="progressPercent">0%</strong></div>
-              <div class="progress-track"><span id="progressBar"></span></div>
-              <ol id="workflowSteps" class="workflow-steps"></ol>
-            </section>
+        <section class="progress-card">
+          <header><div><p class="eyebrow">Durante la lavorazione</p><h2 id="operationTitle">Percorso completo</h2></div><strong id="progressPercent">0%</strong></header>
+          <div class="progress-track"><span id="progressBar"></span></div>
+          <ol id="workflowSteps" class="workflow-steps"></ol>
+        </section>
 
-            <section id="settings" class="settings-section">
-              <div class="section-heading compact"><div><p class="kicker">Configurazione locale</p><h2>Origini e cartelle</h2></div></div>
-              <div class="settings-row">
-                <div><b>Configurazione protetta</b><small id="environmentPath">File worker/.env non selezionato</small></div>
-                <button id="chooseEnvironmentButton" class="button button-outline">Scegli .env</button>
-              </div>
-              <div class="settings-row">
-                <div><b>File Excel recapiti</b><small id="excelPath">Percorso non disponibile</small></div>
-                <button id="chooseExcelButton" class="button button-outline">Scegli file</button>
-              </div>
-              <div class="settings-row">
-                <div><b>Screenshot diagnostici</b><small id="screenshotPath">Percorso non disponibile</small></div>
-              </div>
-              <div class="settings-row">
-                <div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo silenzioso ogni 2-3 minuti</small></div>
-              </div>
-              <p class="security-copy">La chiave Supabase viene letta dal file locale soltanto nel processo principale dell’app e non viene mai inviata a questa schermata.</p>
-            </section>
-          </section>
+        <section id="jobs" class="jobs-card">
+          <header><div><p class="eyebrow">Lavori salvati</p><h2>Riprendi da dove eri rimasto</h2></div><span id="jobCount" class="count">0</span></header>
+          <div id="jobsList" class="jobs-list"><p class="empty-message">Non ci sono ancora lavorazioni.</p></div>
+        </section>
 
-          <aside class="context-column">
-            <section id="jobs" class="jobs-section">
-              <div class="aside-heading"><div><p class="kicker">Archivio operativo</p><h2>Lavorazioni recenti</h2></div><span id="jobCount">0</span></div>
-              <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna lavorazione disponibile.</p></div>
-            </section>
+        <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail">×</button></header><div id="detailContent"></div></section>
 
-            <section class="activity-section">
-              <div class="aside-heading"><div><p class="kicker">In tempo reale</p><h2>Registro attività</h2></div></div>
-              <div id="activityList" class="activity-list"><p class="empty-message">Le attività compariranno qui.</p></div>
-            </section>
+        <section class="activity-card"><header><div><p class="eyebrow">Ultime operazioni</p><h2>Cosa ha fatto il programma</h2></div></header><div id="activityList" class="activity-list"></div></section>
 
-            <section id="detailPanel" class="detail-section is-hidden">
-              <div class="aside-heading"><div><p class="kicker">Dettaglio</p><h2>Contenuto job</h2></div></div>
-              <div id="detailContent"></div>
-            </section>
-          </aside>
-        </div>
+        <section id="settings" class="settings-card">
+          <header><div><p class="eyebrow">Impostazioni</p><h2>Configurazione pronta all’uso</h2><p>La configurazione viene conservata dentro l’app e protetta da Windows. Non serve più selezionare un file .env dopo ogni aggiornamento.</p></div><span id="configurationStatus" class="status-pill is-idle">Da verificare</span></header>
+          <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
+          <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>
+          <div class="setting-row"><div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo automatico in attesa</small></div></div>
+          <details id="advancedConfiguration"><summary>Configurazione avanzata (solo se richiesta)</summary><form id="configurationForm" class="configuration-form"><label>Indirizzo Supabase<input name="supabaseUrl" type="url" autocomplete="off" /></label><label>Chiave locale protetta<input name="serviceRoleKey" type="password" autocomplete="new-password" /></label><label>File Excel<input name="contactsExcelPath" type="text" /></label><label>Come riconoscere SISTER<input name="sisterTabMatch" type="text" /></label><label>Come riconoscere il gestionale<input name="crmTabMatch" type="text" /></label><button class="button primary" type="submit">Salva configurazione</button></form></details>
+        </section>
       </main>
     </div>
 
-    <dialog id="acquisitionReviewDialog" class="acquisition-review" aria-labelledby="acquisitionReviewTitle">
-      <div class="review-shell">
-        <header class="review-header">
-          <div>
-            <p class="kicker">Acquisizione SISTER completata</p>
-            <h2 id="acquisitionReviewTitle">Immobili e proprietari rilevati</h2>
-            <p id="acquisitionReviewContext"></p>
-          </div>
-          <span id="acquisitionReviewCount" class="review-count"></span>
-        </header>
-        <div id="acquisitionReviewContent" class="review-content"></div>
-        <footer class="review-footer">
-          <p>Proseguendo inizierà il confronto con il gestionale. Nessun dato verrà salvato senza le conferme previste.</p>
-          <div>
-            <button class="button button-outline" data-review-decision="cancel">Interrompi e conserva</button>
-            <button class="button button-destructive" data-action="cancel-current">Annulla processo</button>
-            <button class="button button-primary" data-review-decision="proceed">Prosegui <span>→</span></button>
-          </div>
-        </footer>
-      </div>
-    </dialog>
+    <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Proseguendo inizierà il confronto con il gestionale.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button primary" data-review-decision="proceed">I dati sono corretti, prosegui</button></div></footer></div></dialog>
 
-    <dialog id="cancelProcessDialog" class="cancel-process-dialog" aria-labelledby="cancelProcessTitle" aria-describedby="cancelProcessDescription">
-      <div class="cancel-process-shell">
-        <p class="kicker">Azione definitiva</p>
-        <h2 id="cancelProcessTitle">Annullare questa lavorazione?</h2>
-        <p id="cancelProcessDescription">Il job e tutti i suoi immobili, proprietari, quote, passaggi e log verranno eliminati da Listing Radar. Saranno rimossi anche gli screenshot diagnostici locali collegati.</p>
-        <div class="cancel-process-warning">
-          <strong>Il gestionale esterno non può essere ripristinato.</strong>
-          <span>Le modifiche già salvate nel gestionale resteranno presenti; anche un’operazione già iniziata potrebbe terminare prima dell’arresto sicuro.</span>
-        </div>
-        <footer class="cancel-process-actions">
-          <button type="button" class="button button-outline" data-cancel-dialog="close" autofocus>Torna indietro</button>
-          <button type="button" class="button button-destructive is-solid" data-cancel-dialog="confirm">Annulla definitivamente</button>
-        </footer>
-      </div>
-    </dialog>
-
+    <dialog id="cancelProcessDialog" class="confirm-dialog"><div class="dialog-shell"><p class="eyebrow danger-text">Azione definitiva</p><h2>Vuoi davvero annullare questo lavoro?</h2><p>Il lavoro e i dati raccolti verranno eliminati. Le modifiche già concluse nel gestionale non possono essere annullate.</p><footer><button class="button secondary" data-cancel-dialog="close">No, torna indietro</button><button class="button danger solid" data-cancel-dialog="confirm">Sì, annulla definitivamente</button></footer></div></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
   </body>

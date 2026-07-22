@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import dotenv from "dotenv";
+import { z } from "zod";
 
 import { ExcelContactsAdapter, REQUIRED_CONTACT_COLUMNS } from "../adapters/excel/index.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
@@ -26,6 +27,7 @@ type Preferences = {
   contactsExcelPath?: string;
   mode: WorkerMode;
   dryRun: boolean;
+  encryptedEnvironment?: string;
 };
 
 type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"; message: string };
@@ -34,6 +36,39 @@ type KeepAliveState = SisterKeepAliveResult & { nextAttemptAt: string | null; st
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
 const defaultPreferences: Preferences = { mode: "assisted", dryRun: true };
+const editablePropertySchema = z.object({
+  id: z.string().uuid(),
+  sheet: z.string().trim().min(1),
+  parcel: z.string().trim().min(1),
+  subaltern: z.string().trim().min(1),
+  address: z.string().trim().nullable().optional(),
+  category: z.string().trim().min(1),
+  class: z.string().trim().nullable().optional(),
+  consistency: z.string().trim().nullable().optional(),
+  cadastralIncome: z.number().nullable().optional(),
+});
+const editablePersonSchema = z.object({
+  id: z.string().uuid(),
+  fullName: z.string().trim().min(1),
+  taxCode: z.string().trim().nullable().optional(),
+  birthPlace: z.string().trim().nullable().optional(),
+  birthProvince: z.string().trim().nullable().optional(),
+  birthDate: z.string().trim().nullable().optional(),
+  shareOriginal: z.string().trim().min(1),
+  sharePercentage: z.number().min(0).max(100).nullable().optional(),
+});
+const manualCorrectionSchema = z.object({
+  jobId: z.string().uuid(),
+  properties: z.array(editablePropertySchema).default([]),
+  people: z.array(editablePersonSchema).default([]),
+});
+const internalConfigurationSchema = z.object({
+  supabaseUrl: z.string().url(),
+  serviceRoleKey: z.string().min(20),
+  contactsExcelPath: z.string().min(1),
+  sisterTabMatch: z.string().min(1),
+  crmTabMatch: z.string().min(1),
+});
 
 let mainWindow: BrowserWindow | null = null;
 let preferences: Preferences = defaultPreferences;
@@ -77,20 +112,47 @@ async function loadPreferences() {
   if (!preferences.environmentFilePath) {
     preferences.environmentFilePath = [developmentEnv, workspaceEnv].find(existsSync);
   }
+  if (!preferences.encryptedEnvironment) {
+    const imported = readEnvironmentFiles(preferences.environmentFilePath);
+    if (imported.SUPABASE_SERVICE_ROLE_KEY && safeStorage.isEncryptionAvailable()) {
+      preferences.encryptedEnvironment = safeStorage.encryptString(JSON.stringify(imported)).toString("base64");
+      await persistPreferences();
+      pushActivity("Configurazione importata e protetta da Windows", "success");
+    }
+  }
 }
 
 async function persistPreferences() {
+  await mkdir(path.dirname(preferencesPath()), { recursive: true });
   await writeFile(preferencesPath(), JSON.stringify(preferences, null, 2), "utf8");
+}
+
+function readEnvironmentFiles(environmentFilePath?: string): Record<string, string> {
+  const values: Record<string, string> = {};
+  if (environmentFilePath && existsSync(environmentFilePath)) {
+    const rootEnvironment = path.resolve(path.dirname(environmentFilePath), "..", ".env.local");
+    if (existsSync(rootEnvironment)) Object.assign(values, dotenv.parse(readFileSync(rootEnvironment)));
+    Object.assign(values, dotenv.parse(readFileSync(environmentFilePath)));
+  }
+  const bundledPath = app.isPackaged ? path.join(process.resourcesPath, "worker-config.json") : path.join(workerRoot, "generated", "worker-config.json");
+  if (existsSync(bundledPath)) {
+    try { Object.assign(values, JSON.parse(readFileSync(bundledPath, "utf8")) as Record<string, string>); } catch { /* Configurazione opzionale non valida. */ }
+  }
+  return values;
+}
+
+function internalEnvironment(): Record<string, string> {
+  if (preferences.encryptedEnvironment && safeStorage.isEncryptionAvailable()) {
+    try {
+      return JSON.parse(safeStorage.decryptString(Buffer.from(preferences.encryptedEnvironment, "base64"))) as Record<string, string>;
+    } catch { /* Prova le origini di migrazione. */ }
+  }
+  return readEnvironmentFiles(preferences.environmentFilePath);
 }
 
 function workerConfig(overrides: Partial<Preferences> = {}): WorkerConfig {
   const merged = { ...preferences, ...overrides };
-  const fileEnvironment: Record<string, string> = {};
-  if (merged.environmentFilePath && existsSync(merged.environmentFilePath)) {
-    const rootEnvironment = path.resolve(path.dirname(merged.environmentFilePath), "..", ".env.local");
-    if (existsSync(rootEnvironment)) Object.assign(fileEnvironment, dotenv.parse(readFileSync(rootEnvironment)));
-    Object.assign(fileEnvironment, dotenv.parse(readFileSync(merged.environmentFilePath)));
-  }
+  const fileEnvironment = internalEnvironment();
   return loadConfig({
     ...process.env,
     ...fileEnvironment,
@@ -123,7 +185,8 @@ async function stateSnapshot() {
   try {
     const config = workerConfig();
     publicConfig = {
-      environmentFilePath: preferences.environmentFilePath ?? null,
+      configurationReady: true,
+      configurationSource: preferences.encryptedEnvironment ? "Protetta da Windows" : "Inclusa nell'app",
       contactsExcelPath: config.CONTACTS_EXCEL_PATH,
       chromeCdpUrl: config.CHROME_CDP_URL,
       screenshotDirectory: config.ERROR_SCREENSHOT_DIR,
@@ -167,10 +230,10 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(`Lavorazione ${event.job.id.slice(0, 8)} pronta`, "success");
   } else if (event.type === "step-started") {
     currentStep = event.step;
-    pushActivity(`Avvio: ${event.step}`);
+    pushActivity(`Inizio: ${friendlyStepLabel(event.step)}`);
   } else if (event.type === "step-completed") {
     currentStep = event.next;
-    pushActivity(`Completato: ${event.step}`, "success");
+    pushActivity(`Terminato: ${friendlyStepLabel(event.step)}`, "success");
   } else if (event.type === "job-completed") {
     currentStep = "completed";
     pushActivity("Lavorazione completata", "success");
@@ -183,6 +246,20 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(event.message, "error");
   }
   void publishState();
+}
+
+function friendlyStepLabel(step: string) {
+  const labels: Record<string, string> = {
+    ready: "preparazione collegamenti", sister_results_acquired: "lettura risultati SISTER",
+    properties_extracted: "raccolta immobili", owners_extracted: "raccolta proprietari",
+    data_normalized: "controllo dei dati", acquisition_reviewed: "riepilogo acquisizione",
+    person_searched: "ricerca nominativi", person_created_or_updated: "aggiornamento nominativi",
+    person_merge_reviewed: "verifica unioni nominativi", property_searched: "ricerca immobili del nominativo",
+    property_created_or_updated: "aggiornamento immobili", activity_created: "creazione attività sugli immobili",
+    contacts_matched: "abbinamento recapiti Excel", owners_linked: "collegamento comproprietari",
+    verified: "verifica finale", completed: "lavorazione completa",
+  };
+  return labels[step] ?? step.replaceAll("_", " ");
 }
 
 function updateKeepAliveState(result: SisterKeepAliveResult) {
@@ -380,6 +457,10 @@ function registerIpc() {
     const selection = await dialog.showOpenDialog({ properties: ["openFile"], title: "Seleziona worker/.env" });
     if (selection.canceled || !selection.filePaths[0]) return null;
     preferences = { ...preferences, environmentFilePath: selection.filePaths[0] };
+    const imported = readEnvironmentFiles(selection.filePaths[0]);
+    if (imported.SUPABASE_SERVICE_ROLE_KEY && safeStorage.isEncryptionAvailable()) {
+      preferences.encryptedEnvironment = safeStorage.encryptString(JSON.stringify(imported)).toString("base64");
+    }
     await persistPreferences();
     await publishState();
     return selection.filePaths[0];
@@ -389,6 +470,28 @@ function registerIpc() {
     await persistPreferences();
     await publishState();
     return preferences;
+  });
+  ipcMain.handle("desktop:save-internal-configuration", async (_event, rawValues: unknown) => {
+    const values = internalConfigurationSchema.parse(rawValues);
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows non rende disponibile la protezione delle credenziali");
+    const existing = internalEnvironment();
+    const secured = {
+      ...existing,
+      NEXT_PUBLIC_SUPABASE_URL: values.supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: values.serviceRoleKey,
+      CONTACTS_EXCEL_PATH: values.contactsExcelPath,
+      SISTER_TAB_MATCH: values.sisterTabMatch,
+      CRM_TAB_MATCH: values.crmTabMatch,
+    };
+    preferences = {
+      ...preferences,
+      contactsExcelPath: values.contactsExcelPath,
+      encryptedEnvironment: safeStorage.encryptString(JSON.stringify(secured)).toString("base64"),
+    };
+    await persistPreferences();
+    pushActivity("Configurazione salvata e protetta da Windows", "success");
+    await publishState();
+    return true;
   });
   ipcMain.handle("desktop:open-chrome", async () => {
     const executable = findChromeExecutable();
@@ -451,6 +554,39 @@ function registerIpc() {
     const repo = repository();
     const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
     return { job, properties: graph.properties, people: graph.people, ownerships: graph.ownerships };
+  });
+  ipcMain.handle("desktop:save-manual-corrections", async (_event, rawValues: unknown) => {
+    const values = manualCorrectionSchema.parse(rawValues);
+    const repo = repository();
+    const graph = await repo.loadGraph(values.jobId);
+    const allowedProperties = new Set(graph.properties.map((row) => row.id));
+    const allowedPeople = new Set(graph.people.map((row) => row.id));
+    for (const property of values.properties) {
+      if (!allowedProperties.has(property.id)) throw new Error("Immobile non appartenente alla lavorazione");
+      await repo.updatePropertyProcessing(property.id, {
+        sheet: property.sheet, parcel: property.parcel, subaltern: property.subaltern,
+        cadastral_key: [graph.properties.find((row) => row.id === property.id)?.municipality, property.sheet, property.parcel, property.subaltern].join("|"),
+        address: property.address ?? null, category: property.category, class: property.class ?? null,
+        consistency: property.consistency ?? null, cadastral_income: property.cadastralIncome ?? null,
+        processing_status: "normalized",
+      });
+    }
+    for (const person of values.people) {
+      if (!allowedPeople.has(person.id)) throw new Error("Nominativo non appartenente alla lavorazione");
+      await repo.updatePersonProcessing(person.id, {
+        full_name: person.fullName, tax_code: person.taxCode?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || null,
+        birth_place: person.birthPlace ?? null, birth_province: person.birthProvince ?? null,
+        birth_date: person.birthDate || null, share_original: person.shareOriginal,
+        share_percentage: person.sharePercentage ?? null, processing_status: "normalized",
+      });
+      const related = graph.ownerships.filter((row) => row.person_id === person.id);
+      for (const ownership of related) await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
+    }
+    await repo.updateJob(values.jobId, { status: "paused", error_message: null, error_details: { manualCorrection: true } });
+    lastError = null;
+    pushActivity("Correzioni manuali salvate. La lavorazione può ripartire.", "success");
+    await publishState();
+    return true;
   });
   ipcMain.handle("desktop:reveal-file", (_event, filePath: string) => shell.showItemInFolder(filePath));
 }

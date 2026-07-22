@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -15,11 +15,13 @@
     "worker:check": "tsx src/cli.ts check",
     "desktop:compile": "tsc -p tsconfig.desktop.json",
     "desktop:dev": "npm run desktop:compile && electron .",
-    "desktop:build": "npm run desktop:compile && electron-builder --win nsis",
-    "desktop:portable": "npm run desktop:compile && electron-builder --win portable",
+    "desktop:prepare-config": "node scripts/prepare-bundled-config.mjs",
+    "desktop:build": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win nsis",
+    "desktop:portable": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win portable",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "desktop:visual-check": "node scripts/visual-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
@@ -55,6 +57,10 @@
       {
         "from": "src/desktop/preload.cjs",
         "to": "preload.cjs"
+      },
+      {
+        "from": "generated/worker-config.json",
+        "to": "worker-config.json"
       }
     ],
     "asarUnpack": [

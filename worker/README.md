@@ -20,8 +20,11 @@ L'interfaccia permette di:
 - scegliere assisted/automatic e dry-run;
 - avviare, mettere in pausa e riprendere una lavorazione;
 - rispondere alle conferme assisted con pulsanti;
-- consultare avanzamento, lavorazioni recenti e diagnostica.
+- capire in parole semplici cosa sta facendo, perché si è fermata e come ripartire;
+- correggere direttamente nell'app dati catastali, anagrafica, codice fiscale e quote mancanti;
+- consultare avanzamento, lavorazioni recenti e diagnostica;
 - mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 2-3 minuti, senza ricaricare la pagina visibile.
+- conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
 
 Per generare l'installer Windows:
 
@@ -42,7 +45,7 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
 ## Installazione
 
 1. Applica `supabase/migrations/003_property_worker.sql` allo stesso progetto Supabase usato da Listing Radar.
-2. Copia `.env.example` in `.env` e completa i valori. La service role key resta solo su questa macchina e non va mai esposta al frontend.
+2. Nell'app installata la configurazione è inclusa nel pacchetto e viene trasferita al primo avvio nel deposito cifrato di Windows. Se una nuova installazione non è stata preconfigurata, apri **Impostazioni → Configurazione avanzata** e inserisci i valori una sola volta: non occorre creare un file `.env`.
 3. Installa il worker:
 
    ```powershell
@@ -56,7 +59,9 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
    chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\ChromeListingRadar"
    ```
 
-5. Accedi manualmente a SISTER e al gestionale, lasciando entrambe le schede aperte. Imposta `SISTER_TAB_MATCH` e `CRM_TAB_MATCH` con una parte stabile di titolo o URL.
+5. Accedi manualmente a SISTER e al gestionale, lasciando entrambe le schede aperte. Le regole per riconoscere le schede sono già incluse; se cambiano, puoi aggiornarle nella configurazione avanzata dell'app.
+
+Il file `.env` resta supportato soltanto per lo sviluppo e per l'uso tecnico della CLI. Non viene mai letto dal renderer e la service role key non viene mostrata nell'interfaccia o nei log.
 
 Finché l'app desktop resta aperta, il worker richiama in background una pagina neutra di SISTER tra 120 e 180 secondi. Non automatizza il login e segnala subito una sessione scaduta. L'intervallo e l'eventuale URL sicuro possono essere personalizzati con `SISTER_KEEPALIVE_MIN_SECONDS`, `SISTER_KEEPALIVE_MAX_SECONDS` e `SISTER_KEEPALIVE_URL`.
 

@@ -1,308 +1,90 @@
-const STEPS = [
-  "ready", "sister_results_acquired", "properties_extracted", "owners_extracted", "data_normalized", "acquisition_reviewed",
-  "person_searched", "person_created_or_updated", "person_merge_reviewed", "property_searched", "property_created_or_updated",
-  "activity_created", "contacts_matched", "owners_linked", "verified", "completed",
-];
-
-const LABELS = {
-  ready: "Preparazione", sister_results_acquired: "Risultati SISTER", properties_extracted: "Immobili estratti",
-  owners_extracted: "Proprietari estratti", data_normalized: "Dati normalizzati", acquisition_reviewed: "Riepilogo acquisizione", contacts_matched: "Recapiti Excel abbinati",
-  person_searched: "Ricerca nominativi", person_created_or_updated: "Nominativi sincronizzati", person_merge_reviewed: "Merge nominativi verificato",
-  property_searched: "Immobili del nominativo", property_created_or_updated: "Immobili sincronizzati",
-  activity_created: "Attività da eseguire",
-  owners_linked: "Comproprietari collegati", verified: "Verifica finale", completed: "Completato",
+const STEPS = ["ready","sister_results_acquired","properties_extracted","owners_extracted","data_normalized","acquisition_reviewed","person_searched","person_created_or_updated","person_merge_reviewed","property_searched","property_created_or_updated","activity_created","contacts_matched","owners_linked","verified","completed"];
+const GUIDE = {
+  ready:{label:"Preparazione",doing:"Controllo che Chrome, SISTER, gestionale ed Excel siano raggiungibili.",next:"Quando tutto è pronto, ti chiederò di acquisire i risultati SISTER."},
+  sister_results_acquired:{label:"Lettura SISTER",doing:"Sto leggendo la pagina dei risultati che hai già aperto.",next:"Individuerò solo gli immobili delle categorie A/ e C/."},
+  properties_extracted:{label:"Raccolta immobili",doing:"Sto raccogliendo foglio, particella, subalterno, indirizzo e dati catastali.",next:"Per ogni immobile aprirò l’elenco dei proprietari."},
+  owners_extracted:{label:"Raccolta proprietari",doing:"Sto leggendo nominativi, codici fiscali, diritti e quote di proprietà.",next:"Escluderò automaticamente i diritti diversi dalla Proprietà."},
+  data_normalized:{label:"Controllo dati",doing:"Sto uniformando codici fiscali, quote e chiavi catastali per evitare duplicati.",next:"Ti mostrerò un riepilogo completo prima del confronto col gestionale."},
+  acquisition_reviewed:{label:"Riepilogo acquisizione",doing:"I dati SISTER sono raccolti. Attendo il tuo controllo del riepilogo.",next:"Dopo la conferma inizierò dai nominativi."},
+  person_searched:{label:"Ricerca nominativi",doing:"Cerco ogni persona nel gestionale prima per codice fiscale, poi per telefono e anagrafica.",next:"Se non esiste, preparerò una nuova scheda; se esiste, completerò solo i dati mancanti."},
+  person_created_or_updated:{label:"Aggiornamento nominativi",doing:"Sto creando o aggiornando le schede delle persone senza duplicare i recapiti.",next:"Controllerò eventuali unioni proposte dal gestionale."},
+  person_merge_reviewed:{label:"Controllo unioni",doing:"Verifico che gli eventuali merge del gestionale siano conclusi senza conflitti.",next:"Aprirò gli immobili collegati ai nominativi."},
+  property_searched:{label:"Ricerca immobili",doing:"Cerco l’immobile dentro la scheda del proprietario, confrontando prima dati catastali e poi via e civico.",next:"Se lo trovo aggiorno i dati; altrimenti preparo una nuova scheda immobile."},
+  property_created_or_updated:{label:"Aggiornamento immobili",doing:"Sto completando i dati catastali dell’immobile usando SISTER come fonte principale.",next:"Creerò una sola attività direttamente dalla scheda dell’immobile."},
+  activity_created:{label:"Attività sugli immobili",doing:"Sto aggiungendo l’attività “Da eseguire” dalla scheda di ciascun immobile, non dal cliente.",next:"Poi abbinerò i recapiti del file Excel."},
+  contacts_matched:{label:"Recapiti Excel",doing:"Cerco il codice fiscale nel file Excel e raccolgo telefoni ed email senza duplicati.",next:"Aggiungerò i recapiti mancanti alle persone già individuate."},
+  owners_linked:{label:"Comproprietari",doing:"Sto collegando ogni immobile a tutti i proprietari e verificando le quote.",next:"Eseguirò l’ultimo controllo di completezza."},
+  verified:{label:"Verifica finale",doing:"Controllo che immobili, persone, attività, recapiti e quote siano stati elaborati.",next:"Se non manca nulla, il lavoro sarà concluso."},
+  completed:{label:"Completato",doing:"La lavorazione è terminata e tutti i passaggi risultano salvati.",next:"Puoi aprire i dettagli oppure iniziare una nuova lavorazione."},
 };
+const ERROR_STATES=new Set(["needs_review","session_expired","portal_error","data_incomplete","failed"]);
+let appState=null,checks=[],selectedMode="assisted",toastTimer=null,pendingCancelJobId=null,cancelInFlight=false,resolutionDetail=null,resolutionJobId=null;
+const $=id=>document.getElementById(id);
+const esc=value=>String(value??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[c]);
+const fmtTime=value=>value?new Intl.DateTimeFormat("it-IT",{hour:"2-digit",minute:"2-digit"}).format(new Date(value)):"—";
+const fmtDate=value=>value?new Intl.DateTimeFormat("it-IT",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(value)):"—";
+const guide=step=>GUIDE[step]??{label:String(step??"Elaborazione").replaceAll("_"," "),doing:"Il programma sta completando questo passaggio.",next:"L’avanzamento sarà salvato automaticamente."};
+function toast(message){const el=$("toast");el.textContent=message;el.classList.add("is-visible");clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("is-visible"),3500)}
 
-const ERROR_STATES = new Set(["needs_review", "session_expired", "portal_error", "data_incomplete", "failed"]);
-let appState = null;
-let checks = [];
-let selectedMode = "assisted";
-let toastTimer = null;
-let pendingCancelJobId = null;
-let cancelInFlight = false;
-
-const $ = (id) => document.getElementById(id);
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
-const time = (value) => value ? new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
-const dateTime = (value) => value ? new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
-
-function toast(message) {
-  const element = $("toast");
-  element.textContent = message;
-  element.classList.add("is-visible");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => element.classList.remove("is-visible"), 3200);
+function errorAdvice(job,error){const text=String(error??job?.error_message??"").toLowerCase();const status=job?.status;
+  if(status==="session_expired"||text.includes("sessione")&&text.includes("scad"))return{cause:"La sessione del portale non è più valida.",steps:["Apri Chrome di lavoro.","Accedi di nuovo al portale indicato, senza chiudere la scheda.","Torna qui e premi “Ho effettuato l’accesso, riprendi”."],action:"session"};
+  if(status==="data_incomplete"||text.includes("mancant")||text.includes("quota"))return{cause:"Uno o più dati indispensabili non sono disponibili o non sono leggibili con certezza.",steps:["Apri “Correggi dati qui sotto”.","Compila i campi evidenziati usando il dato visibile su SISTER.","Salva e riprendi: il programma continuerà dal passaggio successivo."],action:"data"};
+  if(status==="needs_review"||text.includes("più")||text.includes("merge"))return{cause:"Il programma ha trovato più possibilità e non vuole scegliere quella sbagliata.",steps:["Controlla nel gestionale quale scheda è corretta.","Se serve, completa il merge o la scelta manualmente.","Premi “Ho risolto nel gestionale, riprendi”."],action:"review"};
+  if(text.includes("selector")||text.includes("locator")||text.includes("pagina")||status==="portal_error")return{cause:"La pagina del portale è diversa da quella attesa oppure c’è una finestra aperta che copre i comandi.",steps:["Lascia aperta la pagina indicata nel gestionale o in SISTER.","Chiudi eventuali messaggi o finestre rimaste a metà.","Premi “Riprova questo passaggio”. Se manca un valore, puoi inserirlo dall’app."],action:"portal"};
+  return{cause:"Si è verificato un problema inatteso, ma l’avanzamento precedente è al sicuro.",steps:["Premi “Controlla collegamenti”.","Se tutti i controlli sono verdi, riprova il passaggio.","Se manca un dato, usa “Correggi dati qui sotto”."],action:"unknown"};
 }
 
-function renderChecks() {
-  const wanted = [
-    ["chrome", "Chrome"], ["sister", "SISTER"], ["crm", "Gestionale"], ["excel", "Excel"], ["supabase", "Supabase"],
-  ];
-  $("checksGrid").innerHTML = wanted.map(([id, label]) => {
-    const keepAlive = appState?.sisterKeepAlive;
-    const keepAliveResult = id === "sister" && keepAlive?.statusLabel !== "waiting" && keepAlive?.statusLabel !== "disabled"
-      ? {
-          ok: keepAlive.ok,
-          detail: keepAlive.ok
-            ? `Sessione mantenuta · ${time(keepAlive.checkedAt)}`
-            : keepAlive.message,
-        }
-      : null;
-    const result = keepAliveResult ?? checks.find((item) => item.id === id);
-    const stateClass = result ? (result.ok ? "is-ok" : "is-error") : "is-idle";
-    return `<div class="check-item ${stateClass}"><span></span><div><b>${label}</b><small title="${escapeHtml(result?.detail ?? "Da controllare")}">${escapeHtml(result?.detail ?? "Da controllare")}</small></div></div>`;
-  }).join("");
-}
+function renderChecks(){const wanted=[["chrome","Chrome"],["sister","SISTER"],["crm","Gestionale"],["excel","File Excel"],["supabase","Archivio dati"]];$("checksGrid").innerHTML=wanted.map(([id,label])=>{const keep=appState?.sisterKeepAlive;const keepResult=id==="sister"&&!["waiting","disabled"].includes(keep?.statusLabel)?{ok:keep.ok,detail:keep.ok?`Sessione attiva · ${fmtTime(keep.checkedAt)}`:keep.message}:null;const result=keepResult??checks.find(x=>x.id===id);return`<div class="check-item ${result?(result.ok?"is-ok":"is-error"):""}"><span></span><div><b>${label}</b><small title="${esc(result?.detail??"Da controllare")}">${esc(result?.detail??"Da controllare")}</small></div></div>`}).join("")}
+function renderSteps(){const job=appState?.jobs?.find(j=>j.id===appState.activeJobId);const current=appState?.currentStep??job?.current_step??"ready";const idx=Math.max(0,STEPS.indexOf(current)),done=current==="completed",percent=done?100:Math.round(idx/(STEPS.length-1)*100);$("progressPercent").textContent=`${percent}%`;$("progressBar").style.width=`${percent}%`;$("workflowSteps").innerHTML=STEPS.map((step,i)=>`<li class="workflow-step ${done||i<idx?"is-done":i===idx?"is-current":""}"><span class="index">${done||i<idx?"✓":i+1}</span><b>${esc(guide(step).label)}</b></li>`).join("")}
+function cancelButton(jobId){return jobId?`<button class="button danger" data-cancel-job="${esc(jobId)}">Annulla lavoro</button>`:""}
+function promptButtons(prompt){if(prompt.kind==="merge")return`<button class="button primary" data-prompt="confirm">Il merge è corretto</button><button class="button secondary" data-prompt="manual">Lo sistemo manualmente</button>`;if(prompt.kind==="decision")return`<button class="button primary" data-prompt="confirm">Conferma</button><button class="button secondary" data-prompt="skip">Salta questo caso</button><button class="button secondary" data-prompt="manual">Modifico nel gestionale</button><button class="button danger" data-prompt="review">Segna da verificare</button>`;return`<button class="button primary" data-prompt="confirm">${prompt.kind==="acquisition"?"Acquisisci risultati":"Ho terminato, continua"}</button>`}
+function renderAction(){const panel=$("actionPanel"),job=appState?.jobs?.find(j=>j.id===appState.activeJobId);
+  if(appState?.configError){panel.className="now-card is-error";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Configurazione necessaria</div><h2>Completa una sola volta le impostazioni</h2><p>Il programma non ha trovato la configurazione interna. Non serve creare un file: inserisci i valori nella sezione avanzata e Windows li proteggerà.</p><div class="now-actions"><button class="button primary" data-action="config">Apri impostazioni</button></div></div><div class="now-side"><h3>Cosa manca</h3><p>${esc(appState.configError)}</p></div></div>`;return}
+  if(appState?.cancellingJobId){panel.className="now-card is-warning";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Arresto sicuro</div><h2>Sto annullando la lavorazione</h2><p>Attendo la fine dell’operazione già iniziata, poi elimino i dati del lavoro.</p></div><div class="now-side"><b>Non chiudere l’app.</b><p>Ti avviserò appena l’annullamento è concluso.</p></div></div>`;return}
+  if(appState?.prompt){if(appState.prompt.kind==="acquisition-review"){panel.className="now-card";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Dati raccolti</div><h2>Controlla immobili e proprietari</h2><p>La raccolta da SISTER è finita. Prima di toccare il gestionale, verifica il riepilogo.</p><div class="now-actions"><button class="button primary" data-action="open-review">Apri il riepilogo</button>${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>Dopo la conferma</h3><p>Inizierò a cercare i nominativi nel gestionale.</p></div></div>`;return}panel.className="now-card is-warning";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Serve una tua conferma</div><h2>${esc(appState.prompt.title)}</h2><p>${esc(appState.prompt.summary)}</p><div class="now-actions">${promptButtons(appState.prompt)}${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>Perché mi sono fermato?</h3><p>Questa scelta può modificare dati nel gestionale. Attendo la tua decisione per sicurezza.</p></div></div>`;return}
+  if(appState?.lastError){const advice=errorAdvice(job,appState.lastError),last=guide(job?.last_completed_step),nextIdx=Math.min(Math.max(0,STEPS.indexOf(job?.last_completed_step)+1),STEPS.length-1),next=guide(STEPS[nextIdx]);panel.className="now-card is-error";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Lavorazione ferma, dati salvati</div><h2>${esc(advice.cause)}</h2><p>Ultimo punto concluso: <b>${esc(last.label)}</b>. Ripartirò da <b>${esc(next.label)}</b>, senza ricominciare.</p><div class="recovery-box"><b>Cosa fare adesso</b><ol>${advice.steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol></div><div class="now-actions">${advice.action==="data"||advice.action==="unknown"||advice.action==="portal"?`<button class="button primary" data-action="open-corrections">Correggi dati qui sotto</button>`:""}<button class="button ${advice.action==="data"?"secondary":"primary"}" data-action="resume-current">${advice.action==="session"?"Ho effettuato l’accesso, riprendi":advice.action==="review"?"Ho risolto nel gestionale, riprendi":"Riprova questo passaggio"}</button><button class="button secondary" data-action="checks">Controlla collegamenti</button>${cancelButton(appState.activeJobId)}</div><details class="technical-details"><summary>Mostra il dettaglio tecnico</summary><pre>${esc(appState.lastError)}</pre></details></div><div class="now-side"><h3>Il lavoro è al sicuro</h3><p>Ogni passaggio concluso è stato salvato. Riprendendo non verranno riletti o duplicati i dati già completati.</p></div></div>`;return}
+  const current=guide(appState?.currentStep??"ready");if(appState?.active){panel.className="now-card";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Sto lavorando adesso</div><h2>${esc(current.label)}</h2><p>${esc(current.doing)}</p><div class="now-actions"><button class="button secondary" data-action="pause">Metti in pausa</button>${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>Cosa succede dopo</h3><p>${esc(current.next)}</p><p><b>Non devi fare nulla</b> finché non compare una richiesta.</p></div></div>`;return}
+  panel.className="now-card";panel.innerHTML=`<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Pronto per iniziare</div><h2>Apri le due schede nel Chrome di lavoro</h2><p>Accedi manualmente a SISTER e al gestionale. Su SISTER scegli Comune, via e civico, poi avvia la ricerca e lascia visibili i risultati.</p><div class="now-actions"><button class="button primary" data-action="checks">Controlla se è tutto pronto</button></div></div><div class="now-side"><h3>In tre mosse</h3><ol><li>Apri Chrome di lavoro.</li><li>Porta SISTER sui risultati.</li><li>Premi “Inizia lavorazione”.</li></ol></div></div>`}
 
-function renderSteps() {
-  const current = appState?.currentStep ?? appState?.jobs?.find((job) => job.id === appState.activeJobId)?.current_step ?? "ready";
-  const currentIndex = Math.max(0, STEPS.indexOf(current));
-  const complete = current === "completed";
-  const percent = complete ? 100 : Math.round((currentIndex / (STEPS.length - 1)) * 100);
-  $("progressPercent").textContent = `${percent}%`;
-  $("progressBar").style.width = `${percent}%`;
-  $("workflowSteps").innerHTML = STEPS.map((step, index) => {
-    const status = complete || index < currentIndex ? "is-done" : index === currentIndex && appState?.active ? "is-current" : "";
-    return `<li class="workflow-step ${status}"><span class="index">${String(index + 1).padStart(2, "0")}</span><b>${LABELS[step]}</b><span class="state"></span></li>`;
-  }).join("");
-}
+function renderJobs(){const jobs=appState?.jobs??[];$("jobCount").textContent=jobs.length;$("jobsList").innerHTML=jobs.length?jobs.map(job=>{const resumable=job.status!=="completed"&&(!appState.active||job.id!==appState.activeJobId),place=[job.municipality,job.street,job.civic_number].filter(Boolean).join(" · ")||`Lavoro ${job.id.slice(0,8)}`,tone=job.status==="completed"?"is-completed":ERROR_STATES.has(job.status)?"is-error":job.status==="running"?"is-running":"";return`<article class="job-item ${tone}"><span></span><div><b>${esc(place)}</b><small>${job.mode==="automatic"?"Automatica":"Guidata"} · ultimo punto: ${esc(guide(job.last_completed_step??"ready").label)} · ${fmtDate(job.updated_at??job.created_at)}${job.error_message?`<br><span class="job-issue">Richiede attenzione: ${esc(job.error_message)}</span>`:""}</small></div><div class="job-actions"><button class="text-button" data-detail-job="${job.id}">Apri</button>${ERROR_STATES.has(job.status)?`<button class="text-button" data-fix-job="${job.id}">Risolvi</button>`:""}${resumable?`<button class="text-button" data-resume-job="${job.id}">Riprendi</button>`:""}${job.status!=="completed"?`<button class="text-button is-destructive" data-cancel-job="${job.id}">Annulla</button>`:""}</div></article>`}).join(""):`<p class="empty-message">Non ci sono ancora lavorazioni.</p>`}
+function renderActivity(){const items=appState?.activity??[];$("activityList").innerHTML=items.length?items.map(x=>`<div class="activity-item is-${x.tone}"><time>${fmtTime(x.at)}</time><i></i><p>${esc(x.message)}</p></div>`).join(""):`<p class="empty-message">Qui compariranno le operazioni svolte.</p>`}
+function renderReview(){const dialog=$("acquisitionReviewDialog"),review=appState?.prompt?.kind==="acquisition-review"?appState.prompt.review:null;if(!review){if(dialog.open)dialog.close();return}$("acquisitionReviewContext").textContent=[review.municipality,review.street,review.civicNumber].filter(Boolean).join(" · ")||"Risultati acquisiti";$("acquisitionReviewCount").textContent=`${review.properties.length} immobili`;$("acquisitionReviewContent").innerHTML=review.properties.map((p,i)=>`<article class="review-property"><section class="review-property-data"><p class="eyebrow">Immobile ${i+1}</p><h3>${esc(p.address??"Indirizzo non disponibile")}</h3><p>${esc(p.cadastralKey)}</p><dl><div><dt>Categoria</dt><dd>${esc(p.category??"—")}</dd></div><div><dt>Classe</dt><dd>${esc(p.class??"—")}</dd></div><div><dt>Consistenza</dt><dd>${esc(p.consistency??"—")}</dd></div><div><dt>Rendita</dt><dd>${p.cadastralIncome==null?"—":new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR"}).format(p.cadastralIncome)}</dd></div></dl></section><section class="review-owners"><p class="eyebrow">${p.owners.length} proprietari</p>${p.owners.map(o=>`<div class="review-owner"><div><strong>${esc(o.fullName)}</strong><small>${esc(o.taxCode??"CF mancante")}</small></div><div><span>${esc([o.birthPlace,o.birthDate].filter(Boolean).join(" · ")||"Nascita non disponibile")}</span><b>${o.sharePercentage==null?"Quota n/d":`${new Intl.NumberFormat("it-IT").format(o.sharePercentage)}%`}</b></div></div>`).join("")||"Nessun proprietario"}</section></article>`).join("");if(!dialog.open)dialog.showModal()}
 
-function promptButtons(prompt) {
-  if (prompt.kind === "merge") return `
-    <button class="button button-light" data-prompt="confirm">Conferma merge</button>
-    <button class="button button-outline" data-prompt="manual">Risolvo manualmente</button>`;
-  if (prompt.kind === "decision") return `
-    <button class="button button-light" data-prompt="confirm">Conferma</button>
-    <button class="button button-outline" data-prompt="skip">Salta</button>
-    <button class="button button-outline" data-prompt="manual">Modifica manualmente</button>
-    <button class="button danger" data-prompt="review">Da verificare</button>`;
-  return `<button class="button button-light" data-prompt="confirm">${prompt.kind === "acquisition" ? "Acquisisci risultati" : "Ho terminato"}</button>`;
-}
+function input(name,label,value,type="text"){return`<label class="manual-field">${esc(label)}<input name="${esc(name)}" type="${type}" value="${esc(value??"")}" /></label>`}
+function renderCorrections(){const panel=$("manualCorrectionPanel"),container=$("manualCorrectionFields");if(!resolutionDetail){container.innerHTML=`<p class="empty-message">Apri una lavorazione per vedere i dati correggibili.</p>`;return}const props=resolutionDetail.properties??[],people=resolutionDetail.people??[];container.innerHTML=`${props.map(p=>`<section class="manual-entity" data-property-id="${p.id}"><h3>${esc(p.address??"Immobile senza indirizzo")}</h3><small>Compila sempre foglio, particella, subalterno e categoria.</small><div class="manual-grid">${input("sheet","Foglio",p.sheet)}${input("parcel","Particella",p.parcel)}${input("subaltern","Subalterno",p.subaltern)}${input("category","Categoria",p.category)}${input("address","Indirizzo",p.address)}${input("class","Classe",p.class)}${input("consistency","Consistenza",p.consistency)}${input("cadastralIncome","Rendita",p.cadastral_income,"number")}</div></section>`).join("")}${people.map(p=>`<section class="manual-entity" data-person-id="${p.id}"><h3>${esc(p.full_name)}</h3><small>Controlla soprattutto codice fiscale e quota.</small><div class="manual-grid">${input("fullName","Nome completo",p.full_name)}${input("taxCode","Codice fiscale",p.tax_code)}${input("birthPlace","Luogo di nascita",p.birth_place)}${input("birthProvince","Provincia",p.birth_province)}${input("birthDate","Data di nascita",p.birth_date,"date")}${input("shareOriginal","Quota originale",p.share_original)}${input("sharePercentage","Quota percentuale",p.share_percentage,"number")}</div></section>`).join("")}`;panel.classList.remove("is-hidden")}
+async function loadResolution(jobId,show=true){resolutionJobId=jobId;resolutionDetail=await window.propertyWorker.getJobDetails(jobId);if(show){renderCorrections();$("manualCorrectionPanel").scrollIntoView({behavior:"smooth",block:"start"})}}
+function nullableNumber(value){return value.trim()===""?null:Number(value.replace(",","."))}
 
-function formatMoney(value) {
-  return value == null ? "—" : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(value);
-}
+function render(){if(!appState)return;selectedMode=appState.preferences?.mode??selectedMode;document.querySelectorAll("[data-mode]").forEach(b=>b.classList.toggle("is-selected",b.dataset.mode===selectedMode));$("modeHelp").textContent=selectedMode==="automatic"?"Procede da solo e si ferma solo quando non può scegliere in sicurezza.":"Ti chiede conferma prima dei salvataggi.";$("dryRunToggle").checked=appState.preferences?.dryRun!==false;$("versionLabel").textContent=`v${appState.version}`;$("excelPath").textContent=appState.config?.contactsExcelPath??appState.preferences?.contactsExcelPath??"Nessun file selezionato";$("screenshotPath").textContent=appState.config?.screenshotDirectory??"Gestito automaticamente";$("keepAliveStatus").textContent=appState.sisterKeepAlive?.statusLabel==="active"?`Attivo · ultimo controllo ${fmtTime(appState.sisterKeepAlive.checkedAt)}`:appState.sisterKeepAlive?.message??"In attesa";$("configurationStatus").textContent=appState.configError?"Da completare":appState.config?.configurationSource??"Pronta";$("configurationStatus").className=`status-pill ${appState.configError?"is-error":"is-complete"}`;$("startButton").disabled=appState.active||Boolean(appState.configError)||Boolean(appState.lastError&&appState.activeJobId);$("runBadge").className=`status-pill ${appState.active?"is-running":appState.lastError?"is-error":appState.currentStep==="completed"?"is-complete":"is-idle"}`;$("runBadge").innerHTML=`<span></span>${appState.active?"In lavorazione":appState.lastError?"Serve attenzione":appState.currentStep==="completed"?"Completata":"Pronto"}`;$("operationTitle").textContent=appState.active?guide(appState.currentStep).label:"Percorso completo";renderChecks();renderSteps();renderAction();renderJobs();renderActivity();renderReview()}
+async function runChecks(){$("checkButton").disabled=true;$("lastCheckLabel").textContent="Sto controllando…";try{checks=await window.propertyWorker.runChecks();const ok=checks.every(x=>x.ok);$("lastCheckLabel").textContent=ok?"Tutto pronto":"Controlla gli elementi rossi";renderChecks();toast(ok?"Tutto pronto per partire":"Ci sono collegamenti da sistemare")}catch(e){toast(e.message??String(e))}finally{$("checkButton").disabled=false}}
+function openCancel(jobId){if(!jobId)return;pendingCancelJobId=jobId;cancelInFlight=false;const d=$("cancelProcessDialog");d.querySelectorAll("button").forEach(b=>b.disabled=false);d.showModal()}
 
-function cancelProcessButton(jobId) {
-  return jobId ? `<button class="button button-destructive" data-cancel-job="${escapeHtml(jobId)}">Annulla processo</button>` : "";
-}
+document.addEventListener("click",async event=>{const target=event.target.closest("button");if(!target)return;try{
+  if(target.dataset.scroll)document.getElementById(target.dataset.scroll)?.scrollIntoView({behavior:"smooth"});
+  else if(target.dataset.mode){selectedMode=target.dataset.mode;await window.propertyWorker.savePreferences({mode:selectedMode})}
+  else if(target.id==="checkButton"||target.dataset.action==="checks")await runChecks();
+  else if(target.id==="chromeButton"){await window.propertyWorker.openChrome();toast("Chrome di lavoro aperto")}
+  else if(target.id==="chooseExcelButton"){const path=await window.propertyWorker.chooseExcel();if(path)toast("File Excel aggiornato")}
+  else if(target.id==="startButton")await window.propertyWorker.startJob({mode:selectedMode,dryRun:$("dryRunToggle").checked});
+  else if(target.dataset.action==="pause")await window.propertyWorker.pauseJob();
+  else if(target.dataset.action==="resume-current"&&appState.activeJobId)await window.propertyWorker.resumeJob(appState.activeJobId);
+  else if(target.dataset.resumeJob)await window.propertyWorker.resumeJob(target.dataset.resumeJob);
+  else if(target.dataset.fixJob)await loadResolution(target.dataset.fixJob);
+  else if(target.dataset.action==="open-corrections"&&appState.activeJobId)await loadResolution(appState.activeJobId);
+  else if(target.dataset.action==="close-corrections")$("manualCorrectionPanel").classList.add("is-hidden");
+  else if(target.dataset.action==="config"){document.getElementById("advancedConfiguration").open=true;document.getElementById("settings").scrollIntoView({behavior:"smooth"})}
+  else if(target.dataset.action==="open-review")renderReview();
+  else if(target.dataset.reviewDecision&&appState?.prompt){$("acquisitionReviewDialog").close();await window.propertyWorker.answerPrompt({promptId:appState.prompt.id,decision:target.dataset.reviewDecision})}
+  else if(target.dataset.prompt&&appState?.prompt)await window.propertyWorker.answerPrompt({promptId:appState.prompt.id,decision:target.dataset.prompt==="confirm"&&["acquisition","manual"].includes(appState.prompt.kind)?undefined:target.dataset.prompt});
+  else if(target.dataset.detailJob){const detail=await window.propertyWorker.getJobDetails(target.dataset.detailJob);$("detailPanel").classList.remove("is-hidden");$("detailContent").innerHTML=`<p><b>${detail.properties.length}</b> immobili · <b>${detail.people.length}</b> proprietari · <b>${detail.ownerships.length}</b> quote</p>${detail.properties.map(p=>`<div class="detail-group"><b>${esc(p.address??p.cadastral_key)}</b><small>${esc(p.cadastral_key)} · ${esc(p.processing_status)}</small></div>`).join("")}`;$("detailPanel").scrollIntoView({behavior:"smooth"})}
+  else if(target.dataset.action==="close-detail")$("detailPanel").classList.add("is-hidden");
+  else if(target.dataset.cancelJob)openCancel(target.dataset.cancelJob);
+  else if(target.dataset.action==="cancel-current")openCancel(appState.activeJobId);
+  else if(target.dataset.cancelDialog==="close"&&!cancelInFlight)$("cancelProcessDialog").close();
+  else if(target.dataset.cancelDialog==="confirm"&&pendingCancelJobId){cancelInFlight=true;$("cancelProcessDialog").querySelectorAll("button").forEach(b=>b.disabled=true);await window.propertyWorker.cancelJob(pendingCancelJobId);$("cancelProcessDialog").close();toast("Lavorazione annullata")}
+}catch(e){toast(e.message??String(e))}});
 
-function setCancelDialogBusy(busy) {
-  const dialog = $("cancelProcessDialog");
-  cancelInFlight = busy;
-  dialog.setAttribute("aria-busy", String(busy));
-  dialog.querySelectorAll("button").forEach((button) => { button.disabled = busy; });
-}
-
-function openCancelDialog(jobId) {
-  const knownJob = appState?.jobs?.some((job) => job.id === jobId) || appState?.activeJobId === jobId;
-  if (!jobId || !knownJob) {
-    toast("La lavorazione non è più disponibile");
-    return;
-  }
-  pendingCancelJobId = jobId;
-  setCancelDialogBusy(false);
-  const dialog = $("cancelProcessDialog");
-  if (!dialog.open) dialog.showModal();
-  requestAnimationFrame(() => dialog.querySelector('[data-cancel-dialog="close"]')?.focus());
-}
-
-function renderAcquisitionReview() {
-  const dialog = $("acquisitionReviewDialog");
-  const review = appState?.prompt?.kind === "acquisition-review" ? appState.prompt.review : null;
-  if (!review) {
-    if (dialog.open) dialog.close();
-    return;
-  }
-  const place = [review.municipality, review.street, review.civicNumber].filter(Boolean).join(" · ");
-  $("acquisitionReviewContext").textContent = place || "Contesto acquisito dalla pagina risultati";
-  $("acquisitionReviewCount").textContent = `${review.properties.length} ${review.properties.length === 1 ? "immobile" : "immobili"}`;
-  $("acquisitionReviewContent").innerHTML = review.properties.map((property, index) => `
-    <article class="review-property">
-      <section class="review-property-data">
-        <span class="review-index">${String(index + 1).padStart(2, "0")}</span>
-        <p class="kicker">Immobile</p>
-        <h3>${escapeHtml(property.address ?? "Indirizzo non disponibile")}</h3>
-        <p class="cadastral-key">${escapeHtml(property.cadastralKey)}</p>
-        <dl>
-          <div><dt>Categoria</dt><dd>${escapeHtml(property.category ?? "—")}</dd></div>
-          <div><dt>Classe</dt><dd>${escapeHtml(property.class ?? "—")}</dd></div>
-          <div><dt>Consistenza</dt><dd>${escapeHtml(property.consistency ?? "—")}</dd></div>
-          <div><dt>Rendita</dt><dd>${escapeHtml(formatMoney(property.cadastralIncome))}</dd></div>
-        </dl>
-      </section>
-      <section class="review-owners">
-        <div class="review-owners-heading"><p class="kicker">Proprietari</p><span>${property.owners.length}</span></div>
-        ${property.owners.length ? property.owners.map((owner) => `
-          <div class="review-owner">
-            <div><strong>${escapeHtml(owner.fullName)}</strong><small>${escapeHtml(owner.taxCode ?? "CF mancante")}</small></div>
-            <div><span>${escapeHtml([owner.birthPlace, owner.birthDate].filter(Boolean).join(" · ") || "Nascita non disponibile")}</span><b>${owner.sharePercentage == null ? "Quota n/d" : `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 }).format(owner.sharePercentage)}%`}</b></div>
-          </div>`).join("") : `<p class="review-empty">Nessun proprietario associato.</p>`}
-      </section>
-    </article>`).join("");
-  if (!dialog.open) dialog.showModal();
-}
-
-function renderAction() {
-  const panel = $("actionPanel");
-  if (appState?.configError) {
-    panel.innerHTML = `<div class="action-number">!</div><div class="action-copy"><p class="kicker">Prima configurazione</p><h3>Collega il file worker/.env</h3><p>Seleziona il file locale di configurazione. Il suo contenuto resterà nel processo protetto dell’app.</p></div><div class="action-buttons"><button class="button button-light" data-action="config">Vai alla configurazione</button></div>`;
-    return;
-  }
-  if (appState?.cancellingJobId) {
-    panel.innerHTML = `<div class="action-number">…</div><div class="action-copy"><p class="kicker">Annullamento in corso</p><h3>Arresto sicuro del worker</h3><p>Attendo che l’operazione già iniziata termini, poi elimino la lavorazione e tutti i dati collegati.</p></div><div class="action-buttons"><button class="button button-outline" disabled>Attendere…</button></div>`;
-    return;
-  }
-  if (appState?.prompt) {
-    if (appState.prompt.kind === "acquisition-review") {
-      panel.innerHTML = `<div class="action-number">✓</div><div class="action-copy"><p class="kicker">Raccolta completata</p><h3>Controlla immobili e proprietari</h3><p>I dati SISTER sono pronti. Il confronto con il gestionale inizierà soltanto dopo la tua conferma.</p></div><div class="action-buttons"><button class="button button-light" data-action="open-review">Apri riepilogo</button>${cancelProcessButton(appState.activeJobId)}</div>`;
-      return;
-    }
-    panel.classList.remove("is-empty");
-    panel.innerHTML = `<div class="action-number">!</div><div class="action-copy"><p class="kicker">Richiede la tua attenzione</p><h3>${escapeHtml(appState.prompt.title)}</h3><p>${escapeHtml(appState.prompt.summary)}</p></div><div class="action-buttons">${promptButtons(appState.prompt)}${cancelProcessButton(appState.activeJobId)}</div>`;
-    return;
-  }
-  if (appState?.lastError) {
-    const job = appState.jobs?.find((item) => item.id === appState.activeJobId);
-    const completedLabel = LABELS[job?.last_completed_step] ?? "Preparazione";
-    const completedIndex = STEPS.indexOf(job?.last_completed_step);
-    const nextLabel = LABELS[STEPS[Math.min(Math.max(0, completedIndex + 1), STEPS.length - 1)]] ?? "passaggio successivo";
-    panel.innerHTML = `<div class="action-number">×</div><div class="action-copy"><p class="kicker">Avanzamento salvato</p><h3>La lavorazione si è fermata</h3><p>${escapeHtml(appState.lastError)}\nUltimo passaggio completato: ${escapeHtml(completedLabel)}. La ripresa partirà da ${escapeHtml(nextLabel)}.</p></div><div class="action-buttons">${appState.activeJobId && !appState.active ? `<button class="button button-light" data-action="resume-current">Riprendi lavorazione</button>` : ""}<button class="button button-outline" data-action="checks">Controlla sistema</button>${cancelProcessButton(appState.activeJobId)}</div>`;
-    return;
-  }
-  if (appState?.active) {
-    panel.innerHTML = `<div class="action-number">→</div><div class="action-copy"><p class="kicker">Worker in esecuzione</p><h3>${escapeHtml(LABELS[appState.currentStep] ?? "Elaborazione in corso")}</h3><p>Puoi continuare a lavorare soltanto quando compare una richiesta di conferma. L’avanzamento viene salvato dopo ogni passaggio.</p></div><div class="action-buttons"><button class="button danger" data-action="pause">Metti in pausa</button>${cancelProcessButton(appState.activeJobId)}</div>`;
-    return;
-  }
-  panel.innerHTML = `<div class="action-number">01</div><div class="action-copy"><p class="kicker">Prossima azione</p><h3>Prepara le due schede</h3><p>Apri SISTER e il gestionale nel Chrome dedicato, completa gli accessi e porta SISTER ai risultati.</p></div><div class="action-buttons"><button class="button button-light" data-action="checks">Verifica adesso</button></div>`;
-}
-
-function jobTone(status) {
-  if (status === "completed") return "is-completed";
-  if (ERROR_STATES.has(status)) return "is-error";
-  if (status === "running") return "is-running";
-  return "";
-}
-
-function renderJobs() {
-  const jobs = appState?.jobs ?? [];
-  $("jobCount").textContent = jobs.length;
-  $("jobsList").innerHTML = jobs.length ? jobs.map((job) => {
-    const canResume = job.status !== "completed" && (!appState.active || job.id !== appState.activeJobId);
-    const canCancel = job.status !== "completed" && (!appState.active || job.id === appState.activeJobId);
-    const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Job ${job.id.slice(0, 8)}`;
-    const issue = job.error_message ? `<br><span class="job-issue" title="${escapeHtml(job.error_message)}">${escapeHtml(job.error_message)}</span>` : "";
-    return `<article class="job-item ${jobTone(job.status)}"><span></span><div><b title="${escapeHtml(place)}">${escapeHtml(place)}</b><small>${escapeHtml(job.mode)} · ${escapeHtml(LABELS[job.last_completed_step] ?? "Non avviato")}<br>${dateTime(job.updated_at ?? job.created_at)}${issue}</small></div><div class="job-actions"><button class="text-button" data-detail-job="${job.id}">Dettagli</button>${canResume ? `<button class="text-button" data-resume-job="${job.id}">Riprendi</button>` : ""}${canCancel ? `<button class="text-button is-destructive" data-cancel-job="${job.id}">Annulla</button>` : ""}</div></article>`;
-  }).join("") : `<p class="empty-message">Nessuna lavorazione disponibile.</p>`;
-}
-
-function renderActivity() {
-  const items = appState?.activity ?? [];
-  $("activityList").innerHTML = items.length ? items.map((item) => `<div class="activity-item is-${item.tone}"><time>${time(item.at)}</time><i></i><p>${escapeHtml(item.message)}</p></div>`).join("") : `<p class="empty-message">Le attività compariranno qui.</p>`;
-}
-
-function render() {
-  if (!appState) return;
-  selectedMode = appState.preferences?.mode ?? selectedMode;
-  document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("is-selected", button.dataset.mode === selectedMode));
-  $("dryRunToggle").checked = appState.preferences?.dryRun !== false;
-  $("versionLabel").textContent = `v${appState.version}`;
-  $("environmentPath").textContent = appState.config?.environmentFilePath ?? appState.preferences?.environmentFilePath ?? "File worker/.env non selezionato";
-  $("excelPath").textContent = appState.config?.contactsExcelPath ?? appState.preferences?.contactsExcelPath ?? "Percorso non disponibile";
-  $("screenshotPath").textContent = appState.config?.screenshotDirectory ?? "Percorso non disponibile";
-  $("keepAliveStatus").textContent = appState.sisterKeepAlive?.statusLabel === "active"
-    ? `Attivo · ultimo controllo ${time(appState.sisterKeepAlive.checkedAt)}`
-    : appState.sisterKeepAlive?.message ?? "In attesa del primo controllo";
-  $("startButton").disabled = appState.active || Boolean(appState.configError) || Boolean(appState.lastError && appState.activeJobId);
-  $("pauseButton").disabled = !appState.active;
-  $("runBadge").className = `run-badge ${appState.active ? "is-running" : appState.lastError ? "is-error" : appState.currentStep === "completed" ? "is-complete" : "is-idle"}`;
-  $("runBadge").innerHTML = `<span></span>${appState.active ? "In esecuzione" : appState.lastError ? "Interrotta, riprendibile" : appState.currentStep === "completed" ? "Completato" : "In attesa"}`;
-  $("operationTitle").textContent = appState.active ? (LABELS[appState.currentStep] ?? "Lavorazione in corso") : appState.lastError ? "Lavorazione interrotta · avanzamento salvato" : "Pronto per una nuova acquisizione";
-  renderChecks(); renderSteps(); renderAction(); renderJobs(); renderActivity(); renderAcquisitionReview();
-}
-
-async function runChecks() {
-  $("checkButton").disabled = true;
-  $("lastCheckLabel").textContent = "Controllo in corso…";
-  try {
-    checks = await window.propertyWorker.runChecks();
-    $("lastCheckLabel").textContent = checks.every((item) => item.ok) ? "Tutto pronto" : "Richiede attenzione";
-    renderChecks();
-    toast(checks.every((item) => item.ok) ? "Sistema pronto" : "Controlla gli elementi evidenziati");
-  } catch (error) { toast(error.message ?? String(error)); }
-  finally { $("checkButton").disabled = false; }
-}
-
-document.addEventListener("click", async (event) => {
-  const target = event.target.closest("button");
-  if (!target) return;
-  try {
-    if (target.dataset.cancelJob) {
-      openCancelDialog(target.dataset.cancelJob);
-    } else if (target.dataset.action === "cancel-current") {
-      openCancelDialog(appState?.activeJobId);
-    } else if (target.dataset.cancelDialog === "close") {
-      if (!cancelInFlight) $("cancelProcessDialog").close();
-    } else if (target.dataset.cancelDialog === "confirm") {
-      if (!pendingCancelJobId || cancelInFlight) return;
-      const jobId = pendingCancelJobId;
-      setCancelDialogBusy(true);
-      try {
-        const result = await window.propertyWorker.cancelJob(jobId);
-        setCancelDialogBusy(false);
-        $("cancelProcessDialog").close();
-        toast(result?.pending ? "Annullamento in corso" : "Lavorazione annullata e dati rimossi");
-      } catch (error) {
-        setCancelDialogBusy(false);
-        toast(error.message ?? String(error));
-      }
-    } else if (target.dataset.mode) {
-      selectedMode = target.dataset.mode;
-      await window.propertyWorker.savePreferences({ mode: selectedMode });
-    } else if (target.dataset.reviewDecision && appState?.prompt?.kind === "acquisition-review") {
-      $("acquisitionReviewDialog").close();
-      await window.propertyWorker.answerPrompt({ promptId: appState.prompt.id, decision: target.dataset.reviewDecision });
-    } else if (target.dataset.action === "open-review") renderAcquisitionReview();
-    else if (target.id === "checkButton" || target.id === "actionCheckButton" || target.dataset.action === "checks") await runChecks();
-    else if (target.id === "chromeButton") { await window.propertyWorker.openChrome(); toast("Chrome dedicato avviato"); }
-    else if (target.id === "chooseExcelButton") { const result = await window.propertyWorker.chooseExcel(); if (result) toast("File Excel aggiornato"); }
-    else if (target.id === "chooseEnvironmentButton") { const result = await window.propertyWorker.chooseEnvironment(); if (result) toast("Configurazione locale aggiornata"); }
-    else if (target.id === "startButton") await window.propertyWorker.startJob({ mode: selectedMode, dryRun: $("dryRunToggle").checked });
-    else if (target.id === "pauseButton" || target.dataset.action === "pause") await window.propertyWorker.pauseJob();
-    else if (target.dataset.action === "resume-current" && appState.activeJobId) await window.propertyWorker.resumeJob(appState.activeJobId);
-    else if (target.dataset.action === "config") document.getElementById("settings")?.scrollIntoView({ behavior: "smooth" });
-    else if (target.dataset.prompt) await window.propertyWorker.answerPrompt({
-      promptId: appState.prompt.id,
-      decision: target.dataset.prompt === "confirm" && ["acquisition", "manual"].includes(appState.prompt.kind) ? undefined : target.dataset.prompt,
-    });
-    else if (target.dataset.resumeJob) await window.propertyWorker.resumeJob(target.dataset.resumeJob);
-    else if (target.dataset.detailJob) {
-      const detail = await window.propertyWorker.getJobDetails(target.dataset.detailJob);
-      $("detailPanel").classList.remove("is-hidden");
-      const activities = detail.properties.reduce((total, property) => {
-        const checkpoint = property.raw_payload?.worker_activity;
-        if (checkpoint && !["skipped", "retryable_error", "preparing"].includes(checkpoint.state)) return total + 1;
-        return total + (Object.keys(property.raw_payload?.worker_activities ?? {}).length ? 1 : 0);
-      }, 0);
-      const alternatives = Array.isArray(detail.job.error_details?.alternatives) ? detail.job.error_details.alternatives : [];
-      const review = detail.job.error_message ? `<div class="detail-error"><b>Intervento richiesto</b><p>${escapeHtml(detail.job.error_message)}</p>${alternatives.length ? `<ul>${alternatives.map((item) => `<li>${escapeHtml(item.label ?? "Scheda cliente")} · ${escapeHtml(String(item.id ?? "").slice(-6))}</li>`).join("")}</ul>` : ""}</div>` : "";
-      $("detailContent").innerHTML = `<div class="detail-metrics"><div><b>${detail.properties.length}</b><small>Immobili</small></div><div><b>${detail.people.length}</b><small>Nominativi</small></div><div><b>${detail.ownerships.length}</b><small>Quote</small></div><div><b>${activities}</b><small>Attività</small></div></div>${review}`;
-      $("detailPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } else if (target.dataset.scroll) document.getElementById(target.dataset.scroll)?.scrollIntoView({ behavior: "smooth" });
-  } catch (error) { toast(error.message ?? String(error)); }
-});
-
-$("dryRunToggle").addEventListener("change", async (event) => {
-  await window.propertyWorker.savePreferences({ dryRun: event.target.checked });
-  toast(event.target.checked ? "Dry-run attivo" : "Attenzione: salvataggi reali abilitati");
-});
-
-window.propertyWorker.onState((state) => { appState = state; render(); });
-window.propertyWorker.getState().then((state) => { appState = state; render(); }).catch((error) => toast(error.message ?? String(error)));
-$("acquisitionReviewDialog").addEventListener("cancel", (event) => event.preventDefault());
-$("cancelProcessDialog").addEventListener("cancel", (event) => {
-  if (cancelInFlight) event.preventDefault();
-});
-$("cancelProcessDialog").addEventListener("close", () => {
-  if (!cancelInFlight) pendingCancelJobId = null;
-});
+$("manualCorrectionForm").addEventListener("submit",async event=>{event.preventDefault();if(!resolutionDetail||!resolutionJobId)return;const properties=[...event.currentTarget.querySelectorAll("[data-property-id]")].map(section=>({id:section.dataset.propertyId,sheet:section.querySelector('[name="sheet"]').value,parcel:section.querySelector('[name="parcel"]').value,subaltern:section.querySelector('[name="subaltern"]').value,category:section.querySelector('[name="category"]').value,address:section.querySelector('[name="address"]').value||null,class:section.querySelector('[name="class"]').value||null,consistency:section.querySelector('[name="consistency"]').value||null,cadastralIncome:nullableNumber(section.querySelector('[name="cadastralIncome"]').value)}));const people=[...event.currentTarget.querySelectorAll("[data-person-id]")].map(section=>({id:section.dataset.personId,fullName:section.querySelector('[name="fullName"]').value,taxCode:section.querySelector('[name="taxCode"]').value||null,birthPlace:section.querySelector('[name="birthPlace"]').value||null,birthProvince:section.querySelector('[name="birthProvince"]').value||null,birthDate:section.querySelector('[name="birthDate"]').value||null,shareOriginal:section.querySelector('[name="shareOriginal"]').value,sharePercentage:nullableNumber(section.querySelector('[name="sharePercentage"]').value)}));try{await window.propertyWorker.saveManualCorrections({jobId:resolutionJobId,properties,people});$("manualCorrectionPanel").classList.add("is-hidden");toast("Correzioni salvate. Ora puoi riprendere il lavoro.")}catch(e){toast(e.message??String(e))}});
+$("configurationForm").addEventListener("submit",async event=>{event.preventDefault();const data=new FormData(event.currentTarget);try{await window.propertyWorker.saveInternalConfiguration(Object.fromEntries(data));event.currentTarget.querySelector('[name="serviceRoleKey"]').value="";toast("Configurazione salvata e protetta") }catch(e){toast(e.message??String(e))}});
+window.propertyWorker.onState(async state=>{appState=state;render();if(state.lastError&&state.activeJobId&&resolutionJobId!==state.activeJobId){try{await loadResolution(state.activeJobId,false)}catch{resolutionDetail=null}}});
+window.propertyWorker.getState().then(async state=>{appState=state;render();if(state.lastError&&state.activeJobId)try{await loadResolution(state.activeJobId,false)}catch{resolutionDetail=null}}).catch(e=>toast(e.message??String(e)));
