@@ -58,8 +58,8 @@ describe("adattatori con fixture HTML", () => {
       expect(properties).toHaveLength(1);
       expect(properties[0]).toMatchObject({ sheet: "58", parcel: "1234", subaltern: "7", category: "A/3", cadastralIncome: 432.1 });
       const owners = await adapter.extractOwners(properties[0]!);
-      expect(owners).toHaveLength(1);
-      expect(owners[0]?.taxCode).toBe("CQVMRS49L66A893R");
+      expect(owners).toHaveLength(2);
+      expect(owners.map((owner) => owner.taxCode)).toEqual(["CQVMRS49L66A893R", "CRLCLD78R26A893Q"]);
       expect(adapter.getIgnoredBusinesses()).toEqual([
         expect.objectContaining({ fullName: "EDILE & IMMOBILIARE COCE S.R.L.", taxCode: "075******24", reason: "business-tax-code", rowIndex: 0 }),
       ]);

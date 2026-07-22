@@ -30,6 +30,19 @@ Proprietà`);
       rawPayload: { shareDefaulted: true },
     });
   });
+  it("tratta la nuda proprietÃ  come proprietÃ  ordinaria", () => {
+    const owner = parseOwnerBlock(`CORALLO CLAUDIO nato a BITONTO (BA) il 26/10/1978
+CRLCLD78R26A893Q
+Nuda proprieta'
+1/1`);
+    expect(owner).toMatchObject({
+      fullName: "CORALLO CLAUDIO",
+      taxCode: "CRLCLD78R26A893Q",
+      rightType: "Nuda proprieta'",
+      sharePercentage: 100,
+    });
+    expect(isOwnershipRight(owner.rightType)).toBe(true);
+  });
 });
 
 describe("riconoscimento intestatari aziendali", () => {

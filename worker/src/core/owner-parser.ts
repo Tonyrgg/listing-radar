@@ -19,7 +19,7 @@ export function normalizeRightType(value: string): string {
 }
 
 export function isOwnershipRight(value: string): boolean {
-  return normalizeRightType(value) === "proprieta";
+  return ["proprieta", "nuda proprieta"].includes(normalizeRightType(value));
 }
 
 export function parseOwnerBlock(raw: string): CadastralOwner {

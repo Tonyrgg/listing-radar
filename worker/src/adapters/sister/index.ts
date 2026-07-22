@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
-import { parseOwnerBlock } from "../../core/owner-parser.js";
+import { isOwnershipRight, parseOwnerBlock } from "../../core/owner-parser.js";
 import { businessOwnerReason, maskOwnerTaxCode } from "../../core/owner-kind.js";
 import { logger } from "../../logger.js";
 import type { CadastralOwner, CadastralProperty, SearchContext, SisterAdapter } from "../../types.js";
@@ -282,7 +282,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       logger.info(ignored, "Intestatario aziendale escluso dalla raccolta");
       return;
     }
-    if (/^proprieta'?$/i.test(owner.rightType.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) owners.push(owner);
+    if (isOwnershipRight(owner.rightType)) owners.push(owner);
     else {
       this.ignoredRights.push({ rightType: owner.rightType, rowIndex });
       logger.info({ rightType: owner.rightType, rowIndex }, "Diritto reale ignorato");
