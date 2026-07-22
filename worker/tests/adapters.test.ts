@@ -6,12 +6,29 @@ import { chromium } from "playwright";
 import { PlaywrightCrmAdapter } from "../src/adapters/crm/index.js";
 import { crmFixtureSelectors, crmSelectors } from "../src/adapters/crm/selectors.js";
 import { PlaywrightSisterAdapter } from "../src/adapters/sister/index.js";
-import { sisterFixtureSelectors } from "../src/adapters/sister/selectors.js";
+import { sisterFixtureSelectors, sisterSelectors } from "../src/adapters/sister/selectors.js";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../src/fixtures/${name}`, import.meta.url));
 
 describe("adattatori con fixture HTML", () => {
-  it("estrae soltanto immobili A/C e proprietari", async () => {
+  it("mantiene l'ordine esatto delle sedici righe mostrate da SISTER", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("sister-results-order.html"), "utf8"));
+      const properties = await new PlaywrightSisterAdapter(page, sisterSelectors).extractProperties();
+      expect(properties).toHaveLength(9);
+      expect(properties.map(({ parcel, subaltern }) => `${parcel}|${subaltern}`)).toEqual([
+        "2278|20", "2455|9", "2455|10", "2455|11", "2455|12", "2455|15", "2455|16", "2455|17", "2455|18",
+      ]);
+      expect(properties.map(({ category }) => category)).toEqual([
+        "C/2", "A/2", "A/2", "A/2", "A/2", "A/2", "A/2", "A/2", "A/2",
+      ]);
+      expect(properties.map(({ rawPayload }) => rawPayload.sourceOrder)).toEqual([0, 8, 9, 10, 11, 12, 13, 14, 15]);
+    } finally { await browser.close(); }
+  });
+
+  it("estrae le categorie A/C nell'ordine SISTER e i proprietari", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();

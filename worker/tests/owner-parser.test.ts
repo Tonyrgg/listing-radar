@@ -15,5 +15,19 @@ Proprieta'
     });
     expect(isOwnershipRight(owner.rightType)).toBe(true);
   });
+
+  it("considera proprietà senza quota come proprietà piena 1/1", () => {
+    const owner = parseOwnerBlock(`ROSSI MARIO nato a BARI (BA) il 01/01/1960
+RSSMRA60A01A662X
+Proprietà`);
+    expect(owner).toMatchObject({
+      rightType: "Proprietà",
+      shareOriginal: "1/1",
+      shareNumerator: 1,
+      shareDenominator: 1,
+      sharePercentage: 100,
+      rawPayload: { shareDefaulted: true },
+    });
+  });
 });
 

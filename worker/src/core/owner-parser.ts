@@ -28,8 +28,9 @@ export function parseOwnerBlock(raw: string): CadastralOwner {
   const personMatch = personIndex >= 0 ? lines[personIndex]!.match(PERSON_LINE) : null;
   const taxCode = lines.find((line) => TAX_CODE_LINE.test(normalizeTaxCode(line))) ?? null;
   const shareLine = [...lines].reverse().find((line) => /^\d+(?:[.,]\d+)?\s*\/\s*\d+(?:[.,]\d+)?$/.test(line)) ?? "";
-  const share = parseShare(shareLine);
   const rightType = lines.find((line, index) => index > personIndex && !TAX_CODE_LINE.test(normalizeTaxCode(line)) && line !== shareLine) ?? "";
+  const shareWasDefaulted = !shareLine && isOwnershipRight(rightType);
+  const share = parseShare(shareWasDefaulted ? "1/1" : shareLine);
 
   return {
     fullName: personMatch?.[1]?.trim() ?? lines[0] ?? "",
@@ -42,7 +43,7 @@ export function parseOwnerBlock(raw: string): CadastralOwner {
     shareNumerator: share.numerator,
     shareDenominator: share.denominator,
     sharePercentage: share.percentage,
-    rawPayload: { text: raw, lines },
+    rawPayload: { text: raw, lines, shareDefaulted: shareWasDefaulted },
   };
 }
 

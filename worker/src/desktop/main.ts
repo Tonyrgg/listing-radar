@@ -50,6 +50,7 @@ const editablePropertySchema = z.object({
 });
 const editablePersonSchema = z.object({
   id: z.string().uuid(),
+  ownershipId: z.string().uuid().optional(),
   fullName: z.string().trim().min(1),
   taxCode: z.string().trim().nullable().optional(),
   birthPlace: z.string().trim().nullable().optional(),
@@ -616,6 +617,7 @@ function registerIpc() {
     const graph = await repo.loadGraph(values.jobId);
     const allowedProperties = new Set(graph.properties.map((row) => row.id));
     const allowedPeople = new Set(graph.people.map((row) => row.id));
+    const allowedOwnerships = new Map(graph.ownerships.map((row) => [row.id, row]));
     for (const property of values.properties) {
       if (!allowedProperties.has(property.id)) throw new Error("Immobile non appartenente alla lavorazione");
       await repo.updatePropertyProcessing(property.id, {
@@ -634,8 +636,14 @@ function registerIpc() {
         birth_date: person.birthDate || null, share_original: person.shareOriginal,
         share_percentage: person.sharePercentage ?? null, processing_status: "normalized",
       });
-      const related = graph.ownerships.filter((row) => row.person_id === person.id);
-      for (const ownership of related) await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
+      if (person.ownershipId) {
+        const ownership = allowedOwnerships.get(person.ownershipId);
+        if (!ownership || ownership.person_id !== person.id) throw new Error("Quota non appartenente al nominativo indicato");
+        await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
+      } else {
+        const related = graph.ownerships.filter((row) => row.person_id === person.id);
+        for (const ownership of related) await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
+      }
     }
     await repo.updateJob(values.jobId, { status: "paused", error_message: null, error_details: { manualCorrection: true } });
     lastError = null;

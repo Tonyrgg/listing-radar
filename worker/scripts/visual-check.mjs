@@ -21,7 +21,7 @@ const graph = {
   job: {},
   properties: [{ id: "11111111-1111-4111-8111-111111111111", municipality: "BITONTO", sheet: "58", parcel: "1234", subaltern: "", category: "A/3", address: "Via Borgo San Francesco 29 [2]", class: "3", consistency: "5 vani", cadastral_income: 540.22 }],
   people: [{ id: "22222222-2222-4222-8222-222222222222", full_name: "Mario Rossi", tax_code: null, birth_place: "BITONTO", birth_province: "BA", birth_date: "1970-01-01", share_original: "500/1000", share_percentage: 50 }],
-  ownerships: [],
+  ownerships: [{ id: "44444444-4444-4444-8444-444444444444", property_id: "11111111-1111-4111-8111-111111111111", person_id: "22222222-2222-4222-8222-222222222222", share_percentage: 50 }],
 };
 
 const chromePath = [

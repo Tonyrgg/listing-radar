@@ -8,7 +8,9 @@ import { sisterSelectors, type SisterSelectors } from "./selectors.js";
 
 async function text(scope: Page | Locator, selector: string): Promise<string> {
   if (!selector) return "";
-  return (await scope.locator(selector).first().textContent())?.trim() ?? "";
+  const locator = scope.locator(selector).first();
+  if (await locator.count() === 0) return "";
+  return (await locator.textContent())?.trim() ?? "";
 }
 
 function parseIncome(value: string): number | null {
@@ -156,12 +158,16 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
           class: ["Classe"], consistency: ["Consistenza"], cadastralIncome: ["Rendita"],
         }, "immobili")
       : null;
-    const value = (row: Locator, key: string, selector: string) => columns ? cellText(row, columns[key]!) : text(row, selector);
     const properties: CadastralProperty[] = [];
     this.ignoredCategories = [];
-    for (let index = 0; index < await rows.count(); index += 1) {
+    const rowCount = await rows.count();
+    for (let index = 0; index < rowCount; index += 1) {
       const row = rows.nth(index);
-      const category = normalizeCategory(await value(row, "category", this.selectors.category));
+      const cells = columns ? await row.locator("td").allTextContents() : null;
+      const value = (key: string, selector: string) => cells
+        ? Promise.resolve(cells[columns![key]!]?.trim() ?? "")
+        : text(row, selector);
+      const category = normalizeCategory(await value("category", this.selectors.category));
       if (!/^[AC]\//i.test(category)) {
         this.ignoredCategories.push({ category, rowIndex: index });
         logger.info({ category, rowIndex: index }, "Categoria catastale ignorata");
@@ -169,17 +175,17 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       }
       properties.push({
         municipality: context.municipality,
-        sheet: await value(row, "sheet", this.selectors.sheet),
-        parcel: await value(row, "parcel", this.selectors.parcel),
-        subaltern: await value(row, "subaltern", this.selectors.subaltern),
-        address: (await value(row, "address", this.selectors.address)) || null,
-        censusZone: (await value(row, "censusZone", this.selectors.censusZone)) || null,
+        sheet: await value("sheet", this.selectors.sheet),
+        parcel: await value("parcel", this.selectors.parcel),
+        subaltern: await value("subaltern", this.selectors.subaltern),
+        address: (await value("address", this.selectors.address)) || null,
+        censusZone: (await value("censusZone", this.selectors.censusZone)) || null,
         category,
-        class: (await value(row, "class", this.selectors.class)) || null,
-        consistency: (await value(row, "consistency", this.selectors.consistency)) || null,
-        cadastralIncome: parseIncome(await value(row, "cadastralIncome", this.selectors.cadastralIncome)),
+        class: (await value("class", this.selectors.class)) || null,
+        consistency: (await value("consistency", this.selectors.consistency)) || null,
+        cadastralIncome: parseIncome(await value("cadastralIncome", this.selectors.cadastralIncome)),
         sourceRef: String(index),
-        rawPayload: { rowIndex: index },
+        rawPayload: { rowIndex: index, sourceOrder: index },
       });
     }
     return properties;

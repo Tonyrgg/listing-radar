@@ -15,12 +15,15 @@ const bucket = "property-worker-updates";
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const { data: manifestBlob, error: manifestError } = await supabase.storage
+const { data: signedManifest, error: signedManifestError } = await supabase.storage
   .from(bucket)
-  .download("latest.json", {}, { cache: "no-store" });
-if (manifestError) throw new Error(`Manifest non raggiungibile: ${manifestError.message}`);
-
-const manifest = JSON.parse(await manifestBlob.text());
+  .createSignedUrl("latest.json", 60);
+if (signedManifestError || !signedManifest?.signedUrl) {
+  throw new Error(`Manifest non raggiungibile: ${signedManifestError?.message ?? "URL non disponibile"}`);
+}
+const manifestResponse = await fetch(`${signedManifest.signedUrl}&verification=${Date.now()}`, { cache: "no-store" });
+if (!manifestResponse.ok) throw new Error(`Manifest non raggiungibile: HTTP ${manifestResponse.status}`);
+const manifest = await manifestResponse.json();
 if (manifest.version !== packageData.version) {
   throw new Error(`Versione pubblicata ${manifest.version ?? "sconosciuta"}, attesa ${packageData.version}.`);
 }

@@ -59,12 +59,18 @@ for (const chunk of chunks) {
   console.log(`Pubblicata parte ${path.basename(chunk.path)} (${chunk.size} byte).`);
 }
 const manifestBody = Buffer.from(JSON.stringify(manifest));
+const versionManifestPath = `releases/${version}/manifest.json`;
+const { error: versionManifestUploadError } = await supabase.storage.from(bucket).upload(versionManifestPath, manifestBody, {
+  upsert: true, contentType: "application/json", cacheControl: "31536000",
+});
+if (versionManifestUploadError) throw new Error(`Upload manifest versione fallito: ${versionManifestUploadError.message}`);
+const { data: publishedManifest, error: manifestError } = await supabase.storage.from(bucket).download(versionManifestPath);
+if (manifestError) throw new Error(`Verifica manifest versione fallita: ${manifestError.message}`);
+const verified = JSON.parse(await publishedManifest.text());
+if (verified.version !== version || verified.sha256 !== manifest.sha256) throw new Error("Il manifest della versione non coincide con l'installer");
+
 const { error: manifestUploadError } = await supabase.storage.from(bucket).upload("latest.json", manifestBody, {
-  upsert: true, contentType: "application/json", cacheControl: "60",
+  upsert: true, contentType: "application/json", cacheControl: "0",
 });
 if (manifestUploadError) throw new Error(`Upload manifest fallito: ${manifestUploadError.message}`);
-const { data: publishedManifest, error: manifestError } = await supabase.storage.from(bucket).download("latest.json", {}, { cache: "no-store" });
-if (manifestError) throw new Error(`Verifica manifest fallita: ${manifestError.message}`);
-const verified = JSON.parse(await publishedManifest.text());
-if (verified.version !== version || verified.sha256 !== manifest.sha256) throw new Error("Il manifest pubblicato non coincide con l'installer");
 console.log(`Canale aggiornamenti aggiornato alla versione ${version} (${chunks.length} parti verificate).`);
