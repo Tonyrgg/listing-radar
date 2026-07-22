@@ -200,7 +200,12 @@ export class WorkerRepository {
         class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
         raw_payload: property.rawPayload, processing_status: "extracted",
       };
-      const { data, error } = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" }).select("*").single();
+      let { data, error } = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" }).select("*").single();
+      if (error && /unique|conflict|constraint/i.test(error.message)) {
+        const legacy = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "municipality,sheet,parcel,subaltern" }).select("*").single();
+        data = legacy.data;
+        error = legacy.error;
+      }
       if (error) throw new Error(`Salvataggio immobile fallito: ${error.message}`);
       rows.push(data as PropertyRow);
     }
