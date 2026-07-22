@@ -58,6 +58,8 @@ export interface CrmSelectors {
   propertyPostalCode: string;
   propertyNext: string;
   propertyGoogleSameValue: string;
+  propertyGoogleCurrentRadio: string;
+  propertyGoogleSuggestedRadio: string;
   propertyLocality: string;
   propertyLocalityOption: string;
   propertyCommercialSquareMeters: string;
@@ -107,7 +109,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
-  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue",
+  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue", "propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio",
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
@@ -189,6 +191,8 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyPostalCode: 'c-picklist:has(label:has-text("CAP")) input[role="textbox"]',
   propertyNext: 'button:visible:has-text("Avanti")',
   propertyGoogleSameValue: 'text="Stesso valore"',
+  propertyGoogleCurrentRadio: 'input[type="radio"][id*="_current-"]',
+  propertyGoogleSuggestedRadio: 'input[type="radio"]:not([id*="_current-"])',
   propertyLocality: 'c-picklist:has(label:has-text("LOCALIT")), c-picklist:has(label:has-text("Localit")), lightning-combobox:has(label:has-text("LOCALIT")), lightning-combobox:has(label:has-text("Localit"))',
   propertyLocalityOption: '[role="option"]',
   propertyCommercialSquareMeters: 'lightning-input:has(label:has-text("Metri Quadri Commerciali")) input',
@@ -208,7 +212,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
-  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue",
+  "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue", "propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio",
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",

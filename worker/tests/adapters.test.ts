@@ -225,6 +225,26 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("sceglie la proposta Google prima della località e del salvataggio", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8")).replace(
+        '<div><span>Via Borgo San Francesco</span><span data-worker-crm="propertyGoogleSameValue">Stesso valore</span></div>',
+        '<div><span>Via Borgo San Francesco</span><button id="google-address-suggestion" onclick="document.body.dataset.googleAddressSelected=this.textContent.trim()">Via Borgo S. Francesco</button></div>',
+      );
+      await page.setContent(html);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.createProperty({
+        municipality: "BITONTO", sheet: "50", parcel: "2278", subaltern: "20",
+        address: "Via Borgo San Francesco 62", censusZone: null, category: "C/2",
+        class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
+      })).resolves.toBe("P-99");
+      expect(await page.locator("body").getAttribute("data-google-address-selected")).toBe("Via Borgo S. Francesco");
+      expect(await page.locator("body").getAttribute("data-property-locality")).toBe("BITONTO");
+    } finally { await browser.close(); }
+  });
+
   it("compila l'anagrafica completa con nomi leggibili e recapiti già disponibili", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

@@ -227,21 +227,38 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   private async openPerson(personId: string) {
     await this.ensureCrmIdle();
     if (this.page.url().includes(`/s/account/${personId}`)) {
-      if (this.selectors.personRelatedTab) {
-        await this.visible(this.selectors.personRelatedTab).first().waitFor({ state: "visible", timeout: 15_000 });
-      }
+      await this.waitForPersonWorkspace(personId);
       return;
     }
     const fixtureRow = this.page.locator(this.selectors.personResultRows).filter({ has: this.page.locator(this.selectors.personResultId, { hasText: personId }) });
     if (await fixtureRow.count()) {
       await fixtureRow.first().locator(this.selectors.personResultOpen).first().click();
+      await this.waitForPersonWorkspace(personId);
       return;
     }
     await this.page.goto(new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
     await this.checkSession();
-    if (this.selectors.personRelatedTab) {
-      await this.visible(this.selectors.personRelatedTab).first().waitFor({ state: "visible", timeout: 15_000 });
+    await this.waitForPersonWorkspace(personId);
+  }
+
+  private async waitForPersonWorkspace(personId?: string) {
+    this.require("personPropertiesCard");
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await this.checkSession();
+      const card = this.visible(this.selectors.personPropertiesCard).first();
+      if (await card.waitFor({ state: "visible", timeout: attempt === 1 ? 12_000 : 8_000 }).then(() => true).catch(() => false)) return;
+      if (attempt < 3) {
+        const target = personId ? new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString() : this.page.url();
+        await this.page.goto(target, { waitUntil: "domcontentloaded" });
+        await this.page.waitForTimeout(700 * attempt);
+      }
     }
+    throw new WorkerError(
+      "La scheda nominativo è aperta, ma la sezione Immobili/Notizie/Incarichi non ha terminato il caricamento.",
+      "portal_error",
+      { portal: "CRM", action: "person-workspace-ready", personId, pageUrl: this.page.url(), attempts: 3 },
+      true,
+    );
   }
 
   private async openProperty(propertyId: string, refresh = false) {
@@ -508,8 +525,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         const merge = await this.inspectPersonMerge();
         return { personId: merge.personId, mergeStatus: merge.status, details: { ...merge.details, duplicateCandidateIds } };
       }
-      const personId = await this.currentPersonId();
+      let personId = await this.currentPersonId();
+      for (let attempt = 0; !personId && attempt < 40; attempt += 1) {
+        await this.page.waitForTimeout(250);
+        personId = await this.currentPersonId();
+      }
       if (!personId) throw new WorkerError("Il gestionale ha salvato il nominativo ma non espone il suo identificativo. Apri la scheda creata e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "person-create-record-id" }, true);
+      await this.waitForPersonWorkspace(personId);
       return { personId, mergeStatus: "not_required", details: { duplicateCandidateIds } };
     });
   }
@@ -625,7 +647,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
       }
       if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili compatibili per dati catastali oppure via e civico. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
-      if (!matches.length) await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
+      if (!matches.length) {
+        await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
+        await this.waitForPersonWorkspace(personId);
+      }
       return { match: matches[0] ?? null };
     });
   }
@@ -754,47 +779,77 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     const inserted = dialog.getByText(insertedValue, { exact: true }).filter({ visible: true }).first();
     if (!(await inserted.count())) return false;
     let row = inserted.locator("xpath=..");
-    for (let depth = 0; depth < 5; depth += 1) {
+    for (let depth = 0; depth < 7; depth += 1) {
       const text = normalizedUiText(await row.innerText().catch(() => ""));
       if (text.includes("STESSO VALORE")) return true;
-      const actions = row.locator('button, a, [role="button"], [role="option"], input[type="radio"]').filter({ visible: true });
-      const usable: Locator[] = [];
-      for (let index = 0; index < await actions.count(); index += 1) {
-        const action = actions.nth(index);
-        if (normalizedUiText(await action.innerText().catch(() => "")) !== normalizedUiText(insertedValue)) usable.push(action);
-      }
-      if (usable.length === 1) {
-        await usable[0]!.click();
-        return true;
+      const children = row.locator(":scope > *").filter({ visible: true });
+      if (await children.count() === 2) {
+        const left = normalizedUiText(await children.nth(0).innerText().catch(() => ""));
+        const right = children.nth(1);
+        const rightText = normalizedUiText(await right.innerText().catch(() => ""));
+        if (left.includes(normalizedUiText(insertedValue)) && rightText && !rightText.includes("INDIRIZZO GOOGLE")) {
+          const action = right.locator('button, a, [role="button"], [role="option"], input[type="radio"], label').filter({ visible: true }).first();
+          if (await action.count()) await action.click();
+          else await right.click();
+          const menuOptions = dialog.locator('[role="option"]').filter({ visible: true });
+          if (await menuOptions.count()) await menuOptions.first().click();
+          await this.page.waitForTimeout(250);
+          return true;
+        }
       }
       row = row.locator("xpath=..");
     }
     return false;
   }
 
+  private async selectGoogleAddressRadios(dialog: Locator) {
+    this.require("propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio");
+    const groups = ["street", "streetN", "CAP"] as const;
+    const selected: Record<string, string> = {};
+    for (const name of groups) {
+      const current = dialog.locator(this.selectors.propertyGoogleCurrentRadio).filter({ visible: true }).and(dialog.locator(`[name="${name}"]`)).first();
+      const suggested = dialog.locator(this.selectors.propertyGoogleSuggestedRadio).filter({ visible: true }).and(dialog.locator(`[name="${name}"]`)).first();
+      if (!(await current.count()) || !(await suggested.count())) return null;
+      const suggestedValue = (await suggested.inputValue()).trim();
+      if (!(await suggested.isDisabled()) && suggestedValue) {
+        await suggested.check({ force: true });
+        await suggested.waitFor({ state: "visible" });
+        if (!(await suggested.isChecked())) {
+          throw new WorkerError(`Il valore Google per “${name}” non risulta selezionato.`, "portal_error", { portal: "CRM", action: "property-google-radio", field: name, suggestedValue }, true);
+        }
+        selected[name] = suggestedValue;
+      } else {
+        if (!(await current.isChecked())) await current.check({ force: true });
+        if (!(await current.isChecked())) {
+          throw new WorkerError(`Il valore inserito per “${name}” non risulta confermato.`, "portal_error", { portal: "CRM", action: "property-google-radio", field: name }, true);
+        }
+        selected[name] = (await current.inputValue()).trim();
+      }
+    }
+    return selected;
+  }
+
   private async finishPropertyMap(values: ReturnType<typeof propertyFormValues> & { postalCode: string }) {
     this.require("propertyGoogleSameValue", "propertyLocality", "propertyLocalityOption", "propertySave");
     const save = this.visible(this.selectors.propertySave);
     await save.first().waitFor({ state: "visible", timeout: 20_000 });
-    const sameValues = this.visible(this.selectors.propertyGoogleSameValue);
-    await sameValues.first().waitFor({ state: "visible", timeout: 12_000 }).catch(() => undefined);
-    if (await sameValues.count() < 3) {
-      const dialog = this.visible(this.selectors.blockingDialog).last();
-      const accepted = [];
+    const visibleDialog = this.visible(this.selectors.blockingDialog).last();
+    const dialog = await visibleDialog.count() ? visibleDialog : this.page.locator("body");
+    const radioSelection = await this.selectGoogleAddressRadios(dialog);
+    const accepted: Array<{ value: string; accepted: boolean }> = [];
+    if (!radioSelection) {
       for (const value of [values.street, values.civicNumber, values.postalCode]) {
-        accepted.push(await this.acceptGoogleAddressSuggestion(dialog, value));
-      }
-      if (accepted.some((result) => !result)) {
-        throw new WorkerError(
-          "Google propone una correzione dell'indirizzo che il worker non riesce a selezionare in modo univoco.",
-          "needs_review",
-          { portal: "CRM", action: "property-google-address", street: values.street, civicNumber: values.civicNumber, postalCode: values.postalCode },
-          true,
-        );
+        accepted.push({ value, accepted: await this.acceptGoogleAddressSuggestion(dialog, value) });
       }
     }
-    if (await this.visible(this.selectors.propertyGoogleSameValue).count() < 3) {
-      throw new WorkerError("La conferma Google non è completa per indirizzo, civico e CAP. Il pulsante Salva non verrà premuto.", "data_incomplete", { portal: "CRM", action: "property-google-incomplete" }, true);
+    const unresolved = accepted.filter((result) => !result.accepted).map((result) => result.value);
+    if (unresolved.length) {
+      throw new WorkerError(
+        "Il confronto Google non è completo. Il worker non salverà finché indirizzo, civico e CAP non saranno confermati.",
+        "needs_review",
+        { portal: "CRM", action: "property-google-address", unresolved, street: values.street, civicNumber: values.civicNumber, postalCode: values.postalCode },
+        true,
+      );
     }
     const locality = await this.uniqueVisible("propertyLocality", "Località", 12_000);
     const nativeSelect = locality.locator("select").filter({ visible: true });
@@ -814,7 +869,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await options.first().waitFor({ state: "visible", timeout: 8_000 });
       const selectedLabel = (await options.first().innerText()).trim();
       await options.first().click();
-      localityValue = await input.count() ? (await input.first().inputValue()).trim() || selectedLabel : selectedLabel;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        localityValue = await input.count()
+          ? (await input.first().inputValue()).trim()
+          : (await trigger.innerText().catch(() => "")).trim();
+        if (normalizedUiText(localityValue).includes(normalizedUiText(selectedLabel))) break;
+        await this.page.waitForTimeout(150);
+      }
     }
     if (!localityValue.trim()) {
       throw new WorkerError("La località non risulta selezionata. Il pulsante Salva non verrà premuto.", "data_incomplete", { portal: "CRM", action: "property-locality-incomplete" }, true);
