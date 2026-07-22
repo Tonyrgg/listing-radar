@@ -185,6 +185,12 @@ async function purgeJob(jobId: string) {
 
 async function stateSnapshot() {
   let jobs: Awaited<ReturnType<WorkerRepository["listJobs"]>> = [];
+  let completedImports: Array<{
+    job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
+    properties: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["properties"];
+    people: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["people"];
+    ownerships: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"];
+  }> = [];
   let configError: string | null = null;
   let publicConfig: Record<string, unknown> = {};
   try {
@@ -198,7 +204,21 @@ async function stateSnapshot() {
       sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
       sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
     };
-    jobs = await repository(config).listSavedJobs();
+    const repo = repository(config);
+    const [savedJobs, completedJobs] = await Promise.all([repo.listSavedJobs(), repo.listCompletedJobs()]);
+    jobs = savedJobs;
+    completedImports = await Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) })));
+    if (activeJobId) {
+      const activeJob = completedJobs.find((job) => job.id === activeJobId)
+        ?? savedJobs.find((job) => job.id === activeJobId)
+        ?? await repo.getJob(activeJobId).catch(() => null);
+      if (activeJob?.status === "completed") {
+        currentStep = "completed";
+        propertyProgress = null;
+        prompt = null;
+        lastError = null;
+      }
+    }
   } catch (error) {
     configError = error instanceof Error ? error.message : String(error);
   }
@@ -220,6 +240,7 @@ async function stateSnapshot() {
     config: publicConfig,
     configError,
     jobs,
+    completedImports,
     version: app.getVersion(),
   };
 }
@@ -284,7 +305,9 @@ function handleRunnerEvent(event: RunnerEvent) {
   } else if (event.type === "job-completed") {
     currentStep = "completed";
     propertyProgress = null;
-    pushActivity("Lavorazione completata", "success");
+    prompt = null;
+    lastError = null;
+    pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
     currentStep = "properties_processed";
     propertyProgress = null;

@@ -114,7 +114,18 @@ export class WorkerRepository {
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`Lettura archivio acquisizioni fallita: ${error.message}`);
-    return (data as JobRow[]).filter((job) => Boolean(job.saved_at));
+    return (data as JobRow[]).filter((job) => Boolean(job.saved_at) && job.status !== "completed");
+  }
+
+  async listCompletedJobs(limit = 30): Promise<JobRow[]> {
+    const { data, error } = await this.client
+      .from("property_worker_jobs")
+      .select("*")
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`Lettura import completati fallita: ${error.message}`);
+    return data as JobRow[];
   }
 
   async saveAcquisition(jobId: string) {

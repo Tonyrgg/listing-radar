@@ -22,7 +22,7 @@
     <div class="app-layout">
       <nav class="side-nav" aria-label="Sezioni">
         <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
-        <button class="nav-item" data-scroll="jobs"><span>2</span><div><b>Cronologia</b><small>Riprendi un lavoro</small></div></button>
+        <button class="nav-item" data-scroll="completedImports"><span>2</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
         <button class="nav-item" data-scroll="settings"><span>3</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
         <div class="privacy-note"><span></span><div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div></div>
       </nav>
@@ -58,6 +58,11 @@
           <header><div><p class="eyebrow">Durante la lavorazione</p><h2 id="operationTitle">Percorso completo</h2></div><strong id="progressPercent">0%</strong></header>
           <div class="progress-track"><span id="progressBar"></span></div>
           <ol id="workflowSteps" class="workflow-steps"></ol>
+        </section>
+
+        <section id="completedImports" class="completed-imports-section">
+          <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni immobile resta associato ai nominativi, ai recapiti e alle quote elaborati.</p></div><span id="completedImportCount" class="count">0</span></header>
+          <div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div>
         </section>
 
         <section id="jobs" class="jobs-card">

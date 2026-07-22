@@ -14,7 +14,7 @@ const baseState = {
   activity: [{ at: new Date().toISOString(), tone: "success", message: "Configurazione importata e protetta da Windows" }],
   preferences: { mode: "assisted", dryRun: true, contactsExcelPath: "C:\\Dati\\Book1.xlsx" },
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
-  configError: null, jobs: [], version: "0.5.0",
+  configError: null, jobs: [], completedImports: [], version: "0.5.0",
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
 };
 const graph = {
@@ -67,6 +67,12 @@ await page.addInitScript(({ initialState, details }) => {
     state = { ...state, active: false, softwareUpdate: { status: "available", currentVersion: "0.6.0", availableVersion: "0.7.0", percent: null, transferred: null, total: null, message: "Versione 0.7.0 disponibile", checkedAt: new Date().toISOString() } };
     listener?.(state);
   };
+  window.__showCompletedState = () => {
+    const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", total_properties: 1, processed_properties: 1, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const completedGraph = { ...details, job: completedJob, properties: details.properties.map((property) => ({ ...property, cadastral_key: "BITONTO|58|1234|7", raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
+    state = { ...state, active: false, activeJobId: completedJob.id, currentStep: "completed", lastError: "Vecchio errore che non deve essere mostrato", jobs: [], completedImports: [{ ...completedGraph, job: completedJob }] };
+    listener?.(state);
+  };
 }, { initialState: baseState, details: graph });
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
@@ -77,9 +83,13 @@ await page.evaluate(() => window.__showPropertyState());
 await page.screenshot({ path: path.join(output, "property-progress.png"), fullPage: false });
 await page.evaluate(() => window.__showUpdateState());
 await page.screenshot({ path: path.join(output, "update-available.png"), fullPage: true });
+await page.evaluate(() => window.__showCompletedState());
+await page.screenshot({ path: path.join(output, "completed-import.png"), fullPage: true });
+const successHeading = await page.getByRole("heading", { name: "Import eseguito con successo" }).count();
+const staleErrorVisible = await page.getByText("La pagina del portale è diversa da quella attesa", { exact: false }).count();
 await page.evaluate(() => window.__showErrorState());
 await page.getByRole("button", { name: "Correggi dati qui sotto" }).click();
 await page.screenshot({ path: path.join(output, "recovery.png"), fullPage: true });
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, recoveryOverflow, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, recoveryOverflow, successHeading, staleErrorVisible, output }, null, 2));
 await browser.close();
