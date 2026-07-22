@@ -17,7 +17,10 @@ export interface CrmSelectors {
   personFullName: string;
   personFirstName: string;
   personLastName: string;
+  personGender: string;
+  personGenderOption: string;
   personBirthPlace: string;
+  personBirthPlaceOption: string;
   personBirthProvince: string;
   personBirthDate: string;
   personTaxCode: string;
@@ -80,7 +83,7 @@ export interface CrmSelectors {
 export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
-  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
+  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
@@ -108,10 +111,13 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personResultsReady: 'h1:has-text("Risultati di ricerca")',
   personCreate: 'c-spotlight .icon_container',
   personCreateMenuItem: 'c-spotlight li.element:has-text("Nominativo")',
-  personFirstName: '.slds-form-element:has(label:has-text("Nome")) input',
+  personFirstName: '.slds-form-element:has(label:text-is("Nome")) input',
   personLastName: '.slds-form-element:has(label:has-text("Cognome")) input',
-  personBirthPlace: '.slds-form-element:has-text("Luogo Di Nascita") input',
-  personBirthDate: '.slds-form-element:has-text("Data Di Nascita") input',
+  personGender: 'c-picklist:has(label:text-is("Sesso")) input[role="textbox"]',
+  personGenderOption: 'c-picklist:has(label:text-is("Sesso")) [role="option"]',
+  personBirthPlace: 'c-lookup:has(label:text-is("Luogo Di Nascita")) input[placeholder="Cerca"]',
+  personBirthPlaceOption: 'c-lookup:has(label:text-is("Luogo Di Nascita")) [role="option"]',
+  personBirthDate: 'c-input-date-time:has(label:text-is("Data Di Nascita")) c-date-picker input',
   personTaxCode: '.slds-form-element:has-text("Codice Fiscale") input',
   personMobile: '.slds-form-element:has-text("Cellulare") input',
   personOfficePhone: '.slds-form-element:has-text("Telefono fisso") input',
@@ -155,7 +161,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
 export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
-  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personBirthPlace",
+  "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
   "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",

@@ -159,6 +159,31 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("compila l'anagrafica completa con nomi leggibili e recapiti già disponibili", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await adapter.createPerson({
+        fullName: "ACQUAVIVA MARIA ROSARIA", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1949-07-26",
+        taxCode: "CQVMRS49L66A893R", rightType: "Proprietà", shareOriginal: "1/1", shareNumerator: 1,
+        shareDenominator: 1, sharePercentage: 100, mobiles: ["3331112222", "3334445555"],
+        landlines: ["0801234567"], emails: ["maria@example.it"], whatsapp: [], rawPayload: {},
+      });
+      expect(await page.locator(crmFixtureSelectors.personFirstName).inputValue()).toBe("Maria Rosaria");
+      expect(await page.locator(crmFixtureSelectors.personLastName).inputValue()).toBe("Acquaviva");
+      expect(await page.locator(crmFixtureSelectors.personGender).inputValue()).toBe("F");
+      expect(await page.locator(crmFixtureSelectors.personBirthPlace).inputValue()).toBe("Bitonto");
+      expect(await page.locator(crmFixtureSelectors.personBirthDate).inputValue()).toBe("26/07/1949");
+      expect(await page.locator(crmFixtureSelectors.personTaxCode).inputValue()).toBe("CQVMRS49L66A893R");
+      expect(await page.locator(crmFixtureSelectors.personMobile).inputValue()).toBe("3331112222");
+      expect(await page.locator(crmFixtureSelectors.personOfficePhone).inputValue()).toBe("0801234567");
+      expect(await page.locator(crmFixtureSelectors.personOtherPhone).inputValue()).toBe("3334445555");
+      expect(await page.locator(crmFixtureSelectors.personEmail).inputValue()).toBe("maria@example.it");
+    } finally { await browser.close(); }
+  });
+
   it("non conferma un merge quando la fixture Cloud segnala un conflitto", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

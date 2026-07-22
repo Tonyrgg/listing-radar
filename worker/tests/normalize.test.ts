@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { addressIdentity, buildCadastralKey, consolidateContacts, formatShareForUi, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
     expect(normalizeTaxCode(" cqv\u200bmrs49l66 a893r ")).toBe("CQVMRS49L66A893R");
+  });
+
+  it("ricava il sesso dal giorno codificato", () => {
+    expect(genderFromTaxCode("MRGMHL65B09A893K")).toBe("M");
+    expect(genderFromTaxCode("CQVMRS49L66A893R")).toBe("F");
+    expect(genderFromTaxCode("NON-VALIDO")).toBeNull();
+  });
+});
+
+describe("formattazione anagrafica", () => {
+  it("usa la maiuscola iniziale per nome e cognome", () => {
+    expect(formatPersonName("MICHELE MURGOLO")).toBe("Michele Murgolo");
+    expect(formatPersonName("D'ANGELO MARIA-ROSARIA")).toBe("D'Angelo Maria-Rosaria");
   });
 });
 

@@ -16,10 +16,10 @@ export interface PropertyWorkItem {
 }
 
 export const PROPERTY_WORK_SEQUENCE = [
+  "primary_contacts",
   "primary_person",
   "property",
   "property_activity",
-  "primary_contacts",
   "coowners",
   "ownership_shares",
 ] as const;

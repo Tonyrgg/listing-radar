@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
-import { addressIdentity, formatShareForUi, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
+import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
 import type {
   CrmActivityInput,
   CrmActivityResult,
@@ -314,6 +314,84 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  private async personField(key: keyof CrmSelectors, label: string, timeout = 8_000) {
+    this.require(key);
+    const fields = this.visible(this.selectors[key]);
+    try {
+      await fields.first().waitFor({ state: "visible", timeout });
+    } catch {
+      throw new WorkerError(
+        `Non trovo il campo “${label}” nella finestra del nominativo.`,
+        "portal_error",
+        { portal: "CRM", action: "person-field-missing", selectorKey: key, label },
+        true,
+      );
+    }
+    const count = await fields.count();
+    if (count !== 1) {
+      throw new WorkerError(
+        `La finestra del nominativo mostra ${count} campi “${label}”.`,
+        "portal_error",
+        { portal: "CRM", action: "person-field-ambiguous", selectorKey: key, label, count },
+        true,
+      );
+    }
+    return fields.first();
+  }
+
+  private async fillPersonText(key: keyof CrmSelectors, label: string, value: string) {
+    if (!value || !this.selectors[key]) return;
+    const field = await this.personField(key, label);
+    try {
+      await field.fill(value);
+    } catch (error) {
+      throw new WorkerError(
+        `Non riesco a compilare il campo “${label}”.`,
+        "portal_error",
+        { portal: "CRM", action: "person-field-fill", selectorKey: key, label, technicalError: error instanceof Error ? error.message : String(error) },
+        true,
+      );
+    }
+  }
+
+  private async selectPersonGender(person: NormalizedPerson) {
+    const gender = genderFromTaxCode(person.taxCode);
+    if (!gender || !this.selectors.personGender) return;
+    const field = await this.personField("personGender", "Sesso");
+    await field.click();
+    const options = this.visible(this.selectors.personGenderOption);
+    await options.first().waitFor({ state: "visible", timeout: 5_000 }).catch(() => undefined);
+    const labels = (await options.allTextContents()).map((value) => value.trim().toUpperCase());
+    const index = labels.findIndex((value) => value === gender);
+    if (index >= 0) await options.nth(index).click();
+    else if (await field.isEditable()) await field.fill(gender);
+    else throw new WorkerError("Non riesco a selezionare il sesso ricavato dal codice fiscale.", "portal_error", { portal: "CRM", action: "person-gender", gender }, true);
+  }
+
+  private async selectPersonBirthPlace(person: NormalizedPerson) {
+    if (!person.birthPlace || !this.selectors.personBirthPlace) return;
+    const field = await this.personField("personBirthPlace", "Luogo di nascita");
+    await field.fill(formatPersonName(person.birthPlace));
+    const options = this.visible(this.selectors.personBirthPlaceOption);
+    await options.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
+    const labels = await options.allTextContents();
+    const place = normalizedUiText(person.birthPlace);
+    const province = normalizedUiText(person.birthProvince);
+    let index = labels.findIndex((value) => {
+      const normalized = normalizedUiText(value);
+      return normalized.includes(place) && (!province || normalized.includes(province));
+    });
+    if (index < 0 && labels.length === 1) index = 0;
+    if (index >= 0) await options.nth(index).click();
+    else if (!this.selectors.personBirthPlace.includes("c-lookup")) return;
+    else throw new WorkerError(
+      `Il gestionale non propone “${formatPersonName(person.birthPlace)}” come luogo di nascita.`,
+      "needs_review",
+      { portal: "CRM", action: "person-birth-place", birthPlace: person.birthPlace, birthProvince: person.birthProvince, alternatives: labels },
+      true,
+    );
+  }
+
   private async fillPerson(person: NormalizedPerson) {
     const name = splitPersonName(person.fullName, person.taxCode);
     if (this.selectors.personFirstName && this.selectors.personLastName && !name.verified) {
@@ -322,27 +400,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     const uiBirthDate = person.birthDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
       ? person.birthDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$3/$2/$1")
       : person.birthDate ?? "";
-    const fields: Array<[keyof CrmSelectors, string]> = [
+    const fields: Array<[keyof CrmSelectors, string, string]> = [
       ...(this.selectors.personFirstName && this.selectors.personLastName
-        ? [["personFirstName", name.firstName], ["personLastName", name.lastName]] as Array<[keyof CrmSelectors, string]>
-        : [["personFullName", person.fullName]] as Array<[keyof CrmSelectors, string]>),
-      ["personBirthPlace", person.birthPlace ?? ""],
-      ["personBirthProvince", person.birthProvince ?? ""], ["personBirthDate", person.birthDate ?? ""],
-      ["personTaxCode", person.taxCode ?? ""], ["personMobile", person.mobiles[0] ?? ""],
-      ["personOfficePhone", person.landlines[0] ?? ""],
-      ["personOtherPhone", [...person.mobiles.slice(1), ...person.landlines.slice(1)][0] ?? ""],
-      ["personEmail", person.emails[0] ?? ""],
+        ? [["personFirstName", "Nome", formatPersonName(name.firstName)], ["personLastName", "Cognome", formatPersonName(name.lastName)]] as Array<[keyof CrmSelectors, string, string]>
+        : [["personFullName", "Nominativo", formatPersonName(person.fullName)]] as Array<[keyof CrmSelectors, string, string]>),
+      ["personEmail", "Email", person.emails[0] ?? ""],
+      ["personMobile", "Cellulare", person.mobiles[0] ?? ""],
+      ["personOfficePhone", "Telefono fisso", person.landlines[0] ?? ""],
+      ["personOtherPhone", "Altro telefono", [...person.mobiles.slice(1), ...person.landlines.slice(1)][0] ?? ""],
     ];
-    for (const [key, originalValue] of fields) {
-      if (!this.selectors[key] || !originalValue) continue;
-      const value = key === "personBirthDate" ? uiBirthDate : originalValue;
-      const field = this.page.locator(this.selectors[key]).filter({ visible: true }).first();
-      await field.fill(value);
-      if (key === "personBirthPlace") {
-        const option = this.page.locator('[role="option"]:visible').first();
-        if (await option.count()) await option.click();
-      }
-    }
+    for (const [key, label, value] of fields) await this.fillPersonText(key, label, value);
+    await this.selectPersonGender(person);
+    await this.selectPersonBirthPlace(person);
+    await this.fillPersonText("personBirthProvince", "Provincia di nascita", person.birthProvince ?? "");
+    await this.fillPersonText("personBirthDate", "Data di nascita", uiBirthDate);
+    await this.fillPersonText("personTaxCode", "Codice fiscale", person.taxCode ?? "");
   }
 
   async createPerson(person: NormalizedPerson, duplicateCandidateIds: string[] = [], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult> {
@@ -353,10 +425,15 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     };
     return this.friendly("person-create", "Non riesco a creare il nominativo.", async () => {
       this.require("personCreate", "personCreateMenuItem", "personSave");
-      await this.page.locator(this.selectors.personCreate).click();
-      const menuItem = this.page.locator(this.selectors.personCreateMenuItem).filter({ visible: true }).first();
-      await menuItem.waitFor({ state: "visible", timeout: 8_000 });
-      await menuItem.click();
+      const personFormAlreadyOpen = await this.visible(this.selectors.personSave).count() === 1
+        && await this.visible(this.selectors.personFirstName || this.selectors.personFullName).count() >= 1
+        && await this.visible(this.selectors.personLastName || this.selectors.personFullName).count() >= 1;
+      if (!personFormAlreadyOpen) {
+        await this.page.locator(this.selectors.personCreate).click();
+        const menuItem = this.page.locator(this.selectors.personCreateMenuItem).filter({ visible: true }).first();
+        await menuItem.waitFor({ state: "visible", timeout: 8_000 });
+        await menuItem.click();
+      }
       await this.fillPerson(person);
       await onBeforeSave?.();
       await this.page.locator(this.selectors.personSave).click();

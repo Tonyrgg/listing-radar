@@ -687,7 +687,11 @@ export class PropertyWorkerRunner {
       this.throwIfCancellationRequested(job.id);
       const { property, owners, primary, coowners } = item;
       try {
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Cerco o creo il proprietario principale: ${primary.person.full_name}`);
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco nel file Excel i recapiti di ${primary.person.full_name}`);
+        await this.ensureContacts(job, primary.person, crm, contacts);
+        await this.markPropertyStage(property, "primary_contacts_ready");
+
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Completo o creo il proprietario principale: ${primary.person.full_name}`);
         await this.ensurePerson(job, primary.person, crm);
         await this.markPropertyStage(property, "primary_ready");
 
@@ -699,14 +703,10 @@ export class PropertyWorkerRunner {
         await this.ensurePropertyActivity(job, property, primary.person, owners.map((entry) => entry.person), crm);
         await this.markPropertyStage(property, "activity_ready");
 
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco i recapiti Excel di ${primary.person.full_name}`);
-        await this.ensureContacts(job, primary.person, crm, contacts);
-        await this.markPropertyStage(property, "primary_contacts_ready");
-
         for (const owner of coowners) {
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "coowners", `Creo o aggiorno il comproprietario: ${owner.person.full_name}`);
-          await this.ensurePerson(job, owner.person, crm);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "coowners", `Cerco i recapiti e completo il comproprietario: ${owner.person.full_name}`);
           await this.ensureContacts(job, owner.person, crm, contacts);
+          await this.ensurePerson(job, owner.person, crm);
         }
         await this.markPropertyStage(property, "coowners_ready");
 
@@ -749,7 +749,7 @@ export class PropertyWorkerRunner {
     if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
     let matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : null;
     if (!matches) {
-      const result = await crm.findPerson({ taxCode: person.taxCode, phones: [], fullName: person.fullName, birthDate: person.birthDate });
+      const result = await crm.findPerson({ taxCode: person.taxCode, phones: [...person.mobiles, ...person.landlines], fullName: person.fullName, birthDate: person.birthDate });
       matches = result.matches;
       const onlyMatch = result.matches[0];
       if (onlyMatch?.confidence === "possible") {

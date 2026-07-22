@@ -34,7 +34,7 @@ describe("piano di lavorazione per immobile", () => {
 
   it("mantiene la sequenza richiesta per ciascun immobile", () => {
     expect(PROPERTY_WORK_SEQUENCE).toEqual([
-      "primary_person", "property", "property_activity", "primary_contacts", "coowners", "ownership_shares",
+      "primary_contacts", "primary_person", "property", "property_activity", "coowners", "ownership_shares",
     ]);
   });
 });

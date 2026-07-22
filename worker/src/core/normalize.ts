@@ -10,6 +10,23 @@ export function normalizeTaxCode(value: unknown): string {
     .toUpperCase();
 }
 
+export function formatPersonName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("it-IT")
+    .replace(/(^|[\s'’\-])\p{L}/gu, (letter) => letter.toLocaleUpperCase("it-IT"));
+}
+
+export function genderFromTaxCode(value: unknown): "M" | "F" | null {
+  const taxCode = normalizeTaxCode(value);
+  if (!/^[A-Z0-9]{16}$/.test(taxCode)) return null;
+  const encodedDay = Number(taxCode.slice(9, 11));
+  if (encodedDay >= 1 && encodedDay <= 31) return "M";
+  if (encodedDay >= 41 && encodedDay <= 71) return "F";
+  return null;
+}
+
 export function normalizePhone(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
