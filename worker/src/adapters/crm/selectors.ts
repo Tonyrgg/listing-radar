@@ -72,9 +72,17 @@ export interface CrmSelectors {
   propertyConsistency: string;
   propertyIncome: string;
   propertySave: string;
+  ownerCreate: string;
+  ownerDialog: string;
   ownerPersonId: string;
+  ownerPersonOption: string;
+  ownerRight: string;
+  ownerRole: string;
+  ownerRoleOption: string;
   ownerShare: string;
   ownerSave: string;
+  ownerCancel: string;
+  ownerAlreadyLinkedError: string;
   personResultsReady: string;
   personRelatedTab: string;
   personPropertiesCard: string;
@@ -112,7 +120,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue", "propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio",
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
-  "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
+  "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
@@ -197,9 +205,17 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyLocalityOption: '[role="option"]',
   propertyCommercialSquareMeters: 'lightning-input:has(label:has-text("Metri Quadri Commerciali")) input',
   propertySave: 'button:visible:has-text("Salva")',
-  ownerPersonId: '.slds-form-element_horizontal:has-text("Cliente") input',
-  ownerShare: '.slds-form-element_horizontal:has-text("Quota") input',
-  ownerSave: '[role="dialog"] button:has-text("Salva")',
+  ownerCreate: 'button:has-text("Nuovo")',
+  ownerDialog: '[role="dialog"]:visible:has-text("Soggetto correlato")',
+  ownerPersonId: 'c-lookup:has(label:text-is("Cliente")) input[placeholder="Cerca"]',
+  ownerPersonOption: 'c-lookup:has(label:text-is("Cliente")) [role="option"]:has([data-item-id])',
+  ownerRight: 'lightning-input:has(label:text-is("Diritto")) input',
+  ownerRole: 'c-picklist:has(label:text-is("Ruolo"))',
+  ownerRoleOption: 'c-picklist:has(label:text-is("Ruolo")) [role="option"]',
+  ownerShare: 'lightning-input:has(label:text-is("Quota")) input',
+  ownerSave: 'button:has-text("Salva")',
+  ownerCancel: 'button:has-text("Annulla")',
+  ownerAlreadyLinkedError: '[role="dialog"]:has-text("proprietario pricipale")',
 });
 
 export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
@@ -215,7 +231,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyMunicipality", "propertyMunicipalityOption", "propertyPostalCode", "propertyNext", "propertyGoogleSameValue", "propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio",
   "propertyLocality", "propertyLocalityOption", "propertyCommercialSquareMeters",
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
-  "propertyIncome", "propertySave", "ownerPersonId", "ownerShare", "ownerSave",
+  "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",

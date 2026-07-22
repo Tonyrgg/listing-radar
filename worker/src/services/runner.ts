@@ -719,7 +719,14 @@ export class PropertyWorkerRunner {
         await this.markPropertyStage(property, "coowners_ready");
 
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "shares", "Collego tutti i proprietari all'immobile con le rispettive quote");
-        for (const owner of owners) await this.ensureOwnership(job, property, owner.person, owner.ownership, crm);
+        if (!primary.ownership.crm_link_id && primary.person.crm_record_id) {
+          primary.ownership.crm_link_id = `existing-link-${primary.person.crm_record_id}`;
+          await this.repository.updateOwnership(primary.ownership.id, {
+            crm_link_id: primary.ownership.crm_link_id,
+            processing_status: "verified_existing",
+          });
+        }
+        for (const owner of coowners) await this.ensureOwnership(job, property, owner.person, owner.ownership, crm);
         await this.markPropertyStage(property, "completed");
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
@@ -909,6 +916,22 @@ export class PropertyWorkerRunner {
   private async ensureContacts(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
     const checkpoint = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
     if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && checkpoint.crmPersonId === row.crm_record_id) return;
+    const personCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
+    if (
+      checkpoint?.complete === true
+      && checkpoint.dryRun === this.config.WORKER_DRY_RUN
+      && !checkpoint.crmPersonId
+      && row.crm_record_id
+      && personCheckpoint?.complete === true
+      && personCheckpoint.existing !== true
+    ) {
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        contacts_flow: { ...checkpoint, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() },
+      };
+      await this.repository.updatePersonProcessing(row.id, { raw_payload: row.raw_payload });
+      return;
+    }
     const match = contacts.findByTaxCode(row.tax_code ?? "");
     await this.repository.updateContacts(row.id, match, row.raw_payload);
     row.mobiles = match.mobiles; row.landlines = match.landlines; row.emails = match.emails;

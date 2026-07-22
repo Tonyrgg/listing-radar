@@ -15,7 +15,11 @@ function argument(name: string): string | undefined {
 
 async function main() {
   const command = process.argv[2] ?? "start";
-  const config = loadConfig();
+  const dryRunArg = argument("dry-run");
+  const config = loadConfig({
+    ...process.env,
+    ...(dryRunArg === "true" || dryRunArg === "false" ? { WORKER_DRY_RUN: dryRunArg } : {}),
+  });
   if (command === "check") {
     const results = await runChecks(config);
     for (const item of results) process.stdout.write(`${item.ok ? "✓" : "✗"} ${item.name}: ${item.detail}\n`);

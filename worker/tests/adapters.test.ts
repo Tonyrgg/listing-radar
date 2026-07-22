@@ -159,6 +159,23 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("collega un comproprietario scegliendo la scheda esatta, il diritto, il ruolo e la quota", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.linkOwner("I-42", "P-99", 33.3)).resolves.toMatch(/^owner-link-/);
+      expect(await page.locator('[data-worker-crm="ownerPersonId"]').inputValue()).toBe("Persona P-99");
+      expect(await page.locator('[data-worker-crm="ownerRight"]').inputValue()).toBe("Proprietà");
+      expect(await page.locator('[data-worker-crm="ownerRole"] input').inputValue()).toBe("Comproprietario");
+      expect(await page.locator('[data-worker-crm="ownerShare"]').inputValue()).toBe("33,3");
+      expect(await page.locator("body").getAttribute("data-owner-saved")).toBe("true");
+    } finally { await browser.close(); }
+  });
+
   it("riconosce una scheda nominativo già aperta dal codice fiscale e dal nome", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

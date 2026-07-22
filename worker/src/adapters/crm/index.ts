@@ -1105,14 +1105,50 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     if ((await this.findLinkedOwnerIds(propertyId)).includes(personId)) return `existing-link-${personId}`;
     if (this.dryRun) return `dry-link-${personId}`;
     return this.friendly("property-owner-link", "Non riesco a collegare il comproprietario.", async () => {
-      this.require("propertyOwnersCard", "activityCreate", "activityDialog", "ownerPersonId", "ownerShare", "ownerSave");
+      this.require(
+        "propertyOwnersCard", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption",
+        "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
+      );
       await this.openProperty(propertyId);
-      const card = this.page.locator(this.selectors.propertyOwnersCard).first();
-      await card.locator(this.selectors.activityCreate).first().click({ force: true });
-      const dialog = this.page.locator(this.selectors.activityDialog).last();
-      await dialog.locator(this.selectors.ownerPersonId).fill(personId);
-      await dialog.locator(this.selectors.ownerShare).fill(formatShareForUi(share));
-      await dialog.locator(this.selectors.ownerSave).first().click();
+      const card = await this.uniqueVisible("propertyOwnersCard", "Soggetti collegati", 20_000);
+      const create = card.locator(this.selectors.ownerCreate).filter({ visible: true });
+      await create.first().waitFor({ state: "visible", timeout: 10_000 });
+      if (await create.count() !== 1) throw new WorkerError("Il comando per aggiungere il comproprietario non è univoco.", "portal_error", { portal: "CRM", action: "property-owner-create" }, true);
+      await create.click({ force: true });
+
+      const dialog = await this.uniqueVisible("ownerDialog", "Soggetto correlato", 15_000);
+      const person = await this.uniqueVisible("ownerPersonId", "Cliente comproprietario", 10_000);
+      await person.fill("");
+      await person.pressSequentially(personId, { delay: 45 });
+      const exactOption = this.visible(this.selectors.ownerPersonOption).filter({
+        has: this.page.locator(`[data-item-id="${personId}"]`),
+      });
+      await exactOption.first().waitFor({ state: "visible", timeout: 8_000 });
+      if (await exactOption.count() !== 1) {
+        throw new WorkerError("Il gestionale non ha restituito un solo nominativo corrispondente alla scheda già verificata.", "needs_review", { portal: "CRM", action: "property-owner-person", personId, matches: await exactOption.count() }, true);
+      }
+      await exactOption.click();
+
+      const right = await this.uniqueVisible("ownerRight", "Diritto", 8_000);
+      await right.fill("Proprietà");
+      await this.propertyPicklist("ownerRole", "Ruolo", "Comproprietario");
+      const quota = await this.uniqueVisible("ownerShare", "Quota", 8_000);
+      await quota.fill(formatShareForUi(share));
+
+      const save = dialog.locator(this.selectors.ownerSave).filter({ visible: true });
+      if (await save.count() !== 1) throw new WorkerError("Il pulsante Salva del comproprietario non è univoco.", "portal_error", { portal: "CRM", action: "property-owner-save" }, true);
+      await save.click();
+      const alreadyLinked = this.visible(this.selectors.ownerAlreadyLinkedError);
+      const outcome = await Promise.race([
+        dialog.waitFor({ state: "hidden", timeout: 15_000 }).then(() => "saved" as const),
+        alreadyLinked.first().waitFor({ state: "visible", timeout: 15_000 }).then(() => "existing" as const),
+      ]);
+      if (outcome === "existing") {
+        const cancel = dialog.locator(this.selectors.ownerCancel).filter({ visible: true });
+        if (await cancel.count() === 1) await cancel.click();
+        await dialog.waitFor({ state: "hidden", timeout: 10_000 });
+        return `existing-link-${personId}`;
+      }
       await this.checkSession();
       return `owner-link-${Date.now()}`;
     });

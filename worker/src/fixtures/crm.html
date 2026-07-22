@@ -19,7 +19,13 @@
       <button data-worker-crm="activitySave" onclick="document.body.dataset.activitySaved='true'">Salva</button>
       <button data-worker-crm="activityCancel" onclick="document.body.dataset.activityCancelled='true';this.closest('[role=dialog]').hidden=true">Annulla</button>
     </div>
-    <article data-worker-crm="propertyOwnersCard"><a data-worker-crm="propertyOwnerLinks" href="#P-42">Proprietario</a></article>
+    <article data-worker-crm="propertyOwnersCard"><a data-worker-crm="propertyOwnerLinks" href="#P-42">Proprietario</a><button data-worker-crm="ownerCreate" onclick="document.querySelector('[data-worker-crm=ownerDialog]').hidden=false">Nuovo</button></article>
+    <div role="dialog" data-worker-crm="ownerDialog" hidden>
+      <input data-worker-crm="ownerPersonId"><div role="option" data-worker-crm="ownerPersonOption" onclick="document.querySelector('[data-worker-crm=ownerPersonId]').value='Persona P-99'"><span data-item-id="P-99">Persona P-99</span></div>
+      <input data-worker-crm="ownerRight"><div data-worker-crm="ownerRole"><label>Ruolo</label><input role="textbox"><div role="option" data-worker-crm="ownerRoleOption" onclick="this.parentElement.querySelector('input').value='Comproprietario'">Comproprietario</div></div>
+      <input data-worker-crm="ownerShare"><span data-worker-crm="ownerAlreadyLinkedError" hidden>proprietario pricipale</span>
+      <button data-worker-crm="ownerSave" onclick="document.body.dataset.ownerSaved='true';this.closest('[role=dialog]').hidden=true">Salva</button><button data-worker-crm="ownerCancel" onclick="this.closest('[role=dialog]').hidden=true">Annulla</button>
+    </div>
     <button data-worker-crm="personCreate">Nuovo</button><button data-worker-crm="personCreateMenuItem">Nominativo</button>
     <input data-worker-crm="personFullName"><input data-worker-crm="personFirstName"><input data-worker-crm="personLastName"><input data-worker-crm="personGender"><button role="option" data-worker-crm="personGenderOption" onclick="document.querySelector('[data-worker-crm=personGender]').value='M'">M</button><button role="option" data-worker-crm="personGenderOption" onclick="document.querySelector('[data-worker-crm=personGender]').value='F'">F</button><input data-worker-crm="personBirthPlace"><button role="option" class="slds-listbox__option slds-listbox__option_entity slds-listbox__option_term" onclick="document.body.dataset.selectedBirthPlace='SEARCH_TERM'">bitonto</button><button role="option" class="slds-listbox__option slds-listbox__option_entity slds-listbox__option_has-meta" data-worker-crm="personBirthPlaceOption" onclick="const input=document.querySelector('[data-worker-crm=personBirthPlace]');input.value='BITONTO';input.setAttribute('readonly','');document.body.dataset.selectedBirthPlace='BITONTO - BA'">BITONTO - BA</button><input data-worker-crm="personBirthProvince">
     <input data-worker-crm="personBirthDate"><input data-worker-crm="personTaxCode"><input data-worker-crm="personMobile">
@@ -43,6 +49,5 @@
     <input data-worker-crm="propertyCommercialSquareMeters"><input data-worker-crm="propertySheet"><input data-worker-crm="propertyParcel"><input data-worker-crm="propertySubaltern">
     <input data-worker-crm="propertyCategory"><input data-worker-crm="propertyClass"><input data-worker-crm="propertyConsistency"><input data-worker-crm="propertyIncome">
     <button data-worker-crm="propertySave">Salva immobile</button>
-    <input data-worker-crm="ownerPersonId"><input data-worker-crm="ownerShare"><button data-worker-crm="ownerSave">Collega</button>
   </main>
 </body></html>
