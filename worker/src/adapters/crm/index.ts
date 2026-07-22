@@ -139,9 +139,29 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return true;
   }
 
+  private async closeDeferredOwnerForm() {
+    if (!this.selectors.ownerDialog || !this.selectors.ownerCancel) return false;
+    const dialogs = this.visible(this.selectors.ownerDialog);
+    if (!(await dialogs.count())) return false;
+    const dialog = dialogs.first();
+    const cancel = dialog.locator(this.selectors.ownerCancel).filter({ visible: true });
+    if (!(await cancel.count())) {
+      throw new WorkerError(
+        "La finestra Soggetto correlato è aperta ma non espone il comando Annulla.",
+        "needs_review",
+        { portal: "CRM", action: "deferred-owner-dialog-without-cancel" },
+        true,
+      );
+    }
+    await cancel.first().click();
+    await dialog.waitFor({ state: "hidden", timeout: 10_000 });
+    return true;
+  }
+
   private async ensureCrmIdle() {
     await this.checkSession();
     await this.closeKnownStaleActivityForm();
+    await this.closeDeferredOwnerForm();
     this.require("blockingDialog");
     const remainingDialogs = this.visible(this.selectors.blockingDialog);
     if (await remainingDialogs.count()) {
@@ -967,7 +987,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           if (createCount !== 1) {
             throw new WorkerError(
               `Nel riquadro dell’immobile risultano ${createCount} pulsanti “Nuovo”.`,
-              "needs_review",
+              createCount === 0 ? "portal_error" : "needs_review",
               { portal: "CRM", action: "property-activity-create-button", propertyId: input.propertyId, createCount },
               true,
             );
@@ -980,11 +1000,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
           const relatedField = await this.uniqueVisible("activityRelatedProperty", "Correlato a", ACTIVITY_FORM_TIMEOUT);
           const relatedInputs = relatedField.locator("input").filter({ visible: true });
-          if (await relatedInputs.count() !== 1) {
+          const relatedInputCount = await relatedInputs.count();
+          if (relatedInputCount !== 1) {
             throw new WorkerError(
               "Il campo “Correlato a” dell’attività non è univoco.",
-              "needs_review",
-              { portal: "CRM", action: "property-activity-related-field", propertyId: input.propertyId },
+              relatedInputCount === 0 ? "portal_error" : "needs_review",
+              { portal: "CRM", action: "property-activity-related-field", propertyId: input.propertyId, count: relatedInputCount },
               true,
             );
           }
@@ -995,13 +1016,19 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             const propertyOptions = this.visible(this.selectors.activityOption).filter({ hasText: "IM -" });
             await propertyOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
             const optionCount = await propertyOptions.count();
-            if (optionCount === 1) await propertyOptions.first().click();
+            const optionLabels = await propertyOptions.allTextContents();
+            const matchingIndexes = optionLabels
+              .map((label, index) => activityRelationMatchesProperty(label, input.propertyAddress) ? index : -1)
+              .filter((index) => index >= 0);
+            const optionIndex = matchingIndexes.length === 1 ? (matchingIndexes[0] ?? -1) : optionCount === 1 ? 0 : -1;
+            if (optionIndex >= 0) await propertyOptions.nth(optionIndex).click();
+            await this.page.waitForTimeout(350);
             correlatedProperty = (await relatedInput.inputValue()).trim();
           }
           if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
             throw new WorkerError(
-              "L’attività non risulta correlata all’immobile aperto. Il worker non salva collegamenti incerti.",
-              "needs_review",
+              "Il gestionale non ha ancora collegato l’attività all’immobile aperto; il worker riproverà automaticamente.",
+              "portal_error",
               { portal: "CRM", action: "property-activity-correlation", propertyId: input.propertyId, correlatedProperty },
               true,
             );
@@ -1010,11 +1037,26 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           // Cliente remains a mandatory CRM field, but it is not the origin of
           // the activity: navigation and correlation both stay on the property.
           const client = await this.uniqueVisible("activityClient", "Cliente dell’attività", ACTIVITY_FORM_TIMEOUT);
-          const clientValue = (await client.inputValue()).trim();
+          let clientValue = (await client.inputValue()).trim();
+          if (!clientValue && input.fallbackPersonId) {
+            await client.fill("");
+            await client.pressSequentially(input.fallbackPersonId, { delay: 45 });
+            const options = this.visible(this.selectors.activityOption);
+            await options.first().waitFor({ state: "visible", timeout: 6_000 }).catch(() => undefined);
+            const byRecordId = options.filter({ has: this.page.locator(`[data-item-id="${input.fallbackPersonId}"]`) });
+            const labels = await options.allTextContents();
+            const textMatches = labels
+              .map((label, index) => normalizedUiText(label).includes(normalizedUiText(input.fallbackPersonId!)) && !/NUOVO RECORD/i.test(label) ? index : -1)
+              .filter((index) => index >= 0);
+            if (await byRecordId.count() === 1) await byRecordId.first().click();
+            else if (textMatches.length === 1) await options.nth(textMatches[0]!).click();
+            await this.page.waitForTimeout(350);
+            clientValue = (await client.inputValue()).trim();
+          }
           if (!clientValue) {
             throw new WorkerError(
-              "Il gestionale non ha precompilato il Cliente obbligatorio dell’attività. L’immobile resta comunque l’origine e il correlato.",
-              "needs_review",
+              "Il gestionale non ha ancora valorizzato il Cliente obbligatorio; il worker riproverà automaticamente dalla scheda immobile.",
+              "portal_error",
               { portal: "CRM", action: "property-activity-client", propertyId: input.propertyId, fallbackPersonId: input.fallbackPersonId ?? null },
               true,
             );
@@ -1025,16 +1067,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           let currentStatus = (await status.inputValue()).trim();
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
             await status.click();
-            const desiredOptions = this.visible(this.selectors.activityOption).filter({ hasText: input.status });
+            const desiredOptions = this.visible(this.selectors.activityOption);
             await desiredOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
-            const desiredCount = await desiredOptions.count();
-            if (desiredCount === 1) await desiredOptions.first().click();
+            const labels = await desiredOptions.allTextContents();
+            const indexes = labels
+              .map((label, index) => normalizedUiText(label) === normalizedUiText(input.status) ? index : -1)
+              .filter((index) => index >= 0);
+            if (indexes.length === 1) await desiredOptions.nth(indexes[0]!).click();
+            await this.page.waitForTimeout(300);
             currentStatus = (await status.inputValue()).trim();
           }
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
             throw new WorkerError(
               `Il modulo attività non può essere impostato automaticamente su “${input.status}”.`,
-              "needs_review",
+              "portal_error",
               { portal: "CRM", action: "property-activity-status", propertyId: input.propertyId, currentStatus },
               true,
             );
@@ -1070,6 +1116,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           if (error instanceof WorkerError && error.status !== "portal_error") throw error;
           lastError = error;
           await this.closeKnownStaleActivityForm().catch(() => undefined);
+          await this.page.waitForTimeout(600 * attempt);
           if (attempt === ACTIVITY_PRE_SAVE_ATTEMPTS) break;
         }
       }

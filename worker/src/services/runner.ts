@@ -649,39 +649,18 @@ export class PropertyWorkerRunner {
       }
       case "owners_linked": {
         const graph = await this.repository.loadGraph(job.id);
-        let linked = 0;
-        const linkedOwnersByProperty = new Map<string, Set<string>>();
-        for (const ownership of graph.ownerships) {
-          this.throwIfCancellationRequested(job.id);
-          if (ownership.crm_link_id) continue;
-          const property = graph.properties.find((item) => item.id === ownership.property_id);
-          const person = graph.people.find((item) => item.id === ownership.person_id);
-          if (!property?.crm_record_id || !person?.crm_record_id || ownership.share_percentage == null) {
-            await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" });
-            continue;
+        const plan = buildPropertyWorkPlan(graph);
+        const primaryPersonIds = new Set(plan.map((item) => item.primary.person.id));
+        for (const item of plan) {
+          await this.repository.updateOwnership(item.primary.ownership.id, { processing_status: "verified_existing" });
+          for (const owner of item.coowners) {
+            await this.repository.updateOwnership(owner.ownership.id, { processing_status: "deferred_correlated_owner" });
           }
-          let existingOwnerIds = linkedOwnersByProperty.get(property.crm_record_id);
-          if (!existingOwnerIds) {
-            existingOwnerIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
-            linkedOwnersByProperty.set(property.crm_record_id, existingOwnerIds);
-          }
-          if (existingOwnerIds.has(person.crm_record_id)) {
-            await this.repository.updateOwnership(ownership.id, { crm_link_id: `existing-link-${person.crm_record_id}`, processing_status: "verified_existing" });
-            linked += 1;
-            continue;
-          }
-          if (job.mode === "assisted") {
-            const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), asProperty(property))}\nModifica prevista: collegamento proprietario e quota`);
-            if (decision === "skip") { await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" }); continue; }
-            if (decision === "review") throw new WorkerError("Collegamento proprietario segnato da verificare", "needs_review", { ownershipId: ownership.id });
-            if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updateOwnership(ownership.id, { processing_status: "manual" }); linked += 1; continue; }
-          }
-          const linkId = await crm.linkOwner(property.crm_record_id, person.crm_record_id, ownership.share_percentage);
-          await this.repository.updateOwnership(ownership.id, { crm_link_id: linkId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
-          existingOwnerIds.add(person.crm_record_id);
-          linked += 1;
         }
-        return { linked, dryRun: this.config.WORKER_DRY_RUN };
+        for (const person of graph.people) {
+          if (!primaryPersonIds.has(person.id)) await this.repository.updatePersonProcessing(person.id, { processing_status: "deferred_correlated_owner" });
+        }
+        return { linked: 0, deferred: graph.ownerships.length - plan.length, correlatedOwnersEnabled: false };
       }
       case "verified": {
         const graph = await this.repository.loadGraph(job.id);
@@ -710,9 +689,13 @@ export class PropertyWorkerRunner {
     const graph = await this.repository.loadGraph(job.id);
     let completed = 0;
     const plan = buildPropertyWorkPlan(graph);
+    const primaryPersonIds = new Set(plan.map((item) => item.primary.person.id));
+    await Promise.all(graph.people
+      .filter((person) => !primaryPersonIds.has(person.id))
+      .map((person) => this.repository.updatePersonProcessing(person.id, { processing_status: "deferred_correlated_owner" })));
     for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
-      const { property, owners, primary, coowners } = item;
+      const { property, primary, coowners } = item;
       try {
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco nel file Excel i recapiti di ${primary.person.full_name}`);
         await this.ensureContacts(job, primary.person, crm, contacts);
@@ -727,17 +710,10 @@ export class PropertyWorkerRunner {
         await this.markPropertyStage(property, "property_ready");
 
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Creo l'attività dalla scheda dell'immobile");
-        await this.ensurePropertyActivity(job, property, primary.person, owners.map((entry) => entry.person), crm);
+        await this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm);
         await this.markPropertyStage(property, "activity_ready");
 
-        for (const owner of coowners) {
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "coowners", `Cerco i recapiti e completo il comproprietario: ${owner.person.full_name}`);
-          await this.ensureContacts(job, owner.person, crm, contacts);
-          await this.ensurePerson(job, owner.person, crm);
-        }
-        await this.markPropertyStage(property, "coowners_ready");
-
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "shares", "Collego tutti i proprietari all'immobile con le rispettive quote");
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale con la quota più alta`);
         if (!primary.ownership.crm_link_id && primary.person.crm_record_id) {
           primary.ownership.crm_link_id = `existing-link-${primary.person.crm_record_id}`;
           await this.repository.updateOwnership(primary.ownership.id, {
@@ -745,7 +721,20 @@ export class PropertyWorkerRunner {
             processing_status: "verified_existing",
           });
         }
-        for (const owner of coowners) await this.ensureOwnership(job, property, owner.person, owner.ownership, crm);
+        for (const owner of coowners) {
+          await this.repository.updateOwnership(owner.ownership.id, { processing_status: "deferred_correlated_owner" });
+        }
+        property.raw_payload = {
+          ...(property.raw_payload ?? {}),
+          correlated_owners: {
+            state: "deferred",
+            count: coowners.length,
+            primaryPersonId: primary.person.id,
+            primarySharePercentage: primary.ownership.share_percentage,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
         await this.markPropertyStage(property, "completed");
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
@@ -764,8 +753,14 @@ export class PropertyWorkerRunner {
         }, workerError.captureScreenshot);
       }
     }
-    await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: graph.people.length });
-    return { processedProperties: completed, totalProperties: graph.properties.length, people: graph.people.length, dryRun: this.config.WORKER_DRY_RUN };
+    await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: primaryPersonIds.size });
+    return {
+      processedProperties: completed,
+      totalProperties: graph.properties.length,
+      processedPrimaryPeople: primaryPersonIds.size,
+      deferredCorrelatedPeople: graph.people.length - primaryPersonIds.size,
+      dryRun: this.config.WORKER_DRY_RUN,
+    };
   }
 
   private async ensurePerson(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter) {
@@ -965,25 +960,6 @@ export class PropertyWorkerRunner {
     }
     row.raw_payload = { ...(row.raw_payload ?? {}), contacts_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, matchedRows: match.matchedRows, updatedAt: new Date().toISOString() } };
     await this.repository.updatePersonProcessing(row.id, { mobiles: row.mobiles, landlines: row.landlines, emails: row.emails, raw_payload: row.raw_payload, processing_status: "contacts_matched" });
-  }
-
-  private async ensureOwnership(job: JobRow, property: PropertyRow, person: PersonRow, ownership: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"][number], crm: PlaywrightCrmAdapter) {
-    if (ownership.crm_link_id) return;
-    if (!property.crm_record_id || !person.crm_record_id || ownership.share_percentage == null) throw new WorkerError("Non posso collegare il proprietario: manca la scheda o la quota", "data_incomplete", { propertyId: property.id, personId: person.id, ownershipId: ownership.id });
-    const existing = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
-    if (existing.has(person.crm_record_id)) {
-      ownership.crm_link_id = `existing-link-${person.crm_record_id}`;
-      await this.repository.updateOwnership(ownership.id, { crm_link_id: ownership.crm_link_id, processing_status: "verified_existing" });
-      return;
-    }
-    if (job.mode === "assisted") {
-      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), asProperty(property))}\nModifica prevista: collegamento proprietario con quota ${ownership.share_percentage}%`);
-      if (decision === "skip") { await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" }); return; }
-      if (decision === "review") throw new WorkerError("Collegamento proprietario segnato da verificare", "needs_review", { ownershipId: ownership.id });
-      if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updateOwnership(ownership.id, { processing_status: "manual" }); return; }
-    }
-    ownership.crm_link_id = await crm.linkOwner(property.crm_record_id, person.crm_record_id, ownership.share_percentage);
-    await this.repository.updateOwnership(ownership.id, { crm_link_id: ownership.crm_link_id, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
   }
 
   private async logPersonChanges(jobId: string, row: PersonRow, person: NormalizedPerson) {

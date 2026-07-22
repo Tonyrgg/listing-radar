@@ -20,8 +20,8 @@ export const PROPERTY_WORK_SEQUENCE = [
   "primary_person",
   "property",
   "property_activity",
-  "coowners",
-  "ownership_shares",
+  "primary_ownership",
+  "correlated_owners_deferred",
 ] as const;
 
 export function buildPropertyWorkPlan(graph: Graph): PropertyWorkItem[] {

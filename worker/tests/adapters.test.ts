@@ -137,6 +137,77 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("recupera Cliente e immobile correlato quando la modale attività li apre vuoti", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace(
+          '<input data-worker-crm="activityClient" value="Maria Acquaviva">',
+          '<input data-worker-crm="activityClient" value=""><button data-worker-crm="activityOption" onclick="document.querySelector(\'[data-worker-crm=activityClient]\').value=\'Maria Acquaviva\'"><span data-item-id="P-42">P-42 Maria Acquaviva</span></button>',
+        )
+        .replace(
+          '<div data-worker-crm="activityRelatedProperty"><input value="IM - Via Roma 12 [2]"></div>',
+          '<div data-worker-crm="activityRelatedProperty"><input value=""></div><button data-worker-crm="activityOption" onclick="document.querySelector(\'[data-worker-crm=activityRelatedProperty] input\').value=\'IM - Via Roma 12 [2]\'">IM - Via Roma 12 [2]</button>',
+        );
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        fallbackPersonId: "P-42",
+        description: "Inserire attività",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "simulated", correlatedProperty: "IM - Via Roma 12 [2]" });
+      expect(await page.locator('[data-worker-crm="activityClient"]').inputValue()).toBe("Maria Acquaviva");
+      expect(await page.locator("body").getAttribute("data-activity-cancelled")).toBe("true");
+    } finally { await browser.close(); }
+  });
+
+  it("chiude, ricarica e ritenta da solo quando il primo caricamento dell'attività è incompleto", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace('<input data-worker-crm="activityClient" value="Maria Acquaviva">', '<input data-worker-crm="activityClient" value="">')
+        .replace(
+          'onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector(\'[data-worker-crm=activityDialog]\').hidden=false"',
+          'onclick="const attempt=Number(localStorage.getItem(\'activity-attempt\')||0)+1;localStorage.setItem(\'activity-attempt\',String(attempt));document.body.dataset.activityOrigin=location.pathname;document.querySelector(\'[data-worker-crm=activityClient]\').value=attempt>1?\'Maria Acquaviva\':\'\';document.querySelector(\'[data-worker-crm=activityDialog]\').hidden=false"',
+        );
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        description: "Inserire attività",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "simulated", attempts: 2 });
+      expect(await page.evaluate(() => localStorage.getItem("activity-attempt"))).toBe("2");
+    } finally { await browser.close(); }
+  });
+
+  it("annulla una vecchia finestra Soggetto correlato e continua con l'attività", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      await page.locator('[data-worker-crm="ownerDialog"]').evaluate((dialog) => { (dialog as HTMLElement).hidden = false; });
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        fallbackPersonId: "P-42",
+        description: "Inserire attività",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "simulated" });
+      expect(await page.locator('[data-worker-crm="ownerDialog"]').isVisible()).toBe(false);
+    } finally { await browser.close(); }
+  });
+
   it("chiude automaticamente una modale attività vuota rimasta aperta prima della ricerca", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

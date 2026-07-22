@@ -340,7 +340,7 @@ function friendlyStepLabel(step: string) {
     person_merge_reviewed: "verifica unioni nominativi", property_searched: "ricerca immobili del nominativo",
     property_created_or_updated: "aggiornamento immobili", activity_created: "creazione attività sugli immobili",
     properties_processed: "lavorazione completa degli immobili",
-    contacts_matched: "abbinamento recapiti Excel", owners_linked: "collegamento comproprietari",
+    contacts_matched: "abbinamento recapiti Excel", owners_linked: "sospensione soggetti correlati",
     verified: "verifica finale", completed: "lavorazione completa",
   };
   return labels[step] ?? step.replaceAll("_", " ");
