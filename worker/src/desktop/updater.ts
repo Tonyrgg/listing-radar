@@ -1,0 +1,162 @@
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
+import path from "node:path";
+
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+
+export type UpdateStatus = "unavailable" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "up_to_date" | "error";
+
+export interface DesktopUpdateState {
+  status: UpdateStatus;
+  currentVersion: string;
+  availableVersion: string | null;
+  percent: number | null;
+  transferred: number | null;
+  total: number | null;
+  message: string;
+  checkedAt: string | null;
+}
+
+const updateManifestSchema = z.object({
+  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  fileName: z.string().min(1).refine((value) => path.basename(value) === value, "Nome installer non valido"),
+  size: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  releaseDate: z.string(),
+  chunks: z.array(z.object({
+    path: z.string().regex(/^releases\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/),
+    size: z.number().int().positive(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+  })).min(1),
+});
+
+export type UpdateManifest = z.infer<typeof updateManifestSchema>;
+
+interface DesktopUpdaterOptions {
+  currentVersion: string;
+  packaged: boolean;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  updateDirectory: string;
+  isWorkerActive: () => boolean;
+  quitApp: () => void;
+  onState: (state: DesktopUpdateState) => void;
+}
+
+export function compareVersions(left: string, right: string) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
+export class DesktopUpdater {
+  private readonly storage: SupabaseClient | null;
+  private state: DesktopUpdateState;
+  private manifest: UpdateManifest | null = null;
+  private installerPath: string | null = null;
+
+  constructor(private readonly options: DesktopUpdaterOptions) {
+    this.state = {
+      status: options.packaged ? "idle" : "unavailable",
+      currentVersion: options.currentVersion,
+      availableVersion: null,
+      percent: null,
+      transferred: null,
+      total: null,
+      message: options.packaged ? "Controllo aggiornamenti disponibile" : "Disponibile soltanto nell'app installata",
+      checkedAt: null,
+    };
+    this.storage = options.packaged
+      ? createClient(options.supabaseUrl, options.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+      : null;
+  }
+
+  snapshot() {
+    return { ...this.state };
+  }
+
+  async check() {
+    if (!this.storage) return this.snapshot();
+    this.setState({ status: "checking", message: "Controllo se è disponibile una nuova versione", percent: null });
+    try {
+      const { data, error } = await this.storage.storage.from("property-worker-updates").download("latest.json", {}, { cache: "no-store" });
+      if (error) throw error;
+      this.manifest = updateManifestSchema.parse(JSON.parse(await data.text()));
+      if (compareVersions(this.manifest.version, this.options.currentVersion) <= 0) {
+        this.setState({ status: "up_to_date", availableVersion: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString(), percent: null });
+      } else {
+        this.setState({ status: "available", availableVersion: this.manifest.version, message: `Versione ${this.manifest.version} disponibile`, checkedAt: new Date().toISOString(), percent: null });
+      }
+    } catch (error) {
+      this.fail(error, "Non riesco a controllare gli aggiornamenti");
+    }
+    return this.snapshot();
+  }
+
+  async download() {
+    if (!this.storage) throw new Error("Gli aggiornamenti sono disponibili soltanto nell'app installata");
+    if (this.options.isWorkerActive()) throw new Error("Termina o metti in pausa la lavorazione prima di scaricare l'aggiornamento");
+    if (this.state.status !== "available" || !this.manifest) throw new Error("Non c'è un aggiornamento pronto da scaricare");
+    const versionDirectory = path.join(this.options.updateDirectory, this.manifest.version);
+    await mkdir(versionDirectory, { recursive: true });
+    this.installerPath = path.join(versionDirectory, this.manifest.fileName);
+    await rm(this.installerPath, { force: true });
+    const installer = await open(this.installerPath, "w");
+    let transferred = 0;
+    this.setState({ status: "downloading", message: "Scaricamento dell'aggiornamento", percent: 0, transferred: 0, total: this.manifest.size });
+    try {
+      for (const chunk of this.manifest.chunks) {
+        const { data, error } = await this.storage.storage.from("property-worker-updates").download(chunk.path, {}, { cache: "no-store" });
+        if (error) throw error;
+        const buffer = Buffer.from(await data.arrayBuffer());
+        if (buffer.length !== chunk.size || createHash("sha256").update(buffer).digest("hex") !== chunk.sha256) {
+          throw new Error(`Verifica fallita per ${path.basename(chunk.path)}`);
+        }
+        await installer.write(buffer);
+        transferred += buffer.length;
+        const percent = (transferred / this.manifest.size) * 100;
+        this.setState({ status: "downloading", percent, transferred, total: this.manifest.size, message: `Scaricamento ${Math.round(percent)}%` });
+      }
+    } catch (error) {
+      await installer.close();
+      await rm(this.installerPath, { force: true });
+      this.fail(error, "Il download dell'aggiornamento non è riuscito");
+      return this.snapshot();
+    }
+    await installer.close();
+    const complete = await readFile(this.installerPath);
+    if (complete.length !== this.manifest.size || createHash("sha256").update(complete).digest("hex") !== this.manifest.sha256) {
+      await rm(this.installerPath, { force: true });
+      this.fail(new Error("La firma SHA-256 dell'installer non coincide"), "Aggiornamento non valido");
+      return this.snapshot();
+    }
+    this.setState({ status: "downloaded", availableVersion: this.manifest.version, percent: 100, transferred: complete.length, total: complete.length, message: "Aggiornamento verificato e pronto per l'installazione" });
+    return this.snapshot();
+  }
+
+  install() {
+    if (!this.installerPath || this.state.status !== "downloaded") throw new Error("L'aggiornamento non è ancora stato scaricato");
+    if (this.options.isWorkerActive()) throw new Error("Termina o metti in pausa la lavorazione prima di installare l'aggiornamento");
+    this.setState({ message: "Riavvio e installazione in corso" });
+    const child = spawn(this.installerPath, ["--updated", "/S", "--force-run"], { detached: true, stdio: "ignore", windowsHide: true });
+    child.unref();
+    setTimeout(() => this.options.quitApp(), 500);
+    return true;
+  }
+
+  private fail(error: unknown, fallback: string) {
+    const detail = error instanceof Error ? error.message : String(error);
+    this.setState({ status: "error", message: `${fallback}: ${detail.replace(this.options.serviceRoleKey, "[chiave protetta]")}` });
+  }
+
+  private setState(values: Partial<DesktopUpdateState>) {
+    this.state = { ...this.state, ...values };
+    this.options.onState(this.snapshot());
+  }
+}

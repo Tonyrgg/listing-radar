@@ -13,6 +13,7 @@
       <div class="brand"><span class="brand-mark">LR</span><div><strong>Property Worker</strong><small>Listing Radar</small></div></div>
       <div class="header-actions">
         <span id="versionLabel" class="version">v—</span>
+        <button id="updateButton" class="button secondary">Controlla aggiornamenti</button>
         <button id="checkButton" class="button secondary">Controlla collegamenti</button>
         <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
       </div>
@@ -36,7 +37,7 @@
           <div class="start-copy"><span class="step-number">1</span><div><h2>Prepara una nuova lavorazione</h2><p>Prima apri SISTER sui risultati e lascia aperto il gestionale. Il programma controllerà tutto prima di partire.</p></div></div>
           <div class="start-options">
             <fieldset><legend>Come deve lavorare?</legend><div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div><small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small></fieldset>
-            <label class="toggle-row"><input id="dryRunToggle" type="checkbox" checked /><span class="toggle"></span><span><b>Prova senza salvare</b><small>Consigliato per il primo test</small></span></label>
+            <label class="safe-check"><input id="dryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Controlla tutto, ma non salva nel gestionale</small></span></label>
             <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
         </section>
@@ -70,6 +71,10 @@
 
         <section id="settings" class="settings-card">
           <header><div><p class="eyebrow">Impostazioni</p><h2>Configurazione pronta all’uso</h2><p>La configurazione viene conservata dentro l’app e protetta da Windows. Non serve più selezionare un file .env dopo ogni aggiornamento.</p></div><span id="configurationStatus" class="status-pill is-idle">Da verificare</span></header>
+          <div id="softwareUpdatePanel" class="software-update-row">
+            <div class="software-update-copy"><b id="softwareUpdateTitle">Aggiornamenti del programma</b><small id="softwareUpdateMessage">Controllo non ancora eseguito</small><div id="softwareUpdateProgress" class="software-update-progress is-hidden"><span></span></div></div>
+            <button id="softwareUpdateAction" class="button secondary" data-update-action="check">Controlla adesso</button>
+          </div>
           <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
           <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>
           <div class="setting-row"><div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo automatico in attesa</small></div></div>

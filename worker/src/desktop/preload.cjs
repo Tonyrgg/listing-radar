@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   getJobDetails: (jobId) => ipcRenderer.invoke("desktop:get-job-details", jobId),
   saveManualCorrections: (values) => ipcRenderer.invoke("desktop:save-manual-corrections", values),
   revealFile: (filePath) => ipcRenderer.invoke("desktop:reveal-file", filePath),
+  checkUpdate: () => ipcRenderer.invoke("desktop:check-update"),
+  downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
+  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   onState: (listener) => {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on("desktop:state", handler);

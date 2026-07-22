@@ -20,6 +20,7 @@ import {
   readPropertyActivityCheckpoint,
   type PropertyActivityCheckpoint,
 } from "./property-activities.js";
+import { buildPropertyWorkPlan } from "./property-workflow.js";
 
 function asProperty(row: PropertyRow): CadastralProperty {
   return {
@@ -70,10 +71,15 @@ function normalizedWords(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\W+/).filter((word) => word.length >= 3);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export type RunnerEvent =
   | { type: "job-ready"; job: JobRow; dryRun: boolean }
   | { type: "step-started"; jobId: string; step: WorkflowStep }
   | { type: "step-completed"; jobId: string; step: WorkflowStep; next: WorkflowStep; output: Record<string, unknown> }
+  | { type: "property-progress"; jobId: string; propertyId: string; index: number; total: number; address: string | null; stage: string; message: string }
   | { type: "sister-keepalive"; result: SisterKeepAliveResult }
   | { type: "job-completed"; jobId: string }
   | { type: "job-failed"; jobId: string; status: string; message: string; details: Record<string, unknown> };
@@ -272,6 +278,8 @@ export class PropertyWorkerRunner {
         }
         return { confirmed: true, propertyCount: review.properties.length, ownerCount: graph.people.length };
       }
+      case "properties_processed":
+        return this.processPropertiesInOrder(job, crm, contacts);
       case "person_searched": {
         const graph = await this.repository.loadGraph(job.id);
         for (const row of graph.people) {
@@ -657,6 +665,240 @@ export class PropertyWorkerRunner {
       case "completed":
         return { completedAt: new Date().toISOString(), dryRun: this.config.WORKER_DRY_RUN };
     }
+  }
+
+  private emitPropertyProgress(job: JobRow, property: PropertyRow, index: number, total: number, stage: string, message: string) {
+    this.onEvent({ type: "property-progress", jobId: job.id, propertyId: property.id, index, total, address: property.address, stage, message });
+  }
+
+  private async markPropertyStage(property: PropertyRow, stage: string) {
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      property_flow: { version: 1, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
+    };
+    await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
+  }
+
+  private async processPropertiesInOrder(job: JobRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
+    const graph = await this.repository.loadGraph(job.id);
+    let completed = 0;
+    const plan = buildPropertyWorkPlan(graph);
+    for (const [propertyIndex, item] of plan.entries()) {
+      this.throwIfCancellationRequested(job.id);
+      const { property, owners, primary, coowners } = item;
+      try {
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Cerco o creo il proprietario principale: ${primary.person.full_name}`);
+        await this.ensurePerson(job, primary.person, crm);
+        await this.markPropertyStage(property, "primary_ready");
+
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Cerco o creo l'immobile dentro la scheda del proprietario principale");
+        await this.ensureProperty(job, property, primary.person, crm);
+        await this.markPropertyStage(property, "property_ready");
+
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Creo l'attività dalla scheda dell'immobile");
+        await this.ensurePropertyActivity(job, property, primary.person, owners.map((entry) => entry.person), crm);
+        await this.markPropertyStage(property, "activity_ready");
+
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco i recapiti Excel di ${primary.person.full_name}`);
+        await this.ensureContacts(job, primary.person, crm, contacts);
+        await this.markPropertyStage(property, "primary_contacts_ready");
+
+        for (const owner of coowners) {
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "coowners", `Creo o aggiorno il comproprietario: ${owner.person.full_name}`);
+          await this.ensurePerson(job, owner.person, crm);
+          await this.ensureContacts(job, owner.person, crm, contacts);
+        }
+        await this.markPropertyStage(property, "coowners_ready");
+
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "shares", "Collego tutti i proprietari all'immobile con le rispettive quote");
+        for (const owner of owners) await this.ensureOwnership(job, property, owner.person, owner.ownership, crm);
+        await this.markPropertyStage(property, "completed");
+        completed += 1;
+        await this.repository.updateJob(job.id, { processed_properties: completed });
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "completed", `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato`);
+      } catch (error) {
+        const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+        const checkpoint = isRecord(property.raw_payload?.property_flow) ? property.raw_payload.property_flow : {};
+        throw new WorkerError(workerError.message, workerError.status, {
+          ...workerError.details,
+          propertyId: property.id,
+          cadastralKey: property.cadastral_key,
+          propertyAddress: property.address,
+          propertyIndex: propertyIndex + 1,
+          totalProperties: graph.properties.length,
+          propertyStage: checkpoint.stage ?? "primary",
+        }, workerError.captureScreenshot);
+      }
+    }
+    await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: graph.people.length });
+    return { processedProperties: completed, totalProperties: graph.properties.length, people: graph.people.length, dryRun: this.config.WORKER_DRY_RUN };
+  }
+
+  private async ensurePerson(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter) {
+    const existingCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
+    if (existingCheckpoint?.complete === true && existingCheckpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) return;
+    if (["merge_pending", "merge_blocked", "creation_started"].includes(row.processing_status)) {
+      await this.resolvePersonMerge(job, row, crm);
+      if (!row.crm_record_id) throw new WorkerError("Il merge non ha ancora prodotto una scheda nominativo utilizzabile", "needs_review", { personId: row.id }, true);
+      row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
+      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+      return;
+    }
+    const person = asPerson(row);
+    if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
+    let matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : null;
+    if (!matches) {
+      const result = await crm.findPerson({ taxCode: person.taxCode, phones: [], fullName: person.fullName, birthDate: person.birthDate });
+      matches = result.matches;
+      const onlyMatch = result.matches[0];
+      if (onlyMatch?.confidence === "possible") {
+        const label = normalizedWords(onlyMatch.label);
+        if (!normalizedWords(person.fullName).every((word) => label.includes(word))) {
+          throw new WorkerError("Il nominativo trovato non coincide con certezza con i dati SISTER", "needs_review", { personId: row.id, alternative: onlyMatch });
+        }
+      }
+      row.raw_payload = { ...(row.raw_payload ?? {}), crm_matches: result.matches, force_new_person: result.matches.length > 1 };
+      row.crm_record_id = result.matches.length === 1 ? result.matches[0]!.id : null;
+      row.processing_status = result.matches.length === 1 ? "matched" : result.matches.length ? "duplicate_candidates" : "not_found";
+      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+    }
+    const duplicateIds = matches.length > 1
+      ? matches.map((match) => isRecord(match) && typeof match.id === "string" ? match.id : "").filter(Boolean)
+      : [];
+    const forceNew = duplicateIds.length > 0 || row.raw_payload?.force_new_person === true;
+    if (job.mode === "assisted") {
+      const decision = await this.prompts.confirmSave(`${personSummary(person)}\nModifica prevista: ${row.crm_record_id && !forceNew ? "aggiornamento del nominativo" : "creazione del nominativo"}`);
+      if (decision === "skip") { await this.repository.updatePersonProcessing(row.id, { processing_status: "skipped" }); return; }
+      if (decision === "review") throw new WorkerError("Nominativo segnato da verificare", "needs_review", { personId: row.id });
+      if (decision === "manual") { await this.prompts.waitForManualEdit(); row.processing_status = "manual"; await this.repository.updatePersonProcessing(row.id, { processing_status: "manual" }); return; }
+    }
+    await this.logPersonChanges(job.id, row, person);
+    if (row.crm_record_id && !forceNew) {
+      await crm.updatePerson(row.crm_record_id, person);
+    } else {
+      const creation = await crm.createPerson(person, duplicateIds, duplicateIds.length ? () => this.repository.updatePersonProcessing(row.id, { processing_status: "creation_started" }) : undefined);
+      row.crm_record_id = creation.personId;
+      row.processing_status = creation.mergeStatus === "simulated" ? "merge_simulated" : ["pending", "ready", "blocked"].includes(creation.mergeStatus) ? "merge_pending" : this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
+      row.raw_payload = { ...(row.raw_payload ?? {}), person_creation: creation };
+      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+      await this.resolvePersonMerge(job, row, crm);
+    }
+    if (!row.crm_record_id) throw new WorkerError("Il gestionale non ha restituito la scheda del nominativo", "needs_review", { personId: row.id }, true);
+    row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
+    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+    await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+  }
+
+  private async resolvePersonMerge(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter) {
+    if (row.processing_status === "merge_simulated") return;
+    if (!["merge_pending", "merge_blocked", "creation_started"].includes(row.processing_status)) return;
+    const inspection = await crm.inspectPersonMerge();
+    row.raw_payload = { ...(row.raw_payload ?? {}), merge_inspection: inspection };
+    if (inspection.status === "blocked" || inspection.status === "pending") {
+      await this.repository.updatePersonProcessing(row.id, { processing_status: inspection.status === "blocked" ? "merge_blocked" : "merge_pending", raw_payload: row.raw_payload });
+      throw new WorkerError(inspection.status === "blocked" ? `Il Cloud ha bloccato il merge: ${inspection.message}` : `Il merge non è ancora pronto: ${inspection.message}`, "needs_review", { personId: row.id, merge: inspection }, true);
+    }
+    if (inspection.status === "completed" && inspection.personId) row.crm_record_id = inspection.personId;
+    else if (inspection.status === "ready") {
+      if (job.mode === "assisted" && await this.prompts.confirmMerge(`${inspection.message}\nIl gestionale non segnala problemi. Confermare il merge?`) === "manual") {
+        throw new WorkerError("Completa il merge nel gestionale e poi riprendi", "needs_review", { personId: row.id, merge: inspection }, true);
+      }
+      const confirmed = await crm.confirmPersonMerge();
+      if (confirmed.status !== "completed" || !confirmed.personId) throw new WorkerError(`Il merge non risulta concluso: ${confirmed.message}`, "needs_review", { personId: row.id, merge: confirmed }, true);
+      row.crm_record_id = confirmed.personId;
+      row.raw_payload = { ...(row.raw_payload ?? {}), merge_confirmation: confirmed };
+    } else if (inspection.status !== "simulated") {
+      throw new WorkerError("Lo stato del merge non è riconoscibile", "needs_review", { personId: row.id, merge: inspection }, true);
+    }
+  }
+
+  private async ensureProperty(job: JobRow, row: PropertyRow, primary: PersonRow, crm: PlaywrightCrmAdapter) {
+    const checkpoint = isRecord(row.raw_payload?.property_sync) ? row.raw_payload.property_sync : null;
+    if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) return;
+    if (!primary.crm_record_id) throw new WorkerError("La scheda del proprietario principale non è disponibile", "data_incomplete", { personId: primary.id, propertyId: row.id });
+    const property = asProperty(row);
+    if (!row.crm_record_id) {
+      const result = await crm.findPropertyForPerson(primary.crm_record_id, property);
+      row.crm_record_id = result.match?.id ?? null;
+      row.raw_payload = { ...(row.raw_payload ?? {}), crm_match: result.match, checked_from_people: [primary.id] };
+      await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: result.match ? "matched" : "not_found", raw_payload: row.raw_payload });
+    }
+    if (job.mode === "assisted") {
+      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nModifica prevista: ${row.crm_record_id ? "aggiornamento dell'immobile" : "creazione dell'immobile"}`);
+      if (decision === "skip") { await this.repository.updatePropertyProcessing(row.id, { processing_status: "skipped" }); return; }
+      if (decision === "review") throw new WorkerError("Immobile segnato da verificare", "needs_review", { propertyId: row.id });
+      if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); return; }
+    }
+    await this.logPropertyChanges(job.id, row, property);
+    if (row.crm_record_id) await crm.updateProperty(row.crm_record_id, property);
+    else row.crm_record_id = await crm.createProperty(property);
+    row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
+    row.raw_payload = { ...(row.raw_payload ?? {}), property_sync: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: row.crm_record_id, primaryPersonId: primary.id, updatedAt: new Date().toISOString() } };
+    await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+  }
+
+  private async ensurePropertyActivity(job: JobRow, property: PropertyRow, primary: PersonRow, owners: PersonRow[], crm: PlaywrightCrmAdapter) {
+    if (!property.crm_record_id) throw new WorkerError("La scheda dell'immobile non è disponibile per creare l'attività", "data_incomplete", { propertyId: property.id });
+    const existing = readPropertyActivityCheckpoint(property.raw_payload, this.config.WORKER_DRY_RUN, property.crm_record_id);
+    if (existing) return;
+    if (job.mode === "assisted") {
+      const decision = await this.prompts.confirmSave(propertyActivitySummary(asProperty(property), owners.map((owner) => owner.full_name)));
+      if (decision === "skip") return;
+      if (decision === "review") throw new WorkerError("Attività dell'immobile segnata da verificare", "needs_review", { propertyId: property.id });
+      if (decision === "manual") { await this.prompts.waitForManualEdit(); return; }
+    }
+    let lastError: WorkerError | null = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const result = await crm.createPropertyActivity({ propertyId: property.crm_record_id, propertyAddress: property.address, fallbackPersonId: primary.crm_record_id ?? undefined, description: PROPERTY_ACTIVITY_DESCRIPTION, status: PROPERTY_ACTIVITY_STATUS });
+        property.raw_payload = { ...(property.raw_payload ?? {}), worker_activity: activityCheckpoint({ state: result.outcome, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: property.crm_record_id, crmActivityId: result.crmActivityId, correlatedProperty: result.correlatedProperty, attempts: attempt + result.attempts - 1, error: null }) };
+        await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
+        return;
+      } catch (error) {
+        lastError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "portal_error", { portal: "CRM" }, true);
+        if (lastError.status !== "portal_error") throw lastError;
+      }
+    }
+    throw lastError ?? new WorkerError("Non riesco a creare l'attività dalla scheda dell'immobile", "portal_error", { portal: "CRM", propertyId: property.id }, true);
+  }
+
+  private async ensureContacts(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
+    const checkpoint = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
+    if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && checkpoint.crmPersonId === row.crm_record_id) return;
+    const match = contacts.findByTaxCode(row.tax_code ?? "");
+    await this.repository.updateContacts(row.id, match, row.raw_payload);
+    row.mobiles = match.mobiles; row.landlines = match.landlines; row.emails = match.emails;
+    row.raw_payload = { ...(row.raw_payload ?? {}), contact_match: { matchedRows: match.matchedRows, whatsapp: match.whatsapp, overflowPhones: match.overflowPhones, notes: match.notes } };
+    if (match.matchedRows && row.crm_record_id) {
+      if (job.mode === "assisted") {
+        const decision = await this.prompts.confirmSave(`${personSummary(asPerson(row))}\nModifica prevista: aggiunta dei recapiti Excel mancanti`);
+        if (decision === "review") throw new WorkerError("Recapiti segnati da verificare", "needs_review", { personId: row.id });
+        if (decision === "manual") await this.prompts.waitForManualEdit();
+        else if (decision !== "skip") await crm.updatePerson(row.crm_record_id, asPerson(row));
+      } else await crm.updatePerson(row.crm_record_id, asPerson(row));
+    }
+    row.raw_payload = { ...(row.raw_payload ?? {}), contacts_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, matchedRows: match.matchedRows, updatedAt: new Date().toISOString() } };
+    await this.repository.updatePersonProcessing(row.id, { mobiles: row.mobiles, landlines: row.landlines, emails: row.emails, raw_payload: row.raw_payload, processing_status: "contacts_matched" });
+  }
+
+  private async ensureOwnership(job: JobRow, property: PropertyRow, person: PersonRow, ownership: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"][number], crm: PlaywrightCrmAdapter) {
+    if (ownership.crm_link_id) return;
+    if (!property.crm_record_id || !person.crm_record_id || ownership.share_percentage == null) throw new WorkerError("Non posso collegare il proprietario: manca la scheda o la quota", "data_incomplete", { propertyId: property.id, personId: person.id, ownershipId: ownership.id });
+    const existing = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
+    if (existing.has(person.crm_record_id)) {
+      ownership.crm_link_id = `existing-link-${person.crm_record_id}`;
+      await this.repository.updateOwnership(ownership.id, { crm_link_id: ownership.crm_link_id, processing_status: "verified_existing" });
+      return;
+    }
+    if (job.mode === "assisted") {
+      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), asProperty(property))}\nModifica prevista: collegamento proprietario con quota ${ownership.share_percentage}%`);
+      if (decision === "skip") { await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" }); return; }
+      if (decision === "review") throw new WorkerError("Collegamento proprietario segnato da verificare", "needs_review", { ownershipId: ownership.id });
+      if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updateOwnership(ownership.id, { processing_status: "manual" }); return; }
+    }
+    ownership.crm_link_id = await crm.linkOwner(property.crm_record_id, person.crm_record_id, ownership.share_percentage);
+    await this.repository.updateOwnership(ownership.id, { crm_link_id: ownership.crm_link_id, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
   }
 
   private async logPersonChanges(jobId: string, row: PersonRow, person: NormalizedPerson) {

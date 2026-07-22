@@ -21,6 +21,7 @@ import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
+import { DesktopUpdater, type DesktopUpdateState } from "./updater.js";
 
 type Preferences = {
   environmentFilePath?: string;
@@ -79,8 +80,11 @@ let activeRunPromise: Promise<void> | null = null;
 let cancellingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
 let currentStep: string | null = null;
+let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string } | null = null;
 let lastError: string | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
+let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let desktopUpdater: DesktopUpdater | null = null;
 let sisterKeepAlive: KeepAliveState = {
   ok: false,
   sessionExpired: false,
@@ -202,9 +206,14 @@ async function stateSnapshot() {
     activeJobId,
     cancellingJobId,
     currentStep,
+    propertyProgress,
     prompt,
     lastError,
     sisterKeepAlive,
+    softwareUpdate: desktopUpdater?.snapshot() ?? {
+      status: "unavailable", currentVersion: app.getVersion(), availableVersion: null, percent: null,
+      transferred: null, total: null, message: "Controllo aggiornamenti non inizializzato", checkedAt: null,
+    },
     activity,
     preferences,
     config: publicConfig,
@@ -212,6 +221,43 @@ async function stateSnapshot() {
     jobs,
     version: app.getVersion(),
   };
+}
+
+function scheduleUpdateCheck(delayMs = 12_000) {
+  if (updateCheckTimer) clearTimeout(updateCheckTimer);
+  updateCheckTimer = setTimeout(async () => {
+    await desktopUpdater?.check();
+    scheduleUpdateCheck(6 * 60 * 60 * 1_000);
+  }, delayMs);
+  updateCheckTimer.unref?.();
+}
+
+function initializeDesktopUpdater() {
+  try {
+    const config = workerConfig();
+    let previousStatus: DesktopUpdateState["status"] | null = null;
+    desktopUpdater = new DesktopUpdater({
+      currentVersion: app.getVersion(),
+      packaged: app.isPackaged,
+      supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
+      serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
+      updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
+      isWorkerActive: () => active,
+      quitApp: () => app.quit(),
+      onState: (state) => {
+        if (state.status !== previousStatus) {
+          if (state.status === "available") pushActivity(`Aggiornamento ${state.availableVersion} disponibile`, "warning");
+          else if (state.status === "downloaded") pushActivity("Aggiornamento scaricato e pronto", "success");
+          else if (state.status === "error") pushActivity(state.message, "warning");
+          previousStatus = state.status;
+        }
+        void publishState();
+      },
+    });
+    scheduleUpdateCheck();
+  } catch (error) {
+    pushActivity(`Aggiornamenti non inizializzati: ${error instanceof Error ? error.message : String(error)}`, "warning");
+  }
 }
 
 async function publishState() {
@@ -236,9 +282,13 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(`Terminato: ${friendlyStepLabel(event.step)}`, "success");
   } else if (event.type === "job-completed") {
     currentStep = "completed";
+    propertyProgress = null;
     pushActivity("Lavorazione completata", "success");
   } else if (event.type === "sister-keepalive") {
     updateKeepAliveState(event.result);
+  } else if (event.type === "property-progress") {
+    propertyProgress = { propertyId: event.propertyId, index: event.index, total: event.total, address: event.address, stage: event.stage, message: event.message };
+    pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
   } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
     pushActivity("Arresto del processo completato", "warning");
   } else {
@@ -256,6 +306,7 @@ function friendlyStepLabel(step: string) {
     person_searched: "ricerca nominativi", person_created_or_updated: "aggiornamento nominativi",
     person_merge_reviewed: "verifica unioni nominativi", property_searched: "ricerca immobili del nominativo",
     property_created_or_updated: "aggiornamento immobili", activity_created: "creazione attività sugli immobili",
+    properties_processed: "lavorazione completa degli immobili",
     contacts_matched: "abbinamento recapiti Excel", owners_linked: "collegamento comproprietari",
     verified: "verifica finale", completed: "lavorazione completa",
   };
@@ -325,6 +376,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   cancellingJobId = null;
   lastError = null;
   currentStep = null;
+  propertyProgress = null;
   activeJobId = input.jobId ?? null;
   preferences = { ...preferences, mode: input.mode, dryRun: input.dryRun };
   await persistPreferences();
@@ -351,6 +403,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
           const cleanup = await purgeJob(cancelledJobId);
           activeJobId = null;
           currentStep = null;
+          propertyProgress = null;
           lastError = null;
           prompt = null;
           pushActivity(
@@ -489,6 +542,7 @@ function registerIpc() {
       encryptedEnvironment: safeStorage.encryptString(JSON.stringify(secured)).toString("base64"),
     };
     await persistPreferences();
+    initializeDesktopUpdater();
     pushActivity("Configurazione salvata e protetta da Windows", "success");
     await publishState();
     return true;
@@ -539,6 +593,7 @@ function registerIpc() {
     if (activeJobId === jobId) {
       activeJobId = null;
       currentStep = null;
+      propertyProgress = null;
       lastError = null;
       prompt = null;
     }
@@ -589,6 +644,12 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:reveal-file", (_event, filePath: string) => shell.showItemInFolder(filePath));
+  ipcMain.handle("desktop:check-update", async () => {
+    if (!desktopUpdater) initializeDesktopUpdater();
+    return desktopUpdater?.check();
+  });
+  ipcMain.handle("desktop:download-update", () => desktopUpdater?.download());
+  ipcMain.handle("desktop:install-update", () => desktopUpdater?.install());
 }
 
 app.whenReady().then(async () => {
@@ -596,10 +657,12 @@ app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
   scheduleDesktopKeepAlive(3_000);
+  initializeDesktopUpdater();
 });
 
 app.on("before-quit", () => {
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
+  if (updateCheckTimer) clearTimeout(updateCheckTimer);
 });
 
 app.on("window-all-closed", () => {

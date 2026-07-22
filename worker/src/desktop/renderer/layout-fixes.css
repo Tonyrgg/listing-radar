@@ -1,3 +1,110 @@
-.toggle {
-  flex: 0 0 44px;
+.safe-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.safe-check input {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  accent-color: #287052;
+}
+
+.safe-check b,
+.safe-check small {
+  display: block;
+}
+
+.safe-check small {
+  color: #627068;
+  font-size: 12px;
+}
+
+.check-item > div {
+  width: 100%;
+  min-width: 0;
+}
+
+.check-item small {
+  display: -webkit-box;
+  min-height: 34px;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.property-position {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #dce9df;
+  color: #164d37;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workflow-step b small {
+  display: block;
+  margin-top: 2px;
+  color: #627068;
+  font-weight: 400;
+}
+
+.workflow-steps {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1050px) {
+  .workflow-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+.software-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid #d8ded9;
+}
+
+.software-update-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.software-update-copy b,
+.software-update-copy small {
+  display: block;
+}
+
+.software-update-copy small {
+  color: #627068;
+}
+
+.software-update-progress {
+  width: min(420px, 100%);
+  height: 7px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e9e6;
+}
+
+.software-update-progress.is-hidden {
+  display: none;
+}
+
+.software-update-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #287052;
+  transition: width 180ms cubic-bezier(.22, 1, .36, 1);
 }

@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -17,6 +17,9 @@
     "desktop:dev": "npm run desktop:compile && electron .",
     "desktop:prepare-config": "node scripts/prepare-bundled-config.mjs",
     "desktop:build": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win nsis",
+    "desktop:publish-update": "node scripts/publish-update.mjs",
+    "desktop:verify-update": "node scripts/verify-update-channel.mjs",
+    "desktop:release": "npm run desktop:build && npm run desktop:publish-update",
     "desktop:portable": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win portable",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -33,10 +36,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.11",
-    "tsx": "^4.22.4",
-    "typescript": "^5.9.3",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },
   "build": {

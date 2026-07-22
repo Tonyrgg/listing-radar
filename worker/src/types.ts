@@ -5,6 +5,12 @@ export const WORKFLOW_STEPS = [
   "owners_extracted",
   "data_normalized",
   "acquisition_reviewed",
+  "properties_processed",
+  "verified",
+  "completed",
+] as const;
+
+export const LEGACY_WORKFLOW_STEPS = [
   "person_searched",
   "person_created_or_updated",
   "person_merge_reviewed",
@@ -13,8 +19,6 @@ export const WORKFLOW_STEPS = [
   "activity_created",
   "contacts_matched",
   "owners_linked",
-  "verified",
-  "completed",
 ] as const;
 
 export const ERROR_STATUSES = [
@@ -26,7 +30,8 @@ export const ERROR_STATUSES = [
   "paused",
 ] as const;
 
-export type WorkflowStep = (typeof WORKFLOW_STEPS)[number];
+export type ActiveWorkflowStep = (typeof WORKFLOW_STEPS)[number];
+export type WorkflowStep = ActiveWorkflowStep | (typeof LEGACY_WORKFLOW_STEPS)[number];
 export type ErrorStatus = (typeof ERROR_STATUSES)[number];
 export type WorkerMode = "assisted" | "automatic";
 

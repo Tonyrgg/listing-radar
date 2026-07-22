@@ -32,6 +32,16 @@ Per generare l'installer Windows:
 npm run desktop:build
 ```
 
+Per creare l'installer e pubblicarlo nel canale privato degli aggiornamenti:
+
+```powershell
+npm run desktop:release
+```
+
+L'app installata controlla automaticamente il canale ogni sei ore. L'utente può anche usare **Controlla aggiornamenti**; il download e l'installazione restano bloccati durante una lavorazione attiva. Dopo il download, **Installa e riavvia** aggiorna l'app senza richiedere la disinstallazione e conserva le preferenze cifrate in Windows.
+
+Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
+
 L'installer viene creato in `worker/release/`. Per un singolo eseguibile portabile, senza installazione:
 
 ```powershell
@@ -62,6 +72,20 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
 5. Accedi manualmente a SISTER e al gestionale, lasciando entrambe le schede aperte. Le regole per riconoscere le schede sono già incluse; se cambiano, puoi aggiornarle nella configurazione avanzata dell'app.
 
 Il file `.env` resta supportato soltanto per lo sviluppo e per l'uso tecnico della CLI. Non viene mai letto dal renderer e la service role key non viene mostrata nell'interfaccia o nei log.
+
+## Ordine della lavorazione
+
+Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTER e mostra il riepilogo. Dopo la conferma lavora **un immobile alla volta**, nell'ordine in cui è stato acquisito:
+
+1. cerca o crea il proprietario principale, scelto in modo deterministico dalla quota più alta;
+2. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
+3. crea una sola attività `Da eseguire` partendo dalla scheda dell'immobile;
+4. cerca nel file Excel i recapiti del proprietario principale;
+5. cerca o crea gli altri comproprietari e controlla anche i loro recapiti;
+6. collega tutti i proprietari all'immobile con le quote corrette;
+7. salva il checkpoint dell'immobile e passa al successivo.
+
+Persone già elaborate vengono riutilizzate senza duplicarle. Se il processo si interrompe, i checkpoint di persona, immobile, attività, recapiti e collegamenti permettono di riprendere il singolo immobile senza ripetere le operazioni concluse.
 
 Finché l'app desktop resta aperta, il worker richiama in background una pagina neutra di SISTER tra 120 e 180 secondi. Non automatizza il login e segnala subito una sessione scaduta. L'intervallo e l'eventuale URL sicuro possono essere personalizzati con `SISTER_KEEPALIVE_MIN_SECONDS`, `SISTER_KEEPALIVE_MAX_SECONDS` e `SISTER_KEEPALIVE_URL`.
 
