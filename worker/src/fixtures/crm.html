@@ -9,6 +9,11 @@
     <button data-worker-crm="personRelatedTab">Correlati</button>
     <article data-worker-crm="personPropertiesCard"><a data-worker-crm="personPropertyLinks" href="#fixture-property">Immobile</a><button data-worker-crm="propertyCreate" onclick="document.querySelector('[data-worker-crm=propertyCreateMenuItem]').hidden=false">Apri menu</button><a role="menuitem" data-worker-crm="propertyCreateMenuItem" hidden onclick="document.body.dataset.propertyCreationOrigin='person-card';document.querySelector('[data-worker-crm=propertyNext]').hidden=false">Nuovo</a></article><button data-worker-crm="propertyNext" hidden onclick="document.body.dataset.propertyWizardAdvanced=String(Number(document.body.dataset.propertyWizardAdvanced||0)+1)">Avanti</button>
     <span data-worker-crm="propertySheetValue">58</span><span data-worker-crm="propertyParcelValue">1234</span><span data-worker-crm="propertySubalternValue">7</span><span data-worker-crm="propertyAddressValue">Via Roma 12 [2], 70032 BITONTO (BA)</span>
+    <div data-worker-crm="propertyCadastralSectionUrban"><label>Catasto Sezione Urbana</label><input></div>
+    <div data-worker-crm="propertyCadastralSheet"><label>Catasto Foglio</label><input></div>
+    <div data-worker-crm="propertyCadastralParcel"><label>Catasto Particella</label><input></div>
+    <div data-worker-crm="propertyCadastralSubaltern"><label>Catasto Subalterno</label><input></div>
+    <div data-worker-crm="propertyCadastralIncome"><label>Catasto Rendita</label><input></div>
     <article data-worker-crm="activityCard"><button data-worker-crm="activityCreate" onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector('[data-worker-crm=activityDialog]').hidden=false">Nuovo</button></article>
     <div role="dialog" data-worker-crm="activityDialog" hidden>
       <textarea data-worker-crm="activityDescription"></textarea>

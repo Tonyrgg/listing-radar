@@ -37,4 +37,17 @@ describe("piano di lavorazione per immobile", () => {
       "primary_contacts", "primary_person", "property", "property_activity", "primary_ownership", "correlated_owners_deferred",
     ]);
   });
+
+  it("non rimette in coda gli immobili completati o saltati", () => {
+    const completed = { ...property("done"), processing_status: "completed" };
+    const skipped = { ...property("skip"), processing_status: "skipped" };
+    const pending = property("next");
+    const owners = [person("owner")];
+    const ownerships = [completed, skipped, pending].map((item, index) => ({
+      id: `o${index}`, property_id: item.id, person_id: "owner",
+      share_percentage: 100, processing_status: "extracted", crm_link_id: null,
+    }));
+    expect(buildPropertyWorkPlan({ properties: [completed, skipped, pending], people: owners, ownerships })
+      .map((item) => item.property.id)).toEqual(["next"]);
+  });
 });

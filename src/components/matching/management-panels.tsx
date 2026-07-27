@@ -75,7 +75,7 @@ export function PropertyEditor({
   zones, features, property,
 }: Readonly<{ zones: InternalZone[]; features: FeatureDefinition[]; property?: PortfolioProperty & { feature_values?: Record<string, unknown> } }>) {
   const router = useRouter();
-  const [open, setOpen] = useState(Boolean(property));
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const [address, setAddress] = useState(property?.address ?? "");
@@ -114,7 +114,7 @@ export function PropertyEditor({
       } catch (reason) { setError(reason instanceof Error ? reason.message : "Salvataggio non riuscito."); }
     });
   }
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="min-h-10 rounded-[8px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)]">Nuovo immobile</button>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="min-h-10 rounded-[8px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)]">{property ? "Modifica immobile" : "Nuovo immobile"}</button>;
   return <form action={submit} className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
     <div className="mb-5 flex items-center justify-between"><div><p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--surface-accent)]">Scheda portafoglio</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">{property ? "Modifica immobile" : "Nuovo immobile"}</h2></div>{!property ? <button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-[var(--ink-soft)]">Chiudi</button> : null}</div>
     {error ? <p className="mb-4 rounded-[7px] bg-red-400/10 p-3 text-sm text-red-200">{error}</p> : null}

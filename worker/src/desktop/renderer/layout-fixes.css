@@ -420,6 +420,12 @@
   margin-top: 12px;
 }
 
+/* La cronologia mostra solo una card per sessione. I dettagli completi
+   appartengono esclusivamente alla modale del riepilogo. */
+.completed-imports-section > #completedImportsList .completed-property-list {
+  display: none;
+}
+
 .completed-property-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -520,4 +526,30 @@
     border-top: 1px solid #d8ded9;
     border-left: 0;
   }
+}
+.completed-session {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line, #d7ddd6);
+}
+
+.completed-session:first-child { border-top: 0; }
+.completed-session h3, .completed-session p { margin: 0; }
+.completed-session .eyebrow { margin-bottom: 4px; }
+.completed-imports-footer { display: flex; justify-content: center; padding-top: 16px; }
+.auto-retry-notice {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff4d6;
+  color: #684d00;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .completed-session { grid-template-columns: auto 1fr; }
+  .completed-session .button { grid-column: 1 / -1; width: 100%; }
 }

@@ -352,6 +352,29 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator(crmFixtureSelectors.propertyCivic).inputValue()).toBe("62");
       expect(await page.locator(crmFixtureSelectors.propertyInternal).inputValue()).toBe(".");
       expect(await page.locator(crmFixtureSelectors.propertyMunicipality).locator("input").inputValue()).toBe("BITONTO");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralSectionUrban).locator("input").inputValue()).toBe("BA");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralSheet).locator("input").inputValue()).toBe("50");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralParcel).locator("input").inputValue()).toBe("2278");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralSubaltern).locator("input").inputValue()).toBe("20");
+    } finally { await browser.close(); }
+  });
+
+  it("prepara lo spostamento di un recapito assegnato al nominativo sbagliato", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      const result = await adapter.transferPhoneAssignments("PERSONA-NOUVA", {
+        fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
+        taxCode: "RSSMRA80A01A893X", rightType: "ProprietÃ ", shareOriginal: "1/1",
+        shareNumerator: 1, shareDenominator: 1, sharePercentage: 100,
+        mobiles: ["333 1234567"], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      }, [{ phone: "3331234567", personId: "PERSONA-VECCHIA", label: "Altro nominativo" }]);
+      expect(result).toEqual({
+        moved: [{ phone: "3331234567", fromPersonId: "PERSONA-VECCHIA", toPersonId: "PERSONA-NOUVA" }],
+        alreadyAssigned: [],
+        simulated: true,
+      });
     } finally { await browser.close(); }
   });
 

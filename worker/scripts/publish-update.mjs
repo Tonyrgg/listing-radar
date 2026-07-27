@@ -13,7 +13,7 @@ if (!supabaseUrl || !serviceRoleKey) throw new Error("Configurazione Supabase ma
 
 const version = packageData.version;
 const bucket = "property-worker-updates";
-const retainedReleaseCount = 2;
+const retainedReleaseCount = 1;
 const installerName = `Property Data Worker Setup ${version}.exe`;
 const installer = await readFile(path.join(workerRoot, "release", installerName));
 const chunkSize = 32 * 1024 * 1024;

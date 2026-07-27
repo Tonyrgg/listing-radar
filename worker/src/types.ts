@@ -107,6 +107,18 @@ export interface PersonMatchResult {
   matches: Array<{ id: string; label: string; confidence: MatchConfidence; data: Record<string, unknown> }>;
 }
 
+export interface CrmPhoneAssignment {
+  phone: string;
+  personId: string;
+  label: string;
+}
+
+export interface CrmContactTransferResult {
+  moved: Array<{ phone: string; fromPersonId: string; toPersonId: string }>;
+  alreadyAssigned: string[];
+  simulated: boolean;
+}
+
 export interface PropertyMatchResult {
   match: { id: string; data: Record<string, unknown> } | null;
 }
@@ -175,6 +187,8 @@ export interface CrmAdapter {
   detectPage(): Promise<boolean>;
   openExistingPerson(input: PersonSearchInput, expectedId?: string): Promise<{ id: string; data: Record<string, unknown> } | null>;
   findPerson(input: PersonSearchInput): Promise<PersonMatchResult>;
+  findPhoneAssignments(phones: string[]): Promise<CrmPhoneAssignment[]>;
+  transferPhoneAssignments(targetPersonId: string, person: NormalizedPerson, assignments: CrmPhoneAssignment[]): Promise<CrmContactTransferResult>;
   createPerson(person: NormalizedPerson, duplicateCandidateIds?: string[], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult>;
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;
   inspectPersonMerge(): Promise<PersonMergeResult>;

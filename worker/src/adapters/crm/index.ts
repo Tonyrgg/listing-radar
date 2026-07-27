@@ -1,12 +1,14 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
-import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
+import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, normalizePhone, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
 import { propertyFormValues } from "../../core/property-form.js";
 import type {
   CrmActivityInput,
   CrmActivityResult,
   CrmAdapter,
+  CrmContactTransferResult,
+  CrmPhoneAssignment,
   NormalizedPerson,
   NormalizedProperty,
   PersonCreationResult,
@@ -378,6 +380,108 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  async findPhoneAssignments(phones: string[]): Promise<CrmPhoneAssignment[]> {
+    const normalizedPhones = [...new Set(phones.map(normalizePhone).filter(Boolean))];
+    if (!normalizedPhones.length) return [];
+    return this.friendly("phone-assignment-search", "Non riesco a verificare a chi sono assegnati i recapiti.", async () => {
+      this.require("personSearchPage", "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId", "personResultLabel");
+      await this.ensureCrmIdle();
+      const navigation = await this.uniqueVisible("personSearchPage", "sezione Nominativi");
+      const href = await navigation.getAttribute("href");
+      await navigation.click();
+      if (href && !(await this.page.waitForURL(/\/s\/account\/Account(?:[/?#]|$)/i, { timeout: 10_000 }).then(() => true).catch(() => false))) {
+        await this.page.goto(new URL(href, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
+      }
+      const assignments: CrmPhoneAssignment[] = [];
+      for (const phone of normalizedPhones) {
+        await this.enterGlobalSearch(this.selectors.personSearchPhone, this.selectors.personSearchSubmit, phone);
+        await this.checkSession();
+        for (const match of await this.collectPersonMatches("possible", "crm-phone-assignment", phone)) {
+          if (!assignments.some((item) => item.phone === phone && item.personId === match.id)) {
+            assignments.push({ phone, personId: match.id, label: match.label });
+          }
+        }
+      }
+      return assignments;
+    });
+  }
+
+  async transferPhoneAssignments(
+    targetPersonId: string,
+    person: NormalizedPerson,
+    assignments: CrmPhoneAssignment[],
+  ): Promise<CrmContactTransferResult> {
+    const desiredPhones = new Set([...person.mobiles, ...person.landlines].map(normalizePhone).filter(Boolean));
+    const relevant = assignments.filter((assignment) => desiredPhones.has(normalizePhone(assignment.phone)));
+    const alreadyAssigned = [...new Set(relevant.filter((assignment) => assignment.personId === targetPersonId).map((assignment) => normalizePhone(assignment.phone)))];
+    const conflicts = relevant.filter((assignment) => assignment.personId !== targetPersonId);
+    for (const phone of desiredPhones) {
+      const owners = [...new Set(conflicts.filter((assignment) => normalizePhone(assignment.phone) === phone).map((assignment) => assignment.personId))];
+      if (owners.length > 1) {
+        throw new WorkerError(
+          `Il recapito ${phone} risulta assegnato a ${owners.length} nominativi diversi. Il trasferimento automatico non sarebbe sicuro.`,
+          "needs_review",
+          { portal: "CRM", action: "phone-transfer-ambiguous", phone, personIds: owners, targetPersonId },
+          true,
+        );
+      }
+    }
+    if (this.dryRun) {
+      return {
+        moved: conflicts.map((assignment) => ({ phone: normalizePhone(assignment.phone), fromPersonId: assignment.personId, toPersonId: targetPersonId })),
+        alreadyAssigned,
+        simulated: true,
+      };
+    }
+
+    return this.friendly("phone-assignment-transfer", "Non riesco a spostare il recapito sul nominativo corretto.", async () => {
+      const moved: CrmContactTransferResult["moved"] = [];
+      const byOldPerson = new Map<string, Set<string>>();
+      for (const assignment of conflicts) {
+        const phones = byOldPerson.get(assignment.personId) ?? new Set<string>();
+        phones.add(normalizePhone(assignment.phone));
+        byOldPerson.set(assignment.personId, phones);
+      }
+      const phoneFields: Array<keyof CrmSelectors> = ["personMobile", "personOfficePhone", "personOtherPhone"];
+      for (const [oldPersonId, phones] of byOldPerson) {
+        await this.openPerson(oldPersonId);
+        const removed = new Set<string>();
+        for (const key of phoneFields) {
+          if (!this.selectors[key]) continue;
+          const fields = this.visible(this.selectors[key]);
+          for (let index = 0; index < await fields.count(); index += 1) {
+            const field = fields.nth(index);
+            const current = normalizePhone(await field.inputValue().catch(() => ""));
+            if (current && phones.has(current)) {
+              await field.fill("");
+              removed.add(current);
+            }
+          }
+        }
+        const missing = [...phones].filter((phone) => !removed.has(phone));
+        if (missing.length) {
+          throw new WorkerError(
+            "Il gestionale trova il recapito nella ricerca, ma non lo mostra in un campo modificabile del vecchio nominativo.",
+            "needs_review",
+            { portal: "CRM", action: "phone-transfer-source-field", oldPersonId, phones: missing, targetPersonId },
+            true,
+          );
+        }
+        this.require("personSave");
+        await this.visible(this.selectors.personSave).last().click();
+        await this.checkSession();
+        for (const phone of removed) moved.push({ phone, fromPersonId: oldPersonId, toPersonId: targetPersonId });
+      }
+
+      await this.openPerson(targetPersonId);
+      await this.fillPerson(person);
+      this.require("personSave");
+      await this.visible(this.selectors.personSave).last().click();
+      await this.checkSession();
+      return { moved, alreadyAssigned, simulated: false };
+    });
+  }
+
   private async personField(key: keyof CrmSelectors, label: string, timeout = 8_000) {
     this.require(key);
     const fields = this.visible(this.selectors[key]);
@@ -686,6 +790,65 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     for (const [key, value] of fields) if (value) await this.page.locator(this.selectors[key]).fill(value);
   }
 
+  private async syncPropertyCadastralDetails(property: NormalizedProperty) {
+    const values: Array<[keyof CrmSelectors, string, string]> = [
+      ["propertyCadastralSectionUrban", "Catasto Sezione Urbana", "BA"],
+      ["propertyCadastralSheet", "Catasto Foglio", property.sheet],
+      ["propertyCadastralParcel", "Catasto Particella", property.parcel],
+      ["propertyCadastralSubaltern", "Catasto Subalterno", property.subaltern],
+      ["propertyCadastralIncome", "Catasto Rendita", property.cadastralIncome?.toString().replace(".", ",") ?? ""],
+    ];
+    let changed = false;
+    for (const [key, label, expected] of values) {
+      if (!expected) continue;
+      const row = await this.uniqueVisible(key, label, 15_000);
+      let input = row.locator("input").filter({ visible: true });
+      const currentValue = await input.count() === 1 ? normalizedUiText(await input.inputValue()) : "";
+      const currentText = normalizedUiText(await row.innerText().catch(() => ""))
+        .replace(normalizedUiText(label), "")
+        .trim();
+      if (currentValue === normalizedUiText(expected) || (!currentValue && currentText === normalizedUiText(expected))) continue;
+      if (!(await input.count())) {
+        const edit = row.locator('button[title*="Modifica"], button[title*="Edit"], lightning-button-icon button').filter({ visible: true });
+        if (await edit.count() !== 1) {
+          throw new WorkerError(
+            `Il campo â€œ${label}â€ non contiene il valore SISTER e non mostra un solo comando di modifica.`,
+            "portal_error",
+            { portal: "CRM", action: "property-cadastral-edit", field: label, expected, editButtons: await edit.count() },
+            true,
+          );
+        }
+        await edit.click();
+        input = row.locator("input").filter({ visible: true });
+        await input.first().waitFor({ state: "visible", timeout: 8_000 });
+      }
+      if (await input.count() !== 1) {
+        throw new WorkerError(
+          `Il campo â€œ${label}â€ mostra ${await input.count()} caselle modificabili.`,
+          "portal_error",
+          { portal: "CRM", action: "property-cadastral-input", field: label, expected },
+          true,
+        );
+      }
+      await input.fill(expected);
+      if (normalizedUiText(await input.inputValue()) !== normalizedUiText(expected)) {
+        throw new WorkerError(
+          `Il valore SISTER non Ã¨ rimasto nel campo â€œ${label}â€.`,
+          "portal_error",
+          { portal: "CRM", action: "property-cadastral-fill", field: label, expected },
+          true,
+        );
+      }
+      changed = true;
+    }
+    if (!changed) return;
+    this.require("propertySave");
+    const save = this.visible(this.selectors.propertySave);
+    await save.last().click();
+    await this.checkSession();
+    await this.page.waitForTimeout(700);
+  }
+
   private async propertyPicklist(key: keyof CrmSelectors, label: string, value: string) {
     this.require(key);
     const components = this.visible(this.selectors[key]);
@@ -943,6 +1106,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         propertyId = await this.currentPropertyId();
       }
       if (!propertyId) throw new WorkerError("L'immobile risulta salvato, ma il gestionale non espone il suo identificativo.", "needs_review", { portal: "CRM", action: "property-create-record-id" }, true);
+      await this.syncPropertyCadastralDetails(property);
       if (values.commercialSquareMeters !== null && this.selectors.propertyCommercialSquareMeters) {
         const sqm = this.visible(this.selectors.propertyCommercialSquareMeters);
         if (await sqm.count()) await sqm.first().fill(String(values.commercialSquareMeters));
@@ -953,12 +1117,19 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   async updateProperty(id: string, property: NormalizedProperty): Promise<void> {
     if (this.dryRun) return;
-    await this.friendly("property-update", "Non riesco ad aggiornare l’immobile collegato.", async () => {
+    await this.friendly("property-update", "Non riesco ad aggiornare l'immobile collegato.", async () => {
       await this.openProperty(id);
-      await this.fillProperty(property);
-      this.require("propertySave");
-      await this.page.locator(this.selectors.propertySave).click();
-      await this.checkSession();
+      await this.syncPropertyCadastralDetails(property);
+      const legacyFields: Array<keyof CrmSelectors> = [
+        "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern",
+        "propertyCategory", "propertyClass", "propertyConsistency", "propertyIncome",
+      ];
+      if (legacyFields.every((key) => Boolean(this.selectors[key]))) {
+        await this.fillProperty(property);
+        this.require("propertySave");
+        await this.visible(this.selectors.propertySave).last().click();
+        await this.checkSession();
+      }
     });
   }
 

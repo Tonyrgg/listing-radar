@@ -1,17 +1,22 @@
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
+  ArrowRightLeft,
   Building2,
   CheckCircle2,
   ChevronDown,
   CircleDashed,
+  MapPin,
   Sparkles,
+  UserRound,
   UsersRound,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { RecalculateButton } from "@/components/matching/management-panels";
+import { ContractMark, PropertyTypeMark } from "@/components/matching/visual-language";
 import { listMatches, listProperties, listRequests } from "@/lib/matching/repository";
 
 export default async function MatchingPage({
@@ -137,7 +142,7 @@ export default async function MatchingPage({
           </summary>
           <form className="flex flex-wrap gap-2 border-t border-[var(--line-soft)] p-4">
             <input type="hidden" name="view" value={view} />
-            <select name="classification" defaultValue={classification} className="h-11 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-soft)]"><option value="">Tutti i risultati</option><option value="compatible">Proposte forti</option><option value="almost_compatible">Alternative valide</option><option value="weak">Compatibilità debole</option><option value="not_relevant">Poco pertinente</option></select>
+            <select name="classification" defaultValue={classification} className="h-11 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-soft)]"><option value="">Tutti i risultati</option><option value="compatible">Proposte forti</option><option value="almost_compatible">Alternative valide</option><option value="weak">Da valutare</option><option value="not_relevant">Poco adatto</option></select>
             <select name="contract" defaultValue={contract} className="h-11 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-soft)]"><option value="">Vendita e affitto</option><option value="sale">Vendita</option><option value="rent">Affitto</option></select>
             <input name="minimum" type="number" min="0" max="100" defaultValue={minimum || ""} placeholder="Compatibilità minima" aria-label="Compatibilità minima" className="h-11 w-44 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-soft)]" />
             <button className="h-11 rounded-[7px] border border-[var(--line-strong)] px-4 text-sm font-bold text-[var(--ink-strong)]">Mostra risultati</button>
@@ -152,21 +157,96 @@ export default async function MatchingPage({
             </div>
             <p className="text-sm text-[var(--ink-subtle)]">I punti deboli sono sempre spiegati</p>
           </div>
-          <div className="divide-y divide-[var(--line-soft)]">{filteredMatches.slice(0, 30).map((match) => {
-        const request = requestsById.get(match.request_id);
-        const property = propertiesById.get(match.property_id);
-        const primary = view === "request"
-          ? <Link href={`/requests/${match.request_id}`} className="text-sm font-semibold text-[var(--ink-strong)] hover:underline">{request?.title || "Richiesta anonima"}</Link>
-          : <Link href={`/portfolio/${match.property_id}`} className="text-sm font-semibold text-[var(--ink-strong)] hover:underline">{property?.title || "Immobile"}</Link>;
-        const secondary = view === "request"
-          ? <Link href={`/portfolio/${match.property_id}`} className="text-sm text-[var(--ink-soft)] hover:underline">{property?.title || "Immobile"}</Link>
-          : <Link href={`/requests/${match.request_id}`} className="text-sm text-[var(--ink-soft)] hover:underline">{request?.title || "Richiesta anonima"}</Link>;
-        return <div key={match.id} className="grid gap-4 px-5 py-4 md:grid-cols-[90px_minmax(0,1fr)_minmax(0,1fr)_140px] md:items-center"><div><strong className="text-xl text-[var(--ink-strong)]">{Math.round(match.score)}%</strong><p className="text-[10px] uppercase text-[var(--ink-subtle)]">{match.classification.replace("_"," ")}</p></div>{primary}{secondary}<span className="text-xs font-semibold text-[var(--surface-accent)]">{match.status.replaceAll("_"," ")}</span></div>;
-      })}{!filteredMatches.length ? <p className="p-10 text-center text-sm text-[var(--ink-soft)]">{matches.length ? "Nessun match corrisponde ai filtri." : "Inserisci almeno una richiesta attiva e un immobile attivo, quindi avvia il ricalcolo."}</p> : null}</div>
+          <div className="grid gap-4 p-4 xl:grid-cols-2">{filteredMatches.slice(0, 30).map((match) => {
+            const request = requestsById.get(match.request_id);
+            const property = propertiesById.get(match.property_id);
+            const positives = match.matched_criteria.slice(0, 3);
+            const conflicts = match.conflicting_criteria.slice(0, 2);
+            return (
+              <article key={match.id} className="group rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 transition hover:-translate-y-0.5 hover:border-[var(--line-strong)] hover:bg-[var(--surface-elevated)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    {request ? <ContractMark type={request.contract_type} className="size-10" /> : null}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
+                        {classificationLabel(match.classification)}
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold text-[var(--ink-soft)]">
+                        {commercialStatusLabel(match.status)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <strong className="text-2xl text-[var(--ink-strong)]">{Math.round(match.score)}%</strong>
+                    <p className="text-[10px] uppercase tracking-[.08em] text-[var(--ink-subtle)]">affinità</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_36px_minmax(0,1fr)]">
+                  <Link href={`/requests/${match.request_id}`} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-3 transition hover:border-[var(--surface-accent)]">
+                    <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
+                      <UserRound aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+                      Cliente
+                    </span>
+                    <span className="mt-2 block line-clamp-2 text-sm font-bold text-[var(--ink-strong)]">{request?.title || "Richiesta anonima"}</span>
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      {request?.property_types.slice(0, 3).map((type) => <PropertyTypeMark key={type} type={type} compact />)}
+                    </span>
+                  </Link>
+                  <ArrowRightLeft aria-label="Abbinato a" className="mx-auto size-5 rotate-90 text-[var(--surface-accent)] sm:rotate-0" />
+                  <Link href={`/portfolio/${match.property_id}`} className="rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-3 transition hover:border-[var(--surface-accent)]">
+                    <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
+                      <Building2 aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+                      Immobile
+                    </span>
+                    <span className="mt-2 block line-clamp-2 text-sm font-bold text-[var(--ink-strong)]">{property?.title || "Immobile"}</span>
+                    <span className="mt-2 flex items-center gap-2 text-xs text-[var(--ink-soft)]">
+                      <MapPin aria-hidden="true" className="size-3.5" />
+                      {property?.zone?.name || property?.municipality || "Zona non indicata"}
+                    </span>
+                  </Link>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {positives.map((criterion) => (
+                    <span key={criterion} className="inline-flex items-center gap-1.5 rounded-full bg-[oklch(0.25_0.035_145)] px-2.5 py-1 text-[11px] font-semibold text-[var(--surface-accent)]">
+                      <CheckCircle2 aria-hidden="true" className="size-3.5" /> {criterion}
+                    </span>
+                  ))}
+                  {conflicts.map((criterion) => (
+                    <span key={criterion} className="inline-flex items-center gap-1.5 rounded-full bg-[oklch(0.25_0.04_70)] px-2.5 py-1 text-[11px] font-semibold text-[var(--status-warning)]">
+                      <AlertTriangle aria-hidden="true" className="size-3.5" /> {criterion}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
+          {!filteredMatches.length ? <p className="col-span-full p-10 text-center text-sm text-[var(--ink-soft)]">{matches.length ? "Nessun abbinamento corrisponde ai filtri." : "Inserisci almeno una richiesta attiva e un immobile attivo, quindi avvia il ricalcolo."}</p> : null}</div>
         </section>
       </>
     )}
   </div>;
+}
+
+function classificationLabel(classification: string) {
+  return {
+    compatible: "Compatibile",
+    almost_compatible: "Buona alternativa",
+    weak: "Da valutare",
+    not_relevant: "Poco adatto",
+  }[classification] ?? "Abbinamento";
+}
+
+function commercialStatusLabel(status: string) {
+  return {
+    not_reviewed: "Da controllare",
+    to_propose: "Pronto da proporre",
+    proposed: "Proposto",
+    rejected: "Scartato",
+    visit_scheduled: "Visita fissata",
+    negotiation: "In trattativa",
+  }[status] ?? status.replaceAll("_", " ");
 }
 
 function WorkflowStep({

@@ -381,8 +381,8 @@ export class WorkerRepository {
     };
   }
 
-  async logChange(jobId: string, entityType: string, identifier: string, field: string, oldValue: unknown, newValue: unknown) {
+  async logChange(jobId: string, entityType: string, identifier: string, field: string, oldValue: unknown, newValue: unknown, source = "SISTER") {
     if (String(oldValue ?? "") === String(newValue ?? "")) return;
-    await this.client.from("property_worker_change_logs").insert({ job_id: jobId, entity_type: entityType, entity_identifier: identifier, field_name: field, old_value: oldValue == null ? null : String(oldValue), new_value: newValue == null ? null : String(newValue) });
+    await this.client.from("property_worker_change_logs").insert({ job_id: jobId, entity_type: entityType, entity_identifier: identifier, field_name: field, old_value: oldValue == null ? null : String(oldValue), new_value: newValue == null ? null : String(newValue), source });
   }
 }

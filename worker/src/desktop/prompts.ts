@@ -20,6 +20,7 @@ type PendingPrompt = {
 
 export class DesktopPromptController implements PromptController {
   private pending: PendingPrompt | null = null;
+  private manualRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly publish: (prompt: DesktopPrompt | null) => void) {}
 
@@ -29,6 +30,12 @@ export class DesktopPromptController implements PromptController {
       const prompt = { id: randomUUID(), kind, title, summary, ...(review ? { review } : {}) } satisfies DesktopPrompt;
       this.pending = { prompt, resolve, reject };
       this.publish(prompt);
+      if (kind === "manual") {
+        this.manualRetryTimer = setTimeout(() => {
+          if (this.pending?.prompt.id === prompt.id) this.respond(prompt.id, undefined);
+        }, 60_000);
+        this.manualRetryTimer.unref?.();
+      }
     });
   }
 
@@ -64,6 +71,8 @@ export class DesktopPromptController implements PromptController {
   respond(promptId: string, value: PromptResponse) {
     if (!this.pending || this.pending.prompt.id !== promptId) throw new Error("Conferma non più valida");
     const { resolve } = this.pending;
+    if (this.manualRetryTimer) clearTimeout(this.manualRetryTimer);
+    this.manualRetryTimer = null;
     this.pending = null;
     this.publish(null);
     resolve(value);
@@ -72,12 +81,16 @@ export class DesktopPromptController implements PromptController {
   cancel(message = "Lavorazione messa in pausa") {
     if (!this.pending) return;
     const { reject } = this.pending;
+    if (this.manualRetryTimer) clearTimeout(this.manualRetryTimer);
+    this.manualRetryTimer = null;
     this.pending = null;
     this.publish(null);
     reject(new WorkerError(message, "paused"));
   }
 
   close() {
+    if (this.manualRetryTimer) clearTimeout(this.manualRetryTimer);
+    this.manualRetryTimer = null;
     this.publish(null);
   }
 }

@@ -1,10 +1,19 @@
-import { PageHeader } from "@/components/page-header";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
-import { ZoneEditor } from "@/components/matching/management-panels";
+import { ZoneShowroom } from "@/components/matching/zone-showroom";
+import { PageHeader } from "@/components/page-header";
 import { listZones } from "@/lib/matching/repository";
 
 export default async function ZonesPage() {
   const zones = await listZones();
-  return <div className="space-y-5"><PageHeader eyebrow="Richieste e Matching" title="Zone interne" description="I nomi usati davvero dall’ufficio, con alias, riferimenti e vie che aiutano a suggerire la zona senza assegnarla automaticamente." /><MatchingSectionNav /><ZoneEditor zones={zones} /></div>;
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Clienti e immobili"
+        title="Le zone come le chiami in ufficio"
+        description="Raccogli vie, alias e punti di riferimento. Quando inserisci un indirizzo, Listing Radar ti suggerisce la zona corretta."
+      />
+      <MatchingSectionNav />
+      <ZoneShowroom zones={zones} />
+    </div>
+  );
 }
-

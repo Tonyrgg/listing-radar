@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Download, FolderOpen, KeyRound, MonitorDown, Puzzle, RefreshCw, ShieldCheck } from "lucide-react";
+import { Download, FolderOpen, KeyRound, Puzzle, RefreshCw } from "lucide-react";
 
 import { Badge, type BadgeTone } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
@@ -18,7 +18,6 @@ import { getRunStatusLabel, getSourceLabel } from "@/lib/labels";
 import { SCRAPER_CONFIG, getScraperRuntimeConfig } from "@/lib/scrapers/config";
 import type { ScrapeRun } from "@/types";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
-import { PROPERTY_WORKER_RELEASE } from "@/lib/property-worker/release";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -308,70 +307,6 @@ export default async function SettingsPage() {
                   </li>
                 );
               })}
-            </ol>
-          </aside>
-        </div>
-      </section>
-
-      <section
-        id="software-worker"
-        className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]"
-      >
-        <div className="grid lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.75fr)]">
-          <div className="p-5 lg:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="inline-flex size-9 items-center justify-center rounded-md bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]">
-                    <MonitorDown aria-hidden="true" className="size-4.5" />
-                  </span>
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ink-subtle)]">
-                      Software locale
-                    </p>
-                    <h2 className="mt-1 text-xl font-semibold text-[var(--ink-strong)]">
-                      Property Data Worker
-                    </h2>
-                  </div>
-                  <Badge tone="green">Windows x64</Badge>
-                </div>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-[var(--ink-soft)]">
-                  Scarica l&apos;app desktop che collega SISTER, il file Excel e il gestionale.
-                  Lavora sul computer locale, conserva l&apos;avanzamento su Supabase e non gestisce
-                  né memorizza le credenziali dei portali.
-                </p>
-              </div>
-
-              <a
-                href="/api/property-worker/download"
-                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)]"
-              >
-                <Download aria-hidden="true" className="size-4" />
-                Scarica software
-              </a>
-            </div>
-
-            <dl className="mt-6 grid gap-4 border-y border-[var(--line-soft)] py-5 sm:grid-cols-3">
-              <ConfigRow label="Versione" value={`v${PROPERTY_WORKER_RELEASE.version}`} />
-              <ConfigRow label="Sistema" value={PROPERTY_WORKER_RELEASE.platform} />
-              <ConfigRow label="Primo avvio" value="Assisted + dry-run" />
-            </dl>
-
-            <div className="mt-5 flex gap-3 text-sm leading-6 text-[var(--ink-soft)]">
-              <ShieldCheck aria-hidden="true" className="mt-1 size-4 shrink-0 text-[var(--surface-accent)]" />
-              <p>
-                Con l&apos;app aperta, la sessione SISTER viene mantenuta attiva ogni 2-3 minuti
-                tramite una richiesta silenziosa che non ricarica la pagina dei risultati.
-              </p>
-            </div>
-          </div>
-
-          <aside className="border-t border-[var(--line-soft)] bg-[var(--surface-muted)] p-5 lg:border-l lg:border-t-0 lg:p-6">
-            <h3 className="text-sm font-semibold text-[var(--ink-strong)]">Installazione rapida</h3>
-            <ol className="mt-5 space-y-4 text-xs leading-5 text-[var(--ink-soft)]">
-              <li><strong className="text-[var(--ink-strong)]">1. Installa</strong><br />Apri il file EXE scaricato e completa l&apos;installazione Windows.</li>
-              <li><strong className="text-[var(--ink-strong)]">2. Configura</strong><br />Seleziona il file worker/.env e il foglio Excel dalla schermata locale.</li>
-              <li><strong className="text-[var(--ink-strong)]">3. Accedi e verifica</strong><br />Apri Chrome dedicato, accedi manualmente ai due portali e premi Controlla sistema.</li>
             </ol>
           </aside>
         </div>

@@ -87,6 +87,11 @@ let prompt: DesktopPrompt | null = null;
 let currentStep: string | null = null;
 let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string } | null = null;
 let lastError: string | null = null;
+let skippingPropertyId: string | null = null;
+let autoRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let autoRetryAt: string | null = null;
+let autoRetryJobId: string | null = null;
+let completedImportsLimit = 6;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -195,6 +200,7 @@ async function stateSnapshot() {
     people: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["people"];
     ownerships: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"];
   }> = [];
+  let completedImportsHasMore = false;
   let configError: string | null = null;
   let publicConfig: Record<string, unknown> = {};
   try {
@@ -209,7 +215,9 @@ async function stateSnapshot() {
       sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
     };
     const repo = repository(config);
-    const [savedJobs, completedJobs] = await Promise.all([repo.listSavedJobs(), repo.listCompletedJobs()]);
+    const [savedJobs, completedJobsPage] = await Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]);
+    const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
+    completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
     jobs = savedJobs;
     completedImports = await Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) })));
     if (activeJobId) {
@@ -232,6 +240,7 @@ async function stateSnapshot() {
     cancellingJobId,
     currentStep,
     propertyProgress,
+    autoRetry: autoRetryAt && autoRetryJobId ? { jobId: autoRetryJobId, dueAt: autoRetryAt } : null,
     prompt,
     lastError,
     sisterKeepAlive,
@@ -245,6 +254,7 @@ async function stateSnapshot() {
     configError,
     jobs,
     completedImports,
+    completedImportsHasMore,
     version: app.getVersion(),
   };
 }
@@ -296,6 +306,36 @@ function publishPrompt(value: DesktopPrompt | null) {
   void publishState();
 }
 
+function clearAutoRetry() {
+  if (autoRetryTimer) clearTimeout(autoRetryTimer);
+  autoRetryTimer = null;
+  autoRetryAt = null;
+  autoRetryJobId = null;
+}
+
+function scheduleAutoRetry(jobId: string) {
+  clearAutoRetry();
+  autoRetryJobId = jobId;
+  autoRetryAt = new Date(Date.now() + 60_000).toISOString();
+  autoRetryTimer = setTimeout(async () => {
+    if (active || cancellingJobId || activeJobId !== jobId) {
+      scheduleAutoRetry(jobId);
+      await publishState();
+      return;
+    }
+    try {
+      const job = await repository().getJob(jobId);
+      pushActivity("Riprovo automaticamente il passaggio fermo", "warning");
+      await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      scheduleAutoRetry(jobId);
+      await publishState();
+    }
+  }, 60_000);
+  autoRetryTimer.unref?.();
+}
+
 function handleRunnerEvent(event: RunnerEvent) {
   if (event.type === "job-ready") {
     activeJobId = event.job.id;
@@ -307,12 +347,14 @@ function handleRunnerEvent(event: RunnerEvent) {
     currentStep = event.next;
     pushActivity(`Terminato: ${friendlyStepLabel(event.step)}`, "success");
   } else if (event.type === "job-completed") {
+    clearAutoRetry();
     currentStep = "completed";
     propertyProgress = null;
     prompt = null;
     lastError = null;
     pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
+    clearAutoRetry();
     currentStep = "properties_processed";
     propertyProgress = null;
     activeJobId = null;
@@ -327,6 +369,7 @@ function handleRunnerEvent(event: RunnerEvent) {
   } else {
     lastError = event.message;
     pushActivity(event.message, "error");
+    scheduleAutoRetry(event.jobId);
   }
   void publishState();
 }
@@ -405,6 +448,7 @@ async function runDesktopKeepAlive() {
 
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active) throw new Error("È già presente una lavorazione in esecuzione");
+  clearAutoRetry();
   active = true;
   cancellingJobId = null;
   lastError = null;
@@ -419,6 +463,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     onEvent: handleRunnerEvent,
     keepAlive: false,
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
+    isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
   await publishState();
@@ -453,6 +498,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
         }
       }
       active = false;
+      skippingPropertyId = null;
       activePrompts = null;
       activeRunPromise = null;
       await publishState();
@@ -593,6 +639,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:resume-job", async (_event, jobId: string) => {
+    clearAutoRetry();
     const repo = repository();
     const job = await repo.getJob(jobId);
     if (job.saved_at) await repo.markImportStarted(jobId);
@@ -600,6 +647,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:pause-job", async () => {
+    clearAutoRetry();
     if (!activeJobId) return false;
     await repository().updateJob(activeJobId, { status: "paused" });
     activePrompts?.cancel();
@@ -608,6 +656,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:cancel-job", async (_event, jobId: string) => {
+    clearAutoRetry();
     if (!jobId) throw new Error("Identificativo lavorazione mancante");
     if (active) {
       if (activeJobId !== jobId) throw new Error("Attendi la fine della lavorazione attiva prima di annullarne un'altra");
@@ -644,6 +693,32 @@ function registerIpc() {
     const repo = repository();
     const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
     return { job, properties: graph.properties, people: graph.people, ownerships: graph.ownerships };
+  });
+  ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {
+    if (!values.jobId || !values.propertyId) throw new Error("Immobile da saltare non riconosciuto");
+    const repo = repository();
+    const graph = await repo.loadGraph(values.jobId);
+    const property = graph.properties.find((row) => row.id === values.propertyId);
+    if (!property) throw new Error("Immobile non appartenente alla lavorazione");
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      property_flow: { version: 1, stage: "skipped", dryRun: preferences.dryRun, updatedAt: new Date().toISOString() },
+    };
+    await repo.updatePropertyProcessing(property.id, { processing_status: "skipped", raw_payload: property.raw_payload });
+    skippingPropertyId = property.id;
+    pushActivity(`Immobile saltato: ${property.address ?? property.cadastral_key}`, "warning");
+    if (!active) {
+      const job = await repo.getJob(values.jobId);
+      lastError = null;
+      await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
+    }
+    await publishState();
+    return true;
+  });
+  ipcMain.handle("desktop:load-more-completed", async () => {
+    completedImportsLimit += 6;
+    await publishState();
+    return true;
   });
   ipcMain.handle("desktop:save-manual-corrections", async (_event, rawValues: unknown) => {
     const values = manualCorrectionSchema.parse(rawValues);

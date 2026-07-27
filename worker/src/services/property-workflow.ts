@@ -25,7 +25,10 @@ export const PROPERTY_WORK_SEQUENCE = [
 ] as const;
 
 export function buildPropertyWorkPlan(graph: Graph): PropertyWorkItem[] {
-  return graph.properties.map((property) => {
+  return graph.properties
+    .filter((property) => !["completed", "skipped"].includes(property.processing_status)
+      && (property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage !== "skipped")
+    .map((property) => {
     const owners = graph.ownerships
       .filter((ownership) => ownership.property_id === property.id)
       .map((ownership) => ({ ownership, person: graph.people.find((person) => person.id === ownership.person_id) }))
@@ -35,6 +38,6 @@ export function buildPropertyWorkPlan(graph: Graph): PropertyWorkItem[] {
         return byShare || left.person.id.localeCompare(right.person.id);
       });
     if (!owners[0]) throw new Error(`Nessun proprietario disponibile per l'immobile ${property.id}`);
-    return { property, primary: owners[0], coowners: owners.slice(1), owners };
-  });
+      return { property, primary: owners[0], coowners: owners.slice(1), owners };
+    });
 }

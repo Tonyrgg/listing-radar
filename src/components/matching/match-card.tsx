@@ -1,30 +1,155 @@
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  CircleDot,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
-import type { MatchClassification, MatchStatus } from "@/lib/matching/types";
+
+import type {
+  MatchClassification,
+  MatchStatus,
+} from "@/lib/matching/types";
 import { MatchStatusSelect } from "./management-panels";
 
 const classificationLabel: Record<MatchClassification, string> = {
-  compatible: "Compatibile", almost_compatible: "Quasi compatibile",
-  weak: "Debole", not_relevant: "Poco pertinente",
+  compatible: "Compatibile",
+  almost_compatible: "Buona alternativa",
+  weak: "Da valutare",
+  not_relevant: "Poco adatto",
 };
 
 export function MatchCard({
-  match, counterpartHref, counterpartTitle,
+  match,
+  counterpartHref,
+  counterpartTitle,
 }: Readonly<{
   match: {
-    id: string; score: number; classification: MatchClassification; status: MatchStatus;
-    matched_criteria?: string[]; missing_preferences?: string[];
-    conflicting_criteria?: string[]; explanation?: string;
+    id: string;
+    score: number;
+    classification: MatchClassification;
+    status: MatchStatus;
+    matched_criteria?: string[];
+    missing_preferences?: string[];
+    conflicting_criteria?: string[];
+    explanation?: string;
   };
   counterpartHref: string;
   counterpartTitle: string;
 }>) {
-  return <article className="rounded-[9px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">{classificationLabel[match.classification]}</p><Link href={counterpartHref} className="mt-1 block font-semibold text-[var(--ink-strong)] hover:underline">{counterpartTitle}</Link></div>
-      <div className="rounded-[8px] bg-[var(--surface-muted)] px-3 py-2 text-right"><strong className="text-xl text-[var(--ink-strong)]">{Math.round(match.score)}%</strong><p className="text-[10px] uppercase text-[var(--ink-subtle)]">compatibilità</p></div>
-    </div>
-    {match.explanation ? <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">{match.explanation}</p> : null}
-    <div className="mt-4 max-w-52"><MatchStatusSelect id={match.id} value={match.status} /></div>
-  </article>;
+  const positive = match.matched_criteria ?? [];
+  const conflicts = match.conflicting_criteria ?? [];
+
+  return (
+    <article className="group/match overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] transition-colors hover:border-[var(--line-strong)]">
+      <div className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className={`grid size-10 shrink-0 place-items-center rounded-[8px] ${
+              match.classification === "compatible"
+                ? "bg-[oklch(0.23_0.035_145)] text-[var(--surface-accent)]"
+                : "bg-[var(--surface-muted)] text-[var(--ink-soft)]"
+            }`}
+          >
+            {match.classification === "compatible" ? (
+              <CheckCircle2 aria-hidden="true" className="size-5" />
+            ) : (
+              <Sparkles aria-hidden="true" className="size-5" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
+              {classificationLabel[match.classification]}
+            </p>
+            <Link
+              href={counterpartHref}
+              className="mt-1 inline-flex items-center gap-2 font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
+            >
+              <span className="truncate">{counterpartTitle}</span>
+              <ArrowUpRight
+                aria-hidden="true"
+                className="size-4 shrink-0 transition-transform group-hover/match:-translate-y-0.5 group-hover/match:translate-x-0.5"
+              />
+            </Link>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <strong className="text-2xl text-[var(--ink-strong)]">
+            {Math.round(match.score)}%
+          </strong>
+          <p className="text-[10px] uppercase tracking-[.08em] text-[var(--ink-subtle)]">
+            affinità
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+        <CriteriaList
+          icon={CheckCircle2}
+          label="Punti a favore"
+          items={positive}
+          positive
+        />
+        <CriteriaList
+          icon={conflicts.length ? AlertTriangle : CircleDot}
+          label={conflicts.length ? "Da controllare" : "Nessun ostacolo"}
+          items={conflicts}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-[var(--line-soft)] bg-[var(--surface-muted)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="line-clamp-2 text-xs leading-5 text-[var(--ink-soft)]">
+          {match.explanation ||
+            "Il confronto è stato calcolato sui dati disponibili."}
+        </p>
+        <div className="w-full shrink-0 sm:w-52">
+          <MatchStatusSelect id={match.id} value={match.status} />
+        </div>
+      </div>
+    </article>
+  );
 }
 
+function CriteriaList({
+  icon: Icon,
+  label,
+  items,
+  positive = false,
+}: Readonly<{
+  icon: typeof CheckCircle2;
+  label: string;
+  items: string[];
+  positive?: boolean;
+}>) {
+  return (
+    <div>
+      <p className="flex items-center gap-2 text-xs font-bold text-[var(--ink-soft)]">
+        <Icon
+          aria-hidden="true"
+          className={`size-3.5 ${
+            positive
+              ? "text-[var(--surface-accent)]"
+              : "text-[var(--status-warning)]"
+          }`}
+        />
+        {label}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {items.slice(0, 4).map((item) => (
+          <span
+            key={item}
+            className="rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink-soft)]"
+          >
+            {item}
+          </span>
+        ))}
+        {!items.length ? (
+          <span className="text-xs text-[var(--ink-subtle)]">
+            {positive ? "Nessun dato sufficiente" : "Tutto in ordine"}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}

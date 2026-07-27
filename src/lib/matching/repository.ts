@@ -23,8 +23,57 @@ async function safeList<T>(table: string, order = "created_at", ascending = fals
   }
 }
 
-export const listRequests = () => safeList<PropertyRequest & { clients?: { full_name: string | null } | null }>("property_requests");
-export const listProperties = () => safeList<PortfolioProperty>("portfolio_properties");
+export async function listRequests(): Promise<Array<PropertyRequest & {
+  clients?: { full_name: string | null } | null;
+  request_zones?: Array<{
+    preference_level: string;
+    zone: { id: string; name: string } | null;
+  }>;
+}>> {
+  if (!configured()) return [];
+  try {
+    const { data, error } = await getSupabaseServiceClient()
+      .from("property_requests")
+      .select("*, clients(full_name), request_zones(preference_level, zone:internal_zones(id,name))")
+      .order("created_at", { ascending: false });
+    if (error) return [];
+    return (data ?? []) as Array<PropertyRequest & {
+      clients?: { full_name: string | null } | null;
+      request_zones?: Array<{
+        preference_level: string;
+        zone: { id: string; name: string } | null;
+      }>;
+    }>;
+  } catch {
+    return [];
+  }
+}
+
+export async function listProperties(): Promise<Array<PortfolioProperty & {
+  zone?: { name: string } | null;
+  property_feature_values?: Array<{
+    value: unknown;
+    feature: { key: string; label: string } | null;
+  }>;
+}>> {
+  if (!configured()) return [];
+  try {
+    const { data, error } = await getSupabaseServiceClient()
+      .from("portfolio_properties")
+      .select("*, zone:internal_zones(name), property_feature_values(value, feature:feature_definitions(key,label))")
+      .order("created_at", { ascending: false });
+    if (error) return [];
+    return (data ?? []) as Array<PortfolioProperty & {
+      zone?: { name: string } | null;
+      property_feature_values?: Array<{
+        value: unknown;
+        feature: { key: string; label: string } | null;
+      }>;
+    }>;
+  } catch {
+    return [];
+  }
+}
 export const listZones = () => safeList<InternalZone>("internal_zones", "name", true);
 export const listFeatures = () => safeList<FeatureDefinition>("feature_definitions", "sort_order", true);
 export const listMatches = () => safeList<RequestPropertyMatch>("request_property_matches", "score", false);

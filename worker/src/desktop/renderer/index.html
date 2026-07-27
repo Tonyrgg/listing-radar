@@ -61,8 +61,9 @@
         </section>
 
         <section id="completedImports" class="completed-imports-section">
-          <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni immobile resta associato ai nominativi, ai recapiti e alle quote elaborati.</p></div><span id="completedImportCount" class="count">0</span></header>
+          <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni card rappresenta un’intera sessione. Aprila soltanto quando vuoi consultare immobili e nominativi.</p></div><span id="completedImportCount" class="count">0</span></header>
           <div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div>
+          <footer class="completed-imports-footer"><button id="completedImportsLoadMore" class="button secondary is-hidden">Carica altre sessioni</button></footer>
         </section>
 
         <section id="jobs" class="jobs-card">
@@ -91,6 +92,7 @@
     <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Puoi importare ora oppure conservare questa ricerca nell'archivio.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button secondary" data-review-decision="save">Salva per importarla dopo</button><button class="button primary" data-review-decision="proceed">Importa adesso</button></div></footer></div></dialog>
 
     <dialog id="cancelProcessDialog" class="confirm-dialog"><div class="dialog-shell"><p class="eyebrow danger-text">Azione definitiva</p><h2>Vuoi davvero annullare questo lavoro?</h2><p>Il lavoro e i dati raccolti verranno eliminati. Le modifiche già concluse nel gestionale non possono essere annullate.</p><footer><button class="button secondary" data-cancel-dialog="close">No, torna indietro</button><button class="button danger solid" data-cancel-dialog="confirm">Sì, annulla definitivamente</button></footer></div></dialog>
+    <dialog id="completedImportDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Sessione completata</p><h2 id="completedImportDialogTitle">Riepilogo import</h2><p id="completedImportDialogMeta"></p></div><button class="icon-button" data-action="close-completed-session" aria-label="Chiudi">Ã—</button></header><div id="completedImportDialogContent" class="review-content"></div><footer><button class="button primary" data-action="close-completed-session">Chiudi riepilogo</button></footer></div></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
   </body>

@@ -90,6 +90,7 @@ export interface RunnerOptions {
   onEvent?: (event: RunnerEvent) => void;
   keepAlive?: boolean;
   isCancellationRequested?: (jobId: string) => boolean;
+  isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
 export class PropertyWorkerRunner {
@@ -98,6 +99,7 @@ export class PropertyWorkerRunner {
   private readonly onEvent: (event: RunnerEvent) => void;
   private readonly manageKeepAlive: boolean;
   private readonly isCancellationRequested: (jobId: string) => boolean;
+  private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
@@ -105,6 +107,7 @@ export class PropertyWorkerRunner {
     this.onEvent = options.onEvent ?? (() => undefined);
     this.manageKeepAlive = options.keepAlive !== false;
     this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
+    this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
   private throwIfCancellationRequested(jobId: string) {
@@ -682,36 +685,52 @@ export class PropertyWorkerRunner {
       ...(property.raw_payload ?? {}),
       property_flow: { version: 1, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
     };
-    await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
+    await this.repository.updatePropertyProcessing(property.id, {
+      raw_payload: property.raw_payload,
+      ...(stage === "completed" || stage === "skipped" ? { processing_status: stage } : {}),
+    });
   }
 
   private async processPropertiesInOrder(job: JobRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
     const graph = await this.repository.loadGraph(job.id);
-    let completed = 0;
+    let completed = graph.properties.filter((property) =>
+      ["completed", "skipped"].includes(property.processing_status)
+      || ["completed", "skipped"].includes(String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "")),
+    ).length;
     const plan = buildPropertyWorkPlan(graph);
     const primaryPersonIds = new Set(plan.map((item) => item.primary.person.id));
     await Promise.all(graph.people
       .filter((person) => !primaryPersonIds.has(person.id))
       .map((person) => this.repository.updatePersonProcessing(person.id, { processing_status: "deferred_correlated_owner" })));
-    for (const [propertyIndex, item] of plan.entries()) {
+    propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
       const { property, primary, coowners } = item;
       try {
+        this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco nel file Excel i recapiti di ${primary.person.full_name}`);
         await this.ensureContacts(job, primary.person, crm, contacts);
         await this.markPropertyStage(property, "primary_contacts_ready");
 
+        this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Completo o creo il proprietario principale: ${primary.person.full_name}`);
         await this.ensurePerson(job, primary.person, crm);
         await this.markPropertyStage(property, "primary_ready");
 
+        this.throwIfPropertySkipRequested(job.id, property.id);
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Verifico che i recapiti siano assegnati al nominativo corretto");
+        await this.ensureContacts(job, primary.person, crm, contacts);
+        await this.markPropertyStage(property, "contacts_synced");
+
+        this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Cerco o creo l'immobile dentro la scheda del proprietario principale");
         await this.ensureProperty(job, property, primary.person, crm);
         await this.markPropertyStage(property, "property_ready");
 
+        this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Creo l'attività dalla scheda dell'immobile");
         await this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm);
         await this.markPropertyStage(property, "activity_ready");
+        this.throwIfPropertySkipRequested(job.id, property.id);
 
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale con la quota più alta`);
         if (!primary.ownership.crm_link_id && primary.person.crm_record_id) {
@@ -741,6 +760,13 @@ export class PropertyWorkerRunner {
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "completed", `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato`);
       } catch (error) {
         const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+        if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
+          await this.markPropertyStage(property, "skipped");
+          completed += 1;
+          await this.repository.updateJob(job.id, { processed_properties: completed });
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", "Immobile saltato; continuo con il successivo");
+          continue propertyLoop;
+        }
         const checkpoint = isRecord(property.raw_payload?.property_flow) ? property.raw_payload.property_flow : {};
         throw new WorkerError(workerError.message, workerError.status, {
           ...workerError.details,
@@ -791,19 +817,39 @@ export class PropertyWorkerRunner {
       return;
     }
     let matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : null;
+    if (matches) {
+      const persistedPhoneAssignments = matches.filter((match) => isRecord(match) && isRecord(match.data) && match.data.source === "crm-phone-search");
+      if (persistedPhoneAssignments.length) {
+        matches = matches.filter((match) => !persistedPhoneAssignments.includes(match));
+        row.crm_record_id = matches.length === 1 && isRecord(matches[0]) && typeof matches[0].id === "string" ? matches[0].id : null;
+        row.raw_payload = {
+          ...(row.raw_payload ?? {}),
+          crm_matches: matches,
+          contact_assignments_detected: persistedPhoneAssignments,
+          force_new_person: matches.length > 1,
+        };
+        await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, raw_payload: row.raw_payload });
+      }
+    }
     if (!matches) {
       const result = await crm.findPerson(searchInput);
-      matches = result.matches;
-      const onlyMatch = result.matches[0];
+      const phoneAssignments = result.matches.filter((match) => isRecord(match.data) && match.data.source === "crm-phone-search");
+      matches = result.matches.filter((match) => !phoneAssignments.includes(match));
+      const onlyMatch = matches[0];
       if (onlyMatch?.confidence === "possible") {
         const label = normalizedWords(onlyMatch.label);
         if (!normalizedWords(person.fullName).every((word) => label.includes(word))) {
           throw new WorkerError("Il nominativo trovato non coincide con certezza con i dati SISTER", "needs_review", { personId: row.id, alternative: onlyMatch });
         }
       }
-      row.raw_payload = { ...(row.raw_payload ?? {}), crm_matches: result.matches, force_new_person: result.matches.length > 1 };
-      row.crm_record_id = result.matches.length === 1 ? result.matches[0]!.id : null;
-      row.processing_status = result.matches.length === 1 ? "matched" : result.matches.length ? "duplicate_candidates" : "not_found";
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        crm_matches: matches,
+        contact_assignments_detected: phoneAssignments,
+        force_new_person: matches.length > 1,
+      };
+      row.crm_record_id = matches.length === 1 ? matches[0]!.id : null;
+      row.processing_status = matches.length === 1 ? "matched" : matches.length ? "duplicate_candidates" : "not_found";
       await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
     }
     if (row.crm_record_id && matches.length === 1) {
@@ -930,36 +976,57 @@ export class PropertyWorkerRunner {
   private async ensureContacts(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
     const checkpoint = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
     if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && checkpoint.crmPersonId === row.crm_record_id) return;
-    const personCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
-    if (
-      checkpoint?.complete === true
-      && checkpoint.dryRun === this.config.WORKER_DRY_RUN
-      && !checkpoint.crmPersonId
-      && row.crm_record_id
-      && personCheckpoint?.complete === true
-      && personCheckpoint.existing !== true
-    ) {
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}),
-        contacts_flow: { ...checkpoint, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() },
-      };
-      await this.repository.updatePersonProcessing(row.id, { raw_payload: row.raw_payload });
-      return;
-    }
     const match = contacts.findByTaxCode(row.tax_code ?? "");
     await this.repository.updateContacts(row.id, match, row.raw_payload);
     row.mobiles = match.mobiles; row.landlines = match.landlines; row.emails = match.emails;
     row.raw_payload = { ...(row.raw_payload ?? {}), contact_match: { matchedRows: match.matchedRows, whatsapp: match.whatsapp, overflowPhones: match.overflowPhones, notes: match.notes } };
+    let transfer: Awaited<ReturnType<PlaywrightCrmAdapter["transferPhoneAssignments"]>> | null = null;
     if (match.matchedRows && row.crm_record_id) {
+      const assignments = await crm.findPhoneAssignments([...match.mobiles, ...match.landlines]);
+      const foreignAssignments = assignments.filter((assignment) => assignment.personId !== row.crm_record_id);
       if (job.mode === "assisted") {
-        const decision = await this.prompts.confirmSave(`${personSummary(asPerson(row))}\nModifica prevista: aggiunta dei recapiti Excel mancanti`);
+        const decision = await this.prompts.confirmSave([
+          personSummary(asPerson(row)),
+          "Modifiche previste:",
+          "- aggiunta dei recapiti Excel mancanti",
+          foreignAssignments.length
+            ? `- spostamento di ${foreignAssignments.length} recapiti assegnati a un altro nominativo`
+            : "- nessun recapito da rimuovere da altri nominativi",
+        ].join("\n"));
         if (decision === "review") throw new WorkerError("Recapiti segnati da verificare", "needs_review", { personId: row.id });
         if (decision === "manual") await this.prompts.waitForManualEdit();
-        else if (decision !== "skip") await crm.updatePerson(row.crm_record_id, asPerson(row));
-      } else await crm.updatePerson(row.crm_record_id, asPerson(row));
+        else if (decision !== "skip") transfer = await crm.transferPhoneAssignments(row.crm_record_id, asPerson(row), assignments);
+      } else transfer = await crm.transferPhoneAssignments(row.crm_record_id, asPerson(row), assignments);
+      for (const moved of transfer?.moved ?? []) {
+        await this.repository.logChange(
+          job.id,
+          "person",
+          row.tax_code ?? row.id,
+          "phone_assignment",
+          `Nominativo CRM ${moved.fromPersonId}`,
+          `Nominativo CRM ${moved.toPersonId}`,
+          "EXCEL",
+        );
+      }
     }
-    row.raw_payload = { ...(row.raw_payload ?? {}), contacts_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, matchedRows: match.matchedRows, updatedAt: new Date().toISOString() } };
+    row.raw_payload = {
+      ...(row.raw_payload ?? {}),
+      contacts_flow: {
+        complete: true,
+        dryRun: this.config.WORKER_DRY_RUN,
+        crmPersonId: row.crm_record_id,
+        matchedRows: match.matchedRows,
+        transfer,
+        updatedAt: new Date().toISOString(),
+      },
+    };
     await this.repository.updatePersonProcessing(row.id, { mobiles: row.mobiles, landlines: row.landlines, emails: row.emails, raw_payload: row.raw_payload, processing_status: "contacts_matched" });
+  }
+
+  private throwIfPropertySkipRequested(jobId: string, propertyId: string) {
+    if (this.isPropertySkipRequested(jobId, propertyId)) {
+      throw new WorkerError("Immobile saltato su richiesta dell'utente", "paused", { skipProperty: true, propertyId });
+    }
   }
 
   private async logPersonChanges(jobId: string, row: PersonRow, person: NormalizedPerson) {
