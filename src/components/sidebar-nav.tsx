@@ -9,6 +9,7 @@ import {
   Inbox,
   LayoutDashboard,
   MapPinned,
+  ScanSearch,
   Settings,
   Workflow,
 } from "lucide-react";
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/incoming", label: "Nuovi arrivi", icon: Inbox },
   { href: "/listings", label: "Immobili", icon: Building2 },
   { href: "/map", label: "Mappa Zone", icon: MapPinned },
+  { href: "/matching", label: "Richieste e Matching", icon: ScanSearch },
   { href: "/reports", label: "Report", icon: FileText },
   { href: "/property-worker", label: "Property Worker", icon: Workflow },
   { href: "/settings", label: "Impostazioni", icon: Settings },

@@ -13,6 +13,7 @@ if (!supabaseUrl || !serviceRoleKey) throw new Error("Configurazione Supabase ma
 
 const version = packageData.version;
 const bucket = "property-worker-updates";
+const retainedReleaseCount = 2;
 const installerName = `Property Data Worker Setup ${version}.exe`;
 const installer = await readFile(path.join(workerRoot, "release", installerName));
 const chunkSize = 32 * 1024 * 1024;
@@ -74,3 +75,74 @@ const { error: manifestUploadError } = await supabase.storage.from(bucket).uploa
 });
 if (manifestUploadError) throw new Error(`Upload manifest fallito: ${manifestUploadError.message}`);
 console.log(`Canale aggiornamenti aggiornato alla versione ${version} (${chunks.length} parti verificate).`);
+
+function parseVersion(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function compareVersions(left, right) {
+  const leftParts = parseVersion(left);
+  const rightParts = parseVersion(right);
+  if (!leftParts || !rightParts) return 0;
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
+  }
+  return 0;
+}
+
+async function listReleaseFiles(prefix) {
+  const files = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, {
+      limit: 1000,
+      offset,
+      sortBy: { column: "name", order: "asc" },
+    });
+    if (error) throw new Error(`Lettura ${prefix} fallita: ${error.message}`);
+    for (const item of data ?? []) {
+      const itemPath = `${prefix}/${item.name}`;
+      if (item.id == null) files.push(...await listReleaseFiles(itemPath));
+      else files.push(itemPath);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return files;
+}
+
+async function pruneOldReleases() {
+  const { data, error } = await supabase.storage.from(bucket).list("releases", {
+    limit: 1000,
+    sortBy: { column: "name", order: "asc" },
+  });
+  if (error) throw new Error(`Lettura release pubblicate fallita: ${error.message}`);
+
+  const releaseVersions = (data ?? [])
+    .filter((item) => item.id == null && parseVersion(item.name))
+    .map((item) => item.name)
+    .sort(compareVersions)
+    .reverse();
+  const versionsToKeep = new Set([
+    version,
+    ...releaseVersions.filter((item) => item !== version),
+  ].slice(0, retainedReleaseCount));
+  const versionsToDelete = releaseVersions.filter((item) => !versionsToKeep.has(item));
+
+  const obsoleteFiles = [];
+  for (const obsoleteVersion of versionsToDelete) {
+    obsoleteFiles.push(...await listReleaseFiles(`releases/${obsoleteVersion}`));
+  }
+  for (let index = 0; index < obsoleteFiles.length; index += 1000) {
+    const batch = obsoleteFiles.slice(index, index + 1000);
+    const { error: removeError } = await supabase.storage.from(bucket).remove(batch);
+    if (removeError) throw new Error(`Pulizia release obsolete fallita: ${removeError.message}`);
+  }
+
+  console.log(
+    versionsToDelete.length
+      ? `Pulizia completata: rimosse ${versionsToDelete.join(", ")}; conservate ${[...versionsToKeep].join(", ")}.`
+      : `Nessuna release obsoleta: conservate ${[...versionsToKeep].join(", ")}.`,
+  );
+}
+
+await pruneOldReleases();

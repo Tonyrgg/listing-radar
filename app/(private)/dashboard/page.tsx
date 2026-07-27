@@ -7,6 +7,7 @@ import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-butto
 import { Badge, getSellerTypeTone } from "@/components/badge";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
+import { QuickRequestButton } from "@/components/matching/quick-request";
 import { getDashboardSummary, getLastScrapeRun } from "@/lib/data/repository";
 import { getEmailAlertsConfig } from "@/lib/email-alerts/config";
 import {
@@ -251,7 +252,7 @@ export default async function DashboardPage() {
         eyebrow="Dashboard"
         title="Pannello operativo"
         description="Solo lavoro aperto, automazioni e opportunita da valutare."
-        actions={<RefreshEmailButton />}
+        actions={<div className="flex flex-wrap gap-2"><RefreshEmailButton /><QuickRequestButton /></div>}
       />
 
       <section className="grid gap-4 md:grid-cols-3">

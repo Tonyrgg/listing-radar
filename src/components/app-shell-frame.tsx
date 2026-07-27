@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { logout } from "@/app/login/actions";
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { QuickRequestButton, QuickRequestDrawer } from "@/components/matching/quick-request";
 import { MONITORED_ZONE } from "@/lib/constants";
 
 function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
@@ -88,6 +89,10 @@ export function AppShellFrame({
         </div>
 
         <div className="mt-8 min-h-0 flex-1">
+          <QuickRequestButton
+            compact={collapsed}
+            className={clsx("mb-4 w-full", collapsed && "px-0")}
+          />
           <SidebarNav collapsed={collapsed} />
         </div>
 
@@ -120,6 +125,7 @@ export function AppShellFrame({
             <div className="min-w-0 flex-1">
               <SidebarNav />
             </div>
+            <QuickRequestButton compact className="shrink-0 px-3" />
 
             {showLogout ? (
               <form action={logout} className="ml-auto shrink-0">
@@ -140,6 +146,7 @@ export function AppShellFrame({
           <div className="w-full">{children}</div>
         </main>
       </div>
+      <QuickRequestDrawer />
     </div>
   );
 }

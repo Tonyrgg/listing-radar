@@ -574,6 +574,39 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
+## Richieste e Matching
+
+La sezione privata comprende:
+
+- `/requests` e `/requests/[id]` per richieste anonime o collegate a un cliente;
+- `/portfolio` e `/portfolio/[id]` per gli immobili inseriti manualmente;
+- `/matching` per il confronto spiegato richiesta–immobile;
+- `/zones` per le zone interne, gli alias e le vie associate;
+- `/matching-settings` per feature, pesi, soglie, tolleranze e stima dei mq commerciali.
+
+Applicare in Supabase la migration:
+
+```text
+supabase/migrations/004_requests_matching.sql
+```
+
+Il pulsante globale **Nuova richiesta rapida** apre un percorso in quattro
+passaggi, utilizzabile anche senza nome o telefono. Salvando una richiesta
+attiva vengono calcolati i match contro il portafoglio attivo; i criteri
+obbligatori non nascondono gli immobili quasi compatibili, ma sono riportati
+come conflitti con una penalità esplicita.
+
+I dati dimostrativi sono opzionali e non vengono eseguiti in produzione:
+
+```text
+supabase/seed_requests_matching.sql
+```
+
+L'importazione dal gestionale non è ancora attiva. Il contratto
+`OfficeDatabaseImporter` e un provider mock si trovano in
+`src/lib/matching/importer.ts`; i record prevedono già `external_crm_id`,
+`source` e `last_imported_at`.
+
 ## Project structure
 
 ```text
