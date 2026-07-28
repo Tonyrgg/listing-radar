@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.9.17",
+  "version": "0.9.18",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -64,6 +64,10 @@
       {
         "from": "generated/worker-config.json",
         "to": "worker-config.json"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "icon.png"
       }
     ],
     "asarUnpack": [
@@ -75,6 +79,7 @@
       "en-US"
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         "nsis"
       ],

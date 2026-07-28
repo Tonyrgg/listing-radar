@@ -556,6 +556,9 @@ async function createWindow() {
   const preloadPath = app.isPackaged
     ? path.join(process.resourcesPath, "preload.cjs")
     : path.join(workerRoot, "src", "desktop", "preload.cjs");
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, "icon.png")
+    : path.join(workerRoot, "assets", "icon.png");
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -563,6 +566,7 @@ async function createWindow() {
     minHeight: 720,
     backgroundColor: "#f2efe4",
     title: "Property Data Worker",
+    icon: iconPath,
     show: false,
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -792,6 +796,7 @@ function registerIpc() {
 }
 
 app.whenReady().then(async () => {
+  app.setAppUserModelId("it.listingradar.propertyworker");
   await loadPreferences();
   registerIpc();
   await createWindow();

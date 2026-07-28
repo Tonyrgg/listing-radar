@@ -29,10 +29,25 @@ main {
 
 .app-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.brand img {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #244039;
+  border-radius: 10px;
+  background: #061019;
+  object-fit: cover;
 }
 
 .eyebrow {

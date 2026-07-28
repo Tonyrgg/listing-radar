@@ -1,3 +1,19 @@
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid #27534b;
+  border-radius: 9px;
+  background: #071019;
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .safe-check {
   display: flex;
   align-items: center;
