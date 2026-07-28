@@ -189,12 +189,15 @@ export interface CrmAdapter {
   detectPage(): Promise<boolean>;
   openExistingPerson(input: PersonSearchInput, expectedId?: string): Promise<{ id: string; data: Record<string, unknown> } | null>;
   findPerson(input: PersonSearchInput): Promise<PersonMatchResult>;
+  findMissingPersonPhones(personId: string, phones: string[]): Promise<string[]>;
   findPhoneAssignments(phones: string[]): Promise<CrmPhoneAssignment[]>;
   transferPhoneAssignments(targetPersonId: string, person: NormalizedPerson, assignments: CrmPhoneAssignment[]): Promise<CrmContactTransferResult>;
   createPerson(person: NormalizedPerson, duplicateCandidateIds?: string[], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult>;
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;
   inspectPersonMerge(): Promise<PersonMergeResult>;
   confirmPersonMerge(): Promise<PersonMergeResult>;
+  dismissPersonMerge(): Promise<{ dismissed: boolean; method: "none" | "cancel" | "home" }>;
+  resetToCrmHome(): Promise<{ homeUrl: string; mergeDismissed: boolean; mergeDismissMethod: "none" | "cancel" | "home" }>;
   findLinkedPropertyByAddress(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   findPropertyForPerson(personId: string, property: NormalizedProperty, excludedPropertyIds?: string[]): Promise<PropertyMatchResult>;
   verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult>;

@@ -1,6 +1,7 @@
 export interface CrmSelectors {
   pageMarker: string;
   sessionExpiredMarker: string;
+  accessDeniedMarker: string;
   unexpectedError: string;
   blockingDialog: string;
   loadingSpinner: string;
@@ -34,6 +35,7 @@ export interface CrmSelectors {
   personMergeReady: string;
   personMergeBlocked: string;
   personMergeConfirm: string;
+  personMergeCancel: string;
   personMergeMessage: string;
   propertySearchPage: string;
   propertyFiltersOpen: string;
@@ -115,12 +117,12 @@ export interface CrmSelectors {
 
 /** Selectors verified on the authenticated Tecnocloud Lightning shell. */
 export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
-  "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
+  "pageMarker", "sessionExpiredMarker", "accessDeniedMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
-  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
@@ -136,6 +138,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
   pageMarker: 'a[href*="/CRMImmobiliareLightning/s/account/Account"], a[href*="/CRMImmobiliareLightning/s/immobile/Immobile__c"]',
   sessionExpiredMarker: 'input[type="password"]',
+  accessDeniedMarker: ':text-is("Accesso negato"), :text-is("La pagina a cui stai cercando di accedere non esiste oppure non hai i diritti per visualizzarla")',
   blockingDialog: '[role="dialog"]',
   loadingSpinner: 'lightning-spinner',
   personSearchPage: 'a[href*="/CRMImmobiliareLightning/s/account/Account"]',
@@ -161,10 +164,11 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personOfficePhone: '.slds-form-element:has-text("Telefono fisso") input',
   personEmail: '.slds-form-element:has-text("Email") input',
   personSave: 'button:visible:has-text("Salva")',
-  personMergeDialog: '[role="dialog"]:visible:has-text("Merge dei campi")',
+  personMergeDialog: '[role="dialog"]:visible:has-text("Merge dei campi"), [role="dialog"]:visible:has-text("Riconcilia")',
   personMergeReady: ':text-is("Tutti i campi sono stati riconciliati. Si può procedere al salvataggio")',
   personMergeBlocked: ':text-is("Non si può procedere al salvataggio"), :text-is("Non è possibile procedere al salvataggio")',
   personMergeConfirm: 'button:visible:text-is("Salva")',
+  personMergeCancel: 'button:visible:text-is("Annulla")',
   personMergeMessage: ':text-is("Tutti i campi sono stati riconciliati. Si può procedere al salvataggio"), :text-is("Non si può procedere al salvataggio"), :text-is("Non è possibile procedere al salvataggio")',
   personRelatedTab: '[role="tab"]:has-text("Correlati")',
   personPropertiesCard: 'article:visible:has-text("Immobili/Notizie/Incarichi")',
@@ -239,12 +243,12 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
 });
 
 export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
-  "pageMarker", "sessionExpiredMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
+  "pageMarker", "sessionExpiredMarker", "accessDeniedMarker", "unexpectedError", "blockingDialog", "loadingSpinner", "personSearchPage", "personSearchTaxCode",
   "personSearchPhone", "personSearchSubmit", "personResultRows", "personResultId",
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
-  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage", "propertySearchPage",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",

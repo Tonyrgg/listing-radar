@@ -53,6 +53,7 @@ function runnerWithRepository() {
   const repository = {
     updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
     updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+    updateContacts: vi.fn().mockResolvedValue(undefined),
     logChange: vi.fn().mockResolvedValue(undefined),
   };
   Object.defineProperty(runner, "repository", { value: repository });
@@ -60,8 +61,8 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
-  it("usa la scheda nominativo scelta manualmente dopo risultati duplicati esatti", async () => {
-    const runner = new PropertyWorkerRunner(config, { keepAlive: false, acceptOpenPersonSelection: true });
+  it("su un vecchio caso duplicato riparte dalla ricerca e sceglie il primo risultato con CF verificato", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const repository = {
       updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
       logChange: vi.fn().mockResolvedValue(undefined),
@@ -73,21 +74,31 @@ describe("flusso identità nominativo e immobile", () => {
       raw_payload: { crm_matches: [{ id: "CRM-PERSON-1" }, { id: "CRM-PERSON-2" }] },
     };
     const crm = {
-      openExistingPerson: vi.fn().mockResolvedValue({
-        id: "CRM-PERSON-2",
+      openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
+        id: expectedId,
         data: { taxCodeVerified: true, nameVerified: true },
+      })),
+      findPerson: vi.fn().mockResolvedValue({
+        matches: [
+          { id: "CRM-PERSON-1", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+          { id: "CRM-PERSON-2", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+        ],
       }),
-      findPerson: vi.fn(),
       createPerson: vi.fn(),
     };
 
     await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
-    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object));
-    expect(crm.findPerson).not.toHaveBeenCalled();
+    expect(crm.findPerson).toHaveBeenCalledOnce();
+    expect(crm.openExistingPerson).toHaveBeenCalledTimes(1);
+    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-1");
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBe("CRM-PERSON-2");
-    expect(row.raw_payload?.person_flow).toMatchObject({ selectedFromOpenPage: true, identityVerified: true });
+    expect(row.crm_record_id).toBe("CRM-PERSON-1");
+    expect(row.raw_payload?.person_flow).toMatchObject({
+      version: 3,
+      selectionPolicy: "first-verified-tax-code-result",
+      identityVerified: true,
+    });
   });
 
   it("entra nel nominativo verificato e non ne crea uno nuovo", async () => {
@@ -112,69 +123,71 @@ describe("flusso identità nominativo e immobile", () => {
     expect(row.crm_record_id).toBe("CRM-PERSON-1");
   });
 
-  it("tra due nominativi omonimi mantiene quello che contiene l'immobile all'indirizzo corrente", async () => {
-    const { runner } = runnerWithRepository();
-    const row = personRow();
-    const property = propertyRow();
+  it("sostituisce nel checkpoint il vecchio ID eliminato dal merge con quello recuperato", async () => {
+    const { runner, repository } = runnerWithRepository();
+    const row: PersonRow = {
+      ...personRow(),
+      crm_record_id: "CRM-PERSON-DELETED",
+      raw_payload: {
+        person_flow: {
+          version: 3,
+          complete: true,
+          dryRun: false,
+          crmPersonId: "CRM-PERSON-DELETED",
+        },
+      },
+    };
     const crm = {
-      findPerson: vi.fn().mockResolvedValue({
-        matches: [
-          { id: "CRM-PERSON-CORRECT", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
-          { id: "CRM-PERSON-WRONG", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
-        ],
+      openExistingPerson: vi.fn().mockResolvedValue({
+        id: "CRM-PERSON-MERGED",
+        data: { recoveredFromAccessDenied: true },
       }),
-      openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
-        id: expectedId,
-        data: { taxCodeVerified: true, nameVerified: true },
-      })),
-      findLinkedPropertyByAddress: vi.fn(async (personId: string) => ({
-        match: personId === "CRM-PERSON-CORRECT"
-          ? { id: "CRM-PROPERTY-TRAETTA", data: { matchedBy: "address-for-person-selection" } }
-          : null,
-      })),
+      findPerson: vi.fn(),
       createPerson: vi.fn(),
     };
 
-    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm, property);
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
-    expect(crm.findLinkedPropertyByAddress).toHaveBeenCalledTimes(2);
-    expect(crm.openExistingPerson).toHaveBeenLastCalledWith(expect.any(Object), "CRM-PERSON-CORRECT");
-    expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBe("CRM-PERSON-CORRECT");
-    expect(row.raw_payload?.person_flow).toMatchObject({
-      version: 2,
-      selectedByLinkedProperty: true,
-      linkedPropertyId: "CRM-PROPERTY-TRAETTA",
-    });
+    expect(row.crm_record_id).toBe("CRM-PERSON-MERGED");
+    expect(crm.findPerson).not.toHaveBeenCalled();
+    expect(repository.updatePersonProcessing).toHaveBeenCalledWith(
+      row.id,
+      expect.objectContaining({ crm_record_id: "CRM-PERSON-MERGED" }),
+    );
   });
 
-  it("non sceglie se lo stesso indirizzo compare sotto più nominativi duplicati", async () => {
+  it("con più profili verificati usa il primo e non apre i risultati successivi", async () => {
     const { runner } = runnerWithRepository();
     const row = personRow();
-    const property = propertyRow();
     const crm = {
       findPerson: vi.fn().mockResolvedValue({
         matches: [
-          { id: "CRM-PERSON-1", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
-          { id: "CRM-PERSON-2", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+          { id: "CRM-PERSON-FIRST", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+          { id: "CRM-PERSON-SECOND", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
         ],
       }),
       openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
         id: expectedId,
         data: { taxCodeVerified: true, nameVerified: true },
       })),
-      findLinkedPropertyByAddress: vi.fn(async (personId: string) => ({
-        match: { id: `CRM-PROPERTY-${personId}`, data: { matchedBy: "address-for-person-selection" } },
-      })),
       createPerson: vi.fn(),
     };
 
-    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm, property))
-      .rejects.toMatchObject({ status: "needs_review" });
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
+    expect(crm.openExistingPerson).toHaveBeenCalledTimes(1);
+    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-FIRST");
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBeNull();
-    expect(row.processing_status).toBe("duplicate_candidates");
+    expect(row.crm_record_id).toBe("CRM-PERSON-FIRST");
+    expect(row.raw_payload?.person_flow).toMatchObject({
+      version: 3,
+      selectionPolicy: "first-verified-tax-code-result",
+    });
+    expect(row.raw_payload?.person_search).toMatchObject({
+      candidateCount: 2,
+      selectedPersonId: "CRM-PERSON-FIRST",
+      ignoredLaterCandidates: 1,
+    });
   });
 
   it("crea il nominativo soltanto dopo una ricerca senza schede verificate", async () => {
@@ -198,6 +211,53 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.findPerson).toHaveBeenCalledOnce();
     expect(crm.createPerson).toHaveBeenCalledOnce();
     expect(row.crm_record_id).toBe("CRM-PERSON-NEW");
+  });
+
+  it("dopo la creazione sincronizza i recapiti senza ricercare nuovamente il nominativo per cellulare", async () => {
+    const { runner } = runnerWithRepository();
+    const row: PersonRow = {
+      ...personRow(),
+      crm_record_id: "CRM-PERSON-NEW",
+      mobiles: ["3331234567"],
+      raw_payload: {
+        person_flow: {
+          version: 3,
+          complete: true,
+          existing: false,
+          crmPersonId: "CRM-PERSON-NEW",
+        },
+      },
+    };
+    const contacts = {
+      findByTaxCode: vi.fn().mockReturnValue({
+        mobiles: ["3331234567"],
+        landlines: [],
+        emails: [],
+        whatsapp: [],
+        matchedRows: 1,
+        overflowPhones: [],
+        notes: [],
+      }),
+    };
+    const crm = {
+      findMissingPersonPhones: vi.fn(),
+      findPhoneAssignments: vi.fn(),
+      transferPhoneAssignments: vi.fn().mockResolvedValue({
+        moved: [],
+        alreadyAssigned: ["3331234567"],
+        simulated: false,
+      }),
+    };
+
+    await (runner as unknown as { ensureContacts: Function }).ensureContacts(job, row, crm, contacts, true);
+
+    expect(crm.findMissingPersonPhones).not.toHaveBeenCalled();
+    expect(crm.findPhoneAssignments).not.toHaveBeenCalled();
+    expect(crm.transferPhoneAssignments).toHaveBeenCalledWith("CRM-PERSON-NEW", expect.any(Object), []);
+    expect(row.raw_payload?.contacts_flow).toMatchObject({
+      phoneSearchSkippedAfterCreation: true,
+      phonesCheckedInGlobalSearch: [],
+    });
   });
 
   it("aggiorna l'immobile trovato sotto il nominativo e non lo duplica", async () => {

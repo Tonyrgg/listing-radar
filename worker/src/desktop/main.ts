@@ -448,6 +448,7 @@ async function skipAfterAutomaticRetries(
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (cancellingJobId || activeJobId !== jobId) return;
+    await resetCrmAfterSkippedCase();
     const skipped = await markCaseSkipped(jobId, propertyId, {
       source: "automatic",
       reason,
@@ -592,7 +593,24 @@ async function runDesktopKeepAlive() {
   }
 }
 
-async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; acceptOpenPersonSelection?: boolean }) {
+async function resetCrmAfterSkippedCase() {
+  const config = workerConfig();
+  const tabs = await connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH);
+  try {
+    const result = await new PlaywrightCrmAdapter(tabs.crmPage, false).resetToCrmHome();
+    pushActivity(
+      result.mergeDismissed
+        ? "Caso chiuso e gestionale riportato alla home; avvio il nominativo successivo"
+        : "Gestionale riportato alla home; avvio il nominativo successivo",
+      "warning",
+    );
+    return result;
+  } finally {
+    await tabs.browser.close().catch(() => undefined);
+  }
+}
+
+async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
   active = true;
@@ -610,7 +628,6 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     keepAlive: false,
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
-    acceptOpenPersonSelection: input.acceptOpenPersonSelection === true,
   });
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
   await publishState();
@@ -794,12 +811,7 @@ function registerIpc() {
     const repo = repository();
     const job = await repo.getJob(jobId);
     if (job.saved_at) await repo.markImportStarted(jobId);
-    await runWorker({
-      mode: job.mode,
-      dryRun: preferences.dryRun,
-      jobId,
-      acceptOpenPersonSelection: job.error_details?.action === "person-multiple-exact-matches",
-    });
+    await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
     return true;
   });
   ipcMain.handle("desktop:set-auto-retry-enabled", async (_event, enabled: boolean) => {
@@ -866,6 +878,7 @@ function registerIpc() {
   ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {
     if (!values.jobId || !values.propertyId) throw new Error("Immobile da saltare non riconosciuto");
     const repo = repository();
+    if (!active) await resetCrmAfterSkippedCase();
     const skipped = await markCaseSkipped(values.jobId, values.propertyId, {
       source: "manual",
       reason: "Saltato manualmente dall'utente",

@@ -23,6 +23,7 @@ const CRM_PATH = "/CRMImmobiliareLightning/s";
 const ACTIVITY_FORM_TIMEOUT = 20_000;
 const ACTIVITY_PRE_SAVE_ATTEMPTS = 2;
 const ACTIVITY_PREFILL_WAIT_CYCLES = process.env.VITEST ? 2 : 32;
+const PERSON_MERGE_ID_WAIT_CYCLES = 40;
 
 function normalizedUiText(value: string | null | undefined) {
   return (value ?? "")
@@ -91,6 +92,22 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     if (this.selectors.unexpectedError && await this.page.locator(this.selectors.unexpectedError).count()) {
       throw new WorkerError("Il gestionale mostra un errore inatteso. Chiudi il messaggio e premi “Riprendi”.", "portal_error", { portal: "CRM" }, true);
     }
+  }
+
+  private async isAccessDeniedPage() {
+    if (this.selectors.accessDeniedMarker && await this.visible(this.selectors.accessDeniedMarker).count()) return true;
+    const body = normalizedUiText(await this.page.locator("body").innerText().catch(() => ""));
+    return body.includes("ACCESSO NEGATO")
+      && body.includes("NON ESISTE OPPURE NON HAI I DIRITTI");
+  }
+
+  private async throwIfAccessDenied(personId?: string) {
+    if (!(await this.isAccessDeniedPage())) return;
+    throw new WorkerError(
+      "La vecchia scheda nominativo non esiste più dopo il merge. Il worker tornerà alla home e ricercherà il nominativo aggiornato.",
+      "portal_error",
+      { portal: "CRM", action: "person-record-merged-away", personId, pageUrl: this.page.url() },
+    );
   }
 
   private visible(selector: string) {
@@ -163,6 +180,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   private async ensureCrmIdle() {
     await this.checkSession();
+    await this.settleVisiblePersonMergeAfterSave();
     await this.closeKnownStaleActivityForm();
     await this.closeDeferredOwnerForm();
     this.require("blockingDialog");
@@ -249,6 +267,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   private async openPerson(personId: string) {
     await this.ensureCrmIdle();
+    await this.throwIfAccessDenied(personId);
     if (this.page.url().includes(`/s/account/${personId}`)) {
       await this.waitForPersonWorkspace(personId);
       return;
@@ -261,17 +280,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     }
     await this.page.goto(new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString(), { waitUntil: "domcontentloaded" });
     await this.checkSession();
+    await this.throwIfAccessDenied(personId);
     await this.waitForPersonWorkspace(personId);
   }
 
   private async waitForPersonWorkspace(personId?: string) {
     this.require("personPropertiesCard");
     await this.checkSession();
+    await this.throwIfAccessDenied(personId);
     const card = this.visible(this.selectors.personPropertiesCard).first();
     if (await card.waitFor({ state: "visible", timeout: 30_000 }).then(() => true).catch(() => false)) return;
     const target = personId ? new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString() : this.page.url();
     await this.page.goto(target, { waitUntil: "domcontentloaded" });
     await this.checkSession();
+    await this.throwIfAccessDenied(personId);
     if (await card.waitFor({ state: "visible", timeout: 25_000 }).then(() => true).catch(() => false)) return;
     throw new WorkerError(
       "La scheda nominativo è aperta, ma la sezione Immobili/Notizie/Incarichi non ha terminato il caricamento.",
@@ -353,22 +375,64 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return (await this.page.locator(this.selectors.pageMarker).count()) > 0;
   }
 
+  private async verifyCurrentPerson(input: PersonSearchInput, expectedId?: string) {
+    const personId = await this.currentPersonId();
+    if (!personId || (expectedId && personId !== expectedId)) return null;
+    await this.checkSession();
+    const body = normalizedUiText(await this.page.locator("body").innerText());
+    const taxCode = normalizedUiText(input.taxCode).replaceAll(" ", "");
+    const compactBody = body.replaceAll(" ", "");
+    if (!taxCode || !compactBody.includes(taxCode)) return null;
+    const nameWords = normalizedUiText(input.fullName).split(" ").filter((word) => word.length > 1);
+    if (nameWords.length && !nameWords.every((word) => body.includes(word))) return null;
+    return {
+      id: personId,
+      data: { source: "crm-open-person", taxCodeVerified: true, nameVerified: true, pageUrl: this.page.url() },
+    };
+  }
+
+  private async recoverMergedPerson(input: PersonSearchInput, inaccessibleId: string) {
+    const homeUrl = new URL(CRM_PATH, this.page.url()).toString();
+    await this.page.goto(homeUrl, { waitUntil: "domcontentloaded" });
+    await this.checkSession();
+    const result = await this.findPerson(input);
+    for (const candidate of result.matches) {
+      try {
+        await this.openPerson(candidate.id);
+      } catch (error) {
+        if (!(error instanceof WorkerError) || error.details.action !== "person-record-merged-away") throw error;
+        await this.page.goto(homeUrl, { waitUntil: "domcontentloaded" });
+        continue;
+      }
+      const verified = await this.verifyCurrentPerson(input, candidate.id);
+      if (verified) {
+        return {
+          ...verified,
+          data: {
+            ...verified.data,
+            source: "crm-merged-person-recovery",
+            inaccessiblePersonId: inaccessibleId,
+            recoveredFromAccessDenied: true,
+          },
+        };
+      }
+    }
+    return null;
+  }
+
   async openExistingPerson(input: PersonSearchInput, expectedId?: string) {
     return this.friendly("person-existing-check", "Non riesco a verificare la scheda nominativo aperta.", async () => {
-      if (expectedId) await this.openPerson(expectedId);
-      const personId = await this.currentPersonId();
-      if (!personId || (expectedId && personId !== expectedId)) return null;
-      await this.checkSession();
-      const body = normalizedUiText(await this.page.locator("body").innerText());
-      const taxCode = normalizedUiText(input.taxCode).replaceAll(" ", "");
-      const compactBody = body.replaceAll(" ", "");
-      if (!taxCode || !compactBody.includes(taxCode)) return null;
-      const nameWords = normalizedUiText(input.fullName).split(" ").filter((word) => word.length > 1);
-      if (nameWords.length && !nameWords.every((word) => body.includes(word))) return null;
-      return {
-        id: personId,
-        data: { source: "crm-open-person", taxCodeVerified: true, nameVerified: true, pageUrl: this.page.url() },
-      };
+      if (expectedId) {
+        try {
+          await this.openPerson(expectedId);
+        } catch (error) {
+          if (error instanceof WorkerError && error.details.action === "person-record-merged-away") {
+            return this.recoverMergedPerson(input, expectedId);
+          }
+          throw error;
+        }
+      }
+      return this.verifyCurrentPerson(input, expectedId);
     });
   }
 
@@ -426,6 +490,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
       }
       return assignments;
+    });
+  }
+
+  async findMissingPersonPhones(personId: string, phones: string[]): Promise<string[]> {
+    const desiredPhones = [...new Set(phones.map(normalizePhone).filter(Boolean))];
+    if (!desiredPhones.length) return [];
+    return this.friendly("person-contact-coverage", "Non riesco a verificare i recapiti già presenti nel nominativo.", async () => {
+      await this.openPerson(personId);
+      const labels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
+      const existingPhones = new Set<string>();
+      for (const label of labels) {
+        const value = normalizePhone(await this.readPersonDetailContact(label));
+        if (value) existingPhones.add(value);
+      }
+      return desiredPhones.filter((phone) => !existingPhones.has(phone));
     });
   }
 
@@ -559,6 +638,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await save.click();
     await this.page.waitForTimeout(700);
     await this.checkSession();
+    await this.settleVisiblePersonMergeAfterSave();
     return { changed: true, removed, overflow };
   }
 
@@ -820,7 +900,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
       }
       let personId = await this.currentPersonId();
-      for (let attempt = 0; !personId && attempt < 40; attempt += 1) {
+      for (let attempt = 0; !personId && attempt < PERSON_MERGE_ID_WAIT_CYCLES; attempt += 1) {
         await this.page.waitForTimeout(250);
         personId = await this.currentPersonId();
       }
@@ -855,13 +935,24 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const message = await messageLocator.count()
         ? (await messageLocator.first().textContent())?.trim() ?? ""
         : "";
-      if (await dialog.locator(this.selectors.personMergeBlocked).filter({ visible: true }).count()) {
+      const dialogText = normalizedUiText(await dialog.innerText().catch(() => ""));
+      const blockedByText = dialogText.includes("NON SI PUO PROCEDERE AL SALVATAGGIO")
+        || dialogText.includes("NON E POSSIBILE PROCEDERE AL SALVATAGGIO");
+      const readyByText = dialogText.includes("TUTTI I CAMPI SONO STATI RICONCILIATI")
+        && dialogText.includes("PROCEDERE AL SALVATAGGIO")
+        && !dialogText.includes("NON ");
+      if (blockedByText || await dialog.locator(this.selectors.personMergeBlocked).filter({ visible: true }).count()) {
         return { status: "blocked", personId: null, message: message || "Il Cloud segnala problemi nel merge", details: { source: "crm-merge-dialog" } };
       }
-      if (await dialog.locator(this.selectors.personMergeReady).filter({ visible: true }).count()) {
+      if (readyByText || await dialog.locator(this.selectors.personMergeReady).filter({ visible: true }).count()) {
         return { status: "ready", personId: null, message: message || "Il Cloud non segnala problemi nel merge", details: { source: "crm-merge-dialog" } };
       }
-      return { status: "pending", personId: null, message: message || "Il Cloud non ha ancora concluso il controllo del merge", details: { source: "crm-merge-dialog" } };
+      return {
+        status: "pending",
+        personId: null,
+        message: message || "Il Cloud non ha ancora concluso il controllo del merge",
+        details: { source: "crm-merge-dialog", dialogText },
+      };
     });
   }
 
@@ -881,12 +972,115 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           true,
         );
       }
+      await save.scrollIntoViewIfNeeded();
       await save.click();
       await dialog.waitFor({ state: "hidden", timeout: 20_000 });
       await this.checkSession();
-      const personId = await this.currentPersonId();
+      let personId = await this.currentPersonId();
+      for (let attempt = 0; !personId && attempt < 40; attempt += 1) {
+        await this.page.waitForTimeout(250);
+        personId = await this.currentPersonId();
+      }
       if (!personId) return { status: "pending", personId: null, message: "Merge confermato, identificativo finale non ancora disponibile", details: { source: "crm-merge-confirm" } };
       return { status: "completed", personId, message: "Merge completato", details: { source: "crm-merge-confirm" } };
+    });
+  }
+
+  private async settleVisiblePersonMergeAfterSave() {
+    if (!this.selectors.personMergeDialog) return;
+    const dialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).last();
+    if (!(await dialog.count())) return;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const inspection = await this.inspectPersonMerge();
+      if (inspection.status === "ready") {
+        const confirmed = await this.confirmPersonMerge();
+        if (confirmed.status === "completed" || (
+          confirmed.status === "pending"
+          && confirmed.details.source === "crm-merge-confirm"
+        )) return;
+        throw new WorkerError(
+          `Il Cloud ha accettato la riconciliazione, ma il salvataggio finale non risulta concluso: ${confirmed.message}`,
+          "portal_error",
+          { portal: "CRM", action: "person-merge-save-not-completed", merge: confirmed },
+          true,
+        );
+      }
+      if (inspection.status === "blocked") {
+        throw new WorkerError(
+          `Il Cloud non consente di salvare la riconciliazione: ${inspection.message}`,
+          "needs_review",
+          { portal: "CRM", action: "person-merge-blocked-after-save", merge: inspection },
+          true,
+        );
+      }
+      if (inspection.status === "completed") return;
+      await this.page.waitForTimeout(250);
+    }
+    throw new WorkerError(
+      "La finestra di riconciliazione è rimasta in elaborazione e non ha ancora autorizzato il salvataggio.",
+      "portal_error",
+      { portal: "CRM", action: "person-merge-still-pending" },
+      true,
+    );
+  }
+
+  async dismissPersonMerge(): Promise<{ dismissed: boolean; method: "none" | "cancel" | "home" }> {
+    return this.friendly("person-merge-dismiss", "Non riesco a chiudere la finestra di riconciliazione.", async () => {
+      this.require("personMergeDialog");
+      const dialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).last();
+      if (!(await dialog.count())) return { dismissed: false, method: "none" };
+
+      if (this.selectors.personMergeCancel) {
+        const cancel = dialog.locator(this.selectors.personMergeCancel).filter({ visible: true });
+        if (await cancel.count() === 1) {
+          await cancel.click();
+          const closed = await dialog.waitFor({ state: "hidden", timeout: 8_000 })
+            .then(() => true)
+            .catch(() => false);
+          if (closed) return { dismissed: true, method: "cancel" };
+        }
+      }
+
+      const currentUrl = this.page.url();
+      const homeUrl = new URL(CRM_PATH, currentUrl).toString();
+      await this.page.goto(homeUrl, { waitUntil: "domcontentloaded" });
+      await this.checkSession();
+      const lingeringDialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true });
+      if (await lingeringDialog.count()) {
+        throw new WorkerError(
+          "La finestra di riconciliazione è rimasta aperta anche dopo il ritorno alla home del gestionale.",
+          "portal_error",
+          { portal: "CRM", action: "person-merge-dismiss-home", currentUrl, homeUrl },
+          true,
+        );
+      }
+      return { dismissed: true, method: "home" };
+    });
+  }
+
+  async resetToCrmHome(): Promise<{
+    homeUrl: string;
+    mergeDismissed: boolean;
+    mergeDismissMethod: "none" | "cancel" | "home";
+  }> {
+    return this.friendly("crm-reset-home", "Non riesco a riportare il gestionale alla home prima del caso successivo.", async () => {
+      const merge = await this.dismissPersonMerge();
+      const homeUrl = new URL(CRM_PATH, this.page.url()).toString();
+      await this.page.goto(homeUrl, { waitUntil: "domcontentloaded" });
+      await this.checkSession();
+      if (await this.isAccessDeniedPage()) {
+        throw new WorkerError(
+          "Il gestionale mostra ancora Accesso negato anche dopo il ritorno alla home.",
+          "portal_error",
+          { portal: "CRM", action: "crm-reset-home-access-denied", homeUrl },
+          true,
+        );
+      }
+      return {
+        homeUrl: this.page.url(),
+        mergeDismissed: merge.dismissed,
+        mergeDismissMethod: merge.method,
+      };
     });
   }
 
@@ -897,7 +1091,9 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await this.fillPerson(person);
       this.require("personSave");
       await this.page.locator(this.selectors.personSave).click();
+      await this.page.waitForTimeout(700);
       await this.checkSession();
+      await this.settleVisiblePersonMergeAfterSave();
     });
   }
 

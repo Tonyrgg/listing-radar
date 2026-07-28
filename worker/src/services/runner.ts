@@ -91,7 +91,6 @@ export interface RunnerOptions {
   keepAlive?: boolean;
   isCancellationRequested?: (jobId: string) => boolean;
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
-  acceptOpenPersonSelection?: boolean;
 }
 
 export class PropertyWorkerRunner {
@@ -101,7 +100,6 @@ export class PropertyWorkerRunner {
   private readonly manageKeepAlive: boolean;
   private readonly isCancellationRequested: (jobId: string) => boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
-  private readonly acceptOpenPersonSelection: boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
@@ -110,7 +108,6 @@ export class PropertyWorkerRunner {
     this.manageKeepAlive = options.keepAlive !== false;
     this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
-    this.acceptOpenPersonSelection = options.acceptOpenPersonSelection === true;
   }
 
   private throwIfCancellationRequested(jobId: string) {
@@ -813,7 +810,7 @@ export class PropertyWorkerRunner {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Cerco una sola volta e verifico il proprietario: ${primary.person.full_name}`);
           await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Scheda nominativo", () =>
-            this.ensurePerson(job, primary.person, crm, property));
+            this.ensurePerson(job, primary.person, crm));
           await advanceStage("primary_ready");
         }
 
@@ -871,6 +868,7 @@ export class PropertyWorkerRunner {
       } catch (error) {
         const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
         if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
+          await crm.resetToCrmHome();
           await this.markPropertyStage(property, "skipped");
           completed += 1;
           await this.repository.updateJob(job.id, { processed_properties: completed });
@@ -899,7 +897,7 @@ export class PropertyWorkerRunner {
     };
   }
 
-  private async ensurePerson(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, currentProperty?: PropertyRow) {
+  private async ensurePerson(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter) {
     const person = asPerson(row);
     if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
     const searchInput = {
@@ -911,18 +909,19 @@ export class PropertyWorkerRunner {
     const existingCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
     if (
       existingCheckpoint?.complete === true
-      && Number(existingCheckpoint.version ?? 0) >= 2
+      && Number(existingCheckpoint.version ?? 0) >= 3
       && existingCheckpoint.dryRun === this.config.WORKER_DRY_RUN
       && row.crm_record_id
     ) {
       if (this.config.WORKER_DRY_RUN && row.crm_record_id.startsWith("dry-person-")) return;
       const verifiedCheckpoint = await crm.openExistingPerson(searchInput, row.crm_record_id);
       if (verifiedCheckpoint) {
+        row.crm_record_id = verifiedCheckpoint.id;
         row.raw_payload = {
           ...(row.raw_payload ?? {}),
           person_flow: {
             ...existingCheckpoint,
-            version: 2,
+            version: 3,
             complete: true,
             identityVerified: true,
             crmPersonId: verifiedCheckpoint.id,
@@ -952,32 +951,6 @@ export class PropertyWorkerRunner {
         raw_payload: row.raw_payload,
       });
     }
-    if (row.processing_status === "duplicate_candidates" && this.acceptOpenPersonSelection) {
-      const selectedPerson = await crm.openExistingPerson(searchInput);
-      if (selectedPerson) {
-        row.crm_record_id = selectedPerson.id;
-        row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
-        row.raw_payload = {
-          ...(row.raw_payload ?? {}),
-          person_flow: {
-            version: 2,
-            complete: true,
-            existing: true,
-            identityVerified: true,
-            selectedFromOpenPage: true,
-            dryRun: this.config.WORKER_DRY_RUN,
-            crmPersonId: selectedPerson.id,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        await this.repository.updatePersonProcessing(row.id, {
-          crm_record_id: selectedPerson.id,
-          processing_status: row.processing_status,
-          raw_payload: row.raw_payload,
-        });
-        return;
-      }
-    }
     if (["merge_pending", "merge_blocked", "creation_started"].includes(row.processing_status)) {
       await this.resolvePersonMerge(job, row, crm);
       if (!row.crm_record_id) throw new WorkerError("Il merge non ha ancora prodotto una scheda nominativo utilizzabile", "needs_review", { personId: row.id }, true);
@@ -990,120 +963,47 @@ export class PropertyWorkerRunner {
           true,
         );
       }
+      row.crm_record_id = verifiedAfterMerge.id;
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 2, complete: true, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 3, complete: true, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
       await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
       return;
     }
     const result = await crm.findPerson(searchInput);
     const phoneAssignments = result.matches.filter((match) => isRecord(match.data) && match.data.source === "crm-phone-search");
     const candidates = result.matches.filter((match) => !phoneAssignments.includes(match));
-    const verifiedMatches: typeof candidates = [];
+    let selectedMatch: (typeof candidates)[number] | null = null;
     for (const candidate of candidates) {
       const verified = await crm.openExistingPerson(searchInput, candidate.id);
-      if (verified) verifiedMatches.push({ ...candidate, data: { ...candidate.data, ...verified.data } });
+      if (!verified) continue;
+      selectedMatch = { ...candidate, id: verified.id, data: { ...candidate.data, ...verified.data } };
+      break;
     }
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
-      crm_matches: verifiedMatches,
+      crm_matches: selectedMatch ? [selectedMatch] : [],
       contact_assignments_detected: phoneAssignments,
       person_search: {
         searchedAt: new Date().toISOString(),
         candidateCount: candidates.length,
-        verifiedCount: verifiedMatches.length,
+        verifiedCount: selectedMatch ? 1 : 0,
         exactTaxCodeRequired: true,
+        selectionPolicy: "first-verified-tax-code-result",
+        selectedPersonId: selectedMatch?.id ?? null,
+        ignoredLaterCandidates: Math.max(0, candidates.length - (selectedMatch ? 1 : 0)),
       },
     };
-    let selectedByLinkedProperty: {
-      person: (typeof verifiedMatches)[number];
-      propertyMatch: { id: string; data: Record<string, unknown> };
-    } | null = null;
-    if (verifiedMatches.length > 1 && currentProperty) {
-      const linkedMatches: Array<{
-        person: (typeof verifiedMatches)[number];
-        propertyMatch: { id: string; data: Record<string, unknown> };
-      }> = [];
-      const linkedPropertyErrors: Array<{ personId: string; message: string }> = [];
-      const normalizedProperty = asProperty(currentProperty);
-      for (const candidate of verifiedMatches) {
-        try {
-          const linkedProperty = await crm.findLinkedPropertyByAddress(candidate.id, normalizedProperty);
-          if (linkedProperty.match) linkedMatches.push({ person: candidate, propertyMatch: linkedProperty.match });
-        } catch (error) {
-          linkedPropertyErrors.push({
-            personId: candidate.id,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-      if (linkedMatches.length === 1) {
-        selectedByLinkedProperty = linkedMatches[0]!;
-        const keptOpen = await crm.openExistingPerson(searchInput, selectedByLinkedProperty.person.id);
-        if (!keptOpen) {
-          throw new WorkerError(
-            "Ho individuato il nominativo tramite l'immobile collegato, ma non riesco a mantenere aperta la sua scheda.",
-            "portal_error",
-            {
-              personId: row.id,
-              action: "person-linked-property-reopen",
-              crmPersonId: selectedByLinkedProperty.person.id,
-              crmPropertyId: selectedByLinkedProperty.propertyMatch.id,
-            },
-            true,
-          );
-        }
-      }
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}),
-        person_search: {
-          ...(isRecord(row.raw_payload?.person_search) ? row.raw_payload.person_search : {}),
-          linkedPropertyChecked: true,
-          linkedPropertyAddress: currentProperty.address,
-          linkedPropertyCandidateCount: linkedMatches.length,
-          linkedPropertyErrors,
-          linkedPropertyCandidates: linkedMatches.map(({ person: candidate, propertyMatch }) => ({
-            personId: candidate.id,
-            propertyId: propertyMatch.id,
-          })),
-        },
-      };
-    }
-    if (verifiedMatches.length > 1 && !selectedByLinkedProperty) {
-      row.crm_record_id = null;
-      row.processing_status = "duplicate_candidates";
-      await this.repository.updatePersonProcessing(row.id, {
-        crm_record_id: null,
-        processing_status: row.processing_status,
-        raw_payload: row.raw_payload,
-      });
-      throw new WorkerError(
-        currentProperty
-          ? `Esistono più schede con la stessa identità, ma l'indirizzo “${currentProperty.address ?? "non disponibile"}” non identifica una sola scheda. Il worker non sceglierà alla cieca.`
-          : "Esistono più schede verificate con lo stesso codice fiscale. Il worker non creerà un altro nominativo e non sceglierà alla cieca.",
-        "needs_review",
-        {
-          personId: row.id,
-          action: "person-multiple-exact-matches",
-          propertyId: currentProperty?.id,
-          propertyAddress: currentProperty?.address,
-          alternatives: verifiedMatches.map(({ id, label }) => ({ id, label })),
-        },
-        true,
-      );
-    }
-    if (verifiedMatches.length === 1 || selectedByLinkedProperty) {
-      const selectedMatch = selectedByLinkedProperty?.person ?? verifiedMatches[0]!;
+    if (selectedMatch) {
       row.crm_record_id = selectedMatch.id;
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         person_flow: {
-          version: 2,
+          version: 3,
           complete: true,
           existing: true,
           identityVerified: true,
-          selectedByLinkedProperty: Boolean(selectedByLinkedProperty),
-          linkedPropertyId: selectedByLinkedProperty?.propertyMatch.id ?? null,
+          selectionPolicy: "first-verified-tax-code-result",
           dryRun: this.config.WORKER_DRY_RUN,
           crmPersonId: row.crm_record_id,
           updatedAt: new Date().toISOString(),
@@ -1147,9 +1047,10 @@ export class PropertyWorkerRunner {
           true,
         );
       }
+      row.crm_record_id = verifiedCreated.id;
     }
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 2, complete: true, existing: false, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 3, complete: true, existing: false, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
     await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
   }
 
@@ -1430,8 +1331,20 @@ export class PropertyWorkerRunner {
       && existingFlow.crmPersonId === row.crm_record_id
     ) return;
     let transfer: Awaited<ReturnType<PlaywrightCrmAdapter["transferPhoneAssignments"]>> | null = null;
+    let phoneSearchSkippedAfterCreation = false;
+    let phonesCheckedInGlobalSearch: string[] = [];
     if (match.matchedRows && row.crm_record_id) {
-      const assignments = await crm.findPhoneAssignments([...match.mobiles, ...match.landlines]);
+      const desiredPhones = [...match.mobiles, ...match.landlines];
+      const personFlow = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : {};
+      const createdInThisImport = personFlow.existing === false && personFlow.crmPersonId === row.crm_record_id;
+      const phonesRequiringSearch = createdInThisImport
+        ? []
+        : await crm.findMissingPersonPhones(row.crm_record_id, desiredPhones);
+      phoneSearchSkippedAfterCreation = createdInThisImport;
+      phonesCheckedInGlobalSearch = phonesRequiringSearch;
+      const assignments = phonesRequiringSearch.length
+        ? await crm.findPhoneAssignments(phonesRequiringSearch)
+        : [];
       const foreignAssignments = assignments.filter((assignment) => assignment.personId !== row.crm_record_id);
       if (job.mode === "assisted") {
         const decision = await this.prompts.confirmSave([
@@ -1477,6 +1390,8 @@ export class PropertyWorkerRunner {
         dryRun: this.config.WORKER_DRY_RUN,
         crmPersonId: row.crm_record_id,
         matchedRows: match.matchedRows,
+        phoneSearchSkippedAfterCreation,
+        phonesCheckedInGlobalSearch,
         transfer,
         updatedAt: new Date().toISOString(),
       },

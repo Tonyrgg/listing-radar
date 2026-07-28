@@ -41,6 +41,7 @@
     <section role="dialog" data-worker-crm="personMergeDialog" hidden>
       <p data-worker-crm="personMergeMessage">Nessun problema rilevato nel merge</p>
       <span data-worker-crm="personMergeReady">Merge verificato</span>
+      <button data-worker-crm="personMergeCancel" onclick="this.closest('[role=dialog]').hidden=true">Annulla</button>
       <button data-worker-crm="personMergeConfirm" onclick="this.closest('[role=dialog]').hidden=true">Conferma merge</button>
     </section>
     <button data-worker-crm="propertySearchPage">Ricerca immobili</button><input data-worker-crm="propertySearchSheet"><input data-worker-crm="propertySearchParcel"><input data-worker-crm="propertySearchSubaltern">

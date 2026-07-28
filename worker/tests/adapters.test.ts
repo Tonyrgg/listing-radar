@@ -283,9 +283,11 @@ describe("adattatori con fixture HTML", () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
+      await page.route("https://example.test/**", (route) => route.fulfill({ body: "<!doctype html><body></body>" }));
+      await page.goto("https://example.test/CRMImmobiliareLightning/s/account/P-99");
       await page.setContent(`<!doctype html><body>
         <section role="dialog">
-          <h2>Nominativo</h2>
+          <h2>Riconcilia</h2>
           <div>ATTENZIONE — informativa GDPR necessaria</div>
           <div>
             <strong>Merge dei campi</strong>
@@ -298,7 +300,7 @@ describe("adattatori con fixture HTML", () => {
       </body>`);
       const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
       await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "ready" });
-      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "pending" });
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "completed", personId: "P-99" });
       expect(await page.locator("body").getAttribute("data-merge-saved")).toBe("true");
       expect(await page.locator('[role="dialog"]').isVisible()).toBe(false);
     } finally { await browser.close(); }
@@ -319,6 +321,88 @@ describe("adattatori con fixture HTML", () => {
       await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "pending" });
       await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "pending" });
       expect(await page.locator("body").getAttribute("data-merge-saved")).toBeNull();
+    } finally { await browser.close(); }
+  });
+
+  it("chiude con Annulla una riconciliazione non confermabile prima di cambiare caso", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <section role="dialog">
+          <h2>Riconcilia</h2>
+          <div><strong>Merge dei campi</strong><p>Non si può procedere al salvataggio</p></div>
+          <button onclick="document.body.dataset.mergeCancelled='true'; this.closest('[role=dialog]').hidden=true">Annulla</button>
+          <button>Salva</button>
+        </section>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
+
+      await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "blocked" });
+      await expect(adapter.dismissPersonMerge()).resolves.toEqual({ dismissed: true, method: "cancel" });
+      expect(await page.locator("body").getAttribute("data-merge-cancelled")).toBe("true");
+      expect(await page.locator('[role="dialog"]').isVisible()).toBe(false);
+    } finally { await browser.close(); }
+  });
+
+  it("dopo uno skip chiude il caso e torna sempre alla home del gestionale", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://crm.test/**", (route) => {
+        const isHome = new URL(route.request().url()).pathname === "/CRMImmobiliareLightning/s";
+        return route.fulfill({
+          contentType: "text/html",
+          body: isHome
+            ? '<!doctype html><body><main data-worker-crm="pageMarker">Home CRM</main></body>'
+            : `<!doctype html><body>
+                <section role="dialog" data-worker-crm="personMergeDialog">
+                  <h2>Riconcilia</h2><div>Merge dei campi</div>
+                  <p data-worker-crm="personMergeMessage">Non si può procedere al salvataggio</p>
+                  <span data-worker-crm="personMergeBlocked">Conflitto</span>
+                  <button data-worker-crm="personMergeCancel" onclick="this.closest('[role=dialog]').hidden=true">Annulla</button>
+                </section>
+              </body>`,
+        });
+      });
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-BLOCKED");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.resetToCrmHome()).resolves.toMatchObject({
+        homeUrl: "https://crm.test/CRMImmobiliareLightning/s",
+        mergeDismissed: true,
+        mergeDismissMethod: "cancel",
+      });
+      expect(new URL(page.url()).pathname).toBe("/CRMImmobiliareLightning/s");
+    } finally { await browser.close(); }
+  });
+
+  it("prima di una nuova azione salva sempre una Riconcilia verde rimasta aperta", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://crm.test/**", (route) => route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><body>
+          <article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (0)</article>
+          <div class="flex"><div><label>Cellulare</label></div><div><span class="slds-form-element__static"><span class="slds-grow">3331234567</span></span></div></div>
+          <section role="dialog" data-worker-crm="personMergeDialog">
+            <h2>Riconcilia</h2>
+            <div>Merge dei campi</div>
+            <p data-worker-crm="personMergeMessage">Tutti i campi sono stati riconciliati. Si può procedere al salvataggio</p>
+            <button data-worker-crm="personMergeCancel">Annulla</button>
+            <button data-worker-crm="personMergeConfirm" onclick="document.body.dataset.mergeSaved='true'; this.closest('[role=dialog]').hidden=true">Salva</button>
+          </section>
+        </body></html>`,
+      }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-99");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "ready" });
+      await expect(adapter.findMissingPersonPhones("P-99", ["3331234567"]))
+        .resolves.toEqual([]);
+      expect(await page.locator("body").getAttribute("data-merge-saved")).toBe("true");
+      expect(await page.locator('[data-worker-crm="personMergeDialog"]').isVisible()).toBe(false);
     } finally { await browser.close(); }
   });
 
@@ -369,6 +453,55 @@ describe("adattatori con fixture HTML", () => {
       const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
       await expect(adapter.openExistingPerson({ taxCode: "MRGMHL65B09A893K", phones: [], fullName: "MICHELE MURGOLO", birthDate: null }, "P-42"))
         .resolves.toMatchObject({ id: "P-42", data: { taxCodeVerified: true, nameVerified: true } });
+    } finally { await browser.close(); }
+  });
+
+  it("dopo Accesso negato torna alla home e ritrova il nominativo risultante dal merge", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const searchPage = `<!doctype html><html><body>
+        <main data-worker-crm="pageMarker">
+          <button data-worker-crm="personSearchPage">Clienti</button>
+          <input data-worker-crm="personSearchTaxCode">
+          <input data-worker-crm="personSearchPhone">
+          <button data-worker-crm="personSearchSubmit">Cerca</button>
+          <h1 data-worker-crm="personResultsReady">Risultati di ricerca</h1>
+          <div data-worker-crm="personResultRows">
+            <span data-worker-crm="personResultId">P-MERGED</span>
+            <span data-worker-crm="personResultLabel">Mario Rossi</span>
+            <button data-worker-crm="personResultOpen">Apri</button>
+          </div>
+          <span data-worker-crm="recordId">P-MERGED</span>
+          <article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (0)</article>
+          <div>Mario Rossi RSSMRA80A01A893X</div>
+        </main>
+      </body></html>`;
+      await page.route("https://crm.test/**", (route) => {
+        const oldRecord = route.request().url().includes("/account/P-DELETED");
+        return route.fulfill({
+          contentType: "text/html",
+          body: oldRecord
+            ? `<!doctype html><body><div data-worker-crm="accessDeniedMarker">Accesso negato — La pagina a cui stai cercando di accedere non esiste oppure non hai i diritti per visualizzarla</div></body>`
+            : searchPage,
+        });
+      });
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.openExistingPerson({
+        taxCode: "RSSMRA80A01A893X",
+        phones: ["3331234567"],
+        fullName: "Mario Rossi",
+        birthDate: "1980-01-01",
+      }, "P-DELETED")).resolves.toMatchObject({
+        id: "P-MERGED",
+        data: {
+          source: "crm-merged-person-recovery",
+          inaccessiblePersonId: "P-DELETED",
+          recoveredFromAccessDenied: true,
+        },
+      });
     } finally { await browser.close(); }
   });
 
@@ -468,6 +601,11 @@ describe("adattatori con fixture HTML", () => {
       }));
       await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-99");
       const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.findMissingPersonPhones("P-99", [
+        "3331234567",
+        "0801234567",
+        "3490000000",
+      ])).resolves.toEqual(["3490000000"]);
       await expect(adapter.transferPhoneAssignments("P-99", {
         fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
         taxCode: "RSSMRA80A01A893X", rightType: "ProprietÃ ", shareOriginal: "1/1",
@@ -518,6 +656,50 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator("#landline").inputValue()).toBe("");
       expect(await page.locator("#office").inputValue()).toBe("");
       expect(await page.locator("#other").inputValue()).toBe("");
+    } finally { await browser.close(); }
+  });
+
+  it("salva davvero la riconciliazione verde comparsa dopo l'aggiornamento dei recapiti", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const contactRow = (label: string, id: string) => `
+        <div class="flex"><div><label for="${id}">${label}</label></div>
+          <div><span class="slds-form-element__static"><span class="slds-grow"></span></span><input id="${id}"></div>
+          ${label === "Cellulare" ? '<button class="inline-edit-trigger">Modifica</button>' : ""}
+        </div>`;
+      await page.route("https://crm.test/**", (route) => route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><body>
+          <article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (0)</article>
+          ${contactRow("Cellulare", "mobile")}
+          ${contactRow("Telefono fisso", "landline")}
+          ${contactRow("Telefono Ufficio", "office")}
+          ${contactRow("Altro telefono", "other")}
+          ${contactRow("Email", "email")}
+          ${contactRow("Email Secondaria", "email2")}
+          <button role="button" onclick="document.querySelector('[data-worker-crm=personMergeDialog]').hidden=false">Salva</button>
+          <section role="dialog" data-worker-crm="personMergeDialog" hidden>
+            <h2>Riconcilia</h2>
+            <p data-worker-crm="personMergeMessage">Tutti i campi sono stati riconciliati. Si può procedere al salvataggio</p>
+            <span data-worker-crm="personMergeReady">Merge dei campi</span>
+            <button data-worker-crm="personMergeCancel">Annulla</button>
+            <button data-worker-crm="personMergeConfirm" onclick="document.body.dataset.mergeSaved='true'; this.closest('[role=dialog]').hidden=true">Salva</button>
+          </section>
+        </body></html>`,
+      }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-99");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await adapter.transferPhoneAssignments("P-99", {
+        fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
+        taxCode: "RSSMRA80A01A893X", rightType: "Proprietà", shareOriginal: "1/1",
+        shareNumerator: 1, shareDenominator: 1, sharePercentage: 100,
+        mobiles: ["3331234567"], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      }, []);
+
+      expect(await page.locator("body").getAttribute("data-merge-saved")).toBe("true");
+      expect(await page.locator('[data-worker-crm="personMergeDialog"]').isVisible()).toBe(false);
     } finally { await browser.close(); }
   });
 
