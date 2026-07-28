@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   saveInternalConfiguration: (values) => ipcRenderer.invoke("desktop:save-internal-configuration", values),
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
   resumeJob: (jobId) => ipcRenderer.invoke("desktop:resume-job", jobId),
+  setAutoRetryEnabled: (enabled) => ipcRenderer.invoke("desktop:set-auto-retry-enabled", enabled),
   pauseJob: () => ipcRenderer.invoke("desktop:pause-job"),
   cancelJob: (jobId) => ipcRenderer.invoke("desktop:cancel-job", jobId),
   answerPrompt: (values) => ipcRenderer.invoke("desktop:answer-prompt", values),

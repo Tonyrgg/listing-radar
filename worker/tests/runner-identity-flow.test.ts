@@ -60,6 +60,36 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
+  it("usa la scheda nominativo scelta manualmente dopo risultati duplicati esatti", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false, acceptOpenPersonSelection: true });
+    const repository = {
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
+      logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const row: PersonRow = {
+      ...personRow(),
+      processing_status: "duplicate_candidates",
+      raw_payload: { crm_matches: [{ id: "CRM-PERSON-1" }, { id: "CRM-PERSON-2" }] },
+    };
+    const crm = {
+      openExistingPerson: vi.fn().mockResolvedValue({
+        id: "CRM-PERSON-2",
+        data: { taxCodeVerified: true, nameVerified: true },
+      }),
+      findPerson: vi.fn(),
+      createPerson: vi.fn(),
+    };
+
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
+
+    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object));
+    expect(crm.findPerson).not.toHaveBeenCalled();
+    expect(crm.createPerson).not.toHaveBeenCalled();
+    expect(row.crm_record_id).toBe("CRM-PERSON-2");
+    expect(row.raw_payload?.person_flow).toMatchObject({ selectedFromOpenPage: true, identityVerified: true });
+  });
+
   it("entra nel nominativo verificato e non ne crea uno nuovo", async () => {
     const { runner } = runnerWithRepository();
     const row = personRow();
@@ -80,6 +110,71 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-1");
     expect(crm.createPerson).not.toHaveBeenCalled();
     expect(row.crm_record_id).toBe("CRM-PERSON-1");
+  });
+
+  it("tra due nominativi omonimi mantiene quello che contiene l'immobile all'indirizzo corrente", async () => {
+    const { runner } = runnerWithRepository();
+    const row = personRow();
+    const property = propertyRow();
+    const crm = {
+      findPerson: vi.fn().mockResolvedValue({
+        matches: [
+          { id: "CRM-PERSON-CORRECT", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+          { id: "CRM-PERSON-WRONG", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+        ],
+      }),
+      openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
+        id: expectedId,
+        data: { taxCodeVerified: true, nameVerified: true },
+      })),
+      findLinkedPropertyByAddress: vi.fn(async (personId: string) => ({
+        match: personId === "CRM-PERSON-CORRECT"
+          ? { id: "CRM-PROPERTY-TRAETTA", data: { matchedBy: "address-for-person-selection" } }
+          : null,
+      })),
+      createPerson: vi.fn(),
+    };
+
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm, property);
+
+    expect(crm.findLinkedPropertyByAddress).toHaveBeenCalledTimes(2);
+    expect(crm.openExistingPerson).toHaveBeenLastCalledWith(expect.any(Object), "CRM-PERSON-CORRECT");
+    expect(crm.createPerson).not.toHaveBeenCalled();
+    expect(row.crm_record_id).toBe("CRM-PERSON-CORRECT");
+    expect(row.raw_payload?.person_flow).toMatchObject({
+      version: 2,
+      selectedByLinkedProperty: true,
+      linkedPropertyId: "CRM-PROPERTY-TRAETTA",
+    });
+  });
+
+  it("non sceglie se lo stesso indirizzo compare sotto più nominativi duplicati", async () => {
+    const { runner } = runnerWithRepository();
+    const row = personRow();
+    const property = propertyRow();
+    const crm = {
+      findPerson: vi.fn().mockResolvedValue({
+        matches: [
+          { id: "CRM-PERSON-1", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+          { id: "CRM-PERSON-2", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
+        ],
+      }),
+      openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
+        id: expectedId,
+        data: { taxCodeVerified: true, nameVerified: true },
+      })),
+      findLinkedPropertyByAddress: vi.fn(async (personId: string) => ({
+        match: { id: `CRM-PROPERTY-${personId}`, data: { matchedBy: "address-for-person-selection" } },
+      })),
+      createPerson: vi.fn(),
+    };
+
+    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm, property))
+      .rejects.toMatchObject({ status: "needs_review" });
+
+    expect(crm.createPerson).not.toHaveBeenCalled();
+    expect(row.crm_record_id).toBeNull();
+    expect(row.processing_status).toBe("duplicate_candidates");
   });
 
   it("crea il nominativo soltanto dopo una ricerca senza schede verificate", async () => {

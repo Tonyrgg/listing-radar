@@ -14,7 +14,7 @@ describe("dati form immobile CRM", () => {
   it("converte A/2, sei vani e piano 1", () => {
     expect(propertyFormValues(property({}))).toMatchObject({
       type: "Appartamenti", subtype: "4 locali", floor: "Basso", floorNumber: "1",
-      street: "VIA BORGO SAN FRANCESCO", civicNumber: "62", internal: "1", staircase: "A",
+      street: "Via Borgo San Francesco", civicNumber: "62", internal: "1", staircase: "A",
     });
   });
 
@@ -33,6 +33,12 @@ describe("dati form immobile CRM", () => {
 
   it("usa Posto auto soltanto per C/6", () => {
     expect(propertyFormValues(property({ category: "C/6", consistency: "12 mq" })).subtype).toBe("Posto auto");
+  });
+
+  it("non inserisce l'indirizzo dell'immobile tutto in maiuscolo", () => {
+    expect(propertyFormValues(property({
+      rawPayload: { searchContext: { street: "VIA DELLE MATINE D'ANNUNZIO", civicNumber: "8" } },
+    })).street).toBe("Via Delle Matine D'Annunzio");
   });
 
   it.each([

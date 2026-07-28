@@ -195,6 +195,7 @@ export interface CrmAdapter {
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;
   inspectPersonMerge(): Promise<PersonMergeResult>;
   confirmPersonMerge(): Promise<PersonMergeResult>;
+  findLinkedPropertyByAddress(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   findPropertyForPerson(personId: string, property: NormalizedProperty, excludedPropertyIds?: string[]): Promise<PropertyMatchResult>;
   verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;

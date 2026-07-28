@@ -367,6 +367,44 @@
   padding: 6px 10px;
 }
 
+.completion-label.is-skipped {
+  border-color: #e4bd78;
+  background: #fff1d7;
+  color: #815000;
+}
+
+.completed-property-card.is-skipped {
+  border-color: #e2c58e;
+  background: #fffcf5;
+}
+
+.completed-property-card.is-skipped .completed-owners {
+  background: #fff8e9;
+}
+
+.skip-summary {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #e6c788;
+  border-radius: 8px;
+  background: #fff4dd;
+  color: #684d00;
+}
+
+.skip-summary b,
+.skip-summary small {
+  display: block;
+}
+
+.skip-summary p {
+  margin: 4px 0;
+}
+
+.skipped-person-note {
+  color: #815000 !important;
+  font-weight: 700;
+}
+
 .completed-imports-section {
   margin: 32px 0 18px;
 }
@@ -555,6 +593,10 @@
 .completed-session:first-child { border-top: 0; }
 .completed-session h3, .completed-session p { margin: 0; }
 .completed-session .eyebrow { margin-bottom: 4px; }
+.completed-session.has-skipped .completed-check {
+  background: #fff1d7;
+  color: #815000;
+}
 .completed-imports-footer { display: flex; justify-content: center; padding-top: 16px; }
 .auto-retry-notice {
   margin: 16px 0 0;

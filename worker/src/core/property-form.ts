@@ -1,3 +1,4 @@
+import { formatPersonName } from "./normalize.js";
 import type { NormalizedProperty } from "../types.js";
 
 export type PropertyFloorChoice = "Alto" | "Medio" | "Basso" | "Terra" | "Seminterrato" | "Su più livelli";
@@ -64,7 +65,8 @@ export function propertyFormValues(property: NormalizedProperty): PropertyFormVa
     ? property.rawPayload.searchContext as Record<string, unknown>
     : {};
   const fallback = fallbackStreetAndCivic(property.address);
-  const street = typeof searchContext.street === "string" && searchContext.street.trim() ? searchContext.street.trim() : fallback.street;
+  const rawStreet = typeof searchContext.street === "string" && searchContext.street.trim() ? searchContext.street.trim() : fallback.street;
+  const street = formatPersonName(rawStreet);
   const civicNumber = typeof searchContext.civicNumber === "string" && searchContext.civicNumber.trim() ? searchContext.civicNumber.trim() : fallback.civicNumber;
   const type = category.startsWith("A/") ? "Appartamenti" : "Box / posti auto";
   const subtype = type === "Appartamenti"

@@ -79,6 +79,10 @@ describe("adattatori con fixture HTML", () => {
         censusZone: null, category: "A/3", class: "2", consistency: "5 vani", cadastralIncome: 432.1, rawPayload: {},
       };
       expect((await adapter.findPropertyForPerson("P-42", property)).match?.id).toBe("I-42");
+      expect((await adapter.findLinkedPropertyByAddress("P-42", property)).match).toMatchObject({
+        id: "I-42",
+        data: { matchedBy: "address-for-person-selection", addressVerified: true },
+      });
       const addressMatch = (await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match;
       expect(addressMatch).toBeNull();
       expect((await adapter.findPropertyForPerson("P-42", property, ["I-42"])).match).toBeNull();

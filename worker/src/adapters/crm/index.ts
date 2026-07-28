@@ -901,6 +901,85 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  async findLinkedPropertyByAddress(
+    personId: string,
+    property: NormalizedProperty,
+  ): Promise<PropertyMatchResult> {
+    if (personId.startsWith("dry-person-")) return { match: null };
+    return this.friendly("person-property-address-check", "Non riesco a confrontare gli immobili collegati al nominativo.", async () => {
+      this.require("personPropertiesCard", "personPropertyLinks");
+      await this.openPerson(personId);
+      const personUrl = this.page.url();
+      const card = await this.uniqueVisible("personPropertiesCard", "Immobili/Notizie/Incarichi", 20_000);
+      const cardText = await card.innerText().catch(() => "");
+      const declaredCount = Number(cardText.match(/Immobili\s*\/\s*Notizie\s*\/\s*Incarichi\s*\((\d+)\)/i)?.[1] ?? 0);
+      let hrefs = [...new Set((await card.locator(this.selectors.personPropertyLinks)
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))))
+        .filter((href): href is string => Boolean(href)))];
+      if (!hrefs.length && declaredCount > 0 && this.selectors.personPropertiesViewAll) {
+        const viewAll = card.locator(this.selectors.personPropertiesViewAll).filter({ visible: true }).first();
+        if (await viewAll.count()) {
+          await viewAll.click({ force: true });
+          await this.page.waitForTimeout(800);
+          hrefs = [...new Set((await this.page.locator(this.selectors.personPropertyLinks)
+            .evaluateAll((links) => links.map((link) => link.getAttribute("href"))))
+            .filter((href): href is string => Boolean(href)))];
+        }
+      }
+      if (declaredCount > 0 && !hrefs.length) {
+        throw new WorkerError(
+          `La scheda indica ${declaredCount} immobili collegati, ma non permette di leggerne gli indirizzi.`,
+          "portal_error",
+          { portal: "CRM", action: "person-properties-address-unreadable", personId, declaredCount },
+          true,
+        );
+      }
+
+      const addressMatches: Array<{ id: string; data: Record<string, unknown> }> = [];
+      for (const href of hrefs) {
+        const isFixture = href.startsWith("#fixture-property");
+        const hrefPropertyId = isFixture
+          ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
+          : recordIdFromHref(href, "immobile");
+        if (!isFixture) {
+          await this.page.goto(new URL(href, personUrl).toString(), { waitUntil: "domcontentloaded" });
+          await this.page.waitForTimeout(650);
+        }
+        const identity = await this.readPropertyIdentity();
+        if (samePropertyAddress(identity.rawAddress, property.address)) {
+          addressMatches.push({
+            id: hrefPropertyId || recordIdFromHref(this.page.url(), "immobile"),
+            data: {
+              source: "crm-person-related-properties",
+              matchedBy: "address-for-person-selection",
+              addressVerified: true,
+              ...identity,
+              href,
+            },
+          });
+        }
+      }
+
+      if (!hrefs.every((href) => href.startsWith("#fixture-property"))) {
+        await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
+        await this.waitForPersonWorkspace(personId);
+      }
+      if (!addressMatches.length) return { match: null };
+      return {
+        match: {
+          ...addressMatches[0]!,
+          data: {
+            ...addressMatches[0]!.data,
+            matchingLinkedProperties: addressMatches.map(({ id, data }) => ({
+              id,
+              address: data.rawAddress,
+            })),
+          },
+        },
+      };
+    });
+  }
+
   async findPropertyForPerson(
     personId: string,
     property: NormalizedProperty,

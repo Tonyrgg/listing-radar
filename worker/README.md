@@ -22,6 +22,7 @@ L'interfaccia permette di:
 - rispondere alle conferme assisted con pulsanti;
 - capire in parole semplici cosa sta facendo, perché si è fermata e come ripartire;
 - correggere direttamente nell'app dati catastali, anagrafica, codice fiscale e quote mancanti;
+- fermare o riattivare il riprova automatico; dopo tre tentativi falliti sullo stesso immobile, il caso viene saltato e annotato nel riepilogo;
 - consultare avanzamento, lavorazioni recenti e diagnostica;
 - mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 2-3 minuti, senza ricaricare la pagina visibile.
 - conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
@@ -39,6 +40,8 @@ npm run desktop:release
 ```
 
 L'app installata controlla automaticamente il canale ogni sei ore. L'utente può anche usare **Controlla aggiornamenti**; il download e l'installazione restano bloccati durante una lavorazione attiva. Dopo il download, **Installa e riavvia** aggiorna l'app senza richiedere la disinstallazione e conserva le preferenze cifrate in Windows.
+
+Quando un errore riguarda un immobile identificato, il desktop esegue al massimo tre riprove a distanza di 60 secondi. Se il terzo tentativo fallisce, immobile, collegamenti e nominativi esclusivi del caso vengono marcati come saltati; i nominativi condivisi con altri immobili restano utilizzabili. Il riepilogo conserva motivo, numero di tentativi e soggetti coinvolti. Errori globali come una sessione scaduta non provocano skip automatici.
 
 Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
 

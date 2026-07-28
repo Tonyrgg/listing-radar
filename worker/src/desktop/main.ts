@@ -13,6 +13,7 @@ import { ExcelContactsAdapter, REQUIRED_CONTACT_COLUMNS } from "../adapters/exce
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
+import { automaticRetryAttempts, buildAutomaticSkipImpact } from "../core/automatic-skip.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
@@ -28,6 +29,7 @@ type Preferences = {
   contactsExcelPath?: string;
   mode: WorkerMode;
   dryRun: boolean;
+  autoRetryEnabled: boolean;
   encryptedEnvironment?: string;
 };
 
@@ -36,7 +38,7 @@ type KeepAliveState = SisterKeepAliveResult & { nextAttemptAt: string | null; st
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -91,6 +93,8 @@ let skippingPropertyId: string | null = null;
 let autoRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let autoRetryAt: string | null = null;
 let autoRetryJobId: string | null = null;
+let autoRetryAttemptNumber: number | null = null;
+let automaticRetryInFlight: { jobId: string; propertyId: string; attempt: number } | null = null;
 let completedImportsLimit = 6;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -240,7 +244,10 @@ async function stateSnapshot() {
     cancellingJobId,
     currentStep,
     propertyProgress,
-    autoRetry: autoRetryAt && autoRetryJobId ? { jobId: autoRetryJobId, dueAt: autoRetryAt } : null,
+    autoRetry: autoRetryAt && autoRetryJobId
+      ? { jobId: autoRetryJobId, dueAt: autoRetryAt, attempt: autoRetryAttemptNumber, maximumAttempts: 3 }
+      : null,
+    autoRetryEnabled: preferences.autoRetryEnabled,
     prompt,
     lastError,
     sisterKeepAlive,
@@ -311,29 +318,156 @@ function clearAutoRetry() {
   autoRetryTimer = null;
   autoRetryAt = null;
   autoRetryJobId = null;
+  autoRetryAttemptNumber = null;
 }
 
-function scheduleAutoRetry(jobId: string) {
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+async function markCaseSkipped(
+  jobId: string,
+  propertyId: string,
+  values: { source: "automatic" | "manual"; reason: string; attempts: number },
+) {
+  const repo = repository();
+  const graph = await repo.loadGraph(jobId);
+  const property = graph.properties.find((row) => row.id === propertyId);
+  if (!property) throw new Error("Immobile da saltare non appartenente alla lavorazione");
+  const impact = buildAutomaticSkipImpact(graph, propertyId);
+  const relatedOwnerships = graph.ownerships.filter((ownership) => impact.ownershipIds.includes(ownership.id));
+  const relatedPersonIds = impact.personIds;
+  const skippedAt = new Date().toISOString();
+  const skipDetails = {
+    source: values.source,
+    reason: values.reason,
+    attempts: values.attempts,
+    personIds: relatedPersonIds,
+    skippedAt,
+  };
+  property.raw_payload = {
+    ...(property.raw_payload ?? {}),
+    property_flow: { version: 2, stage: "skipped", dryRun: preferences.dryRun, updatedAt: skippedAt },
+    skip_details: skipDetails,
+  };
+  await repo.updatePropertyProcessing(property.id, {
+    processing_status: "skipped",
+    raw_payload: property.raw_payload,
+  });
+  for (const ownership of relatedOwnerships) {
+    await repo.updateOwnership(ownership.id, { processing_status: "skipped" });
+  }
+  for (const personId of relatedPersonIds) {
+    const person = graph.people.find((row) => row.id === personId);
+    if (!person) continue;
+    const previousCases = Array.isArray(person.raw_payload?.skipped_cases)
+      ? person.raw_payload.skipped_cases
+      : [];
+    const hasAnotherActiveProperty = !impact.exclusivePersonIds.includes(personId);
+    person.raw_payload = {
+      ...(person.raw_payload ?? {}),
+      skipped_cases: [
+        ...previousCases.filter((entry) => recordValue(entry).propertyId !== propertyId),
+        { propertyId, cadastralKey: property.cadastral_key, ...skipDetails },
+      ],
+    };
+    await repo.updatePersonProcessing(person.id, {
+      ...(!hasAnotherActiveProperty ? { processing_status: "skipped" } : {}),
+      raw_payload: person.raw_payload,
+    });
+  }
+  return { property, peopleCount: relatedPersonIds.length };
+}
+
+async function scheduleAutoRetry(jobId: string) {
   clearAutoRetry();
+  if (!preferences.autoRetryEnabled) return;
+  const repo = repository();
+  const job = await repo.getJob(jobId);
+  const propertyId = typeof job.error_details?.propertyId === "string"
+    ? job.error_details.propertyId
+    : propertyProgress?.propertyId;
+  let completedAttempts = 0;
+  if (propertyId) {
+    const graph = await repo.loadGraph(jobId);
+    const property = graph.properties.find((row) => row.id === propertyId);
+    completedAttempts = automaticRetryAttempts(property?.raw_payload);
+  }
   autoRetryJobId = jobId;
+  autoRetryAttemptNumber = Math.min(completedAttempts + 1, 3);
   autoRetryAt = new Date(Date.now() + 60_000).toISOString();
   autoRetryTimer = setTimeout(async () => {
     if (active || cancellingJobId || activeJobId !== jobId) {
-      scheduleAutoRetry(jobId);
+      await scheduleAutoRetry(jobId);
       await publishState();
       return;
     }
     try {
-      const job = await repository().getJob(jobId);
-      pushActivity("Riprovo automaticamente il passaggio fermo", "warning");
-      await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
+      const currentJob = await repo.getJob(jobId);
+      const currentPropertyId = typeof currentJob.error_details?.propertyId === "string"
+        ? currentJob.error_details.propertyId
+        : propertyId;
+      const attempt = autoRetryAttemptNumber ?? 1;
+      if (currentPropertyId) {
+        const graph = await repo.loadGraph(jobId);
+        const property = graph.properties.find((row) => row.id === currentPropertyId);
+        if (property) {
+          property.raw_payload = {
+            ...(property.raw_payload ?? {}),
+            automatic_retry: {
+              attempts: attempt,
+              maximumAttempts: 3,
+              lastAttemptAt: new Date().toISOString(),
+              lastError: currentJob.error_message,
+            },
+          };
+          await repo.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
+          automaticRetryInFlight = { jobId, propertyId: property.id, attempt };
+        }
+      }
+      pushActivity(`Tentativo automatico ${attempt}/3`, "warning");
+      await runWorker({ mode: currentJob.mode, dryRun: preferences.dryRun, jobId });
     } catch (error) {
+      automaticRetryInFlight = null;
       lastError = error instanceof Error ? error.message : String(error);
-      scheduleAutoRetry(jobId);
+      await scheduleAutoRetry(jobId);
       await publishState();
     }
   }, 60_000);
   autoRetryTimer.unref?.();
+}
+
+async function skipAfterAutomaticRetries(
+  jobId: string,
+  propertyId: string,
+  reason: string,
+  attempts: number,
+) {
+  try {
+    while (active && activeJobId === jobId) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (cancellingJobId || activeJobId !== jobId) return;
+    const skipped = await markCaseSkipped(jobId, propertyId, {
+      source: "automatic",
+      reason,
+      attempts,
+    });
+    lastError = null;
+    propertyProgress = null;
+    pushActivity(
+      `Caso saltato automaticamente dopo ${attempts} tentativi: ${skipped.property.address ?? skipped.property.cadastral_key}`,
+      "warning",
+    );
+    pushActivity(`${skipped.peopleCount} nominativ${skipped.peopleCount === 1 ? "o" : "i"} annotati nel riepilogo`, "warning");
+    await publishState();
+    const job = await repository().getJob(jobId);
+    await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
+  } catch (error) {
+    lastError = `Skip automatico non completato: ${error instanceof Error ? error.message : String(error)}`;
+    pushActivity(lastError, "error");
+    await publishState();
+  }
 }
 
 function handleRunnerEvent(event: RunnerEvent) {
@@ -348,6 +482,7 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(`Terminato: ${friendlyStepLabel(event.step)}`, "success");
   } else if (event.type === "job-completed") {
     clearAutoRetry();
+    automaticRetryInFlight = null;
     currentStep = "completed";
     propertyProgress = null;
     prompt = null;
@@ -355,6 +490,7 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
     clearAutoRetry();
+    automaticRetryInFlight = null;
     currentStep = "properties_processed";
     propertyProgress = null;
     activeJobId = null;
@@ -369,7 +505,17 @@ function handleRunnerEvent(event: RunnerEvent) {
   } else {
     lastError = event.message;
     pushActivity(event.message, "error");
-    scheduleAutoRetry(event.jobId);
+    const retry = automaticRetryInFlight;
+    automaticRetryInFlight = null;
+    const failedPropertyId = typeof event.details.propertyId === "string" ? event.details.propertyId : null;
+    if (retry && retry.jobId === event.jobId && retry.propertyId === failedPropertyId && retry.attempt >= 3) {
+      clearAutoRetry();
+      void skipAfterAutomaticRetries(event.jobId, retry.propertyId, event.message, retry.attempt);
+    } else if (preferences.autoRetryEnabled) {
+      void scheduleAutoRetry(event.jobId);
+    } else {
+      pushActivity("Riprova automatico disattivato: il lavoro resta fermo finché non decidi tu", "warning");
+    }
   }
   void publishState();
 }
@@ -446,7 +592,7 @@ async function runDesktopKeepAlive() {
   }
 }
 
-async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
+async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; acceptOpenPersonSelection?: boolean }) {
   if (active) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
   active = true;
@@ -464,6 +610,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     keepAlive: false,
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
+    acceptOpenPersonSelection: input.acceptOpenPersonSelection === true,
   });
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
   await publishState();
@@ -647,8 +794,26 @@ function registerIpc() {
     const repo = repository();
     const job = await repo.getJob(jobId);
     if (job.saved_at) await repo.markImportStarted(jobId);
-    await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
+    await runWorker({
+      mode: job.mode,
+      dryRun: preferences.dryRun,
+      jobId,
+      acceptOpenPersonSelection: job.error_details?.action === "person-multiple-exact-matches",
+    });
     return true;
+  });
+  ipcMain.handle("desktop:set-auto-retry-enabled", async (_event, enabled: boolean) => {
+    preferences = { ...preferences, autoRetryEnabled: Boolean(enabled) };
+    await persistPreferences();
+    if (!preferences.autoRetryEnabled) {
+      clearAutoRetry();
+      pushActivity("Riprova automatico fermato. Ripartirà soltanto quando lo riattivi.", "warning");
+    } else {
+      pushActivity("Riprova automatico riattivato", "success");
+      if (activeJobId && lastError && !active) await scheduleAutoRetry(activeJobId);
+    }
+    await publishState();
+    return preferences.autoRetryEnabled;
   });
   ipcMain.handle("desktop:pause-job", async () => {
     clearAutoRetry();
@@ -701,16 +866,13 @@ function registerIpc() {
   ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {
     if (!values.jobId || !values.propertyId) throw new Error("Immobile da saltare non riconosciuto");
     const repo = repository();
-    const graph = await repo.loadGraph(values.jobId);
-    const property = graph.properties.find((row) => row.id === values.propertyId);
-    if (!property) throw new Error("Immobile non appartenente alla lavorazione");
-    property.raw_payload = {
-      ...(property.raw_payload ?? {}),
-      property_flow: { version: 1, stage: "skipped", dryRun: preferences.dryRun, updatedAt: new Date().toISOString() },
-    };
-    await repo.updatePropertyProcessing(property.id, { processing_status: "skipped", raw_payload: property.raw_payload });
-    skippingPropertyId = property.id;
-    pushActivity(`Immobile saltato: ${property.address ?? property.cadastral_key}`, "warning");
+    const skipped = await markCaseSkipped(values.jobId, values.propertyId, {
+      source: "manual",
+      reason: "Saltato manualmente dall'utente",
+      attempts: 0,
+    });
+    skippingPropertyId = skipped.property.id;
+    pushActivity(`Immobile e nominativi annotati come saltati: ${skipped.property.address ?? skipped.property.cadastral_key}`, "warning");
     if (!active) {
       const job = await repo.getJob(values.jobId);
       lastError = null;
