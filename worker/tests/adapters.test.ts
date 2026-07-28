@@ -80,8 +80,8 @@ describe("adattatori con fixture HTML", () => {
       };
       expect((await adapter.findPropertyForPerson("P-42", property)).match?.id).toBe("I-42");
       const addressMatch = (await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match;
-      expect(addressMatch?.data.matchedBy).toBe("street-and-civic");
-      expect(addressMatch?.data).toMatchObject({ address: "Via Roma 12", internal: "2" });
+      expect(addressMatch).toBeNull();
+      expect((await adapter.findPropertyForPerson("P-42", property, ["I-42"])).match).toBeNull();
     } finally { await browser.close(); }
   });
 
@@ -422,6 +422,8 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator(crmFixtureSelectors.propertyCadastralSheet).locator("input").inputValue()).toBe("50");
       expect(await page.locator(crmFixtureSelectors.propertyCadastralParcel).locator("input").inputValue()).toBe("2278");
       expect(await page.locator(crmFixtureSelectors.propertyCadastralSubaltern).locator("input").inputValue()).toBe("20");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralGroup).locator("xpath=..").locator('input[role="textbox"]').inputValue()).toBe("Gruppo C");
+      expect(await page.locator(crmFixtureSelectors.propertyCadastralType).locator("xpath=..").locator('input[role="textbox"]').inputValue()).toContain("C02");
     } finally { await browser.close(); }
   });
 
@@ -444,10 +446,23 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
-  it("non riapre la modifica del nominativo quando tutti i recapiti Excel sono già assegnati correttamente", async () => {
+  it("verifica i campi del nominativo senza duplicare recapiti già presenti", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
+      await page.route("https://crm.test/**", (route) => route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><body>
+          <article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (0)</article>
+          <div class="flex"><div><label>Cellulare</label></div><div><span class="slds-form-element__static"><span class="slds-grow">3331234567</span></span></div></div>
+          <div class="flex"><div><label>Telefono fisso</label></div><div><span class="slds-form-element__static"><span class="slds-grow">0801234567</span></span></div></div>
+          <div class="flex"><div><label>Telefono Ufficio</label></div><div><span class="slds-form-element__static"><span class="slds-grow"></span></span></div></div>
+          <div class="flex"><div><label>Altro telefono</label></div><div><span class="slds-form-element__static"><span class="slds-grow"></span></span></div></div>
+          <div class="flex"><div><label>Email</label></div><div><span class="slds-form-element__static"><span class="slds-grow"></span></span></div></div>
+          <div class="flex"><div><label>Email Secondaria</label></div><div><span class="slds-form-element__static"><span class="slds-grow"></span></span></div></div>
+        </body></html>`,
+      }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-99");
       const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
       await expect(adapter.transferPhoneAssignments("P-99", {
         fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
@@ -462,6 +477,43 @@ describe("adattatori con fixture HTML", () => {
         alreadyAssigned: ["3331234567", "0801234567"],
         simulated: false,
       });
+    } finally { await browser.close(); }
+  });
+
+  it("inserisce una sola volta un numero presente sia tra cellulari sia tra fissi", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const contactRow = (label: string, id: string) => `
+        <div class="flex"><div><label for="${id}">${label}</label></div>
+          <div><span class="slds-form-element__static"><span class="slds-grow"></span></span><input id="${id}"></div>
+          ${label === "Cellulare" ? '<button class="inline-edit-trigger">Modifica</button>' : ""}
+        </div>`;
+      await page.route("https://crm.test/**", (route) => route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><body>
+          <article data-worker-crm="personPropertiesCard">Immobili/Notizie/Incarichi (0)</article>
+          ${contactRow("Cellulare", "mobile")}
+          ${contactRow("Telefono fisso", "landline")}
+          ${contactRow("Telefono Ufficio", "office")}
+          ${contactRow("Altro telefono", "other")}
+          ${contactRow("Email", "email")}
+          ${contactRow("Email Secondaria", "email2")}
+          <button role="button">Salva</button>
+        </body></html>`,
+      }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-99");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await adapter.transferPhoneAssignments("P-99", {
+        fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
+        taxCode: "RSSMRA80A01A893X", rightType: "Proprietà", shareOriginal: "1/1",
+        shareNumerator: 1, shareDenominator: 1, sharePercentage: 100,
+        mobiles: ["3331234567"], landlines: ["3331234567"], emails: [], whatsapp: [], rawPayload: {},
+      }, []);
+      expect(await page.locator("#mobile").inputValue()).toBe("3331234567");
+      expect(await page.locator("#landline").inputValue()).toBe("");
+      expect(await page.locator("#office").inputValue()).toBe("");
+      expect(await page.locator("#other").inputValue()).toBe("");
     } finally { await browser.close(); }
   });
 

@@ -97,6 +97,8 @@ export interface CrmSelectors {
   propertyCadastralParcel: string;
   propertyCadastralSubaltern: string;
   propertyCadastralIncome: string;
+  propertyCadastralGroup: string;
+  propertyCadastralType: string;
   activityCard: string;
   activityCreate: string;
   activityDialog: string;
@@ -128,7 +130,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
-  "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome",
+  "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
@@ -177,6 +179,8 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   propertyCadastralParcel: '.flex:has(> div > label:has-text("Catasto Particella"))',
   propertyCadastralSubaltern: '.flex:has(> div > label:has-text("Catasto Subalterno"))',
   propertyCadastralIncome: '.flex:has(> div > label:has-text("Catasto Rendita"))',
+  propertyCadastralGroup: 'label:text-is("Catasto Gruppi")',
+  propertyCadastralType: 'label:text-is("Catasto Tipologie")',
   activityCard: 'article:visible:has-text("Attivit"):has(button:has-text("Nuovo"))',
   activityCreate: 'button:has-text("Nuovo")',
   // The custom c-lwc-modal host has a zero-sized box in production. Target the
@@ -250,7 +254,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
-  "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome",
+  "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, `[data-worker-crm="${key}"]`])) as unknown as CrmSelectors;

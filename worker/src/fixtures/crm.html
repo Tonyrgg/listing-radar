@@ -14,6 +14,8 @@
     <div data-worker-crm="propertyCadastralParcel"><label>Catasto Particella</label><input></div>
     <div data-worker-crm="propertyCadastralSubaltern"><label>Catasto Subalterno</label><input></div>
     <div data-worker-crm="propertyCadastralIncome"><label>Catasto Rendita</label><input></div>
+    <div><label data-worker-crm="propertyCadastralGroup">Catasto Gruppi</label><input role="textbox"><div role="option" onclick="this.parentElement.querySelector('input').value='Gruppo A';document.body.dataset.cadastralGroup='Gruppo A'">Gruppo A</div><div role="option" onclick="this.parentElement.querySelector('input').value='Gruppo C';document.body.dataset.cadastralGroup='Gruppo C'">Gruppo C</div></div>
+    <div><label data-worker-crm="propertyCadastralType">Catasto Tipologie</label><input role="textbox"><div role="option" onclick="this.parentElement.querySelector('input').value='A02 - abitazioni di tipo civile';document.body.dataset.cadastralType='A02'">A02 - abitazioni di tipo civile</div><div role="option" onclick="this.parentElement.querySelector('input').value='C02 - magazzini e locali di deposito';document.body.dataset.cadastralType='C02'">C02 - magazzini e locali di deposito</div></div>
     <article data-worker-crm="activityCard"><button data-worker-crm="activityCreate" onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector('[data-worker-crm=activityDialog]').hidden=false">Nuovo</button></article>
     <div role="dialog" data-worker-crm="activityDialog" hidden>
       <textarea data-worker-crm="activityDescription"></textarea>

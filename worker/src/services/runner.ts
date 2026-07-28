@@ -571,6 +571,7 @@ export class PropertyWorkerRunner {
                 propertyId: task.property.crm_record_id!,
                 propertyAddress: task.property.address,
                 fallbackPersonId: task.fallbackPersonId,
+                fallbackPersonLabel: task.owners[0]?.full_name,
                 description: PROPERTY_ACTIVITY_DESCRIPTION,
                 status: PROPERTY_ACTIVITY_STATUS,
               });
@@ -685,8 +686,9 @@ export class PropertyWorkerRunner {
     total: number,
     label: string,
     operation: () => Promise<T>,
+    maximumAttemptsOverride?: number,
   ): Promise<T> {
-    const maximumAttempts = job.mode === "automatic" ? 3 : 1;
+    const maximumAttempts = maximumAttemptsOverride ?? (job.mode === "automatic" ? 2 : 1);
     let lastError: unknown;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       this.throwIfCancellationRequested(job.id);
@@ -728,7 +730,7 @@ export class PropertyWorkerRunner {
   private async markPropertyStage(property: PropertyRow, stage: string) {
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
-      property_flow: { version: 1, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
+      property_flow: { version: 2, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
     };
     await this.repository.updatePropertyProcessing(property.id, {
       raw_payload: property.raw_payload,
@@ -774,36 +776,67 @@ export class PropertyWorkerRunner {
     propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
       const { property, primary, coowners } = item;
+      const stageOrder = [
+        "ready",
+        "primary_contacts_ready",
+        "primary_ready",
+        "contacts_synced",
+        "property_ready",
+        "activity_ready",
+        "completed",
+      ];
+      const savedPropertyFlow = property.raw_payload?.property_flow as { stage?: string; version?: number } | undefined;
+      let propertyStage = String(savedPropertyFlow?.stage ?? "ready");
+      if (
+        Number(savedPropertyFlow?.version ?? 0) < 2
+        && ["contacts_synced", "property_ready"].includes(propertyStage)
+      ) propertyStage = "primary_ready";
+      const stageReached = (target: string) => stageOrder.indexOf(propertyStage) >= stageOrder.indexOf(target);
+      const advanceStage = async (stage: string) => {
+        await this.markPropertyStage(property, stage);
+        propertyStage = stage;
+      };
+      if (["completed", "skipped"].includes(property.processing_status) || stageReached("completed")) continue;
       try {
-        this.throwIfPropertySkipRequested(job.id, property.id);
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco nel file Excel i recapiti di ${primary.person.full_name}`);
-        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Recapiti Excel", () =>
-          this.ensureContacts(job, primary.person, crm, contacts));
-        await this.markPropertyStage(property, "primary_contacts_ready");
+        if (!stageReached("primary_contacts_ready")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Leggo da Excel i recapiti di ${primary.person.full_name}, senza ancora toccare il gestionale`);
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Recapiti Excel", () =>
+            this.ensureContacts(job, primary.person, crm, contacts, false));
+          await advanceStage("primary_contacts_ready");
+        }
 
-        this.throwIfPropertySkipRequested(job.id, property.id);
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Completo o creo il proprietario principale: ${primary.person.full_name}`);
-        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Scheda nominativo", () =>
-          this.ensurePerson(job, primary.person, crm));
-        await this.markPropertyStage(property, "primary_ready");
+        if (!stageReached("primary_ready")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Cerco una sola volta e verifico il proprietario: ${primary.person.full_name}`);
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Scheda nominativo", () =>
+            this.ensurePerson(job, primary.person, crm));
+          await advanceStage("primary_ready");
+        }
 
-        this.throwIfPropertySkipRequested(job.id, property.id);
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Verifico che i recapiti siano assegnati al nominativo corretto");
-        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Assegnazione recapiti", () =>
-          this.ensureContacts(job, primary.person, crm, contacts));
-        await this.markPropertyStage(property, "contacts_synced");
+        if (!stageReached("contacts_synced")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Confronto ogni recapito con tutti i campi del nominativo e aggiungo solo quelli assenti");
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Assegnazione recapiti", () =>
+            this.ensureContacts(job, primary.person, crm, contacts, true));
+          await advanceStage("contacts_synced");
+        }
 
-        this.throwIfPropertySkipRequested(job.id, property.id);
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Cerco o creo l'immobile dentro la scheda del proprietario principale");
-        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Passaggio nominativo-immobile", () =>
-          this.ensureProperty(job, property, primary.person, crm));
-        await this.markPropertyStage(property, "property_ready");
+        if (!stageReached("property_ready")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Confronto gli immobili usando soltanto foglio, particella e subalterno");
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Passaggio nominativo-immobile", () =>
+            this.ensureProperty(job, property, primary.person, crm));
+          await advanceStage("property_ready");
+        }
 
-        this.throwIfPropertySkipRequested(job.id, property.id);
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Creo l'attività dalla scheda dell'immobile");
-        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "AttivitÃ  immobile", () =>
-          this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm));
-        await this.markPropertyStage(property, "activity_ready");
+        if (!stageReached("activity_ready")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Apro l’attività dall’immobile verificato, compilo la descrizione e salvo");
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Attività immobile", () =>
+            this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm), 1);
+          await advanceStage("activity_ready");
+        }
         this.throwIfPropertySkipRequested(job.id, property.id);
 
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale con la quota più alta`);
@@ -828,7 +861,7 @@ export class PropertyWorkerRunner {
           },
         };
         await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
-        await this.markPropertyStage(property, "completed");
+        await advanceStage("completed");
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "completed", `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato`);
@@ -1050,12 +1083,58 @@ export class PropertyWorkerRunner {
         civicNumber: job.civic_number,
       },
     };
-    const linkedResult = await crm.findPropertyForPerson(primary.crm_record_id, property);
+    const persistedCrmMatch = isRecord(row.raw_payload?.crm_match) ? row.raw_payload.crm_match : null;
+    const persistedCrmMatchData = isRecord(persistedCrmMatch?.data) ? persistedCrmMatch.data : null;
+    const persistedQuarantine = isRecord(row.raw_payload?.unsafe_address_only_match)
+      ? row.raw_payload.unsafe_address_only_match
+      : null;
+    const persistedMatchMethod = String(persistedCrmMatchData?.matchedBy ?? "");
+    const unsafePersistedPropertyId = String(
+      persistedQuarantine?.crmPropertyId
+      ?? (row.crm_record_id && persistedMatchMethod && persistedMatchMethod !== "cadastral" ? row.crm_record_id : ""),
+    ) || null;
+    if (unsafePersistedPropertyId && row.crm_record_id) {
+      row.crm_record_id = null;
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        unsafe_address_only_match: {
+          crmPropertyId: unsafePersistedPropertyId,
+          matchedBy: persistedMatchMethod,
+          quarantinedAt: new Date().toISOString(),
+        },
+        crm_match: null,
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: "not_found",
+        raw_payload: row.raw_payload,
+      });
+    }
+    const linkedResult = await crm.findPropertyForPerson(
+      primary.crm_record_id,
+      property,
+      unsafePersistedPropertyId ? [unsafePersistedPropertyId] : [],
+    );
     if (linkedResult.match) {
+      const verifiedLinkedProperty = await crm.verifyProperty(linkedResult.match.id, property);
+      if (!verifiedLinkedProperty.match || verifiedLinkedProperty.match.id !== linkedResult.match.id) {
+        throw new WorkerError(
+          "L’immobile collegato al nominativo non supera la verifica catastale finale. Il worker non lo aggiornerà.",
+          "needs_review",
+          {
+            action: "property-linked-identity-mismatch",
+            propertyId: row.id,
+            crmPropertyId: linkedResult.match.id,
+            crmPersonId: primary.crm_record_id,
+            cadastralKey: row.cadastral_key,
+          },
+          true,
+        );
+      }
       row.crm_record_id = linkedResult.match.id;
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
-        crm_match: linkedResult.match,
+        crm_match: verifiedLinkedProperty.match,
         checked_from_people: [primary.id],
         property_search: {
           linkedToVerifiedPerson: true,
@@ -1152,7 +1231,11 @@ export class PropertyWorkerRunner {
       );
     }
     if (!this.config.WORKER_DRY_RUN) {
-      const linkedVerification = await crm.findPropertyForPerson(primary.crm_record_id, property);
+      const linkedVerification = await crm.findPropertyForPerson(
+        primary.crm_record_id,
+        property,
+        unsafePersistedPropertyId ? [unsafePersistedPropertyId] : [],
+      );
       if (!linkedVerification.match || linkedVerification.match.id !== row.crm_record_id) {
         throw new WorkerError(
           "La scheda immobile è corretta, ma il collegamento con il nominativo non è ancora visibile. Il worker riproverà senza ricreare l'immobile.",
@@ -1194,26 +1277,57 @@ export class PropertyWorkerRunner {
       if (decision === "review") throw new WorkerError("Attività dell'immobile segnata da verificare", "needs_review", { propertyId: property.id });
       if (decision === "manual") { await this.prompts.waitForManualEdit(); return; }
     }
-    let lastError: WorkerError | null = null;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        const result = await crm.createPropertyActivity({ propertyId: property.crm_record_id, propertyAddress: property.address, fallbackPersonId: primary.crm_record_id ?? undefined, description: PROPERTY_ACTIVITY_DESCRIPTION, status: PROPERTY_ACTIVITY_STATUS });
-        property.raw_payload = { ...(property.raw_payload ?? {}), worker_activity: activityCheckpoint({ state: result.outcome, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: property.crm_record_id, crmActivityId: result.crmActivityId, correlatedProperty: result.correlatedProperty, attempts: attempt + result.attempts - 1, error: null }) };
-        await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
-        return;
-      } catch (error) {
-        lastError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "portal_error", { portal: "CRM" }, true);
-        if (lastError.status !== "portal_error") throw lastError;
-      }
-    }
-    throw lastError ?? new WorkerError("Non riesco a creare l'attività dalla scheda dell'immobile", "portal_error", { portal: "CRM", propertyId: property.id }, true);
+    const result = await crm.createPropertyActivity({
+      propertyId: property.crm_record_id,
+      propertyAddress: property.address,
+      fallbackPersonId: primary.crm_record_id ?? undefined,
+      fallbackPersonLabel: primary.full_name,
+      description: PROPERTY_ACTIVITY_DESCRIPTION,
+      status: PROPERTY_ACTIVITY_STATUS,
+    });
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      worker_activity: activityCheckpoint({
+        state: result.outcome,
+        dryRun: this.config.WORKER_DRY_RUN,
+        crmPropertyId: property.crm_record_id,
+        crmActivityId: result.crmActivityId,
+        correlatedProperty: result.correlatedProperty,
+        attempts: result.attempts,
+        error: null,
+      }),
+    };
+    await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
   }
 
-  private async ensureContacts(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
+  private async ensureContacts(
+    job: JobRow,
+    row: PersonRow,
+    crm: PlaywrightCrmAdapter,
+    contacts: ExcelContactsAdapter,
+    syncToCrm = true,
+  ) {
     const match = contacts.findByTaxCode(row.tax_code ?? "");
     await this.repository.updateContacts(row.id, match, row.raw_payload);
     row.mobiles = match.mobiles; row.landlines = match.landlines; row.emails = match.emails;
     row.raw_payload = { ...(row.raw_payload ?? {}), contact_match: { matchedRows: match.matchedRows, whatsapp: match.whatsapp, overflowPhones: match.overflowPhones, notes: match.notes } };
+    if (!syncToCrm) {
+      await this.repository.updatePersonProcessing(row.id, {
+        mobiles: row.mobiles,
+        landlines: row.landlines,
+        emails: row.emails,
+        raw_payload: row.raw_payload,
+        processing_status: "contacts_loaded",
+      });
+      return;
+    }
+    const existingFlow = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
+    if (
+      existingFlow?.complete === true
+      && existingFlow.version === 2
+      && existingFlow.dryRun === this.config.WORKER_DRY_RUN
+      && existingFlow.crmPersonId === row.crm_record_id
+    ) return;
     let transfer: Awaited<ReturnType<PlaywrightCrmAdapter["transferPhoneAssignments"]>> | null = null;
     if (match.matchedRows && row.crm_record_id) {
       const assignments = await crm.findPhoneAssignments([...match.mobiles, ...match.landlines]);
@@ -1257,6 +1371,7 @@ export class PropertyWorkerRunner {
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
       contacts_flow: {
+        version: 2,
         complete: true,
         dryRun: this.config.WORKER_DRY_RUN,
         crmPersonId: row.crm_record_id,

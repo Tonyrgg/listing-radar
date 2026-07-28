@@ -166,6 +166,7 @@ export interface CrmActivityInput {
   propertyId: string;
   propertyAddress: string | null;
   fallbackPersonId?: string;
+  fallbackPersonLabel?: string;
   description: string;
   status: "Da eseguire";
 }
@@ -194,7 +195,7 @@ export interface CrmAdapter {
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;
   inspectPersonMerge(): Promise<PersonMergeResult>;
   confirmPersonMerge(): Promise<PersonMergeResult>;
-  findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
+  findPropertyForPerson(personId: string, property: NormalizedProperty, excludedPropertyIds?: string[]): Promise<PropertyMatchResult>;
   verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;

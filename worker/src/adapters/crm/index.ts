@@ -21,7 +21,8 @@ import { crmSelectors, type CrmSelectors } from "./selectors.js";
 
 const CRM_PATH = "/CRMImmobiliareLightning/s";
 const ACTIVITY_FORM_TIMEOUT = 20_000;
-const ACTIVITY_PRE_SAVE_ATTEMPTS = 3;
+const ACTIVITY_PRE_SAVE_ATTEMPTS = 2;
+const ACTIVITY_PREFILL_WAIT_CYCLES = process.env.VITEST ? 2 : 32;
 
 function normalizedUiText(value: string | null | undefined) {
   return (value ?? "")
@@ -265,20 +266,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   private async waitForPersonWorkspace(personId?: string) {
     this.require("personPropertiesCard");
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      await this.checkSession();
-      const card = this.visible(this.selectors.personPropertiesCard).first();
-      if (await card.waitFor({ state: "visible", timeout: attempt === 1 ? 12_000 : 8_000 }).then(() => true).catch(() => false)) return;
-      if (attempt < 3) {
-        const target = personId ? new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString() : this.page.url();
-        await this.page.goto(target, { waitUntil: "domcontentloaded" });
-        await this.page.waitForTimeout(700 * attempt);
-      }
-    }
+    await this.checkSession();
+    const card = this.visible(this.selectors.personPropertiesCard).first();
+    if (await card.waitFor({ state: "visible", timeout: 30_000 }).then(() => true).catch(() => false)) return;
+    const target = personId ? new URL(`${CRM_PATH}/account/${personId}`, this.page.url()).toString() : this.page.url();
+    await this.page.goto(target, { waitUntil: "domcontentloaded" });
+    await this.checkSession();
+    if (await card.waitFor({ state: "visible", timeout: 25_000 }).then(() => true).catch(() => false)) return;
     throw new WorkerError(
       "La scheda nominativo è aperta, ma la sezione Immobili/Notizie/Incarichi non ha terminato il caricamento.",
       "portal_error",
-      { portal: "CRM", action: "person-workspace-ready", personId, pageUrl: this.page.url(), attempts: 3 },
+      { portal: "CRM", action: "person-workspace-ready", personId, pageUrl: this.page.url(), attempts: 2 },
       true,
     );
   }
@@ -439,6 +437,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     const row = this.personDetailRow(label);
     if (await row.count() !== 1) return "";
     const value = row.locator(".slds-form-element__static .slds-grow").filter({ visible: true });
+    if (await value.count() !== 1) return "";
     return (await value.first().innerText().catch(() => "")).trim();
   }
 
@@ -449,23 +448,44 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     emails?: string[];
   }) {
     const labels = ["Email", "Email Secondaria", "Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
+    const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
+    const emailLabels = ["Email", "Email Secondaria"] as const;
     const before = new Map<string, string>();
     for (const label of labels) before.set(label, await this.readPersonDetailContact(label));
 
-    const normalizedBeforePhones = new Set(
-      ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"]
-        .map((label) => normalizePhone(before.get(label) ?? ""))
-        .filter(Boolean),
-    );
-    const normalizedBeforeEmails = new Set(
-      ["Email", "Email Secondaria"].map((label) => (before.get(label) ?? "").trim().toLowerCase()).filter(Boolean),
-    );
     const removePhones = input.removePhones ?? new Set<string>();
-    const missingMobiles = (input.mobiles ?? []).map(normalizePhone).filter((value) => value && !normalizedBeforePhones.has(value));
-    const missingLandlines = (input.landlines ?? []).map(normalizePhone).filter((value) => value && !normalizedBeforePhones.has(value));
-    const missingEmails = (input.emails ?? []).map((value) => value.trim().toLowerCase()).filter((value) => value && !normalizedBeforeEmails.has(value));
-    const mustRemove = [...normalizedBeforePhones].some((phone) => removePhones.has(phone));
-    if (!mustRemove && !missingMobiles.length && !missingLandlines.length && !missingEmails.length) {
+    const duplicatePhoneLabels = new Set<string>();
+    const retainedPhones = new Set<string>();
+    for (const label of phoneLabels) {
+      const phone = normalizePhone(before.get(label) ?? "");
+      if (!phone || removePhones.has(phone)) continue;
+      if (retainedPhones.has(phone)) duplicatePhoneLabels.add(label);
+      else retainedPhones.add(phone);
+    }
+    const duplicateEmailLabels = new Set<string>();
+    const retainedEmails = new Set<string>();
+    for (const label of emailLabels) {
+      const email = (before.get(label) ?? "").trim().toLowerCase();
+      if (!email) continue;
+      if (retainedEmails.has(email)) duplicateEmailLabels.add(label);
+      else retainedEmails.add(email);
+    }
+    const desiredMobiles = [...new Set((input.mobiles ?? []).map(normalizePhone).filter(Boolean))];
+    const desiredMobileSet = new Set(desiredMobiles);
+    const desiredLandlines = [...new Set((input.landlines ?? []).map(normalizePhone).filter((value) => value && !desiredMobileSet.has(value)))];
+    const desiredEmails = [...new Set((input.emails ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean))];
+    const missingMobiles = desiredMobiles.filter((value) => !retainedPhones.has(value));
+    const missingLandlines = desiredLandlines.filter((value) => !retainedPhones.has(value));
+    const missingEmails = desiredEmails.filter((value) => !retainedEmails.has(value));
+    const mustRemove = phoneLabels.some((label) => removePhones.has(normalizePhone(before.get(label) ?? "")));
+    if (
+      !mustRemove
+      && !duplicatePhoneLabels.size
+      && !duplicateEmailLabels.size
+      && !missingMobiles.length
+      && !missingLandlines.length
+      && !missingEmails.length
+    ) {
       return { changed: false, removed: [] as string[], overflow: [] as string[] };
     }
 
@@ -487,24 +507,38 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     }
 
     const removed: string[] = [];
-    for (const label of ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"]) {
+    for (const label of phoneLabels) {
       const field = fields.get(label);
       if (!field) continue;
       const current = normalizePhone(await field.inputValue());
-      if (current && removePhones.has(current)) {
+      if (current && (removePhones.has(current) || duplicatePhoneLabels.has(label))) {
         await field.fill("");
-        removed.push(current);
+        if (removePhones.has(current)) removed.push(current);
+      }
+    }
+    for (const label of emailLabels) {
+      const field = fields.get(label);
+      if (field && duplicateEmailLabels.has(label)) {
+        await field.fill("");
       }
     }
 
     const assignMissing = async (values: string[], preferredLabels: string[]) => {
       const overflow: string[] = [];
+      const assignedValues = new Set<string>();
+      for (const field of fields.values()) {
+        const value = (await field.inputValue()).trim();
+        const normalized = value.includes("@") ? value.toLowerCase() : normalizePhone(value);
+        if (normalized) assignedValues.add(normalized);
+      }
       for (const value of values) {
+        if (assignedValues.has(value)) continue;
         let assigned = false;
         for (const label of preferredLabels) {
           const field = fields.get(label);
           if (!field || (await field.inputValue()).trim()) continue;
           await field.fill(value);
+          assignedValues.add(value);
           assigned = true;
           break;
         }
@@ -560,11 +594,6 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         simulated: true,
       };
     }
-    const safeDesiredPhones = [...desiredPhones].filter((phone) => !ambiguousPhones.has(phone));
-    if (!safeConflicts.length && safeDesiredPhones.every((phone) => alreadyAssigned.includes(phone))) {
-      return { moved: [], alreadyAssigned, ...(unresolved.length ? { unresolved } : {}), simulated: false };
-    }
-
     return this.friendly("phone-assignment-transfer", "Non riesco a spostare il recapito sul nominativo corretto.", async () => {
       const moved: CrmContactTransferResult["moved"] = [];
       const byOldPerson = new Map<string, Set<string>>();
@@ -872,7 +901,11 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
-  async findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult> {
+  async findPropertyForPerson(
+    personId: string,
+    property: NormalizedProperty,
+    excludedPropertyIds: string[] = [],
+  ): Promise<PropertyMatchResult> {
     if (personId.startsWith("dry-person-")) return { match: null };
     return this.friendly("person-property-search", "Non riesco a leggere gli immobili collegati al nominativo.", async () => {
       this.require("personPropertiesCard", "personPropertyLinks");
@@ -901,6 +934,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
       for (const href of hrefs) {
         const isFixture = href.startsWith("#fixture-property");
+        const hrefPropertyId = isFixture
+          ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
+          : recordIdFromHref(href, "immobile");
+        if (hrefPropertyId && excludedPropertyIds.includes(hrefPropertyId)) continue;
         if (!isFixture) {
           await this.page.goto(new URL(href, personUrl).toString(), { waitUntil: "domcontentloaded" });
           await this.page.waitForTimeout(650);
@@ -910,27 +947,23 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
           && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
         const addressMatch = samePropertyAddress(identity.rawAddress, property.address);
-        if (cadastralMatch || addressMatch) {
-          const id = isFixture
-            ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
-            : recordIdFromHref(this.page.url(), "immobile") || recordIdFromHref(href, "immobile");
-          const sisterAddress = addressIdentity(property.address);
+        if (cadastralMatch) {
+          const id = hrefPropertyId || recordIdFromHref(this.page.url(), "immobile");
           matches.push({
             id,
             data: {
               source: "crm-person-related-properties",
-              matchedBy: cadastralMatch
-                ? "cadastral"
-                : identity.internal && sisterAddress?.internal ? "street-civic-and-internal" : "street-and-civic",
+              matchedBy: "cadastral",
+              identityVerified: true,
               ...identity,
-              needsUpdate: cadastralMatch ? !addressMatch : false,
+              needsUpdate: !addressMatch,
               href,
             },
           });
         }
       }
-      if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili compatibili per dati catastali oppure via e civico. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
-      if (!matches.length) {
+      if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili con gli stessi dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
+      if (!matches.length && !hrefs.every((href) => href.startsWith("#fixture-property"))) {
         await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
         await this.waitForPersonWorkspace(personId);
       }
@@ -949,6 +982,53 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     for (const [key, value] of fields) if (value) await this.page.locator(this.selectors[key]).fill(value);
   }
 
+  private async selectCadastralPicklist(
+    key: "propertyCadastralGroup" | "propertyCadastralType",
+    label: string,
+    expected: string,
+    startsWith = false,
+  ) {
+    const labelElement = await this.uniqueVisible(key, label, 10_000);
+    const component = labelElement.locator("xpath=..");
+    const input = component.locator('input[role="textbox"]').filter({ visible: true });
+    const inputCount = await input.count();
+    if (inputCount !== 1) {
+      throw new WorkerError(
+        `Il modulo catastale mostra ${inputCount} menu “${label}”.`,
+        "portal_error",
+        { portal: "CRM", action: "property-cadastral-picklist-input", field: label, expected, inputCount },
+        true,
+      );
+    }
+    const matches = (value: string) => startsWith
+      ? normalizedUiText(value).startsWith(normalizedUiText(expected))
+      : normalizedUiText(value) === normalizedUiText(expected);
+    if (matches(await input.inputValue())) return;
+
+    await input.click();
+    const options = component.locator('[role="option"]').filter({ visible: true });
+    await options.first().waitFor({ state: "visible", timeout: 8_000 });
+    const optionLabels = await options.allTextContents();
+    const optionIndex = optionLabels.findIndex(matches);
+    if (optionIndex < 0) {
+      throw new WorkerError(
+        `Nel menu “${label}” non è disponibile il valore catastale SISTER “${expected}”.`,
+        "needs_review",
+        { portal: "CRM", action: "property-cadastral-picklist-option", field: label, expected, alternatives: optionLabels },
+        true,
+      );
+    }
+    await options.nth(optionIndex).click();
+    if (!matches(await input.inputValue())) {
+      throw new WorkerError(
+        `Il gestionale non ha confermato il valore “${expected}” nel menu “${label}”.`,
+        "portal_error",
+        { portal: "CRM", action: "property-cadastral-picklist-confirmation", field: label, expected },
+        true,
+      );
+    }
+  }
+
   private async syncPropertyCadastralDetails(property: NormalizedProperty) {
     const values: Array<[keyof CrmSelectors, string, string]> = [
       ["propertyCadastralSectionUrban", "Catasto Sezione Urbana", "BA"],
@@ -957,53 +1037,84 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       ["propertyCadastralSubaltern", "Catasto Subalterno", property.subaltern],
       ["propertyCadastralIncome", "Catasto Rendita", property.cadastralIncome?.toString().replace(".", ",") ?? ""],
     ];
-    let changed = false;
-    for (const [key, label, expected] of values) {
-      if (!expected) continue;
-      const row = await this.uniqueVisible(key, label, 15_000);
-      let input = row.locator("input").filter({ visible: true });
-      const currentValue = await input.count() === 1 ? normalizedUiText(await input.inputValue()) : "";
-      const currentText = normalizedUiText(await row.innerText().catch(() => ""))
-        .replace(normalizedUiText(label), "")
-        .trim();
-      if (currentValue === normalizedUiText(expected) || (!currentValue && currentText === normalizedUiText(expected))) continue;
-      if (!(await input.count())) {
-        const edit = row.locator('button.inline-edit-trigger, button[title*="Modifica"], button[title*="Edit"], lightning-button-icon button').filter({ visible: true });
-        if (await edit.count() !== 1) {
-          throw new WorkerError(
-            `Il campo â€œ${label}â€ non contiene il valore SISTER e non mostra un solo comando di modifica.`,
-            "portal_error",
-            { portal: "CRM", action: "property-cadastral-edit", field: label, expected, editButtons: await edit.count() },
-            true,
-          );
-        }
-        await edit.click();
-        input = row.locator("input").filter({ visible: true });
-        await input.first().waitFor({ state: "visible", timeout: 8_000 });
+    const editableInput = (key: keyof CrmSelectors, label: string) => this.page
+      .getByLabel(label, { exact: true })
+      .or(this.visible(this.selectors[key]).locator("input"))
+      .filter({ visible: true });
+    const firstEditable = editableInput("propertyCadastralSectionUrban", "Catasto Sezione Urbana");
+    let editFormOpen = await firstEditable.count() === 1;
+
+    if (!editFormOpen) {
+      let rowToEdit: Locator | null = null;
+      for (const [key, label, expected] of values) {
+        if (!expected) continue;
+        const row = await this.uniqueVisible(key, label, 15_000);
+        const currentText = normalizedUiText(await row.innerText().catch(() => ""))
+          .replace(normalizedUiText(label), "")
+          .trim();
+        if (currentText !== normalizedUiText(expected) && !rowToEdit) rowToEdit = row;
       }
-      if (await input.count() !== 1) {
+      if (!rowToEdit) return;
+      const edit = rowToEdit
+        .locator('button.inline-edit-trigger, button[title*="Modifica"], button[title*="Edit"], lightning-button-icon button')
+        .filter({ visible: true });
+      if (await edit.count() !== 1) {
         throw new WorkerError(
-          `Il campo â€œ${label}â€ mostra ${await input.count()} caselle modificabili.`,
+          "I dati catastali non coincidono con SISTER, ma la scheda non mostra un solo comando di modifica.",
           "portal_error",
-          { portal: "CRM", action: "property-cadastral-input", field: label, expected },
+          { portal: "CRM", action: "property-cadastral-edit", editButtons: await edit.count() },
           true,
         );
       }
-      await input.fill(expected);
+      await edit.click();
+      await firstEditable.waitFor({ state: "visible", timeout: 10_000 });
+      editFormOpen = true;
+    }
+
+    if (!editFormOpen) return;
+    for (const [key, label, expected] of values) {
+      if (!expected) continue;
+      const input = editableInput(key, label);
+      const inputCount = await input.count();
+      if (inputCount !== 1) {
+        throw new WorkerError(
+          `Il modulo catastale mostra ${inputCount} caselle “${label}”.`,
+          "portal_error",
+          { portal: "CRM", action: "property-cadastral-input", field: label, expected, inputCount },
+          true,
+        );
+      }
+      if (normalizedUiText(await input.inputValue()) !== normalizedUiText(expected)) await input.fill(expected);
       if (normalizedUiText(await input.inputValue()) !== normalizedUiText(expected)) {
         throw new WorkerError(
-          `Il valore SISTER non Ã¨ rimasto nel campo â€œ${label}â€.`,
+          `Il valore SISTER non è rimasto nel campo “${label}”.`,
           "portal_error",
           { portal: "CRM", action: "property-cadastral-fill", field: label, expected },
           true,
         );
       }
-      changed = true;
     }
-    if (!changed) return;
+
+    const categoryMatch = property.category.trim().toUpperCase().match(/^([AC])\s*\/?\s*(\d{1,2})$/);
+    if (categoryMatch) {
+      const categoryGroup = `Gruppo ${categoryMatch[1]}`;
+      const categoryCode = `${categoryMatch[1]}${categoryMatch[2]!.padStart(2, "0")}`;
+      await this.selectCadastralPicklist("propertyCadastralGroup", "Catasto Gruppi", categoryGroup);
+      await this.selectCadastralPicklist("propertyCadastralType", "Catasto Tipologie", categoryCode, true);
+    }
+
     this.require("propertySave");
     const save = this.visible(this.selectors.propertySave);
-    await save.last().click();
+    const saveCount = await save.count();
+    if (saveCount !== 1) {
+      throw new WorkerError(
+        `Il modulo catastale mostra ${saveCount} pulsanti Salva.`,
+        "portal_error",
+        { portal: "CRM", action: "property-cadastral-save", saveCount },
+        true,
+      );
+    }
+    await save.click();
     await this.checkSession();
     await this.page.waitForTimeout(700);
   }
@@ -1387,6 +1498,15 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           // rendered controls, which appear only after the internal spinner.
           await this.uniqueVisible("activityDialog", "finestra Attività", ACTIVITY_FORM_TIMEOUT);
           const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
+          await description.fill(input.description);
+          if (normalizedUiText(await description.inputValue()) !== normalizedUiText(input.description)) {
+            throw new WorkerError(
+              "La descrizione non è rimasta nel modulo dell’attività.",
+              "portal_error",
+              { portal: "CRM", action: "property-activity-description", propertyId: input.propertyId },
+              true,
+            );
+          }
           const relatedField = await this.uniqueVisible("activityRelatedProperty", "Correlato a", ACTIVITY_FORM_TIMEOUT);
           const relatedInputs = relatedField.locator("input").filter({ visible: true });
           const relatedInputCount = await relatedInputs.count();
@@ -1400,6 +1520,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           }
           const relatedInput = relatedInputs.first();
           let correlatedProperty = (await relatedInput.inputValue()).trim();
+          for (let wait = 0; !correlatedProperty && wait < ACTIVITY_PREFILL_WAIT_CYCLES; wait += 1) {
+            await this.page.waitForTimeout(250);
+            correlatedProperty = (await relatedInput.inputValue()).trim();
+          }
           if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
             await relatedInput.click();
             const propertyOptions = this.visible(this.selectors.activityOption).filter({ hasText: "IM -" });
@@ -1427,15 +1551,27 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           // the activity: navigation and correlation both stay on the property.
           const client = await this.uniqueVisible("activityClient", "Cliente dell’attività", ACTIVITY_FORM_TIMEOUT);
           let clientValue = (await client.inputValue()).trim();
+          for (let wait = 0; !clientValue && wait < ACTIVITY_PREFILL_WAIT_CYCLES; wait += 1) {
+            await this.page.waitForTimeout(250);
+            clientValue = (await client.inputValue()).trim();
+          }
           if (!clientValue && input.fallbackPersonId) {
             await client.fill("");
-            await client.pressSequentially(input.fallbackPersonId, { delay: 45 });
+            const searchValue = input.fallbackPersonLabel?.trim() || input.fallbackPersonId;
+            await client.pressSequentially(searchValue, { delay: 65 });
             const options = this.visible(this.selectors.activityOption);
             await options.first().waitFor({ state: "visible", timeout: 6_000 }).catch(() => undefined);
             const byRecordId = options.filter({ has: this.page.locator(`[data-item-id="${input.fallbackPersonId}"]`) });
             const labels = await options.allTextContents();
+            const expectedLabel = normalizedUiText(input.fallbackPersonLabel);
             const textMatches = labels
-              .map((label, index) => normalizedUiText(label).includes(normalizedUiText(input.fallbackPersonId!)) && !/NUOVO RECORD/i.test(label) ? index : -1)
+              .map((label, index) => {
+                const normalized = normalizedUiText(label);
+                const matchesPerson = expectedLabel
+                  ? normalized.includes(expectedLabel)
+                  : normalized.includes(normalizedUiText(input.fallbackPersonId!));
+                return matchesPerson && !/NUOVO RECORD/i.test(label) ? index : -1;
+              })
               .filter((index) => index >= 0);
             if (await byRecordId.count() === 1) await byRecordId.first().click();
             else if (textMatches.length === 1) await options.nth(textMatches[0]!).click();
@@ -1451,7 +1587,6 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             );
           }
 
-          await description.fill(input.description);
           const status = await this.uniqueVisible("activityStatus", "Stato attività", ACTIVITY_FORM_TIMEOUT);
           let currentStatus = (await status.inputValue()).trim();
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
@@ -1465,6 +1600,18 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             if (indexes.length === 1) await desiredOptions.nth(indexes[0]!).click();
             await this.page.waitForTimeout(300);
             currentStatus = (await status.inputValue()).trim();
+          }
+
+          if (normalizedUiText(await description.inputValue()) !== normalizedUiText(input.description)) {
+            await description.fill(input.description);
+          }
+          if (normalizedUiText(await description.inputValue()) !== normalizedUiText(input.description)) {
+            throw new WorkerError(
+              "La descrizione dell’attività è stata cancellata dal gestionale durante il caricamento.",
+              "portal_error",
+              { portal: "CRM", action: "property-activity-description-final", propertyId: input.propertyId },
+              true,
+            );
           }
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
             throw new WorkerError(

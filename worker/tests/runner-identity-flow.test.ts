@@ -145,4 +145,88 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.verifyProperty).toHaveBeenCalledWith("CRM-PROPERTY-NEW", expect.any(Object));
     expect(property.crm_record_id).toBe("CRM-PROPERTY-NEW");
   });
+
+  it("mette in quarantena un vecchio abbinamento basato soltanto sull'indirizzo", async () => {
+    const { runner } = runnerWithRepository();
+    const property = {
+      ...propertyRow(),
+      crm_record_id: "CRM-PROPERTY-WRONG",
+      raw_payload: {
+        crm_match: {
+          id: "CRM-PROPERTY-WRONG",
+          data: { matchedBy: "street-and-civic" },
+        },
+      },
+    };
+    const primary = { ...personRow(), crm_record_id: "CRM-PERSON-1" };
+    const verifiedNew = { id: "CRM-PROPERTY-NEW", data: { identityVerified: true } };
+    const crm = {
+      findPropertyForPerson: vi.fn()
+        .mockResolvedValueOnce({ match: null })
+        .mockResolvedValueOnce({ match: verifiedNew }),
+      updateProperty: vi.fn(),
+      createProperty: vi.fn().mockResolvedValue("CRM-PROPERTY-NEW"),
+      verifyProperty: vi.fn().mockResolvedValue({ match: verifiedNew }),
+    };
+
+    await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
+
+    expect(crm.findPropertyForPerson).toHaveBeenNthCalledWith(
+      1,
+      "CRM-PERSON-1",
+      expect.any(Object),
+      ["CRM-PROPERTY-WRONG"],
+    );
+    expect(crm.updateProperty).not.toHaveBeenCalled();
+    expect(crm.createProperty).toHaveBeenCalledOnce();
+    expect(property.crm_record_id).toBe("CRM-PROPERTY-NEW");
+  });
+
+  it("dopo un errore sull'immobile riparte dall'immobile senza ricercare nominativo e recapiti", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const person = { ...personRow(), crm_record_id: "CRM-PERSON-1", processing_status: "contacts_matched" };
+    const property = {
+      ...propertyRow(),
+      raw_payload: {
+        property_flow: { version: 2, stage: "contacts_synced", dryRun: false },
+      },
+    };
+    const ownership = {
+      id: "ownership-1", property_id: property.id, person_id: person.id,
+      right_type: "Proprietà", share_percentage: 100, crm_link_id: null,
+      processing_status: "normalized",
+    };
+    const repository = {
+      loadGraph: vi.fn().mockResolvedValue({ properties: [property], people: [person], ownerships: [ownership] }),
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
+      updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+      updateOwnership: vi.fn().mockResolvedValue(undefined),
+      updateJob: vi.fn().mockResolvedValue(undefined),
+      logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const match = { id: "CRM-PROPERTY-1", data: { identityVerified: true } };
+    const crm = {
+      findPerson: vi.fn(),
+      findPropertyForPerson: vi.fn().mockResolvedValue({ match }),
+      updateProperty: vi.fn().mockResolvedValue(undefined),
+      createProperty: vi.fn(),
+      verifyProperty: vi.fn().mockResolvedValue({ match }),
+      createPropertyActivity: vi.fn().mockResolvedValue({
+        outcome: "created", crmActivityId: "ACTIVITY-1", correlatedProperty: "VIA ROMA 10", attempts: 1,
+      }),
+    };
+    const contacts = { findByTaxCode: vi.fn() };
+
+    await (runner as unknown as { processPropertiesInOrder: Function }).processPropertiesInOrder(
+      { ...job, total_properties: 1, processed_properties: 0 },
+      crm,
+      contacts,
+    );
+
+    expect(crm.findPerson).not.toHaveBeenCalled();
+    expect(contacts.findByTaxCode).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledOnce();
+    expect(crm.createPropertyActivity).toHaveBeenCalledOnce();
+  });
 });
