@@ -310,6 +310,31 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     };
   }
 
+  async verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult> {
+    if (id.startsWith("dry-property-")) {
+      return { match: { id, data: { source: "dry-property-verification", identityVerified: true } } };
+    }
+    return this.friendly("property-identity-check", "Non riesco a verificare l'identità dell'immobile aperto.", async () => {
+      await this.openProperty(id);
+      const identity = await this.readPropertyIdentity();
+      const cadastralMatch = comparableCadastralValue(identity.sheet) === comparableCadastralValue(property.sheet)
+        && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
+        && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
+      if (!cadastralMatch) return { match: null };
+      return {
+        match: {
+          id,
+          data: {
+            source: "crm-property-identity",
+            identityVerified: true,
+            addressMatches: samePropertyAddress(identity.rawAddress, property.address),
+            ...identity,
+          },
+        },
+      };
+    });
+  }
+
   private async currentPersonId() {
     const fromUrl = recordIdFromHref(this.page.url(), "account");
     if (fromUrl) return fromUrl;
@@ -406,6 +431,103 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  private personDetailRow(label: string) {
+    return this.page.locator(`div.flex:has(> div > label:text-is("${label}"))`).filter({ visible: true });
+  }
+
+  private async readPersonDetailContact(label: string) {
+    const row = this.personDetailRow(label);
+    if (await row.count() !== 1) return "";
+    const value = row.locator(".slds-form-element__static .slds-grow").filter({ visible: true });
+    return (await value.first().innerText().catch(() => "")).trim();
+  }
+
+  private async editExistingPersonContacts(input: {
+    removePhones?: Set<string>;
+    mobiles?: string[];
+    landlines?: string[];
+    emails?: string[];
+  }) {
+    const labels = ["Email", "Email Secondaria", "Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
+    const before = new Map<string, string>();
+    for (const label of labels) before.set(label, await this.readPersonDetailContact(label));
+
+    const normalizedBeforePhones = new Set(
+      ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"]
+        .map((label) => normalizePhone(before.get(label) ?? ""))
+        .filter(Boolean),
+    );
+    const normalizedBeforeEmails = new Set(
+      ["Email", "Email Secondaria"].map((label) => (before.get(label) ?? "").trim().toLowerCase()).filter(Boolean),
+    );
+    const removePhones = input.removePhones ?? new Set<string>();
+    const missingMobiles = (input.mobiles ?? []).map(normalizePhone).filter((value) => value && !normalizedBeforePhones.has(value));
+    const missingLandlines = (input.landlines ?? []).map(normalizePhone).filter((value) => value && !normalizedBeforePhones.has(value));
+    const missingEmails = (input.emails ?? []).map((value) => value.trim().toLowerCase()).filter((value) => value && !normalizedBeforeEmails.has(value));
+    const mustRemove = [...normalizedBeforePhones].some((phone) => removePhones.has(phone));
+    if (!mustRemove && !missingMobiles.length && !missingLandlines.length && !missingEmails.length) {
+      return { changed: false, removed: [] as string[], overflow: [] as string[] };
+    }
+
+    const triggerCandidates = this.page.locator("div.flex button.inline-edit-trigger").filter({ visible: true });
+    if (!(await triggerCandidates.count())) {
+      throw new WorkerError("La scheda nominativo non mostra il comando per modificare i recapiti.", "portal_error", { portal: "CRM", action: "person-contact-edit-open" }, true);
+    }
+    const preferredTrigger = this.personDetailRow("Cellulare").locator("button.inline-edit-trigger").filter({ visible: true });
+    await (await preferredTrigger.count() === 1 ? preferredTrigger : triggerCandidates.first()).click();
+
+    const fields = new Map<string, Locator>();
+    for (const label of labels) {
+      const field = this.page.getByLabel(label, { exact: true }).filter({ visible: true });
+      await field.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
+      if (await field.count() === 1) fields.set(label, field.first());
+    }
+    if (!fields.has("Cellulare") && !fields.has("Telefono fisso")) {
+      throw new WorkerError("La modifica recapiti si è aperta, ma i campi telefono non sono disponibili.", "portal_error", { portal: "CRM", action: "person-contact-edit-fields" }, true);
+    }
+
+    const removed: string[] = [];
+    for (const label of ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"]) {
+      const field = fields.get(label);
+      if (!field) continue;
+      const current = normalizePhone(await field.inputValue());
+      if (current && removePhones.has(current)) {
+        await field.fill("");
+        removed.push(current);
+      }
+    }
+
+    const assignMissing = async (values: string[], preferredLabels: string[]) => {
+      const overflow: string[] = [];
+      for (const value of values) {
+        let assigned = false;
+        for (const label of preferredLabels) {
+          const field = fields.get(label);
+          if (!field || (await field.inputValue()).trim()) continue;
+          await field.fill(value);
+          assigned = true;
+          break;
+        }
+        if (!assigned) overflow.push(value);
+      }
+      return overflow;
+    };
+    const overflow = [
+      ...await assignMissing(missingMobiles, ["Cellulare", "Altro telefono", "Telefono Ufficio"]),
+      ...await assignMissing(missingLandlines, ["Telefono fisso", "Telefono Ufficio", "Altro telefono"]),
+      ...await assignMissing(missingEmails, ["Email", "Email Secondaria"]),
+    ];
+
+    const save = this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
+    if (await save.count() !== 1) {
+      throw new WorkerError("La modifica recapiti non mostra un solo pulsante Salva.", "portal_error", { portal: "CRM", action: "person-contact-edit-save", count: await save.count() }, true);
+    }
+    await save.click();
+    await this.page.waitForTimeout(700);
+    await this.checkSession();
+    return { changed: true, removed, overflow };
+  }
+
   async transferPhoneAssignments(
     targetPersonId: string,
     person: NormalizedPerson,
@@ -415,49 +537,46 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     const relevant = assignments.filter((assignment) => desiredPhones.has(normalizePhone(assignment.phone)));
     const alreadyAssigned = [...new Set(relevant.filter((assignment) => assignment.personId === targetPersonId).map((assignment) => normalizePhone(assignment.phone)))];
     const conflicts = relevant.filter((assignment) => assignment.personId !== targetPersonId);
+    const unresolved: NonNullable<CrmContactTransferResult["unresolved"]> = [];
+    const ambiguousPhones = new Set<string>();
     for (const phone of desiredPhones) {
       const owners = [...new Set(conflicts.filter((assignment) => normalizePhone(assignment.phone) === phone).map((assignment) => assignment.personId))];
       if (owners.length > 1) {
-        throw new WorkerError(
-          `Il recapito ${phone} risulta assegnato a ${owners.length} nominativi diversi. Il trasferimento automatico non sarebbe sicuro.`,
-          "needs_review",
-          { portal: "CRM", action: "phone-transfer-ambiguous", phone, personIds: owners, targetPersonId },
-          true,
-        );
+        ambiguousPhones.add(phone);
+        unresolved.push({ phone, personIds: owners, reason: "multiple_assignments" });
       }
     }
+    const safeConflicts = conflicts.filter((assignment) => !ambiguousPhones.has(normalizePhone(assignment.phone)));
+    const safePerson = {
+      ...person,
+      mobiles: person.mobiles.filter((phone) => !ambiguousPhones.has(normalizePhone(phone))),
+      landlines: person.landlines.filter((phone) => !ambiguousPhones.has(normalizePhone(phone))),
+    };
     if (this.dryRun) {
       return {
-        moved: conflicts.map((assignment) => ({ phone: normalizePhone(assignment.phone), fromPersonId: assignment.personId, toPersonId: targetPersonId })),
+        moved: safeConflicts.map((assignment) => ({ phone: normalizePhone(assignment.phone), fromPersonId: assignment.personId, toPersonId: targetPersonId })),
         alreadyAssigned,
+        ...(unresolved.length ? { unresolved } : {}),
         simulated: true,
       };
+    }
+    const safeDesiredPhones = [...desiredPhones].filter((phone) => !ambiguousPhones.has(phone));
+    if (!safeConflicts.length && safeDesiredPhones.every((phone) => alreadyAssigned.includes(phone))) {
+      return { moved: [], alreadyAssigned, ...(unresolved.length ? { unresolved } : {}), simulated: false };
     }
 
     return this.friendly("phone-assignment-transfer", "Non riesco a spostare il recapito sul nominativo corretto.", async () => {
       const moved: CrmContactTransferResult["moved"] = [];
       const byOldPerson = new Map<string, Set<string>>();
-      for (const assignment of conflicts) {
+      for (const assignment of safeConflicts) {
         const phones = byOldPerson.get(assignment.personId) ?? new Set<string>();
         phones.add(normalizePhone(assignment.phone));
         byOldPerson.set(assignment.personId, phones);
       }
-      const phoneFields: Array<keyof CrmSelectors> = ["personMobile", "personOfficePhone", "personOtherPhone"];
       for (const [oldPersonId, phones] of byOldPerson) {
         await this.openPerson(oldPersonId);
-        const removed = new Set<string>();
-        for (const key of phoneFields) {
-          if (!this.selectors[key]) continue;
-          const fields = this.visible(this.selectors[key]);
-          for (let index = 0; index < await fields.count(); index += 1) {
-            const field = fields.nth(index);
-            const current = normalizePhone(await field.inputValue().catch(() => ""));
-            if (current && phones.has(current)) {
-              await field.fill("");
-              removed.add(current);
-            }
-          }
-        }
+        const edit = await this.editExistingPersonContacts({ removePhones: phones });
+        const removed = new Set(edit.removed);
         const missing = [...phones].filter((phone) => !removed.has(phone));
         if (missing.length) {
           throw new WorkerError(
@@ -467,18 +586,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             true,
           );
         }
-        this.require("personSave");
-        await this.visible(this.selectors.personSave).last().click();
-        await this.checkSession();
         for (const phone of removed) moved.push({ phone, fromPersonId: oldPersonId, toPersonId: targetPersonId });
       }
 
       await this.openPerson(targetPersonId);
-      await this.fillPerson(person);
-      this.require("personSave");
-      await this.visible(this.selectors.personSave).last().click();
-      await this.checkSession();
-      return { moved, alreadyAssigned, simulated: false };
+      await this.editExistingPersonContacts({ mobiles: safePerson.mobiles, landlines: safePerson.landlines, emails: safePerson.emails });
+      return { moved, alreadyAssigned, ...(unresolved.length ? { unresolved } : {}), simulated: false };
     });
   }
 
@@ -645,9 +758,37 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           details: { duplicateCandidateIds, calibrationRequired: true, message: "Merge non confermato: controllo manuale richiesto" },
         };
       }
-      if (duplicateCandidateIds.length && await this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).count()) {
-        const merge = await this.inspectPersonMerge();
-        return { personId: merge.personId, mergeStatus: merge.status, details: { ...merge.details, duplicateCandidateIds } };
+      if (mergeSelectorsConfigured) {
+        let pendingMerge: PersonMergeResult | null = null;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          const mergeDialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true });
+          if (await mergeDialog.count()) {
+            const merge = await this.inspectPersonMerge();
+            if (merge.status === "ready" || merge.status === "blocked") {
+              return { personId: merge.personId, mergeStatus: merge.status, details: { ...merge.details, duplicateCandidateIds } };
+            }
+            pendingMerge = merge;
+          } else {
+            const personId = await this.currentPersonId();
+            const personFormStillOpen = await this.visible(this.selectors.personSave).count() > 0
+              && await this.visible(this.selectors.personFirstName || this.selectors.personFullName).count() > 0;
+            // Concedi al Cloud alcuni secondi per mostrare un eventuale merge.
+            // Se l'identificativo è già disponibile e nessuna area merge compare,
+            // la creazione normale può proseguire anche se la modale si chiude lentamente.
+            if (personId && (!personFormStillOpen || attempt >= 12)) {
+              const workspaceReady = await this.visible(this.selectors.personPropertiesCard).count() > 0;
+              return { personId, mergeStatus: "not_required", details: { duplicateCandidateIds, workspaceReady } };
+            }
+          }
+          await this.page.waitForTimeout(250);
+        }
+        if (pendingMerge) {
+          return {
+            personId: null,
+            mergeStatus: "pending",
+            details: { ...pendingMerge.details, duplicateCandidateIds, message: pendingMerge.message },
+          };
+        }
       }
       let personId = await this.currentPersonId();
       for (let attempt = 0; !personId && attempt < 40; attempt += 1) {
@@ -655,8 +796,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         personId = await this.currentPersonId();
       }
       if (!personId) throw new WorkerError("Il gestionale ha salvato il nominativo ma non espone il suo identificativo. Apri la scheda creata e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "person-create-record-id" }, true);
-      await this.waitForPersonWorkspace(personId);
-      return { personId, mergeStatus: "not_required", details: { duplicateCandidateIds } };
+      /*
+       * L'identificativo conferma che il nominativo è già stato salvato.
+       * La card immobili è caricata dopo, in modo asincrono: non deve far
+       * ripetere la creazione. Sarà il passaggio immobile a riaprirla.
+       */
+      const workspaceReady = await this.visible(this.selectors.personPropertiesCard).count() > 0;
+      return { personId, mergeStatus: "not_required", details: { duplicateCandidateIds, workspaceReady } };
     });
   }
 
@@ -676,7 +822,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           ? { status: "completed", personId, message: "Merge completato o risolto manualmente", details: { source: "crm-current-person" } }
           : { status: "pending", personId: null, message: "La finestra di merge non è riconoscibile", details: { pageUrl: this.page.url() } };
       }
-      const message = (await dialog.locator(this.selectors.personMergeMessage).first().textContent())?.trim() ?? "";
+      const messageLocator = dialog.locator(this.selectors.personMergeMessage).filter({ visible: true });
+      const message = await messageLocator.count()
+        ? (await messageLocator.first().textContent())?.trim() ?? ""
+        : "";
       if (await dialog.locator(this.selectors.personMergeBlocked).filter({ visible: true }).count()) {
         return { status: "blocked", personId: null, message: message || "Il Cloud segnala problemi nel merge", details: { source: "crm-merge-dialog" } };
       }
@@ -693,8 +842,18 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       if (inspection.status !== "ready") return inspection;
       this.require("personMergeDialog", "personMergeConfirm");
       const dialog = this.page.locator(this.selectors.personMergeDialog).filter({ visible: true }).last();
-      await dialog.locator(this.selectors.personMergeConfirm).first().click();
-      await dialog.waitFor({ state: "hidden", timeout: 15_000 });
+      const save = dialog.locator(this.selectors.personMergeConfirm).filter({ visible: true });
+      const saveCount = await save.count();
+      if (saveCount !== 1) {
+        throw new WorkerError(
+          `La finestra di merge mostra ${saveCount} pulsanti Salva utilizzabili.`,
+          "portal_error",
+          { portal: "CRM", action: "person-merge-save", saveCount },
+          true,
+        );
+      }
+      await save.click();
+      await dialog.waitFor({ state: "hidden", timeout: 20_000 });
       await this.checkSession();
       const personId = await this.currentPersonId();
       if (!personId) return { status: "pending", personId: null, message: "Merge confermato, identificativo finale non ancora disponibile", details: { source: "crm-merge-confirm" } };
@@ -809,7 +968,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         .trim();
       if (currentValue === normalizedUiText(expected) || (!currentValue && currentText === normalizedUiText(expected))) continue;
       if (!(await input.count())) {
-        const edit = row.locator('button[title*="Modifica"], button[title*="Edit"], lightning-button-icon button').filter({ visible: true });
+        const edit = row.locator('button.inline-edit-trigger, button[title*="Modifica"], button[title*="Edit"], lightning-button-icon button').filter({ visible: true });
         if (await edit.count() !== 1) {
           throw new WorkerError(
             `Il campo â€œ${label}â€ non contiene il valore SISTER e non mostra un solo comando di modifica.`,
@@ -1115,21 +1274,80 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  private async syncExistingPropertyCoreDetails(property: NormalizedProperty) {
+    const values = propertyFormValues(property);
+    const typeRow = this.page
+      .locator('div.flex:has(label span:text-is("Tipologia Immobile"))')
+      .filter({ visible: true });
+    const typeRowCount = await typeRow.count();
+    if (typeRowCount !== 1) {
+      throw new WorkerError(
+        `La scheda immobile mostra ${typeRowCount} righe “Tipologia Immobile”.`,
+        "portal_error",
+        { portal: "CRM", action: "property-core-edit-row", field: "Tipologia Immobile", count: typeRowCount },
+        true,
+      );
+    }
+    if (await this.visible(this.selectors.propertyType).count() !== 1) {
+      const edit = typeRow.locator("button.inline-edit-trigger").filter({ visible: true });
+      if (await edit.count() !== 1) {
+        throw new WorkerError(
+          "La scheda immobile non mostra un solo comando per modificare i dati principali.",
+          "portal_error",
+          { portal: "CRM", action: "property-core-edit-open", count: await edit.count() },
+          true,
+        );
+      }
+      await edit.click();
+      await this.visible(this.selectors.propertyType).first().waitFor({ state: "visible", timeout: 10_000 });
+    }
+
+    await this.propertyPicklist("propertyType", "Tipologia Immobile", values.type);
+    await this.propertyPicklist("propertySubtype", "Sottotipologia Immobile", values.subtype);
+    if (values.floor) await this.propertyPicklist("propertyFloor", "Piano Immobile", values.floor);
+    const fields: Array<[keyof CrmSelectors, string, string]> = [
+      ["propertyFloorNumber", "Numero piano", values.floorNumber],
+      ["propertyAddress", "Indirizzo", values.street],
+      ["propertyCivic", "Civico", values.civicNumber],
+      ["propertyInternal", "Interno", values.internal],
+      ["propertyStaircase", "Lettera", values.staircase],
+    ];
+    for (const [key, label, value] of fields) {
+      this.require(key);
+      const field = await this.uniqueVisible(key, label, 10_000);
+      await field.fill(value);
+      if (normalizedUiText(await field.inputValue()) !== normalizedUiText(value)) {
+        throw new WorkerError(
+          `Il dato SISTER non è rimasto nel campo “${label}”.`,
+          "portal_error",
+          { portal: "CRM", action: "property-core-fill", field: label, expected: value },
+          true,
+        );
+      }
+    }
+    await this.selectPropertyMunicipality(values.municipality);
+    await this.assertNewPropertyComplete(values);
+    const save = this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
+    if (await save.count() !== 1) {
+      throw new WorkerError(
+        `La modifica dell'immobile mostra ${await save.count()} pulsanti Salva.`,
+        "portal_error",
+        { portal: "CRM", action: "property-core-save", count: await save.count() },
+        true,
+      );
+    }
+    await save.click();
+    await this.page.waitForTimeout(700);
+    await this.checkSession();
+  }
+
   async updateProperty(id: string, property: NormalizedProperty): Promise<void> {
     if (this.dryRun) return;
     await this.friendly("property-update", "Non riesco ad aggiornare l'immobile collegato.", async () => {
       await this.openProperty(id);
+      await this.syncExistingPropertyCoreDetails(property);
+      await this.openProperty(id, true);
       await this.syncPropertyCadastralDetails(property);
-      const legacyFields: Array<keyof CrmSelectors> = [
-        "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern",
-        "propertyCategory", "propertyClass", "propertyConsistency", "propertyIncome",
-      ];
-      if (legacyFields.every((key) => Boolean(this.selectors[key]))) {
-        await this.fillProperty(property);
-        this.require("propertySave");
-        await this.visible(this.selectors.propertySave).last().click();
-        await this.checkSession();
-      }
     });
   }
 

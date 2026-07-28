@@ -197,6 +197,7 @@ export class PropertyWorkerRunner {
     } finally {
       keepAlive.stop();
       this.prompts.close();
+      await tabs.browser.close().catch(() => undefined);
     }
   }
 
@@ -427,9 +428,6 @@ export class PropertyWorkerRunner {
           }
           if (inspection.status !== "ready") {
             throw new WorkerError("Stato merge non riconosciuto. Non è stata eseguita alcuna conferma.", "needs_review", { personId: row.id, merge: inspection }, true);
-          }
-          if (job.mode === "assisted" && await this.prompts.confirmMerge(`${inspection.message}\nIl gestionale non segnala problemi. Confermare adesso il merge dei nominativi?`) === "manual") {
-            throw new WorkerError("Merge lasciato alla gestione manuale. Completalo nel gestionale e premi “Riprendi”.", "needs_review", { personId: row.id, merge: inspection }, true);
           }
           const confirmed = await crm.confirmPersonMerge();
           if (confirmed.status !== "completed" || !confirmed.personId) {
@@ -680,6 +678,53 @@ export class PropertyWorkerRunner {
     this.onEvent({ type: "property-progress", jobId: job.id, propertyId: property.id, index, total, address: property.address, stage, message });
   }
 
+  private async withAutomaticRecovery<T>(
+    job: JobRow,
+    property: PropertyRow,
+    index: number,
+    total: number,
+    label: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const maximumAttempts = job.mode === "automatic" ? 3 : 1;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+      this.throwIfCancellationRequested(job.id);
+      this.throwIfPropertySkipRequested(job.id, property.id);
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        const workerError = error instanceof WorkerError
+          ? error
+          : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+        if (!["portal_error", "failed"].includes(workerError.status) || attempt === maximumAttempts) {
+          throw new WorkerError(
+            workerError.message,
+            workerError.status,
+            {
+              ...workerError.details,
+              operationLabel: label,
+              automaticAttempts: attempt,
+              automaticRecoveryExhausted: attempt === maximumAttempts && maximumAttempts > 1,
+            },
+            workerError.captureScreenshot,
+          );
+        }
+        this.emitPropertyProgress(
+          job,
+          property,
+          index,
+          total,
+          "recovery",
+          `${label}: il portale non ha completato il passaggio. Recupero automatico ${attempt} di ${maximumAttempts - 1}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 900 * attempt));
+      }
+    }
+    throw lastError;
+  }
+
   private async markPropertyStage(property: PropertyRow, stage: string) {
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
@@ -693,6 +738,30 @@ export class PropertyWorkerRunner {
 
   private async processPropertiesInOrder(job: JobRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
     const graph = await this.repository.loadGraph(job.id);
+    if (graph.properties.length !== job.total_properties) {
+      throw new WorkerError(
+        `Archivio della lavorazione incoerente: attesi ${job.total_properties} immobili, disponibili ${graph.properties.length}. Il worker non toccherà il gestionale.`,
+        "data_incomplete",
+        {
+          action: "job-graph-integrity",
+          jobId: job.id,
+          expectedProperties: job.total_properties,
+          actualProperties: graph.properties.length,
+          migrationRequired: "006_property_worker_archives.sql",
+        },
+      );
+    }
+    const propertyIds = new Set(graph.properties.map(({ id }) => id));
+    const personIds = new Set(graph.people.map(({ id }) => id));
+    const invalidOwnerships = graph.ownerships.filter(({ property_id, person_id }) =>
+      !propertyIds.has(property_id) || !personIds.has(person_id));
+    if (invalidOwnerships.length) {
+      throw new WorkerError(
+        "L'archivio contiene collegamenti tra immobili e nominativi di lavorazioni diverse. Il worker non toccherà il gestionale.",
+        "data_incomplete",
+        { action: "job-ownership-integrity", jobId: job.id, invalidOwnershipCount: invalidOwnerships.length },
+      );
+    }
     let completed = graph.properties.filter((property) =>
       ["completed", "skipped"].includes(property.processing_status)
       || ["completed", "skipped"].includes(String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "")),
@@ -708,27 +777,32 @@ export class PropertyWorkerRunner {
       try {
         this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Cerco nel file Excel i recapiti di ${primary.person.full_name}`);
-        await this.ensureContacts(job, primary.person, crm, contacts);
+        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Recapiti Excel", () =>
+          this.ensureContacts(job, primary.person, crm, contacts));
         await this.markPropertyStage(property, "primary_contacts_ready");
 
         this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Completo o creo il proprietario principale: ${primary.person.full_name}`);
-        await this.ensurePerson(job, primary.person, crm);
+        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Scheda nominativo", () =>
+          this.ensurePerson(job, primary.person, crm));
         await this.markPropertyStage(property, "primary_ready");
 
         this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Verifico che i recapiti siano assegnati al nominativo corretto");
-        await this.ensureContacts(job, primary.person, crm, contacts);
+        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Assegnazione recapiti", () =>
+          this.ensureContacts(job, primary.person, crm, contacts));
         await this.markPropertyStage(property, "contacts_synced");
 
         this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Cerco o creo l'immobile dentro la scheda del proprietario principale");
-        await this.ensureProperty(job, property, primary.person, crm);
+        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Passaggio nominativo-immobile", () =>
+          this.ensureProperty(job, property, primary.person, crm));
         await this.markPropertyStage(property, "property_ready");
 
         this.throwIfPropertySkipRequested(job.id, property.id);
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Creo l'attività dalla scheda dell'immobile");
-        await this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm);
+        await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "AttivitÃ  immobile", () =>
+          this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm));
         await this.markPropertyStage(property, "activity_ready");
         this.throwIfPropertySkipRequested(job.id, property.id);
 
@@ -790,103 +864,158 @@ export class PropertyWorkerRunner {
   }
 
   private async ensurePerson(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter) {
+    const person = asPerson(row);
+    if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
+    const searchInput = {
+      taxCode: person.taxCode,
+      phones: [...person.mobiles, ...person.landlines],
+      fullName: person.fullName,
+      birthDate: person.birthDate,
+    };
     const existingCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
-    if (existingCheckpoint?.complete === true && existingCheckpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) return;
+    if (existingCheckpoint?.complete === true && existingCheckpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) {
+      if (this.config.WORKER_DRY_RUN && row.crm_record_id.startsWith("dry-person-")) return;
+      const verifiedCheckpoint = await crm.openExistingPerson(searchInput, row.crm_record_id);
+      if (verifiedCheckpoint) {
+        row.raw_payload = {
+          ...(row.raw_payload ?? {}),
+          person_flow: {
+            ...existingCheckpoint,
+            complete: true,
+            identityVerified: true,
+            crmPersonId: verifiedCheckpoint.id,
+            verifiedAt: new Date().toISOString(),
+          },
+        };
+        await this.repository.updatePersonProcessing(row.id, {
+          crm_record_id: verifiedCheckpoint.id,
+          processing_status: "reused",
+          raw_payload: row.raw_payload,
+        });
+        return;
+      }
+      row.crm_record_id = null;
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        person_flow: {
+          ...existingCheckpoint,
+          complete: false,
+          invalidatedAt: new Date().toISOString(),
+          invalidatedReason: "identity_not_verified",
+        },
+      };
+      await this.repository.updatePersonProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: "normalized",
+        raw_payload: row.raw_payload,
+      });
+    }
     if (["merge_pending", "merge_blocked", "creation_started"].includes(row.processing_status)) {
       await this.resolvePersonMerge(job, row, crm);
       if (!row.crm_record_id) throw new WorkerError("Il merge non ha ancora prodotto una scheda nominativo utilizzabile", "needs_review", { personId: row.id }, true);
+      const verifiedAfterMerge = await crm.openExistingPerson(searchInput, row.crm_record_id);
+      if (!verifiedAfterMerge) {
+        throw new WorkerError(
+          "Il merge ha restituito una scheda, ma codice fiscale e nominativo non coincidono con SISTER.",
+          "needs_review",
+          { personId: row.id, crmPersonId: row.crm_record_id, action: "person-merge-identity" },
+          true,
+        );
+      }
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
       await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
       return;
     }
-    const person = asPerson(row);
-    if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
-    const searchInput = { taxCode: person.taxCode, phones: [...person.mobiles, ...person.landlines], fullName: person.fullName, birthDate: person.birthDate };
-    const alreadyOpen = await crm.openExistingPerson(searchInput, row.crm_record_id ?? undefined);
-    if (alreadyOpen) {
-      row.crm_record_id = alreadyOpen.id;
+    const result = await crm.findPerson(searchInput);
+    const phoneAssignments = result.matches.filter((match) => isRecord(match.data) && match.data.source === "crm-phone-search");
+    const candidates = result.matches.filter((match) => !phoneAssignments.includes(match));
+    const verifiedMatches: typeof candidates = [];
+    for (const candidate of candidates) {
+      const verified = await crm.openExistingPerson(searchInput, candidate.id);
+      if (verified) verifiedMatches.push({ ...candidate, data: { ...candidate.data, ...verified.data } });
+    }
+    row.raw_payload = {
+      ...(row.raw_payload ?? {}),
+      crm_matches: verifiedMatches,
+      contact_assignments_detected: phoneAssignments,
+      person_search: {
+        searchedAt: new Date().toISOString(),
+        candidateCount: candidates.length,
+        verifiedCount: verifiedMatches.length,
+        exactTaxCodeRequired: true,
+      },
+    };
+    if (verifiedMatches.length > 1) {
+      row.crm_record_id = null;
+      row.processing_status = "duplicate_candidates";
+      await this.repository.updatePersonProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: row.processing_status,
+        raw_payload: row.raw_payload,
+      });
+      throw new WorkerError(
+        "Esistono più schede verificate con lo stesso codice fiscale. Il worker non creerà un altro nominativo e non sceglierà alla cieca.",
+        "needs_review",
+        { personId: row.id, action: "person-multiple-exact-matches", alternatives: verifiedMatches.map(({ id, label }) => ({ id, label })) },
+        true,
+      );
+    }
+    if (verifiedMatches.length === 1) {
+      row.crm_record_id = verifiedMatches[0]!.id;
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
-        crm_matches: [{ id: alreadyOpen.id, label: person.fullName, confidence: "certain", data: alreadyOpen.data }],
-        force_new_person: false,
-        person_flow: { complete: true, existing: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: alreadyOpen.id, updatedAt: new Date().toISOString() },
+        person_flow: {
+          complete: true,
+          existing: true,
+          identityVerified: true,
+          dryRun: this.config.WORKER_DRY_RUN,
+          crmPersonId: row.crm_record_id,
+          updatedAt: new Date().toISOString(),
+        },
       };
-      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+      await this.repository.updatePersonProcessing(row.id, {
+        crm_record_id: row.crm_record_id,
+        processing_status: row.processing_status,
+        raw_payload: row.raw_payload,
+      });
       return;
     }
-    let matches = Array.isArray(row.raw_payload?.crm_matches) ? row.raw_payload.crm_matches : null;
-    if (matches) {
-      const persistedPhoneAssignments = matches.filter((match) => isRecord(match) && isRecord(match.data) && match.data.source === "crm-phone-search");
-      if (persistedPhoneAssignments.length) {
-        matches = matches.filter((match) => !persistedPhoneAssignments.includes(match));
-        row.crm_record_id = matches.length === 1 && isRecord(matches[0]) && typeof matches[0].id === "string" ? matches[0].id : null;
-        row.raw_payload = {
-          ...(row.raw_payload ?? {}),
-          crm_matches: matches,
-          contact_assignments_detected: persistedPhoneAssignments,
-          force_new_person: matches.length > 1,
-        };
-        await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, raw_payload: row.raw_payload });
-      }
-    }
-    if (!matches) {
-      const result = await crm.findPerson(searchInput);
-      const phoneAssignments = result.matches.filter((match) => isRecord(match.data) && match.data.source === "crm-phone-search");
-      matches = result.matches.filter((match) => !phoneAssignments.includes(match));
-      const onlyMatch = matches[0];
-      if (onlyMatch?.confidence === "possible") {
-        const label = normalizedWords(onlyMatch.label);
-        if (!normalizedWords(person.fullName).every((word) => label.includes(word))) {
-          throw new WorkerError("Il nominativo trovato non coincide con certezza con i dati SISTER", "needs_review", { personId: row.id, alternative: onlyMatch });
-        }
-      }
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}),
-        crm_matches: matches,
-        contact_assignments_detected: phoneAssignments,
-        force_new_person: matches.length > 1,
-      };
-      row.crm_record_id = matches.length === 1 ? matches[0]!.id : null;
-      row.processing_status = matches.length === 1 ? "matched" : matches.length ? "duplicate_candidates" : "not_found";
-      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
-    }
-    if (row.crm_record_id && matches.length === 1) {
-      const existing = await crm.openExistingPerson(searchInput, row.crm_record_id);
-      if (!existing) {
-        throw new WorkerError("Il risultato trovato non coincide con certezza con il codice fiscale SISTER. Il worker non creerà un duplicato.", "needs_review", { personId: row.id, crmPersonId: row.crm_record_id }, true);
-      }
-      row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}), force_new_person: false,
-        person_flow: { complete: true, existing: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() },
-      };
-      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
-      return;
-    }
-    const duplicateIds = matches.length > 1
-      ? matches.map((match) => isRecord(match) && typeof match.id === "string" ? match.id : "").filter(Boolean)
-      : [];
-    const forceNew = duplicateIds.length > 0 || row.raw_payload?.force_new_person === true;
+    row.crm_record_id = null;
+    row.processing_status = "not_found";
+    await this.repository.updatePersonProcessing(row.id, {
+      crm_record_id: null,
+      processing_status: row.processing_status,
+      raw_payload: row.raw_payload,
+    });
     if (job.mode === "assisted") {
-      const decision = await this.prompts.confirmSave(`${personSummary(person)}\nModifica prevista: ${row.crm_record_id && !forceNew ? "aggiornamento del nominativo" : "creazione del nominativo"}`);
+      const decision = await this.prompts.confirmSave(`${personSummary(person)}\nRicerca per codice fiscale completata: nessuna scheda verificata.\nModifica prevista: creazione del nominativo`);
       if (decision === "skip") { await this.repository.updatePersonProcessing(row.id, { processing_status: "skipped" }); return; }
       if (decision === "review") throw new WorkerError("Nominativo segnato da verificare", "needs_review", { personId: row.id });
       if (decision === "manual") { await this.prompts.waitForManualEdit(); row.processing_status = "manual"; await this.repository.updatePersonProcessing(row.id, { processing_status: "manual" }); return; }
     }
     await this.logPersonChanges(job.id, row, person);
-    if (!row.crm_record_id || forceNew) {
-      const creation = await crm.createPerson(person, duplicateIds, duplicateIds.length ? () => this.repository.updatePersonProcessing(row.id, { processing_status: "creation_started" }) : undefined);
-      row.crm_record_id = creation.personId;
-      row.processing_status = creation.mergeStatus === "simulated" ? "merge_simulated" : ["pending", "ready", "blocked"].includes(creation.mergeStatus) ? "merge_pending" : this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-      row.raw_payload = { ...(row.raw_payload ?? {}), person_creation: creation };
-      await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
-      await this.resolvePersonMerge(job, row, crm);
-    }
+    const creation = await crm.createPerson(person);
+    row.crm_record_id = creation.personId;
+    row.processing_status = creation.mergeStatus === "simulated" ? "merge_simulated" : ["pending", "ready", "blocked"].includes(creation.mergeStatus) ? "merge_pending" : this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
+    row.raw_payload = { ...(row.raw_payload ?? {}), person_creation: creation };
+    await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
+    await this.resolvePersonMerge(job, row, crm);
     if (!row.crm_record_id) throw new WorkerError("Il gestionale non ha restituito la scheda del nominativo", "needs_review", { personId: row.id }, true);
+    if (!this.config.WORKER_DRY_RUN) {
+      const verifiedCreated = await crm.openExistingPerson(searchInput, row.crm_record_id);
+      if (!verifiedCreated) {
+        throw new WorkerError(
+          "Il nominativo è stato salvato, ma la scheda finale non supera la verifica di codice fiscale e nome.",
+          "needs_review",
+          { personId: row.id, crmPersonId: row.crm_record_id, action: "person-created-identity" },
+          true,
+        );
+      }
+    }
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { complete: true, existing: false, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
     await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
   }
 
@@ -901,9 +1030,6 @@ export class PropertyWorkerRunner {
     }
     if (inspection.status === "completed" && inspection.personId) row.crm_record_id = inspection.personId;
     else if (inspection.status === "ready") {
-      if (job.mode === "assisted" && await this.prompts.confirmMerge(`${inspection.message}\nIl gestionale non segnala problemi. Confermare il merge?`) === "manual") {
-        throw new WorkerError("Completa il merge nel gestionale e poi riprendi", "needs_review", { personId: row.id, merge: inspection }, true);
-      }
       const confirmed = await crm.confirmPersonMerge();
       if (confirmed.status !== "completed" || !confirmed.personId) throw new WorkerError(`Il merge non risulta concluso: ${confirmed.message}`, "needs_review", { personId: row.id, merge: confirmed }, true);
       row.crm_record_id = confirmed.personId;
@@ -914,8 +1040,6 @@ export class PropertyWorkerRunner {
   }
 
   private async ensureProperty(job: JobRow, row: PropertyRow, primary: PersonRow, crm: PlaywrightCrmAdapter) {
-    const checkpoint = isRecord(row.raw_payload?.property_sync) ? row.raw_payload.property_sync : null;
-    if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && row.crm_record_id) return;
     if (!primary.crm_record_id) throw new WorkerError("La scheda del proprietario principale non è disponibile", "data_incomplete", { personId: primary.id, propertyId: row.id });
     const property = asProperty(row);
     property.rawPayload = {
@@ -926,11 +1050,72 @@ export class PropertyWorkerRunner {
         civicNumber: job.civic_number,
       },
     };
-    if (!row.crm_record_id) {
-      const result = await crm.findPropertyForPerson(primary.crm_record_id, property);
-      row.crm_record_id = result.match?.id ?? null;
-      row.raw_payload = { ...(row.raw_payload ?? {}), crm_match: result.match, checked_from_people: [primary.id] };
-      await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: result.match ? "matched" : "not_found", raw_payload: row.raw_payload });
+    const linkedResult = await crm.findPropertyForPerson(primary.crm_record_id, property);
+    if (linkedResult.match) {
+      row.crm_record_id = linkedResult.match.id;
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        crm_match: linkedResult.match,
+        checked_from_people: [primary.id],
+        property_search: {
+          linkedToVerifiedPerson: true,
+          searchedAt: new Date().toISOString(),
+          personCrmId: primary.crm_record_id,
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: row.crm_record_id,
+        processing_status: "matched",
+        raw_payload: row.raw_payload,
+      });
+    } else if (row.crm_record_id) {
+      const submittedId = row.crm_record_id;
+      const directVerification = await crm.verifyProperty(submittedId, property);
+      if (directVerification.match) {
+        throw new WorkerError(
+          "L'immobile salvato esiste, ma non compare ancora nella sezione Immobili/Notizie/Incarichi del nominativo verificato. Attendo e riprovo senza crearne un altro.",
+          "portal_error",
+          {
+            portal: "CRM",
+            action: "property-created-relation-pending",
+            propertyId: row.id,
+            crmPropertyId: submittedId,
+            crmPersonId: primary.crm_record_id,
+          },
+          true,
+        );
+      }
+      row.crm_record_id = null;
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        stale_crm_property_id: submittedId,
+        property_sync: {
+          complete: false,
+          invalidatedAt: new Date().toISOString(),
+          invalidatedReason: "identity_not_verified",
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: "not_found",
+        raw_payload: row.raw_payload,
+      });
+    } else {
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        crm_match: null,
+        checked_from_people: [primary.id],
+        property_search: {
+          linkedToVerifiedPerson: false,
+          searchedAt: new Date().toISOString(),
+          personCrmId: primary.crm_record_id,
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: "not_found",
+        raw_payload: row.raw_payload,
+      });
     }
     if (job.mode === "assisted") {
       const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nModifica prevista: ${row.crm_record_id ? "aggiornamento dell'immobile" : "creazione dell'immobile"}`);
@@ -939,12 +1124,63 @@ export class PropertyWorkerRunner {
       if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); return; }
     }
     await this.logPropertyChanges(job.id, row, property);
-    const matchData = isRecord(row.raw_payload?.crm_match) ? row.raw_payload.crm_match : null;
-    const matchDetails = matchData && isRecord(matchData.data) ? matchData.data : null;
-    if (row.crm_record_id && matchDetails?.needsUpdate === true) await crm.updateProperty(row.crm_record_id, property);
-    else if (!row.crm_record_id) row.crm_record_id = await crm.createProperty(property);
+    if (row.crm_record_id) {
+      await crm.updateProperty(row.crm_record_id, property);
+    } else {
+      row.crm_record_id = await crm.createProperty(property);
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        property_creation: {
+          submitted: true,
+          crmPropertyId: row.crm_record_id,
+          submittedAt: new Date().toISOString(),
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: row.crm_record_id,
+        processing_status: "creation_submitted",
+        raw_payload: row.raw_payload,
+      });
+    }
+    const identity = await crm.verifyProperty(row.crm_record_id, property);
+    if (!identity.match) {
+      throw new WorkerError(
+        "La scheda immobile finale non coincide con foglio, particella e subalterno SISTER. Il worker non aggiungerà l'attività.",
+        "needs_review",
+        { propertyId: row.id, crmPropertyId: row.crm_record_id, action: "property-final-identity" },
+        true,
+      );
+    }
+    if (!this.config.WORKER_DRY_RUN) {
+      const linkedVerification = await crm.findPropertyForPerson(primary.crm_record_id, property);
+      if (!linkedVerification.match || linkedVerification.match.id !== row.crm_record_id) {
+        throw new WorkerError(
+          "La scheda immobile è corretta, ma il collegamento con il nominativo non è ancora visibile. Il worker riproverà senza ricreare l'immobile.",
+          "portal_error",
+          {
+            portal: "CRM",
+            action: "property-final-link-verification",
+            propertyId: row.id,
+            crmPropertyId: row.crm_record_id,
+            crmPersonId: primary.crm_record_id,
+          },
+          true,
+        );
+      }
+    }
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-    row.raw_payload = { ...(row.raw_payload ?? {}), property_sync: { complete: true, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: row.crm_record_id, primaryPersonId: primary.id, updatedAt: new Date().toISOString() } };
+    row.raw_payload = {
+      ...(row.raw_payload ?? {}),
+      property_sync: {
+        complete: true,
+        identityVerified: true,
+        linkedToVerifiedPerson: true,
+        dryRun: this.config.WORKER_DRY_RUN,
+        crmPropertyId: row.crm_record_id,
+        primaryPersonId: primary.id,
+        updatedAt: new Date().toISOString(),
+      },
+    };
     await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
   }
 
@@ -974,8 +1210,6 @@ export class PropertyWorkerRunner {
   }
 
   private async ensureContacts(job: JobRow, row: PersonRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
-    const checkpoint = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
-    if (checkpoint?.complete === true && checkpoint.dryRun === this.config.WORKER_DRY_RUN && checkpoint.crmPersonId === row.crm_record_id) return;
     const match = contacts.findByTaxCode(row.tax_code ?? "");
     await this.repository.updateContacts(row.id, match, row.raw_payload);
     row.mobiles = match.mobiles; row.landlines = match.landlines; row.emails = match.emails;
@@ -1005,6 +1239,17 @@ export class PropertyWorkerRunner {
           "phone_assignment",
           `Nominativo CRM ${moved.fromPersonId}`,
           `Nominativo CRM ${moved.toPersonId}`,
+          "EXCEL",
+        );
+      }
+      for (const unresolved of transfer?.unresolved ?? []) {
+        await this.repository.logChange(
+          job.id,
+          "person",
+          row.tax_code ?? row.id,
+          "phone_assignment_needs_review",
+          `${unresolved.personIds.length} schede CRM`,
+          "Recapito non spostato; lavorazione proseguita",
           "EXCEL",
         );
       }

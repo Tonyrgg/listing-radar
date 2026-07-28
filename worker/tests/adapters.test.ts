@@ -252,6 +252,72 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("considera riuscita la creazione appena il CRM espone l'id, anche se la card immobili sta ancora caricando", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator('[data-worker-crm="personPropertiesCard"]').evaluate((card) => {
+        (card as HTMLElement).hidden = true;
+      });
+      await page.locator('[data-worker-crm="personSave"]').evaluate((button) => button.removeAttribute("onclick"));
+      await page.locator('[data-worker-crm="personMergeDialog"]').evaluate((dialog) => dialog.remove());
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.createPerson({
+        fullName: "ACQUAVIVA MARIA ROSARIA", birthPlace: "Bitonto", birthProvince: "BA", birthDate: "1949-07-26",
+        taxCode: "CQVMRS49L66A893R", rightType: "ProprietÃ ", shareOriginal: "1/1", shareNumerator: 1,
+        shareDenominator: 1, sharePercentage: 100, mobiles: [], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      })).resolves.toMatchObject({
+        personId: "P-99",
+        mergeStatus: "not_required",
+        details: { workspaceReady: false },
+      });
+    } finally { await browser.close(); }
+  });
+
+  it("riconosce la striscia verde reale e preme l'unico Salva della finestra merge", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <section role="dialog">
+          <h2>Nominativo</h2>
+          <div>ATTENZIONE — informativa GDPR necessaria</div>
+          <div>
+            <strong>Merge dei campi</strong>
+            <p>Tutti i campi sono stati riconciliati. Si può procedere al salvataggio</p>
+          </div>
+          <button>Annulla</button>
+          <button>Indietro</button>
+          <button onclick="document.body.dataset.mergeSaved='true'; this.closest('[role=dialog]').hidden=true">Salva</button>
+        </section>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
+      await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "ready" });
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "pending" });
+      expect(await page.locator("body").getAttribute("data-merge-saved")).toBe("true");
+      expect(await page.locator('[role="dialog"]').isVisible()).toBe(false);
+    } finally { await browser.close(); }
+  });
+
+  it("non preme Salva se la conferma verde del merge non è presente", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <section role="dialog">
+          <h2>Nominativo</h2>
+          <div><strong>Merge dei campi</strong><p>Verifica dei campi ancora in corso</p></div>
+          <button onclick="document.body.dataset.mergeSaved='true'">Salva</button>
+        </section>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
+      await expect(adapter.inspectPersonMerge()).resolves.toMatchObject({ status: "pending" });
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "pending" });
+      expect(await page.locator("body").getAttribute("data-merge-saved")).toBeNull();
+    } finally { await browser.close(); }
+  });
+
   it("esclude completamente gli intestatari aziendali senza confonderli con i privati", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -375,6 +441,50 @@ describe("adattatori con fixture HTML", () => {
         alreadyAssigned: [],
         simulated: true,
       });
+    } finally { await browser.close(); }
+  });
+
+  it("non riapre la modifica del nominativo quando tutti i recapiti Excel sono già assegnati correttamente", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.transferPhoneAssignments("P-99", {
+        fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
+        taxCode: "RSSMRA80A01A893X", rightType: "ProprietÃ ", shareOriginal: "1/1",
+        shareNumerator: 1, shareDenominator: 1, sharePercentage: 100,
+        mobiles: ["3331234567"], landlines: ["0801234567"], emails: [], whatsapp: [], rawPayload: {},
+      }, [
+        { phone: "3331234567", personId: "P-99", label: "Mario Rossi" },
+        { phone: "0801234567", personId: "P-99", label: "Mario Rossi" },
+      ])).resolves.toEqual({
+        moved: [],
+        alreadyAssigned: ["3331234567", "0801234567"],
+        simulated: false,
+      });
+    } finally { await browser.close(); }
+  });
+
+  it("segnala un recapito ambiguo senza fermare l'intero import", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      const result = await adapter.transferPhoneAssignments("PERSONA-NUOVA", {
+        fullName: "Mario Rossi", birthPlace: "BITONTO", birthProvince: "BA", birthDate: "1980-01-01",
+        taxCode: "RSSMRA80A01A893X", rightType: "Proprietà", shareOriginal: "1/1",
+        shareNumerator: 1, shareDenominator: 1, sharePercentage: 100,
+        mobiles: ["3331234567"], landlines: [], emails: [], whatsapp: [], rawPayload: {},
+      }, [
+        { phone: "3331234567", personId: "P-1", label: "Primo nominativo" },
+        { phone: "3331234567", personId: "P-2", label: "Secondo nominativo" },
+      ]);
+      expect(result.moved).toEqual([]);
+      expect(result.unresolved).toEqual([{
+        phone: "3331234567",
+        personIds: ["P-1", "P-2"],
+        reason: "multiple_assignments",
+      }]);
     } finally { await browser.close(); }
   });
 

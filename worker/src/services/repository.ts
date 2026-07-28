@@ -75,8 +75,14 @@ export class WorkerRepository {
   }
 
   async healthCheck() {
-    const { error } = await this.client.from("property_worker_jobs").select("id", { head: true, count: "exact" });
-    if (error) throw new Error(`Supabase non disponibile o migration mancante: ${error.message}`);
+    const { error } = await this.client
+      .from("property_worker_jobs")
+      .select("id,saved_at,import_started_at", { head: true, count: "exact" });
+    if (error) {
+      throw new Error(
+        `Supabase non pronto: applica la migration 006_property_worker_archives.sql prima di avviare il worker. ${error.message}`,
+      );
+    }
   }
 
   async createJob(mode: WorkerMode): Promise<JobRow> {
@@ -114,7 +120,13 @@ export class WorkerRepository {
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`Lettura archivio acquisizioni fallita: ${error.message}`);
-    return (data as JobRow[]).filter((job) => Boolean(job.saved_at) && job.status !== "completed");
+    const recoverableStatuses = new Set([
+      "saved", "running", "paused", "needs_review", "session_expired",
+      "portal_error", "data_incomplete", "failed",
+    ]);
+    return (data as JobRow[]).filter((job) =>
+      job.status !== "completed" && (Boolean(job.saved_at) || recoverableStatuses.has(job.status)),
+    );
   }
 
   async listCompletedJobs(limit = 30): Promise<JobRow[]> {
@@ -211,13 +223,19 @@ export class WorkerRepository {
         class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
         raw_payload: property.rawPayload, processing_status: "extracted",
       };
-      let { data, error } = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" }).select("*").single();
-      if (error && /unique|conflict|constraint/i.test(error.message)) {
-        const legacy = await this.client.from("property_worker_properties").upsert(payload, { onConflict: "municipality,sheet,parcel,subaltern" }).select("*").single();
-        data = legacy.data;
-        error = legacy.error;
+      const { data, error } = await this.client
+        .from("property_worker_properties")
+        .upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" })
+        .select("*")
+        .single();
+      if (error) {
+        throw new Error(
+          `Salvataggio immobile isolato per lavorazione fallito. Non verrà riutilizzato un record di un altro job. Verifica la migration 006_property_worker_archives.sql: ${error.message}`,
+        );
       }
-      if (error) throw new Error(`Salvataggio immobile fallito: ${error.message}`);
+      if (data.job_id !== jobId) {
+        throw new Error("Integrità archivio violata: l'immobile restituito appartiene a un'altra lavorazione.");
+      }
       rows.push(data as PropertyRow);
     }
     await this.updateJob(jobId, { total_properties: rows.length });

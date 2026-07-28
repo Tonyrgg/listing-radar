@@ -116,6 +116,7 @@ export interface CrmPhoneAssignment {
 export interface CrmContactTransferResult {
   moved: Array<{ phone: string; fromPersonId: string; toPersonId: string }>;
   alreadyAssigned: string[];
+  unresolved?: Array<{ phone: string; personIds: string[]; reason: "multiple_assignments" }>;
   simulated: boolean;
 }
 
@@ -194,6 +195,7 @@ export interface CrmAdapter {
   inspectPersonMerge(): Promise<PersonMergeResult>;
   confirmPersonMerge(): Promise<PersonMergeResult>;
   findPropertyForPerson(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
+  verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;
   createPropertyActivity(input: CrmActivityInput): Promise<CrmActivityResult>;
