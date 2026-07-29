@@ -330,6 +330,95 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     };
   }
 
+  private async collectPersonPropertyLinks(card: Locator, personId: string) {
+    this.require("personPropertyLinks");
+    const fromCard = await card.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => ({
+      href: link.getAttribute("href") ?? "",
+      id: link.getAttribute("data-recordid") ?? link.getAttribute("data-id") ?? "",
+      label: (link.textContent ?? "").replace(/\s+/g, " ").trim(),
+    })));
+    const cardLinks = fromCard.filter(({ href, id }) => Boolean(href || id));
+    if (!this.selectors.personPropertiesViewAll) return { links: cardLinks, fullListOpened: false };
+
+    const viewAll = card.locator(this.selectors.personPropertiesViewAll).filter({ visible: true }).first();
+    if (!(await viewAll.count())) return { links: cardLinks, fullListOpened: false };
+
+    this.require(
+      "personPropertiesModal",
+      "personPropertiesModalRows",
+      "personPropertiesModalName",
+      "personPropertiesModalClose",
+    );
+    await viewAll.click({ force: true });
+    const modal = this.visible(this.selectors.personPropertiesModal).first();
+    const opened = await modal.waitFor({ state: "visible", timeout: 12_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) {
+      throw new WorkerError(
+        "Il gestionale mostra “Visualizza tutto”, ma non apre l’elenco completo degli immobili.",
+        "portal_error",
+        { portal: "CRM", action: "person-properties-modal-not-opened", personId },
+        true,
+      );
+    }
+
+    const rows = modal.locator(this.selectors.personPropertiesModalRows);
+    const propertyLinks: Array<{ href: string; id: string; label: string }> = [];
+    const unreadableProperties: Array<{ rowIndex: number; label: string }> = [];
+    for (let index = 0; index < await rows.count(); index += 1) {
+      const row = rows.nth(index);
+      const name = row.locator(this.selectors.personPropertiesModalName).first();
+      const label = ((await name.textContent().catch(() => null)) ?? (await row.textContent().catch(() => null)) ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!/^\s*IM\s*-/i.test(label)) continue;
+      const rawHref = await name.getAttribute("href").catch(() => null) ?? "";
+      const id = await name.getAttribute("data-recordid").catch(() => null)
+        ?? await name.getAttribute("data-id").catch(() => null)
+        ?? recordIdFromHref(rawHref, "immobile");
+      const href = /\/s\/immobile\//i.test(rawHref) || rawHref.startsWith("#fixture-property")
+        ? rawHref
+        : "";
+      if (!href && !id) {
+        unreadableProperties.push({ rowIndex: index, label });
+        continue;
+      }
+      propertyLinks.push({
+        href: href || `${CRM_PATH}/immobile/${id}`,
+        id,
+        label,
+      });
+    }
+
+    const close = modal.locator(this.selectors.personPropertiesModalClose).filter({ visible: true }).last();
+    if (await close.count()) await close.click({ force: true }).catch(() => undefined);
+    if (await modal.isVisible().catch(() => false)) await this.page.keyboard.press("Escape").catch(() => undefined);
+    await modal.waitFor({ state: "hidden", timeout: 8_000 }).catch(() => undefined);
+
+    if (unreadableProperties.length) {
+      throw new WorkerError(
+        "L’elenco completo contiene immobili che il gestionale non permette di aprire. Per evitare duplicati il worker non crea un nuovo immobile.",
+        "needs_review",
+        {
+          portal: "CRM",
+          action: "person-properties-modal-unreadable",
+          personId,
+          unreadableProperties,
+        },
+        true,
+      );
+    }
+
+    return {
+      links: propertyLinks.filter((link, index, links) => {
+        const key = link.id || link.href;
+        return links.findIndex((candidate) => (candidate.id || candidate.href) === key) === index;
+      }),
+      fullListOpened: true,
+    };
+  }
+
   async verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult> {
     if (id.startsWith("dry-property-")) {
       return { match: { id, data: { source: "dry-property-verification", identityVerified: true } } };
@@ -1109,20 +1198,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const card = await this.uniqueVisible("personPropertiesCard", "Immobili/Notizie/Incarichi", 20_000);
       const cardText = await card.innerText().catch(() => "");
       const declaredCount = Number(cardText.match(/Immobili\s*\/\s*Notizie\s*\/\s*Incarichi\s*\((\d+)\)/i)?.[1] ?? 0);
-      let hrefs = [...new Set((await card.locator(this.selectors.personPropertyLinks)
-        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))))
-        .filter((href): href is string => Boolean(href)))];
-      if (!hrefs.length && declaredCount > 0 && this.selectors.personPropertiesViewAll) {
-        const viewAll = card.locator(this.selectors.personPropertiesViewAll).filter({ visible: true }).first();
-        if (await viewAll.count()) {
-          await viewAll.click({ force: true });
-          await this.page.waitForTimeout(800);
-          hrefs = [...new Set((await this.page.locator(this.selectors.personPropertyLinks)
-            .evaluateAll((links) => links.map((link) => link.getAttribute("href"))))
-            .filter((href): href is string => Boolean(href)))];
-        }
-      }
-      if (declaredCount > 0 && !hrefs.length) {
+      const { links, fullListOpened } = await this.collectPersonPropertyLinks(card, personId);
+      if (declaredCount > 0 && !links.length && !fullListOpened) {
         throw new WorkerError(
           `La scheda indica ${declaredCount} immobili collegati, ma non permette di leggerne gli indirizzi.`,
           "portal_error",
@@ -1132,11 +1209,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       }
 
       const addressMatches: Array<{ id: string; data: Record<string, unknown> }> = [];
-      for (const href of hrefs) {
+      for (const link of links) {
+        const href = link.href;
         const isFixture = href.startsWith("#fixture-property");
-        const hrefPropertyId = isFixture
+        const hrefPropertyId = link.id || (isFixture
           ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
-          : recordIdFromHref(href, "immobile");
+          : recordIdFromHref(href, "immobile"));
         if (!isFixture) {
           await this.page.goto(new URL(href, personUrl).toString(), { waitUntil: "domcontentloaded" });
           await this.page.waitForTimeout(650);
@@ -1156,7 +1234,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
       }
 
-      if (!hrefs.every((href) => href.startsWith("#fixture-property"))) {
+      if (!links.every(({ href }) => href.startsWith("#fixture-property"))) {
         await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
         await this.waitForPersonWorkspace(personId);
       }
@@ -1189,16 +1267,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const card = await this.uniqueVisible("personPropertiesCard", "Immobili/Notizie/Incarichi", 20_000);
       const cardText = await card.innerText().catch(() => "");
       const declaredCount = Number(cardText.match(/Immobili\s*\/\s*Notizie\s*\/\s*Incarichi\s*\((\d+)\)/i)?.[1] ?? 0);
-      let hrefs = [...new Set((await card.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")))).filter((href): href is string => Boolean(href)))];
-      if (!hrefs.length && declaredCount > 0 && this.selectors.personPropertiesViewAll) {
-        const viewAll = card.locator(this.selectors.personPropertiesViewAll).filter({ visible: true }).first();
-        if (await viewAll.count()) {
-          await viewAll.click({ force: true });
-          await this.page.waitForTimeout(800);
-          hrefs = [...new Set((await this.page.locator(this.selectors.personPropertyLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")))).filter((href): href is string => Boolean(href)))];
-        }
-      }
-      if (declaredCount > 0 && !hrefs.length) {
+      const { links, fullListOpened } = await this.collectPersonPropertyLinks(card, personId);
+      if (declaredCount > 0 && !links.length && !fullListOpened) {
         throw new WorkerError(
           `La scheda indica ${declaredCount} immobili collegati, ma il gestionale non ne espone l'elenco. Per evitare duplicati il worker non ne crea uno nuovo.`,
           "needs_review",
@@ -1207,11 +1277,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
       const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
-      for (const href of hrefs) {
+      for (const link of links) {
+        const href = link.href;
         const isFixture = href.startsWith("#fixture-property");
-        const hrefPropertyId = isFixture
+        const hrefPropertyId = link.id || (isFixture
           ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
-          : recordIdFromHref(href, "immobile");
+          : recordIdFromHref(href, "immobile"));
         if (hrefPropertyId && excludedPropertyIds.includes(hrefPropertyId)) continue;
         if (!isFixture) {
           await this.page.goto(new URL(href, personUrl).toString(), { waitUntil: "domcontentloaded" });
@@ -1238,7 +1309,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
       }
       if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili con gli stessi dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
-      if (!matches.length && !hrefs.every((href) => href.startsWith("#fixture-property"))) {
+      if (!matches.length && !links.every(({ href }) => href.startsWith("#fixture-property"))) {
         await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
         await this.waitForPersonWorkspace(personId);
       }

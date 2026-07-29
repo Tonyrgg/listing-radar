@@ -90,6 +90,10 @@ export interface CrmSelectors {
   personPropertiesCard: string;
   personPropertyLinks: string;
   personPropertiesViewAll: string;
+  personPropertiesModal: string;
+  personPropertiesModalRows: string;
+  personPropertiesModalName: string;
+  personPropertiesModalClose: string;
   propertySheetValue: string;
   propertyParcelValue: string;
   propertySubalternValue: string;
@@ -131,6 +135,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
+  "personPropertiesModal", "personPropertiesModalRows", "personPropertiesModalName", "personPropertiesModalClose",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
@@ -174,6 +179,10 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personPropertiesCard: 'article:visible:has-text("Immobili/Notizie/Incarichi")',
   personPropertyLinks: 'a[href*="/s/immobile/"]',
   personPropertiesViewAll: 'a:has-text("Visualizza tutto"), button:has-text("Visualizza tutto")',
+  personPropertiesModal: '[role="dialog"]:visible:has-text("Immobili/Notizie/Incarichi")',
+  personPropertiesModalRows: 'table tbody tr',
+  personPropertiesModalName: 'td:first-child a',
+  personPropertiesModalClose: 'button:has-text("Chiudi"), button[title="Chiudi"], button[title="Close"]',
   propertySheetValue: '.flex:has(> div > label:has-text("Catasto Foglio")) .slds-form-element__static .slds-grow',
   propertyParcelValue: '.flex:has(> div > label:has-text("Catasto Particella")) .slds-form-element__static .slds-grow',
   propertySubalternValue: '.flex:has(> div > label:has-text("Catasto Subalterno")) .slds-form-element__static .slds-grow',
@@ -257,6 +266,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertyAddress", "propertySheet", "propertyParcel", "propertySubaltern", "propertyCategory", "propertyClass", "propertyConsistency",
   "propertyIncome", "propertySave", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption", "ownerRight", "ownerRole", "ownerRoleOption", "ownerShare", "ownerSave", "ownerCancel", "ownerAlreadyLinkedError",
   "personResultsReady", "personRelatedTab", "personPropertiesCard", "personPropertyLinks", "personPropertiesViewAll",
+  "personPropertiesModal", "personPropertiesModalRows", "personPropertiesModalName", "personPropertiesModalClose",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",

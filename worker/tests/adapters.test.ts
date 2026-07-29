@@ -89,6 +89,96 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("apre Visualizza tutto, ignora le righe NT e identifica l'immobile dalla terna catastale", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const visitedProperties: string[] = [];
+      const accountHtml = `
+        <main>
+          <article data-worker-crm="personPropertiesCard">
+            Immobili/Notizie/Incarichi (4)
+            <a data-worker-crm="personPropertyLinks" href="/CRMImmobiliareLightning/s/immobile/I-FIRST">IM - Via Roma 12</a>
+            <a data-worker-crm="personPropertyLinks" href="/CRMImmobiliareLightning/s/immobile/I-SECOND">IM - Via Roma 12</a>
+            <button data-worker-crm="personPropertiesViewAll"
+              onclick="document.querySelector('[data-worker-crm=personPropertiesModal]').hidden=false">
+              Visualizza tutto
+            </button>
+          </article>
+          <section role="dialog" data-worker-crm="personPropertiesModal" hidden>
+            <h2>Immobili/Notizie/Incarichi (4)</h2>
+            <table><tbody>
+              <tr data-worker-crm="personPropertiesModalRows">
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/notizia/NT-1">NT - Abitazione - Locazione</a></td>
+              </tr>
+              <tr data-worker-crm="personPropertiesModalRows">
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-WRONG">IM - Via Roma 12 - Abitazione</a></td>
+              </tr>
+              <tr data-worker-crm="personPropertiesModalRows">
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-MATCH">IM - Via Roma 12 - Abitazione</a></td>
+              </tr>
+              <tr data-worker-crm="personPropertiesModalRows">
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/incarico/IN-1">IN - Via Roma 12</a></td>
+              </tr>
+            </tbody></table>
+            <button data-worker-crm="personPropertiesModalClose"
+              onclick="document.querySelector('[data-worker-crm=personPropertiesModal]').hidden=true">
+              Chiudi
+            </button>
+          </section>
+        </main>`;
+      const propertyHtml = (sheet: string, parcel: string, subaltern: string) => `
+        <main>
+          <div data-worker-crm="propertySheetValue">${sheet}</div>
+          <div data-worker-crm="propertyParcelValue">${parcel}</div>
+          <div data-worker-crm="propertySubalternValue">${subaltern}</div>
+          <div data-worker-crm="propertyAddressValue">Via Roma 12, 70032 BITONTO (BA)</div>
+        </main>`;
+      await page.route("https://crm.test/**", async (route) => {
+        const url = new URL(route.request().url());
+        const propertyId = url.pathname.match(/\/s\/immobile\/([^/]+)/)?.[1];
+        if (!propertyId) {
+          await route.fulfill({ contentType: "text/html", body: accountHtml });
+          return;
+        }
+        visitedProperties.push(propertyId);
+        await route.fulfill({
+          contentType: "text/html",
+          body: propertyId === "I-MATCH"
+            ? propertyHtml("50", "2455", "9")
+            : propertyHtml("50", "2455", "10"),
+        });
+      });
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      const result = await adapter.findPropertyForPerson("P-42", {
+        municipality: "BITONTO",
+        sheet: "50",
+        parcel: "2455",
+        subaltern: "9",
+        address: "Via Roma 12",
+        censusZone: "U",
+        category: "A/2",
+        class: "3",
+        consistency: "6 vani",
+        cadastralIncome: null,
+        rawPayload: {},
+      });
+
+      expect(result.match).toMatchObject({
+        id: "I-MATCH",
+        data: {
+          matchedBy: "cadastral",
+          identityVerified: true,
+          sheet: "50",
+          parcel: "2455",
+          subaltern: "9",
+        },
+      });
+      expect(visitedProperties).toEqual(["I-WRONG", "I-MATCH"]);
+    } finally { await browser.close(); }
+  });
+
   it("mantiene univoci i selettori CRM calibrati sulla struttura reale", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
