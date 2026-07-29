@@ -32,6 +32,11 @@ export const propertyRequestSchema = z.object({
   municipality: z.string().trim().default("Bitonto"),
   status: z.enum(["draft","active","urgent","suspended","satisfied","cancelled","archived"]).default("draft"),
   priority: z.enum(["low","normal","high","urgent"]).default("normal"),
+  destination: z.enum(["first_home","investment","exchange","temporary","other"]).nullable().optional(),
+  financing_method: z.enum(["cash","cash_and_mortgage","full_mortgage","exchange","other"]).nullable().optional(),
+  credit_status: z.enum(["unknown","in_progress","positive","negative"]).nullable().optional(),
+  requested_floor_band: z.enum(["any","low","medium","high","top"]).nullable().optional(),
+  from_own_listing: z.boolean().default(false),
   budget_ideal: nullableNumber,
   budget_max: nullableNumber,
   monthly_rent_ideal: nullableNumber,
@@ -108,4 +113,3 @@ export const matchStatusSchema = z.enum([
   "new","to_propose","proposed","interested","visit_scheduled",
   "not_interested","excluded","negotiation","completed",
 ]);
-

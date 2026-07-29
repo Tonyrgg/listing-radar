@@ -4,6 +4,8 @@ import {
   CircleDot,
   Clock3,
   Flame,
+  Home,
+  Landmark,
   Layers3,
   MapPin,
   Ruler,
@@ -35,11 +37,14 @@ export default async function RequestsPage({
   const contract = typeof filters.contract === "string" ? filters.contract : "";
   const priority = typeof filters.priority === "string" ? filters.priority : "";
   const client = typeof filters.client === "string" ? filters.client : "";
+  const destination =
+    typeof filters.destination === "string" ? filters.destination : "";
   const filteredRequests = requests.filter(
     (request) =>
       (!status || request.status === status) &&
       (!contract || request.contract_type === contract) &&
       (!priority || request.priority === priority) &&
+      (!destination || request.destination === destination) &&
       (!client ||
         (client === "anonymous"
           ? !request.client_id
@@ -71,7 +76,7 @@ export default async function RequestsPage({
             <SlidersHorizontal aria-hidden="true" className="size-4" />
             Filtra le richieste
           </summary>
-          <form className="grid gap-2 border-t border-[var(--line-soft)] p-3 sm:grid-cols-4">
+          <form className="grid gap-2 border-t border-[var(--line-soft)] p-3 sm:grid-cols-2 xl:grid-cols-5">
             <Filter
               name="status"
               label="Tutti gli stati"
@@ -103,6 +108,18 @@ export default async function RequestsPage({
                 ["normal", "Normale"],
                 ["high", "Importante"],
                 ["urgent", "Urgente"],
+              ]}
+            />
+            <Filter
+              name="destination"
+              label="Tutte le finalità"
+              value={destination}
+              options={[
+                ["first_home", "Prima casa"],
+                ["investment", "Investimento"],
+                ["exchange", "Permuta"],
+                ["temporary", "Esigenza temporanea"],
+                ["other", "Altro"],
               ]}
             />
             <div className="flex gap-2">
@@ -163,6 +180,24 @@ export default async function RequestsPage({
                     {request.property_types.map((type) => (
                       <PropertyTypeMark key={type} type={type} />
                     ))}
+                    {request.destination ? (
+                      <span
+                        title="Finalità della ricerca"
+                        className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
+                      >
+                        <Home aria-hidden="true" className="size-3.5" />
+                        {destinationLabel(request.destination)}
+                      </span>
+                    ) : null}
+                    {request.financing_method ? (
+                      <span
+                        title="Modalità economica"
+                        className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
+                      >
+                        <Landmark aria-hidden="true" className="size-3.5" />
+                        {financingLabel(request.financing_method)}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -344,5 +379,29 @@ function priorityLabel(priority: string) {
       high: "Importante",
       urgent: "Urgente",
     }[priority] ?? priority
+  );
+}
+
+function destinationLabel(value: string) {
+  return (
+    {
+      first_home: "Prima casa",
+      investment: "Investimento",
+      exchange: "Permuta",
+      temporary: "Esigenza temporanea",
+      other: "Altra esigenza",
+    }[value] ?? value
+  );
+}
+
+function financingLabel(value: string) {
+  return (
+    {
+      cash: "Contanti",
+      cash_and_mortgage: "Contanti + mutuo",
+      full_mortgage: "Mutuo 100%",
+      exchange: "Permuta",
+      other: "Da definire",
+    }[value] ?? value
   );
 }

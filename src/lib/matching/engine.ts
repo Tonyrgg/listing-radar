@@ -5,6 +5,19 @@ import {
 } from "./scoring";
 import type { MatchResult, MatchingContext } from "./types";
 
+function scoreFloorBand(
+  band: MatchingContext["request"]["requested_floor_band"],
+  floor: number | null,
+  buildingFloors: number | null,
+) {
+  if (!band || band === "any") return null;
+  if (floor == null) return 0.25;
+  if (band === "low") return floor <= 2 ? 1 : 0;
+  if (band === "medium") return floor >= 3 && floor <= 4 ? 1 : 0;
+  if (band === "high") return floor >= 5 ? 1 : 0;
+  return buildingFloors != null && floor === buildingFloors ? 1 : 0;
+}
+
 export function calculateMatch(context: MatchingContext): MatchResult {
   const { request, property } = context;
   const config = context.config ?? DEFAULT_MATCHING_CONFIG;
@@ -57,7 +70,14 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   add(config.weights.internalSqm, scoreRange(property.internal_sqm, request.internal_sqm_min, request.internal_sqm_ideal, request.internal_sqm_max), "metratura", "metratura fuori intervallo");
   add(config.weights.rooms, scoreRange(property.rooms, request.rooms_min, request.rooms_ideal, request.rooms_max), "vani", "vani fuori intervallo");
 
-  if (request.floor_min != null || request.floor_max != null) {
+  const floorBandScore = scoreFloorBand(
+    request.requested_floor_band,
+    property.floor,
+    property.building_floors,
+  );
+  if (floorBandScore != null) {
+    add(config.weights.floor, floorBandScore, "piano", "piano non preferito");
+  } else if (request.floor_min != null || request.floor_max != null) {
     add(config.weights.floor, scoreRange(property.floor, request.floor_min, null, request.floor_max), "piano", "piano non preferito");
   }
   if (request.accepted_conditions.length) {
@@ -99,4 +119,3 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     warnings,
   };
 }
-

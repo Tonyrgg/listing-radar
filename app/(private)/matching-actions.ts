@@ -47,7 +47,17 @@ export async function saveRequestAction(input: unknown) {
     ? supabase.from("property_requests").update(payload).eq("id", id).select().single()
     : supabase.from("property_requests").insert(payload).select().single();
   const { data, error } = await query;
-  if (error || !data) throw new Error(error?.message ?? "Richiesta non salvata.");
+  if (error || !data) {
+    const missingRequestFormat =
+      error?.code === "PGRST204"
+      || error?.code === "42703"
+      || /destination|financing_method|requested_floor_band|credit_status/i.test(error?.message ?? "");
+    throw new Error(
+      missingRequestFormat
+        ? "Applica la migration 007_request_real_estate_format.sql in Supabase prima di salvare il nuovo formato."
+        : error?.message ?? "Richiesta non salvata.",
+    );
+  }
   await Promise.all([
     supabase.from("request_zones").delete().eq("request_id", data.id),
     supabase.from("request_feature_preferences").delete().eq("request_id", data.id),

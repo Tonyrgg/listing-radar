@@ -41,4 +41,18 @@ describe("matching engine", () => {
     expect(estimateCommercialSqm(100)).toEqual({ minimum: 110, maximum: 120 });
     expect(sqmCoherenceWarnings(45, 5)).toHaveLength(1);
   });
+  it("interpreta le fasce piano usate nelle richieste del gestionale", () => {
+    const topFloorRequest = { ...request, requested_floor_band: "top" as const };
+    const lastFloor = calculateMatch({
+      request: topFloorRequest,
+      property: { ...property, floor: 4, building_floors: 4 },
+    });
+    const middleFloor = calculateMatch({
+      request: topFloorRequest,
+      property: { ...property, floor: 2, building_floors: 4 },
+    });
+    expect(lastFloor.matched_criteria).toContain("piano");
+    expect(middleFloor.missing_preferences).toContain("piano non preferito");
+    expect(lastFloor.score).toBeGreaterThan(middleFloor.score);
+  });
 });

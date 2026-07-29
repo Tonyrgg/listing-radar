@@ -2,14 +2,18 @@ import {
   Bath,
   BedDouble,
   Clock3,
+  Home,
+  Landmark,
   Layers3,
   MapPin,
+  Megaphone,
   MessageSquareText,
   Ruler,
   SlidersHorizontal,
   UserRound,
   WalletCards,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
@@ -166,6 +170,41 @@ export default async function RequestDetailPage({
               )}
             </div>
 
+            <div className="mt-6 border-t border-[var(--line-soft)] pt-5">
+              <p className="text-xs font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
+                Profilo della ricerca
+              </p>
+              <dl className="mt-3 divide-y divide-[var(--line-soft)]">
+                <RequestFact
+                  icon={Home}
+                  label="Finalità"
+                  value={destinationLabel(request.destination)}
+                />
+                {request.contract_type === "sale" ? (
+                  <RequestFact
+                    icon={Landmark}
+                    label="Modalità economica"
+                    value={financingLabel(request.financing_method)}
+                  />
+                ) : null}
+                <RequestFact
+                  icon={Layers3}
+                  label="Piano"
+                  value={floorBandLabel(request.requested_floor_band)}
+                />
+                <RequestFact
+                  icon={Clock3}
+                  label="Verifica economica"
+                  value={creditLabel(request.credit_status)}
+                />
+                <RequestFact
+                  icon={Megaphone}
+                  label="Provenienza"
+                  value={request.from_own_listing ? "Da mio annuncio" : "Altra origine"}
+                />
+              </dl>
+            </div>
+
             {request.notes ? (
               <div className="mt-6 border-t border-[var(--line-soft)] pt-5">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
@@ -303,5 +342,72 @@ function preferenceLabel(value: string) {
       indifferent: "Non importante",
       avoid: "Da evitare",
     }[value] ?? value
+  );
+}
+
+function RequestFact({
+  icon: Icon,
+  label,
+  value,
+}: Readonly<{
+  icon: LucideIcon;
+  label: string;
+  value: string;
+}>) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
+      <dt className="inline-flex items-center gap-2 text-[var(--ink-soft)]">
+        <Icon aria-hidden="true" className="size-4 text-[var(--ink-subtle)]" />
+        {label}
+      </dt>
+      <dd className="text-right font-semibold text-[var(--ink-strong)]">{value}</dd>
+    </div>
+  );
+}
+
+function destinationLabel(value?: string | null) {
+  return (
+    {
+      first_home: "Prima casa",
+      investment: "Investimento",
+      exchange: "Permuta",
+      temporary: "Esigenza temporanea",
+      other: "Altra esigenza",
+    }[value ?? ""] ?? "Da definire"
+  );
+}
+
+function financingLabel(value?: string | null) {
+  return (
+    {
+      cash: "Contanti",
+      cash_and_mortgage: "Contanti + mutuo",
+      full_mortgage: "Mutuo 100%",
+      exchange: "Permuta",
+      other: "Da definire",
+    }[value ?? ""] ?? "Da definire"
+  );
+}
+
+function floorBandLabel(value?: string | null) {
+  return (
+    {
+      any: "Qualsiasi",
+      low: "Basso, terra–2°",
+      medium: "Medio, 3°–4°",
+      high: "Alto, dal 5°",
+      top: "Ultimo piano",
+    }[value ?? ""] ?? "Qualsiasi"
+  );
+}
+
+function creditLabel(value?: string | null) {
+  return (
+    {
+      unknown: "Da verificare",
+      in_progress: "Verifica in corso",
+      positive: "Merito positivo",
+      negative: "Criticità rilevate",
+    }[value ?? ""] ?? "Da verificare"
   );
 }

@@ -3,6 +3,12 @@ export type RequestStatus =
   | "draft" | "active" | "urgent" | "suspended" | "satisfied"
   | "cancelled" | "archived";
 export type RequestPriority = "low" | "normal" | "high" | "urgent";
+export type RequestDestination =
+  | "first_home" | "investment" | "exchange" | "temporary" | "other";
+export type FinancingMethod =
+  | "cash" | "cash_and_mortgage" | "full_mortgage" | "exchange" | "other";
+export type CreditStatus = "unknown" | "in_progress" | "positive" | "negative";
+export type RequestedFloorBand = "any" | "low" | "medium" | "high" | "top";
 export type PreferenceLevel = "required" | "preferred" | "indifferent" | "avoid";
 export type ZonePreferenceLevel = "required" | "preferred" | "accepted" | "excluded";
 export type MatchClassification =
@@ -40,6 +46,11 @@ export interface PropertyRequest {
   municipality: string | null;
   status: RequestStatus;
   priority: RequestPriority;
+  destination?: RequestDestination | null;
+  financing_method?: FinancingMethod | null;
+  credit_status?: CreditStatus | null;
+  requested_floor_band?: RequestedFloorBand | null;
+  from_own_listing?: boolean;
   budget_ideal: number | null;
   budget_max: number | null;
   monthly_rent_ideal: number | null;
@@ -61,6 +72,9 @@ export interface PropertyRequest {
   availability_requirement: string | null;
   available_by: string | null;
   notes: string | null;
+  external_crm_id?: string | null;
+  source?: string | null;
+  last_imported_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -160,4 +174,3 @@ export interface MatchingContext {
 export interface MatchResult extends Omit<RequestPropertyMatch, "request_id" | "property_id" | "status"> {
   warnings: string[];
 }
-

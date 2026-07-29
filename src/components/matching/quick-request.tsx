@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 
 import {
   getQuickRequestOptionsAction,
+  saveClientAction,
   saveRequestAction,
 } from "@/app/(private)/matching-actions";
 import type {
@@ -78,27 +79,30 @@ const commonFeatures = new Set([
 const steps = [
   {
     number: 1,
-    title: "Che casa cerca?",
-    description: "Contratto, tipologia e zone",
+    title: "Cliente e ricerca",
+    description: "Contatto, contratto, tipologia e zone",
   },
   {
     number: 2,
-    title: "Quanto e quanto grande?",
-    description: "Budget, metri e vani",
+    title: "Casa e budget",
+    description: "Tipologia, prezzo e dimensioni",
   },
   {
     number: 3,
-    title: "Cosa deve avere?",
-    description: "Caratteristiche importanti",
+    title: "Dotazioni",
+    description: "Cosa deve avere o evitare",
   },
   {
     number: 4,
-    title: "Ultimi dettagli",
-    description: "Piano, stato e note",
+    title: "Esigenza e priorità",
+    description: "Finalità, pagamento e note",
   },
 ] as const;
 
 type Draft = {
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
   contract_type: "sale" | "rent";
   property_types: string[];
   zones: string[];
@@ -112,13 +116,21 @@ type Draft = {
   featurePreferences: Record<string, PreferenceLevel>;
   floorMin: string;
   floorMax: string;
+  floorBand: "any" | "low" | "medium" | "high" | "top";
   conditions: string[];
+  destination: "first_home" | "investment" | "exchange" | "temporary" | "other";
+  financingMethod: "" | "cash" | "cash_and_mortgage" | "full_mortgage" | "exchange" | "other";
+  creditStatus: "unknown" | "in_progress" | "positive" | "negative";
+  fromOwnListing: boolean;
   availableBy: string;
   priority: "low" | "normal" | "high" | "urgent";
   notes: string;
 };
 
 const initialDraft: Draft = {
+  clientName: "",
+  clientPhone: "",
+  clientEmail: "",
   contract_type: "sale",
   property_types: ["apartment"],
   zones: [],
@@ -132,7 +144,12 @@ const initialDraft: Draft = {
   featurePreferences: {},
   floorMin: "",
   floorMax: "",
+  floorBand: "any",
   conditions: [],
+  destination: "first_home",
+  financingMethod: "",
+  creditStatus: "unknown",
+  fromOwnListing: false,
   availableBy: "",
   priority: "normal",
   notes: "",
@@ -320,22 +337,57 @@ export function QuickRequestDrawer() {
     set("sqmMax", maximum == null ? "" : String(maximum));
   }
 
-  function chooseFloor(minimum: string, maximum: string) {
-    set("floorMin", minimum);
-    set("floorMax", maximum);
+  function chooseFloorBand(band: Draft["floorBand"]) {
+    const ranges: Record<Draft["floorBand"], [string, string]> = {
+      any: ["", ""],
+      low: ["0", "2"],
+      medium: ["3", "4"],
+      high: ["5", ""],
+      top: ["", ""],
+    };
+    const [minimum, maximum] = ranges[band];
+    setDraft((current) => ({
+      ...current,
+      floorBand: band,
+      floorMin: minimum,
+      floorMax: maximum,
+    }));
   }
 
   function save(status: "draft" | "active", showMatches: boolean) {
     setError("");
     startTransition(async () => {
       try {
+        const client = draft.clientName.trim() || draft.clientPhone.trim() || draft.clientEmail.trim()
+          ? await saveClientAction({
+              full_name: draft.clientName.trim() || null,
+              phone: draft.clientPhone.trim() || null,
+              email: draft.clientEmail.trim() || null,
+              notes: null,
+            })
+          : null;
+        const primaryType = propertyTypes.find(([value]) => value === draft.property_types[0])?.[1]
+          ?? "Immobile";
+        const requestLabel = draft.rooms
+          ? `${draft.rooms} ${Number(draft.rooms) === 1 ? "locale" : "locali"}`
+          : primaryType;
+        const clientLabel = draft.clientName.trim().split(/\s+/).at(-1) || "Nuova";
         const result = await saveRequestAction({
-          title: `Richiesta ${draft.contract_type === "sale" ? "acquisto" : "affitto"}`,
+          client_id: client?.id ?? null,
+          title: `RR - ${requestLabel} - ${clientLabel}`,
           contract_type: draft.contract_type,
           property_types: draft.property_types,
           municipality: "Bitonto",
           status,
           priority: draft.priority,
+          destination: draft.destination,
+          financing_method:
+            draft.contract_type === "sale" && draft.financingMethod
+              ? draft.financingMethod
+              : null,
+          credit_status: draft.creditStatus,
+          requested_floor_band: draft.floorBand,
+          from_own_listing: draft.fromOwnListing,
           budget_ideal:
             draft.contract_type === "sale" && draft.ideal
               ? Number(draft.ideal)
@@ -536,6 +588,44 @@ export function QuickRequestDrawer() {
 
                 {step === 1 ? (
                   <div>
+                    <Question
+                      title="Chi sta cercando casa?"
+                      help="Nome e recapito aiutano a riconoscere subito la richiesta. Puoi completarli anche dopo."
+                    >
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)] sm:col-span-2">
+                          Nome e cognome
+                          <input
+                            type="text"
+                            value={draft.clientName}
+                            onChange={(event) => set("clientName", event.target.value)}
+                            placeholder="Per esempio: Franco Abbondanza"
+                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                          />
+                        </label>
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          Telefono
+                          <input
+                            type="tel"
+                            value={draft.clientPhone}
+                            onChange={(event) => set("clientPhone", event.target.value)}
+                            placeholder="Cellulare o fisso"
+                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                          />
+                        </label>
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          Email
+                          <input
+                            type="email"
+                            value={draft.clientEmail}
+                            onChange={(event) => set("clientEmail", event.target.value)}
+                            placeholder="Facoltativa"
+                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                          />
+                        </label>
+                      </div>
+                    </Question>
+
                     <Question title="Vuole comprare o prendere in affitto?">
                       <div className="grid grid-cols-2 gap-3">
                         <ChoiceButton
@@ -570,6 +660,56 @@ export function QuickRequestDrawer() {
                         ))}
                       </div>
                     </Question>
+
+                    <Question
+                      title="Per quale motivo cerca l’immobile?"
+                      help="È la destinazione usata nelle richieste del gestionale."
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          ["first_home", "Prima casa"],
+                          ["investment", "Investimento"],
+                          ["exchange", "Permuta"],
+                          ["temporary", "Esigenza temporanea"],
+                          ["other", "Altro"],
+                        ].map(([value, label]) => (
+                          <ChoiceButton
+                            key={value}
+                            compact
+                            selected={draft.destination === value}
+                            onClick={() => set("destination", value as Draft["destination"])}
+                          >
+                            {label}
+                          </ChoiceButton>
+                        ))}
+                      </div>
+                    </Question>
+
+                    {draft.contract_type === "sale" ? (
+                      <Question
+                        title="Come pensa di acquistare?"
+                        help="La modalità economica resta separata dal budget."
+                      >
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ["cash", "Contanti"],
+                            ["cash_and_mortgage", "Contanti + mutuo"],
+                            ["full_mortgage", "Mutuo 100%"],
+                            ["exchange", "Permuta"],
+                            ["other", "Da definire"],
+                          ].map(([value, label]) => (
+                            <ChoiceButton
+                              key={value}
+                              compact
+                              selected={draft.financingMethod === value}
+                              onClick={() => set("financingMethod", value as Draft["financingMethod"])}
+                            >
+                              {label}
+                            </ChoiceButton>
+                          ))}
+                        </div>
+                      </Question>
+                    ) : null}
 
                     <Question
                       title="In quali zone?"
@@ -815,26 +955,22 @@ export function QuickRequestDrawer() {
                 {step === 4 ? (
                   <div>
                     <Question
-                      title="Quali piani vanno bene?"
+                      title="Quale fascia di piano preferisce?"
                       help="Scegli l’opzione più vicina alla richiesta."
                     >
                       <div className="flex flex-wrap gap-2">
                         {[
-                          ["", "", "Qualsiasi piano"],
-                          ["0", "0", "Solo piano terra"],
-                          ["1", "", "Dal primo in su"],
-                          ["2", "", "Dal secondo in su"],
-                          ["", "2", "Massimo secondo piano"],
-                          ["", "4", "Massimo quarto piano"],
-                        ].map(([minimum, maximum, label]) => (
+                          ["any", "Qualsiasi"],
+                          ["low", "Basso, dal terra al 2°"],
+                          ["medium", "Medio, 3° o 4°"],
+                          ["high", "Alto, dal 5°"],
+                          ["top", "Ultimo piano"],
+                        ].map(([value, label]) => (
                           <ChoiceButton
                             key={label}
                             compact
-                            selected={
-                              draft.floorMin === minimum &&
-                              draft.floorMax === maximum
-                            }
-                            onClick={() => chooseFloor(minimum, maximum)}
+                            selected={draft.floorBand === value}
+                            onClick={() => chooseFloorBand(value as Draft["floorBand"])}
                           >
                             {label}
                           </ChoiceButton>
@@ -863,6 +999,46 @@ export function QuickRequestDrawer() {
                             {label}
                           </ChoiceButton>
                         ))}
+                      </div>
+                    </Question>
+
+                    <Question
+                      title="A che punto è la verifica economica?"
+                      help="Se non ne avete ancora parlato, lascia “Da verificare”."
+                    >
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          ["unknown", "Da verificare"],
+                          ["in_progress", "Verifica in corso"],
+                          ["positive", "Merito positivo"],
+                          ["negative", "Criticità rilevate"],
+                        ].map(([value, label]) => (
+                          <ChoiceButton
+                            key={value}
+                            compact
+                            selected={draft.creditStatus === value}
+                            onClick={() => set("creditStatus", value as Draft["creditStatus"])}
+                          >
+                            {label}
+                          </ChoiceButton>
+                        ))}
+                      </div>
+                    </Question>
+
+                    <Question title="La richiesta arriva da un tuo annuncio?">
+                      <div className="grid grid-cols-2 gap-2">
+                        <ChoiceButton
+                          selected={!draft.fromOwnListing}
+                          onClick={() => set("fromOwnListing", false)}
+                        >
+                          No
+                        </ChoiceButton>
+                        <ChoiceButton
+                          selected={draft.fromOwnListing}
+                          onClick={() => set("fromOwnListing", true)}
+                        >
+                          Sì
+                        </ChoiceButton>
                       </div>
                     </Question>
 
