@@ -7,12 +7,14 @@ import {
   Building2,
   MapPinned,
   Settings2,
-  Sparkles,
+  ScanSearch,
+  Gauge,
   UsersRound,
 } from "lucide-react";
 
 const items = [
-  ["/matching", "Panoramica", Sparkles],
+  ["/matching/overview", "Panoramica", Gauge],
+  ["/matching", "Matching", ScanSearch],
   ["/requests", "Richieste clienti", UsersRound],
   ["/portfolio", "Immobili disponibili", Building2],
   ["/zones", "Zone immobiliari", MapPinned],
@@ -27,7 +29,7 @@ export function MatchingSectionNav() {
       className="flex gap-1 overflow-x-auto border-b border-[var(--line-soft)] pb-2"
     >
       {items.map(([href, label, Icon]) => {
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+        const active = pathname === href || (href !== "/matching" && pathname.startsWith(`${href}/`));
         return (
           <Link
             key={href}
