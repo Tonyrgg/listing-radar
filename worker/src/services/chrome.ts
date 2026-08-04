@@ -15,6 +15,8 @@ export interface RequestArchiveChrome {
   archivePage: Page;
 }
 
+export type MandateArchiveChrome = RequestArchiveChrome;
+
 async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   if (/^wss?:\/\//i.test(cdpUrl)) return cdpUrl;
   const controller = new AbortController();
@@ -69,7 +71,11 @@ export async function connectToChrome(
   return { browser, pages: described, sisterPage, crmPage };
 }
 
-export async function connectToRequestArchiveChrome(cdpUrl: string): Promise<RequestArchiveChrome> {
+async function connectToCrmArchiveChrome(
+  cdpUrl: string,
+  recordSelector: string,
+  archiveLabel: "richieste" | "incarichi",
+): Promise<RequestArchiveChrome> {
   let browser: Browser;
   try {
     browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
@@ -81,25 +87,31 @@ export async function connectToRequestArchiveChrome(cdpUrl: string): Promise<Req
     );
   }
   const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  let archivePage = pages.find(({ url }) => /\/CRMImmobiliareLightning\/s\/query(?:\?|$)/i.test(url))?.page;
-  if (!archivePage) {
-    for (const candidate of pages) {
-      if (await candidate.page.locator('a[href*="/richiestaimmobiliare/"]').count().catch(() => 0)) {
-        archivePage = candidate.page;
-        break;
-      }
+  let archivePage: Page | undefined;
+  for (const candidate of pages.filter(({ url }) => /\/CRMImmobiliareLightning\/s\/query(?:\?|$)/i.test(url))) {
+    if (await candidate.page.locator(recordSelector).count().catch(() => 0)) {
+      archivePage = candidate.page;
+      break;
     }
   }
   if (!archivePage) {
     await browser.close().catch(() => undefined);
     throw new WorkerError(
-      "La pagina dell’archivio richieste non è aperta in Chrome. Apri la ricerca con l’elenco delle richieste e riprova.",
+      `La pagina dell'archivio ${archiveLabel} non è aperta in Chrome. Apri la ricerca con l'elenco corretto e riprova.`,
       "needs_review",
       { openTabs: pages.map(({ title, url }) => ({ title, url })) },
       true,
     );
   }
   return { browser, pages, archivePage };
+}
+
+export async function connectToRequestArchiveChrome(cdpUrl: string): Promise<RequestArchiveChrome> {
+  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/richiestaimmobiliare/"]', "richieste");
+}
+
+export async function connectToMandateArchiveChrome(cdpUrl: string): Promise<MandateArchiveChrome> {
+  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/incarico/"]', "incarichi");
 }
 
 export function isPresumablyAuthenticated(page: Page): boolean {

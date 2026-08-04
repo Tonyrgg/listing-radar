@@ -18,5 +18,8 @@ document.getElementById("requestArchiveCancel").addEventListener("click", async 
 });
 
 window.propertyWorker.onState(state => {
-  if (state.requestArchive?.active) document.getElementById("startButton").disabled = true;
+  if (state.requestArchive?.active) {
+    document.getElementById("startButton").disabled = true;
+    document.getElementById("mandateArchiveStart").disabled = true;
+  }
 });

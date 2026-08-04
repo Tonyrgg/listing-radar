@@ -60,6 +60,12 @@ const propertyTypes = [
   ["penthouse", "Attico"],
   ["ground_floor", "Piano terra"],
   ["entire_building", "Intero stabile"],
+  ["commercial_space", "Locale commerciale"],
+  ["office", "Ufficio"],
+  ["warehouse", "Deposito / magazzino"],
+  ["garage", "Garage / box"],
+  ["land", "Terreno"],
+  ["other", "Altra tipologia"],
 ] as const;
 
 const commonFeatures = new Set([

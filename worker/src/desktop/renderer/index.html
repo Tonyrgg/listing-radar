@@ -24,8 +24,9 @@
       <nav class="side-nav" aria-label="Sezioni">
         <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
         <button class="nav-item" data-scroll="requestArchive"><span>2</span><div><b>Richieste</b><small>Sincronizza l’archivio CRM</small></div></button>
-        <button class="nav-item" data-scroll="completedImports"><span>3</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
-        <button class="nav-item" data-scroll="settings"><span>4</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
+        <button class="nav-item" data-scroll="mandateArchive"><span>3</span><div><b>Incarichi</b><small>Importa gli immobili CRM</small></div></button>
+        <button class="nav-item" data-scroll="completedImports"><span>4</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
+        <button class="nav-item" data-scroll="settings"><span>5</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
         <div class="privacy-note"><span></span><div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div></div>
       </nav>
 
@@ -45,6 +46,18 @@
             <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
           </div>
           <div id="requestArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
+        </section>
+
+        <section id="mandateArchive" class="request-archive-card">
+          <header>
+            <div><p class="eyebrow">Incarichi e immobili</p><h2>Portafoglio completo del gestionale</h2><p>Apre in sequenza ogni incarico della ricerca visibile in Chrome e conserva immobile, proprietario, storico, immagini e allegati.</p></div>
+            <span id="mandateArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
+          </header>
+          <div class="request-archive-body">
+            <div><b id="mandateArchiveTitle">Pronto per la prima sincronizzazione</b><small id="mandateArchiveMessage">La scheda “Incarichi aperti” deve rimanere aperta e autenticata.</small></div>
+            <div class="request-archive-actions"><button id="mandateArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="mandateArchiveStart" class="button primary">Sincronizza incarichi</button></div>
+          </div>
+          <div id="mandateArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
         </section>
 
         <section class="start-card">
@@ -110,5 +123,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
     <script src="./request-archive.js"></script>
+    <script src="./mandate-archive.js"></script>
   </body>
 </html>

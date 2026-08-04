@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { buildCadastralKey } from "../core/normalize.js";
+import type { CrmMandateArchiveItem, CrmMandateDetail } from "../adapters/crm/mandates.js";
 import type { CrmRequestArchiveItem, CrmRequestDetail } from "../adapters/crm/requests.js";
 import type { CadastralOwner, CadastralProperty, ContactMatchResult, ErrorStatus, WorkflowStep, WorkerMode } from "../types.js";
 
@@ -93,6 +94,35 @@ export type CrmRequestImportItemRow = {
   list_payload: CrmRequestArchiveItem | Record<string, unknown>;
   detail_payload: CrmRequestDetail | null;
   imported_request_id: string | null;
+  error_message: string | null;
+  attempts: number;
+};
+
+export type CrmMandateImportRunRow = {
+  id: string;
+  status: "running" | "completed" | "completed_with_errors" | "failed" | "cancelled";
+  source_url: string;
+  total_mandates: number;
+  processed_mandates: number;
+  failed_mandates: number;
+  current_external_id: string | null;
+  current_title: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type CrmMandateImportItemRow = {
+  id: string;
+  run_id: string;
+  external_crm_id: string;
+  source_url: string;
+  title: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  list_payload: CrmMandateArchiveItem | Record<string, unknown>;
+  detail_payload: CrmMandateDetail | null;
+  imported_property_id: string | null;
   error_message: string | null;
   attempts: number;
 };
@@ -238,6 +268,100 @@ export class WorkerRepository {
       ? await this.client.from("property_requests").update(requestPayload).eq("id", existingRequest.data.id).select("id").single()
       : await this.client.from("property_requests").insert(requestPayload).select("id").single();
     if (mutation.error) throw new Error(`Salvataggio richiesta CRM fallito: ${mutation.error.message}`);
+    return String(mutation.data.id);
+  }
+
+  async mandateArchiveHealthCheck() {
+    const { error } = await this.client.from("crm_mandate_import_runs").select("id", { head: true, count: "exact" });
+    if (error) throw new Error(`Archivio incarichi non pronto: applica la migration 011_crm_mandate_archive_import.sql. ${error.message}`);
+  }
+
+  async createMandateImportRun(sourceUrl: string): Promise<CrmMandateImportRunRow> {
+    const { data, error } = await this.client.from("crm_mandate_import_runs")
+      .insert({ source_url: sourceUrl, status: "running" }).select("*").single();
+    if (error) throw new Error(`Avvio sincronizzazione incarichi fallito: ${error.message}`);
+    return data as CrmMandateImportRunRow;
+  }
+
+  async latestMandateImportRun(): Promise<CrmMandateImportRunRow | null> {
+    const { data, error } = await this.client.from("crm_mandate_import_runs")
+      .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error(`Lettura sincronizzazioni incarichi fallita: ${error.message}`);
+    return data as CrmMandateImportRunRow | null;
+  }
+
+  async latestResumableMandateImportRun(): Promise<CrmMandateImportRunRow | null> {
+    const { data, error } = await this.client.from("crm_mandate_import_runs")
+      .select("*").in("status", ["running", "failed", "cancelled", "completed_with_errors"])
+      .gt("total_mandates", 0).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error(`Lettura sincronizzazione incarichi riprendibile fallita: ${error.message}`);
+    return data as CrmMandateImportRunRow | null;
+  }
+
+  async updateMandateImportRun(runId: string, values: Record<string, unknown>) {
+    const { error } = await this.client.from("crm_mandate_import_runs").update(values).eq("id", runId);
+    if (error) throw new Error(`Aggiornamento sincronizzazione incarichi fallito: ${error.message}`);
+  }
+
+  async saveMandateImportItems(runId: string, items: CrmMandateArchiveItem[]) {
+    if (!items.length) return;
+    const { error } = await this.client.from("crm_mandate_import_items").upsert(items.map((item) => ({
+      run_id: runId,
+      external_crm_id: item.externalId,
+      source_url: item.url,
+      title: item.title,
+      list_payload: item,
+      status: "pending",
+    })), { onConflict: "run_id,external_crm_id", ignoreDuplicates: true });
+    if (error) throw new Error(`Salvataggio indice incarichi fallito: ${error.message}`);
+    await this.updateMandateImportRun(runId, { total_mandates: items.length });
+  }
+
+  async listMandateImportItems(runId: string): Promise<CrmMandateImportItemRow[]> {
+    const { data, error } = await this.client.from("crm_mandate_import_items")
+      .select("*").eq("run_id", runId).order("created_at", { ascending: true });
+    if (error) throw new Error(`Lettura incarichi da sincronizzare fallita: ${error.message}`);
+    return data as CrmMandateImportItemRow[];
+  }
+
+  async markMandateImportItem(itemId: string, values: Record<string, unknown>) {
+    const { error } = await this.client.from("crm_mandate_import_items").update(values).eq("id", itemId);
+    if (error) throw new Error(`Aggiornamento incarico importato fallito: ${error.message}`);
+  }
+
+  async saveArchivedCrmMandate(
+    itemId: string,
+    detail: CrmMandateDetail,
+    normalized: Record<string, unknown>,
+  ): Promise<string> {
+    await this.markMandateImportItem(itemId, { detail_payload: detail });
+    const propertyExternalId = String(normalized.external_crm_id);
+    const mandateExternalId = String(normalized.external_mandate_id);
+    let existing = await this.client.from("portfolio_properties").select("id,raw_payload,internal_zone_id")
+      .eq("external_crm_id", propertyExternalId).limit(1).maybeSingle();
+    if (existing.error) throw new Error(`Ricerca immobile CRM fallita: ${existing.error.message}`);
+    if (!existing.data) {
+      existing = await this.client.from("portfolio_properties").select("id,raw_payload,internal_zone_id")
+        .eq("external_mandate_id", mandateExternalId).limit(1).maybeSingle();
+      if (existing.error) throw new Error(`Ricerca incarico CRM fallita: ${existing.error.message}`);
+    }
+    let internalZoneId = existing.data?.internal_zone_id ?? null;
+    const crmZoneName = typeof normalized.crm_zone_name === "string" ? normalized.crm_zone_name.trim() : "";
+    if (!internalZoneId && crmZoneName) {
+      const zone = await this.client.from("internal_zones").select("id").ilike("name", crmZoneName).limit(1).maybeSingle();
+      if (zone.error) throw new Error(`Ricerca zona immobiliare fallita: ${zone.error.message}`);
+      internalZoneId = zone.data?.id ?? null;
+    }
+    const previousRaw = (existing.data?.raw_payload as Record<string, unknown> | null) ?? {};
+    const payload = {
+      ...Object.fromEntries(Object.entries(normalized).filter(([key, value]) => key !== "crm_zone_name" && (key === "raw_payload" || key === "image_urls" || value !== null && value !== ""))),
+      ...(internalZoneId ? { internal_zone_id: internalZoneId } : {}),
+      raw_payload: { ...previousRaw, ...(normalized.raw_payload as Record<string, unknown> ?? {}) },
+    };
+    const mutation = existing.data
+      ? await this.client.from("portfolio_properties").update(payload).eq("id", existing.data.id).select("id").single()
+      : await this.client.from("portfolio_properties").insert(payload).select("id").single();
+    if (mutation.error) throw new Error(`Salvataggio immobile CRM fallito: ${mutation.error.message}`);
     return String(mutation.data.id);
   }
 

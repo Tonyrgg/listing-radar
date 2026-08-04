@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
   startRequestArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-request-archive-import", runId),
   cancelRequestArchiveImport: () => ipcRenderer.invoke("desktop:cancel-request-archive-import"),
+  startMandateArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-mandate-archive-import", runId),
+  cancelMandateArchiveImport: () => ipcRenderer.invoke("desktop:cancel-mandate-archive-import"),
   resumeJob: (jobId) => ipcRenderer.invoke("desktop:resume-job", jobId),
   setAutoRetryEnabled: (enabled) => ipcRenderer.invoke("desktop:set-auto-retry-enabled", enabled),
   pauseJob: () => ipcRenderer.invoke("desktop:pause-job"),

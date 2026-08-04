@@ -126,6 +126,12 @@ export interface PortfolioProperty {
   available_from: string | null;
   description: string | null;
   notes: string | null;
+  external_crm_id?: string | null;
+  external_mandate_id?: string | null;
+  source?: string | null;
+  last_imported_at?: string | null;
+  image_urls?: string[] | null;
+  raw_payload?: Record<string, unknown> | null;
   mandate_status: string;
   created_at?: string;
   updated_at?: string;

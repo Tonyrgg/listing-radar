@@ -41,6 +41,12 @@ const propertyTypeConfig: Record<string, { label: string; icon: LucideIcon }> = 
   penthouse: { label: "Attico", icon: ArrowUpToLine },
   ground_floor: { label: "Piano terra", icon: ArrowDownToLine },
   entire_building: { label: "Intero stabile", icon: Store },
+  commercial_space: { label: "Locale commerciale", icon: Store },
+  office: { label: "Ufficio", icon: Building2 },
+  warehouse: { label: "Deposito / magazzino", icon: Warehouse },
+  garage: { label: "Garage / box", icon: Car },
+  land: { label: "Terreno", icon: Trees },
+  other: { label: "Altra tipologia", icon: Box },
 };
 
 const featureIcons: Record<string, LucideIcon> = {

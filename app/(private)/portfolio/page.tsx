@@ -116,7 +116,7 @@ function Field({ label, value, muted = false }: Readonly<{ label: string; value:
 function numberValue(value: number | null) { return value === null ? "Non indicato" : String(value); }
 
 function propertyTypeLabel(value: string) {
-  return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile" }[value] ?? value);
+  return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile", commercial_space: "Locale commerciale", office: "Ufficio", warehouse: "Deposito / magazzino", garage: "Garage / box", land: "Terreno", other: "Altra tipologia" }[value] ?? value);
 }
 
 function mandateLabel(status: string) {

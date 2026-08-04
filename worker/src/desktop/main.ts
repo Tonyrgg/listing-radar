@@ -16,6 +16,7 @@ import { loadConfig, type WorkerConfig } from "../config.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact } from "../core/automatic-skip.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
+import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
 import { WorkerRepository } from "../services/repository.js";
@@ -101,6 +102,10 @@ let requestImportActive = false;
 let requestImportCancellationRequested = false;
 let requestImportError: string | null = null;
 let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
+let mandateImportActive = false;
+let mandateImportCancellationRequested = false;
+let mandateImportError: string | null = null;
+let mandateImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -214,6 +219,8 @@ async function stateSnapshot() {
   let publicConfig: Record<string, unknown> = {};
   let latestRequestImport: Awaited<ReturnType<WorkerRepository["latestRequestImportRun"]>> = null;
   let requestImportSchemaError: string | null = null;
+  let latestMandateImport: Awaited<ReturnType<WorkerRepository["latestMandateImportRun"]>> = null;
+  let mandateImportSchemaError: string | null = null;
   try {
     const config = workerConfig();
     publicConfig = {
@@ -236,6 +243,12 @@ async function stateSnapshot() {
       latestRequestImport = await repo.latestRequestImportRun();
     } catch (error) {
       requestImportSchemaError = error instanceof Error ? error.message : String(error);
+    }
+    try {
+      await repo.mandateArchiveHealthCheck();
+      latestMandateImport = await repo.latestMandateImportRun();
+    } catch (error) {
+      mandateImportSchemaError = error instanceof Error ? error.message : String(error);
     }
     if (activeJobId) {
       const activeJob = completedJobs.find((job) => job.id === activeJobId)
@@ -283,6 +296,14 @@ async function stateSnapshot() {
       latestRun: latestRequestImport,
       schemaError: requestImportSchemaError,
     },
+    mandateArchive: {
+      active: mandateImportActive,
+      cancelling: mandateImportCancellationRequested,
+      progress: mandateImportProgress,
+      lastError: mandateImportError,
+      latestRun: latestMandateImport,
+      schemaError: mandateImportSchemaError,
+    },
     version: app.getVersion(),
   };
 }
@@ -306,7 +327,7 @@ function initializeDesktopUpdater() {
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
       serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
       updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-      isWorkerActive: () => active || requestImportActive,
+      isWorkerActive: () => active || requestImportActive || mandateImportActive,
       quitApp: () => app.quit(),
       onState: (state) => {
         if (state.status !== previousStatus) {
@@ -336,7 +357,7 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
 }
 
 async function runRequestArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  if (active || requestImportActive || mandateImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
   requestImportActive = true;
   requestImportCancellationRequested = false;
   requestImportError = null;
@@ -357,6 +378,43 @@ async function runRequestArchiveImport(resumeRunId?: string) {
   }).finally(async () => {
     requestImportActive = false;
     requestImportCancellationRequested = false;
+    await publishState();
+  });
+}
+
+async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
+  if (event.type === "index") {
+    mandateImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} incarichi individuati`, externalId: null, failed: 0, phase: "index" };
+  } else if (event.type === "progress") {
+    mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
+  } else {
+    mandateImportProgress = { runId: event.run.id, index: event.run.processed_mandates + event.run.failed_mandates, total: event.run.total_mandates, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_mandates, phase: "detail" };
+  }
+  await publishState();
+}
+
+async function runMandateArchiveImport(resumeRunId?: string) {
+  if (active || requestImportActive || mandateImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  mandateImportActive = true;
+  mandateImportCancellationRequested = false;
+  mandateImportError = null;
+  mandateImportProgress = null;
+  pushActivity(resumeRunId ? "Ripresa sincronizzazione archivio incarichi" : "Sincronizzazione archivio incarichi avviata");
+  await publishState();
+  const importer = new MandateArchiveImporter(workerConfig(), repository(), {
+    isCancelled: () => mandateImportCancellationRequested,
+    onEvent: handleMandateImportEvent,
+  });
+  void importer.run(resumeRunId).then((run) => {
+    if (run.status === "cancelled") pushActivity("Sincronizzazione incarichi interrotta: l'avanzamento è stato salvato", "warning");
+    else if (run.failed_mandates) pushActivity(`Sincronizzazione conclusa con ${run.failed_mandates} incarichi da riprovare`, "warning");
+    else pushActivity(`${run.processed_mandates} immobili con incarico sincronizzati`, "success");
+  }).catch((error) => {
+    mandateImportError = error instanceof Error ? error.message : String(error);
+    pushActivity(mandateImportError, "error");
+  }).finally(async () => {
+    mandateImportActive = false;
+    mandateImportCancellationRequested = false;
     await publishState();
   });
 }
@@ -669,7 +727,7 @@ async function resetCrmAfterSkippedCase() {
 }
 
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
-  if (active) throw new Error("È già presente una lavorazione in esecuzione");
+  if (active || requestImportActive || mandateImportActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
   active = true;
   cancellingJobId = null;
@@ -872,6 +930,17 @@ function registerIpc() {
     if (!requestImportActive) return false;
     requestImportCancellationRequested = true;
     pushActivity("Interruzione sincronizzazione richieste richiesta", "warning");
+    await publishState();
+    return true;
+  });
+  ipcMain.handle("desktop:start-mandate-archive-import", async (_event, resumeRunId?: string) => {
+    await runMandateArchiveImport(resumeRunId || undefined);
+    return true;
+  });
+  ipcMain.handle("desktop:cancel-mandate-archive-import", async () => {
+    if (!mandateImportActive) return false;
+    mandateImportCancellationRequested = true;
+    pushActivity("Interruzione sincronizzazione incarichi richiesta", "warning");
     await publishState();
     return true;
   });

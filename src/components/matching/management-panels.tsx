@@ -20,6 +20,9 @@ const propertyTypes = [
   ["apartment","Appartamento"],["independent_house","Casa indipendente"],
   ["villa","Villa"],["townhouse","Villetta a schiera"],["penthouse","Attico"],
   ["ground_floor","Piano terra"],["entire_building","Intero stabile"],
+  ["commercial_space","Locale commerciale"],["office","Ufficio"],
+  ["warehouse","Deposito / magazzino"],["garage","Garage / box"],
+  ["land","Terreno"],["other","Altra tipologia"],
 ];
 
 export function RecalculateButton({ scope, id }: Readonly<{ scope: "all" | "request" | "property"; id?: string }>) {
@@ -135,7 +138,7 @@ export function PropertyEditor({
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Disponibilità<select name="availability_status" defaultValue={property?.availability_status ?? ""} className={inputClass}><option value="">Non indicata</option><option value="available_now">Subito</option><option value="available_at_deed">Al rogito</option><option value="occupied">Occupato</option><option value="rented">Locato</option><option value="future_availability">Futura</option></select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Disponibile dal<input name="available_from" type="date" defaultValue={property?.available_from ?? ""} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Stato incarico<select name="mandate_status" defaultValue={property?.mandate_status ?? "active"} className={inputClass}><option value="draft">Bozza</option><option value="active">Attivo</option><option value="suspended">Sospeso</option><option value="expired">Scaduto</option><option value="sold">Venduto</option><option value="rented">Affittato</option><option value="archived">Archiviato</option></select></label>
-      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">ID gestionale<input name="external_crm_id" className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">ID gestionale<input name="external_crm_id" defaultValue={property?.external_crm_id ?? ""} className={inputClass} /></label>
     </div>
     <div className="mt-5"><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Caratteristiche</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{features.filter((feature) => feature.field_type === "boolean").map((feature) => <label key={feature.id} className="flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] px-3 text-sm text-[var(--ink-soft)]"><input name={`feature_${feature.id}`} type="checkbox" defaultChecked={Boolean(values[feature.id])} />{feature.label}</label>)}</div></div>
     <section className="mt-5 overflow-hidden rounded-[9px] border border-[var(--line-soft)]">
