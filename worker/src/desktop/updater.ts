@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -43,6 +43,21 @@ interface DesktopUpdaterOptions {
   isWorkerActive: () => boolean;
   quitApp: () => void;
   onState: (state: DesktopUpdateState) => void;
+  storageClient?: Pick<SupabaseClient, "storage">;
+}
+
+function hasExpectedIntegrity(buffer: Buffer, size: number, sha256: string) {
+  return buffer.length === size && createHash("sha256").update(buffer).digest("hex") === sha256;
+}
+
+async function readVerifiedFile(filePath: string, size: number, sha256: string) {
+  try {
+    const buffer = await readFile(filePath);
+    return hasExpectedIntegrity(buffer, size, sha256) ? buffer : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 export function compareVersions(left: string, right: string) {
@@ -56,7 +71,7 @@ export function compareVersions(left: string, right: string) {
 }
 
 export class DesktopUpdater {
-  private readonly storage: SupabaseClient | null;
+  private readonly storage: Pick<SupabaseClient, "storage"> | null;
   private state: DesktopUpdateState;
   private manifest: UpdateManifest | null = null;
   private installerPath: string | null = null;
@@ -73,7 +88,7 @@ export class DesktopUpdater {
       checkedAt: null,
     };
     this.storage = options.packaged
-      ? createClient(options.supabaseUrl, options.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+      ? options.storageClient ?? createClient(options.supabaseUrl, options.serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
       : null;
   }
 
@@ -106,17 +121,31 @@ export class DesktopUpdater {
     const versionDirectory = path.join(this.options.updateDirectory, this.manifest.version);
     await mkdir(versionDirectory, { recursive: true });
     this.installerPath = path.join(versionDirectory, this.manifest.fileName);
+    const cachedInstaller = await readVerifiedFile(this.installerPath, this.manifest.size, this.manifest.sha256);
+    if (cachedInstaller) {
+      this.setState({
+        status: "downloaded", availableVersion: this.manifest.version, percent: 100,
+        transferred: cachedInstaller.length, total: cachedInstaller.length,
+        message: "Aggiornamento gi\u00e0 scaricato e pronto per l'installazione",
+      });
+      return this.snapshot();
+    }
     await rm(this.installerPath, { force: true });
     const installer = await open(this.installerPath, "w");
     let transferred = 0;
     this.setState({ status: "downloading", message: "Scaricamento dell'aggiornamento", percent: 0, transferred: 0, total: this.manifest.size });
     try {
       for (const chunk of this.manifest.chunks) {
-        const { data, error } = await this.storage.storage.from("property-worker-updates").download(chunk.path, {}, { cache: "no-store" });
-        if (error) throw error;
-        const buffer = Buffer.from(await data.arrayBuffer());
-        if (buffer.length !== chunk.size || createHash("sha256").update(buffer).digest("hex") !== chunk.sha256) {
-          throw new Error(`Verifica fallita per ${path.basename(chunk.path)}`);
+        const chunkFilePath = path.join(versionDirectory, path.basename(chunk.path));
+        let buffer = await readVerifiedFile(chunkFilePath, chunk.size, chunk.sha256);
+        if (!buffer) {
+          const { data, error } = await this.storage.storage.from("property-worker-updates").download(chunk.path);
+          if (error) throw error;
+          buffer = Buffer.from(await data.arrayBuffer());
+          if (!hasExpectedIntegrity(buffer, chunk.size, chunk.sha256)) {
+            throw new Error(`Verifica fallita per ${path.basename(chunk.path)}`);
+          }
+          await writeFile(chunkFilePath, buffer);
         }
         await installer.write(buffer);
         transferred += buffer.length;
@@ -130,8 +159,8 @@ export class DesktopUpdater {
       return this.snapshot();
     }
     await installer.close();
-    const complete = await readFile(this.installerPath);
-    if (complete.length !== this.manifest.size || createHash("sha256").update(complete).digest("hex") !== this.manifest.sha256) {
+    const complete = await readVerifiedFile(this.installerPath, this.manifest.size, this.manifest.sha256);
+    if (!complete) {
       await rm(this.installerPath, { force: true });
       this.fail(new Error("La firma SHA-256 dell'installer non coincide"), "Aggiornamento non valido");
       return this.snapshot();

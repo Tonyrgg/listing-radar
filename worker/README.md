@@ -39,11 +39,23 @@ Per creare l'installer e pubblicarlo nel canale privato degli aggiornamenti:
 npm run desktop:release
 ```
 
+Durante lo sviluppo usa l'installer locale in `worker/release/` e pubblica soltanto una versione stabile: ogni download remoto dell'installer consuma Storage Egress. Dopo la pubblicazione, la verifica standard controlla manifest, presenza e dimensione delle parti senza riscaricare i binari:
+
+```powershell
+npm run desktop:verify-update
+```
+
+La verifica end-to-end che riscarica e ricompone l'intero installer va riservata alle release importanti:
+
+```powershell
+npm run desktop:verify-update:full
+```
+
 L'app installata controlla automaticamente il canale ogni sei ore. L'utente può anche usare **Controlla aggiornamenti**; il download e l'installazione restano bloccati durante una lavorazione attiva. Dopo il download, **Installa e riavvia** aggiorna l'app senza richiedere la disinstallazione e conserva le preferenze cifrate in Windows.
 
 Quando un errore riguarda un immobile identificato, il desktop esegue al massimo tre riprove a distanza di 60 secondi. Se il terzo tentativo fallisce, immobile, collegamenti e nominativi esclusivi del caso vengono marcati come saltati; i nominativi condivisi con altri immobili restano utilizzabili. Il riepilogo conserva motivo, numero di tentativi e soggetti coinvolti. Errori globali come una sessione scaduta non provocano skip automatici.
 
-Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
+Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, conserva localmente ogni parte valida per riprendere un download interrotto senza nuovo traffico, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
 
 L'installer viene creato in `worker/release/`. Per un singolo eseguibile portabile, senza installazione:
 

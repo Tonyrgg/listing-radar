@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,22 +29,45 @@ if (manifest.version !== packageData.version) {
 if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
   throw new Error("Il manifest non contiene parti dell'installer.");
 }
+if (!Number.isInteger(manifest.size) || manifest.size <= 0 || !/^[a-f0-9]{64}$/i.test(manifest.sha256 ?? "")) {
+  throw new Error("Dimensione o firma dell'installer non valida nel manifest.");
+}
 
-const installerHash = createHash("sha256");
-let totalSize = 0;
+const expectedPrefix = `releases/${manifest.version}`;
+const expectedChunks = new Map();
+let expectedTotalSize = 0;
 for (const chunk of manifest.chunks) {
-  const { data, error } = await supabase.storage.from(bucket).download(chunk.path, {}, { cache: "no-store" });
-  if (error) throw new Error(`Parte ${chunk.path} non raggiungibile: ${error.message}`);
-  const body = Buffer.from(await data.arrayBuffer());
-  const chunkHash = createHash("sha256").update(body).digest("hex");
-  if (body.length !== chunk.size || chunkHash !== chunk.sha256) {
-    throw new Error(`La parte ${chunk.path} non supera il controllo di integrità.`);
+  const expectedPathPrefix = `${expectedPrefix}/`;
+  if (
+    typeof chunk.path !== "string" || !chunk.path.startsWith(expectedPathPrefix)
+    || path.posix.dirname(chunk.path) !== expectedPrefix
+    || !Number.isInteger(chunk.size) || chunk.size <= 0
+    || !/^[a-f0-9]{64}$/i.test(chunk.sha256 ?? "")
+  ) {
+    throw new Error(`Parte non valida nel manifest: ${chunk.path ?? "percorso mancante"}.`);
   }
-  totalSize += body.length;
-  installerHash.update(body);
+  const name = path.posix.basename(chunk.path);
+  if (expectedChunks.has(name)) throw new Error(`Parte duplicata nel manifest: ${name}.`);
+  expectedChunks.set(name, chunk);
+  expectedTotalSize += chunk.size;
+}
+if (expectedTotalSize !== manifest.size) {
+  throw new Error(`La somma delle parti (${expectedTotalSize}) non coincide con la dimensione dell'installer (${manifest.size}).`);
 }
 
-if (totalSize !== manifest.size || installerHash.digest("hex") !== manifest.sha256) {
-  throw new Error("L'installer ricomposto non supera il controllo di integrità.");
+const { data: publishedObjects, error: listError } = await supabase.storage.from(bucket).list(expectedPrefix, {
+  limit: 1000,
+  sortBy: { column: "name", order: "asc" },
+});
+if (listError) throw new Error(`Impossibile leggere la release pubblicata: ${listError.message}`);
+const objectsByName = new Map((publishedObjects ?? []).filter((item) => item.id != null).map((item) => [item.name, item]));
+for (const [name, chunk] of expectedChunks) {
+  const published = objectsByName.get(name);
+  if (!published) throw new Error(`Parte pubblicata non trovata: ${chunk.path}.`);
+  const publishedSize = Number(published.metadata?.size);
+  if (publishedSize !== chunk.size) {
+    throw new Error(`Dimensione remota errata per ${chunk.path}: ${publishedSize}, attesa ${chunk.size}.`);
+  }
 }
-console.log(`Canale aggiornamenti verificato: versione ${manifest.version}, ${manifest.chunks.length} parti, ${totalSize} byte.`);
+
+console.log(`Canale aggiornamenti verificato senza download binari: versione ${manifest.version}, ${manifest.chunks.length} parti, ${manifest.size} byte.`);

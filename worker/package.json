@@ -19,6 +19,7 @@
     "desktop:build": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win nsis && node scripts/prune-local-releases.mjs",
     "desktop:publish-update": "node scripts/publish-update.mjs",
     "desktop:verify-update": "node scripts/verify-update-channel.mjs",
+    "desktop:verify-update:full": "node scripts/verify-update-channel-full.mjs",
     "desktop:release": "npm run desktop:build && npm run desktop:publish-update",
     "desktop:portable": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win portable && node scripts/prune-local-releases.mjs",
     "build": "tsc -p tsconfig.json",
