@@ -182,12 +182,21 @@
   border: 1px solid var(--line-soft);
   border-radius: .65rem;
   background: var(--surface-panel);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
   transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .requestCard:hover {
   border-color: var(--line-strong);
   background: color-mix(in oklch, var(--surface-panel) 92%, var(--surface-muted));
+}
+
+.requestCard:focus-visible {
+  border-color: var(--surface-accent);
+  outline: 2px solid var(--surface-accent);
+  outline-offset: 2px;
 }
 
 .cardHeader {

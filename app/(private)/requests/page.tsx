@@ -15,7 +15,6 @@ import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
 import {
   cleanRequestTitle,
-  clientContact,
   crmField,
   displayValue,
   formatDate,
@@ -147,13 +146,20 @@ export default async function RequestsPage({
         {pageRequests.map((request) => {
           const payload = requestPayload(request);
           const fields = payload.fields ?? {};
-          const contact = clientContact(request.clients);
           const activities = requestActivityCount(request);
           const compatible = compatibleCounts.get(request.id) ?? 0;
           const isHot = crmField(payload, "Richiesta Calda") === true || request.priority === "urgent";
+          const zoneNames = (request.request_zones ?? [])
+            .map((item) => item.zone?.name)
+            .filter((name): name is string => Boolean(name));
 
           return (
-            <article className={styles.requestCard} key={request.id}>
+            <Link
+              className={styles.requestCard}
+              href={`/requests/${request.id}`}
+              key={request.id}
+              aria-label={`Apri la richiesta ${cleanRequestTitle(request.title)}`}
+            >
               <div className={styles.cardHeader}>
                 <div className={styles.cardIdentity}>
                   <p className={styles.recordReference}>Richiesta {requestReference(request)}</p>
@@ -180,14 +186,14 @@ export default async function RequestsPage({
                   </dl>
                 </section>
                 <section className={styles.cardColumn}>
-                  <h3 className={styles.columnTitle}>Cliente</h3>
+                  <h3 className={styles.columnTitle}>Requisiti</h3>
                   <dl className={styles.fieldList}>
-                    <Field label="Nominativo" value={request.clients?.full_name || "Da collegare"} />
-                    <Field label="Telefono" value={contact.phone || "Non disponibile"} muted={!contact.phone} />
-                    <Field label="Email" value={contact.email || "Non disponibile"} muted={!contact.email} />
-                    <Field label="Responsabile" value={displayValue(fields.Responsabile)} />
+                    <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
+                    <Field label="Ascensore" value={displayValue(fields.Ascensore)} />
+                    <Field label="Arredato" value={displayValue(fields.Arredato)} />
                     <Field label="Finalità" value={displayValue(fields["Destinazione Richiesta"], destinationLabel(request.destination))} />
-                    <Field label="Finanziamento" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} muted />
+                    <Field label="Zona" value={zoneNames.join(", ") || request.municipality || "Tutta Bitonto"} />
+                    <Field label="Dettaglio" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} muted />
                   </dl>
                 </section>
               </div>
@@ -197,11 +203,11 @@ export default async function RequestsPage({
                 <span className={styles.footerFact}>{requestSourceLabel(request)}</span>
                 <span className={styles.footerFact}><History aria-hidden="true" /> {activities} attività</span>
                 <span className={styles.footerFact}>{compatible} compatibili</span>
-                <Link className={styles.cardAction} href={`/requests/${request.id}`}>
+                <span className={styles.cardAction}>
                   Apri scheda <ArrowUpRight aria-hidden="true" className="size-4" />
-                </Link>
+                </span>
               </footer>
-            </article>
+            </Link>
           );
         })}
 
@@ -317,4 +323,8 @@ function destinationLabel(destination?: string | null) {
 
 function financingLabel(financing?: string | null) {
   return ({ cash: "Contanti", cash_and_mortgage: "Contanti + mutuo", full_mortgage: "Mutuo 100%", exchange: "Permuta", other: "Da definire" }[financing ?? ""] ?? "Non indicato");
+}
+
+function floorBandLabel(value?: string | null) {
+  return ({ any: "Qualsiasi", low: "Basso", medium: "Medio", high: "Alto", top: "Ultimo piano" }[value ?? ""] ?? "Qualsiasi");
 }
