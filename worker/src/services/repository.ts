@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { buildCadastralKey } from "../core/normalize.js";
+import type { CrmRequestArchiveItem, CrmRequestDetail } from "../adapters/crm/requests.js";
 import type { CadastralOwner, CadastralProperty, ContactMatchResult, ErrorStatus, WorkflowStep, WorkerMode } from "../types.js";
 
 export type JobRow = {
@@ -67,6 +68,35 @@ export type PersonRow = {
   crm_record_id: string | null;
 };
 
+export type CrmRequestImportRunRow = {
+  id: string;
+  status: "running" | "completed" | "completed_with_errors" | "failed" | "cancelled";
+  source_url: string;
+  total_requests: number;
+  processed_requests: number;
+  failed_requests: number;
+  current_external_id: string | null;
+  current_title: string | null;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type CrmRequestImportItemRow = {
+  id: string;
+  run_id: string;
+  external_crm_id: string;
+  source_url: string;
+  title: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  list_payload: CrmRequestArchiveItem | Record<string, unknown>;
+  detail_payload: CrmRequestDetail | null;
+  imported_request_id: string | null;
+  error_message: string | null;
+  attempts: number;
+};
+
 export class WorkerRepository {
   readonly client: SupabaseClient;
 
@@ -111,6 +141,104 @@ export class WorkerRepository {
       .limit(limit);
     if (error) throw new Error(`Lettura lavorazioni fallita: ${error.message}`);
     return data as JobRow[];
+  }
+
+  async requestArchiveHealthCheck() {
+    const { error } = await this.client.from("crm_request_import_runs").select("id", { head: true, count: "exact" });
+    if (error) throw new Error(`Archivio richieste non pronto: applica la migration 008_crm_request_archive_import.sql. ${error.message}`);
+  }
+
+  async createRequestImportRun(sourceUrl: string): Promise<CrmRequestImportRunRow> {
+    const { data, error } = await this.client.from("crm_request_import_runs")
+      .insert({ source_url: sourceUrl, status: "running" }).select("*").single();
+    if (error) throw new Error(`Avvio sincronizzazione richieste fallito: ${error.message}`);
+    return data as CrmRequestImportRunRow;
+  }
+
+  async latestRequestImportRun(): Promise<CrmRequestImportRunRow | null> {
+    const { data, error } = await this.client.from("crm_request_import_runs")
+      .select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error(`Lettura sincronizzazioni richieste fallita: ${error.message}`);
+    return data as CrmRequestImportRunRow | null;
+  }
+
+  async latestResumableRequestImportRun(): Promise<CrmRequestImportRunRow | null> {
+    const { data, error } = await this.client.from("crm_request_import_runs")
+      .select("*").in("status", ["running", "failed", "cancelled", "completed_with_errors"])
+      .gt("total_requests", 0).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error(`Lettura sincronizzazione riprendibile fallita: ${error.message}`);
+    return data as CrmRequestImportRunRow | null;
+  }
+
+  async updateRequestImportRun(runId: string, values: Record<string, unknown>) {
+    const { error } = await this.client.from("crm_request_import_runs").update(values).eq("id", runId);
+    if (error) throw new Error(`Aggiornamento sincronizzazione richieste fallito: ${error.message}`);
+  }
+
+  async saveRequestImportItems(runId: string, items: CrmRequestArchiveItem[]) {
+    if (!items.length) return;
+    const { error } = await this.client.from("crm_request_import_items").upsert(items.map((item) => ({
+      run_id: runId,
+      external_crm_id: item.externalId,
+      source_url: item.url,
+      title: item.title,
+      list_payload: item,
+      status: "pending",
+    })), { onConflict: "run_id,external_crm_id", ignoreDuplicates: true });
+    if (error) throw new Error(`Salvataggio indice richieste fallito: ${error.message}`);
+    await this.updateRequestImportRun(runId, { total_requests: items.length });
+  }
+
+  async listRequestImportItems(runId: string): Promise<CrmRequestImportItemRow[]> {
+    const { data, error } = await this.client.from("crm_request_import_items")
+      .select("*").eq("run_id", runId).order("created_at", { ascending: true });
+    if (error) throw new Error(`Lettura richieste da sincronizzare fallita: ${error.message}`);
+    return data as CrmRequestImportItemRow[];
+  }
+
+  async markRequestImportItem(itemId: string, values: Record<string, unknown>) {
+    const { error } = await this.client.from("crm_request_import_items").update(values).eq("id", itemId);
+    if (error) throw new Error(`Aggiornamento richiesta importata fallito: ${error.message}`);
+  }
+
+  async saveArchivedCrmRequest(
+    itemId: string,
+    detail: CrmRequestDetail,
+    normalized: { client: Record<string, unknown>; request: Record<string, unknown> | null },
+  ): Promise<string | null> {
+    await this.markRequestImportItem(itemId, { detail_payload: detail });
+    if (!normalized.request) return null;
+
+    let clientId: string | null = null;
+    const clientExternalId = normalized.client.external_crm_id;
+    if (typeof clientExternalId === "string" && clientExternalId) {
+      const existing = await this.client.from("clients").select("id,raw_payload").eq("external_crm_id", clientExternalId).limit(1).maybeSingle();
+      if (existing.error) throw new Error(`Ricerca cliente CRM fallita: ${existing.error.message}`);
+      const clientPayload = {
+        ...Object.fromEntries(Object.entries(normalized.client).filter(([key, value]) => key === "raw_payload" || value !== null && value !== "")),
+        raw_payload: { ...((existing.data?.raw_payload as Record<string, unknown> | null) ?? {}), ...(normalized.client.raw_payload as Record<string, unknown> ?? {}) },
+      };
+      const mutation = existing.data
+        ? await this.client.from("clients").update(clientPayload).eq("id", existing.data.id).select("id").single()
+        : await this.client.from("clients").insert(clientPayload).select("id").single();
+      if (mutation.error) throw new Error(`Salvataggio cliente CRM fallito: ${mutation.error.message}`);
+      clientId = String(mutation.data.id);
+    }
+
+    const externalId = String(normalized.request.external_crm_id);
+    const existingRequest = await this.client.from("property_requests").select("id,client_id,raw_payload")
+      .eq("external_crm_id", externalId).limit(1).maybeSingle();
+    if (existingRequest.error) throw new Error(`Ricerca richiesta CRM fallita: ${existingRequest.error.message}`);
+    const requestPayload = {
+      ...normalized.request,
+      client_id: clientId ?? existingRequest.data?.client_id ?? null,
+      raw_payload: { ...((existingRequest.data?.raw_payload as Record<string, unknown> | null) ?? {}), ...(normalized.request.raw_payload as Record<string, unknown> ?? {}) },
+    };
+    const mutation = existingRequest.data
+      ? await this.client.from("property_requests").update(requestPayload).eq("id", existingRequest.data.id).select("id").single()
+      : await this.client.from("property_requests").insert(requestPayload).select("id").single();
+    if (mutation.error) throw new Error(`Salvataggio richiesta CRM fallito: ${mutation.error.message}`);
+    return String(mutation.data.id);
   }
 
   async listSavedJobs(limit = 50): Promise<JobRow[]> {

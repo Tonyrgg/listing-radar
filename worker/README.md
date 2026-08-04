@@ -24,6 +24,7 @@ L'interfaccia permette di:
 - correggere direttamente nell'app dati catastali, anagrafica, codice fiscale e quote mancanti;
 - fermare o riattivare il riprova automatico; dopo tre tentativi falliti sullo stesso immobile, il caso viene saltato e annotato nel riepilogo;
 - consultare avanzamento, lavorazioni recenti e diagnostica;
+- sincronizzare l’intero archivio delle richieste immobiliari, aprendo ogni scheda in una pagina dedicata e riprendendo solo gli elementi non completati;
 - mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 2-3 minuti, senza ricaricare la pagina visibile.
 - conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
 
@@ -69,7 +70,7 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
 
 ## Installazione
 
-1. Applica `supabase/migrations/003_property_worker.sql` e `supabase/migrations/006_property_worker_archives.sql` allo stesso progetto Supabase usato da Listing Radar.
+1. Applica `supabase/migrations/003_property_worker.sql`, `supabase/migrations/006_property_worker_archives.sql` e `supabase/migrations/008_crm_request_archive_import.sql` allo stesso progetto Supabase usato da Listing Radar.
 2. Nell'app installata la configurazione è inclusa nel pacchetto e viene trasferita al primo avvio nel deposito cifrato di Windows. Se una nuova installazione non è stata preconfigurata, apri **Impostazioni → Configurazione avanzata** e inserisci i valori una sola volta: non occorre creare un file `.env`.
 3. Installa il worker:
 

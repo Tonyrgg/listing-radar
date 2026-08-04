@@ -16,6 +16,7 @@ import { loadConfig, type WorkerConfig } from "../config.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact } from "../core/automatic-skip.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
+import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
@@ -96,6 +97,10 @@ let autoRetryJobId: string | null = null;
 let autoRetryAttemptNumber: number | null = null;
 let automaticRetryInFlight: { jobId: string; propertyId: string; attempt: number } | null = null;
 let completedImportsLimit = 6;
+let requestImportActive = false;
+let requestImportCancellationRequested = false;
+let requestImportError: string | null = null;
+let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -207,6 +212,8 @@ async function stateSnapshot() {
   let completedImportsHasMore = false;
   let configError: string | null = null;
   let publicConfig: Record<string, unknown> = {};
+  let latestRequestImport: Awaited<ReturnType<WorkerRepository["latestRequestImportRun"]>> = null;
+  let requestImportSchemaError: string | null = null;
   try {
     const config = workerConfig();
     publicConfig = {
@@ -224,6 +231,12 @@ async function stateSnapshot() {
     completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
     jobs = savedJobs;
     completedImports = await Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) })));
+    try {
+      await repo.requestArchiveHealthCheck();
+      latestRequestImport = await repo.latestRequestImportRun();
+    } catch (error) {
+      requestImportSchemaError = error instanceof Error ? error.message : String(error);
+    }
     if (activeJobId) {
       const activeJob = completedJobs.find((job) => job.id === activeJobId)
         ?? savedJobs.find((job) => job.id === activeJobId)
@@ -262,6 +275,14 @@ async function stateSnapshot() {
     jobs,
     completedImports,
     completedImportsHasMore,
+    requestArchive: {
+      active: requestImportActive,
+      cancelling: requestImportCancellationRequested,
+      progress: requestImportProgress,
+      lastError: requestImportError,
+      latestRun: latestRequestImport,
+      schemaError: requestImportSchemaError,
+    },
     version: app.getVersion(),
   };
 }
@@ -285,7 +306,7 @@ function initializeDesktopUpdater() {
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
       serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
       updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-      isWorkerActive: () => active,
+      isWorkerActive: () => active || requestImportActive,
       quitApp: () => app.quit(),
       onState: (state) => {
         if (state.status !== previousStatus) {
@@ -301,6 +322,43 @@ function initializeDesktopUpdater() {
   } catch (error) {
     pushActivity(`Aggiornamenti non inizializzati: ${error instanceof Error ? error.message : String(error)}`, "warning");
   }
+}
+
+async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
+  if (event.type === "index") {
+    requestImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} richieste individuate`, externalId: null, failed: 0, phase: "index" };
+  } else if (event.type === "progress") {
+    requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
+  } else {
+    requestImportProgress = { runId: event.run.id, index: event.run.processed_requests + event.run.failed_requests, total: event.run.total_requests, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_requests, phase: "detail" };
+  }
+  await publishState();
+}
+
+async function runRequestArchiveImport(resumeRunId?: string) {
+  if (active || requestImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  requestImportActive = true;
+  requestImportCancellationRequested = false;
+  requestImportError = null;
+  requestImportProgress = null;
+  pushActivity(resumeRunId ? "Ripresa sincronizzazione archivio richieste" : "Sincronizzazione archivio richieste avviata");
+  await publishState();
+  const importer = new RequestArchiveImporter(workerConfig(), repository(), {
+    isCancelled: () => requestImportCancellationRequested,
+    onEvent: handleRequestImportEvent,
+  });
+  void importer.run(resumeRunId).then((run) => {
+    if (run.status === "cancelled") pushActivity("Sincronizzazione richieste interrotta: l’avanzamento è stato salvato", "warning");
+    else if (run.failed_requests) pushActivity(`Sincronizzazione conclusa con ${run.failed_requests} richieste da riprovare`, "warning");
+    else pushActivity(`${run.processed_requests} richieste immobiliari sincronizzate`, "success");
+  }).catch((error) => {
+    requestImportError = error instanceof Error ? error.message : String(error);
+    pushActivity(requestImportError, "error");
+  }).finally(async () => {
+    requestImportActive = false;
+    requestImportCancellationRequested = false;
+    await publishState();
+  });
 }
 
 async function publishState() {
@@ -804,6 +862,17 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
+    return true;
+  });
+  ipcMain.handle("desktop:start-request-archive-import", async (_event, resumeRunId?: string) => {
+    await runRequestArchiveImport(resumeRunId || undefined);
+    return true;
+  });
+  ipcMain.handle("desktop:cancel-request-archive-import", async () => {
+    if (!requestImportActive) return false;
+    requestImportCancellationRequested = true;
+    pushActivity("Interruzione sincronizzazione richieste richiesta", "warning");
+    await publishState();
     return true;
   });
   ipcMain.handle("desktop:resume-job", async (_event, jobId: string) => {

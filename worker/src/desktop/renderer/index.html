@@ -7,6 +7,7 @@
     <title>Property Data Worker</title>
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./layout-fixes.css" />
+    <link rel="stylesheet" href="./request-archive.css" />
   </head>
   <body>
     <header class="app-header">
@@ -22,8 +23,9 @@
     <div class="app-layout">
       <nav class="side-nav" aria-label="Sezioni">
         <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
-        <button class="nav-item" data-scroll="completedImports"><span>2</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
-        <button class="nav-item" data-scroll="settings"><span>3</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
+        <button class="nav-item" data-scroll="requestArchive"><span>2</span><div><b>Richieste</b><small>Sincronizza l’archivio CRM</small></div></button>
+        <button class="nav-item" data-scroll="completedImports"><span>3</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
+        <button class="nav-item" data-scroll="settings"><span>4</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
         <div class="privacy-note"><span></span><div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div></div>
       </nav>
 
@@ -31,6 +33,18 @@
         <section class="page-intro">
           <div><p class="eyebrow">Assistente di acquisizione</p><h1>Cosa vuoi fare?</h1><p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p></div>
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
+        </section>
+
+        <section id="requestArchive" class="request-archive-card">
+          <header>
+            <div><p class="eyebrow">Richieste immobiliari</p><h2>Archivio completo del gestionale</h2><p>Apre in sequenza ogni richiesta della ricerca già visibile in Chrome e conserva campi, cliente e sezioni correlate.</p></div>
+            <span id="requestArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
+          </header>
+          <div class="request-archive-body">
+            <div><b id="requestArchiveTitle">Pronto per la prima sincronizzazione</b><small id="requestArchiveMessage">La scheda dell’archivio deve rimanere aperta e autenticata.</small></div>
+            <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
+          </div>
+          <div id="requestArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
         </section>
 
         <section class="start-card">
@@ -95,5 +109,6 @@
     <dialog id="completedImportDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Sessione completata</p><h2 id="completedImportDialogTitle">Riepilogo import</h2><p id="completedImportDialogMeta"></p></div><button class="icon-button" data-action="close-completed-session" aria-label="Chiudi">Ã—</button></header><div id="completedImportDialogContent" class="review-content"></div><footer><button class="button primary" data-action="close-completed-session">Chiudi riepilogo</button></footer></div></dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
+    <script src="./request-archive.js"></script>
   </body>
 </html>

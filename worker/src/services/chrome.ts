@@ -9,6 +9,12 @@ export interface ChromeTabs {
   crmPage: Page;
 }
 
+export interface RequestArchiveChrome {
+  browser: Browser;
+  pages: Array<{ title: string; url: string; page: Page }>;
+  archivePage: Page;
+}
+
 async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   if (/^wss?:\/\//i.test(cdpUrl)) return cdpUrl;
   const controller = new AbortController();
@@ -61,6 +67,39 @@ export async function connectToChrome(
     });
   }
   return { browser, pages: described, sisterPage, crmPage };
+}
+
+export async function connectToRequestArchiveChrome(cdpUrl: string): Promise<RequestArchiveChrome> {
+  let browser: Browser;
+  try {
+    browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
+  } catch (error) {
+    throw new WorkerError(
+      `Chrome non raggiungibile su ${cdpUrl}. Avvialo con --remote-debugging-port=9222.`,
+      "session_expired",
+      { cause: error instanceof Error ? error.message : String(error) },
+    );
+  }
+  const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+  let archivePage = pages.find(({ url }) => /\/CRMImmobiliareLightning\/s\/query(?:\?|$)/i.test(url))?.page;
+  if (!archivePage) {
+    for (const candidate of pages) {
+      if (await candidate.page.locator('a[href*="/richiestaimmobiliare/"]').count().catch(() => 0)) {
+        archivePage = candidate.page;
+        break;
+      }
+    }
+  }
+  if (!archivePage) {
+    await browser.close().catch(() => undefined);
+    throw new WorkerError(
+      "La pagina dell’archivio richieste non è aperta in Chrome. Apri la ricerca con l’elenco delle richieste e riprova.",
+      "needs_review",
+      { openTabs: pages.map(({ title, url }) => ({ title, url })) },
+      true,
+    );
+  }
+  return { browser, pages, archivePage };
 }
 
 export function isPresumablyAuthenticated(page: Page): boolean {
