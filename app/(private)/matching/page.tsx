@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, ArrowRightLeft, CheckCircle2, ChevronDown, Clock3, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, ArrowRight, Banknote, Building2, CheckCircle2, ChevronDown, Clock3, MapPin, Ruler, SlidersHorizontal, UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { MatchStatusSelect, RecalculateButton } from "@/components/matching/management-panels";
@@ -107,7 +107,7 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
             return (
               <section className={styles.matchGroup} key={groupId}>
                 <header className={styles.matchGroupHeader}><div><p className={styles.pairLabel}>{view === "request" ? "Richiesta cliente" : "Immobile"}</p><h2>{title}</h2><p>{subtitle}</p></div><div><strong>{Math.round(group[0]!.score)}%</strong><span>migliore · {group.length} risultati</span></div></header>
-                <div className={styles.matchList}>{group.slice(0, 4).map((match) => <MatchRecord key={match.id} match={match} request={requestsById.get(match.request_id)} property={propertiesById.get(match.property_id)} />)}</div>
+                <div className={styles.matchList}>{group.slice(0, 4).map((match, index) => <MatchRecord key={match.id} match={match} request={requestsById.get(match.request_id)} property={propertiesById.get(match.property_id)} view={view} leading={index === 0} />)}</div>
               </section>
             );
           })}
@@ -118,21 +118,63 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
   );
 }
 
-function MatchRecord({ match, request, property }: Readonly<{ match: RequestPropertyMatch; request: Awaited<ReturnType<typeof listRequests>>[number] | undefined; property: Awaited<ReturnType<typeof listProperties>>[number] | undefined }>) {
+function MatchRecord({ match, request, property, view, leading }: Readonly<{ match: RequestPropertyMatch; request: Awaited<ReturnType<typeof listRequests>>[number] | undefined; property: Awaited<ReturnType<typeof listProperties>>[number] | undefined; view: "request" | "property"; leading: boolean }>) {
+  const showProperty = view === "request";
+  const counterpartTitle = showProperty ? property?.title || "Immobile" : request?.clients?.full_name || "Cliente da collegare";
+  const counterpartSubtitle = showProperty
+    ? property?.zone?.name || property?.municipality || "Zona non indicata"
+    : cleanRequestTitle(request?.title ?? "Richiesta");
   return (
-    <article className={styles.matchRecord}>
-      <header className={styles.matchHeader}><div className={styles.statusLine}><span className={styles.badge}>{classificationLabel(match.classification)}</span><span className={styles.badge}>{commercialStatusLabel(match.status)}</span></div><div className={styles.compactScore}><strong>{Math.round(match.score)}%</strong><span><i style={{ width: `${match.score}%` }} /></span></div></header>
-      <div className={styles.pairing}>
-        <Link className={styles.pairSide} href={`/requests/${match.request_id}`}><span className={styles.pairLabel}>Richiesta</span><span className={styles.pairTitle}>{cleanRequestTitle(request?.title ?? "Richiesta")}</span><span className={styles.pairMeta}>{request?.clients?.full_name || "Cliente da collegare"}</span></Link>
-        <ArrowRightLeft aria-label="Abbinato a" className={`${styles.pairArrow} size-4 rotate-90 sm:rotate-0`} />
-        <Link className={styles.pairSide} href={`/portfolio/${match.property_id}`}><span className={styles.pairLabel}>Immobile</span><span className={styles.pairTitle}>{property?.title || "Immobile"}</span><span className={styles.pairMeta}>{property?.zone?.name || property?.municipality || "Zona non indicata"}</span></Link>
+    <article className={`${styles.matchRecord} ${leading ? styles.matchRecordLeading : ""}`}>
+      <div className={styles.matchDecision}>
+        <div className={styles.matchScoreBlock}>
+          <strong>{Math.round(match.score)}%</strong>
+          <span>{classificationLabel(match.classification)}</span>
+        </div>
+        <div className={styles.matchCounterpart}>
+          <p className={styles.pairLabel}>{showProperty ? "Immobile consigliato" : "Cliente compatibile"}</p>
+          <h3>{counterpartTitle}</h3>
+          <p>{counterpartSubtitle}</p>
+        </div>
+        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`}>Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
+      </div>
+      <div className={styles.matchFacts}>
+        {showProperty ? (
+          <>
+            <MatchFact icon={Banknote} label="Prezzo" value={propertyPrice(property)} />
+            <MatchFact icon={Ruler} label="Superficie" value={property?.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} />
+            <MatchFact icon={MapPin} label="Zona" value={property?.zone?.name || property?.municipality || "Non indicata"} />
+          </>
+        ) : (
+          <>
+            <MatchFact icon={UserRound} label="Cliente" value={request?.clients?.full_name || "Da collegare"} />
+            <MatchFact icon={Banknote} label="Budget" value={requestBudgetLabel(request)} />
+            <MatchFact icon={Building2} label="Tipologia" value={request?.property_types?.join(", ") || "Non indicata"} />
+          </>
+        )}
       </div>
       <div className={styles.matchFooter}>
-        <div className={styles.criteria}>{match.matched_criteria.slice(0, 3).map((criterion) => <span className={`${styles.criterion} ${styles.criterionGood}`} key={criterion}><CheckCircle2 aria-hidden="true" className="size-3.5" /> {criterion}</span>)}{match.conflicting_criteria.slice(0, 2).map((criterion) => <span className={`${styles.criterion} ${styles.criterionWarning}`} key={criterion}><AlertTriangle aria-hidden="true" className="size-3.5" /> {criterion}</span>)}</div>
+        <div className={styles.criteria}>{match.matched_criteria.slice(0, 3).map((criterion) => <span className={`${styles.criterion} ${styles.criterionGood}`} key={criterion}><CheckCircle2 aria-hidden="true" className="size-3.5" /> {criterion}</span>)}{match.conflicting_criteria.slice(0, 1).map((criterion) => <span className={`${styles.criterion} ${styles.criterionWarning}`} key={criterion}><AlertTriangle aria-hidden="true" className="size-3.5" /> {criterion}</span>)}</div>
         {match.id ? <div className={styles.matchStatusControl}><MatchStatusSelect id={match.id} value={match.status} /></div> : null}
       </div>
     </article>
   );
+}
+
+function MatchFact({ icon: Icon, label, value }: Readonly<{ icon: typeof Banknote; label: string; value: string }>) {
+  return <div className={styles.matchFact}><Icon aria-hidden="true" className="size-3.5" /><span><small>{label}</small><strong>{value}</strong></span></div>;
+}
+
+function propertyPrice(property: Awaited<ReturnType<typeof listProperties>>[number] | undefined) {
+  if (!property) return "Non indicato";
+  const amount = property.contract_type === "sale" ? property.price : property.monthly_rent;
+  return amount ? `€ ${Number(amount).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Non indicato";
+}
+
+function requestBudgetLabel(request: Awaited<ReturnType<typeof listRequests>>[number] | undefined) {
+  if (!request) return "Non indicato";
+  const amount = request.contract_type === "sale" ? request.budget_max : request.monthly_rent_max;
+  return amount ? `€ ${Number(amount).toLocaleString("it-IT")}${request.contract_type === "rent" ? "/mese" : ""}` : "Da definire";
 }
 
 function DistributionRow({ label, count, total, href, tone }: Readonly<{ label: string; count: number; total: number; href: string; tone: string }>) {

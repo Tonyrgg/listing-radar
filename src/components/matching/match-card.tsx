@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  ArrowUpRight,
+  ArrowRight,
   CheckCircle2,
   CircleDot,
   Sparkles,
@@ -24,6 +24,7 @@ export function MatchCard({
   match,
   counterpartHref,
   counterpartTitle,
+  detailHref,
 }: Readonly<{
   match: {
     id: string;
@@ -37,13 +38,14 @@ export function MatchCard({
   };
   counterpartHref: string;
   counterpartTitle: string;
+  detailHref?: string;
 }>) {
   const positive = match.matched_criteria ?? [];
   const conflicts = match.conflicting_criteria ?? [];
 
   return (
     <article className="group/match overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] transition-colors hover:border-[var(--line-strong)]">
-      <div className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
+      <div className="flex items-start justify-between gap-4 px-5 pb-3 pt-5">
         <div className="flex min-w-0 items-start gap-3">
           <span
             className={`grid size-10 shrink-0 place-items-center rounded-[8px] ${
@@ -62,15 +64,8 @@ export function MatchCard({
             <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
               {classificationLabel[match.classification]}
             </p>
-            <Link
-              href={counterpartHref}
-              className="mt-1 inline-flex items-center gap-2 font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
-            >
-              <span className="truncate">{counterpartTitle}</span>
-              <ArrowUpRight
-                aria-hidden="true"
-                className="size-4 shrink-0 transition-transform group-hover/match:-translate-y-0.5 group-hover/match:translate-x-0.5"
-              />
+            <Link href={counterpartHref} className="mt-1 block font-semibold leading-snug text-[var(--ink-strong)] hover:text-[var(--surface-accent)]">
+              {counterpartTitle}
             </Link>
           </div>
         </div>
@@ -84,7 +79,7 @@ export function MatchCard({
         </div>
       </div>
 
-      <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+      <div className="grid gap-4 border-t border-[var(--line-soft)] px-5 py-4 sm:grid-cols-[1.15fr_.85fr]">
         <CriteriaList
           icon={CheckCircle2}
           label="Punti a favore"
@@ -103,8 +98,13 @@ export function MatchCard({
           {match.explanation ||
             "Il confronto è stato calcolato sui dati disponibili."}
         </p>
-        <div className="w-full shrink-0 sm:w-52">
-          <MatchStatusSelect id={match.id} value={match.status} />
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+          <div className="min-w-0 flex-1 sm:w-48"><MatchStatusSelect id={match.id} value={match.status} /></div>
+          {detailHref ? (
+            <Link href={detailHref} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[7px] border border-[var(--line-strong)] px-3 text-xs font-bold text-[var(--ink-strong)] hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]">
+              Analizza <ArrowRight aria-hidden="true" className="size-3.5" />
+            </Link>
+          ) : null}
         </div>
       </div>
     </article>

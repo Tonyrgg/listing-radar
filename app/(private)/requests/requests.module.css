@@ -414,6 +414,18 @@
   font-size: .88rem;
 }
 
+.contextLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.1rem;
+  margin-top: 1rem;
+  color: var(--ink-subtle);
+  font-size: .69rem;
+}
+
+.contextLine span { display: inline-flex; align-items: center; gap: .35rem; }
+.contextLine strong { color: var(--ink-strong); font-weight: 720; }
+
 .detailActions {
   display: flex;
   flex-wrap: wrap;
@@ -500,6 +512,82 @@
 .workflowComplete::after { background: var(--surface-accent); }
 
 .workflowActive .stepDot { background: var(--surface-accent-soft); }
+
+.requestFocus {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: .7rem;
+  background: var(--surface-panel);
+}
+
+.requestFocusMain { min-width: 0; padding: clamp(1.1rem, 2.5vw, 1.65rem); }
+
+.focusStatement {
+  max-width: 24ch;
+  margin-top: .35rem;
+  color: var(--ink-strong);
+  font-size: clamp(1.35rem, 2.7vw, 2rem);
+  font-weight: 680;
+  letter-spacing: -.025em;
+  line-height: 1.15;
+}
+
+.focusLocation {
+  display: flex;
+  align-items: flex-start;
+  gap: .45rem;
+  margin-top: .65rem;
+  color: var(--ink-soft);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.focusLocation svg { flex: none; margin-top: .12rem; color: var(--surface-accent); }
+
+.prioritySignals {
+  display: grid;
+  gap: .65rem;
+  margin-top: 1.3rem;
+}
+
+.prioritySignal {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .65rem;
+  border-top: 1px solid var(--line-soft);
+  padding-top: .7rem;
+}
+
+.prioritySignal > svg { flex: none; color: var(--surface-accent); }
+.prioritySignal span { display: grid; min-width: 0; gap: .1rem; }
+.prioritySignal small { color: var(--ink-subtle); font-size: .61rem; font-weight: 740; letter-spacing: .08em; text-transform: uppercase; }
+.prioritySignal strong { color: var(--ink-strong); font-size: .9rem; font-weight: 680; overflow-wrap: anywhere; }
+
+.exclusionNote { margin-top: 1rem; color: var(--status-warning); font-size: .72rem; line-height: 1.5; }
+.exclusionNote strong { color: var(--ink-strong); }
+
+.clientFocus {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in oklch, var(--surface-panel) 90%, var(--surface-accent));
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+}
+
+.clientIdentity { display: flex; align-items: center; gap: .7rem; }
+.clientIdentity > span { display: grid; width: 2.25rem; height: 2.25rem; flex: none; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--surface-accent); }
+.clientIdentity h2 { margin-top: .2rem; color: var(--ink-strong); font-size: 1rem; font-weight: 680; }
+.contactActions { display: grid; gap: .45rem; }
+.contactActions a, .contactUnavailable { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; border: 1px solid var(--line-soft); border-radius: .45rem; padding: .5rem .7rem; color: var(--ink-strong); font-size: .76rem; text-decoration: none; }
+.contactActions a:hover { border-color: var(--surface-accent); }
+.contactActions svg { flex: none; color: var(--surface-accent); }
+.contactActions span > small { display: block; margin-bottom: .05rem; color: var(--ink-subtle); font-size: .6rem; font-weight: 720; letter-spacing: .07em; text-transform: uppercase; }
+.contactUnavailable { color: var(--ink-subtle); }
+.clientContext { display: grid; gap: .5rem; margin-top: auto; border-top: 1px solid var(--line-soft); padding-top: .9rem; }
 
 .summaryPanel,
 .documentSection,
@@ -654,6 +742,7 @@
   .needGrid,
   .systemGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .needItem:nth-last-child(-n + 2) { border-bottom: 0; }
+  .prioritySignals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 768px) {
@@ -668,6 +757,8 @@
   .filterGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .detailFlow { grid-template-columns: minmax(0, 1.35fr) minmax(18rem, .65fr); }
   .matchesGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .requestFocus { grid-template-columns: minmax(0, 1.45fr) minmax(19rem, .55fr); }
+  .clientFocus { border-top: 0; border-left: 1px solid var(--line-soft); }
 }
 
 @media (prefers-reduced-motion: reduce) {

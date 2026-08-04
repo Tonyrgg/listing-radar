@@ -192,6 +192,21 @@ export async function getProperty(id: string) {
   return property ? { property, features: features ?? [], matches: matches ?? [] } : null;
 }
 
+export async function getMatch(id: string): Promise<RequestPropertyMatch | null> {
+  if (!configured()) return null;
+  try {
+    const { data, error } = await getSupabaseServiceClient()
+      .from("request_property_matches")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return null;
+    return data as RequestPropertyMatch | null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getMatchingConfig(): Promise<MatchingConfig> {
   if (!configured()) return DEFAULT_MATCHING_CONFIG;
   const { data } = await getSupabaseServiceClient()

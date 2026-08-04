@@ -1,10 +1,19 @@
 import {
   ArrowLeft,
   ArrowUpRight,
+  Banknote,
+  Building2,
+  CalendarDays,
   Check,
   ChevronDown,
+  DoorOpen,
   History,
+  Mail,
+  MapPinned,
+  Phone,
+  Ruler,
   Settings2,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -48,6 +57,8 @@ export default async function RequestDetailPage({
   const workflowIndex = currentWorkflowIndex(payload.status, request.status);
   const zones = detail.zones.filter((item) => item.preference_level !== "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
   const excludedZones = detail.zones.filter((item) => item.preference_level === "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
+  const clientName = request.clients?.full_name || displayValue(fields.Cliente, "Cliente da collegare");
+  const targetType = displayValue(fields["Tipologia Immobile"], propertyTypesLabel(request.property_types));
 
   return (
     <div className={styles.page}>
@@ -61,7 +72,7 @@ export default async function RequestDetailPage({
             <p className={styles.recordReference}>Richiesta {requestReference(request)}</p>
             <h1 className={styles.detailTitle}>{cleanRequestTitle(request.title)}</h1>
             <p className={styles.detailSubtitle}>
-              {request.clients?.full_name || "Cliente da collegare"} · {request.contract_type === "sale" ? "Acquisto" : "Locazione"}
+              {clientName} · {request.contract_type === "sale" ? "Acquisto" : "Locazione"}
             </p>
           </div>
           <div className={styles.detailActions}>
@@ -74,13 +85,12 @@ export default async function RequestDetailPage({
           </div>
         </div>
 
-        <dl className={styles.metadataStrip}>
-          <Meta label="Stato" value={payload.status || statusLabel(request.status)} />
-          <Meta label="Agenzia inserimento" value={displayValue(headers["Agenzia di inserimento"])} />
-          <Meta label="Agenzia aggiornamento" value={displayValue(headers["Agenzia di aggiornamento"])} />
-          <Meta label="Data inserimento" value={displayValue(headers["Data Inserimento Richiesta"], formatDate(request.created_at))} />
-          <Meta label="Provenienza" value={sourceDescription(request)} />
-        </dl>
+        <div className={styles.contextLine} aria-label="Contesto della richiesta">
+          <span><strong>{payload.status || statusLabel(request.status)}</strong> stato</span>
+          <span><CalendarDays aria-hidden="true" className="size-3.5" /> inserita {displayValue(headers["Data Inserimento Richiesta"], formatDate(request.created_at))}</span>
+          <span>{sourceDescription(request)}</span>
+          <span>aggiornata da {displayValue(headers["Agenzia di aggiornamento"], "agenzia non indicata")}</span>
+        </div>
       </header>
 
       <nav className={styles.workflow} aria-label="Avanzamento richiesta">
@@ -98,38 +108,34 @@ export default async function RequestDetailPage({
         </ol>
       </nav>
 
-      <section className={styles.summaryPanel} aria-label="Riepilogo richiesta e cliente">
-        <div className={styles.summaryGrid}>
-          <div className={styles.summaryColumn}>
-            <p className={styles.sectionEyebrow}>Richiesta</p>
-            <h2 className={styles.sectionTitle}>Cosa sta cercando</h2>
-            <dl className={`${styles.fieldList} mt-5`}>
-              <Field label="Motivazione" value={displayValue(fields["Motivazione Richiesta"], request.contract_type === "sale" ? "Acquisto" : "Locazione")} />
-              <Field label="Tipologia" value={displayValue(fields["Tipologia Immobile"], propertyTypesLabel(request.property_types))} />
-              <Field label="Sottotipologia" value={displayValue(fields["Sottotipologia Immobile"])} />
-              <Field label="Prezzo" value={requestBudget(request)} />
-              <Field label="Superficie" value={requestArea(request)} />
-              <Field label="Locali" value={requestRooms(request)} />
-              <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
-              <Field label="Zone immobiliari" value={zones || request.municipality || "Tutta Bitonto"} />
-              {excludedZones ? <Field label="Zone immobiliari escluse" value={excludedZones} muted /> : null}
-            </dl>
+      <section className={styles.requestFocus} aria-label="Priorità della richiesta">
+        <div className={styles.requestFocusMain}>
+          <p className={styles.sectionEyebrow}>Obiettivo del cliente</p>
+          <h2 className={styles.focusStatement}>{targetType}</h2>
+          <p className={styles.focusLocation}><MapPinned aria-hidden="true" className="size-4" /> {zones || request.municipality || "Tutta Bitonto"}</p>
+          <div className={styles.prioritySignals}>
+            <Signal icon={Banknote} label="Budget" value={requestBudget(request)} />
+            <Signal icon={Ruler} label="Superficie" value={requestArea(request)} />
+            <Signal icon={DoorOpen} label="Locali" value={requestRooms(request)} />
+            <Signal icon={Building2} label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
           </div>
-          <div className={styles.summaryColumn}>
-            <p className={styles.sectionEyebrow}>Cliente</p>
-            <h2 className={styles.sectionTitle}>Contatto e relazione</h2>
-            <dl className={`${styles.fieldList} mt-5`}>
-              <Field label="Nominativo" value={request.clients?.full_name || displayValue(fields.Cliente, "Da collegare")} />
-              <Field label="Telefono" value={contact.phone || "Non disponibile"} muted={!contact.phone} />
-              <Field label="Email" value={contact.email || "Non disponibile"} muted={!contact.email} />
-              <Field label="Indirizzo" value={contact.address || "Non disponibile"} muted={!contact.address} />
-              <Field label="Responsabile" value={displayValue(fields.Responsabile)} />
-              <Field label="Privacy" value={privacyValue(clientSection)} />
-              <Field label="Richieste attive" value={relatedCount(clientSection, /([0-9]+)\s+Richieste/i) || "Non indicato"} />
-              <Field label="Immobili" value={relatedCount(clientSection, /([0-9]+)\s+Immobili/i) || "Non indicato"} />
-            </dl>
-          </div>
+          {excludedZones ? <p className={styles.exclusionNote}>Da evitare: <strong>{excludedZones}</strong></p> : null}
         </div>
+        <aside className={styles.clientFocus} aria-label="Contatto cliente">
+          <div className={styles.clientIdentity}>
+            <span><UserRound aria-hidden="true" className="size-4" /></span>
+            <div><p className={styles.sectionEyebrow}>Cliente</p><h2>{clientName}</h2></div>
+          </div>
+          <div className={styles.contactActions}>
+            {contact.phone ? <a href={`tel:${contact.phone}`}><Phone aria-hidden="true" className="size-4" /><span><small>Telefono</small>{contact.phone}</span></a> : <span className={styles.contactUnavailable}><Phone aria-hidden="true" className="size-4" /> Telefono non disponibile</span>}
+            {contact.email ? <a href={`mailto:${contact.email}`}><Mail aria-hidden="true" className="size-4" /><span><small>Email</small>{contact.email}</span></a> : null}
+          </div>
+          <dl className={styles.clientContext}>
+            <Field label="Responsabile" value={displayValue(fields.Responsabile)} />
+            <Field label="Privacy" value={privacyValue(clientSection)} />
+            {contact.address ? <Field label="Residenza" value={contact.address} /> : null}
+          </dl>
+        </aside>
       </section>
 
       <section className={styles.documentSection}>
@@ -262,6 +268,7 @@ export default async function RequestDetailPage({
                   }}
                   counterpartHref={`/portfolio/${match.property_id}`}
                   counterpartTitle={match.property?.title ?? "Immobile"}
+                  detailHref={match.id ? `/matching/${match.id}` : undefined}
                 />
               ))}
             </div>
@@ -304,12 +311,12 @@ export default async function RequestDetailPage({
 
 const WORKFLOW = ["Chiudi", "Analizza richiesta", "In gestione", "In visita", "Trattativa avanzata"];
 
-function Meta({ label, value }: Readonly<{ label: string; value: string }>) {
-  return <div className={styles.metaItem}><dt className={styles.metaLabel}>{label}</dt><dd className={styles.metaValue}>{value}</dd></div>;
-}
-
 function Field({ label, value, muted = false }: Readonly<{ label: string; value: string; muted?: boolean }>) {
   return <div className={styles.fieldRow}><dt className={styles.fieldLabel}>{label}</dt><dd className={`${styles.fieldValue} ${muted ? styles.fieldValueMuted : ""}`}>{value}</dd></div>;
+}
+
+function Signal({ icon: Icon, label, value }: Readonly<{ icon: typeof Banknote; label: string; value: string }>) {
+  return <div className={styles.prioritySignal}><Icon aria-hidden="true" className="size-4" /><span><small>{label}</small><strong>{value}</strong></span></div>;
 }
 
 function Need({ label, value }: Readonly<{ label: string; value: string }>) {
@@ -337,10 +344,6 @@ function sourceDescription(request: PropertyRequest) {
 function privacyValue(text: string) {
   const match = text.match(/Privacy:\s*([^0-9]+?)(?:\s+Tipologia|$)/i);
   return match?.[1]?.trim() || "Non indicata";
-}
-
-function relatedCount(text: string, pattern: RegExp) {
-  return text.match(pattern)?.[1] ?? null;
 }
 
 function propertyTypesLabel(types: string[]) {

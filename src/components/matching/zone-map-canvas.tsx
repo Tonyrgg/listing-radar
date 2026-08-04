@@ -36,6 +36,7 @@ export type ZoneMapCanvasProps = {
   drawing?: boolean;
   allowPointSelection?: boolean;
   compact?: boolean;
+  fitRequest?: number;
   onGeometryCreated?: (geometry: GeoJsonGeometry) => void;
   onDrawingConsumed?: () => void;
   onZoneToggle?: (zoneId: string) => void;
@@ -55,13 +56,22 @@ function geometryFromLayer(layer: L.Layer) {
 function ResizeController() {
   const map = useMap();
   useEffect(() => {
-    const timer = window.setTimeout(() => map.invalidateSize(), 100);
-    return () => window.clearTimeout(timer);
+    const container = map.getContainer();
+    const invalidate = () => map.invalidateSize({ pan: false });
+    const timer = window.setTimeout(invalidate, 100);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(invalidate);
+    observer?.observe(container);
+    window.addEventListener("resize", invalidate);
+    return () => {
+      window.clearTimeout(timer);
+      observer?.disconnect();
+      window.removeEventListener("resize", invalidate);
+    };
   }, [map]);
   return null;
 }
 
-function FitController({ shapes, point, highlightedZoneId }: Readonly<{ shapes: ZoneMapShape[]; point?: MapPoint | null; highlightedZoneId?: string | null }>) {
+function FitController({ shapes, draftGeometry, point, highlightedZoneId }: Readonly<{ shapes: ZoneMapShape[]; draftGeometry?: GeoJsonGeometry | null; point?: MapPoint | null; highlightedZoneId?: string | null }>) {
   const map = useMap();
   useEffect(() => {
     if (point) {
@@ -71,11 +81,29 @@ function FitController({ shapes, point, highlightedZoneId }: Readonly<{ shapes: 
     const relevantShapes = highlightedZoneId
       ? shapes.filter((shape) => shape.zoneId === highlightedZoneId)
       : shapes;
-    const positions = relevantShapes.flatMap((shape) => geometryPositions(shape.geometry) ?? []);
+    const positions = draftGeometry
+      ? geometryPositions(draftGeometry) ?? []
+      : relevantShapes.flatMap((shape) => geometryPositions(shape.geometry) ?? []);
     if (positions.length >= 3) {
       map.fitBounds(positions as LatLngBoundsExpression, { padding: [18, 18], maxZoom: 15, animate: false });
+    } else {
+      map.setView([BITONTO_CENTER.latitude, BITONTO_CENTER.longitude], BITONTO_CENTER.zoom, { animate: false });
     }
-  }, [highlightedZoneId, map, point, shapes]);
+  }, [draftGeometry, highlightedZoneId, map, point, shapes]);
+  return null;
+}
+
+function FitAllController({ shapes, fitRequest }: Readonly<{ shapes: ZoneMapShape[]; fitRequest: number }>) {
+  const map = useMap();
+  useEffect(() => {
+    if (fitRequest === 0) return;
+    const positions = shapes.flatMap((shape) => geometryPositions(shape.geometry) ?? []);
+    if (positions.length >= 3) {
+      map.fitBounds(positions as LatLngBoundsExpression, { padding: [18, 18], maxZoom: 15, animate: false });
+    } else {
+      map.setView([BITONTO_CENTER.latitude, BITONTO_CENTER.longitude], BITONTO_CENTER.zoom, { animate: false });
+    }
+  }, [fitRequest, map, shapes]);
   return null;
 }
 
@@ -130,6 +158,7 @@ export function ZoneMapCanvas({
   drawing = false,
   allowPointSelection = false,
   compact = false,
+  fitRequest = 0,
   onGeometryCreated,
   onDrawingConsumed,
   onZoneToggle,
@@ -146,7 +175,8 @@ export function ZoneMapCanvas({
       className={`${styles.map} ${compact ? styles.compact : ""}`}
     >
       <ResizeController />
-      <FitController shapes={shapes} point={point} highlightedZoneId={highlightedZoneId} />
+      <FitController shapes={shapes} draftGeometry={draftGeometry} point={point} highlightedZoneId={highlightedZoneId} />
+      <FitAllController shapes={shapes} fitRequest={fitRequest} />
       <DrawController active={drawing} onCreated={onGeometryCreated} onConsumed={onDrawingConsumed} />
       <PointController enabled={allowPointSelection} onPointChange={onPointChange} />
       <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />

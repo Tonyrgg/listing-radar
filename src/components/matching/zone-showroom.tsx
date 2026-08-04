@@ -1,7 +1,23 @@
 "use client";
 
-import { Eraser, Landmark, MapPinned, Milestone, Plus, Save, ScanSearch, Tags, Trash2 } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import {
+  Check,
+  Eraser,
+  Focus,
+  Info,
+  Landmark,
+  Maximize2,
+  Milestone,
+  Minimize2,
+  MousePointer2,
+  Plus,
+  Save,
+  ScanSearch,
+  Shapes,
+  Tags,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -26,6 +42,11 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const [zoneColor, setZoneColor] = useState(DEFAULT_COLOR);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
+  const [fitRequest, setFitRequest] = useState(0);
+  const mapPanelRef = useRef<HTMLElement>(null);
+  const editorRef = useRef<HTMLFormElement>(null);
 
   const shapes = useMemo(() => zones.filter((zone) => zone.geometry).map((zone) => ({
     shapeId: zone.id,
@@ -35,6 +56,27 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
     geometry: zone.geometry!,
   })), [zones]);
 
+  const mapExpanded = fullscreen || fallbackFullscreen;
+  const mappedZoneCount = shapes.length;
+
+  useEffect(() => {
+    function syncFullscreen() {
+      setFullscreen(document.fullscreenElement === mapPanelRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  useEffect(() => {
+    if (!fallbackFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fallbackFullscreen]);
+
   function chooseZone(zone: InternalZone | null) {
     setEditing(zone);
     setZoneColor(zone?.color || DEFAULT_COLOR);
@@ -43,6 +85,44 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
     setMessage("");
     setError("");
   }
+
+  async function toggleFullscreen() {
+    if (fallbackFullscreen) {
+      setFallbackFullscreen(false);
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === mapPanelRef.current) {
+        await document.exitFullscreen();
+      } else if (mapPanelRef.current?.requestFullscreen) {
+        await mapPanelRef.current.requestFullscreen();
+      } else {
+        setFallbackFullscreen(true);
+      }
+    } catch {
+      setFallbackFullscreen((current) => !current);
+    }
+  }
+
+  async function continueToEditor() {
+    if (document.fullscreenElement === mapPanelRef.current) await document.exitFullscreen();
+    setFallbackFullscreen(false);
+    window.setTimeout(() => editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+  }
+
+  function startNewDrawing() {
+    chooseZone(null);
+    setDrawing(true);
+  }
+
+  const mapInstruction = drawing
+    ? "Clicca i vertici del perimetro e chiudilo sul primo punto."
+    : draftGeometry
+      ? "Perimetro pronto: completa i dati e salva la zona."
+      : editing
+        ? `${editing.name} selezionata. Ridisegna per sostituire il perimetro salvato.`
+        : "Seleziona un perimetro esistente oppure avvia un nuovo disegno.";
 
   function submit(formData: FormData) {
     const split = (key: string) => String(formData.get(key) ?? "").split(",").map((item) => item.trim()).filter(Boolean);
@@ -86,26 +166,70 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
 
   return (
     <div className={styles.page}>
-      <section className={styles.mapPanel}>
-        <header className={styles.mapToolbar}>
+      <section
+        ref={mapPanelRef}
+        className={`${styles.mapPanel} ${mapExpanded ? styles.mapPanelFullscreen : ""}`}
+      >
+        <header className={styles.mapHeader}>
           <div>
             <p className={styles.sectionEyebrow}>Perimetri immobiliari</p>
             <h2 className={styles.panelTitle}>Disegna i quartieri usati da immobili e richieste</h2>
             <p className={styles.mapHint}>Questi perimetri descrivono la posizione degli immobili. Le aree operative assegnate agli agenti restano separate.</p>
           </div>
-          <div className={styles.mapToolbarActions}>
-            <button type="button" className={styles.secondaryButton} onClick={() => setDrawing(true)} disabled={drawing}>
-              <MapPinned aria-hidden="true" className="size-4" /> {editing?.geometry || draftGeometry ? "Ridisegna perimetro" : "Disegna perimetro"}
-            </button>
-            {draftGeometry ? <button type="button" className={styles.secondaryButton} onClick={() => setDraftGeometry(null)}>Annulla disegno</button> : null}
+          <div className={styles.mapStats} aria-label={`${mappedZoneCount} zone su ${zones.length} hanno un perimetro`}>
+            <strong>{mappedZoneCount}/{zones.length}</strong>
+            <span>perimetri pronti</span>
           </div>
         </header>
+        <div className={styles.mapToolbar} aria-label="Strumenti della mappa">
+          <div className={styles.mapModes}>
+            <button
+              type="button"
+              className={`${styles.mapModeButton} ${!drawing ? styles.mapModeActive : ""}`}
+              aria-pressed={!drawing}
+              onClick={() => setDrawing(false)}
+            >
+              <MousePointer2 aria-hidden="true" className="size-4" /> Esplora
+            </button>
+            <button
+              type="button"
+              className={`${styles.mapModeButton} ${drawing ? styles.mapModeActive : ""}`}
+              aria-pressed={drawing}
+              onClick={() => setDrawing(true)}
+            >
+              <Shapes aria-hidden="true" className="size-4" /> {editing?.geometry || draftGeometry ? "Ridisegna" : "Disegna zona"}
+            </button>
+            <button type="button" className={styles.mapModeButton} onClick={startNewDrawing}>
+              <Plus aria-hidden="true" className="size-4" /> Nuova zona
+            </button>
+          </div>
+          <div className={styles.mapTools}>
+            <button type="button" className={styles.mapToolButton} onClick={() => setFitRequest((value) => value + 1)} title="Inquadra tutti i perimetri">
+              <Focus aria-hidden="true" className="size-4" /> <span>Inquadra</span>
+            </button>
+            <button type="button" className={styles.mapToolButton} onClick={toggleFullscreen} aria-pressed={mapExpanded}>
+              {mapExpanded ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
+              <span>{mapExpanded ? "Esci da schermo intero" : "Schermo intero"}</span>
+            </button>
+          </div>
+        </div>
+        <div className={`${styles.mapStatus} ${drawing ? styles.mapStatusActive : ""}`} role="status">
+          <Info aria-hidden="true" className="size-4" />
+          <span>{mapInstruction}</span>
+          {draftGeometry ? (
+            <div className={styles.mapStatusActions}>
+              <button type="button" onClick={() => setDraftGeometry(null)}>Scarta</button>
+              {mapExpanded ? <button type="button" onClick={continueToEditor}><Check aria-hidden="true" className="size-3.5" /> Completa dati</button> : null}
+            </div>
+          ) : null}
+        </div>
         <div className={styles.mapBody}>
           <ZoneMap
             shapes={shapes}
             highlightedZoneId={editing?.id}
             draftGeometry={draftGeometry}
             drawing={drawing}
+            fitRequest={fitRequest}
             onGeometryCreated={setDraftGeometry}
             onDrawingConsumed={() => setDrawing(false)}
             onZoneToggle={(zoneId) => chooseZone(zones.find((zone) => zone.id === zoneId) ?? null)}
@@ -141,7 +265,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
           {!zones.length ? <div className={styles.emptyState}><p>Crea la prima zona immobiliare di Bitonto.</p></div> : null}
         </section>
 
-        <form action={submit} key={editing?.id ?? "new"} className={styles.editor}>
+        <form ref={editorRef} action={submit} key={editing?.id ?? "new"} className={styles.editor}>
           <header className={styles.editorHeader}>
             <div><p className={styles.sectionEyebrow}>{editing ? "Zona immobiliare selezionata" : "Nuova zona immobiliare"}</p><h2 className={styles.panelTitle}>{editing?.name || "Aggiungi zona"}</h2></div>
             {editing ? <button type="button" className={styles.secondaryButton} onClick={() => chooseZone(null)}><Plus aria-hidden="true" className="size-4" /> Nuova</button> : null}
