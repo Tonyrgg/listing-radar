@@ -1,6 +1,7 @@
 import { MatchingRulesShowroom } from "@/components/matching/rules-showroom";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
-import { PageHeader } from "@/components/page-header";
+import { MatchingSectionHeader } from "@/components/matching/section-header";
+import styles from "@/components/matching/section-design.module.css";
 import {
   getMatchingConfig,
   listFeatures,
@@ -12,11 +13,11 @@ export default async function MatchingSettingsPage() {
     getMatchingConfig(),
   ]);
   return (
-    <div className="space-y-5">
-      <PageHeader
+    <div className={styles.page}>
+      <MatchingSectionHeader
         eyebrow="Regole automatiche"
-        title="Come decide Listing Radar"
-        description="Scegli quali caratteristiche contano e quanto devono influire. Le modifiche valgono dal prossimo ricalcolo."
+        title="Regole di matching"
+        description="Soglie, tolleranze e pesi usati per ordinare gli abbinamenti."
       />
       <MatchingSectionNav />
       <MatchingRulesShowroom features={features} config={config} />

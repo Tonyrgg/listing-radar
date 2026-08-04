@@ -1,278 +1,114 @@
-import {
-  Bath,
-  BedDouble,
-  Building2,
-  CalendarCheck2,
-  CircleDot,
-  Layers3,
-  MapPin,
-  Ruler,
-  WalletCards,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
-import {
-  DeletePropertyButton,
-  PropertyEditor,
-  RecalculateButton,
-} from "@/components/matching/management-panels";
-import {
-  ContractMark,
-  FeatureMark,
-  PropertyTypeMark,
-  VisualFact,
-} from "@/components/matching/visual-language";
-import { PageHeader } from "@/components/page-header";
-import {
-  getProperty,
-  listFeatures,
-  listZones,
-} from "@/lib/matching/repository";
-import type {
-  MatchClassification,
-  MatchStatus,
-  PortfolioProperty,
-} from "@/lib/matching/types";
+import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
+import styles from "@/components/matching/section-design.module.css";
+import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
+import type { MatchClassification, MatchStatus, PortfolioProperty } from "@/lib/matching/types";
 
-export default async function PropertyDetailPage({
-  params,
-}: Readonly<{ params: Promise<{ id: string }> }>) {
+export default async function PropertyDetailPage({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
-  const [detail, zones, features] = await Promise.all([
-    getProperty(id),
-    listZones(),
-    listFeatures(),
-  ]);
+  const [detail, zones, features] = await Promise.all([getProperty(id), listZones(), listFeatures()]);
   if (!detail) notFound();
   const property = detail.property;
-  const featureValues = Object.fromEntries(
-    detail.features.map((item) => [item.feature_definition_id, item.value]),
-  );
-  const price =
-    property.contract_type === "sale"
-      ? property.price
-      : property.monthly_rent;
+  const featureValues = Object.fromEntries(detail.features.map((item) => [item.feature_definition_id, item.value]));
   const activeFeatures = detail.features.filter((item) => Boolean(item.value));
+  const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Immobile disponibile"
-        title={property.title}
-        description={
-          property.address ||
-          property.municipality ||
-          "Indirizzo non indicato"
-        }
-        backHref="/portfolio"
-        backLabel="Torna agli immobili"
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <PropertyEditor
-              zones={zones}
-              features={features}
-              property={{
-                ...(property as PortfolioProperty),
-                feature_values: featureValues,
-              }}
-            />
+    <div className={styles.page}>
+      <header className={styles.detailHeader}>
+        <Link className={styles.backLink} href="/portfolio"><ArrowLeft aria-hidden="true" className="size-4" /> Tutti gli immobili</Link>
+        <div className={styles.detailTitleRow}>
+          <div>
+            <p className={styles.recordReference}>{property.contract_type === "sale" ? "Immobile in vendita" : "Immobile in locazione"}</p>
+            <h1 className={styles.detailTitle}>{property.title}</h1>
+            <p className={styles.recordSubtitle}>{property.address || property.zone?.name || property.municipality || "Indirizzo non indicato"}</p>
+          </div>
+          <div className={styles.actions}>
+            <PropertyEditor zones={zones} features={features} property={{ ...(property as PortfolioProperty), feature_values: featureValues }} />
             <RecalculateButton scope="property" id={id} />
             <DeletePropertyButton id={id} />
           </div>
-        }
-      />
+        </div>
+        <dl className={styles.metadataStrip}>
+          <Meta label="Stato incarico" value={mandateLabel(property.mandate_status)} />
+          <Meta label={property.contract_type === "sale" ? "Prezzo" : "Canone"} value={price ? `€ ${Number(price).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Da definire"} />
+          <Meta label="Zona" value={property.zone?.name || property.municipality || "Non indicata"} />
+          <Meta label="Disponibilità" value={availabilityLabel(property.availability_status)} />
+        </dl>
+      </header>
 
-      <section className="overflow-hidden rounded-[11px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(300px,.6fr)]">
-          <div className="p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-5">
-              <div className="flex items-start gap-4">
-                <ContractMark type={property.contract_type} />
-                <div>
-                  <PropertyTypeMark type={property.property_type} />
-                  <p className="mt-3 flex items-center gap-2 text-sm text-[var(--ink-soft)]">
-                    <MapPin aria-hidden="true" className="size-4" />
-                    {property.zone?.name ||
-                      property.address ||
-                      property.municipality ||
-                      "Zona da completare"}
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex min-h-8 items-center gap-2 rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-xs font-bold text-[var(--ink-soft)]">
-                <CircleDot aria-hidden="true" className="size-3.5" />
-                {mandateLabel(property.mandate_status)}
-              </span>
-            </div>
-
-            <div className="mt-7 flex items-center gap-3 border-y border-[var(--line-soft)] py-5">
-              <span className="grid size-11 place-items-center rounded-[8px] bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-                <WalletCards aria-hidden="true" className="size-5" />
-              </span>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[.11em] text-[var(--ink-subtle)]">
-                  {property.contract_type === "sale"
-                    ? "Prezzo richiesto"
-                    : "Canone mensile"}
-                </p>
-                <p className="mt-1 text-2xl font-bold text-[var(--ink-strong)]">
-                  {price
-                    ? `€ ${Number(price).toLocaleString("it-IT")}`
-                    : "Da definire"}
-                  {price && property.contract_type === "rent" ? (
-                    <span className="ml-1 text-sm font-medium text-[var(--ink-soft)]">
-                      /mese
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <VisualFact
-                icon={Ruler}
-                label="Metratura"
-                value={
-                  property.internal_sqm
-                    ? `${property.internal_sqm} mq`
-                    : "Da completare"
-                }
-              />
-              <VisualFact
-                icon={Layers3}
-                label="Vani"
-                value={property.rooms ?? "Da completare"}
-              />
-              <VisualFact
-                icon={BedDouble}
-                label="Camere"
-                value={property.bedrooms ?? "Da completare"}
-              />
-              <VisualFact
-                icon={Bath}
-                label="Bagni"
-                value={property.bathrooms ?? "Da completare"}
-              />
-            </div>
-          </div>
-
-          <aside className="border-t border-[var(--line-soft)] bg-[oklch(0.155_0.012_155)] p-5 lg:border-l lg:border-t-0 lg:p-6">
-            <Building2
-              aria-hidden="true"
-              className="size-20 text-[oklch(0.38_0.024_155)]"
-              strokeWidth={0.9}
-            />
-            <h2 className="mt-5 font-semibold text-[var(--ink-strong)]">
-              Disponibilità
-            </h2>
-            <p className="mt-2 flex items-center gap-2 text-sm text-[var(--ink-soft)]">
-              <CalendarCheck2
-                aria-hidden="true"
-                className="size-4 text-[var(--surface-accent)]"
-              />
-              {availabilityLabel(property.availability_status)}
-            </p>
-            {property.description ? (
-              <p className="mt-5 border-t border-[var(--line-soft)] pt-5 text-sm leading-6 text-[var(--ink-soft)]">
-                {property.description}
-              </p>
-            ) : null}
-          </aside>
+      <section className={styles.panel}>
+        <div className={styles.detailGrid}>
+          <section className={styles.detailColumn}>
+            <p className={styles.sectionEyebrow}>Immobile</p>
+            <h2 className={styles.panelTitle}>Caratteristiche principali</h2>
+            <dl className={`${styles.fieldList} mt-5`}>
+              <Field label="Tipologia" value={propertyTypeLabel(property.property_type)} />
+              <Field label="Superficie interna" value={property.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} />
+              <Field label="Superficie commerciale" value={property.commercial_sqm ? `${property.commercial_sqm} mq` : "Non indicata"} />
+              <Field label="Locali" value={numberValue(property.rooms)} />
+              <Field label="Camere" value={numberValue(property.bedrooms)} />
+              <Field label="Bagni" value={numberValue(property.bathrooms)} />
+              <Field label="Piano" value={numberValue(property.floor)} />
+              <Field label="Piani edificio" value={numberValue(property.building_floors)} />
+            </dl>
+          </section>
+          <section className={styles.detailColumn}>
+            <p className={styles.sectionEyebrow}>Commerciale</p>
+            <h2 className={styles.panelTitle}>Incarico e disponibilità</h2>
+            <dl className={`${styles.fieldList} mt-5`}>
+              <Field label="Contratto" value={property.contract_type === "sale" ? "Vendita" : "Locazione"} />
+              <Field label="Stato incarico" value={mandateLabel(property.mandate_status)} />
+              <Field label="Condizione" value={conditionLabel(property.condition)} />
+              <Field label="Disponibilità" value={availabilityLabel(property.availability_status)} />
+              <Field label="Disponibile dal" value={property.available_from ? new Date(property.available_from).toLocaleDateString("it-IT") : "Non indicato"} />
+              <Field label="Comune" value={property.municipality || "Non indicato"} />
+              <Field label="Zona" value={property.zone?.name || "Non indicata"} />
+              <Field label="Indirizzo" value={property.address || "Non indicato"} />
+            </dl>
+          </section>
         </div>
       </section>
 
-      <section>
-        <div className="mb-3">
-          <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
-            Dotazioni
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
-            Cosa offre l’immobile
-          </h2>
-        </div>
-        {activeFeatures.length ? (
-          <div className="flex flex-wrap gap-3">
-            {activeFeatures.map((item) => (
-              <div
-                key={item.id}
-                className="flex min-h-14 items-center gap-3 rounded-[9px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3"
-              >
-                <FeatureMark
-                  featureKey={item.feature?.key ?? "feature"}
-                  label={item.feature?.label ?? "Caratteristica"}
-                />
-                <span className="text-sm font-semibold text-[var(--ink-strong)]">
-                  {item.feature?.label ?? "Caratteristica"}
-                </span>
-              </div>
-            ))}
+      {property.description || property.notes ? (
+        <section className={styles.panel}>
+          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Informazioni</p><h2 className={styles.panelTitle}>Descrizione e note</h2></div></header>
+          <div className={styles.detailGrid}>
+            <div className={styles.detailColumn}><p className={styles.label}>Descrizione</p><p className={`${styles.description} mt-2`}>{property.description || "Non disponibile"}</p></div>
+            <div className={styles.detailColumn}><p className={styles.label}>Note interne</p><p className={`${styles.description} mt-2`}>{property.notes || "Nessuna nota"}</p></div>
           </div>
-        ) : (
-          <p className="rounded-[9px] border border-dashed border-[var(--line-strong)] p-6 text-sm text-[var(--ink-soft)]">
-            Nessuna dotazione indicata. Usa “Modifica immobile” per completare
-            la scheda.
-          </p>
-        )}
+        </section>
+      ) : null}
+
+      <section className={styles.panel}>
+        <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Dotazioni</p><h2 className={styles.panelTitle}>Caratteristiche presenti</h2></div><span className={styles.count}>{activeFeatures.length}</span></header>
+        <div className={styles.panelBody}>
+          {activeFeatures.length ? <div className={styles.features}>{activeFeatures.map((item) => <span className={styles.feature} key={item.id}>{item.feature?.label || "Caratteristica"}</span>)}</div> : <p className={styles.muted}>Nessuna dotazione indicata.</p>}
+        </div>
       </section>
 
-      <section>
-        <div className="mb-3">
-          <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
-            Clienti possibili
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
-            A chi puoi proporlo
-          </h2>
-        </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          {detail.matches.map((match) => (
-            <MatchCard
-              key={match.id}
-              match={{
-                ...match,
-                classification:
-                  match.classification as MatchClassification,
-                status: match.status as MatchStatus,
-              }}
-              counterpartHref={`/requests/${match.request_id}`}
-              counterpartTitle={`${match.request?.clients?.full_name || "Cliente da collegare"}: ${match.request?.title || "Richiesta"}`}
-            />
-          ))}
-          {!detail.matches.length ? (
-            <p className="rounded-[9px] border border-dashed border-[var(--line-strong)] p-8 text-center text-sm text-[var(--ink-soft)]">
-              Nessuna richiesta confrontata con questo immobile.
-            </p>
-          ) : null}
+      <section className={styles.panel}>
+        <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Matching</p><h2 className={styles.panelTitle}>Richieste compatibili</h2></div><span className={styles.count}>{detail.matches.length} risultati</span></header>
+        <div className={styles.panelBody}>
+          {detail.matches.length ? (
+            <div className={styles.matchGrid}>
+              {detail.matches.map((match) => <MatchCard key={match.id} match={{ ...match, classification: match.classification as MatchClassification, status: match.status as MatchStatus }} counterpartHref={`/requests/${match.request_id}`} counterpartTitle={`${match.request?.clients?.full_name || "Cliente da collegare"}: ${match.request?.title || "Richiesta"}`} />)}
+            </div>
+          ) : <p className={styles.muted}>Nessuna richiesta confrontata con questo immobile.</p>}
         </div>
       </section>
     </div>
   );
 }
 
-function mandateLabel(status: string) {
-  return (
-    {
-      draft: "Bozza",
-      active: "Disponibile",
-      suspended: "Sospeso",
-      expired: "Scaduto",
-      sold: "Venduto",
-      rented: "Affittato",
-      archived: "Archiviato",
-    }[status] ?? status
-  );
-}
-
-function availabilityLabel(value: string | null) {
-  if (!value) return "Da indicare";
-  return (
-    {
-      available_now: "Disponibile subito",
-      available_at_deed: "Disponibile al rogito",
-      occupied: "Attualmente occupato",
-      rented: "Attualmente locato",
-      future_availability: "Disponibilità futura",
-    }[value] ?? value
-  );
-}
+function Meta({ label, value }: Readonly<{ label: string; value: string }>) { return <div className={styles.metaItem}><dt className={styles.label}>{label}</dt><dd className={styles.metaValue}>{value}</dd></div>; }
+function Field({ label, value }: Readonly<{ label: string; value: string }>) { return <div className={styles.fieldRow}><dt className={styles.label}>{label}</dt><dd className={styles.fieldValue}>{value}</dd></div>; }
+function numberValue(value: number | null) { return value === null ? "Non indicato" : String(value); }
+function propertyTypeLabel(value: string) { return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile" }[value] ?? value); }
+function mandateLabel(value: string) { return ({ draft: "Bozza", active: "Disponibile", suspended: "Sospeso", expired: "Scaduto", sold: "Venduto", rented: "Affittato", archived: "Archiviato" }[value] ?? value); }
+function availabilityLabel(value: string | null) { return ({ available_now: "Disponibile subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Disponibilità futura" }[value ?? ""] ?? "Non indicata"); }
+function conditionLabel(value: string | null) { return ({ new: "Nuovo", excellent: "Ottimo", good: "Buono", habitable: "Abitabile", renovated: "Ristrutturato", to_renovate: "Da ristrutturare" }[value ?? ""] ?? value ?? "Non indicata"); }
