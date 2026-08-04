@@ -12,6 +12,8 @@ import type {
   Client, FeatureDefinition, InternalZone, MatchingConfig, PortfolioProperty,
   MatchStatus,
 } from "@/lib/matching/types";
+import { zoneContainingPoint } from "@/lib/map/geometry";
+import { ZoneMap } from "@/components/matching/zone-map";
 
 const inputClass = "h-10 w-full rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none focus:border-[var(--surface-accent)]";
 const propertyTypes = [
@@ -80,6 +82,8 @@ export function PropertyEditor({
   const [pending, start] = useTransition();
   const [address, setAddress] = useState(property?.address ?? "");
   const [selectedZone, setSelectedZone] = useState(property?.internal_zone_id ?? "");
+  const [latitude, setLatitude] = useState<number | null>(property?.latitude ?? null);
+  const [longitude, setLongitude] = useState<number | null>(property?.longitude ?? null);
   const suggestedZone = useMemo(() => {
     const normalized = address.trim().toLocaleLowerCase("it");
     if (!normalized) return null;
@@ -102,6 +106,7 @@ export function PropertyEditor({
           id: property?.id, title: formData.get("title"), contract_type: formData.get("contract_type"),
           property_type: formData.get("property_type"), municipality: formData.get("municipality"),
           address: formData.get("address") || null, internal_zone_id: formData.get("internal_zone_id") || null,
+          latitude, longitude,
           price: number("price"), monthly_rent: number("monthly_rent"), internal_sqm: number("internal_sqm"),
           commercial_sqm: number("commercial_sqm"), rooms: number("rooms"), bedrooms: number("bedrooms"),
           bathrooms: number("bathrooms"), floor: number("floor"), building_floors: number("building_floors"),
@@ -133,6 +138,27 @@ export function PropertyEditor({
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">ID gestionale<input name="external_crm_id" className={inputClass} /></label>
     </div>
     <div className="mt-5"><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Caratteristiche</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{features.filter((feature) => feature.field_type === "boolean").map((feature) => <label key={feature.id} className="flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] px-3 text-sm text-[var(--ink-soft)]"><input name={`feature_${feature.id}`} type="checkbox" defaultChecked={Boolean(values[feature.id])} />{feature.label}</label>)}</div></div>
+    <section className="mt-5 overflow-hidden rounded-[9px] border border-[var(--line-soft)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-3">
+        <div><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Posizione sulla mappa</h3><p className="mt-1 text-xs text-[var(--ink-soft)]">Clicca il punto esatto. Se cade in un perimetro, la zona viene assegnata automaticamente.</p></div>
+        {latitude != null && longitude != null ? <button type="button" onClick={() => { setLatitude(null); setLongitude(null); }} className="text-xs font-bold text-[var(--ink-soft)]">Rimuovi punto</button> : null}
+      </div>
+      <div className="p-2">
+        <ZoneMap
+          compact
+          shapes={zones.filter((zone) => zone.map_area).map((zone) => ({ areaId: zone.map_area!.id, zoneId: zone.id, name: zone.name, color: zone.map_area!.color, geometry: zone.map_area!.geometry }))}
+          highlightedZoneId={selectedZone || null}
+          point={latitude != null && longitude != null ? { latitude, longitude } : null}
+          allowPointSelection
+          onPointChange={(point) => {
+            setLatitude(point.latitude);
+            setLongitude(point.longitude);
+            const detected = zoneContainingPoint(zones, point);
+            if (detected) setSelectedZone(detected.id);
+          }}
+        />
+      </div>
+    </section>
     <div className="mt-5 grid gap-3 md:grid-cols-2"><label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Descrizione<textarea name="description" rows={4} defaultValue={property?.description ?? ""} className={`${inputClass} h-auto py-2`} /></label><label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Note interne<textarea name="notes" rows={4} defaultValue={property?.notes ?? ""} className={`${inputClass} h-auto py-2`} /></label></div>
     <button disabled={pending} className="mt-5 min-h-10 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)]">{pending ? "Salvataggio…" : "Salva immobile"}</button>
   </form>;

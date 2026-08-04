@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
 import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
+import { RequestZonePicker } from "@/components/matching/request-zone-picker";
 import {
   cleanRequestTitle,
   clientContact,
@@ -25,7 +26,7 @@ import {
   requestRooms,
   requestSourceLabel,
 } from "@/lib/matching/request-presentation";
-import { getRequest, listClients } from "@/lib/matching/repository";
+import { getRequest, listClients, listZones } from "@/lib/matching/repository";
 import type { Client, MatchClassification, MatchStatus, PropertyRequest } from "@/lib/matching/types";
 
 import styles from "../requests.module.css";
@@ -34,7 +35,7 @@ export default async function RequestDetailPage({
   params,
 }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
-  const [detail, clients] = await Promise.all([getRequest(id), listClients()]);
+  const [detail, clients, allZones] = await Promise.all([getRequest(id), listClients(), listZones()]);
   if (!detail) notFound();
 
   const request = detail.request as PropertyRequest & { clients?: Client | null };
@@ -45,7 +46,8 @@ export default async function RequestDetailPage({
   const activities = requestActivities(request);
   const clientSection = payload.relatedSections?.find((section) => section.heading === "Cliente")?.text ?? "";
   const workflowIndex = currentWorkflowIndex(payload.status, request.status);
-  const zones = detail.zones.map((item) => item.zone?.name).filter(Boolean).join(", ");
+  const zones = detail.zones.filter((item) => item.preference_level !== "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
+  const excludedZones = detail.zones.filter((item) => item.preference_level === "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
 
   return (
     <div className={styles.page}>
@@ -110,6 +112,7 @@ export default async function RequestDetailPage({
               <Field label="Locali" value={requestRooms(request)} />
               <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
               <Field label="Zone" value={zones || request.municipality || "Tutta Bitonto"} />
+              {excludedZones ? <Field label="Zone escluse" value={excludedZones} muted /> : null}
             </dl>
           </div>
           <div className={styles.summaryColumn}>
@@ -126,6 +129,24 @@ export default async function RequestDetailPage({
               <Field label="Immobili" value={relatedCount(clientSection, /([0-9]+)\s+Immobili/i) || "Non indicato"} />
             </dl>
           </div>
+        </div>
+      </section>
+
+      <section className={styles.documentSection}>
+        <header className={styles.sectionHeader}>
+          <div>
+            <p className={styles.sectionEyebrow}>Localizzazione</p>
+            <h2 className={styles.sectionTitle}>Zone desiderate</h2>
+          </div>
+          <span className={styles.sectionCount}>{detail.zones.length} selezionate</span>
+        </header>
+        <div className={styles.sectionBody}>
+          <RequestZonePicker
+            requestId={id}
+            zones={allZones}
+            initialZoneIds={detail.zones.filter((item) => item.preference_level !== "excluded").map((item) => item.zone_id)}
+            initialExcludedZoneIds={detail.zones.filter((item) => item.preference_level === "excluded").map((item) => item.zone_id)}
+          />
         </div>
       </section>
 

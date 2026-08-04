@@ -56,6 +56,13 @@ export interface InternalZone {
   associated_streets: string[];
   map_area_id: string | null;
   is_active: boolean;
+  map_area?: {
+    id: string;
+    name: string;
+    color: string | null;
+    geometry: import("@/lib/map/types").GeoJsonGeometry;
+    status: string;
+  } | null;
 }
 
 export interface PropertyRequest {
@@ -109,6 +116,8 @@ export interface PortfolioProperty {
   municipality: string | null;
   address: string | null;
   internal_zone_id: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   price: number | null;
   monthly_rent: number | null;
   internal_sqm: number | null;

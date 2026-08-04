@@ -1,0 +1,29 @@
+.map {
+  width: 100%;
+  min-height: 31rem;
+  border: 1px solid var(--line-soft);
+  border-radius: .55rem;
+  background: var(--surface-muted);
+  z-index: 0;
+}
+
+.compact { min-height: 22rem; }
+
+.loading {
+  display: flex;
+  min-height: 22rem;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  border: 1px solid var(--line-soft);
+  border-radius: .55rem;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+@media (max-width: 639px) {
+  .map { min-height: 24rem; }
+  .compact { min-height: 19rem; }
+}

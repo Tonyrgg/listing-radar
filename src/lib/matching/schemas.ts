@@ -20,6 +20,11 @@ export const zoneSchema = z.object({
   aliases: z.array(z.string().trim()).default([]),
   associated_streets: z.array(z.string().trim()).default([]),
   map_area_id: z.string().uuid().nullable().optional(),
+  geometry: z.object({
+    type: z.string(),
+    coordinates: z.unknown(),
+  }).passthrough().nullable().optional(),
+  area_color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
   is_active: z.boolean().default(true),
 });
 
@@ -75,6 +80,8 @@ export const portfolioPropertySchema = z.object({
   municipality: z.string().trim().default("Bitonto"),
   address: optionalText,
   internal_zone_id: z.string().uuid().nullable().optional(),
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional(),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional(),
   price: nullableNumber,
   monthly_rent: nullableNumber,
   internal_sqm: nullableNumber,

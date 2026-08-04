@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { MatchCard } from "@/components/matching/match-card";
 import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
 import styles from "@/components/matching/section-design.module.css";
+import { ZoneMap } from "@/components/matching/zone-map";
 import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
 import type { MatchClassification, MatchStatus, PortfolioProperty } from "@/lib/matching/types";
 
@@ -16,6 +17,16 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
   const featureValues = Object.fromEntries(detail.features.map((item) => [item.feature_definition_id, item.value]));
   const activeFeatures = detail.features.filter((item) => Boolean(item.value));
   const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
+  const zoneShapes = zones.filter((zone) => zone.map_area).map((zone) => ({
+    areaId: zone.map_area!.id,
+    zoneId: zone.id,
+    name: zone.name,
+    color: zone.map_area!.color,
+    geometry: zone.map_area!.geometry,
+  }));
+  const propertyPoint = property.latitude != null && property.longitude != null
+    ? { latitude: Number(property.latitude), longitude: Number(property.longitude) }
+    : null;
 
   return (
     <div className={styles.page}>
@@ -71,6 +82,21 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
               <Field label="Indirizzo" value={property.address || "Non indicato"} />
             </dl>
           </section>
+        </div>
+      </section>
+
+      <section className={styles.panel}>
+        <header className={styles.panelHeader}>
+          <div><p className={styles.sectionEyebrow}>Posizione</p><h2 className={styles.panelTitle}>Immobile sulla mappa</h2></div>
+          <span className={styles.count}>{propertyPoint ? "Punto esatto salvato" : property.internal_zone_id ? "Perimetro della zona" : "Posizione da completare"}</span>
+        </header>
+        <div className={styles.panelBody}>
+          {zoneShapes.length ? (
+            <ZoneMap compact shapes={zoneShapes} highlightedZoneId={property.internal_zone_id} point={propertyPoint} />
+          ) : (
+            <p className={styles.muted}>Disegna e collega i perimetri nella scheda Zone per visualizzare la posizione.</p>
+          )}
+          {!propertyPoint ? <p className={`${styles.muted} mt-3`}>Per aggiungere il punto esatto, usa “Modifica immobile” e clicca sulla mappa.</p> : null}
         </div>
       </section>
 

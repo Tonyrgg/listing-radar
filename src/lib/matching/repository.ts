@@ -74,7 +74,24 @@ export async function listProperties(): Promise<Array<PortfolioProperty & {
     return [];
   }
 }
-export const listZones = () => safeList<InternalZone>("internal_zones", "name", true);
+export async function listZones(): Promise<InternalZone[]> {
+  if (!configured()) return [];
+  try {
+    const supabase = getSupabaseServiceClient();
+    const [{ data: zones, error: zonesError }, { data: areas, error: areasError }] = await Promise.all([
+      supabase.from("internal_zones").select("*").order("name", { ascending: true }),
+      supabase.from("map_areas").select("id,name,color,geometry,status"),
+    ]);
+    if (zonesError || areasError) return [];
+    const areasById = new Map((areas ?? []).map((area) => [area.id, area]));
+    return (zones ?? []).map((zone) => ({
+      ...zone,
+      map_area: zone.map_area_id ? areasById.get(zone.map_area_id) ?? null : null,
+    })) as InternalZone[];
+  } catch {
+    return [];
+  }
+}
 export const listFeatures = () => safeList<FeatureDefinition>("feature_definitions", "sort_order", true);
 export const listMatches = () => safeList<RequestPropertyMatch>("request_property_matches", "score", false);
 

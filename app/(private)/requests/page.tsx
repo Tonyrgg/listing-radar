@@ -150,6 +150,7 @@ export default async function RequestsPage({
           const compatible = compatibleCounts.get(request.id) ?? 0;
           const isHot = crmField(payload, "Richiesta Calda") === true || request.priority === "urgent";
           const zoneNames = (request.request_zones ?? [])
+            .filter((item) => item.preference_level !== "excluded")
             .map((item) => item.zone?.name)
             .filter((name): name is string => Boolean(name));
 
