@@ -19,8 +19,8 @@ import type { GeoJsonGeometry } from "@/lib/map/types";
 import styles from "./zone-map.module.css";
 
 export type ZoneMapShape = {
-  areaId: string;
-  zoneId: string | null;
+  shapeId: string;
+  zoneId: string;
   name: string;
   color: string | null;
   geometry: GeoJsonGeometry;
@@ -152,27 +152,27 @@ export function ZoneMapCanvas({
       <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       {rendered.map((shape) => {
-        const selected = Boolean(shape.zoneId && selectedZoneIds.includes(shape.zoneId));
-        const excluded = Boolean(shape.zoneId && excludedZoneIds.includes(shape.zoneId));
+        const selected = selectedZoneIds.includes(shape.zoneId);
+        const excluded = excludedZoneIds.includes(shape.zoneId);
         const highlighted = shape.zoneId === highlightedZoneId;
         const color = excluded ? "#d0746f" : shape.color || "#5fbf7a";
         return (
           <Polygon
-            key={shape.areaId}
+            key={shape.shapeId}
             positions={shape.positions!}
             pathOptions={{
               color,
               weight: highlighted || selected ? 4 : 2,
-              opacity: shape.zoneId ? .9 : .45,
+              opacity: .9,
               fillColor: color,
-              fillOpacity: selected ? .32 : highlighted ? .24 : shape.zoneId ? .12 : .05,
-              dashArray: excluded ? "5 5" : shape.zoneId ? undefined : "6 6",
+              fillOpacity: selected ? .32 : highlighted ? .24 : .12,
+              dashArray: excluded ? "5 5" : undefined,
             }}
             eventHandlers={{
-              click: () => { if (shape.zoneId) onZoneToggle?.(shape.zoneId); },
+              click: () => onZoneToggle?.(shape.zoneId),
             }}
           >
-            <Tooltip sticky>{shape.name}{shape.zoneId ? "" : " · area non collegata"}</Tooltip>
+            <Tooltip sticky>{shape.name}</Tooltip>
           </Polygon>
         );
       })}

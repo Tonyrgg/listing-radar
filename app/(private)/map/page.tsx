@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { MapClient } from "@/components/map/MapClient";
 
 export const metadata: Metadata = {
-  title: "Mappa Zone",
+  title: "Aree operative",
 };
 
 export default function MapPage() {

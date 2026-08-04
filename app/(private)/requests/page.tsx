@@ -193,7 +193,7 @@ export default async function RequestsPage({
                     <Field label="Ascensore" value={displayValue(fields.Ascensore)} />
                     <Field label="Arredato" value={displayValue(fields.Arredato)} />
                     <Field label="Finalità" value={displayValue(fields["Destinazione Richiesta"], destinationLabel(request.destination))} />
-                    <Field label="Zona" value={zoneNames.join(", ") || request.municipality || "Tutta Bitonto"} />
+                    <Field label="Zona immobiliare" value={zoneNames.join(", ") || request.municipality || "Tutta Bitonto"} />
                     <Field label="Dettaglio" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} muted />
                   </dl>
                 </section>

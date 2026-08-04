@@ -77,17 +77,12 @@ export async function listProperties(): Promise<Array<PortfolioProperty & {
 export async function listZones(): Promise<InternalZone[]> {
   if (!configured()) return [];
   try {
-    const supabase = getSupabaseServiceClient();
-    const [{ data: zones, error: zonesError }, { data: areas, error: areasError }] = await Promise.all([
-      supabase.from("internal_zones").select("*").order("name", { ascending: true }),
-      supabase.from("map_areas").select("id,name,color,geometry,status"),
-    ]);
-    if (zonesError || areasError) return [];
-    const areasById = new Map((areas ?? []).map((area) => [area.id, area]));
-    return (zones ?? []).map((zone) => ({
-      ...zone,
-      map_area: zone.map_area_id ? areasById.get(zone.map_area_id) ?? null : null,
-    })) as InternalZone[];
+    const { data, error } = await getSupabaseServiceClient()
+      .from("internal_zones")
+      .select("*")
+      .order("name", { ascending: true });
+    if (error) return [];
+    return (data ?? []) as InternalZone[];
   } catch {
     return [];
   }

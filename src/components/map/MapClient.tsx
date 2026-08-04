@@ -705,9 +705,9 @@ export function MapClient() {
           <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] p-2 shadow-[var(--shadow-panel)]">
             <div className="min-w-40 px-2">
               <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--surface-accent)]">
-                Territorio
+                Ricerca sul territorio
               </p>
-              <h1 className="text-sm font-semibold text-[var(--ink-strong)]">Mappa Zone</h1>
+              <h1 className="text-sm font-semibold text-[var(--ink-strong)]">Aree operative</h1>
             </div>
             <button
               type="button"

@@ -111,8 +111,8 @@ export default async function RequestDetailPage({
               <Field label="Superficie" value={requestArea(request)} />
               <Field label="Locali" value={requestRooms(request)} />
               <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
-              <Field label="Zone" value={zones || request.municipality || "Tutta Bitonto"} />
-              {excludedZones ? <Field label="Zone escluse" value={excludedZones} muted /> : null}
+              <Field label="Zone immobiliari" value={zones || request.municipality || "Tutta Bitonto"} />
+              {excludedZones ? <Field label="Zone immobiliari escluse" value={excludedZones} muted /> : null}
             </dl>
           </div>
           <div className={styles.summaryColumn}>
@@ -136,7 +136,7 @@ export default async function RequestDetailPage({
         <header className={styles.sectionHeader}>
           <div>
             <p className={styles.sectionEyebrow}>Localizzazione</p>
-            <h2 className={styles.sectionTitle}>Zone desiderate</h2>
+            <h2 className={styles.sectionTitle}>Zone immobiliari desiderate</h2>
           </div>
           <span className={styles.sectionCount}>{detail.zones.length} selezionate</span>
         </header>

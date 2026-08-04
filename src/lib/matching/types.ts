@@ -54,15 +54,9 @@ export interface InternalZone {
   landmarks: string[];
   aliases: string[];
   associated_streets: string[];
-  map_area_id: string | null;
+  geometry: import("@/lib/map/types").GeoJsonGeometry | null;
+  color: string | null;
   is_active: boolean;
-  map_area?: {
-    id: string;
-    name: string;
-    color: string | null;
-    geometry: import("@/lib/map/types").GeoJsonGeometry;
-    status: string;
-  } | null;
 }
 
 export interface PropertyRequest {

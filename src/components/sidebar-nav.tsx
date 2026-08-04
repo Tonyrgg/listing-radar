@@ -17,7 +17,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/incoming", label: "Nuovi arrivi", icon: Inbox },
   { href: "/listings", label: "Immobili", icon: Building2 },
-  { href: "/map", label: "Mappa Zone", icon: MapPinned },
+  { href: "/map", label: "Aree operative", icon: MapPinned },
   { href: "/matching", label: "Richieste e Matching", icon: ScanSearch },
   { href: "/reports", label: "Report", icon: FileText },
   { href: "/settings", label: "Impostazioni", icon: Settings },

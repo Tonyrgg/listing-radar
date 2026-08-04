@@ -129,7 +129,7 @@ export function PropertyEditor({
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Tipologia<select name="property_type" defaultValue={property?.property_type ?? "apartment"} className={inputClass}>{propertyTypes.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Comune<input name="municipality" defaultValue={property?.municipality ?? "Bitonto"} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Indirizzo<input name="address" value={address} onChange={(event) => setAddress(event.target.value)} className={inputClass} />{suggestedZone && selectedZone !== suggestedZone.id ? <button type="button" onClick={() => setSelectedZone(suggestedZone.id)} className="text-left text-[11px] font-bold text-[var(--surface-accent)]">Via riconosciuta: usa {suggestedZone.name}</button> : null}</label>
-      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Zona<select name="internal_zone_id" value={selectedZone} onChange={(event) => setSelectedZone(event.target.value)} className={inputClass}><option value="">Nessuna</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Zona immobiliare<select name="internal_zone_id" value={selectedZone} onChange={(event) => setSelectedZone(event.target.value)} className={inputClass}><option value="">Nessuna</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
       {["price","monthly_rent","internal_sqm","commercial_sqm","rooms","bedrooms","bathrooms","floor","building_floors"].map((key) => <label key={key} className="grid gap-1 text-xs font-semibold capitalize text-[var(--ink-soft)]">{key.replaceAll("_"," ")}<input name={key} type="number" min={key.includes("floor") ? undefined : "0"} step="any" defaultValue={property?.[key as keyof PortfolioProperty] as number ?? ""} className={inputClass} /></label>)}
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Condizione<input name="condition" defaultValue={property?.condition ?? ""} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Disponibilità<select name="availability_status" defaultValue={property?.availability_status ?? ""} className={inputClass}><option value="">Non indicata</option><option value="available_now">Subito</option><option value="available_at_deed">Al rogito</option><option value="occupied">Occupato</option><option value="rented">Locato</option><option value="future_availability">Futura</option></select></label>
@@ -140,13 +140,13 @@ export function PropertyEditor({
     <div className="mt-5"><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Caratteristiche</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{features.filter((feature) => feature.field_type === "boolean").map((feature) => <label key={feature.id} className="flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] px-3 text-sm text-[var(--ink-soft)]"><input name={`feature_${feature.id}`} type="checkbox" defaultChecked={Boolean(values[feature.id])} />{feature.label}</label>)}</div></div>
     <section className="mt-5 overflow-hidden rounded-[9px] border border-[var(--line-soft)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-3">
-        <div><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Posizione sulla mappa</h3><p className="mt-1 text-xs text-[var(--ink-soft)]">Clicca il punto esatto. Se cade in un perimetro, la zona viene assegnata automaticamente.</p></div>
+        <div><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Posizione immobiliare</h3><p className="mt-1 text-xs text-[var(--ink-soft)]">Clicca il punto esatto. La zona immobiliare viene assegnata dal suo perimetro, mai dalle aree operative degli agenti.</p></div>
         {latitude != null && longitude != null ? <button type="button" onClick={() => { setLatitude(null); setLongitude(null); }} className="text-xs font-bold text-[var(--ink-soft)]">Rimuovi punto</button> : null}
       </div>
       <div className="p-2">
         <ZoneMap
           compact
-          shapes={zones.filter((zone) => zone.map_area).map((zone) => ({ areaId: zone.map_area!.id, zoneId: zone.id, name: zone.name, color: zone.map_area!.color, geometry: zone.map_area!.geometry }))}
+          shapes={zones.filter((zone) => zone.geometry).map((zone) => ({ shapeId: zone.id, zoneId: zone.id, name: zone.name, color: zone.color, geometry: zone.geometry! }))}
           highlightedZoneId={selectedZone || null}
           point={latitude != null && longitude != null ? { latitude, longitude } : null}
           allowPointSelection
@@ -171,7 +171,7 @@ export function ZoneEditor({ zones }: Readonly<{ zones: InternalZone[] }>) {
   function submit(formData: FormData) {
     const split = (key: string) => String(formData.get(key) ?? "").split(",").map((value) => value.trim()).filter(Boolean);
     start(async () => {
-      await saveZoneAction({ id: editing?.id, name: formData.get("name"), description: formData.get("description") || null, landmarks: split("landmarks"), aliases: split("aliases"), associated_streets: split("streets"), map_area_id: null, is_active: formData.get("is_active") === "on" });
+      await saveZoneAction({ id: editing?.id, name: formData.get("name"), description: formData.get("description") || null, landmarks: split("landmarks"), aliases: split("aliases"), associated_streets: split("streets"), geometry: editing?.geometry ?? null, color: editing?.color ?? "#5fbf7a", is_active: formData.get("is_active") === "on" });
       setEditing(null); router.refresh();
     });
   }

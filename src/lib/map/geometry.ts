@@ -35,7 +35,7 @@ export function pointInPolygon(point: MapPoint, geometry?: GeoJsonGeometry | nul
 }
 
 export function zoneContainingPoint(zones: InternalZone[], point: MapPoint) {
-  return zones.find((zone) => pointInPolygon(point, zone.map_area?.geometry));
+  return zones.find((zone) => pointInPolygon(point, zone.geometry));
 }
 
 export function normalizeZoneText(value: string) {

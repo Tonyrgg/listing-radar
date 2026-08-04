@@ -26,9 +26,9 @@ const zone: InternalZone = {
   landmarks: ["Villa comunale"],
   aliases: ["Villa"],
   associated_streets: ["Via 4 Novembre"],
-  map_area_id: "area-villa",
+  geometry,
+  color: "#5fbf7a",
   is_active: true,
-  map_area: { id: "area-villa", name: "Zona Villa", color: "#5fbf7a", geometry, status: "completed" },
 };
 
 describe("zone geometry", () => {

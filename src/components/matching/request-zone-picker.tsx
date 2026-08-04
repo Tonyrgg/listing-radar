@@ -51,12 +51,12 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
   }
 
   const activeZones = zones.filter((zone) => zone.is_active);
-  const shapes = activeZones.filter((zone) => zone.map_area).map((zone) => ({
-    areaId: zone.map_area!.id,
+  const shapes = activeZones.filter((zone) => zone.geometry).map((zone) => ({
+    shapeId: zone.id,
     zoneId: zone.id,
     name: zone.name,
-    color: zone.map_area!.color,
-    geometry: zone.map_area!.geometry,
+    color: zone.color,
+    geometry: zone.geometry!,
   }));
 
   return (
@@ -65,7 +65,7 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
         <ZoneMap compact shapes={shapes} selectedZoneIds={[...selected]} excludedZoneIds={[...excluded]} onZoneToggle={toggle} />
       ) : (
         <div className="grid min-h-48 place-items-center rounded-[8px] border border-dashed border-[var(--line-strong)] text-center text-sm text-[var(--ink-soft)]">
-          <div><MapPinned aria-hidden="true" className="mx-auto size-5 text-[var(--surface-accent)]" /><p className="mt-2">Disegna i perimetri nella scheda Zone per abilitarne la selezione sulla mappa.</p></div>
+          <div><MapPinned aria-hidden="true" className="mx-auto size-5 text-[var(--surface-accent)]" /><p className="mt-2">Disegna i perimetri nella scheda Zone immobiliari per abilitarne la selezione sulla mappa.</p></div>
         </div>
       )}
 
@@ -81,7 +81,7 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
               onClick={() => toggle(zone.id)}
               key={zone.id}
             >
-              {checked ? <Check aria-hidden="true" className="size-3.5" /> : null}{zone.name}{isExcluded ? " · esclusa dal CRM" : !zone.map_area_id ? " · senza perimetro" : ""}
+              {checked ? <Check aria-hidden="true" className="size-3.5" /> : null}{zone.name}{isExcluded ? " · esclusa dal CRM" : !zone.geometry ? " · senza perimetro" : ""}
             </button>
           );
         })}

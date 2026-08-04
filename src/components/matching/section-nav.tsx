@@ -15,7 +15,7 @@ const items = [
   ["/matching", "Panoramica", Sparkles],
   ["/requests", "Richieste clienti", UsersRound],
   ["/portfolio", "Immobili disponibili", Building2],
-  ["/zones", "Zone di Bitonto", MapPinned],
+  ["/zones", "Zone immobiliari", MapPinned],
   ["/matching-settings", "Regole automatiche", Settings2],
 ] as const;
 

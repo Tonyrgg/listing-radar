@@ -19,12 +19,11 @@ export const zoneSchema = z.object({
   landmarks: z.array(z.string().trim()).default([]),
   aliases: z.array(z.string().trim()).default([]),
   associated_streets: z.array(z.string().trim()).default([]),
-  map_area_id: z.string().uuid().nullable().optional(),
   geometry: z.object({
     type: z.string(),
     coordinates: z.unknown(),
   }).passthrough().nullable().optional(),
-  area_color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
   is_active: z.boolean().default(true),
 });
 

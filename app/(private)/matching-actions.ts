@@ -76,7 +76,7 @@ export async function savePropertyAction(input: unknown) {
   const parsed = portfolioPropertySchema.parse(input);
   const { feature_values, id, ...propertyInput } = parsed;
   const supabase = requireMatchingDatabase();
-  const zones = await getZonesWithGeometry(supabase);
+  const zones = await getPropertyZones(supabase);
   const detectedZone = propertyInput.latitude != null && propertyInput.longitude != null
     ? zoneContainingPoint(zones, { latitude: propertyInput.latitude, longitude: propertyInput.longitude })
     : null;
@@ -113,47 +113,31 @@ export async function savePropertyAction(input: unknown) {
 
 export async function saveZoneAction(input: unknown) {
   await requireUser();
-  const { id, geometry, area_color, ...zoneInput } = zoneSchema.parse(input);
+  const { id, ...zone } = zoneSchema.parse(input);
   const supabase = requireMatchingDatabase();
-  let mapAreaId = zoneInput.map_area_id ?? null;
-
-  if (geometry) {
-    const areaPayload = {
-      name: zoneInput.name,
-      color: area_color ?? "#5fbf7a",
-      geometry,
-      status: "completed",
-    };
-    if (mapAreaId) {
-      const { error } = await supabase.from("map_areas").update(areaPayload).eq("id", mapAreaId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { data: area, error } = await supabase.from("map_areas").insert(areaPayload).select("id").single();
-      if (error || !area) throw new Error(error?.message ?? "Area non salvata.");
-      mapAreaId = area.id;
-    }
-  } else if (mapAreaId && area_color) {
-    const { error } = await supabase.from("map_areas").update({ color: area_color }).eq("id", mapAreaId);
-    if (error) throw new Error(error.message);
-  }
-
-  const zone = { ...zoneInput, map_area_id: mapAreaId };
   const query = id
     ? supabase.from("internal_zones").update(zone).eq("id", id).select("id").single()
     : supabase.from("internal_zones").insert(zone).select("id").single();
   const { data, error } = await query;
-  if (error || !data) throw new Error(error?.message ?? "Zona non salvata.");
-  await logMatchingActivity("zone", data.id, id ? "updated" : "created", { map_area_id: mapAreaId });
+  const missingGeometryColumns = error && (
+    error.code === "PGRST204" || error.code === "42703" || /geometry|color/i.test(error.message)
+  );
+  if (error || !data) throw new Error(
+    missingGeometryColumns
+      ? "Applica la migration 010_separate_operational_and_property_zones.sql prima di salvare le zone immobiliari."
+      : error?.message ?? "Zona non salvata.",
+  );
+  await logMatchingActivity("zone", data.id, id ? "updated" : "created", { has_geometry: Boolean(zone.geometry) });
   refreshAll();
-  return { id: data.id as string, mapAreaId };
+  return { id: data.id as string };
 }
 
-export async function unlinkZoneAreaAction(zoneId: string) {
+export async function clearZoneGeometryAction(zoneId: string) {
   await requireUser();
   const id = zoneSchema.shape.id.unwrap().parse(zoneId);
-  const { error } = await requireMatchingDatabase().from("internal_zones").update({ map_area_id: null }).eq("id", id);
+  const { error } = await requireMatchingDatabase().from("internal_zones").update({ geometry: null }).eq("id", id);
   if (error) throw new Error(error.message);
-  await logMatchingActivity("zone", id, "map_area_unlinked");
+  await logMatchingActivity("zone", id, "property_zone_geometry_cleared");
   refreshAll();
 }
 
@@ -182,7 +166,7 @@ export async function saveRequestZonesAction(requestId: string, zoneIds: string[
 export async function backfillRequestZonesAction() {
   await requireUser();
   const supabase = requireMatchingDatabase();
-  const zones = await getZonesWithGeometry(supabase);
+  const zones = await getPropertyZones(supabase);
   const [{ data: requests, error: requestError }, { data: existing, error: existingError }] = await Promise.all([
     supabase.from("property_requests").select("id,title,notes,raw_payload"),
     supabase.from("request_zones").select("request_id"),
@@ -207,16 +191,10 @@ export async function backfillRequestZonesAction() {
   return { requestsUpdated, linksCreated: rows.length };
 }
 
-async function getZonesWithGeometry(supabase: ReturnType<typeof requireMatchingDatabase>) {
-  const [{ data: zones }, { data: areas }] = await Promise.all([
-    supabase.from("internal_zones").select("*"),
-    supabase.from("map_areas").select("id,name,color,geometry,status"),
-  ]);
-  const areasById = new Map((areas ?? []).map((area) => [area.id, area]));
-  return (zones ?? []).map((zone) => ({
-    ...zone,
-    map_area: zone.map_area_id ? areasById.get(zone.map_area_id) ?? null : null,
-  }));
+async function getPropertyZones(supabase: ReturnType<typeof requireMatchingDatabase>) {
+  const { data, error } = await supabase.from("internal_zones").select("*");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as import("@/lib/matching/types").InternalZone[];
 }
 
 export async function saveClientAction(input: unknown) {

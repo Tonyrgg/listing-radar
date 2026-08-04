@@ -380,11 +380,12 @@ export function MapSidebar({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--surface-accent)]">
-            Mappa Zone
+            Aree operative
           </p>
           <h2 className="mt-1 text-base font-semibold text-[var(--ink-strong)]">
-            Lavoro in zona
+            Ricerca e contatto sul territorio
           </h2>
+          <p className="mt-1 text-xs leading-5 text-[var(--ink-subtle)]">Assegnate agli agenti, non usate per localizzare gli immobili.</p>
         </div>
         <div className="rounded-full border border-[var(--line-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
           {pins.length + areas.length + streets.length} elementi

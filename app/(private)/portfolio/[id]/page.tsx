@@ -17,12 +17,12 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
   const featureValues = Object.fromEntries(detail.features.map((item) => [item.feature_definition_id, item.value]));
   const activeFeatures = detail.features.filter((item) => Boolean(item.value));
   const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
-  const zoneShapes = zones.filter((zone) => zone.map_area).map((zone) => ({
-    areaId: zone.map_area!.id,
+  const zoneShapes = zones.filter((zone) => zone.geometry).map((zone) => ({
+    shapeId: zone.id,
     zoneId: zone.id,
     name: zone.name,
-    color: zone.map_area!.color,
-    geometry: zone.map_area!.geometry,
+    color: zone.color,
+    geometry: zone.geometry!,
   }));
   const propertyPoint = property.latitude != null && property.longitude != null
     ? { latitude: Number(property.latitude), longitude: Number(property.longitude) }
@@ -47,7 +47,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <dl className={styles.metadataStrip}>
           <Meta label="Stato incarico" value={mandateLabel(property.mandate_status)} />
           <Meta label={property.contract_type === "sale" ? "Prezzo" : "Canone"} value={price ? `€ ${Number(price).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Da definire"} />
-          <Meta label="Zona" value={property.zone?.name || property.municipality || "Non indicata"} />
+          <Meta label="Zona immobiliare" value={property.zone?.name || property.municipality || "Non indicata"} />
           <Meta label="Disponibilità" value={availabilityLabel(property.availability_status)} />
         </dl>
       </header>
@@ -78,7 +78,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
               <Field label="Disponibilità" value={availabilityLabel(property.availability_status)} />
               <Field label="Disponibile dal" value={property.available_from ? new Date(property.available_from).toLocaleDateString("it-IT") : "Non indicato"} />
               <Field label="Comune" value={property.municipality || "Non indicato"} />
-              <Field label="Zona" value={property.zone?.name || "Non indicata"} />
+              <Field label="Zona immobiliare" value={property.zone?.name || "Non indicata"} />
               <Field label="Indirizzo" value={property.address || "Non indicato"} />
             </dl>
           </section>
@@ -88,13 +88,13 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
       <section className={styles.panel}>
         <header className={styles.panelHeader}>
           <div><p className={styles.sectionEyebrow}>Posizione</p><h2 className={styles.panelTitle}>Immobile sulla mappa</h2></div>
-          <span className={styles.count}>{propertyPoint ? "Punto esatto salvato" : property.internal_zone_id ? "Perimetro della zona" : "Posizione da completare"}</span>
+          <span className={styles.count}>{propertyPoint ? "Punto esatto salvato" : property.internal_zone_id ? "Perimetro immobiliare" : "Posizione da completare"}</span>
         </header>
         <div className={styles.panelBody}>
-          {zoneShapes.length ? (
+          {zoneShapes.length || propertyPoint ? (
             <ZoneMap compact shapes={zoneShapes} highlightedZoneId={property.internal_zone_id} point={propertyPoint} />
           ) : (
-            <p className={styles.muted}>Disegna e collega i perimetri nella scheda Zone per visualizzare la posizione.</p>
+            <p className={styles.muted}>Disegna i perimetri nella scheda Zone immobiliari per visualizzare la posizione. Le aree operative degli agenti non vengono usate.</p>
           )}
           {!propertyPoint ? <p className={`${styles.muted} mt-3`}>Per aggiungere il punto esatto, usa “Modifica immobile” e clicca sulla mappa.</p> : null}
         </div>
