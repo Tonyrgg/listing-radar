@@ -17,6 +17,26 @@ export type MatchStatus =
   | "new" | "to_propose" | "proposed" | "interested" | "visit_scheduled"
   | "not_interested" | "excluded" | "negotiation" | "completed";
 
+export type CrmFieldValue = string | number | boolean | null;
+
+export interface CrmRelatedSection {
+  heading: string;
+  text: string;
+}
+
+export interface CrmRequestRawPayload {
+  url?: string;
+  title?: string;
+  status?: string | null;
+  capturedAt?: string;
+  externalId?: string;
+  clientExternalId?: string | null;
+  headerFields?: Record<string, CrmFieldValue>;
+  fields?: Record<string, CrmFieldValue>;
+  evolutionText?: string | null;
+  relatedSections?: CrmRelatedSection[];
+}
+
 export interface Client {
   id: string;
   full_name: string | null;
@@ -24,6 +44,7 @@ export interface Client {
   email: string | null;
   notes: string | null;
   external_crm_id: string | null;
+  raw_payload?: Record<string, unknown> | null;
 }
 
 export interface InternalZone {
@@ -75,6 +96,7 @@ export interface PropertyRequest {
   external_crm_id?: string | null;
   source?: string | null;
   last_imported_at?: string | null;
+  raw_payload?: CrmRequestRawPayload | null;
   created_at?: string;
   updated_at?: string;
 }

@@ -1,407 +1,320 @@
 import {
+  ArrowLeft,
+  ArrowRight,
   ArrowUpRight,
-  CheckCircle2,
-  CircleDot,
-  Clock3,
+  CalendarDays,
   Flame,
-  Home,
-  Landmark,
-  Layers3,
-  MapPin,
-  Ruler,
+  History,
+  Search,
   SlidersHorizontal,
-  UserRound,
   UsersRound,
-  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { QuickRequestButton } from "@/components/matching/quick-request";
+import { MatchingSectionNav } from "@/components/matching/section-nav";
 import {
-  ContractMark,
-  PropertyTypeMark,
-  VisualFact,
-} from "@/components/matching/visual-language";
-import { PageHeader } from "@/components/page-header";
-import { listMatches, listRequests } from "@/lib/matching/repository";
+  cleanRequestTitle,
+  clientContact,
+  crmField,
+  displayValue,
+  formatDate,
+  requestActivityCount,
+  requestArea,
+  requestBudget,
+  requestPayload,
+  requestReference,
+  requestRooms,
+  requestSearchText,
+  requestSourceLabel,
+} from "@/lib/matching/request-presentation";
+import { listCompatibleMatchReferences, listRequests } from "@/lib/matching/repository";
+
+import styles from "./requests.module.css";
+
+const PAGE_SIZE = 24;
 
 export default async function RequestsPage({
   searchParams,
 }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
-  const filters = await searchParams;
-  const [requests, matches] = await Promise.all([listRequests(), listMatches()]);
-  const status = typeof filters.status === "string" ? filters.status : "";
-  const contract = typeof filters.contract === "string" ? filters.contract : "";
-  const priority = typeof filters.priority === "string" ? filters.priority : "";
-  const client = typeof filters.client === "string" ? filters.client : "";
-  const destination =
-    typeof filters.destination === "string" ? filters.destination : "";
-  const filteredRequests = requests.filter(
-    (request) =>
-      (!status || request.status === status) &&
-      (!contract || request.contract_type === contract) &&
-      (!priority || request.priority === priority) &&
-      (!destination || request.destination === destination) &&
-      (!client ||
-        (client === "anonymous"
-          ? !request.client_id
-          : Boolean(request.client_id))),
+  const params = await searchParams;
+  const [requests, matches] = await Promise.all([listRequests(), listCompatibleMatchReferences()]);
+  const query = value(params.q);
+  const status = value(params.status);
+  const contract = value(params.contract);
+  const priority = value(params.priority);
+  const client = value(params.client);
+  const destination = value(params.destination);
+  const normalizedQuery = query.trim().toLocaleLowerCase("it");
+
+  const filteredRequests = requests.filter((request) =>
+    (!normalizedQuery || requestSearchText(request).includes(normalizedQuery)) &&
+    (!status || request.status === status) &&
+    (!contract || request.contract_type === contract) &&
+    (!priority || request.priority === priority) &&
+    (!destination || request.destination === destination) &&
+    (!client || (client === "anonymous" ? !request.client_id : Boolean(request.client_id))),
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
+  const requestedPage = Number.parseInt(value(params.page) || "1", 10);
+  const currentPage = Math.min(Math.max(Number.isFinite(requestedPage) ? requestedPage : 1, 1), totalPages);
+  const pageRequests = filteredRequests.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
   );
 
   const compatibleCounts = new Map<string, number>();
   for (const match of matches) {
     if (match.classification !== "compatible") continue;
-    compatibleCounts.set(
-      match.request_id,
-      (compatibleCounts.get(match.request_id) ?? 0) + 1,
-    );
+    compatibleCounts.set(match.request_id, (compatibleCounts.get(match.request_id) ?? 0) + 1);
   }
 
+  const activeFilters = [status, contract, priority, client, destination].filter(Boolean).length;
+  const persistentParams = { q: query, status, contract, priority, client, destination };
+
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Clienti e immobili"
-        title="Cosa cercano i clienti"
-        description="Ogni scheda riassume una ricerca reale: cosa vuole il cliente, quanto può spendere e quali immobili puoi già proporgli."
-        actions={<QuickRequestButton />}
-      />
+    <div className={styles.page}>
+      <header className={styles.pageIntro}>
+        <div>
+          <p className={styles.eyebrow}>Clienti e immobili</p>
+          <h1 className={styles.pageTitle}>Richieste immobiliari</h1>
+          <p className={styles.pageDescription}>
+            L’archivio operativo delle esigenze cliente, con i dati importati dal CRM e i match disponibili.
+          </p>
+        </div>
+        <QuickRequestButton />
+      </header>
+
       <MatchingSectionNav />
 
-      {requests.length ? (
-        <details className="rounded-[9px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 text-sm font-semibold text-[var(--ink-soft)] hover:text-[var(--ink-strong)]">
+      <form className={styles.toolbar}>
+        <div className={styles.searchRow}>
+          <label className={styles.searchControl}>
+            <span className="sr-only">Cerca nelle richieste</span>
+            <Search aria-hidden="true" />
+            <input
+              className={styles.input}
+              type="search"
+              name="q"
+              defaultValue={query}
+              placeholder="Cerca cliente, riferimento, tipologia o esigenza…"
+            />
+          </label>
+          <button className={styles.button}>Cerca</button>
+        </div>
+        <details className={styles.filterPanel} open={activeFilters > 0}>
+          <summary className={styles.filterSummary}>
             <SlidersHorizontal aria-hidden="true" className="size-4" />
-            Filtra le richieste
+            Filtri avanzati{activeFilters ? ` · ${activeFilters} attivi` : ""}
           </summary>
-          <form className="grid gap-2 border-t border-[var(--line-soft)] p-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Filter
-              name="status"
-              label="Tutti gli stati"
-              value={status}
-              options={[
-                ["draft", "Bozza"],
-                ["active", "Attiva"],
-                ["urgent", "Urgente"],
-                ["suspended", "Sospesa"],
-                ["satisfied", "Soddisfatta"],
-                ["archived", "Archiviata"],
-              ]}
-            />
-            <Filter
-              name="contract"
-              label="Acquisto e affitto"
-              value={contract}
-              options={[
-                ["sale", "Acquisto"],
-                ["rent", "Affitto"],
-              ]}
-            />
-            <Filter
-              name="priority"
-              label="Tutte le priorità"
-              value={priority}
-              options={[
-                ["low", "Senza fretta"],
-                ["normal", "Normale"],
-                ["high", "Importante"],
-                ["urgent", "Urgente"],
-              ]}
-            />
-            <Filter
-              name="destination"
-              label="Tutte le finalità"
-              value={destination}
-              options={[
-                ["first_home", "Prima casa"],
-                ["investment", "Investimento"],
-                ["exchange", "Permuta"],
-                ["temporary", "Esigenza temporanea"],
-                ["other", "Altro"],
-              ]}
-            />
-            <div className="flex gap-2">
-              <Filter
-                name="client"
-                label="Tutti i clienti"
-                value={client}
-                options={[
-                  ["anonymous", "Anonime"],
-                  ["linked", "Con cliente"],
-                ]}
-              />
-              <button className="min-h-11 rounded-[7px] bg-[var(--surface-accent)] px-4 text-xs font-bold text-[var(--button-ink)]">
-                Applica
-              </button>
-            </div>
-          </form>
+          <div className={styles.filterGrid}>
+            <Filter name="status" label="Tutti gli stati" value={status} options={[
+              ["draft", "Bozza"], ["active", "Attiva"], ["urgent", "Urgente"],
+              ["suspended", "Sospesa"], ["satisfied", "Soddisfatta"], ["archived", "Archiviata"],
+            ]} />
+            <Filter name="contract" label="Acquisto e locazione" value={contract} options={[
+              ["sale", "Acquisto"], ["rent", "Locazione"],
+            ]} />
+            <Filter name="priority" label="Tutte le priorità" value={priority} options={[
+              ["low", "Senza fretta"], ["normal", "Normale"], ["high", "Importante"], ["urgent", "Urgente"],
+            ]} />
+            <Filter name="destination" label="Tutte le finalità" value={destination} options={[
+              ["first_home", "Prima casa"], ["investment", "Investimento"], ["exchange", "Permuta"],
+              ["temporary", "Esigenza temporanea"], ["other", "Altro"],
+            ]} />
+            <Filter name="client" label="Tutti i clienti" value={client} options={[
+              ["anonymous", "Senza cliente"], ["linked", "Con cliente"],
+            ]} />
+            <button className={styles.button}>Applica filtri</button>
+            {activeFilters || query ? (
+              <Link className={styles.secondaryButton} href="/requests">Azzera</Link>
+            ) : null}
+          </div>
         </details>
-      ) : null}
+      </form>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        {filteredRequests.map((request) => {
+      <div className={styles.listSummary}>
+        <p className={styles.resultCount} aria-live="polite">
+          <strong>{filteredRequests.length}</strong> richieste · pagina {currentPage} di {totalPages}
+        </p>
+        <p className={styles.resultCount}>24 schede per pagina</p>
+      </div>
+
+      <section className={styles.requestGrid} aria-label="Elenco richieste">
+        {pageRequests.map((request) => {
+          const payload = requestPayload(request);
+          const fields = payload.fields ?? {};
+          const contact = clientContact(request.clients);
+          const activities = requestActivityCount(request);
           const compatible = compatibleCounts.get(request.id) ?? 0;
-          const budget =
-            request.contract_type === "sale"
-              ? request.budget_max
-              : request.monthly_rent_max;
-          const zoneNames = (request.request_zones ?? [])
-            .map((item) => item.zone?.name)
-            .filter((value): value is string => Boolean(value));
+          const isHot = crmField(payload, "Richiesta Calda") === true || request.priority === "urgent";
 
           return (
-            <Link
-              key={request.id}
-              href={`/requests/${request.id}`}
-              className="group/request relative overflow-hidden rounded-[11px] border border-[var(--line-soft)] bg-[var(--surface-panel)] transition-colors hover:border-[var(--line-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
-            >
-              <div className="flex items-start gap-4 px-5 pb-4 pt-5">
-                <ContractMark type={request.contract_type} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-2 text-xs font-semibold text-[var(--ink-soft)]">
-                        <UserRound aria-hidden="true" className="size-3.5" />
-                        {request.clients?.full_name || "Cliente da collegare"}
-                      </p>
-                      <h2 className="mt-1 truncate text-lg font-semibold text-[var(--ink-strong)]">
-                        {request.title || "Richiesta senza titolo"}
-                      </h2>
-                    </div>
-                    <span className="inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-full border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2.5 text-[11px] font-bold text-[var(--ink-soft)]">
-                      <CircleDot aria-hidden="true" className="size-3" />
-                      {statusLabel(request.status)}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {request.property_types.map((type) => (
-                      <PropertyTypeMark key={type} type={type} />
-                    ))}
-                    {request.destination ? (
-                      <span
-                        title="Finalità della ricerca"
-                        className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
-                      >
-                        <Home aria-hidden="true" className="size-3.5" />
-                        {destinationLabel(request.destination)}
-                      </span>
-                    ) : null}
-                    {request.financing_method ? (
-                      <span
-                        title="Modalità economica"
-                        className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
-                      >
-                        <Landmark aria-hidden="true" className="size-3.5" />
-                        {financingLabel(request.financing_method)}
-                      </span>
-                    ) : null}
-                  </div>
+            <article className={styles.requestCard} key={request.id}>
+              <div className={styles.cardHeader}>
+                <div className={styles.cardIdentity}>
+                  <p className={styles.recordReference}>Richiesta {requestReference(request)}</p>
+                  <h2 className={styles.cardTitle}>{cleanRequestTitle(request.title)}</h2>
+                  <p className={styles.cardClient}>{request.clients?.full_name || "Cliente da collegare"}</p>
+                </div>
+                <div className={styles.statusGroup}>
+                  {isHot ? <span className={styles.hotBadge}><Flame aria-hidden="true" className="size-3" /> Calda</span> : null}
+                  <span className={styles.badge}>{statusLabel(request.status)}</span>
+                  <span className={styles.badge}>{request.contract_type === "sale" ? "Acquisto" : "Locazione"}</span>
                 </div>
               </div>
 
-              <div className="grid gap-4 border-y border-[var(--line-soft)] bg-[oklch(0.155_0.01_155)] px-5 py-4 sm:grid-cols-3">
-                <VisualFact
-                  icon={WalletCards}
-                  label={
-                    request.contract_type === "sale"
-                      ? "Budget massimo"
-                      : "Canone massimo"
-                  }
-                  value={
-                    budget
-                      ? `€ ${Number(budget).toLocaleString("it-IT")}${request.contract_type === "rent" ? "/mese" : ""}`
-                      : "Da definire"
-                  }
-                  prominent
-                />
-                <VisualFact
-                  icon={Ruler}
-                  label="Metratura"
-                  value={
-                    request.internal_sqm_min
-                      ? `${request.internal_sqm_min}${request.internal_sqm_max ? `–${request.internal_sqm_max}` : "+"} mq`
-                      : "Flessibile"
-                  }
-                />
-                <VisualFact
-                  icon={Layers3}
-                  label="Vani"
-                  value={
-                    request.rooms_min
-                      ? `${request.rooms_min}+ vani`
-                      : "Non indicati"
-                  }
-                />
+              <div className={styles.cardBody}>
+                <section className={styles.cardColumn}>
+                  <h3 className={styles.columnTitle}>Richiesta</h3>
+                  <dl className={styles.fieldList}>
+                    <Field label="Tipologia" value={displayValue(fields["Tipologia Immobile"], propertyTypesLabel(request.property_types))} />
+                    <Field label="Sottotipologia" value={displayValue(fields["Sottotipologia Immobile"])} />
+                    <Field label="Prezzo" value={requestBudget(request)} />
+                    <Field label="Superficie" value={requestArea(request)} />
+                    <Field label="Locali" value={requestRooms(request)} />
+                    <Field label="Esigenza" value={displayValue(fields.Esigenze, request.notes || "Non indicata")} muted />
+                  </dl>
+                </section>
+                <section className={styles.cardColumn}>
+                  <h3 className={styles.columnTitle}>Cliente</h3>
+                  <dl className={styles.fieldList}>
+                    <Field label="Nominativo" value={request.clients?.full_name || "Da collegare"} />
+                    <Field label="Telefono" value={contact.phone || "Non disponibile"} muted={!contact.phone} />
+                    <Field label="Email" value={contact.email || "Non disponibile"} muted={!contact.email} />
+                    <Field label="Responsabile" value={displayValue(fields.Responsabile)} />
+                    <Field label="Finalità" value={displayValue(fields["Destinazione Richiesta"], destinationLabel(request.destination))} />
+                    <Field label="Finanziamento" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} muted />
+                  </dl>
+                </section>
               </div>
 
-              <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span
-                    title={`Priorità: ${priorityLabel(request.priority)}`}
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
-                  >
-                    <Flame
-                      aria-hidden="true"
-                      className={`size-3.5 ${request.priority === "urgent" ? "text-[var(--status-warning)]" : "text-[var(--ink-subtle)]"}`}
-                    />
-                    {priorityLabel(request.priority)}
-                  </span>
-                  {zoneNames.slice(0, 2).map((zone) => (
-                    <span
-                      key={zone}
-                      className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-soft)]"
-                    >
-                      <MapPin aria-hidden="true" className="size-3.5" />
-                      {zone}
-                    </span>
-                  ))}
-                  {!zoneNames.length ? (
-                    <span className="inline-flex min-h-8 items-center gap-1.5 text-xs text-[var(--ink-subtle)]">
-                      <MapPin aria-hidden="true" className="size-3.5" />
-                      Tutta Bitonto
-                    </span>
-                  ) : null}
-                  {request.created_at ? (
-                    <span
-                      title={`Creata il ${new Date(request.created_at).toLocaleDateString("it-IT")}`}
-                      className="inline-flex min-h-8 items-center gap-1.5 text-xs text-[var(--ink-subtle)]"
-                    >
-                      <Clock3 aria-hidden="true" className="size-3.5" />
-                      {new Date(request.created_at).toLocaleDateString("it-IT")}
-                    </span>
-                  ) : null}
-                </div>
-
-                <span
-                  className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold ${
-                    compatible
-                      ? "bg-[oklch(0.23_0.035_145)] text-[var(--surface-accent)]"
-                      : "bg-[var(--surface-muted)] text-[var(--ink-subtle)]"
-                  }`}
-                >
-                  <CheckCircle2 aria-hidden="true" className="size-4" />
-                  {compatible
-                    ? `${compatible} ${compatible === 1 ? "compatibile" : "compatibili"}`
-                    : "Nessun compatibile"}
-                  <ArrowUpRight
-                    aria-hidden="true"
-                    className="size-4 transition-transform group-hover/request:translate-x-0.5 group-hover/request:-translate-y-0.5"
-                  />
-                </span>
-              </div>
-            </Link>
+              <footer className={styles.cardFooter}>
+                <span className={styles.footerFact}><CalendarDays aria-hidden="true" /> {displayValue(payload.headerFields?.["Data Inserimento Richiesta"], formatDate(request.created_at))}</span>
+                <span className={styles.footerFact}>{requestSourceLabel(request)}</span>
+                <span className={styles.footerFact}><History aria-hidden="true" /> {activities} attività</span>
+                <span className={styles.footerFact}>{compatible} compatibili</span>
+                <Link className={styles.cardAction} href={`/requests/${request.id}`}>
+                  Apri scheda <ArrowUpRight aria-hidden="true" className="size-4" />
+                </Link>
+              </footer>
+            </article>
           );
         })}
 
-        {!filteredRequests.length ? (
-          <div className="col-span-full grid min-h-72 place-items-center rounded-[11px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-panel)] p-8 text-center">
-            <div className="max-w-md">
-              <span className="mx-auto grid size-12 place-items-center rounded-[9px] bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-                {requests.length ? (
-                  <SlidersHorizontal className="size-5" />
-                ) : (
-                  <UsersRound className="size-5" />
-                )}
-              </span>
-              <h2 className="mt-4 text-lg font-semibold text-[var(--ink-strong)]">
-                {requests.length
-                  ? "Nessuna richiesta con questi filtri"
-                  : "Inizia dalla prima telefonata"}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
-                {requests.length
-                  ? "Modifica i filtri per rivedere tutte le richieste."
-                  : "Registra cosa cerca il cliente. Il nome può essere aggiunto anche in seguito."}
-              </p>
-              {!requests.length ? (
-                <div className="mt-5">
-                  <QuickRequestButton />
-                </div>
-              ) : null}
+        {!pageRequests.length ? (
+          <div className={styles.emptyState}>
+            <div>
+              <UsersRound aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" />
+              <h2 className="mt-4 font-semibold text-[var(--ink-strong)]">Nessuna richiesta trovata</h2>
+              <p className="mt-2 text-sm">Prova a modificare la ricerca o ad azzerare i filtri.</p>
             </div>
           </div>
         ) : null}
       </section>
+
+      {totalPages > 1 ? (
+        <nav className={styles.pagination} aria-label="Paginazione richieste">
+          <PaginationLink page={currentPage - 1} disabled={currentPage === 1} params={persistentParams} label="Precedente">
+            <ArrowLeft aria-hidden="true" className="size-4" />
+          </PaginationLink>
+          {paginationWindow(currentPage, totalPages).map((page, index) =>
+            typeof page === "number" ? (
+              <PaginationLink key={page} page={page} current={page === currentPage} params={persistentParams} label={`Pagina ${page}`}>
+                {page}
+              </PaginationLink>
+            ) : <span key={`${page}-${index}`} className={styles.resultCount}>…</span>,
+          )}
+          <PaginationLink page={currentPage + 1} disabled={currentPage === totalPages} params={persistentParams} label="Successiva">
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </PaginationLink>
+        </nav>
+      ) : null}
     </div>
   );
 }
 
-function Filter({
-  name,
-  label,
-  value,
-  options,
-}: Readonly<{
+function Filter({ name, label, value: selected, options }: Readonly<{
   name: string;
   label: string;
   value: string;
   options: [string, string][];
 }>) {
   return (
-    <select
-      name={name}
-      defaultValue={value}
-      aria-label={label}
-      className="h-11 min-w-0 flex-1 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 text-xs font-semibold text-[var(--ink-soft)]"
-    >
+    <select className={styles.select} name={name} defaultValue={selected} aria-label={label}>
       <option value="">{label}</option>
       {options.map(([optionValue, optionLabel]) => (
-        <option key={optionValue} value={optionValue}>
-          {optionLabel}
-        </option>
+        <option value={optionValue} key={optionValue}>{optionLabel}</option>
       ))}
     </select>
   );
 }
 
+function Field({ label, value: content, muted = false }: Readonly<{ label: string; value: string; muted?: boolean }>) {
+  return (
+    <div className={styles.fieldRow}>
+      <dt className={styles.fieldLabel}>{label}</dt>
+      <dd className={`${styles.fieldValue} ${muted ? styles.fieldValueMuted : ""}`}>{content}</dd>
+    </div>
+  );
+}
+
+function PaginationLink({ page, params, current = false, disabled = false, label, children }: Readonly<{
+  page: number;
+  params: Record<string, string>;
+  current?: boolean;
+  disabled?: boolean;
+  label: string;
+  children: React.ReactNode;
+}>) {
+  const className = [styles.paginationLink, current ? styles.paginationCurrent : "", disabled ? styles.paginationDisabled : ""].join(" ");
+  return (
+    <Link className={className} href={pageHref(params, page)} aria-label={label} aria-current={current ? "page" : undefined} aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined}>
+      {children}
+    </Link>
+  );
+}
+
+function pageHref(params: Record<string, string>, page: number) {
+  const search = new URLSearchParams();
+  for (const [key, item] of Object.entries(params)) if (item) search.set(key, item);
+  if (page > 1) search.set("page", String(page));
+  const query = search.toString();
+  return query ? `/requests?${query}` : "/requests";
+}
+
+function paginationWindow(current: number, total: number): Array<number | "gap"> {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+  const pages = new Set([1, total, current - 1, current, current + 1]);
+  const valid = [...pages].filter((page) => page > 0 && page <= total).sort((a, b) => a - b);
+  const result: Array<number | "gap"> = [];
+  valid.forEach((page, index) => {
+    if (index && page - valid[index - 1] > 1) result.push("gap");
+    result.push(page);
+  });
+  return result;
+}
+
+function value(input: string | string[] | undefined) {
+  return typeof input === "string" ? input : "";
+}
+
+function propertyTypesLabel(types: string[]) {
+  if (!types.length) return "Non indicata";
+  return types.map((type) => ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile" }[type] ?? type)).join(", ");
+}
+
 function statusLabel(status: string) {
-  return (
-    {
-      draft: "Bozza",
-      active: "Attiva",
-      urgent: "Urgente",
-      suspended: "Sospesa",
-      satisfied: "Soddisfatta",
-      cancelled: "Annullata",
-      archived: "Archiviata",
-    }[status] ?? status
-  );
+  return ({ draft: "Bozza", active: "Attiva", urgent: "Urgente", suspended: "Sospesa", satisfied: "Soddisfatta", cancelled: "Annullata", archived: "Archiviata" }[status] ?? status);
 }
 
-function priorityLabel(priority: string) {
-  return (
-    {
-      low: "Senza fretta",
-      normal: "Normale",
-      high: "Importante",
-      urgent: "Urgente",
-    }[priority] ?? priority
-  );
+function destinationLabel(destination?: string | null) {
+  return ({ first_home: "Prima casa", investment: "Investimento", exchange: "Permuta", temporary: "Esigenza temporanea", other: "Altro" }[destination ?? ""] ?? "Non indicata");
 }
 
-function destinationLabel(value: string) {
-  return (
-    {
-      first_home: "Prima casa",
-      investment: "Investimento",
-      exchange: "Permuta",
-      temporary: "Esigenza temporanea",
-      other: "Altra esigenza",
-    }[value] ?? value
-  );
-}
-
-function financingLabel(value: string) {
-  return (
-    {
-      cash: "Contanti",
-      cash_and_mortgage: "Contanti + mutuo",
-      full_mortgage: "Mutuo 100%",
-      exchange: "Permuta",
-      other: "Da definire",
-    }[value] ?? value
-  );
+function financingLabel(financing?: string | null) {
+  return ({ cash: "Contanti", cash_and_mortgage: "Contanti + mutuo", full_mortgage: "Mutuo 100%", exchange: "Permuta", other: "Da definire" }[financing ?? ""] ?? "Non indicato");
 }

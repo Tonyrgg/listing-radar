@@ -117,8 +117,8 @@ export function AppShellFrame({
 
       <div className="min-w-0">
         <header className="sticky top-0 z-40 border-b border-[var(--line-soft)] bg-[oklch(0.155_0.012_160_/_0.94)] backdrop-blur-xl lg:hidden">
-          <div className="flex min-h-16 w-full items-center gap-5 px-5 sm:px-7 lg:px-8">
-            <div className="flex min-w-[190px] items-center gap-3">
+          <div className="flex min-h-16 w-full items-center gap-2 px-4 sm:gap-5 sm:px-7 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3 sm:min-w-[190px]">
               <Brand />
             </div>
 
@@ -133,9 +133,9 @@ export function AppShellFrame({
                   type="submit"
                   pendingLabel="Esco"
                   icon={<LogOut aria-hidden="true" className="size-4" />}
-                  className="inline-flex h-9 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)]"
+                  className="inline-flex size-9 items-center justify-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-0 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink-strong)] sm:h-9 sm:w-auto sm:px-3"
                 >
-                  Esci
+                  <span className="sr-only sm:not-sr-only">Esci</span>
                 </PendingSubmitButton>
               </form>
             ) : null}

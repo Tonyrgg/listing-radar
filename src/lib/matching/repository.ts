@@ -24,7 +24,7 @@ async function safeList<T>(table: string, order = "created_at", ascending = fals
 }
 
 export async function listRequests(): Promise<Array<PropertyRequest & {
-  clients?: { full_name: string | null } | null;
+  clients?: Pick<Client, "id" | "full_name" | "phone" | "email" | "raw_payload"> | null;
   request_zones?: Array<{
     preference_level: string;
     zone: { id: string; name: string } | null;
@@ -34,11 +34,11 @@ export async function listRequests(): Promise<Array<PropertyRequest & {
   try {
     const { data, error } = await getSupabaseServiceClient()
       .from("property_requests")
-      .select("*, clients(full_name), request_zones(preference_level, zone:internal_zones(id,name))")
+      .select("*, clients(id,full_name,phone,email,raw_payload), request_zones(preference_level, zone:internal_zones(id,name))")
       .order("created_at", { ascending: false });
     if (error) return [];
     return (data ?? []) as Array<PropertyRequest & {
-      clients?: { full_name: string | null } | null;
+      clients?: Pick<Client, "id" | "full_name" | "phone" | "email" | "raw_payload"> | null;
       request_zones?: Array<{
         preference_level: string;
         zone: { id: string; name: string } | null;
@@ -77,6 +77,20 @@ export async function listProperties(): Promise<Array<PortfolioProperty & {
 export const listZones = () => safeList<InternalZone>("internal_zones", "name", true);
 export const listFeatures = () => safeList<FeatureDefinition>("feature_definitions", "sort_order", true);
 export const listMatches = () => safeList<RequestPropertyMatch>("request_property_matches", "score", false);
+
+export async function listCompatibleMatchReferences(): Promise<Array<Pick<RequestPropertyMatch, "request_id" | "classification">>> {
+  if (!configured()) return [];
+  try {
+    const { data, error } = await getSupabaseServiceClient()
+      .from("request_property_matches")
+      .select("request_id,classification")
+      .eq("classification", "compatible");
+    if (error) return [];
+    return (data ?? []) as Array<Pick<RequestPropertyMatch, "request_id" | "classification">>;
+  } catch {
+    return [];
+  }
+}
 export const listClients = () => safeList<Client>("clients", "full_name", true);
 
 export async function getRequest(id: string) {

@@ -1,413 +1,352 @@
 import {
-  Bath,
-  BedDouble,
-  Clock3,
-  Home,
-  Landmark,
-  Layers3,
-  MapPin,
-  Megaphone,
-  MessageSquareText,
-  Ruler,
-  SlidersHorizontal,
-  UserRound,
-  WalletCards,
+  ArrowLeft,
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  History,
+  Settings2,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
 import {
-  RecalculateButton,
-  RequestControls,
-} from "@/components/matching/management-panels";
-import {
-  ContractMark,
-  FeatureMark,
-  PropertyTypeMark,
-  VisualFact,
-} from "@/components/matching/visual-language";
-import { PageHeader } from "@/components/page-header";
+  cleanRequestTitle,
+  clientContact,
+  crmField,
+  displayValue,
+  formatDate,
+  requestActivities,
+  requestArea,
+  requestBudget,
+  requestPayload,
+  requestReference,
+  requestRooms,
+  requestSourceLabel,
+} from "@/lib/matching/request-presentation";
 import { getRequest, listClients } from "@/lib/matching/repository";
-import type {
-  MatchClassification,
-  MatchStatus,
-} from "@/lib/matching/types";
+import type { Client, MatchClassification, MatchStatus, PropertyRequest } from "@/lib/matching/types";
+
+import styles from "../requests.module.css";
 
 export default async function RequestDetailPage({
   params,
 }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
-  const [detail, clients] = await Promise.all([
-    getRequest(id),
-    listClients(),
-  ]);
+  const [detail, clients] = await Promise.all([getRequest(id), listClients()]);
   if (!detail) notFound();
-  const request = detail.request;
-  const budget =
-    request.contract_type === "sale"
-      ? request.budget_max
-      : request.monthly_rent_max;
+
+  const request = detail.request as PropertyRequest & { clients?: Client | null };
+  const payload = requestPayload(request);
+  const fields = payload.fields ?? {};
+  const headers = payload.headerFields ?? {};
+  const contact = clientContact(request.clients);
+  const activities = requestActivities(request);
+  const clientSection = payload.relatedSections?.find((section) => section.heading === "Cliente")?.text ?? "";
+  const workflowIndex = currentWorkflowIndex(payload.status, request.status);
+  const zones = detail.zones.map((item) => item.zone?.name).filter(Boolean).join(", ");
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Ricerca cliente"
-        title={request.title || "Richiesta senza titolo"}
-        description={
-          request.clients?.full_name ||
-          "Cliente non ancora collegato, la richiesta resta utilizzabile"
-        }
-        backHref="/requests"
-        backLabel="Torna alle richieste"
-        actions={<RecalculateButton scope="request" id={id} />}
-      />
+    <div className={styles.page}>
+      <header className={styles.detailHeader}>
+        <Link className={styles.backLink} href="/requests">
+          <ArrowLeft aria-hidden="true" className="size-4" /> Tutte le richieste
+        </Link>
 
-      <section className="overflow-hidden rounded-[11px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
-          <div className="p-5 sm:p-6">
-            <div className="flex items-start gap-4">
-              <ContractMark type={request.contract_type} />
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-[var(--ink-soft)]">
-                  <UserRound aria-hidden="true" className="size-4" />
-                  {request.clients?.full_name || "Cliente da collegare"}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {request.property_types.map((type: string) => (
-                    <PropertyTypeMark key={type} type={type} />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-7 flex items-center gap-3 border-y border-[var(--line-soft)] py-5">
-              <span className="grid size-11 place-items-center rounded-[8px] bg-[var(--surface-muted)] text-[var(--surface-accent)]">
-                <WalletCards aria-hidden="true" className="size-5" />
-              </span>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[.11em] text-[var(--ink-subtle)]">
-                  {request.contract_type === "sale"
-                    ? "Budget massimo"
-                    : "Canone massimo"}
-                </p>
-                <p className="mt-1 text-2xl font-bold text-[var(--ink-strong)]">
-                  {budget
-                    ? `€ ${Number(budget).toLocaleString("it-IT")}`
-                    : "Da definire"}
-                  {budget && request.contract_type === "rent" ? (
-                    <span className="ml-1 text-sm font-medium text-[var(--ink-soft)]">
-                      /mese
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <VisualFact
-                icon={Ruler}
-                label="Metratura"
-                value={
-                  request.internal_sqm_min
-                    ? `${request.internal_sqm_min}${request.internal_sqm_max ? `–${request.internal_sqm_max}` : "+"} mq`
-                    : "Flessibile"
-                }
-              />
-              <VisualFact
-                icon={Layers3}
-                label="Vani"
-                value={
-                  request.rooms_min
-                    ? `${request.rooms_min}+`
-                    : "Non indicati"
-                }
-              />
-              <VisualFact
-                icon={BedDouble}
-                label="Camere"
-                value={
-                  request.bedrooms_min
-                    ? `${request.bedrooms_min}+`
-                    : "Non indicate"
-                }
-              />
-              <VisualFact
-                icon={Bath}
-                label="Bagni"
-                value={
-                  request.bathrooms_min
-                    ? `${request.bathrooms_min}+`
-                    : "Non indicati"
-                }
-              />
-            </div>
-          </div>
-
-          <aside className="border-t border-[var(--line-soft)] bg-[var(--surface-muted)] p-5 lg:border-l lg:border-t-0 lg:p-6">
-            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
-              <MapPin aria-hidden="true" className="size-4" />
-              Dove cerca
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {detail.zones.length ? (
-                detail.zones.map((item) => (
-                  <span
-                    key={item.id}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-panel)] px-3 text-sm font-semibold text-[var(--ink-strong)]"
-                  >
-                    <MapPin
-                      aria-hidden="true"
-                      className="size-4 text-[var(--surface-accent)]"
-                    />
-                    {item.zone?.name ?? "Zona"}
-                  </span>
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-[var(--ink-soft)]">
-                  Nessuna zona specifica, considera tutta Bitonto.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-6 border-t border-[var(--line-soft)] pt-5">
-              <p className="text-xs font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
-                Profilo della ricerca
-              </p>
-              <dl className="mt-3 divide-y divide-[var(--line-soft)]">
-                <RequestFact
-                  icon={Home}
-                  label="Finalità"
-                  value={destinationLabel(request.destination)}
-                />
-                {request.contract_type === "sale" ? (
-                  <RequestFact
-                    icon={Landmark}
-                    label="Modalità economica"
-                    value={financingLabel(request.financing_method)}
-                  />
-                ) : null}
-                <RequestFact
-                  icon={Layers3}
-                  label="Piano"
-                  value={floorBandLabel(request.requested_floor_band)}
-                />
-                <RequestFact
-                  icon={Clock3}
-                  label="Verifica economica"
-                  value={creditLabel(request.credit_status)}
-                />
-                <RequestFact
-                  icon={Megaphone}
-                  label="Provenienza"
-                  value={request.from_own_listing ? "Da mio annuncio" : "Altra origine"}
-                />
-              </dl>
-            </div>
-
-            {request.notes ? (
-              <div className="mt-6 border-t border-[var(--line-soft)] pt-5">
-                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.1em] text-[var(--ink-subtle)]">
-                  <MessageSquareText aria-hidden="true" className="size-4" />
-                  Nota utile
-                </p>
-                <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">
-                  {request.notes}
-                </p>
-              </div>
-            ) : null}
-          </aside>
-        </div>
-      </section>
-
-      <RequestControls
-        id={id}
-        status={request.status}
-        clients={clients}
-        clientId={request.client_id}
-      />
-
-      <section>
-        <div className="mb-3">
-          <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
-            Cosa conta per il cliente
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
-            Caratteristiche richieste
-          </h2>
-        </div>
-        {detail.features.length ? (
-          <div className="flex flex-wrap gap-3">
-            {detail.features.map((item) => (
-              <div
-                key={item.id}
-                className="flex min-h-14 items-center gap-3 rounded-[9px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3"
-              >
-                <FeatureMark
-                  featureKey={item.feature?.key ?? "feature"}
-                  label={item.feature?.label ?? "Caratteristica"}
-                />
-                <div>
-                  <p className="text-sm font-semibold text-[var(--ink-strong)]">
-                    {item.feature?.label ?? "Caratteristica"}
-                  </p>
-                  <p className="text-[11px] text-[var(--ink-subtle)]">
-                    {preferenceLabel(item.preference_level)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex min-h-24 items-center gap-3 rounded-[9px] border border-dashed border-[var(--line-strong)] px-4 text-sm text-[var(--ink-soft)]">
-            <SlidersHorizontal className="size-4" />
-            Nessuna caratteristica specifica: il confronto userà budget, spazi
-            e zona.
-          </div>
-        )}
-      </section>
-
-      <section>
-        <div className="mb-3 flex items-end justify-between">
+        <div className={styles.detailTitleRow}>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
-              Proposte
+            <p className={styles.recordReference}>Richiesta {requestReference(request)}</p>
+            <h1 className={styles.detailTitle}>{cleanRequestTitle(request.title)}</h1>
+            <p className={styles.detailSubtitle}>
+              {request.clients?.full_name || "Cliente da collegare"} · {request.contract_type === "sale" ? "Acquisto" : "Locazione"}
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
-              Immobili ordinati per affinità
-            </h2>
           </div>
-          <span className="text-sm text-[var(--ink-subtle)]">
-            {detail.matches.length} risultati
-          </span>
+          <div className={styles.detailActions}>
+            {payload.url ? (
+              <a className={styles.externalLink} href={payload.url} target="_blank" rel="noreferrer">
+                Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-4" />
+              </a>
+            ) : null}
+            <RecalculateButton scope="request" id={id} />
+          </div>
         </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          {detail.matches.map((match) => (
-            <MatchCard
-              key={match.id}
-              match={{
-                ...match,
-                classification:
-                  match.classification as MatchClassification,
-                status: match.status as MatchStatus,
-              }}
-              counterpartHref={`/portfolio/${match.property_id}`}
-              counterpartTitle={match.property?.title ?? "Immobile"}
-            />
+
+        <dl className={styles.metadataStrip}>
+          <Meta label="Stato" value={payload.status || statusLabel(request.status)} />
+          <Meta label="Agenzia inserimento" value={displayValue(headers["Agenzia di inserimento"])} />
+          <Meta label="Agenzia aggiornamento" value={displayValue(headers["Agenzia di aggiornamento"])} />
+          <Meta label="Data inserimento" value={displayValue(headers["Data Inserimento Richiesta"], formatDate(request.created_at))} />
+          <Meta label="Provenienza" value={sourceDescription(request)} />
+        </dl>
+      </header>
+
+      <nav className={styles.workflow} aria-label="Avanzamento richiesta">
+        <ol className={styles.workflowList}>
+          {WORKFLOW.map((step, index) => (
+            <li
+              className={`${styles.workflowStep} ${index < workflowIndex ? styles.workflowComplete : ""} ${index === workflowIndex ? styles.workflowActive : ""}`}
+              key={step}
+              aria-current={index === workflowIndex ? "step" : undefined}
+            >
+              <span className={styles.stepDot}>{index < workflowIndex ? <Check aria-hidden="true" className="size-3" /> : index + 1}</span>
+              <span>{step}</span>
+            </li>
           ))}
-          {!detail.matches.length ? (
-            <p className="rounded-[9px] border border-dashed border-[var(--line-strong)] p-8 text-center text-sm text-[var(--ink-soft)]">
-              Nessun confronto disponibile. Inserisci un immobile attivo e
-              premi “Ricalcola match”.
-            </p>
-          ) : null}
+        </ol>
+      </nav>
+
+      <section className={styles.summaryPanel} aria-label="Riepilogo richiesta e cliente">
+        <div className={styles.summaryGrid}>
+          <div className={styles.summaryColumn}>
+            <p className={styles.sectionEyebrow}>Richiesta</p>
+            <h2 className={styles.sectionTitle}>Cosa sta cercando</h2>
+            <dl className={`${styles.fieldList} mt-5`}>
+              <Field label="Motivazione" value={displayValue(fields["Motivazione Richiesta"], request.contract_type === "sale" ? "Acquisto" : "Locazione")} />
+              <Field label="Tipologia" value={displayValue(fields["Tipologia Immobile"], propertyTypesLabel(request.property_types))} />
+              <Field label="Sottotipologia" value={displayValue(fields["Sottotipologia Immobile"])} />
+              <Field label="Prezzo" value={requestBudget(request)} />
+              <Field label="Superficie" value={requestArea(request)} />
+              <Field label="Locali" value={requestRooms(request)} />
+              <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
+              <Field label="Zone" value={zones || request.municipality || "Tutta Bitonto"} />
+            </dl>
+          </div>
+          <div className={styles.summaryColumn}>
+            <p className={styles.sectionEyebrow}>Cliente</p>
+            <h2 className={styles.sectionTitle}>Contatto e relazione</h2>
+            <dl className={`${styles.fieldList} mt-5`}>
+              <Field label="Nominativo" value={request.clients?.full_name || displayValue(fields.Cliente, "Da collegare")} />
+              <Field label="Telefono" value={contact.phone || "Non disponibile"} muted={!contact.phone} />
+              <Field label="Email" value={contact.email || "Non disponibile"} muted={!contact.email} />
+              <Field label="Indirizzo" value={contact.address || "Non disponibile"} muted={!contact.address} />
+              <Field label="Responsabile" value={displayValue(fields.Responsabile)} />
+              <Field label="Privacy" value={privacyValue(clientSection)} />
+              <Field label="Richieste attive" value={relatedCount(clientSection, /([0-9]+)\s+Richieste/i) || "Non indicato"} />
+              <Field label="Immobili" value={relatedCount(clientSection, /([0-9]+)\s+Immobili/i) || "Non indicato"} />
+            </dl>
+          </div>
         </div>
       </section>
 
-      <details className="rounded-[9px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 text-sm font-semibold text-[var(--ink-soft)]">
-          <Clock3 className="size-4" />
-          Cronologia della richiesta
-        </summary>
-        <div className="divide-y divide-[var(--line-soft)] border-t border-[var(--line-soft)] px-4">
-          {detail.logs.map((log) => (
-            <div
-              key={log.id}
-              className="flex justify-between gap-4 py-3 text-sm"
-            >
-              <span className="text-[var(--ink-soft)]">
-                {String(log.action).replaceAll("_", " ")}
-              </span>
-              <time className="text-xs text-[var(--ink-subtle)]">
-                {new Date(log.created_at).toLocaleString("it-IT")}
-              </time>
+      <div className={styles.detailFlow}>
+        <section className={styles.documentSection}>
+          <header className={styles.sectionHeader}>
+            <div>
+              <p className={styles.sectionEyebrow}>Profilo operativo</p>
+              <h2 className={styles.sectionTitle}>Dettaglio dell’esigenza</h2>
             </div>
-          ))}
-          {!detail.logs.length ? (
-            <p className="py-4 text-sm text-[var(--ink-subtle)]">
-              Nessuna modifica registrata.
-            </p>
-          ) : null}
+          </header>
+          <div className={styles.sectionBody}>
+            <dl className={styles.needGrid}>
+              <Need label="Esigenze" value={displayValue(fields.Esigenze, request.notes || "Non indicate")} />
+              <Need label="Dettaglio economico" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} />
+              <Need label="Destinazione" value={displayValue(fields["Destinazione Richiesta"], destinationLabel(request.destination))} />
+              <Need label="Ascensore" value={displayValue(fields.Ascensore)} />
+              <Need label="Arredato" value={displayValue(fields.Arredato)} />
+              <Need label="Rimesse" value={displayValue(fields.Rimesse)} />
+              <Need label="Permuta" value={displayValue(fields.Permuta)} />
+              <Need label="Specifiche prezzo" value={displayValue(fields["Specifiche Prezzo"])} />
+              <Need label="Merito creditizio" value={displayValue(fields["Merito creditizio"], creditLabel(request.credit_status))} />
+              <Need label="Da soddisfare entro" value={displayValue(fields["Da Soddisfare Entro Il"])} />
+            </dl>
+          </div>
+        </section>
+
+        <section className={styles.documentSection}>
+          <header className={styles.sectionHeader}>
+            <div>
+              <p className={styles.sectionEyebrow}>CRM</p>
+              <h2 className={styles.sectionTitle}>Attività ed evoluzione</h2>
+            </div>
+            <span className={styles.sectionCount}>{activities.length}</span>
+          </header>
+          <div className={styles.sectionBody}>
+            {activities.length ? (
+              <div className={styles.activityList}>
+                {activities.map((activity, index) => (
+                  <article className={styles.activityItem} key={`${activity.heading}-${index}`}>
+                    <h3 className={styles.activityTitle}>{activity.heading}</h3>
+                    <p className={styles.activityText}>{activity.text}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.emptyInline}>Nessuna attività completa è stata importata dal CRM per questa richiesta.</p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className={styles.documentSection}>
+        <header className={styles.sectionHeader}>
+          <div>
+            <p className={styles.sectionEyebrow}>Preferenze</p>
+            <h2 className={styles.sectionTitle}>Caratteristiche richieste</h2>
+          </div>
+          <span className={styles.sectionCount}>{detail.features.length}</span>
+        </header>
+        <div className={styles.sectionBody}>
+          {detail.features.length ? (
+            <div className={styles.features}>
+              {detail.features.map((item) => (
+                <span className={styles.feature} key={item.id}>
+                  {item.feature?.label ?? "Caratteristica"} · {preferenceLabel(item.preference_level)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.emptyInline}>Il confronto userà i dati disponibili: budget, superficie, locali, tipologia e zona.</p>
+          )}
+        </div>
+      </section>
+
+      <section className={styles.documentSection}>
+        <header className={styles.sectionHeader}>
+          <div>
+            <p className={styles.sectionEyebrow}>Sistema</p>
+            <h2 className={styles.sectionTitle}>Dati di archivio</h2>
+          </div>
+        </header>
+        <div className={styles.sectionBody}>
+          <dl className={styles.systemGrid}>
+            <Need label="Creato da" value={displayValue(fields["Creato da"])} />
+            <Need label="Ultima modifica di" value={displayValue(fields["Ultima modifica di"])} />
+            <Need label="Acquisito il" value={formatDate(payload.capturedAt || request.last_imported_at, true)} />
+            <Need label="Fonte" value={requestSourceLabel(request)} />
+            <Need label="ID CRM" value={payload.externalId || request.external_crm_id || "Non disponibile"} />
+            <Need label="ID Listing Radar" value={request.id} />
+          </dl>
+        </div>
+      </section>
+
+      <section className={styles.documentSection}>
+        <header className={styles.sectionHeader}>
+          <div>
+            <p className={styles.sectionEyebrow}>Matching</p>
+            <h2 className={styles.sectionTitle}>Immobili compatibili</h2>
+          </div>
+          <span className={styles.sectionCount}>{detail.matches.length} risultati</span>
+        </header>
+        <div className={styles.sectionBody}>
+          {detail.matches.length ? (
+            <div className={styles.matchesGrid}>
+              {detail.matches.map((match) => (
+                <MatchCard
+                  key={match.id}
+                  match={{
+                    ...match,
+                    classification: match.classification as MatchClassification,
+                    status: match.status as MatchStatus,
+                  }}
+                  counterpartHref={`/portfolio/${match.property_id}`}
+                  counterpartTitle={match.property?.title ?? "Immobile"}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className={styles.emptyInline}>Nessun confronto disponibile. Inserisci un immobile attivo e ricalcola i match.</p>
+          )}
+        </div>
+      </section>
+
+      <details className={styles.managementSection}>
+        <summary className={styles.managementSummary}>
+          <span className="inline-flex items-center gap-2"><Settings2 aria-hidden="true" className="size-4" /> Gestione richiesta</span>
+          <ChevronDown aria-hidden="true" className="size-4" />
+        </summary>
+        <div className={styles.managementContent}>
+          <RequestControls id={id} status={request.status} clients={clients} clientId={request.client_id} />
+        </div>
+      </details>
+
+      <details className={styles.managementSection}>
+        <summary className={styles.managementSummary}>
+          <span className="inline-flex items-center gap-2"><History aria-hidden="true" className="size-4" /> Cronologia Listing Radar</span>
+          <span className={styles.sectionCount}>{detail.logs.length}</span>
+        </summary>
+        <div className={styles.managementContent}>
+          <div className={styles.activityList}>
+            {detail.logs.map((log) => (
+              <article className={styles.activityItem} key={log.id}>
+                <h3 className={styles.activityTitle}>{String(log.action).replaceAll("_", " ")}</h3>
+                <time className={styles.activityText}>{formatDate(log.created_at, true)}</time>
+              </article>
+            ))}
+            {!detail.logs.length ? <p className={styles.emptyInline}>Nessuna modifica registrata.</p> : null}
+          </div>
         </div>
       </details>
     </div>
   );
 }
 
-function preferenceLabel(value: string) {
-  return (
-    {
-      required: "Indispensabile",
-      preferred: "Sarebbe utile",
-      indifferent: "Non importante",
-      avoid: "Da evitare",
-    }[value] ?? value
-  );
+const WORKFLOW = ["Chiudi", "Analizza richiesta", "In gestione", "In visita", "Trattativa avanzata"];
+
+function Meta({ label, value }: Readonly<{ label: string; value: string }>) {
+  return <div className={styles.metaItem}><dt className={styles.metaLabel}>{label}</dt><dd className={styles.metaValue}>{value}</dd></div>;
 }
 
-function RequestFact({
-  icon: Icon,
-  label,
-  value,
-}: Readonly<{
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}>) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
-      <dt className="inline-flex items-center gap-2 text-[var(--ink-soft)]">
-        <Icon aria-hidden="true" className="size-4 text-[var(--ink-subtle)]" />
-        {label}
-      </dt>
-      <dd className="text-right font-semibold text-[var(--ink-strong)]">{value}</dd>
-    </div>
-  );
+function Field({ label, value, muted = false }: Readonly<{ label: string; value: string; muted?: boolean }>) {
+  return <div className={styles.fieldRow}><dt className={styles.fieldLabel}>{label}</dt><dd className={`${styles.fieldValue} ${muted ? styles.fieldValueMuted : ""}`}>{value}</dd></div>;
+}
+
+function Need({ label, value }: Readonly<{ label: string; value: string }>) {
+  return <div className={styles.needItem}><dt className={styles.fieldLabel}>{label}</dt><dd className={styles.needValue}>{value}</dd></div>;
+}
+
+function currentWorkflowIndex(rawStatus: string | null | undefined, status: string) {
+  const source = `${rawStatus ?? ""} ${status}`.toLocaleLowerCase("it");
+  if (/trattativa|soddisfatta|conclus/.test(source)) return 4;
+  if (/visita|appuntamento/.test(source)) return 3;
+  if (/gestione|active|urgent/.test(source)) return 2;
+  if (/analizza|bozza|draft/.test(source)) return 1;
+  return 0;
+}
+
+function sourceDescription(request: PropertyRequest) {
+  const payload = requestPayload(request);
+  const fromInternet = crmField(payload, "Da Internet");
+  const ownListing = crmField(payload, "Da mio annuncio");
+  if (fromInternet === true) return "Internet";
+  if (ownListing === true || request.from_own_listing) return "Mio annuncio";
+  return requestSourceLabel(request);
+}
+
+function privacyValue(text: string) {
+  const match = text.match(/Privacy:\s*([^0-9]+?)(?:\s+Tipologia|$)/i);
+  return match?.[1]?.trim() || "Non indicata";
+}
+
+function relatedCount(text: string, pattern: RegExp) {
+  return text.match(pattern)?.[1] ?? null;
+}
+
+function propertyTypesLabel(types: string[]) {
+  if (!types.length) return "Non indicata";
+  return types.map((type) => ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile" }[type] ?? type)).join(", ");
+}
+
+function statusLabel(status: string) {
+  return ({ draft: "Bozza", active: "Attiva", urgent: "Urgente", suspended: "Sospesa", satisfied: "Soddisfatta", cancelled: "Annullata", archived: "Archiviata" }[status] ?? status);
 }
 
 function destinationLabel(value?: string | null) {
-  return (
-    {
-      first_home: "Prima casa",
-      investment: "Investimento",
-      exchange: "Permuta",
-      temporary: "Esigenza temporanea",
-      other: "Altra esigenza",
-    }[value ?? ""] ?? "Da definire"
-  );
+  return ({ first_home: "Prima casa", investment: "Investimento", exchange: "Permuta", temporary: "Esigenza temporanea", other: "Altro" }[value ?? ""] ?? "Non indicata");
 }
 
 function financingLabel(value?: string | null) {
-  return (
-    {
-      cash: "Contanti",
-      cash_and_mortgage: "Contanti + mutuo",
-      full_mortgage: "Mutuo 100%",
-      exchange: "Permuta",
-      other: "Da definire",
-    }[value ?? ""] ?? "Da definire"
-  );
+  return ({ cash: "Contanti", cash_and_mortgage: "Contanti + mutuo", full_mortgage: "Mutuo 100%", exchange: "Permuta", other: "Da definire" }[value ?? ""] ?? "Non indicato");
 }
 
 function floorBandLabel(value?: string | null) {
-  return (
-    {
-      any: "Qualsiasi",
-      low: "Basso, terra–2°",
-      medium: "Medio, 3°–4°",
-      high: "Alto, dal 5°",
-      top: "Ultimo piano",
-    }[value ?? ""] ?? "Qualsiasi"
-  );
+  return ({ any: "Qualsiasi", low: "Basso", medium: "Medio", high: "Alto", top: "Ultimo piano" }[value ?? ""] ?? "Qualsiasi");
 }
 
 function creditLabel(value?: string | null) {
-  return (
-    {
-      unknown: "Da verificare",
-      in_progress: "Verifica in corso",
-      positive: "Merito positivo",
-      negative: "Criticità rilevate",
-    }[value ?? ""] ?? "Da verificare"
-  );
+  return ({ unknown: "Da verificare", in_progress: "Verifica in corso", positive: "Positivo", negative: "Criticità rilevate" }[value ?? ""] ?? "Non indicato");
+}
+
+function preferenceLabel(value: string) {
+  return ({ required: "Indispensabile", preferred: "Preferita", indifferent: "Indifferente", avoid: "Da evitare" }[value] ?? value);
 }
