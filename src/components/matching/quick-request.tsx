@@ -95,13 +95,13 @@ const steps = [
   },
   {
     number: 3,
-    title: "Dotazioni",
-    description: "Cosa deve avere o evitare",
+    title: "Dettagli facoltativi",
+    description: "Dotazioni richieste o da evitare",
   },
   {
     number: 4,
-    title: "Esigenza e priorità",
-    description: "Finalità, pagamento e note",
+    title: "Note facoltative",
+    description: "Piano, condizioni e contesto",
   },
 ] as const;
 
@@ -1103,7 +1103,27 @@ export function QuickRequestDrawer() {
             Indietro
           </button>
 
-          {step < 4 ? (
+          {step === 2 ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => setStep(3)}
+                className="min-h-11 rounded-[8px] border border-[var(--line-strong)] px-4 text-sm font-semibold text-[var(--ink-soft)]"
+              >
+                Aggiungi dettagli
+              </button>
+              <button
+                type="button"
+                disabled={isPending || draft.property_types.length === 0}
+                onClick={() => save("active", true)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)] disabled:opacity-50"
+              >
+                <Check aria-hidden="true" className="size-4" />
+                {isPending ? "Salvataggio…" : "Salva richiesta"}
+              </button>
+            </div>
+          ) : step < 4 ? (
             <button
               type="button"
               disabled={draft.property_types.length === 0}

@@ -93,7 +93,6 @@ export const listFeatures = () => safeList<FeatureDefinition>("feature_definitio
 export async function listMatches(options: {
   limit?: number;
   classification?: string;
-  status?: string;
   minimum?: number;
   requestIds?: string[];
 } = {}): Promise<RequestPropertyMatch[]> {
@@ -101,7 +100,6 @@ export async function listMatches(options: {
   try {
     let query = getSupabaseServiceClient().from("request_property_matches").select("*");
     if (options.classification) query = query.eq("classification", options.classification);
-    if (options.status) query = query.eq("status", options.status);
     if (options.minimum) query = query.gte("score", options.minimum);
     if (options.requestIds) {
       if (!options.requestIds.length) return [];
@@ -121,13 +119,11 @@ export type MatchingStats = {
   almostCompatible: number;
   weak: number;
   notRelevant: number;
-  toPropose: number;
-  inProgress: number;
   lastCalculatedAt: string | null;
 };
 
 export async function getMatchingStats(): Promise<MatchingStats> {
-  const empty = { total: 0, compatible: 0, almostCompatible: 0, weak: 0, notRelevant: 0, toPropose: 0, inProgress: 0, lastCalculatedAt: null };
+  const empty = { total: 0, compatible: 0, almostCompatible: 0, weak: 0, notRelevant: 0, lastCalculatedAt: null };
   if (!configured()) return empty;
   try {
     const db = getSupabaseServiceClient();
@@ -137,18 +133,16 @@ export async function getMatchingStats(): Promise<MatchingStats> {
       else if (column && value) query = query.eq(column, value);
       return query;
     };
-    const [total, compatible, almostCompatible, weak, notRelevant, toPropose, inProgress, latest] = await Promise.all([
+    const [total, compatible, almostCompatible, weak, notRelevant, latest] = await Promise.all([
       count(), count("classification", "compatible"), count("classification", "almost_compatible"),
-      count("classification", "weak"), count("classification", "not_relevant"), count("status", "to_propose"),
-      count("status", ["proposed", "interested", "visit_scheduled", "negotiation"]),
+      count("classification", "weak"), count("classification", "not_relevant"),
       db.from("request_property_matches").select("last_calculated_at").order("last_calculated_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
-    if ([total, compatible, almostCompatible, weak, notRelevant, toPropose, inProgress, latest].some((result) => result.error)) return empty;
+    if ([total, compatible, almostCompatible, weak, notRelevant, latest].some((result) => result.error)) return empty;
     return {
       total: total.count ?? 0, compatible: compatible.count ?? 0,
       almostCompatible: almostCompatible.count ?? 0, weak: weak.count ?? 0,
-      notRelevant: notRelevant.count ?? 0, toPropose: toPropose.count ?? 0,
-      inProgress: inProgress.count ?? 0, lastCalculatedAt: latest.data?.last_calculated_at ?? null,
+      notRelevant: notRelevant.count ?? 0, lastCalculatedAt: latest.data?.last_calculated_at ?? null,
     };
   } catch {
     return empty;

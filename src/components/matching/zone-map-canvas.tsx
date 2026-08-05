@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L, { type LatLngBoundsExpression, type LatLngExpression } from "leaflet";
 import "leaflet-draw";
 import {
@@ -227,76 +227,9 @@ function ZoneLabels({ shapes, highlightedZoneId }: Readonly<{
   shapes: RenderedZoneShape[];
   highlightedZoneId?: string | null;
 }>) {
-  const map = useMap();
-  const [, setViewportRevision] = useState(0);
-  useMapEvents({
-    moveend: () => setViewportRevision((value) => value + 1),
-    zoomend: () => setViewportRevision((value) => value + 1),
-  });
-  useEffect(() => {
-    const timer = window.setTimeout(() => setViewportRevision((value) => value + 1), 120);
-    return () => window.clearTimeout(timer);
-  }, [map]);
+  const labels = shapes.filter((shape) => shape.resolvedLabelPoint);
 
-  const labels = (() => {
-    const candidates = shapes.flatMap((shape) => {
-      if (!shape.resolvedLabelPoint) return [];
-      const rings = polygonRings(shape.geometry);
-      if (!rings) return [];
-
-      const pixels = rings[0].map(([longitude, latitude]) => map.latLngToContainerPoint([latitude, longitude]));
-      const width = Math.max(...pixels.map((point) => point.x)) - Math.min(...pixels.map((point) => point.x));
-      const height = Math.max(...pixels.map((point) => point.y)) - Math.min(...pixels.map((point) => point.y));
-      const selected = shape.zoneId === highlightedZoneId;
-      const estimatedNameWidth = Math.min(168, Math.max(62, shape.name.length * 6.2 + (shape.zoneNumber ? 34 : 18)));
-      const detailed = selected || (width >= estimatedNameWidth && height >= 32);
-      const numbered = typeof shape.zoneNumber === "number";
-      if (!detailed && (!numbered || Math.min(width, height) < 22)) return [];
-
-      const anchor = map.latLngToContainerPoint([
-        shape.resolvedLabelPoint.latitude,
-        shape.resolvedLabelPoint.longitude,
-      ]);
-      return [{ shape, detailed, numbered, selected, anchor, area: width * height, estimatedNameWidth }];
-    }).sort((left, right) =>
-      Number(right.selected) - Number(left.selected) ||
-      Number(right.detailed) - Number(left.detailed) ||
-      right.area - left.area,
-    );
-
-    const occupied: Array<{ left: number; right: number; top: number; bottom: number }> = [];
-    const visible: Array<{ shape: RenderedZoneShape; detailed: boolean }> = [];
-    const collides = (box: { left: number; right: number; top: number; bottom: number }) => occupied.some((current) =>
-      box.left < current.right + 4 && box.right + 4 > current.left &&
-      box.top < current.bottom + 4 && box.bottom + 4 > current.top,
-    );
-
-    for (const candidate of candidates) {
-      const modes = candidate.selected
-        ? [true]
-        : candidate.detailed && candidate.numbered
-          ? [true, false]
-          : [candidate.detailed];
-      for (const detailed of modes) {
-        const labelWidth = detailed ? candidate.estimatedNameWidth : 29;
-        const labelHeight = detailed ? 30 : 29;
-        const box = {
-          left: candidate.anchor.x - labelWidth / 2,
-          right: candidate.anchor.x + labelWidth / 2,
-          top: candidate.anchor.y - labelHeight / 2,
-          bottom: candidate.anchor.y + labelHeight / 2,
-        };
-        if (!candidate.selected && collides(box)) continue;
-        occupied.push(box);
-        visible.push({ shape: candidate.shape, detailed });
-        break;
-      }
-    }
-
-    return visible;
-  })();
-
-  return labels.map(({ shape, detailed }) => (
+  return labels.map((shape) => (
     <CircleMarker
       key={`label-${shape.shapeId}`}
       center={[shape.resolvedLabelPoint!.latitude, shape.resolvedLabelPoint!.longitude]}
@@ -307,7 +240,7 @@ function ZoneLabels({ shapes, highlightedZoneId }: Readonly<{
       <Tooltip
         permanent
         direction="center"
-        className={`${styles.zoneLabel} ${detailed ? styles.zoneLabelDetailed : styles.zoneLabelCompact}`}
+        className={`${styles.zoneLabel} ${styles.zoneLabelDetailed} ${shape.zoneId === highlightedZoneId ? styles.zoneLabelHighlighted : ""}`}
       >
         <span className={styles.zoneLabelContent}>
           {shape.zoneNumber ? (
@@ -315,7 +248,7 @@ function ZoneLabels({ shapes, highlightedZoneId }: Readonly<{
               {shape.zoneNumber}
             </span>
           ) : null}
-          <span className={detailed ? styles.zoneLabelName : styles.zoneLabelAccessibleName}>{shape.name}</span>
+          <span className={styles.zoneLabelName}>{shape.name}</span>
         </span>
       </Tooltip>
     </CircleMarker>

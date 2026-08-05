@@ -28,8 +28,8 @@ export default async function MatchingOverviewPage() {
   const canCalculate = activeRequests.length > 0 && activeProperties.length > 0;
   const recommendation = matching.total === 0 && canCalculate
     ? { title: "Calcola il primo matching reale", detail: `${activeRequests.length} richieste e ${activeProperties.length} immobili sono disponibili per il confronto.`, kind: "calculate" as const }
-    : matching.toPropose > 0
-      ? { title: `Lavora ${matching.toPropose} abbinamenti da proporre`, detail: "Sono già stati valutati dall'algoritmo e attendono una decisione commerciale.", href: "/matching?status=to_propose", kind: "link" as const }
+    : matching.compatible > 0
+      ? { title: `Analizza ${matching.compatible} abbinamenti compatibili`, detail: "Parti dai punteggi più alti e apri il dettaglio per capire subito punti forti e distanze territoriali.", href: "/matching?classification=compatible", kind: "link" as const }
       : requestGaps.zones > 0
         ? { title: `Completa le zone di ${requestGaps.zones} richieste`, detail: "La zona pesa molto nel risultato e oggi è il dato mancante più frequente.", href: "/requests", kind: "link" as const }
         : propertyGaps.zone > 0
@@ -54,7 +54,7 @@ export default async function MatchingOverviewPage() {
         </div>
         <div className={styles.focusAction}>
           {recommendation.kind === "calculate" ? <RecalculateButton scope="all" /> : (
-            <Link className={styles.primaryButton} href={recommendation.href}>Apri attività <ArrowRight aria-hidden="true" className="size-4" /></Link>
+            <Link className={styles.primaryButton} href={recommendation.href} target="_blank" rel="noreferrer">Apri attività <ArrowRight aria-hidden="true" className="size-4" /></Link>
           )}
         </div>
       </section>
@@ -105,7 +105,7 @@ function ReadinessRow({ icon: Icon, label, value, total, detail, href }: Readonl
         <div className={styles.readinessTrack}><span style={{ width: `${percentage}%` }} /></div>
         <p>{detail}</p>
       </div>
-      <Link className={styles.textAction} href={href}>Apri <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <Link className={styles.textAction} href={href} target="_blank" rel="noreferrer">Apri <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
 }
@@ -116,7 +116,7 @@ function AttentionBlock({ title, href, items }: Readonly<{ title: string; href: 
     <section className={styles.attentionBlock}>
       <header><div><p className={styles.sectionEyebrow}>Da completare</p><h2 className={styles.panelTitle}>{title}</h2></div><CircleAlert aria-hidden="true" className={total ? "size-5 text-[var(--status-warning)]" : "size-5 text-[var(--surface-accent)]"} /></header>
       <ul>{items.map(([count, label]) => <li key={label}><span>{label}</span><strong>{count}</strong></li>)}</ul>
-      <Link className={styles.textAction} href={href}>Vai all'archivio <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <Link className={styles.textAction} href={href} target="_blank" rel="noreferrer">Vai all&apos;archivio <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </section>
   );
 }

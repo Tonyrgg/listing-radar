@@ -414,7 +414,7 @@ export default async function ListingDetailPage({
           </div>
           <div className="divide-y divide-[var(--line-soft)]">
             {duplicateListings.map((duplicate) => (
-              <Link key={duplicate.id} href={`/listings/${duplicate.id}`} className="flex min-h-14 items-center justify-between gap-4 px-5 py-3 hover:bg-[var(--surface-muted)]">
+              <Link key={duplicate.id} href={`/listings/${duplicate.id}`} target="_blank" rel="noreferrer" className="flex min-h-14 items-center justify-between gap-4 px-5 py-3 hover:bg-[var(--surface-muted)]">
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-[var(--ink-strong)]">{duplicate.title}</span>
                   <span className="mt-1 block text-xs text-[var(--ink-subtle)]">{getSourceLabel(duplicate.source)}</span>

@@ -561,7 +561,7 @@ export function MapCanvas({
                 {isCluster ? (
                   <div className="grid gap-1">
                     {cluster.listings.slice(0, 6).map((listing) => (
-                      <a key={listing.id} href={`/listings/${listing.id}`}>
+                      <a key={listing.id} href={`/listings/${listing.id}`} target="_blank" rel="noreferrer">
                         {listing.title}
                       </a>
                     ))}
@@ -573,7 +573,7 @@ export function MapCanvas({
                   <>
                     <span>{listingSummary(firstListing)}</span>
                     {firstListing.addressRaw ? <span>{firstListing.addressRaw}</span> : null}
-                    <a href={`/listings/${firstListing.id}`}>Apri annuncio</a>
+                    <a href={`/listings/${firstListing.id}`} target="_blank" rel="noreferrer">Apri annuncio</a>
                   </>
                 )}
               </div>

@@ -19,6 +19,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { ProgressiveList } from "@/components/progressive-list";
 import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
 import { RequestZonePicker } from "@/components/matching/request-zone-picker";
 import {
@@ -36,7 +37,7 @@ import {
   requestSourceLabel,
 } from "@/lib/matching/request-presentation";
 import { getRequest, listClients, listZones } from "@/lib/matching/repository";
-import type { Client, MatchClassification, MatchStatus, PropertyRequest } from "@/lib/matching/types";
+import type { Client, MatchClassification, PropertyRequest } from "@/lib/matching/types";
 
 import styles from "../requests.module.css";
 
@@ -149,21 +150,21 @@ export default async function RequestDetailPage({
           </div>
           <span className={styles.sectionCount}>{desiredZoneCount} desiderate · {excludedZoneCount} escluse</span>
         </header>
-        <div className={styles.sectionBody}>
-          {zoneInference.length ? (
-            <div className={styles.zoneEvidence}>
-              <p className={styles.fieldLabel}>Riconosciute automaticamente dal testo CRM</p>
-              <ul>
-                {zoneInference.map((item) => <li key={item.zone_id}><strong>{item.zone_name}</strong><span>{item.preference_level === "excluded" ? "Da evitare" : "Desiderata"}</span><q>{item.evidence}</q></li>)}
-              </ul>
-            </div>
-          ) : null}
+        <div className={`${styles.sectionBody} ${styles.zoneMapBody}`}>
           <RequestZonePicker
             requestId={id}
             zones={allZones}
             initialZoneIds={detail.zones.filter((item) => item.preference_level !== "excluded").map((item) => item.zone_id)}
             initialExcludedZoneIds={detail.zones.filter((item) => item.preference_level === "excluded").map((item) => item.zone_id)}
           />
+          {zoneInference.length ? (
+            <details className={styles.zoneEvidence}>
+              <summary>Vedi come le zone sono state riconosciute dal testo CRM</summary>
+              <ul>
+                {zoneInference.map((item) => <li key={item.zone_id}><strong>{item.zone_name}</strong><span>{item.preference_level === "excluded" ? "Da evitare" : "Desiderata"}</span><q>{item.evidence}</q></li>)}
+              </ul>
+            </details>
+          ) : null}
         </div>
       </section>
 
@@ -222,16 +223,16 @@ export default async function RequestDetailPage({
         </section>
       </div>
 
-      <section className={styles.documentSection}>
-        <header className={styles.sectionHeader}>
-          <div>
-            <p className={styles.sectionEyebrow}>Preferenze</p>
-            <h2 className={styles.sectionTitle}>Caratteristiche richieste</h2>
-          </div>
-          <span className={styles.sectionCount}>{detail.features.length}</span>
-        </header>
-        <div className={styles.sectionBody}>
-          {detail.features.length ? (
+      {detail.features.length ? (
+        <section className={styles.documentSection}>
+          <header className={styles.sectionHeader}>
+            <div>
+              <p className={styles.sectionEyebrow}>Preferenze esplicite</p>
+              <h2 className={styles.sectionTitle}>Caratteristiche richieste</h2>
+            </div>
+            <span className={styles.sectionCount}>{detail.features.length}</span>
+          </header>
+          <div className={styles.sectionBody}>
             <div className={styles.features}>
               {detail.features.map((item) => (
                 <span className={styles.feature} key={item.id}>
@@ -239,11 +240,9 @@ export default async function RequestDetailPage({
                 </span>
               ))}
             </div>
-          ) : (
-            <p className={styles.emptyInline}>Il confronto userà i dati disponibili: budget, superficie, locali, tipologia e zona.</p>
-          )}
-        </div>
-      </section>
+          </div>
+        </section>
+      ) : null}
 
       <section className={styles.documentSection}>
         <header className={styles.sectionHeader}>
@@ -274,21 +273,20 @@ export default async function RequestDetailPage({
         </header>
         <div className={styles.sectionBody}>
           {detail.matches.length ? (
-            <div className={styles.matchesGrid}>
+            <ProgressiveList className={styles.matchesGrid} initialCount={4} step={4} noun="immobili">
               {detail.matches.map((match) => (
                 <MatchCard
                   key={match.id}
                   match={{
                     ...match,
                     classification: match.classification as MatchClassification,
-                    status: match.status as MatchStatus,
                   }}
                   counterpartHref={`/portfolio/${match.property_id}`}
                   counterpartTitle={match.property?.title ?? "Immobile"}
                   detailHref={match.id ? `/matching/${match.id}` : undefined}
                 />
               ))}
-            </div>
+            </ProgressiveList>
           ) : (
             <p className={styles.emptyInline}>Nessun confronto disponibile. Inserisci un immobile attivo e ricalcola i match.</p>
           )}

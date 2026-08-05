@@ -286,11 +286,15 @@ function ListingRow({
     >
       <Link
         href={`/listings/${listing.id}`}
+        target="_blank"
+        rel="noreferrer"
         className="absolute inset-0 z-0 rounded-[10px]"
         aria-label={`Apri la scheda di ${listing.title}`}
       />
       <Link
         href={`/listings/${listing.id}`}
+        target="_blank"
+        rel="noreferrer"
         className={clsx(
           "relative z-10 flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[8px] border bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)] sm:aspect-auto sm:h-full sm:min-h-[174px]",
           isTreated
@@ -337,6 +341,8 @@ function ListingRow({
 
         <Link
           href={`/listings/${listing.id}`}
+          target="_blank"
+          rel="noreferrer"
           className={clsx(
             "mt-2 block text-base font-semibold leading-6 transition-colors group-hover:text-[var(--surface-accent)]",
             isTreated ? "text-[oklch(0.88_0.08_150)]" : "text-[var(--ink-strong)]",
@@ -421,12 +427,16 @@ function ListingGridCard({
     >
       <Link
         href={`/listings/${listing.id}`}
+        target="_blank"
+        rel="noreferrer"
         className="absolute inset-0 z-0 rounded-[10px]"
         aria-label={`Apri la scheda di ${listing.title}`}
       />
 
       <Link
         href={`/listings/${listing.id}`}
+        target="_blank"
+        rel="noreferrer"
         className={clsx(
           "relative z-10 flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b bg-[var(--surface-muted)] text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)]",
           isTreated
@@ -475,6 +485,8 @@ function ListingGridCard({
 
         <Link
           href={`/listings/${listing.id}`}
+          target="_blank"
+          rel="noreferrer"
           className={clsx(
             "mt-3 line-clamp-2 min-h-11 text-[15px] font-semibold leading-[22px] transition-colors group-hover:text-[var(--surface-accent)]",
             isTreated ? "text-[oklch(0.88_0.08_150)]" : "text-[var(--ink-strong)]",

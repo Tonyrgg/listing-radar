@@ -1,7 +1,8 @@
 import { AlertTriangle, ArrowRight, Banknote, Building2, CheckCircle2, ChevronDown, Clock3, MapPin, Ruler, SlidersHorizontal, UserRound } from "lucide-react";
 import Link from "next/link";
 
-import { MatchStatusSelect, RecalculateButton } from "@/components/matching/management-panels";
+import { RecalculateButton } from "@/components/matching/management-panels";
+import { ProgressiveList } from "@/components/progressive-list";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
@@ -14,18 +15,17 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
   const query = await searchParams;
   const view = value(query.view) === "property" ? "property" : "request";
   const classification = allowed(value(query.classification), ["compatible", "almost_compatible", "weak", "not_relevant"]);
-  const status = allowed(value(query.status), ["not_reviewed", "new", "to_propose", "proposed", "interested", "visit_scheduled", "not_interested", "excluded", "negotiation", "completed"]);
   const contract = allowed(value(query.contract), ["sale", "rent"]);
   const minimum = Math.max(0, Math.min(100, Number(value(query.minimum)) || 0));
   const [requests, properties, stats, config] = await Promise.all([listRequests(), listProperties(), getMatchingStats(), getMatchingConfig()]);
   const activeRequests = requests.filter((request) => ["active", "urgent"].includes(request.status));
   const activeProperties = properties.filter((property) => property.mandate_status === "active");
   const requestIds = contract ? activeRequests.filter((request) => request.contract_type === contract).map((request) => request.id) : activeRequests.map((request) => request.id);
-  const matches = await listMatches({ limit: 600, classification, status, minimum, requestIds });
+  const matches = await listMatches({ limit: 600, classification, minimum, requestIds });
   const requestsById = new Map(activeRequests.map((item) => [item.id, item]));
   const propertiesById = new Map(activeProperties.map((item) => [item.id, item]));
   const visibleMatches = matches.filter((match) => requestsById.has(match.request_id) && propertiesById.has(match.property_id));
-  const groups = groupMatches(visibleMatches, view).slice(0, 18);
+  const groups = groupMatches(visibleMatches, view);
   const canCalculate = activeRequests.length > 0 && activeProperties.length > 0;
 
   return (
@@ -47,8 +47,8 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
         <div className={styles.matchingStatusFacts}>
           <span><strong>{activeRequests.length}</strong> richieste attive</span>
           <span><strong>{activeProperties.length}</strong> immobili disponibili</span>
-          <span><strong>{stats.toPropose}</strong> da proporre</span>
-          <span><strong>{stats.inProgress}</strong> in lavorazione</span>
+          <span><strong>{stats.compatible}</strong> compatibili</span>
+          <span><strong>{stats.almostCompatible}</strong> buone alternative</span>
         </div>
       </section>
 
@@ -64,7 +64,7 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
         </section>
 
         <section className={styles.panel} aria-labelledby="logic-title">
-          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Logica attiva</p><h2 className={styles.panelTitle} id="logic-title">Come nasce la percentuale</h2></div><Link className={styles.textAction} href="/matching-settings">Modifica regole <ArrowRight aria-hidden="true" className="size-4" /></Link></header>
+          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Logica attiva</p><h2 className={styles.panelTitle} id="logic-title">Come nasce la percentuale</h2></div><Link className={styles.textAction} href="/matching-settings" target="_blank" rel="noreferrer">Modifica regole <ArrowRight aria-hidden="true" className="size-4" /></Link></header>
           <div className={styles.logicBody}>
             <div className={styles.thresholdLine}><span>Compatibile da <strong>{config.thresholds.compatible}%</strong></span><span>Alternativa da <strong>{config.thresholds.almostCompatible}%</strong></span><span>Valutabile da <strong>{config.thresholds.weak}%</strong></span></div>
             <div className={styles.weightList}>
@@ -86,19 +86,18 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
       </div>
 
       <section className={styles.panel}>
-        <details className={styles.filterDetails} open={Boolean(classification || contract || minimum || status)}>
+        <details className={styles.filterDetails} open={Boolean(classification || contract || minimum)}>
           <summary className={styles.filterSummary}>Filtri risultati <ChevronDown aria-hidden="true" className="size-4" /></summary>
           <form className={styles.filterForm}>
             <input type="hidden" name="view" value={view} />
             <select className={styles.select} name="classification" defaultValue={classification} aria-label="Classificazione"><option value="">Tutte le classificazioni</option><option value="compatible">Compatibili</option><option value="almost_compatible">Buone alternative</option><option value="weak">Da valutare</option><option value="not_relevant">Poco pertinenti</option></select>
-            <select className={styles.select} name="status" defaultValue={status} aria-label="Stato commerciale"><option value="">Tutti gli stati</option><option value="to_propose">Da proporre</option><option value="proposed">Proposto</option><option value="interested">Interessato</option><option value="visit_scheduled">Visita fissata</option><option value="negotiation">In trattativa</option><option value="completed">Concluso</option><option value="excluded">Escluso</option></select>
             <select className={styles.select} name="contract" defaultValue={contract} aria-label="Contratto"><option value="">Vendita e locazione</option><option value="sale">Vendita</option><option value="rent">Locazione</option></select>
             <input className={styles.input} name="minimum" type="number" min="0" max="100" defaultValue={minimum || ""} placeholder="Affinità minima" aria-label="Affinità minima" />
             <button className={styles.secondaryButton}>Applica filtri</button>
           </form>
         </details>
 
-        <div className={styles.matchGroups}>
+        <ProgressiveList className={styles.matchGroups} initialCount={6} step={6} noun="gruppi">
           {groups.map(([groupId, group]) => {
             const request = requestsById.get(group[0]!.request_id);
             const property = propertiesById.get(group[0]!.property_id);
@@ -112,7 +111,7 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
             );
           })}
           {!groups.length ? <div className={styles.emptyState}><div><CheckCircle2 aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" /><h2 className="mt-4 font-semibold text-[var(--ink-strong)]">Nessun abbinamento da mostrare</h2><p className="mt-2 text-sm">{canCalculate ? "Avvia il calcolo oppure modifica i filtri applicati." : "Servono almeno una richiesta attiva e un immobile disponibile."}</p></div></div> : null}
-        </div>
+        </ProgressiveList>
       </section>
     </div>
   );
@@ -136,7 +135,7 @@ function MatchRecord({ match, request, property, view, leading }: Readonly<{ mat
           <h3>{counterpartTitle}</h3>
           <p>{counterpartSubtitle}</p>
         </div>
-        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`}>Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
+        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`} target="_blank" rel="noreferrer">Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
       </div>
       <div className={styles.matchFacts}>
         {showProperty ? (
@@ -155,7 +154,6 @@ function MatchRecord({ match, request, property, view, leading }: Readonly<{ mat
       </div>
       <div className={styles.matchFooter}>
         <div className={styles.criteria}>{match.matched_criteria.slice(0, 3).map((criterion) => <span className={`${styles.criterion} ${styles.criterionGood}`} key={criterion}><CheckCircle2 aria-hidden="true" className="size-3.5" /> {criterion}</span>)}{match.conflicting_criteria.slice(0, 1).map((criterion) => <span className={`${styles.criterion} ${styles.criterionWarning}`} key={criterion}><AlertTriangle aria-hidden="true" className="size-3.5" /> {criterion}</span>)}</div>
-        {match.id ? <div className={styles.matchStatusControl}><MatchStatusSelect id={match.id} value={match.status} /></div> : null}
       </div>
     </article>
   );
@@ -194,5 +192,4 @@ function value(input: string | string[] | undefined) { return typeof input === "
 function allowed<T extends string>(input: string, values: readonly T[]) { return values.includes(input as T) ? input as T : ""; }
 function withQuery(query: Record<string, string | string[] | undefined>, updates: Record<string, string>) { const params = new URLSearchParams(); for (const [key, raw] of Object.entries(query)) if (typeof raw === "string" && raw) params.set(key, raw); for (const [key, raw] of Object.entries(updates)) params.set(key, raw); return `/matching?${params.toString()}`; }
 function classificationLabel(input: string) { return ({ compatible: "Compatibile", almost_compatible: "Buona alternativa", weak: "Da valutare", not_relevant: "Poco pertinente" }[input] ?? "Abbinamento"); }
-function commercialStatusLabel(input: string) { return ({ not_reviewed: "Da controllare", new: "Nuovo", to_propose: "Da proporre", proposed: "Proposto", interested: "Interessato", not_interested: "Non interessato", visit_scheduled: "Visita fissata", negotiation: "In trattativa", completed: "Concluso", excluded: "Escluso" }[input] ?? input.replaceAll("_", " ")); }
 function weightLabel(input: string) { return ({ propertyType: "Tipologia", zone: "Zona", budget: "Budget", internalSqm: "Superficie", rooms: "Locali", floor: "Piano", condition: "Condizione", availability: "Disponibilità" }[input] ?? input); }

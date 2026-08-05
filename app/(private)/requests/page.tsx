@@ -162,6 +162,8 @@ export default async function RequestsPage({
             <Link
               className={styles.requestCard}
               href={`/requests/${request.id}`}
+              target="_blank"
+              rel="noreferrer"
               key={request.id}
               aria-label={`Apri la richiesta ${cleanRequestTitle(request.title)}`}
             >

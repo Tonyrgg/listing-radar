@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { ProgressiveList } from "@/components/progressive-list";
 import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
 import styles from "@/components/matching/section-design.module.css";
 import { ZoneMap } from "@/components/matching/zone-map";
 import { propertyConditionLabel, propertyCrmCondition } from "@/lib/matching/property-presentation";
 import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
-import type { MatchClassification, MatchStatus, PortfolioProperty } from "@/lib/matching/types";
+import type { MatchClassification, PortfolioProperty } from "@/lib/matching/types";
 
 export default async function PropertyDetailPage({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
@@ -72,7 +73,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <div className={styles.propertyMapArea}>
           <header><div><p className={styles.sectionEyebrow}>Posizione</p><h2 className={styles.panelTitle}>Dove si trova</h2></div><span className={styles.count}>{propertyPoint ? "Punto esatto" : property.internal_zone_id ? "Perimetro zona" : "Da completare"}</span></header>
           <div className={styles.propertyMapBody}>
-            {zoneShapes.length || propertyPoint ? <ZoneMap compact shapes={zoneShapes} highlightedZoneId={property.internal_zone_id} point={propertyPoint} /> : <div className={styles.mapEmptyState}><MapPin aria-hidden="true" className="size-5" /><strong>Posizione da completare</strong><p>Aggiungi il punto esatto o assegna una zona immobiliare per localizzare l’immobile.</p></div>}
+            {zoneShapes.length || propertyPoint ? <ZoneMap compact showZoneLabels showFullscreenControl shapes={zoneShapes} highlightedZoneId={property.internal_zone_id} point={propertyPoint} /> : <div className={styles.mapEmptyState}><MapPin aria-hidden="true" className="size-5" /><strong>Posizione da completare</strong><p>Aggiungi il punto esatto o assegna una zona immobiliare per localizzare l’immobile.</p></div>}
           </div>
           {property.description ? <div className={styles.propertyNarrative}><p className={styles.label}>Presentazione</p><p>{property.description}</p></div> : null}
         </div>
@@ -106,9 +107,9 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Matching</p><h2 className={styles.panelTitle}>Richieste compatibili</h2></div><span className={styles.count}>{detail.matches.length} risultati</span></header>
         <div className={styles.panelBody}>
           {detail.matches.length ? (
-            <div className={styles.matchGrid}>
-              {detail.matches.map((match) => <MatchCard key={match.id} match={{ ...match, classification: match.classification as MatchClassification, status: match.status as MatchStatus }} counterpartHref={`/requests/${match.request_id}`} counterpartTitle={`${match.request?.clients?.full_name || "Cliente da collegare"}: ${match.request?.title || "Richiesta"}`} detailHref={match.id ? `/matching/${match.id}` : undefined} />)}
-            </div>
+            <ProgressiveList className={styles.matchGrid} initialCount={4} step={4} noun="richieste">
+              {detail.matches.map((match) => <MatchCard key={match.id} match={{ ...match, classification: match.classification as MatchClassification }} counterpartHref={`/requests/${match.request_id}`} counterpartTitle={`${match.request?.clients?.full_name || "Cliente da collegare"}: ${match.request?.title || "Richiesta"}`} detailHref={match.id ? `/matching/${match.id}` : undefined} />)}
+            </ProgressiveList>
           ) : <p className={styles.muted}>Nessuna richiesta confrontata con questo immobile.</p>}
         </div>
       </section>

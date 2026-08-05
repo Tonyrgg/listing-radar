@@ -13,9 +13,6 @@ export type PreferenceLevel = "required" | "preferred" | "indifferent" | "avoid"
 export type ZonePreferenceLevel = "required" | "preferred" | "accepted" | "excluded";
 export type MatchClassification =
   | "compatible" | "almost_compatible" | "weak" | "not_relevant";
-export type MatchStatus =
-  | "new" | "to_propose" | "proposed" | "interested" | "visit_scheduled"
-  | "not_interested" | "excluded" | "negotiation" | "completed";
 
 export type CrmFieldValue = string | number | boolean | null;
 
@@ -158,6 +155,11 @@ export interface PortfolioProperty {
   mandate_status: string;
   created_at?: string;
   updated_at?: string;
+  zone?: {
+    id?: string;
+    name: string;
+    geometry?: import("@/lib/map/types").GeoJsonGeometry | null;
+  } | null;
 }
 
 export interface FeatureDefinition {
@@ -202,7 +204,6 @@ export interface RequestPropertyMatch {
   missing_preferences: string[];
   conflicting_criteria: string[];
   explanation: string;
-  status: MatchStatus;
   last_calculated_at?: string;
 }
 
@@ -225,6 +226,6 @@ export interface MatchingContext {
   config?: MatchingConfig;
 }
 
-export interface MatchResult extends Omit<RequestPropertyMatch, "request_id" | "property_id" | "status"> {
+export interface MatchResult extends Omit<RequestPropertyMatch, "request_id" | "property_id"> {
   warnings: string[];
 }

@@ -15,7 +15,6 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { MatchStatusSelect } from "@/components/matching/management-panels";
 import {
   cleanRequestTitle,
   requestArea,
@@ -66,10 +65,6 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
           <span>compatibilità</span>
           <i><b style={{ width: `${match.score}%` }} /></i>
         </div>
-        <div className={styles.decisionControls}>
-          <span>Stato commerciale</span>
-          <MatchStatusSelect id={match.id ?? id} value={match.status} />
-        </div>
       </header>
 
       <section className={styles.pairSection} aria-label="Soggetti del match">
@@ -82,7 +77,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
             <EntitySignal icon={DoorOpen} label="Locali" value={requestRooms(request)} />
             <EntitySignal icon={MapPin} label="Zona" value={desiredZones} />
           </div>
-          <Link href={`/requests/${request.id}`}>Apri richiesta <ArrowRight aria-hidden="true" className="size-4" /></Link>
+          <Link href={`/requests/${request.id}`} target="_blank" rel="noreferrer">Apri richiesta <ArrowRight aria-hidden="true" className="size-4" /></Link>
         </article>
 
         <article className={styles.pairEntity}>
@@ -94,7 +89,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
             <EntitySignal icon={DoorOpen} label="Locali" value={numberLabel(property.rooms)} />
             <EntitySignal icon={MapPin} label="Zona" value={propertyZone} />
           </div>
-          <Link href={`/portfolio/${property.id}`}>Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
+          <Link href={`/portfolio/${property.id}`} target="_blank" rel="noreferrer">Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
         </article>
       </section>
 

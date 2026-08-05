@@ -1,4 +1,5 @@
 import { buildExplanation } from "./explanations";
+import { polygonLabelPoint, type MapPoint } from "@/lib/map/geometry";
 import {
   DEFAULT_MATCHING_CONFIG, clampScore, classifyScore, scoreBudget, scoreRange,
   sqmCoherenceWarnings,
@@ -55,12 +56,28 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     available += config.weights.zone;
     const current = zones.find((zone) => zone.zone_id === property.internal_zone_id);
     const required = zones.filter((zone) => zone.preference_level === "required");
+    const desired = zones.filter((zone) => zone.preference_level !== "excluded");
     if (current?.preference_level === "excluded") conflicts.push("zona esclusa");
     else if (current?.preference_level === "required") { earned += config.weights.zone; matched.push(current.zone?.name ?? "zona richiesta"); }
     else if (current?.preference_level === "preferred") { earned += config.weights.zone * 0.9; matched.push(current.zone?.name ?? "zona preferita"); }
     else if (current?.preference_level === "accepted") { earned += config.weights.zone * 0.65; matched.push(current.zone?.name ?? "zona accettata"); }
-    else if (required.length) conflicts.push("zona obbligatoria non rispettata");
-    else earned += config.weights.zone * 0.35;
+    else if (!desired.length) {
+      earned += config.weights.zone;
+      matched.push("zona non esclusa");
+    } else {
+      const proximity = closestDesiredZone(property, desired);
+      if (proximity) {
+        earned += config.weights.zone * proximity.ratio;
+        const distance = proximity.distanceKm.toLocaleString("it-IT", { maximumFractionDigits: 1 });
+        if (proximity.ratio >= 0.75) matched.push(`vicino a ${proximity.name}`);
+        else missing.push(`zona a ${distance} km da ${proximity.name}`);
+        if (required.length && proximity.distanceKm > .8) conflicts.push("zona obbligatoria troppo distante");
+      } else {
+        earned += config.weights.zone * .2;
+        missing.push("zona immobile non localizzata");
+        if (required.length) conflicts.push("zona obbligatoria non verificabile");
+      }
+    }
   }
 
   const price = request.contract_type === "sale" ? property.price : property.monthly_rent;
@@ -123,4 +140,39 @@ export function calculateMatch(context: MatchingContext): MatchResult {
 
 function canonicalCondition(value: string) {
   return ({ good: "normal", habitable: "normal", excellent: "renovated" }[value] ?? value);
+}
+
+function closestDesiredZone(
+  property: MatchingContext["property"],
+  zones: NonNullable<MatchingContext["requestZones"]>,
+) {
+  const propertyPoint = polygonLabelPoint(property.zone?.geometry);
+  if (!propertyPoint) return null;
+  const candidates = zones.flatMap((zone) => {
+    const point = polygonLabelPoint(zone.zone?.geometry);
+    if (!point) return [];
+    const distanceKm = distanceBetween(propertyPoint, point);
+    return [{
+      distanceKm,
+      name: zone.zone?.name ?? "zona desiderata",
+      ratio: zoneProximityRatio(distanceKm),
+    }];
+  });
+  return candidates.sort((left, right) => left.distanceKm - right.distanceKm)[0] ?? null;
+}
+
+export function zoneProximityRatio(distanceKm: number) {
+  if (!Number.isFinite(distanceKm) || distanceKm < 0) return .08;
+  return Math.max(.08, Math.min(.82, 1 - distanceKm / 3.2));
+}
+
+function distanceBetween(left: MapPoint, right: MapPoint) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const deltaLatitude = radians(right.latitude - left.latitude);
+  const deltaLongitude = radians(right.longitude - left.longitude);
+  const startLatitude = radians(left.latitude);
+  const endLatitude = radians(right.latitude);
+  const a = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(startLatitude) * Math.cos(endLatitude) * Math.sin(deltaLongitude / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }

@@ -9,9 +9,7 @@ import Link from "next/link";
 
 import type {
   MatchClassification,
-  MatchStatus,
 } from "@/lib/matching/types";
-import { MatchStatusSelect } from "./management-panels";
 
 const classificationLabel: Record<MatchClassification, string> = {
   compatible: "Compatibile",
@@ -30,7 +28,6 @@ export function MatchCard({
     id: string;
     score: number;
     classification: MatchClassification;
-    status: MatchStatus;
     matched_criteria?: string[];
     missing_preferences?: string[];
     conflicting_criteria?: string[];
@@ -64,7 +61,7 @@ export function MatchCard({
             <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
               {classificationLabel[match.classification]}
             </p>
-            <Link href={counterpartHref} className="mt-1 block font-semibold leading-snug text-[var(--ink-strong)] hover:text-[var(--surface-accent)]">
+            <Link href={counterpartHref} target="_blank" rel="noreferrer" className="mt-1 block font-semibold leading-snug text-[var(--ink-strong)] hover:text-[var(--surface-accent)]">
               {counterpartTitle}
             </Link>
           </div>
@@ -99,9 +96,8 @@ export function MatchCard({
             "Il confronto è stato calcolato sui dati disponibili."}
         </p>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-          <div className="min-w-0 flex-1 sm:w-48"><MatchStatusSelect id={match.id} value={match.status} /></div>
           {detailHref ? (
-            <Link href={detailHref} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[7px] border border-[var(--line-strong)] px-3 text-xs font-bold text-[var(--ink-strong)] hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]">
+            <Link href={detailHref} target="_blank" rel="noreferrer" className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[7px] border border-[var(--line-strong)] px-3 text-xs font-bold text-[var(--ink-strong)] hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]">
               Analizza <ArrowRight aria-hidden="true" className="size-3.5" />
             </Link>
           ) : null}

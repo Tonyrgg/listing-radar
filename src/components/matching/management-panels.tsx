@@ -1,16 +1,15 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deletePropertyAction, deleteRequestAction, deleteZoneAction, duplicateRequestAction,
   linkClientAction, recalculateAction, saveClientAction, saveFeatureAction,
   saveMatchingConfigAction, savePropertyAction, saveZoneAction,
-  updateMatchStatusAction, updateRequestStatusAction,
+  updateRequestStatusAction,
 } from "@/app/(private)/matching-actions";
 import type {
   Client, FeatureDefinition, InternalZone, MatchingConfig, PortfolioProperty,
-  MatchStatus,
 } from "@/lib/matching/types";
 import { zoneContainingPoint } from "@/lib/map/geometry";
 import { ZoneMap } from "@/components/matching/zone-map";
@@ -29,17 +28,6 @@ export function RecalculateButton({ scope, id }: Readonly<{ scope: "all" | "requ
   const router = useRouter();
   const [pending, start] = useTransition();
   return <button type="button" disabled={pending} onClick={() => start(async () => { await recalculateAction(scope, id); router.refresh(); })} className="min-h-10 rounded-[8px] border border-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--surface-accent)]">{pending ? "Calcolo in corso…" : "Ricalcola match"}</button>;
-}
-
-export function MatchStatusSelect({ id, value }: Readonly<{ id: string; value: MatchStatus }>) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  return <select aria-label="Stato commerciale" disabled={pending} value={value} onChange={(event) => start(async () => { await updateMatchStatusAction(id, event.target.value); router.refresh(); })} className={inputClass}>
-    <option value="new">Nuovo</option><option value="to_propose">Da proporre</option>
-    <option value="proposed">Proposto</option><option value="interested">Interessato</option>
-    <option value="visit_scheduled">Visita fissata</option><option value="not_interested">Non interessato</option>
-    <option value="excluded">Escluso</option><option value="negotiation">Trattativa</option><option value="completed">Concluso</option>
-  </select>;
 }
 
 export function RequestControls({
@@ -84,6 +72,7 @@ export function PropertyEditor({
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const [address, setAddress] = useState(property?.address ?? "");
+  const [contractType, setContractType] = useState<"sale" | "rent">(property?.contract_type ?? "sale");
   const [selectedZone, setSelectedZone] = useState(property?.internal_zone_id ?? "");
   const [latitude, setLatitude] = useState<number | null>(property?.latitude ?? null);
   const [longitude, setLongitude] = useState<number | null>(property?.longitude ?? null);
@@ -96,6 +85,17 @@ export function PropertyEditor({
     })) ?? null;
   }, [address, zones]);
   const values = property?.feature_values ?? {};
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", close);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
   function submit(formData: FormData) {
     setError("");
     start(async () => {
@@ -123,23 +123,35 @@ export function PropertyEditor({
     });
   }
   if (!open) return <button type="button" onClick={() => setOpen(true)} className="min-h-10 rounded-[8px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)]">{property ? "Modifica immobile" : "Nuovo immobile"}</button>;
-  return <form action={submit} className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
-    <div className="mb-5 flex items-center justify-between"><div><p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--surface-accent)]">Scheda portafoglio</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">{property ? "Modifica immobile" : "Nuovo immobile"}</h2></div>{!property ? <button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-[var(--ink-soft)]">Chiudi</button> : null}</div>
+  return <div className="fixed inset-0 z-[1200] grid place-items-center bg-[oklch(0.08_0.008_155_/_0.82)] p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}><form action={submit} role="dialog" aria-modal="true" aria-label={property ? "Modifica immobile" : "Nuovo immobile"} className="max-h-[94dvh] w-full max-w-[1040px] overflow-y-auto rounded-[10px] border border-[var(--line-strong)] bg-[var(--surface-panel)] p-5 sm:p-6">
+    <div className="mb-5 flex items-start justify-between gap-4"><div><p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--surface-accent)]">Scheda portafoglio</p><h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">{property ? "Modifica immobile" : "Nuovo immobile"}</h2><p className="mt-1 text-sm text-[var(--ink-soft)]">Inserisci subito i dati indispensabili. Posizione, dotazioni e note possono essere completate dopo.</p></div><button type="button" onClick={() => setOpen(false)} className="min-h-10 rounded-[7px] border border-[var(--line-soft)] px-3 text-sm font-semibold text-[var(--ink-soft)]">Chiudi</button></div>
     {error ? <p className="mb-4 rounded-[7px] bg-red-400/10 p-3 text-sm text-red-200">{error}</p> : null}
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Titolo<input name="title" required defaultValue={property?.title} className={inputClass} /></label>
-      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Contratto<select name="contract_type" defaultValue={property?.contract_type ?? "sale"} className={inputClass}><option value="sale">Vendita</option><option value="rent">Affitto</option></select></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Contratto<select name="contract_type" value={contractType} onChange={(event) => setContractType(event.target.value as "sale" | "rent")} className={inputClass}><option value="sale">Vendita</option><option value="rent">Affitto</option></select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Tipologia<select name="property_type" defaultValue={property?.property_type ?? "apartment"} className={inputClass}>{propertyTypes.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Comune<input name="municipality" defaultValue={property?.municipality ?? "Bitonto"} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Indirizzo<input name="address" value={address} onChange={(event) => setAddress(event.target.value)} className={inputClass} />{suggestedZone && selectedZone !== suggestedZone.id ? <button type="button" onClick={() => setSelectedZone(suggestedZone.id)} className="text-left text-[11px] font-bold text-[var(--surface-accent)]">Via riconosciuta: usa {suggestedZone.name}</button> : null}</label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Zona immobiliare<select name="internal_zone_id" value={selectedZone} onChange={(event) => setSelectedZone(event.target.value)} className={inputClass}><option value="">Da assegnare / fuori perimetro</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.zone_number ? `${zone.zone_number} · ` : ""}{zone.name}</option>)}</select></label>
-      {["price","monthly_rent","internal_sqm","commercial_sqm","rooms","bedrooms","bathrooms","floor","building_floors"].map((key) => <label key={key} className="grid gap-1 text-xs font-semibold capitalize text-[var(--ink-soft)]">{key.replaceAll("_"," ")}<input name={key} type="number" min={key.includes("floor") ? undefined : "0"} step="any" defaultValue={property?.[key as keyof PortfolioProperty] as number ?? ""} className={inputClass} /></label>)}
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">{contractType === "sale" ? "Prezzo richiesto" : "Canone mensile"}<input key={contractType} name={contractType === "sale" ? "price" : "monthly_rent"} type="number" min="0" step="any" defaultValue={(contractType === "sale" ? property?.price : property?.monthly_rent) ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Superficie interna<input name="internal_sqm" type="number" min="0" step="any" defaultValue={property?.internal_sqm ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Locali<input name="rooms" type="number" min="0" step="any" defaultValue={property?.rooms ?? ""} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Stato immobile<select name="condition" defaultValue={property?.condition ?? ""} className={inputClass}><option value="">Non indicato</option><option value="new">Nuovo</option><option value="renovated">Ristrutturato</option><option value="normal">Normale</option><option value="to_renovate">Da ristrutturare</option><option value="poor">Scarso</option></select></label>
+    </div>
+    <details className="mt-5 rounded-[9px] border border-[var(--line-soft)]" open={Boolean(property)}>
+      <summary className="flex min-h-12 cursor-pointer items-center px-4 text-sm font-bold text-[var(--ink-strong)]">Posizione e dettagli facoltativi</summary>
+      <div className="border-t border-[var(--line-soft)] p-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Superficie commerciale<input name="commercial_sqm" type="number" min="0" step="any" defaultValue={property?.commercial_sqm ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Camere<input name="bedrooms" type="number" min="0" step="any" defaultValue={property?.bedrooms ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Bagni<input name="bathrooms" type="number" min="0" step="any" defaultValue={property?.bathrooms ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Piano<input name="floor" type="number" step="any" defaultValue={property?.floor ?? ""} className={inputClass} /></label>
+      <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Piani edificio<input name="building_floors" type="number" min="0" step="any" defaultValue={property?.building_floors ?? ""} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Disponibilità<select name="availability_status" defaultValue={property?.availability_status ?? ""} className={inputClass}><option value="">Non indicata</option><option value="available_now">Subito</option><option value="available_at_deed">Al rogito</option><option value="occupied">Occupato</option><option value="rented">Locato</option><option value="future_availability">Futura</option></select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Disponibile dal<input name="available_from" type="date" defaultValue={property?.available_from ?? ""} className={inputClass} /></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Stato incarico<select name="mandate_status" defaultValue={property?.mandate_status ?? "active"} className={inputClass}><option value="draft">Bozza</option><option value="active">Attivo</option><option value="suspended">Sospeso</option><option value="expired">Scaduto</option><option value="sold">Venduto</option><option value="rented">Affittato</option><option value="archived">Archiviato</option></select></label>
       <label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">ID gestionale<input name="external_crm_id" defaultValue={property?.external_crm_id ?? ""} className={inputClass} /></label>
-    </div>
+      </div>
     <div className="mt-5"><h3 className="text-sm font-semibold text-[var(--ink-strong)]">Caratteristiche</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{features.filter((feature) => feature.field_type === "boolean").map((feature) => <label key={feature.id} className="flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-soft)] px-3 text-sm text-[var(--ink-soft)]"><input name={`feature_${feature.id}`} type="checkbox" defaultChecked={Boolean(values[feature.id])} />{feature.label}</label>)}</div></div>
     <section className="mt-5 overflow-hidden rounded-[9px] border border-[var(--line-soft)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-3">
@@ -163,8 +175,10 @@ export function PropertyEditor({
       </div>
     </section>
     <div className="mt-5 grid gap-3 md:grid-cols-2"><label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Descrizione<textarea name="description" rows={4} defaultValue={property?.description ?? ""} className={`${inputClass} h-auto py-2`} /></label><label className="grid gap-1 text-xs font-semibold text-[var(--ink-soft)]">Note interne<textarea name="notes" rows={4} defaultValue={property?.notes ?? ""} className={`${inputClass} h-auto py-2`} /></label></div>
+      </div>
+    </details>
     <button disabled={pending} className="mt-5 min-h-10 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)]">{pending ? "Salvataggio…" : "Salva immobile"}</button>
-  </form>;
+  </form></div>;
 }
 
 export function ZoneEditor({ zones }: Readonly<{ zones: InternalZone[] }>) {

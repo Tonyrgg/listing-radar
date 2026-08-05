@@ -124,6 +124,8 @@ export function LoadingLink({
   return (
     <Link
       href={href}
+      target="_blank"
+      rel="noreferrer"
       aria-busy={pending}
       onClick={() => setPending(true)}
       className={clsx(className, pending && "cursor-wait opacity-80")}

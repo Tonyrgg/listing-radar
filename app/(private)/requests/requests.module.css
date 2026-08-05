@@ -656,7 +656,9 @@
   overflow-wrap: anywhere;
 }
 
-.zoneEvidence { margin-bottom: .9rem; border-bottom: 1px solid var(--line-soft); padding-bottom: .9rem; }
+.zoneEvidence { margin: .75rem .35rem .2rem; border-top: 1px solid var(--line-soft); padding-top: .7rem; }
+.zoneEvidence summary { cursor: pointer; color: var(--ink-soft); font-size: .72rem; font-weight: 680; }
+.zoneMapBody { padding: .65rem; }
 .zoneEvidence ul { display: grid; gap: .45rem; margin-top: .5rem; }
 .zoneEvidence li { display: grid; gap: .25rem .8rem; align-items: baseline; color: var(--ink-soft); font-size: .7rem; }
 .zoneEvidence li strong { color: var(--ink-strong); }

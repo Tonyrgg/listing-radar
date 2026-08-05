@@ -1,14 +1,23 @@
-import { ArrowUpRight, Building2, CalendarDays, MapPin } from "lucide-react";
+import { ArrowUpRight, Building2, CalendarDays, MapPin, Search, X } from "lucide-react";
 import Link from "next/link";
 
+import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { PropertyEditor } from "@/components/matching/management-panels";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
+import { ProgressiveList } from "@/components/progressive-list";
 import { propertyConditionLabel } from "@/lib/matching/property-presentation";
 import { listFeatures, listProperties, listZones } from "@/lib/matching/repository";
 
-export default async function PortfolioPage() {
+export default async function PortfolioPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+  const query = await searchParams;
+  const search = value(query.q).trim().toLocaleLowerCase("it");
+  const contract = value(query.contract);
+  const propertyType = value(query.type);
+  const zoneId = value(query.zone);
+  const condition = value(query.condition);
+  const mandate = value(query.mandate);
   const [properties, zones, features] = await Promise.all([
     listProperties(),
     listZones(),
@@ -16,6 +25,17 @@ export default async function PortfolioPage() {
   ]);
 
   const active = properties.filter((property) => property.mandate_status === "active").length;
+  const filteredProperties = properties.filter((property) => {
+    const haystack = [property.title, property.address, property.municipality, property.zone?.name, property.external_crm_id]
+      .filter(Boolean).join(" ").toLocaleLowerCase("it");
+    return (!search || haystack.includes(search))
+      && (!contract || property.contract_type === contract)
+      && (!propertyType || property.property_type === propertyType)
+      && (!zoneId || property.internal_zone_id === zoneId)
+      && (!condition || property.condition === condition)
+      && (!mandate || property.mandate_status === mandate);
+  });
+  const hasFilters = Boolean(search || contract || propertyType || zoneId || condition || mandate);
 
   return (
     <div className={styles.page}>
@@ -34,14 +54,34 @@ export default async function PortfolioPage() {
         <Metric label="Locazione" value={properties.filter((item) => item.contract_type === "rent").length} note="incarichi di locazione" />
       </dl>
 
-      <div className={styles.recordGrid}>
-        {properties.map((property) => {
+      <AutoSubmitFiltersForm className={styles.portfolioFilters}>
+        <label className={styles.searchField}>
+          <Search aria-hidden="true" />
+          <span className="sr-only">Cerca immobili</span>
+          <input className={styles.input} name="q" defaultValue={value(query.q)} placeholder="Cerca per titolo, via, zona o ID CRM" />
+        </label>
+        <select className={styles.select} name="contract" defaultValue={contract} aria-label="Contratto"><option value="">Tutti i contratti</option><option value="sale">Vendita</option><option value="rent">Locazione</option></select>
+        <select className={styles.select} name="type" defaultValue={propertyType} aria-label="Tipologia"><option value="">Tutte le tipologie</option>{[...new Set(properties.map((item) => item.property_type))].sort().map((item) => <option value={item} key={item}>{propertyTypeLabel(item)}</option>)}</select>
+        <select className={styles.select} name="zone" defaultValue={zoneId} aria-label="Zona"><option value="">Tutte le zone</option>{zones.map((zone) => <option value={zone.id} key={zone.id}>{zone.zone_number ? `${zone.zone_number} · ` : ""}{zone.name}</option>)}</select>
+        <select className={styles.select} name="condition" defaultValue={condition} aria-label="Stato immobile"><option value="">Tutti gli stati immobile</option><option value="new">Nuovo</option><option value="renovated">Ristrutturato</option><option value="normal">Normale</option><option value="to_renovate">Da ristrutturare</option><option value="poor">Scarso</option></select>
+        <select className={styles.select} name="mandate" defaultValue={mandate} aria-label="Disponibilità incarico"><option value="">Tutti gli incarichi</option><option value="active">Disponibili</option><option value="draft">Bozze</option><option value="suspended">Sospesi</option><option value="sold">Venduti</option><option value="rented">Affittati</option><option value="archived">Archiviati</option></select>
+      </AutoSubmitFiltersForm>
+
+      <div className={styles.listResultLine}>
+        <p><strong>{filteredProperties.length}</strong> {filteredProperties.length === 1 ? "immobile trovato" : "immobili trovati"}</p>
+        {hasFilters ? <Link href="/portfolio"><X aria-hidden="true" className="size-3.5" /> Azzera filtri</Link> : null}
+      </div>
+
+      <ProgressiveList className={styles.recordGrid} initialCount={12} step={12} noun="immobili">
+        {filteredProperties.map((property) => {
           const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
           const featureCount = (property.property_feature_values ?? []).filter((item) => Boolean(item.value)).length;
           return (
             <Link
               className={styles.propertyCard}
               href={`/portfolio/${property.id}`}
+              target="_blank"
+              rel="noreferrer"
               key={property.id}
               aria-label={`Apri l’immobile ${property.title}`}
             >
@@ -93,15 +133,15 @@ export default async function PortfolioPage() {
             </Link>
           );
         })}
-      </div>
+      </ProgressiveList>
 
-      {!properties.length ? (
+      {!filteredProperties.length ? (
         <div className={styles.emptyState}>
           <div>
             <Building2 aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" />
-            <h2 className="mt-4 font-semibold text-[var(--ink-strong)]">Nessun immobile in portafoglio</h2>
-            <p className="mt-2 text-sm">Aggiungi il primo immobile per attivare il confronto con le richieste.</p>
-            <div className="mt-5"><PropertyEditor zones={zones} features={features} /></div>
+            <h2 className="mt-4 font-semibold text-[var(--ink-strong)]">{hasFilters ? "Nessun immobile corrisponde ai filtri" : "Nessun immobile in portafoglio"}</h2>
+            <p className="mt-2 text-sm">{hasFilters ? "Prova a rimuovere un filtro o a cambiare la ricerca." : "Aggiungi il primo immobile per attivare il confronto con le richieste."}</p>
+            <div className="mt-5">{hasFilters ? <Link className={styles.secondaryButton} href="/portfolio">Azzera filtri</Link> : <PropertyEditor zones={zones} features={features} />}</div>
           </div>
         </div>
       ) : null}
@@ -134,3 +174,5 @@ function mandateLabel(status: string) {
 function availabilityLabel(value: string | null) {
   return ({ available_now: "Subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Futura" }[value ?? ""] ?? "Non indicata");
 }
+
+function value(input: string | string[] | undefined) { return typeof input === "string" ? input : ""; }

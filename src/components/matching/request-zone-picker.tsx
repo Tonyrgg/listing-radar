@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { saveRequestZonesAction } from "@/app/(private)/matching-actions";
 import type { InternalZone } from "@/lib/matching/types";
 import { ZoneMap } from "./zone-map";
+import styles from "./request-zone-picker.module.css";
 
 export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExcludedZoneIds }: Readonly<{
   requestId: string;
@@ -77,50 +78,39 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
   }));
 
   return (
-    <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-2">
-        <span className="px-1 text-xs font-semibold text-[var(--ink-soft)]">Quando tocchi una zona:</span>
-        <button type="button" onClick={() => setMode("preferred")} aria-pressed={mode === "preferred"} className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${mode === "preferred" ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]" : "border-[var(--line-soft)] bg-[var(--surface-panel)] text-[var(--ink-soft)]"}`}>
-          <Check aria-hidden="true" className="size-3.5" /> Desiderata
-        </button>
-        <button type="button" onClick={() => setMode("excluded")} aria-pressed={mode === "excluded"} className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${mode === "excluded" ? "border-red-400/55 bg-red-400/12 text-red-300" : "border-[var(--line-soft)] bg-[var(--surface-panel)] text-[var(--ink-soft)]"}`}>
-          <Ban aria-hidden="true" className="size-3.5" /> Da evitare
-        </button>
-      </div>
+    <div className={styles.picker}>
       {shapes.length ? (
-        <ZoneMap compact showZoneLabels shapes={shapes} selectedZoneIds={[...selected]} excludedZoneIds={[...excluded]} onZoneToggle={toggle} />
+        <ZoneMap
+          compact
+          showZoneLabels
+          showFullscreenControl
+          shapes={shapes}
+          selectedZoneIds={[...selected]}
+          excludedZoneIds={[...excluded]}
+          onZoneToggle={toggle}
+          controls={(
+            <div className={styles.controls}>
+              <button type="button" onClick={() => setMode("preferred")} aria-pressed={mode === "preferred"} className={`${styles.mode} ${mode === "preferred" ? styles.modePreferred : ""}`}>
+                <Check aria-hidden="true" /> Desiderate
+              </button>
+              <button type="button" onClick={() => setMode("excluded")} aria-pressed={mode === "excluded"} className={`${styles.mode} ${mode === "excluded" ? styles.modeExcluded : ""}`}>
+                <Ban aria-hidden="true" /> Da evitare
+              </button>
+              <span className={styles.counts}>{selected.size} desiderate · {excluded.size} escluse</span>
+              <button type="button" onClick={save} disabled={pending} className={styles.save}>
+                <Save aria-hidden="true" /> {pending ? "Salvo…" : "Salva"}
+              </button>
+            </div>
+          )}
+        />
       ) : (
         <div className="grid min-h-48 place-items-center rounded-[8px] border border-dashed border-[var(--line-strong)] text-center text-sm text-[var(--ink-soft)]">
           <div><MapPinned aria-hidden="true" className="mx-auto size-5 text-[var(--surface-accent)]" /><p className="mt-2">Disegna i perimetri nella scheda Zone immobiliari per abilitarne la selezione sulla mappa.</p></div>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {activeZones.map((zone) => {
-          const checked = selected.has(zone.id);
-          const isExcluded = excluded.has(zone.id);
-          return (
-            <button
-              type="button"
-              className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${checked ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]" : isExcluded ? "border-red-400/40 bg-red-400/10 text-red-300" : "border-[var(--line-soft)] text-[var(--ink-soft)]"}`}
-              aria-pressed={mode === "excluded" ? isExcluded : checked}
-              onClick={() => toggle(zone.id)}
-              key={zone.id}
-            >
-              {checked ? <Check aria-hidden="true" className="size-3.5" /> : isExcluded ? <Ban aria-hidden="true" className="size-3.5" /> : null}{zone.zone_number ? `${zone.zone_number} · ` : ""}{zone.name}{isExcluded ? " · da evitare" : !zone.geometry ? " · senza perimetro" : ""}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3 border-t border-[var(--line-soft)] pt-3">
-        <button type="button" onClick={save} disabled={pending} className="inline-flex min-h-10 items-center gap-2 rounded-[7px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)]">
-          <Save aria-hidden="true" className="size-4" /> {pending ? "Salvataggio…" : "Salva preferenze territoriali"}
-        </button>
-        <span className="text-xs text-[var(--ink-subtle)]">{selected.size} desiderate · {excluded.size} escluse</span>
-        {message ? <span className="text-xs font-semibold text-[var(--surface-accent)]">{message}</span> : null}
-        {error ? <span className="text-xs font-semibold text-[var(--status-error)]">{error}</span> : null}
-      </div>
+      {message ? <p className={styles.message}>{message}</p> : null}
+      {error ? <p className={`${styles.message} ${styles.error}`}>{error}</p> : null}
     </div>
   );
 }

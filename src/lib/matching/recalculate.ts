@@ -70,7 +70,7 @@ export async function recalculateMatchesForRequest(requestId: string) {
   const supabase = requireMatchingDatabase();
   const [{ data: request, error: requestError }, { data: properties, error: propertiesError }] = await Promise.all([
     supabase.from("property_requests").select("*").eq("id", requestId).single(),
-    supabase.from("portfolio_properties").select("*").eq("mandate_status", "active"),
+    supabase.from("portfolio_properties").select("*, zone:internal_zones(id,name,geometry)").eq("mandate_status", "active"),
   ]);
   if (requestError || !request) throw new Error(requestError?.message ?? "Richiesta non trovata.");
   if (propertiesError) throw new Error(propertiesError.message);
@@ -81,7 +81,7 @@ export async function recalculateMatchesForRequest(requestId: string) {
 export async function recalculateMatchesForProperty(propertyId: string) {
   const supabase = requireMatchingDatabase();
   const [{ data: property, error: propertyError }, { data: requests, error: requestsError }] = await Promise.all([
-    supabase.from("portfolio_properties").select("*").eq("id", propertyId).single(),
+    supabase.from("portfolio_properties").select("*, zone:internal_zones(id,name,geometry)").eq("id", propertyId).single(),
     supabase.from("property_requests").select("*").in("status", ["active", "urgent"]),
   ]);
   if (propertyError || !property) throw new Error(propertyError?.message ?? "Immobile non trovato.");
@@ -94,7 +94,7 @@ export async function recalculateAllActiveMatches() {
   const supabase = requireMatchingDatabase();
   const [{ data: requests, error: requestsError }, { data: properties, error: propertiesError }] = await Promise.all([
     supabase.from("property_requests").select("*").in("status", ["active", "urgent"]),
-    supabase.from("portfolio_properties").select("*").eq("mandate_status", "active"),
+    supabase.from("portfolio_properties").select("*, zone:internal_zones(id,name,geometry)").eq("mandate_status", "active"),
   ]);
   if (requestsError || propertiesError) throw new Error((requestsError ?? propertiesError)?.message);
   const count = await calculateAndStore((requests ?? []) as PropertyRequest[], (properties ?? []) as PortfolioProperty[]);

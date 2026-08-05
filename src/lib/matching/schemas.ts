@@ -118,8 +118,3 @@ export const featureDefinitionSchema = z.object({
   is_active: z.boolean().default(true),
   sort_order: z.coerce.number().int().default(0),
 });
-
-export const matchStatusSchema = z.enum([
-  "new","to_propose","proposed","interested","visit_scheduled",
-  "not_interested","excluded","negotiation","completed",
-]);

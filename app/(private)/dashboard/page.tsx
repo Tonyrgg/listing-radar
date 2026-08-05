@@ -160,6 +160,8 @@ function OpportunityRow({
       <div className="grid min-w-0 gap-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
         <Link
           href={`/listings/${listing.id}`}
+          target="_blank"
+          rel="noreferrer"
           className="block h-24 overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] transition-colors hover:border-[var(--line-strong)]"
           aria-label={`Apri scheda ${listing.title}`}
         >
@@ -186,6 +188,8 @@ function OpportunityRow({
           </div>
           <Link
             href={`/listings/${listing.id}`}
+            target="_blank"
+            rel="noreferrer"
             className="mt-2 block truncate text-sm font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
           >
             {listing.title}
@@ -279,6 +283,8 @@ export default async function DashboardPage() {
           action={
             <Link
               href="/incoming"
+              target="_blank"
+              rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
             >
               Vedi tutti
@@ -300,6 +306,8 @@ export default async function DashboardPage() {
           action={
             <Link
               href="/settings"
+              target="_blank"
+              rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
             >
               Dettagli
@@ -350,6 +358,8 @@ export default async function DashboardPage() {
         action={
           <Link
             href="/listings?onlyHighPriority=on"
+            target="_blank"
+            rel="noreferrer"
             className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
           >
             Archivio

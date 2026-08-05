@@ -403,9 +403,22 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
 .compactScore > span { display: block; height: .3rem; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
 .compactScore i { display: block; height: 100%; border-radius: inherit; background: var(--surface-accent); }
 .matchFooter { display: flex; flex-direction: column; gap: .75rem; margin-top: .8rem; border-top: 1px solid var(--line-soft); padding-top: .75rem; }
-.matchStatusControl { width: 100%; }
 
 /* Portfolio */
+.portfolioFilters {
+  display: grid;
+  gap: .55rem;
+  border: 1px solid var(--line-soft);
+  border-radius: .65rem;
+  background: var(--surface-panel);
+  padding: .75rem;
+}
+.searchField { position: relative; min-width: 0; }
+.searchField svg { position: absolute; z-index: 1; top: 50%; left: .8rem; width: 1rem; height: 1rem; color: var(--ink-subtle); transform: translateY(-50%); pointer-events: none; }
+.searchField .input { padding-left: 2.4rem; }
+.listResultLine { display: flex; min-height: 2rem; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; color: var(--ink-soft); font-size: .78rem; }
+.listResultLine strong { color: var(--ink-strong); }
+.listResultLine a { display: inline-flex; align-items: center; gap: .35rem; color: var(--surface-accent); font-weight: 700; text-decoration: none; }
 .recordGrid { display: grid; gap: .85rem; }
 .propertyCard {
   display: flex;
@@ -577,6 +590,8 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
 .matchGrid { display: grid; gap: .75rem; }
 
 @media (min-width: 640px) {
+  .portfolioFilters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .searchField { grid-column: 1 / -1; }
   .pageIntro, .detailTitleRow { flex-direction: row; align-items: flex-end; justify-content: space-between; }
   .overviewStrip { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .metric + .metric { border-top: 0; }
@@ -599,7 +614,6 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
   .readinessRow > .textAction { grid-column: auto; justify-self: end; }
   .attentionGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .matchFooter { flex-direction: row; align-items: center; justify-content: space-between; }
-  .matchStatusControl { width: 12rem; flex: none; }
   .matchDecision { grid-template-columns: 4.6rem minmax(0,1fr) auto; }
   .matchDetailAction { grid-column: auto; min-width: 8.5rem; padding-inline: .8rem; }
   .mapStats { display: block; }
@@ -636,6 +650,8 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
 }
 
 @media (min-width: 1180px) {
+  .portfolioFilters { grid-template-columns: minmax(16rem,1.7fr) repeat(5,minmax(9rem,1fr)); }
+  .searchField { grid-column: auto; }
   .overviewStrip { grid-template-columns: repeat(4,minmax(0,1fr)); }
   .metric + .metric, .metric:nth-child(n+3) { border-top: 0; border-left: 1px solid var(--line-soft); }
   .filterForm { grid-template-columns: repeat(4,minmax(0,1fr)) auto; }

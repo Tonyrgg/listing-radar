@@ -1,3 +1,8 @@
+.shell {
+  position: relative;
+  min-width: 0;
+}
+
 .map {
   width: 100%;
   min-height: 31rem;
@@ -6,6 +11,48 @@
   background: var(--surface-muted);
   z-index: 0;
 }
+
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  padding: .75rem;
+  background: var(--surface-canvas);
+}
+
+.fullscreen .map,
+.fullscreen .loading {
+  height: calc(100dvh - 1.5rem);
+  min-height: 0;
+  border-radius: .7rem;
+}
+
+.mapControls {
+  position: absolute;
+  z-index: 500;
+  top: .75rem;
+  left: 3.5rem;
+  max-width: calc(100% - 8rem);
+}
+
+.fullscreenButton {
+  position: absolute;
+  z-index: 520;
+  top: .75rem;
+  right: .75rem;
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: .5rem;
+  background: color-mix(in oklch, var(--surface-panel) 94%, transparent);
+  color: var(--ink-strong);
+  cursor: pointer;
+}
+
+.fullscreenButton:hover { border-color: var(--surface-accent); color: var(--surface-accent); }
+.fullscreenButton svg { width: 1rem; height: 1rem; }
 
 .compact { min-height: 22rem; }
 
@@ -48,7 +95,7 @@
   font-weight: 760;
   letter-spacing: .025em;
   line-height: 1.2;
-  padding: .24rem .34rem;
+  padding: .2rem .36rem .2rem .2rem;
   pointer-events: none;
   text-align: center;
   text-transform: uppercase;
@@ -56,11 +103,11 @@
 }
 
 .zoneLabel::before { display: none; }
-.zoneLabelContent { display: inline-flex; align-items: center; gap: .32rem; }
+.zoneLabelContent { display: inline-flex; align-items: center; gap: .34rem; }
 .zoneLabelNumber {
   display: inline-grid;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.45rem;
+  height: 1.45rem;
   flex: none;
   place-items: center;
   border: 1px solid color-mix(in oklch, var(--ink-strong) 70%, transparent);
@@ -68,24 +115,16 @@
   font-size: .65rem;
   font-weight: 820;
 }
-.zoneLabelName { max-width: 10.5rem; overflow: hidden; text-overflow: ellipsis; }
-.zoneLabelCompact { border-radius: 50%; padding: .18rem; }
-.zoneLabelCompact .zoneLabelContent { gap: 0; }
-.zoneLabelCompact .zoneLabelNumber { width: 1.45rem; height: 1.45rem; }
-.zoneLabelAccessibleName {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
+.zoneLabelName { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+.zoneLabelHighlighted {
+  border-color: var(--surface-accent);
+  outline: 2px solid color-mix(in oklch, var(--surface-accent) 28%, transparent);
 }
 
 @media (max-width: 639px) {
   .map { min-height: 24rem; }
   .compact { min-height: 19rem; }
   .zoneLabel { font-size: .62rem; }
-  .zoneLabelDetailed { max-width: 8.75rem; }
+  .zoneLabelDetailed { max-width: 9.5rem; }
   .zoneLabelNumber { width: 1.2rem; height: 1.2rem; font-size: .6rem; }
 }

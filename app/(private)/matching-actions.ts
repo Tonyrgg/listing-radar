@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import {
-  clientSchema, featureDefinitionSchema, matchStatusSchema,
+  clientSchema, featureDefinitionSchema,
   portfolioPropertySchema, propertyRequestSchema, zoneSchema,
 } from "@/lib/matching/schemas";
 import { estimateCommercialSqm } from "@/lib/matching/scoring";
@@ -277,15 +277,6 @@ export async function deleteZoneAction(zoneId: string) {
   }
   const { error } = await supabase.from("internal_zones").delete().eq("id", zoneId);
   if (error) throw new Error(error.message);
-  refreshAll();
-}
-
-export async function updateMatchStatusAction(matchId: string, status: unknown) {
-  await requireUser();
-  const parsed = matchStatusSchema.parse(status);
-  const { error } = await requireMatchingDatabase().from("request_property_matches").update({ status: parsed }).eq("id", matchId);
-  if (error) throw new Error(error.message);
-  await logMatchingActivity("match", matchId, "status_changed", { status: parsed });
   refreshAll();
 }
 

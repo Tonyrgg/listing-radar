@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { calculateMatch } from "@/lib/matching/engine";
 import { estimateCommercialSqm, sqmCoherenceWarnings } from "@/lib/matching/scoring";
 import type { PortfolioProperty, PropertyRequest } from "@/lib/matching/types";
+import type { GeoJsonGeometry } from "@/lib/map/types";
 
 const request: PropertyRequest = {
   id: "r", client_id: null, title: "Casa", contract_type: "sale",
@@ -55,4 +56,38 @@ describe("matching engine", () => {
     expect(middleFloor.missing_preferences).toContain("piano non preferito");
     expect(lastFloor.score).toBeGreaterThan(middleFloor.score);
   });
+  it("pesa la zona in base alla distanza reale tra i perimetri", () => {
+    const centro = square(16.690, 41.107);
+    const santiMedici = square(16.695, 41.112);
+    const scuole = square(16.710, 41.105);
+    const requestZones = [{
+      zone_id: "centro",
+      preference_level: "preferred" as const,
+      zone: { id: "centro", zone_number: 2, name: "Centro", description: null, landmarks: [], aliases: [], associated_streets: [], geometry: centro, color: "#f97316", is_active: true },
+    }];
+    const near = calculateMatch({
+      request,
+      property: { ...property, internal_zone_id: "santi", zone: { id: "santi", name: "Santi Medici", geometry: santiMedici } },
+      requestZones,
+    });
+    const peripheral = calculateMatch({
+      request,
+      property: { ...property, internal_zone_id: "scuole", zone: { id: "scuole", name: "Zona Scuole", geometry: scuole } },
+      requestZones,
+    });
+    expect(near.score).toBeGreaterThan(peripheral.score);
+    expect(near.matched_criteria).toContain("vicino a Centro");
+    expect(peripheral.missing_preferences.some((item) => item.includes("km da Centro"))).toBe(true);
+  });
 });
+
+function square(longitude: number, latitude: number): GeoJsonGeometry {
+  const offset = .001;
+  return { type: "Polygon", coordinates: [[
+    [longitude - offset, latitude - offset],
+    [longitude + offset, latitude - offset],
+    [longitude + offset, latitude + offset],
+    [longitude - offset, latitude + offset],
+    [longitude - offset, latitude - offset],
+  ]] };
+}
