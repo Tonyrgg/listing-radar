@@ -37,6 +37,19 @@ describe("zone geometry", () => {
     expect(pointInPolygon({ latitude: 41.13, longitude: 16.69 }, geometry)).toBe(false);
   });
 
+  it("excludes an inner district from a surrounding zone", () => {
+    const geometryWithHole = {
+      type: "Polygon",
+      coordinates: [
+        [[16.68, 41.10], [16.70, 41.10], [16.70, 41.12], [16.68, 41.12], [16.68, 41.10]],
+        [[16.687, 41.107], [16.693, 41.107], [16.693, 41.113], [16.687, 41.113], [16.687, 41.107]],
+      ],
+    };
+
+    expect(pointInPolygon({ latitude: 41.105, longitude: 16.685 }, geometryWithHole)).toBe(true);
+    expect(pointInPolygon({ latitude: 41.11, longitude: 16.69 }, geometryWithHole)).toBe(false);
+  });
+
   it("finds the zone that contains a property point", () => {
     expect(zoneContainingPoint([zone], { latitude: 41.11, longitude: 16.69 })?.id).toBe("zone-villa");
   });

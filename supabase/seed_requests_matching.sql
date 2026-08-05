@@ -1,12 +1,21 @@
 -- SOLO SVILUPPO: eseguire manualmente dopo 004_requests_matching.sql.
 insert into public.internal_zones (name, description, landmarks, aliases, associated_streets)
-values
-  ('Zona Villa','Area intorno alla villa comunale','["Villa comunale"]','["Villa"]','["Via 4 Novembre"]'),
-  ('Zona Stazione','Collegamenti ferroviari','["Stazione"]','["Stazione centrale"]','["Via della Repubblica"]'),
-  ('Zona Ospedale','Area del presidio sanitario','["Ospedale"]','["Ospedale civile"]','[]'),
-  ('Centro Storico','Nucleo antico','["Cattedrale"]','["Centro","Borgo antico"]','[]'),
-  ('Zona San Francesco','Quadrante San Francesco','["Chiesa San Francesco"]','["San Francesco"]','["Via Borgo San Francesco"]')
-on conflict do nothing;
+select seed.*
+from (values
+  ('Centro Storico','Nucleo antico','["Concattedrale di Bitonto"]'::jsonb,'["Borgo antico"]'::jsonb,'["Via Solferino"]'::jsonb),
+  ('Centro','Fascia centrale moderna','["Piazza Marconi"]'::jsonb,'["Zona Centro"]'::jsonb,'["Via Giacomo Matteotti"]'::jsonb),
+  ('Zona Villa','Area intorno alla Villa Comunale','["Villa Comunale Giovanni XXIII"]'::jsonb,'["Villa"]'::jsonb,'["Via Quattro Novembre"]'::jsonb),
+  ('Zona Stazione','Area della stazione','["Stazione di Bitonto"]'::jsonb,'["Stazione"]'::jsonb,'["Viale Italia"]'::jsonb),
+  ('Zona Santi Medici','Area della Basilica','["Basilica dei Santi Medici"]'::jsonb,'["Santi Medici"]'::jsonb,'["Via Patierno"]'::jsonb),
+  ('Zona Ospedale / Hospice','Area nord dell''Hospice','["Hospice Aurelio Marena"]'::jsonb,'["Ospedale","Hospice"]'::jsonb,'["Via Patierno"]'::jsonb),
+  ('Zona Togliatti / Ulivi','Fascia residenziale nord-est','["Farmacia degli Ulivi"]'::jsonb,'["Togliatti","Ulivi"]'::jsonb,'["Via Palmiro Togliatti"]'::jsonb),
+  ('Zona Traiana','Area occidentale','["Cimitero Comunale"]'::jsonb,'["Traiana"]'::jsonb,'["Via Traiana"]'::jsonb),
+  ('Zona Sud / Megra','Fascia meridionale','[]'::jsonb,'["Sud","Megra"]'::jsonb,'["Via Megra"]'::jsonb),
+  ('Zona Artigianale / Nord-Ovest','Area artigianale nord-occidentale','["Zona Artigianale di Bitonto"]'::jsonb,'["Artigianale","Nord-Ovest"]'::jsonb,'["Viale Europa"]'::jsonb)
+) as seed(name, description, landmarks, aliases, associated_streets)
+where not exists (
+  select 1 from public.internal_zones existing where lower(trim(existing.name)) = lower(trim(seed.name))
+);
 
 insert into public.property_requests
   (title, contract_type, property_types, status, priority, budget_ideal, budget_max,
@@ -34,8 +43,8 @@ values
     null,210000,null,140,170,5,3,2,0,2,'renovated','available_at_deed','active'),
   ('Attico Centro Storico','sale','penthouse','Bitonto','Piazza Cattedrale',
     (select id from public.internal_zones where name='Centro Storico' limit 1),135000,null,82,105,3,2,1,4,4,'to_renovate','future_availability','active'),
-  ('Appartamento San Francesco','sale','apartment','Bitonto','Via Borgo San Francesco',
-    (select id from public.internal_zones where name='Zona San Francesco' limit 1),98000,null,72,83,3,2,1,1,4,'habitable','available_now','active');
+  ('Appartamento Santi Medici','sale','apartment','Bitonto','Via Patierno',
+    (select id from public.internal_zones where name='Zona Santi Medici' limit 1),98000,null,72,83,3,2,1,1,4,'habitable','available_now','active');
 
 -- I match demo vengono prodotti dal pulsante "Ricalcola match", usando lo stesso
 -- motore server-side impiegato in produzione.

@@ -11,11 +11,13 @@ import {
   Minimize2,
   MousePointer2,
   Plus,
+  PenLine,
   Save,
   ScanSearch,
   Shapes,
   Tags,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -32,12 +34,30 @@ import styles from "./section-design.module.css";
 import { ZoneMap } from "./zone-map";
 
 const DEFAULT_COLOR = "#5fbf7a";
+const ZONE_NUMBER_BY_NAME = new Map([
+  ["Centro Storico", 1], ["Centro", 2], ["Zona Villa", 3], ["Zona Stazione", 4],
+  ["Zona Santi Medici", 5], ["Zona Ospedale / Hospice", 6], ["Zona Togliatti / Ulivi", 7],
+  ["Zona Traiana", 8], ["Zona Sud / Megra", 9], ["Zona Artigianale / Nord-Ovest", 10],
+]);
+const ZONE_LABEL_POINTS = new Map([
+  [1, { latitude: 41.1063, longitude: 16.6898 }],
+  [2, { latitude: 41.1091, longitude: 16.6917 }],
+  [3, { latitude: 41.1128, longitude: 16.6968 }],
+  [4, { latitude: 41.1132, longitude: 16.6815 }],
+  [5, { latitude: 41.1146, longitude: 16.6915 }],
+  [6, { latitude: 41.1200, longitude: 16.6970 }],
+  [7, { latitude: 41.1115, longitude: 16.7040 }],
+  [8, { latitude: 41.1065, longitude: 16.6778 }],
+  [9, { latitude: 41.1012, longitude: 16.6950 }],
+  [10, { latitude: 41.1198, longitude: 16.6780 }],
+]);
 
 export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState<InternalZone | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [vertexEditing, setVertexEditing] = useState(false);
   const [draftGeometry, setDraftGeometry] = useState<GeoJsonGeometry | null>(null);
   const [zoneColor, setZoneColor] = useState(DEFAULT_COLOR);
   const [message, setMessage] = useState("");
@@ -48,13 +68,24 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const mapPanelRef = useRef<HTMLElement>(null);
   const editorRef = useRef<HTMLFormElement>(null);
 
-  const shapes = useMemo(() => zones.filter((zone) => zone.geometry).map((zone) => ({
-    shapeId: zone.id,
-    zoneId: zone.id,
-    name: zone.name,
-    color: zone.color,
-    geometry: zone.geometry!,
-  })), [zones]);
+  const orderedZones = useMemo(() => [...zones].sort((left, right) => {
+    const leftNumber = left.zone_number ?? ZONE_NUMBER_BY_NAME.get(left.name) ?? 999;
+    const rightNumber = right.zone_number ?? ZONE_NUMBER_BY_NAME.get(right.name) ?? 999;
+    return leftNumber - rightNumber || left.name.localeCompare(right.name, "it");
+  }), [zones]);
+
+  const shapes = useMemo(() => orderedZones.filter((zone) => zone.geometry).map((zone) => {
+    const zoneNumber = zone.zone_number ?? ZONE_NUMBER_BY_NAME.get(zone.name);
+    return {
+      shapeId: zone.id,
+      zoneId: zone.id,
+      zoneNumber,
+      labelPoint: zoneNumber ? ZONE_LABEL_POINTS.get(zoneNumber) : null,
+      name: zone.name,
+      color: zone.color,
+      geometry: zone.geometry!,
+    };
+  }), [orderedZones]);
 
   const mapExpanded = fullscreen || fallbackFullscreen;
   const mappedZoneCount = shapes.length;
@@ -82,6 +113,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
     setZoneColor(zone?.color || DEFAULT_COLOR);
     setDraftGeometry(null);
     setDrawing(false);
+    setVertexEditing(false);
     setMessage("");
     setError("");
   }
@@ -116,7 +148,54 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
     setDrawing(true);
   }
 
-  const mapInstruction = drawing
+  function startVertexEditing() {
+    if (!editing?.geometry) return;
+    setDrawing(false);
+    setDraftGeometry(editing.geometry);
+    setVertexEditing(true);
+    setMessage("");
+    setError("");
+  }
+
+  function cancelVertexEditing() {
+    setVertexEditing(false);
+    setDraftGeometry(null);
+    setMessage("");
+    setError("");
+  }
+
+  function saveEditedGeometry() {
+    if (!editing || !draftGeometry) return;
+    const selectedZone = editing;
+    const geometry = draftGeometry;
+    start(async () => {
+      try {
+        setError("");
+        await saveZoneAction({
+          id: selectedZone.id,
+          name: selectedZone.name,
+          description: selectedZone.description,
+          landmarks: selectedZone.landmarks,
+          aliases: selectedZone.aliases,
+          associated_streets: selectedZone.associated_streets,
+          geometry,
+          color: zoneColor,
+          is_active: selectedZone.is_active,
+        });
+        setVertexEditing(false);
+        setDraftGeometry(null);
+        setEditing({ ...selectedZone, geometry });
+        setMessage(`Perimetro di ${selectedZone.name} aggiornato.`);
+        router.refresh();
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "Aggiornamento del perimetro non riuscito.");
+      }
+    });
+  }
+
+  const mapInstruction = vertexEditing
+    ? `Modifica ${editing?.name ?? "il perimetro"}: trascina i punti pieni oppure usa quelli intermedi per aggiungere nuovi vertici.`
+    : drawing
     ? "Clicca i vertici del perimetro e chiudilo sul primo punto."
     : draftGeometry
       ? "Perimetro pronto: completa i dati e salva la zona."
@@ -185,9 +264,9 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
           <div className={styles.mapModes}>
             <button
               type="button"
-              className={`${styles.mapModeButton} ${!drawing ? styles.mapModeActive : ""}`}
-              aria-pressed={!drawing}
-              onClick={() => setDrawing(false)}
+              className={`${styles.mapModeButton} ${!drawing && !vertexEditing ? styles.mapModeActive : ""}`}
+              aria-pressed={!drawing && !vertexEditing}
+              onClick={() => { setDrawing(false); if (vertexEditing) cancelVertexEditing(); }}
             >
               <MousePointer2 aria-hidden="true" className="size-4" /> Esplora
             </button>
@@ -195,10 +274,20 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
               type="button"
               className={`${styles.mapModeButton} ${drawing ? styles.mapModeActive : ""}`}
               aria-pressed={drawing}
-              onClick={() => setDrawing(true)}
+              onClick={() => { setVertexEditing(false); setDraftGeometry(null); setDrawing(true); }}
             >
               <Shapes aria-hidden="true" className="size-4" /> {editing?.geometry || draftGeometry ? "Ridisegna" : "Disegna zona"}
             </button>
+            {editing?.geometry ? (
+              <button
+                type="button"
+                className={`${styles.mapModeButton} ${vertexEditing ? styles.mapModeActive : ""}`}
+                aria-pressed={vertexEditing}
+                onClick={vertexEditing ? cancelVertexEditing : startVertexEditing}
+              >
+                <PenLine aria-hidden="true" className="size-4" /> Modifica punti
+              </button>
+            ) : null}
             <button type="button" className={styles.mapModeButton} onClick={startNewDrawing}>
               <Plus aria-hidden="true" className="size-4" /> Nuova zona
             </button>
@@ -213,10 +302,15 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
             </button>
           </div>
         </div>
-        <div className={`${styles.mapStatus} ${drawing ? styles.mapStatusActive : ""}`} role="status">
+        <div className={`${styles.mapStatus} ${drawing || vertexEditing ? styles.mapStatusActive : ""}`} role="status">
           <Info aria-hidden="true" className="size-4" />
           <span>{mapInstruction}</span>
-          {draftGeometry ? (
+          {vertexEditing ? (
+            <div className={styles.mapStatusActions}>
+              <button type="button" onClick={cancelVertexEditing} disabled={pending}><Undo2 aria-hidden="true" className="size-3.5" /> Annulla</button>
+              <button type="button" onClick={saveEditedGeometry} disabled={pending}><Check aria-hidden="true" className="size-3.5" /> {pending ? "Salvataggio…" : "Applica modifiche"}</button>
+            </div>
+          ) : draftGeometry ? (
             <div className={styles.mapStatusActions}>
               <button type="button" onClick={() => setDraftGeometry(null)}>Scarta</button>
               {mapExpanded ? <button type="button" onClick={continueToEditor}><Check aria-hidden="true" className="size-3.5" /> Completa dati</button> : null}
@@ -227,10 +321,15 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
           <ZoneMap
             shapes={shapes}
             highlightedZoneId={editing?.id}
-            draftGeometry={draftGeometry}
+            draftGeometry={vertexEditing ? null : draftGeometry}
             drawing={drawing}
+            showZoneLabels
+            vertexEditing={vertexEditing}
+            editingZoneId={editing?.id}
+            editingGeometry={draftGeometry}
             fitRequest={fitRequest}
             onGeometryCreated={setDraftGeometry}
+            onGeometryEdited={setDraftGeometry}
             onDrawingConsumed={() => setDrawing(false)}
             onZoneToggle={(zoneId) => chooseZone(zones.find((zone) => zone.id === zoneId) ?? null)}
           />
@@ -246,8 +345,8 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
 
       <div className={styles.workspace}>
         <section className={styles.zoneList} aria-label="Zone immobiliari configurate">
-          {zones.map((zone) => (
-            <button type="button" onClick={() => chooseZone(zone)} className={`${styles.zoneButton} ${editing?.id === zone.id ? styles.zoneSelected : ""}`} key={zone.id}>
+          {orderedZones.map((zone) => (
+            <button type="button" data-zone-name={zone.name} onClick={() => chooseZone(zone)} className={`${styles.zoneButton} ${editing?.id === zone.id ? styles.zoneSelected : ""}`} key={zone.id}>
               <div className={styles.zoneTop}>
                 <div>
                   <h2 className={styles.zoneName}>{zone.name}</h2>

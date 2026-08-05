@@ -23,7 +23,52 @@
   font-weight: 650;
 }
 
+.map :global(.leaflet-editing-icon) {
+  width: .9rem !important;
+  height: .9rem !important;
+  margin-left: -.45rem !important;
+  margin-top: -.45rem !important;
+  border: 2px solid #80d49a !important;
+  border-radius: 50%;
+  background: #102019 !important;
+  box-shadow: 0 0 0 3px rgb(16 32 25 / 45%);
+  cursor: grab;
+}
+
+.map :global(.leaflet-editing-icon:active) { cursor: grabbing; }
+.map :global(.leaflet-draw-tooltip) { display: none; }
+
+.zoneLabel {
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: .3rem;
+  background: rgb(16 32 25 / 86%);
+  box-shadow: none;
+  color: #edf4ef;
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .035em;
+  line-height: 1.15;
+  padding: .28rem .42rem;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.zoneLabel::before { display: none; }
+.zoneLabelNumber::after { content: " · "; }
+
 @media (max-width: 639px) {
   .map { min-height: 24rem; }
   .compact { min-height: 19rem; }
+  .zoneLabel {
+    display: inline-flex;
+    width: 1.6rem;
+    height: 1.6rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    padding: 0;
+    font-size: .68rem;
+  }
+  .zoneLabelName { display: none; }
+  .zoneLabelNumber::after { content: ""; }
 }

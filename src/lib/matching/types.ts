@@ -49,6 +49,7 @@ export interface Client {
 
 export interface InternalZone {
   id: string;
+  zone_number?: number | null;
   name: string;
   description: string | null;
   landmarks: string[];

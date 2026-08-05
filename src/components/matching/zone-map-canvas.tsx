@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L, { type LatLngBoundsExpression, type LatLngExpression } from "leaflet";
 import "leaflet-draw";
 import {
@@ -14,13 +14,15 @@ import {
 } from "react-leaflet";
 
 import { BITONTO_CENTER } from "@/lib/map/constants";
-import { polygonRing, type MapPoint } from "@/lib/map/geometry";
+import { polygonRings, type MapPoint } from "@/lib/map/geometry";
 import type { GeoJsonGeometry } from "@/lib/map/types";
 import styles from "./zone-map.module.css";
 
 export type ZoneMapShape = {
   shapeId: string;
   zoneId: string;
+  zoneNumber?: number | null;
+  labelPoint?: MapPoint | null;
   name: string;
   color: string | null;
   geometry: GeoJsonGeometry;
@@ -34,18 +36,27 @@ export type ZoneMapCanvasProps = {
   draftGeometry?: GeoJsonGeometry | null;
   point?: MapPoint | null;
   drawing?: boolean;
+  vertexEditing?: boolean;
+  editingZoneId?: string | null;
+  editingGeometry?: GeoJsonGeometry | null;
   allowPointSelection?: boolean;
   compact?: boolean;
   fitRequest?: number;
+  showZoneLabels?: boolean;
   onGeometryCreated?: (geometry: GeoJsonGeometry) => void;
+  onGeometryEdited?: (geometry: GeoJsonGeometry) => void;
   onDrawingConsumed?: () => void;
   onZoneToggle?: (zoneId: string) => void;
   onPointChange?: (point: MapPoint) => void;
 };
 
-function geometryPositions(geometry?: GeoJsonGeometry | null): LatLngExpression[] | null {
-  const ring = polygonRing(geometry);
-  return ring?.map(([longitude, latitude]) => [latitude, longitude] as LatLngExpression) ?? null;
+function geometryPositions(geometry?: GeoJsonGeometry | null): LatLngExpression[][] | null {
+  const rings = polygonRings(geometry);
+  return rings?.map((ring) => ring.map(([longitude, latitude]) => [latitude, longitude] as LatLngExpression)) ?? null;
+}
+
+function flatGeometryPositions(geometry?: GeoJsonGeometry | null): LatLngExpression[] {
+  return geometryPositions(geometry)?.flat() ?? [];
 }
 
 function geometryFromLayer(layer: L.Layer) {
@@ -82,8 +93,8 @@ function FitController({ shapes, draftGeometry, point, highlightedZoneId }: Read
       ? shapes.filter((shape) => shape.zoneId === highlightedZoneId)
       : shapes;
     const positions = draftGeometry
-      ? geometryPositions(draftGeometry) ?? []
-      : relevantShapes.flatMap((shape) => geometryPositions(shape.geometry) ?? []);
+      ? flatGeometryPositions(draftGeometry)
+      : relevantShapes.flatMap((shape) => flatGeometryPositions(shape.geometry));
     if (positions.length >= 3) {
       map.fitBounds(positions as LatLngBoundsExpression, { padding: [18, 18], maxZoom: 15, animate: false });
     } else {
@@ -97,7 +108,7 @@ function FitAllController({ shapes, fitRequest }: Readonly<{ shapes: ZoneMapShap
   const map = useMap();
   useEffect(() => {
     if (fitRequest === 0) return;
-    const positions = shapes.flatMap((shape) => geometryPositions(shape.geometry) ?? []);
+    const positions = shapes.flatMap((shape) => flatGeometryPositions(shape.geometry));
     if (positions.length >= 3) {
       map.fitBounds(positions as LatLngBoundsExpression, { padding: [18, 18], maxZoom: 15, animate: false });
     } else {
@@ -139,6 +150,64 @@ function DrawController({ active, onCreated, onConsumed }: Readonly<{
   return null;
 }
 
+function EditController({ active, geometry, color, onEdited }: Readonly<{
+  active: boolean;
+  geometry?: GeoJsonGeometry | null;
+  color?: string | null;
+  onEdited?: (geometry: GeoJsonGeometry) => void;
+}>) {
+  const map = useMap();
+  const geometryRef = useRef(geometry);
+  const wasActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (!active || !wasActiveRef.current) geometryRef.current = geometry;
+    wasActiveRef.current = active;
+  }, [active, geometry]);
+
+  useEffect(() => {
+    if (!active) return;
+    const positions = geometryPositions(geometryRef.current);
+    if (!positions || positions[0].length < 3) return;
+
+    const featureGroup = new L.FeatureGroup();
+    const polygon = L.polygon(positions, {
+      color: color || "#5fbf7a",
+      weight: 4,
+      fillColor: color || "#5fbf7a",
+      fillOpacity: .28,
+    });
+    featureGroup.addLayer(polygon);
+    map.addLayer(featureGroup);
+
+    const editor = new L.EditToolbar.Edit(map as L.DrawMap, {
+      featureGroup,
+      poly: { allowIntersection: false },
+      selectedPathOptions: {
+        color: color || "#5fbf7a",
+        weight: 4,
+        fillColor: color || "#5fbf7a",
+        fillOpacity: .3,
+        dashArray: "8 6",
+      },
+    });
+    const publishGeometry = () => {
+      const updatedGeometry = geometryFromLayer(polygon);
+      if (updatedGeometry) onEdited?.(updatedGeometry);
+    };
+
+    map.on(L.Draw.Event.EDITVERTEX, publishGeometry);
+    editor.enable();
+    return () => {
+      editor.disable();
+      map.off(L.Draw.Event.EDITVERTEX, publishGeometry);
+      map.removeLayer(featureGroup);
+    };
+  }, [active, color, map, onEdited]);
+
+  return null;
+}
+
 function PointController({ enabled, onPointChange }: Readonly<{ enabled: boolean; onPointChange?: (point: MapPoint) => void }>) {
   useMapEvents({
     click(event) {
@@ -156,10 +225,15 @@ export function ZoneMapCanvas({
   draftGeometry,
   point,
   drawing = false,
+  vertexEditing = false,
+  editingZoneId,
+  editingGeometry,
   allowPointSelection = false,
   compact = false,
   fitRequest = 0,
+  showZoneLabels = false,
   onGeometryCreated,
+  onGeometryEdited,
   onDrawingConsumed,
   onZoneToggle,
   onPointChange,
@@ -178,36 +252,59 @@ export function ZoneMapCanvas({
       <FitController shapes={shapes} draftGeometry={draftGeometry} point={point} highlightedZoneId={highlightedZoneId} />
       <FitAllController shapes={shapes} fitRequest={fitRequest} />
       <DrawController active={drawing} onCreated={onGeometryCreated} onConsumed={onDrawingConsumed} />
+      <EditController
+        active={vertexEditing}
+        geometry={editingGeometry}
+        color={shapes.find((shape) => shape.zoneId === editingZoneId)?.color}
+        onEdited={onGeometryEdited}
+      />
       <PointController enabled={allowPointSelection} onPointChange={onPointChange} />
       <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       {rendered.map((shape) => {
+        if (vertexEditing && shape.zoneId === editingZoneId) return null;
         const selected = selectedZoneIds.includes(shape.zoneId);
         const excluded = excludedZoneIds.includes(shape.zoneId);
         const highlighted = shape.zoneId === highlightedZoneId;
         const color = excluded ? "#d0746f" : shape.color || "#5fbf7a";
+        const strokeColor = showZoneLabels && !excluded ? "#eef3ef" : color;
         return (
           <Polygon
             key={shape.shapeId}
             positions={shape.positions!}
             pathOptions={{
-              color,
-              weight: highlighted || selected ? 4 : 2,
+              color: strokeColor,
+              weight: highlighted || selected ? 4 : showZoneLabels ? 2.5 : 2,
               opacity: .9,
               fillColor: color,
-              fillOpacity: selected ? .32 : highlighted ? .24 : .12,
+              fillOpacity: selected ? .32 : highlighted ? .28 : showZoneLabels ? .24 : .12,
               dashArray: excluded ? "5 5" : undefined,
             }}
             eventHandlers={{
               click: () => onZoneToggle?.(shape.zoneId),
             }}
           >
-            <Tooltip sticky>{shape.name}</Tooltip>
+            {!showZoneLabels ? <Tooltip sticky>{shape.name}</Tooltip> : null}
           </Polygon>
         );
       })}
 
-      {draftPositions ? (
+      {showZoneLabels ? rendered.map((shape) => shape.labelPoint ? (
+        <CircleMarker
+          key={`label-${shape.shapeId}`}
+          center={[shape.labelPoint.latitude, shape.labelPoint.longitude]}
+          radius={0}
+          interactive={false}
+          pathOptions={{ opacity: 0, fillOpacity: 0 }}
+        >
+          <Tooltip permanent direction="center" className={styles.zoneLabel}>
+            {shape.zoneNumber ? <span className={styles.zoneLabelNumber}>{shape.zoneNumber}</span> : null}
+            <span className={styles.zoneLabelName}>{shape.name}</span>
+          </Tooltip>
+        </CircleMarker>
+      ) : null) : null}
+
+      {draftPositions && !vertexEditing ? (
         <Polygon positions={draftPositions} pathOptions={{ color: "#5fbf7a", weight: 4, fillColor: "#5fbf7a", fillOpacity: .28 }}>
           <Tooltip sticky>Nuovo perimetro</Tooltip>
         </Polygon>

@@ -6,19 +6,31 @@ export type MapPoint = { latitude: number; longitude: number };
 type LngLat = [number, number];
 
 export function polygonRing(geometry?: GeoJsonGeometry | null): LngLat[] | null {
+  return polygonRings(geometry)?.[0] ?? null;
+}
+
+export function polygonRings(geometry?: GeoJsonGeometry | null): LngLat[][] | null {
   if (!geometry || geometry.type !== "Polygon" || !Array.isArray(geometry.coordinates)) return null;
-  const ring = geometry.coordinates[0];
-  if (!Array.isArray(ring)) return null;
-  const points = ring.filter((point): point is LngLat =>
-    Array.isArray(point) && point.length >= 2 &&
-    typeof point[0] === "number" && typeof point[1] === "number",
-  );
-  return points.length >= 3 ? points : null;
+  const rings = geometry.coordinates.flatMap((ring) => {
+    if (!Array.isArray(ring)) return [];
+    const points = ring.filter((point): point is LngLat =>
+      Array.isArray(point) && point.length >= 2 &&
+      typeof point[0] === "number" && typeof point[1] === "number",
+    );
+    return points.length >= 3 ? [points] : [];
+  });
+  return rings.length ? rings : null;
 }
 
 export function pointInPolygon(point: MapPoint, geometry?: GeoJsonGeometry | null) {
-  const ring = polygonRing(geometry);
-  if (!ring) return false;
+  const rings = polygonRings(geometry);
+  if (!rings) return false;
+  const [outerRing, ...holes] = rings;
+  if (!ringContainsPoint(point, outerRing)) return false;
+  return !holes.some((hole) => ringContainsPoint(point, hole));
+}
+
+function ringContainsPoint(point: MapPoint, ring: LngLat[]) {
   const x = point.longitude;
   const y = point.latitude;
   let inside = false;
