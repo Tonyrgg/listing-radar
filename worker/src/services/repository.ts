@@ -1,9 +1,17 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { buildCadastralKey } from "../core/normalize.js";
-import type { CrmMandateArchiveItem, CrmMandateDetail } from "../adapters/crm/mandates.js";
+import { normalizeCrmMandate, type CrmMandateArchiveItem, type CrmMandateDetail } from "../adapters/crm/mandates.js";
 import type { CrmRequestArchiveItem, CrmRequestDetail } from "../adapters/crm/requests.js";
 import type { CadastralOwner, CadastralProperty, ContactMatchResult, ErrorStatus, WorkflowStep, WorkerMode } from "../types.js";
+import {
+  cleanImportedPropertyAddress,
+  NominatimPropertyGeocoder,
+  parsePropertyAddress,
+  resolvePropertyLocation,
+  type PropertyLocationResolution,
+  type PropertyLocationZone,
+} from "./property-location.js";
 
 export type JobRow = {
   id: string;
@@ -129,6 +137,7 @@ export type CrmMandateImportItemRow = {
 
 export class WorkerRepository {
   readonly client: SupabaseClient;
+  private readonly propertyGeocoder = new NominatimPropertyGeocoder();
 
   constructor(url: string, serviceRoleKey: string) {
     this.client = createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -337,32 +346,115 @@ export class WorkerRepository {
     await this.markMandateImportItem(itemId, { detail_payload: detail });
     const propertyExternalId = String(normalized.external_crm_id);
     const mandateExternalId = String(normalized.external_mandate_id);
-    let existing = await this.client.from("portfolio_properties").select("id,raw_payload,internal_zone_id")
+    let existing = await this.client.from("portfolio_properties").select("id,address,municipality,latitude,longitude,raw_payload,internal_zone_id")
       .eq("external_crm_id", propertyExternalId).limit(1).maybeSingle();
     if (existing.error) throw new Error(`Ricerca immobile CRM fallita: ${existing.error.message}`);
     if (!existing.data) {
-      existing = await this.client.from("portfolio_properties").select("id,raw_payload,internal_zone_id")
+      existing = await this.client.from("portfolio_properties").select("id,address,municipality,latitude,longitude,raw_payload,internal_zone_id")
         .eq("external_mandate_id", mandateExternalId).limit(1).maybeSingle();
       if (existing.error) throw new Error(`Ricerca incarico CRM fallita: ${existing.error.message}`);
     }
     let internalZoneId = existing.data?.internal_zone_id ?? null;
-    const crmZoneName = typeof normalized.crm_zone_name === "string" ? normalized.crm_zone_name.trim() : "";
-    if (!internalZoneId && crmZoneName) {
-      const zone = await this.client.from("internal_zones").select("id").ilike("name", crmZoneName).limit(1).maybeSingle();
-      if (zone.error) throw new Error(`Ricerca zona immobiliare fallita: ${zone.error.message}`);
-      internalZoneId = zone.data?.id ?? null;
-    }
     const previousRaw = (existing.data?.raw_payload as Record<string, unknown> | null) ?? {};
+    const address = typeof normalized.address === "string" ? normalized.address : existing.data?.address ?? null;
+    const municipality = typeof normalized.municipality === "string" ? normalized.municipality : existing.data?.municipality ?? "Bitonto";
+    const zones = await this.listPropertyLocationZones();
+    const cachedResolution = this.cachedLocationResolution(previousRaw, address, municipality);
+    const locationResolution = cachedResolution ?? await resolvePropertyLocation({
+      address,
+      municipality,
+      latitude: existing.data?.latitude == null ? null : Number(existing.data.latitude),
+      longitude: existing.data?.longitude == null ? null : Number(existing.data.longitude),
+    }, zones, this.propertyGeocoder);
+    internalZoneId ??= locationResolution.zone_id;
     const payload = {
       ...Object.fromEntries(Object.entries(normalized).filter(([key, value]) => key !== "crm_zone_name" && (key === "raw_payload" || key === "image_urls" || value !== null && value !== ""))),
       ...(internalZoneId ? { internal_zone_id: internalZoneId } : {}),
-      raw_payload: { ...previousRaw, ...(normalized.raw_payload as Record<string, unknown> ?? {}) },
+      ...(locationResolution.latitude != null && locationResolution.longitude != null ? {
+        latitude: locationResolution.latitude,
+        longitude: locationResolution.longitude,
+      } : {}),
+      raw_payload: {
+        ...previousRaw,
+        ...(normalized.raw_payload as Record<string, unknown> ?? {}),
+        _location_resolution: locationResolution,
+      },
     };
     const mutation = existing.data
       ? await this.client.from("portfolio_properties").update(payload).eq("id", existing.data.id).select("id").single()
       : await this.client.from("portfolio_properties").insert(payload).select("id").single();
     if (mutation.error) throw new Error(`Salvataggio immobile CRM fallito: ${mutation.error.message}`);
     return String(mutation.data.id);
+  }
+
+  private async listPropertyLocationZones(): Promise<PropertyLocationZone[]> {
+    const { data, error } = await this.client.from("internal_zones")
+      .select("id,zone_number,name,geometry,associated_streets")
+      .eq("is_active", true)
+      .not("zone_number", "is", null)
+      .not("geometry", "is", null)
+      .order("zone_number", { ascending: true });
+    if (error) throw new Error(`Lettura perimetri immobiliari fallita: ${error.message}`);
+    return (data ?? []) as PropertyLocationZone[];
+  }
+
+  private cachedLocationResolution(
+    rawPayload: Record<string, unknown>,
+    address: string | null,
+    municipality: string,
+  ): PropertyLocationResolution | null {
+    const candidate = rawPayload._location_resolution;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+    const cached = candidate as Partial<PropertyLocationResolution>;
+    const current = parsePropertyAddress(address, municipality).normalizedAddress;
+    if (cached.normalized_address !== current || typeof cached.status !== "string") return null;
+    return cached as PropertyLocationResolution;
+  }
+
+  async backfillPortfolioPropertyLocations(
+    onProgress?: (progress: { index: number; total: number; address: string | null; resolution: PropertyLocationResolution }) => void,
+  ) {
+    const [{ data: properties, error: propertiesError }, zones] = await Promise.all([
+      this.client.from("portfolio_properties")
+        .select("id,address,municipality,latitude,longitude,internal_zone_id,raw_payload")
+        .order("created_at", { ascending: true }),
+      this.listPropertyLocationZones(),
+    ]);
+    if (propertiesError) throw new Error(`Lettura incarichi fallita: ${propertiesError.message}`);
+
+    const summary = { total: properties?.length ?? 0, resolved: 0, streetMatched: 0, outsideMunicipality: 0, outsideZones: 0, notFound: 0, errors: 0 };
+    for (const [index, property] of (properties ?? []).entries()) {
+      const rawPayload = (property.raw_payload as Record<string, unknown> | null) ?? {};
+      let normalizedAddress = cleanImportedPropertyAddress(property.address, property.municipality ?? "Bitonto");
+      if (typeof rawPayload.mandateExternalId === "string" && rawPayload.mandateExternalId) {
+        const normalized = normalizeCrmMandate(rawPayload as CrmMandateDetail);
+        normalizedAddress = normalized.address ?? normalizedAddress;
+      }
+      const resolution = await resolvePropertyLocation({
+        address: normalizedAddress,
+        municipality: property.municipality ?? "Bitonto",
+        latitude: property.latitude == null ? null : Number(property.latitude),
+        longitude: property.longitude == null ? null : Number(property.longitude),
+      }, zones, this.propertyGeocoder);
+      const internalZoneId = property.internal_zone_id ?? resolution.zone_id;
+      const update = {
+        address: normalizedAddress,
+        ...(resolution.latitude != null && resolution.longitude != null ? { latitude: resolution.latitude, longitude: resolution.longitude } : {}),
+        ...(internalZoneId ? { internal_zone_id: internalZoneId } : {}),
+        raw_payload: { ...rawPayload, _location_resolution: resolution },
+      };
+      const { error } = await this.client.from("portfolio_properties").update(update).eq("id", property.id);
+      if (error) throw new Error(`Aggiornamento posizione incarico fallito: ${error.message}`);
+
+      if (resolution.status === "resolved") summary.resolved += 1;
+      else if (resolution.status === "street_match") summary.streetMatched += 1;
+      else if (resolution.status === "outside_municipality") summary.outsideMunicipality += 1;
+      else if (resolution.status === "outside_zones") summary.outsideZones += 1;
+      else if (resolution.status === "error") summary.errors += 1;
+      else summary.notFound += 1;
+      onProgress?.({ index: index + 1, total: summary.total, address: normalizedAddress, resolution });
+    }
+    return summary;
   }
 
   async listSavedJobs(limit = 50): Promise<JobRow[]> {

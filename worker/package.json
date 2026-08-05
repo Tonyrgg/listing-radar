@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "mandates:backfill-locations": "tsx scripts/backfill-property-locations.ts",
     "desktop:visual-check": "node scripts/visual-check.mjs"
   },
   "dependencies": {

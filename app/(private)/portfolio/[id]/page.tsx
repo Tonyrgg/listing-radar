@@ -21,6 +21,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
   const zoneShapes = zones.filter((zone) => zone.geometry).map((zone) => ({
     shapeId: zone.id,
     zoneId: zone.id,
+    zoneNumber: zone.zone_number,
     name: zone.name,
     color: zone.color,
     geometry: zone.geometry!,

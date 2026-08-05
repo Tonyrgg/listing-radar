@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { cleanImportedPropertyAddress } from "../../services/property-location.js";
 
 export type CrmMandateArchiveItem = {
   externalId: string;
@@ -242,13 +243,21 @@ export function normalizeCrmMandate(detail: CrmMandateDetail) {
   const conditionRaw = `${value("Stato Interno") ?? ""} ${value("Stato Esterno") ?? ""}`.toLocaleLowerCase("it");
   const condition = /ristrutturat|ottim/.test(conditionRaw) ? "renovated" : /da ristrutturare|ristrutturaz/.test(conditionRaw) ? "to_renovate"
     : /buon|abitabil/.test(conditionRaw) ? "good" : null;
+  const municipality = value("Comune", "Immobile: Comune") ?? "Bitonto";
   const internal = value("Interno", "Immobile: Interno");
-  const address = [value("Indirizzo", "Immobile: Indirizzo"), value("Civico", "Immobile: Civico"), value("Lettera", "Immobile: Lettera"), internal ? `int. ${internal}` : null].filter(Boolean).join(" ") || null;
+  const detailAddress = value("Indirizzo");
+  const address = cleanImportedPropertyAddress(
+    detailAddress,
+    municipality,
+    value("Immobile: Indirizzo"),
+    [value("Civico", "Immobile: Civico"), value("Lettera", "Immobile: Lettera")].filter(Boolean).join(""),
+    internal,
+  );
   const price = parseNumber(value("Prezzo Incarico"));
   return {
     external_crm_id: detail.propertyExternalId, external_mandate_id: detail.mandateExternalId,
     title: detail.title, contract_type: contractType, property_type: propertyType,
-    municipality: value("Comune", "Immobile: Comune") ?? "Bitonto", address,
+    municipality, address,
     crm_zone_name: value("Zona", "Immobile: Zona"),
     price: contractType === "sale" ? price : null, monthly_rent: contractType === "rent" ? price : null,
     internal_sqm: parseNumber(value("Metri Quadri Calpestabili")), commercial_sqm: parseNumber(value("Metri Quadri Commerciali", "Immobile: Metri Quadri Commerciali")),

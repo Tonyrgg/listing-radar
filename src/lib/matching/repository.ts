@@ -80,7 +80,9 @@ export async function listZones(): Promise<InternalZone[]> {
     const { data, error } = await getSupabaseServiceClient()
       .from("internal_zones")
       .select("*")
-      .order("name", { ascending: true });
+      .eq("is_active", true)
+      .not("zone_number", "is", null)
+      .order("zone_number", { ascending: true });
     if (error) return [];
     return (data ?? []) as InternalZone[];
   } catch {
