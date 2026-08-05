@@ -487,6 +487,10 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
 .zoneButton:hover { background: var(--surface-muted); }
 .zoneSelected { background: var(--surface-accent-soft); }
 .zoneTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.zoneIdentity { display: flex; min-width: 0; align-items: flex-start; gap: .65rem; }
+.zoneIdentity > div { min-width: 0; }
+.zoneNumber { display: inline-grid; width: 1.75rem; height: 1.75rem; flex: none; place-items: center; border: 1px solid color-mix(in oklch,var(--ink-strong) 58%,transparent); border-radius: 50%; font-size: .72rem; font-weight: 820; }
+.zoneNumberUnassigned { border-style: dashed; background: var(--surface-muted); color: var(--ink-subtle); }
 .zoneName { color: var(--ink-strong); font-size: .9rem; font-weight: 680; }
 .zoneDescription { margin-top: .25rem; color: var(--ink-soft); font-size: .74rem; line-height: 1.5; }
 .zoneFacts { display: flex; flex-wrap: wrap; gap: .75rem; color: var(--ink-subtle); font-size: .68rem; }

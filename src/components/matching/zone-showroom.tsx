@@ -29,29 +29,12 @@ import {
   saveZoneAction,
 } from "@/app/(private)/matching-actions";
 import type { InternalZone } from "@/lib/matching/types";
+import { readableTextColor } from "@/lib/map/colors";
 import type { GeoJsonGeometry } from "@/lib/map/types";
 import styles from "./section-design.module.css";
 import { ZoneMap } from "./zone-map";
 
 const DEFAULT_COLOR = "#5fbf7a";
-const ZONE_NUMBER_BY_NAME = new Map([
-  ["Centro Storico", 1], ["Centro", 2], ["Zona Villa", 3], ["Zona Stazione", 4],
-  ["Zona Santi Medici", 5], ["Zona Ospedale / Hospice", 6], ["Zona Togliatti / Ulivi", 7],
-  ["Zona Traiana", 8], ["Zona Sud / Megra", 9], ["Zona Artigianale / Nord-Ovest", 10],
-]);
-const ZONE_LABEL_POINTS = new Map([
-  [1, { latitude: 41.1063, longitude: 16.6898 }],
-  [2, { latitude: 41.1091, longitude: 16.6917 }],
-  [3, { latitude: 41.1128, longitude: 16.6968 }],
-  [4, { latitude: 41.1132, longitude: 16.6815 }],
-  [5, { latitude: 41.1146, longitude: 16.6915 }],
-  [6, { latitude: 41.1200, longitude: 16.6970 }],
-  [7, { latitude: 41.1115, longitude: 16.7040 }],
-  [8, { latitude: 41.1065, longitude: 16.6778 }],
-  [9, { latitude: 41.1012, longitude: 16.6950 }],
-  [10, { latitude: 41.1198, longitude: 16.6780 }],
-]);
-
 export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -69,18 +52,20 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const editorRef = useRef<HTMLFormElement>(null);
 
   const orderedZones = useMemo(() => [...zones].sort((left, right) => {
-    const leftNumber = left.zone_number ?? ZONE_NUMBER_BY_NAME.get(left.name) ?? 999;
-    const rightNumber = right.zone_number ?? ZONE_NUMBER_BY_NAME.get(right.name) ?? 999;
+    const leftNumber = left.zone_number ?? 999;
+    const rightNumber = right.zone_number ?? 999;
     return leftNumber - rightNumber || left.name.localeCompare(right.name, "it");
   }), [zones]);
+  const nextZoneNumber = useMemo(
+    () => Math.min(99, Math.max(0, ...zones.map((zone) => zone.zone_number ?? 0)) + 1),
+    [zones],
+  );
 
   const shapes = useMemo(() => orderedZones.filter((zone) => zone.geometry).map((zone) => {
-    const zoneNumber = zone.zone_number ?? ZONE_NUMBER_BY_NAME.get(zone.name);
     return {
       shapeId: zone.id,
       zoneId: zone.id,
-      zoneNumber,
-      labelPoint: zoneNumber ? ZONE_LABEL_POINTS.get(zoneNumber) : null,
+      zoneNumber: zone.zone_number,
       name: zone.name,
       color: zone.color,
       geometry: zone.geometry!,
@@ -173,6 +158,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
         setError("");
         await saveZoneAction({
           id: selectedZone.id,
+          zone_number: selectedZone.zone_number,
           name: selectedZone.name,
           description: selectedZone.description,
           landmarks: selectedZone.landmarks,
@@ -210,6 +196,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
         setError("");
         await saveZoneAction({
           id: editing?.id,
+          zone_number: formData.get("zone_number"),
           name: formData.get("name"),
           description: formData.get("description") || null,
           landmarks: split("landmarks"),
@@ -348,9 +335,18 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
           {orderedZones.map((zone) => (
             <button type="button" data-zone-name={zone.name} onClick={() => chooseZone(zone)} className={`${styles.zoneButton} ${editing?.id === zone.id ? styles.zoneSelected : ""}`} key={zone.id}>
               <div className={styles.zoneTop}>
-                <div>
+                <div className={styles.zoneIdentity}>
+                  <span
+                    className={`${styles.zoneNumber} ${zone.zone_number ? "" : styles.zoneNumberUnassigned}`}
+                    style={zone.zone_number ? { backgroundColor: zone.color || DEFAULT_COLOR, color: readableTextColor(zone.color || DEFAULT_COLOR) } : undefined}
+                    aria-label={zone.zone_number ? `Zona numero ${zone.zone_number}` : "Zona senza numero"}
+                  >
+                    {zone.zone_number ?? "—"}
+                  </span>
+                  <div>
                   <h2 className={styles.zoneName}>{zone.name}</h2>
                   <p className={styles.zoneDescription}>{zone.description || "Nessuna descrizione immobiliare."}</p>
+                  </div>
                 </div>
                 <span className={styles.badge}>{zone.geometry ? "Perimetro salvato" : zone.is_active ? "Perimetro da disegnare" : "Disattivata"}</span>
               </div>
@@ -370,6 +366,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
             {editing ? <button type="button" className={styles.secondaryButton} onClick={() => chooseZone(null)}><Plus aria-hidden="true" className="size-4" /> Nuova</button> : null}
           </header>
           <div className={styles.editorBody}>
+            <Field label="Numero zona" hint="univoco sulla mappa"><input className={styles.input} name="zone_number" type="number" min="1" max="99" required defaultValue={editing?.zone_number ?? nextZoneNumber} /></Field>
             <Field label="Nome della zona"><input className={styles.input} name="name" required defaultValue={editing?.name} placeholder="Es. Zona Villa" /></Field>
             <Field label="Descrizione"><textarea className={styles.input} name="description" rows={3} defaultValue={editing?.description ?? ""} /></Field>
             <Field label="Colore del perimetro"><input className={styles.input} type="color" value={zoneColor} onChange={(event) => setZoneColor(event.target.value)} /></Field>

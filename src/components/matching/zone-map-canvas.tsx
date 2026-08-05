@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import L, { type LatLngBoundsExpression, type LatLngExpression } from "leaflet";
 import "leaflet-draw";
 import {
@@ -14,7 +14,8 @@ import {
 } from "react-leaflet";
 
 import { BITONTO_CENTER } from "@/lib/map/constants";
-import { polygonRings, type MapPoint } from "@/lib/map/geometry";
+import { readableTextColor } from "@/lib/map/colors";
+import { polygonLabelPoint, polygonRings, type MapPoint } from "@/lib/map/geometry";
 import type { GeoJsonGeometry } from "@/lib/map/types";
 import styles from "./zone-map.module.css";
 
@@ -217,6 +218,110 @@ function PointController({ enabled, onPointChange }: Readonly<{ enabled: boolean
   return null;
 }
 
+type RenderedZoneShape = ZoneMapShape & {
+  positions: LatLngExpression[][] | null;
+  resolvedLabelPoint: MapPoint | null;
+};
+
+function ZoneLabels({ shapes, highlightedZoneId }: Readonly<{
+  shapes: RenderedZoneShape[];
+  highlightedZoneId?: string | null;
+}>) {
+  const map = useMap();
+  const [, setViewportRevision] = useState(0);
+  useMapEvents({
+    moveend: () => setViewportRevision((value) => value + 1),
+    zoomend: () => setViewportRevision((value) => value + 1),
+  });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setViewportRevision((value) => value + 1), 120);
+    return () => window.clearTimeout(timer);
+  }, [map]);
+
+  const labels = (() => {
+    const candidates = shapes.flatMap((shape) => {
+      if (!shape.resolvedLabelPoint) return [];
+      const rings = polygonRings(shape.geometry);
+      if (!rings) return [];
+
+      const pixels = rings[0].map(([longitude, latitude]) => map.latLngToContainerPoint([latitude, longitude]));
+      const width = Math.max(...pixels.map((point) => point.x)) - Math.min(...pixels.map((point) => point.x));
+      const height = Math.max(...pixels.map((point) => point.y)) - Math.min(...pixels.map((point) => point.y));
+      const selected = shape.zoneId === highlightedZoneId;
+      const estimatedNameWidth = Math.min(168, Math.max(62, shape.name.length * 6.2 + (shape.zoneNumber ? 34 : 18)));
+      const detailed = selected || (width >= estimatedNameWidth && height >= 32);
+      const numbered = typeof shape.zoneNumber === "number";
+      if (!detailed && (!numbered || Math.min(width, height) < 22)) return [];
+
+      const anchor = map.latLngToContainerPoint([
+        shape.resolvedLabelPoint.latitude,
+        shape.resolvedLabelPoint.longitude,
+      ]);
+      return [{ shape, detailed, numbered, selected, anchor, area: width * height, estimatedNameWidth }];
+    }).sort((left, right) =>
+      Number(right.selected) - Number(left.selected) ||
+      Number(right.detailed) - Number(left.detailed) ||
+      right.area - left.area,
+    );
+
+    const occupied: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    const visible: Array<{ shape: RenderedZoneShape; detailed: boolean }> = [];
+    const collides = (box: { left: number; right: number; top: number; bottom: number }) => occupied.some((current) =>
+      box.left < current.right + 4 && box.right + 4 > current.left &&
+      box.top < current.bottom + 4 && box.bottom + 4 > current.top,
+    );
+
+    for (const candidate of candidates) {
+      const modes = candidate.selected
+        ? [true]
+        : candidate.detailed && candidate.numbered
+          ? [true, false]
+          : [candidate.detailed];
+      for (const detailed of modes) {
+        const labelWidth = detailed ? candidate.estimatedNameWidth : 29;
+        const labelHeight = detailed ? 30 : 29;
+        const box = {
+          left: candidate.anchor.x - labelWidth / 2,
+          right: candidate.anchor.x + labelWidth / 2,
+          top: candidate.anchor.y - labelHeight / 2,
+          bottom: candidate.anchor.y + labelHeight / 2,
+        };
+        if (!candidate.selected && collides(box)) continue;
+        occupied.push(box);
+        visible.push({ shape: candidate.shape, detailed });
+        break;
+      }
+    }
+
+    return visible;
+  })();
+
+  return labels.map(({ shape, detailed }) => (
+    <CircleMarker
+      key={`label-${shape.shapeId}`}
+      center={[shape.resolvedLabelPoint!.latitude, shape.resolvedLabelPoint!.longitude]}
+      radius={0}
+      interactive={false}
+      pathOptions={{ opacity: 0, fillOpacity: 0 }}
+    >
+      <Tooltip
+        permanent
+        direction="center"
+        className={`${styles.zoneLabel} ${detailed ? styles.zoneLabelDetailed : styles.zoneLabelCompact}`}
+      >
+        <span className={styles.zoneLabelContent}>
+          {shape.zoneNumber ? (
+            <span className={styles.zoneLabelNumber} style={{ backgroundColor: shape.color || "#5fbf7a", color: readableTextColor(shape.color || "#5fbf7a") }}>
+              {shape.zoneNumber}
+            </span>
+          ) : null}
+          <span className={detailed ? styles.zoneLabelName : styles.zoneLabelAccessibleName}>{shape.name}</span>
+        </span>
+      </Tooltip>
+    </CircleMarker>
+  ));
+}
+
 export function ZoneMapCanvas({
   shapes,
   selectedZoneIds = [],
@@ -238,7 +343,11 @@ export function ZoneMapCanvas({
   onZoneToggle,
   onPointChange,
 }: Readonly<ZoneMapCanvasProps>) {
-  const rendered = useMemo(() => shapes.map((shape) => ({ ...shape, positions: geometryPositions(shape.geometry) })).filter((shape) => Boolean(shape.positions)), [shapes]);
+  const rendered = useMemo(() => shapes.map((shape) => ({
+    ...shape,
+    positions: geometryPositions(shape.geometry),
+    resolvedLabelPoint: shape.labelPoint ?? polygonLabelPoint(shape.geometry),
+  })).filter((shape): shape is RenderedZoneShape => Boolean(shape.positions)), [shapes]);
   const draftPositions = geometryPositions(draftGeometry);
 
   return (
@@ -289,20 +398,7 @@ export function ZoneMapCanvas({
         );
       })}
 
-      {showZoneLabels ? rendered.map((shape) => shape.labelPoint ? (
-        <CircleMarker
-          key={`label-${shape.shapeId}`}
-          center={[shape.labelPoint.latitude, shape.labelPoint.longitude]}
-          radius={0}
-          interactive={false}
-          pathOptions={{ opacity: 0, fillOpacity: 0 }}
-        >
-          <Tooltip permanent direction="center" className={styles.zoneLabel}>
-            {shape.zoneNumber ? <span className={styles.zoneLabelNumber}>{shape.zoneNumber}</span> : null}
-            <span className={styles.zoneLabelName}>{shape.name}</span>
-          </Tooltip>
-        </CircleMarker>
-      ) : null) : null}
+      {showZoneLabels ? <ZoneLabels shapes={rendered} highlightedZoneId={highlightedZoneId} /> : null}
 
       {draftPositions && !vertexEditing ? (
         <Polygon positions={draftPositions} pathOptions={{ color: "#5fbf7a", weight: 4, fillColor: "#5fbf7a", fillOpacity: .28 }}>

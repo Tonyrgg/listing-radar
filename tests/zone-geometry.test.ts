@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   pointInPolygon,
+  polygonLabelPoint,
   suggestedZoneIdsForRequest,
   suggestedZonePreferencesForRequest,
   zoneContainingPoint,
@@ -48,6 +49,29 @@ describe("zone geometry", () => {
 
     expect(pointInPolygon({ latitude: 41.105, longitude: 16.685 }, geometryWithHole)).toBe(true);
     expect(pointInPolygon({ latitude: 41.11, longitude: 16.69 }, geometryWithHole)).toBe(false);
+  });
+
+  it("places the visual label inside the polygon without changing its geometry", () => {
+    const original = JSON.stringify(geometry);
+    const labelPoint = polygonLabelPoint(geometry);
+
+    expect(labelPoint).not.toBeNull();
+    expect(pointInPolygon(labelPoint!, geometry)).toBe(true);
+    expect(JSON.stringify(geometry)).toBe(original);
+  });
+
+  it("keeps the visual label outside polygon holes", () => {
+    const geometryWithHole = {
+      type: "Polygon",
+      coordinates: [
+        [[16.68, 41.10], [16.70, 41.10], [16.70, 41.12], [16.68, 41.12], [16.68, 41.10]],
+        [[16.685, 41.105], [16.695, 41.105], [16.695, 41.115], [16.685, 41.115], [16.685, 41.105]],
+      ],
+    };
+    const labelPoint = polygonLabelPoint(geometryWithHole);
+
+    expect(labelPoint).not.toBeNull();
+    expect(pointInPolygon(labelPoint!, geometryWithHole)).toBe(true);
   });
 
   it("finds the zone that contains a property point", () => {

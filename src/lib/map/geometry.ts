@@ -30,6 +30,148 @@ export function pointInPolygon(point: MapPoint, geometry?: GeoJsonGeometry | nul
   return !holes.some((hole) => ringContainsPoint(point, hole));
 }
 
+type LabelCell = {
+  x: number;
+  y: number;
+  halfSize: number;
+  distance: number;
+  potential: number;
+};
+
+export function polygonLabelPoint(geometry?: GeoJsonGeometry | null): MapPoint | null {
+  const rings = polygonRings(geometry);
+  if (!rings) return null;
+
+  const outerRing = rings[0];
+  const longitudes = outerRing.map(([longitude]) => longitude);
+  const latitudes = outerRing.map(([, latitude]) => latitude);
+  const minLongitude = Math.min(...longitudes);
+  const maxLongitude = Math.max(...longitudes);
+  const minLatitude = Math.min(...latitudes);
+  const maxLatitude = Math.max(...latitudes);
+  const width = maxLongitude - minLongitude;
+  const height = maxLatitude - minLatitude;
+  const cellSize = Math.min(width, height);
+
+  if (cellSize === 0) {
+    return { latitude: outerRing[0][1], longitude: outerRing[0][0] };
+  }
+
+  const cells: LabelCell[] = [];
+  const halfSize = cellSize / 2;
+  for (let longitude = minLongitude; longitude < maxLongitude; longitude += cellSize) {
+    for (let latitude = minLatitude; latitude < maxLatitude; latitude += cellSize) {
+      cells.push(createLabelCell(longitude + halfSize, latitude + halfSize, halfSize, rings));
+    }
+  }
+
+  let bestCell = centroidLabelCell(outerRing, rings);
+  const boundingCell = createLabelCell(
+    minLongitude + width / 2,
+    minLatitude + height / 2,
+    0,
+    rings,
+  );
+  if (boundingCell.distance > bestCell.distance) bestCell = boundingCell;
+
+  const precision = Math.max(cellSize / 80, 0.000002);
+  while (cells.length) {
+    cells.sort((left, right) => left.potential - right.potential);
+    const cell = cells.pop()!;
+    if (cell.distance > bestCell.distance) bestCell = cell;
+    if (cell.potential - bestCell.distance <= precision) continue;
+
+    const nextHalfSize = cell.halfSize / 2;
+    cells.push(
+      createLabelCell(cell.x - nextHalfSize, cell.y - nextHalfSize, nextHalfSize, rings),
+      createLabelCell(cell.x + nextHalfSize, cell.y - nextHalfSize, nextHalfSize, rings),
+      createLabelCell(cell.x - nextHalfSize, cell.y + nextHalfSize, nextHalfSize, rings),
+      createLabelCell(cell.x + nextHalfSize, cell.y + nextHalfSize, nextHalfSize, rings),
+    );
+  }
+
+  return { latitude: bestCell.y, longitude: bestCell.x };
+}
+
+function createLabelCell(x: number, y: number, halfSize: number, rings: [number, number][][]): LabelCell {
+  const distance = signedDistanceToPolygon(x, y, rings);
+  return {
+    x,
+    y,
+    halfSize,
+    distance,
+    potential: distance + halfSize * Math.SQRT2,
+  };
+}
+
+function centroidLabelCell(outerRing: [number, number][], rings: [number, number][][]) {
+  let area = 0;
+  let longitude = 0;
+  let latitude = 0;
+
+  for (let index = 0, previous = outerRing.length - 1; index < outerRing.length; previous = index++) {
+    const [currentLongitude, currentLatitude] = outerRing[index];
+    const [previousLongitude, previousLatitude] = outerRing[previous];
+    const factor = previousLongitude * currentLatitude - currentLongitude * previousLatitude;
+    longitude += (previousLongitude + currentLongitude) * factor;
+    latitude += (previousLatitude + currentLatitude) * factor;
+    area += factor * 3;
+  }
+
+  if (area === 0) return createLabelCell(outerRing[0][0], outerRing[0][1], 0, rings);
+  return createLabelCell(longitude / area, latitude / area, 0, rings);
+}
+
+function signedDistanceToPolygon(x: number, y: number, rings: [number, number][][]) {
+  let inside = false;
+  let minimumDistanceSquared = Number.POSITIVE_INFINITY;
+
+  for (const ring of rings) {
+    for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+      const [currentX, currentY] = ring[index];
+      const [previousX, previousY] = ring[previous];
+      if ((currentY > y) !== (previousY > y) && x < ((previousX - currentX) * (y - currentY)) / (previousY - currentY) + currentX) {
+        inside = !inside;
+      }
+      minimumDistanceSquared = Math.min(
+        minimumDistanceSquared,
+        squaredDistanceToSegment(x, y, currentX, currentY, previousX, previousY),
+      );
+    }
+  }
+
+  return (inside ? 1 : -1) * Math.sqrt(minimumDistanceSquared);
+}
+
+function squaredDistanceToSegment(
+  x: number,
+  y: number,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) {
+  let segmentX = startX;
+  let segmentY = startY;
+  const deltaX = endX - startX;
+  const deltaY = endY - startY;
+
+  if (deltaX !== 0 || deltaY !== 0) {
+    const ratio = ((x - startX) * deltaX + (y - startY) * deltaY) / (deltaX * deltaX + deltaY * deltaY);
+    if (ratio > 1) {
+      segmentX = endX;
+      segmentY = endY;
+    } else if (ratio > 0) {
+      segmentX += deltaX * ratio;
+      segmentY += deltaY * ratio;
+    }
+  }
+
+  const distanceX = x - segmentX;
+  const distanceY = y - segmentY;
+  return distanceX * distanceX + distanceY * distanceY;
+}
+
 function ringContainsPoint(point: MapPoint, ring: LngLat[]) {
   const x = point.longitude;
   const y = point.latitude;

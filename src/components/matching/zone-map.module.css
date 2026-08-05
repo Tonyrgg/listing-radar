@@ -39,36 +39,53 @@
 .map :global(.leaflet-draw-tooltip) { display: none; }
 
 .zoneLabel {
-  border: 1px solid rgb(255 255 255 / 72%);
-  border-radius: .3rem;
-  background: rgb(16 32 25 / 86%);
+  border: 1px solid color-mix(in oklch, var(--ink-strong) 58%, transparent);
+  border-radius: .42rem;
+  background: color-mix(in oklch, var(--surface-canvas) 92%, transparent);
   box-shadow: none;
-  color: #edf4ef;
-  font-size: .65rem;
-  font-weight: 800;
-  letter-spacing: .035em;
-  line-height: 1.15;
-  padding: .28rem .42rem;
+  color: var(--ink-strong);
+  font-size: .66rem;
+  font-weight: 760;
+  letter-spacing: .025em;
+  line-height: 1.2;
+  padding: .24rem .34rem;
+  pointer-events: none;
   text-align: center;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .zoneLabel::before { display: none; }
-.zoneLabelNumber::after { content: " · "; }
+.zoneLabelContent { display: inline-flex; align-items: center; gap: .32rem; }
+.zoneLabelNumber {
+  display: inline-grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid color-mix(in oklch, var(--ink-strong) 70%, transparent);
+  border-radius: 50%;
+  font-size: .65rem;
+  font-weight: 820;
+}
+.zoneLabelName { max-width: 10.5rem; overflow: hidden; text-overflow: ellipsis; }
+.zoneLabelCompact { border-radius: 50%; padding: .18rem; }
+.zoneLabelCompact .zoneLabelContent { gap: 0; }
+.zoneLabelCompact .zoneLabelNumber { width: 1.45rem; height: 1.45rem; }
+.zoneLabelAccessibleName {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 @media (max-width: 639px) {
   .map { min-height: 24rem; }
   .compact { min-height: 19rem; }
-  .zoneLabel {
-    display: inline-flex;
-    width: 1.6rem;
-    height: 1.6rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    padding: 0;
-    font-size: .68rem;
-  }
-  .zoneLabelName { display: none; }
-  .zoneLabelNumber::after { content: ""; }
+  .zoneLabel { font-size: .62rem; }
+  .zoneLabelDetailed { max-width: 8.75rem; }
+  .zoneLabelNumber { width: 1.2rem; height: 1.2rem; font-size: .6rem; }
 }

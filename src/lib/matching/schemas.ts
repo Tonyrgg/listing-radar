@@ -14,6 +14,10 @@ export const clientSchema = z.object({
 
 export const zoneSchema = z.object({
   id: z.string().uuid().optional(),
+  zone_number: z.preprocess(
+    (value) => value === "" || value == null ? null : value,
+    z.coerce.number().int().min(1).max(99).nullable(),
+  ).optional(),
   name: z.string().trim().min(2).max(100),
   description: optionalText,
   landmarks: z.array(z.string().trim()).default([]),
