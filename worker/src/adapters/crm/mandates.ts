@@ -219,6 +219,22 @@ function parseDate(value: string | boolean | null | undefined) {
   return match ? `${match[3]}-${match[2]!.padStart(2, "0")}-${match[1]!.padStart(2, "0")}` : null;
 }
 
+export function resolveCrmPropertyCondition(
+  internalState: string | null,
+  externalState: string | null,
+): "new" | "renovated" | "normal" | "to_renovate" | "poor" | null {
+  const internal = clean(internalState).toLocaleLowerCase("it");
+  const external = clean(externalState).toLocaleLowerCase("it");
+  if (internal === "da ristrutturare") return "to_renovate";
+  if (internal === "scarso") return "poor";
+  if (internal === "ristrutturato") return "renovated";
+  if (internal === "nuovo") return "new";
+  if (internal === "buono" || internal === "normale") return "normal";
+  if (external === "nuovo") return "new";
+  if (external === "usato") return "normal";
+  return null;
+}
+
 export function normalizeCrmMandate(detail: CrmMandateDetail) {
   const value = (...labels: string[]) => {
     for (const label of labels) {
@@ -240,9 +256,7 @@ export function normalizeCrmMandate(detail: CrmMandateDetail) {
   const rawStatus = `${detail.status ?? ""} ${value("Stato Incarico") ?? ""}`.toLocaleLowerCase("it");
   const mandateStatus = /vendut/.test(rawStatus) ? "sold" : /locat|affittat/.test(rawStatus) ? "rented" : /sospes/.test(rawStatus) ? "suspended"
     : /scadut/.test(rawStatus) ? "expired" : /chius|archiv/.test(rawStatus) ? "archived" : "active";
-  const conditionRaw = `${value("Stato Interno") ?? ""} ${value("Stato Esterno") ?? ""}`.toLocaleLowerCase("it");
-  const condition = /ristrutturat|ottim/.test(conditionRaw) ? "renovated" : /da ristrutturare|ristrutturaz/.test(conditionRaw) ? "to_renovate"
-    : /buon|abitabil/.test(conditionRaw) ? "good" : null;
+  const condition = resolveCrmPropertyCondition(value("Stato Interno"), value("Stato Esterno"));
   const municipality = value("Comune", "Immobile: Comune") ?? "Bitonto";
   const internal = value("Interno", "Immobile: Interno");
   const detailAddress = value("Indirizzo");
@@ -263,7 +277,7 @@ export function normalizeCrmMandate(detail: CrmMandateDetail) {
     internal_sqm: parseNumber(value("Metri Quadri Calpestabili")), commercial_sqm: parseNumber(value("Metri Quadri Commerciali", "Immobile: Metri Quadri Commerciali")),
     rooms: parseNumber(value("Numero Locali", "Immobile: Numero Locali")), floor: parseNumber(value("Numero Piano", "Immobile: Numero Piano")),
     condition, availability_status: /liber/.test(occupancy) ? "available_now" : occupancy ? "occupied" : null,
-    available_from: parseDate(value("Data Scadenza Affitto")), description: value("Descrizione"), notes: value("Note Interne"),
+    available_from: parseDate(value("Data Scadenza Affitto")), description: value("Descrizione Immobile", "Descrizione"), notes: value("Note Interne"),
     source: "crm_archive", last_imported_at: detail.capturedAt, mandate_status: mandateStatus,
     image_urls: detail.images.map((image) => image.src), raw_payload: detail,
   };

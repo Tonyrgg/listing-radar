@@ -26,6 +26,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mandates:backfill-locations": "tsx scripts/backfill-property-locations.ts",
+    "mandates:backfill-condition": "tsx scripts/backfill-property-condition.ts",
+    "requests:sync-archive": "tsx scripts/sync-request-archive.ts",
+    "requests:reconcile-zones": "tsx scripts/reconcile-request-zones.ts",
     "desktop:visual-check": "node scripts/visual-check.mjs"
   },
   "dependencies": {

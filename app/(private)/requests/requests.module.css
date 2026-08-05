@@ -314,6 +314,8 @@
   font-weight: 500;
 }
 
+.fieldValueDanger { color: color-mix(in oklch, var(--status-error) 78%, var(--ink-strong)); }
+
 .cardFooter {
   display: flex;
   flex-wrap: wrap;
@@ -654,6 +656,13 @@
   overflow-wrap: anywhere;
 }
 
+.zoneEvidence { margin-bottom: .9rem; border-bottom: 1px solid var(--line-soft); padding-bottom: .9rem; }
+.zoneEvidence ul { display: grid; gap: .45rem; margin-top: .5rem; }
+.zoneEvidence li { display: grid; gap: .25rem .8rem; align-items: baseline; color: var(--ink-soft); font-size: .7rem; }
+.zoneEvidence li strong { color: var(--ink-strong); }
+.zoneEvidence li span { color: var(--status-warning); font-weight: 680; }
+.zoneEvidence q { color: var(--ink-subtle); font-style: normal; line-height: 1.45; }
+
 .activityList { display: grid; }
 
 .activityItem {
@@ -671,6 +680,10 @@
   font-size: .8rem;
   font-weight: 680;
 }
+
+.activityMeta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .65rem; color: var(--ink-subtle); font-size: .65rem; }
+.activityMeta span { border: 1px solid var(--line-soft); border-radius: 999px; padding: .16rem .42rem; color: var(--ink-soft); }
+.activityOwner { color: var(--ink-subtle); font-size: .68rem; }
 
 .activityText {
   color: var(--ink-soft);
@@ -721,6 +734,7 @@
 .managementContent { border-top: 1px solid var(--line-soft); padding: .75rem; }
 
 @media (min-width: 640px) {
+  .zoneEvidence li { grid-template-columns: minmax(8rem,.55fr) auto minmax(0,1.45fr); gap-block: .55rem; }
   .pageIntro,
   .detailTopline,
   .detailTitleRow {

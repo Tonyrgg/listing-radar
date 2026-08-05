@@ -214,46 +214,54 @@ export function suggestedZonePreferencesForRequest(
 ) {
   const fields = request.raw_payload?.fields ?? {};
   const source = normalizeZoneText([
-    request.title,
     request.notes,
     fields.Esigenze,
     fields["Dettaglio Esigenza"],
-    fields["Destinazione Richiesta"],
     request.raw_payload?.evolutionText,
+    ...(request.raw_payload?.activities ?? []).flatMap((activity) => [activity.subject, activity.description]),
   ].filter(Boolean).join(" "));
 
   if (!source) return [];
 
-  return zones.flatMap((zone) => {
-    const zoneName = normalizeZoneText(zone.name);
-    let matchedPhrase = zoneName.length >= 4 && containsPhrase(source, zoneName) ? zoneName : null;
-
-    const explicitPlaces = [...zone.associated_streets, ...zone.landmarks]
+  const matches = zones.flatMap((zone) => {
+    const aliases = zone.aliases.map(normalizeZoneText).map((alias) => alias.includes(" ") ? alias : `zona ${alias}`);
+    const phrases = [zone.name, ...aliases, ...zone.associated_streets, ...zone.landmarks]
       .map(normalizeZoneText)
-      .filter((candidate) => candidate.length >= 4);
-    matchedPhrase ??= explicitPlaces.find((candidate) => containsPhrase(source, candidate)) ?? null;
+      .filter((phrase, index, values) => phrase.length >= 4 && values.indexOf(phrase) === index);
+    return phrases.flatMap((phrase) => phraseOccurrences(source, phrase).map(({ start, end }) => ({ zone, phrase, start, end })));
+  }).sort((left, right) => (right.end - right.start) - (left.end - left.start) || left.start - right.start);
 
-    matchedPhrase ??= zone.aliases.map(normalizeZoneText).map((alias) => {
-      if (alias.length < 4) return false;
-      const phrase = alias.includes(" ") ? alias : `zona ${alias}`;
-      return containsPhrase(source, phrase) ? phrase : false;
-    }).find((phrase): phrase is string => Boolean(phrase)) ?? null;
+  const selected: typeof matches = [];
+  for (const match of matches) {
+    if (!selected.some((current) => match.start < current.end && match.end > current.start)) selected.push(match);
+  }
 
-    if (!matchedPhrase) return [];
-    return [{
-      zoneId: zone.id,
-      preferenceLevel: isNegated(source, matchedPhrase) ? "excluded" as const : "preferred" as const,
-    }];
-  });
+  const byZone = new Map<string, { zoneId: string; preferenceLevel: "preferred" | "excluded" }>();
+  for (const match of selected.sort((left, right) => left.start - right.start)) {
+    const preferenceLevel = isNegatedAt(source, match.start, match.end) ? "excluded" as const : "preferred" as const;
+    if (!byZone.has(match.zone.id) || preferenceLevel === "excluded") byZone.set(match.zone.id, { zoneId: match.zone.id, preferenceLevel });
+  }
+  return [...byZone.values()];
 }
 
-function containsPhrase(source: string, phrase: string) {
-  return ` ${source} `.includes(` ${phrase} `);
+function phraseOccurrences(source: string, phrase: string) {
+  const occurrences: Array<{ start: number; end: number }> = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const start = source.indexOf(phrase, cursor);
+    if (start < 0) break;
+    const end = start + phrase.length;
+    const before = start === 0 ? " " : source[start - 1];
+    const after = end === source.length ? " " : source[end];
+    if (before === " " && after === " ") occurrences.push({ start, end });
+    cursor = start + Math.max(1, phrase.length);
+  }
+  return occurrences;
 }
 
-function isNegated(source: string, phrase: string) {
-  const index = ` ${source} `.indexOf(` ${phrase} `);
-  if (index < 0) return false;
-  const before = ` ${source} `.slice(Math.max(0, index - 34), index).trim();
-  return /(?:^|\s)(?:no|non|esclude|esclusa|escluso|evita|evitare|fuori)(?:\s+dal|\s+dalla|\s+da|\s+il|\s+la)?\s*$/i.test(before);
+function isNegatedAt(source: string, start: number, end: number) {
+  const before = source.slice(Math.max(0, start - 56), start).trim();
+  const after = source.slice(end, Math.min(source.length, end + 24)).trim();
+  return /(?:^|\s)(?:no|non|esclude|esclusa|escluso|evita|evitare|fuori|tranne)(?:\s+dal|\s+dalla|\s+da|\s+il|\s+la|\s+zona)?\s*$/i.test(before)
+    || /^(?:no|esclusa|escluso|da evitare)(?:\s|$)/i.test(after);
 }

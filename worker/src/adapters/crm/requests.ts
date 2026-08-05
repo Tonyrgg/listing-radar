@@ -7,6 +7,18 @@ export type CrmRequestArchiveItem = {
   listFields: Record<string, string>;
 };
 
+export type CrmRequestActivity = {
+  externalId: string | null;
+  subject: string | null;
+  mode: string | null;
+  type: string | null;
+  status: string | null;
+  date: string | null;
+  assignedTo: string | null;
+  agency: string | null;
+  description: string | null;
+};
+
 export type CrmRequestDetail = {
   externalId: string;
   title: string;
@@ -17,6 +29,8 @@ export type CrmRequestDetail = {
   clientExternalId: string | null;
   relatedSections: Array<{ heading: string; text: string }>;
   evolutionText: string | null;
+  activities: CrmRequestActivity[];
+  activityCaptureError: string | null;
   capturedAt: string;
 };
 
@@ -28,6 +42,84 @@ function clean(value: string | null | undefined) {
 
 function requestId(url: string) {
   return url.match(/\/richiestaimmobiliare\/([^/?#]+)/i)?.[1] ?? "";
+}
+
+function activityFromFields(fields: Record<string, string>, externalId: string | null): CrmRequestActivity {
+  const normalizedLabel = (value: string) => clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleUpperCase("it");
+  const field = (...labels: string[]) => {
+    for (const label of labels) {
+      const entry = Object.entries(fields).find(([key]) => normalizedLabel(key) === normalizedLabel(label));
+      if (entry && clean(entry[1])) return clean(entry[1]);
+    }
+    return null;
+  };
+  return {
+    externalId,
+    subject: field("OGGETTO"),
+    mode: field("MODALITA"),
+    type: field("TIPO"),
+    status: field("STATO"),
+    date: field("DATA"),
+    assignedTo: field("ASSEGNATO A"),
+    agency: field("AGENZIA"),
+    description: field("DESCRIZIONE"),
+  };
+}
+
+export async function extractCrmRequestActivities(page: Page): Promise<CrmRequestActivity[]> {
+  const card = page.locator("article.slds-card").filter({ hasText: /Attivit(?:a|\u00e0) e appuntamenti/i, visible: true }).first();
+  if (!(await card.count())) return [];
+
+  const viewAll = card.getByText("Visualizza tutto", { exact: true });
+  const activityDeadline = Date.now() + 8_000;
+  while (Date.now() < activityDeadline) {
+    const cardText = clean(await card.innerText().catch(() => ""));
+    if (/appuntamenti\s*\(\s*0\s*\)/i.test(cardText)) return [];
+    if (await viewAll.isVisible().catch(() => false)) break;
+    if (!/loading/i.test(cardText) && await card.locator("ul.slds-timeline > li").count()) break;
+    await page.waitForTimeout(250);
+  }
+  if (await viewAll.count() && await viewAll.isVisible()) {
+    await viewAll.click();
+    const dialog = page.locator('[role="dialog"]').filter({ hasText: /Attivit(?:a|\u00e0) e appuntamenti/i, visible: true }).first();
+    await dialog.waitFor({ state: "visible", timeout: 15_000 });
+    const table = page.locator("table").filter({ hasText: /DESCRIZIONE/i, visible: true }).first();
+    await table.locator("tbody tr").first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => undefined);
+    const headers = await table.locator("thead th").allInnerTexts().then((values) => values.map(clean));
+    const rows = await table.locator("tbody tr").evaluateAll((elements, columnHeaders) => elements.map((row) => {
+      const cells = Array.from(row.querySelectorAll("td")).map((cell) => (cell as HTMLElement).innerText.replace(/\s+/g, " ").trim());
+      const fields = Object.fromEntries((columnHeaders as string[]).map((header, index) => [header || `Colonna ${index + 1}`, cells[index] ?? ""]));
+      const externalId = row.querySelector("[data-recordid]")?.getAttribute("data-recordid") ?? null;
+      return { fields, externalId };
+    }), headers);
+    const close = dialog.locator("lightning-button-icon.slds-modal__close").first();
+    const closedByButton = await close.count()
+      ? await close.click({ force: true, timeout: 2_000 }).then(() => true).catch(() => false)
+      : false;
+    if (!closedByButton) await page.keyboard.press("Escape").catch(() => undefined);
+    return rows.map((row) => activityFromFields(row.fields, row.externalId));
+  }
+
+  const timelineItems = card.locator("ul.slds-timeline > li");
+  const rows = await timelineItems.evaluateAll((elements) => elements.map((row) => {
+    const subject = (row.querySelector("h3") as HTMLElement | null)?.innerText ?? "";
+    const date = (row.querySelector(".slds-timeline__date") as HTMLElement | null)?.innerText ?? "";
+    const descriptionLabel = Array.from(row.querySelectorAll("span")).find((element) => /descrizione/i.test((element as HTMLElement).innerText));
+    const description = (descriptionLabel?.parentElement?.querySelector("p") as HTMLElement | null)?.innerText ?? "";
+    const externalId = row.querySelector("[data-recordid]")?.getAttribute("data-recordid") ?? null;
+    return { subject, date, description, externalId };
+  }));
+  return rows.map((row) => ({
+    externalId: row.externalId,
+    subject: clean(row.subject) || null,
+    mode: null,
+    type: null,
+    status: null,
+    date: clean(row.date) || null,
+    assignedTo: null,
+    agency: null,
+    description: clean(row.description) || null,
+  }));
 }
 
 async function archiveSignature(page: Page) {
@@ -159,6 +251,14 @@ export async function extractCrmRequestDetail(page: Page): Promise<CrmRequestDet
   })));
   const relatedSections = rawSections.map((section, index) => ({ heading: clean(section.heading) || `Sezione ${index + 1}`, text: clean(section.text) })).filter((section) => section.text);
 
+  let activities: CrmRequestActivity[] = [];
+  let activityCaptureError: string | null = null;
+  try {
+    activities = await extractCrmRequestActivities(page);
+  } catch (error) {
+    activityCaptureError = error instanceof Error ? error.message : String(error);
+  }
+
   let evolutionText: string | null = null;
   const evolutionTab = page.getByRole("tab", { name: /Evoluzione richiesta/i }).first();
   if (await evolutionTab.count()) {
@@ -179,6 +279,8 @@ export async function extractCrmRequestDetail(page: Page): Promise<CrmRequestDet
     clientExternalId,
     relatedSections,
     evolutionText,
+    activities,
+    activityCaptureError,
     capturedAt: new Date().toISOString(),
   };
 }

@@ -24,6 +24,18 @@ export interface CrmRelatedSection {
   text: string;
 }
 
+export interface CrmRequestActivity {
+  externalId: string | null;
+  subject: string | null;
+  mode: string | null;
+  type: string | null;
+  status: string | null;
+  date: string | null;
+  assignedTo: string | null;
+  agency: string | null;
+  description: string | null;
+}
+
 export interface CrmRequestRawPayload {
   url?: string;
   title?: string;
@@ -35,6 +47,16 @@ export interface CrmRequestRawPayload {
   fields?: Record<string, CrmFieldValue>;
   evolutionText?: string | null;
   relatedSections?: CrmRelatedSection[];
+  activities?: CrmRequestActivity[];
+  activityCaptureError?: string | null;
+  _zone_inference?: Array<{
+    zone_id: string;
+    zone_number: number | null;
+    zone_name: string;
+    preference_level: "preferred" | "excluded";
+    matched_phrase: string;
+    evidence: string;
+  }>;
 }
 
 export interface Client {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, MapPinned, Save } from "lucide-react";
+import { Ban, Check, MapPinned, Save } from "lucide-react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
@@ -17,23 +17,39 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
   const router = useRouter();
   const [selected, setSelected] = useState(() => new Set(initialZoneIds));
   const [excluded, setExcluded] = useState(() => new Set(initialExcludedZoneIds));
+  const [mode, setMode] = useState<"preferred" | "excluded">("preferred");
   const [pending, start] = useTransition();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   function toggle(zoneId: string) {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(zoneId)) next.delete(zoneId);
-      else next.add(zoneId);
-      return next;
-    });
-    setExcluded((current) => {
-      if (!current.has(zoneId)) return current;
-      const next = new Set(current);
-      next.delete(zoneId);
-      return next;
-    });
+    if (mode === "preferred") {
+      setSelected((current) => {
+        const next = new Set(current);
+        if (next.has(zoneId)) next.delete(zoneId);
+        else next.add(zoneId);
+        return next;
+      });
+      setExcluded((current) => {
+        if (!current.has(zoneId)) return current;
+        const next = new Set(current);
+        next.delete(zoneId);
+        return next;
+      });
+    } else {
+      setExcluded((current) => {
+        const next = new Set(current);
+        if (next.has(zoneId)) next.delete(zoneId);
+        else next.add(zoneId);
+        return next;
+      });
+      setSelected((current) => {
+        if (!current.has(zoneId)) return current;
+        const next = new Set(current);
+        next.delete(zoneId);
+        return next;
+      });
+    }
     setMessage("");
   }
 
@@ -54,6 +70,7 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
   const shapes = activeZones.filter((zone) => zone.geometry).map((zone) => ({
     shapeId: zone.id,
     zoneId: zone.id,
+    zoneNumber: zone.zone_number,
     name: zone.name,
     color: zone.color,
     geometry: zone.geometry!,
@@ -61,8 +78,17 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
 
   return (
     <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-2">
+        <span className="px-1 text-xs font-semibold text-[var(--ink-soft)]">Quando tocchi una zona:</span>
+        <button type="button" onClick={() => setMode("preferred")} aria-pressed={mode === "preferred"} className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${mode === "preferred" ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]" : "border-[var(--line-soft)] bg-[var(--surface-panel)] text-[var(--ink-soft)]"}`}>
+          <Check aria-hidden="true" className="size-3.5" /> Desiderata
+        </button>
+        <button type="button" onClick={() => setMode("excluded")} aria-pressed={mode === "excluded"} className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${mode === "excluded" ? "border-red-400/55 bg-red-400/12 text-red-300" : "border-[var(--line-soft)] bg-[var(--surface-panel)] text-[var(--ink-soft)]"}`}>
+          <Ban aria-hidden="true" className="size-3.5" /> Da evitare
+        </button>
+      </div>
       {shapes.length ? (
-        <ZoneMap compact shapes={shapes} selectedZoneIds={[...selected]} excludedZoneIds={[...excluded]} onZoneToggle={toggle} />
+        <ZoneMap compact showZoneLabels shapes={shapes} selectedZoneIds={[...selected]} excludedZoneIds={[...excluded]} onZoneToggle={toggle} />
       ) : (
         <div className="grid min-h-48 place-items-center rounded-[8px] border border-dashed border-[var(--line-strong)] text-center text-sm text-[var(--ink-soft)]">
           <div><MapPinned aria-hidden="true" className="mx-auto size-5 text-[var(--surface-accent)]" /><p className="mt-2">Disegna i perimetri nella scheda Zone immobiliari per abilitarne la selezione sulla mappa.</p></div>
@@ -77,11 +103,11 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
             <button
               type="button"
               className={`inline-flex min-h-9 items-center gap-2 rounded-[7px] border px-3 text-xs font-bold ${checked ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]" : isExcluded ? "border-red-400/40 bg-red-400/10 text-red-300" : "border-[var(--line-soft)] text-[var(--ink-soft)]"}`}
-              aria-pressed={checked}
+              aria-pressed={mode === "excluded" ? isExcluded : checked}
               onClick={() => toggle(zone.id)}
               key={zone.id}
             >
-              {checked ? <Check aria-hidden="true" className="size-3.5" /> : null}{zone.name}{isExcluded ? " · esclusa dal CRM" : !zone.geometry ? " · senza perimetro" : ""}
+              {checked ? <Check aria-hidden="true" className="size-3.5" /> : isExcluded ? <Ban aria-hidden="true" className="size-3.5" /> : null}{zone.zone_number ? `${zone.zone_number} · ` : ""}{zone.name}{isExcluded ? " · da evitare" : !zone.geometry ? " · senza perimetro" : ""}
             </button>
           );
         })}
@@ -89,7 +115,7 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
 
       <div className="flex flex-wrap items-center gap-3 border-t border-[var(--line-soft)] pt-3">
         <button type="button" onClick={save} disabled={pending} className="inline-flex min-h-10 items-center gap-2 rounded-[7px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)]">
-          <Save aria-hidden="true" className="size-4" /> {pending ? "Salvataggio…" : "Salva zone desiderate"}
+          <Save aria-hidden="true" className="size-4" /> {pending ? "Salvataggio…" : "Salva preferenze territoriali"}
         </button>
         <span className="text-xs text-[var(--ink-subtle)]">{selected.size} desiderate · {excluded.size} escluse</span>
         {message ? <span className="text-xs font-semibold text-[var(--surface-accent)]">{message}</span> : null}

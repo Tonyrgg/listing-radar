@@ -153,6 +153,10 @@ export default async function RequestsPage({
             .filter((item) => item.preference_level !== "excluded")
             .map((item) => item.zone?.name)
             .filter((name): name is string => Boolean(name));
+          const excludedZoneNames = (request.request_zones ?? [])
+            .filter((item) => item.preference_level === "excluded")
+            .map((item) => item.zone?.name)
+            .filter((name): name is string => Boolean(name));
 
           return (
             <Link
@@ -191,9 +195,9 @@ export default async function RequestsPage({
                   <dl className={styles.fieldList}>
                     <Field label="Piano" value={displayValue(fields["Piano Immobile"], floorBandLabel(request.requested_floor_band))} />
                     <Field label="Ascensore" value={displayValue(fields.Ascensore)} />
-                    <Field label="Arredato" value={displayValue(fields.Arredato)} />
+                    <Field label="Zona desiderata" value={zoneNames.join(", ") || "Nessuna preferenza di zona"} muted={!zoneNames.length} />
+                    <Field label="Da evitare" value={excludedZoneNames.join(", ") || "Nessuna zona esclusa"} muted={!excludedZoneNames.length} danger={Boolean(excludedZoneNames.length)} />
                     <Field label="Finalità" value={displayValue(fields["Destinazione Richiesta"], destinationLabel(request.destination))} />
-                    <Field label="Zona immobiliare" value={zoneNames.join(", ") || request.municipality || "Tutta Bitonto"} />
                     <Field label="Dettaglio" value={displayValue(fields["Dettaglio Esigenza"], financingLabel(request.financing_method))} muted />
                   </dl>
                 </section>
@@ -260,11 +264,11 @@ function Filter({ name, label, value: selected, options }: Readonly<{
   );
 }
 
-function Field({ label, value: content, muted = false }: Readonly<{ label: string; value: string; muted?: boolean }>) {
+function Field({ label, value: content, muted = false, danger = false }: Readonly<{ label: string; value: string; muted?: boolean; danger?: boolean }>) {
   return (
     <div className={styles.fieldRow}>
       <dt className={styles.fieldLabel}>{label}</dt>
-      <dd className={`${styles.fieldValue} ${muted ? styles.fieldValueMuted : ""}`}>{content}</dd>
+      <dd className={`${styles.fieldValue} ${muted ? styles.fieldValueMuted : ""} ${danger ? styles.fieldValueDanger : ""}`}>{content}</dd>
     </div>
   );
 }

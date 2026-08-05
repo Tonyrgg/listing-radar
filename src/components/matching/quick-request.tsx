@@ -992,9 +992,9 @@ export function QuickRequestDrawer() {
                         {[
                           ["new", "Nuovo"],
                           ["renovated", "Ristrutturato"],
-                          ["good", "Buone condizioni"],
-                          ["habitable", "Abitabile"],
+                          ["normal", "Normale"],
                           ["to_renovate", "Da ristrutturare"],
+                          ["poor", "Scarso"],
                         ].map(([value, label]) => (
                           <ChoiceButton
                             key={value}

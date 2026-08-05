@@ -40,6 +40,10 @@ describe("archivio richieste CRM", () => {
       expect(detail).toMatchObject({ externalId: "REQ-1", status: "In Gestione", clientExternalId: "CLIENT-1" });
       expect(detail.fields).toMatchObject({ Cliente: "Cliente Uno", "Richiesta Calda": true, Prezzo: "120,000" });
       expect(detail.relatedSections[0]).toMatchObject({ heading: "NOTE (1)" });
+      expect(detail.activities[0]).toMatchObject({
+        externalId: "TASK-1", type: "Proposta", status: "Eseguito",
+        description: "Girato link su WhatsApp",
+      });
       const normalized = normalizeCrmRequest(detail);
       expect(normalized.request).toMatchObject({ contract_type: "sale", budget_max: 120000, rooms_ideal: 3, priority: "high", destination: "first_home", financing_method: "full_mortgage" });
     } finally { await browser.close(); }

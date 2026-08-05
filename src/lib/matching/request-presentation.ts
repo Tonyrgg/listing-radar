@@ -69,13 +69,37 @@ export function requestRooms(request: PropertyRequest) {
 }
 
 export function requestActivityCount(request: PropertyRequest) {
-  const sections = requestPayload(request).relatedSections ?? [];
+  const payload = requestPayload(request);
+  if (payload.activities?.length) return payload.activities.length;
+  const sections = payload.relatedSections ?? [];
   return sections.filter(isActivitySection).length;
 }
 
-export function requestActivities(request: PropertyRequest): CrmRelatedSection[] {
+export type PresentedRequestActivity = CrmRelatedSection & {
+  id?: string | null;
+  date?: string | null;
+  mode?: string | null;
+  type?: string | null;
+  status?: string | null;
+  assignedTo?: string | null;
+  agency?: string | null;
+};
+
+export function requestActivities(request: PropertyRequest): PresentedRequestActivity[] {
   const payload = requestPayload(request);
-  const activities = (payload.relatedSections ?? []).filter(isActivitySection);
+  const activities: PresentedRequestActivity[] = payload.activities?.length
+    ? payload.activities.map((activity) => ({
+      id: activity.externalId,
+      heading: activity.subject || activity.type || "Attività CRM",
+      text: activity.description || "Nessuna descrizione registrata.",
+      date: activity.date,
+      mode: activity.mode,
+      type: activity.type,
+      status: activity.status,
+      assignedTo: activity.assignedTo,
+      agency: activity.agency,
+    }))
+    : (payload.relatedSections ?? []).filter(isActivitySection);
   if (payload.evolutionText?.trim()) {
     activities.unshift({ heading: "Evoluzione richiesta", text: payload.evolutionText.trim() });
   }
@@ -103,6 +127,7 @@ export function requestSearchText(request: RequestWithClient) {
     payload.externalId,
     ...Object.values(payload.fields ?? {}),
     ...Object.values(payload.headerFields ?? {}),
+    ...(payload.activities ?? []).flatMap((activity) => [activity.subject, activity.description]),
   ].filter((value) => value !== null && value !== undefined).join(" ").toLocaleLowerCase("it");
 }
 

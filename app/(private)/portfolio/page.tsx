@@ -5,6 +5,7 @@ import { PropertyEditor } from "@/components/matching/management-panels";
 import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
+import { propertyConditionLabel } from "@/lib/matching/property-presentation";
 import { listFeatures, listProperties, listZones } from "@/lib/matching/repository";
 
 export default async function PortfolioPage() {
@@ -55,12 +56,17 @@ export default async function PortfolioPage() {
                 <span className={styles.badge}>{mandateLabel(property.mandate_status)}</span>
               </header>
 
+              <dl className={styles.propertyHighlights}>
+                <PropertyHighlight label={property.contract_type === "sale" ? "Prezzo" : "Canone"} value={price ? `€ ${Number(price).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Da definire"} />
+                <PropertyHighlight label="Superficie" value={property.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} muted={!property.internal_sqm} />
+                <PropertyHighlight label="Stato" value={propertyConditionLabel(property.condition)} muted={!property.condition} emphasized />
+              </dl>
+
               <div className={styles.propertyBody}>
                 <section className={styles.recordColumn}>
                   <h3 className={styles.columnTitle}>Immobile</h3>
                   <dl className={styles.fieldList}>
                     <Field label="Tipologia" value={propertyTypeLabel(property.property_type)} />
-                    <Field label="Superficie" value={property.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} muted={!property.internal_sqm} />
                     <Field label="Locali" value={numberValue(property.rooms)} />
                     <Field label="Camere" value={numberValue(property.bedrooms)} />
                     <Field label="Bagni" value={numberValue(property.bathrooms)} />
@@ -70,10 +76,8 @@ export default async function PortfolioPage() {
                 <section className={styles.recordColumn}>
                   <h3 className={styles.columnTitle}>Commerciale</h3>
                   <dl className={styles.fieldList}>
-                    <Field label={property.contract_type === "sale" ? "Prezzo" : "Canone"} value={price ? `€ ${Number(price).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Da definire"} />
                     <Field label="Incarico" value={mandateLabel(property.mandate_status)} />
                     <Field label="Disponibilità" value={availabilityLabel(property.availability_status)} />
-                    <Field label="Condizione" value={conditionLabel(property.condition)} muted={!property.condition} />
                     <Field label="Comune" value={property.municipality || "Non indicato"} />
                     <Field label="Indirizzo" value={property.address || "Non indicato"} muted={!property.address} />
                   </dl>
@@ -113,6 +117,10 @@ function Field({ label, value, muted = false }: Readonly<{ label: string; value:
   return <div className={styles.fieldRow}><dt className={styles.label}>{label}</dt><dd className={`${styles.fieldValue} ${muted ? styles.fieldMuted : ""}`}>{value}</dd></div>;
 }
 
+function PropertyHighlight({ label, value, muted = false, emphasized = false }: Readonly<{ label: string; value: string; muted?: boolean; emphasized?: boolean }>) {
+  return <div className={`${styles.propertyHighlight} ${emphasized ? styles.propertyHighlightState : ""}`}><dt>{label}</dt><dd className={muted ? styles.fieldMuted : ""}>{value}</dd></div>;
+}
+
 function numberValue(value: number | null) { return value === null ? "Non indicato" : String(value); }
 
 function propertyTypeLabel(value: string) {
@@ -125,8 +133,4 @@ function mandateLabel(status: string) {
 
 function availabilityLabel(value: string | null) {
   return ({ available_now: "Subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Futura" }[value ?? ""] ?? "Non indicata");
-}
-
-function conditionLabel(value: string | null) {
-  return ({ new: "Nuovo", excellent: "Ottimo", good: "Buono", habitable: "Abitabile", renovated: "Ristrutturato", to_renovate: "Da ristrutturare" }[value ?? ""] ?? value ?? "Non indicata");
 }

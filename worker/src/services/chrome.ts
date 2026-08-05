@@ -78,7 +78,7 @@ async function connectToCrmArchiveChrome(
 ): Promise<RequestArchiveChrome> {
   let browser: Browser;
   try {
-    browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
+    browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 30_000 });
   } catch (error) {
     throw new WorkerError(
       `Chrome non raggiungibile su ${cdpUrl}. Avvialo con --remote-debugging-port=9222.`,

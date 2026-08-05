@@ -12,6 +12,7 @@ import {
   type PropertyLocationResolution,
   type PropertyLocationZone,
 } from "./property-location.js";
+import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
 
 export type JobRow = {
   id: string;
@@ -268,16 +269,43 @@ export class WorkerRepository {
     const existingRequest = await this.client.from("property_requests").select("id,client_id,raw_payload")
       .eq("external_crm_id", externalId).limit(1).maybeSingle();
     if (existingRequest.error) throw new Error(`Ricerca richiesta CRM fallita: ${existingRequest.error.message}`);
+    const inferredZones = inferRequestZonePreferences(detail, await this.listRequestInferenceZones());
     const requestPayload = {
       ...normalized.request,
       client_id: clientId ?? existingRequest.data?.client_id ?? null,
-      raw_payload: { ...((existingRequest.data?.raw_payload as Record<string, unknown> | null) ?? {}), ...(normalized.request.raw_payload as Record<string, unknown> ?? {}) },
+      raw_payload: {
+        ...((existingRequest.data?.raw_payload as Record<string, unknown> | null) ?? {}),
+        ...(normalized.request.raw_payload as Record<string, unknown> ?? {}),
+        _zone_inference: inferredZones,
+      },
     };
     const mutation = existingRequest.data
       ? await this.client.from("property_requests").update(requestPayload).eq("id", existingRequest.data.id).select("id").single()
       : await this.client.from("property_requests").insert(requestPayload).select("id").single();
     if (mutation.error) throw new Error(`Salvataggio richiesta CRM fallito: ${mutation.error.message}`);
-    return String(mutation.data.id);
+    const requestId = String(mutation.data.id);
+    const { data: existingZones, error: existingZonesError } = await this.client.from("request_zones")
+      .select("id").eq("request_id", requestId).limit(1);
+    if (existingZonesError) throw new Error(`Lettura zone della richiesta fallita: ${existingZonesError.message}`);
+    if (!existingZones?.length && inferredZones.length) {
+      const { error: zoneInsertError } = await this.client.from("request_zones").insert(inferredZones.map((zone) => ({
+        request_id: requestId,
+        zone_id: zone.zone_id,
+        preference_level: zone.preference_level,
+      })));
+      if (zoneInsertError) throw new Error(`Salvataggio zone della richiesta fallito: ${zoneInsertError.message}`);
+    }
+    return requestId;
+  }
+
+  private async listRequestInferenceZones(): Promise<RequestInferenceZone[]> {
+    const { data, error } = await this.client.from("internal_zones")
+      .select("id,zone_number,name,aliases,landmarks,associated_streets")
+      .eq("is_active", true)
+      .not("zone_number", "is", null)
+      .order("zone_number", { ascending: true });
+    if (error) throw new Error(`Lettura zone immobiliari fallita: ${error.message}`);
+    return (data ?? []) as RequestInferenceZone[];
   }
 
   async mandateArchiveHealthCheck() {

@@ -425,6 +425,13 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
 .recordReference { color: var(--surface-accent); font-size: .66rem; font-weight: 780; letter-spacing: .08em; text-transform: uppercase; }
 .recordTitle { margin-top: .3rem; color: var(--ink-strong); font-size: 1rem; font-weight: 680; line-height: 1.35; }
 .recordSubtitle { margin-top: .25rem; color: var(--ink-soft); font-size: .76rem; }
+.propertyHighlights { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border-top: 1px solid var(--line-soft); background: color-mix(in oklch,var(--surface-panel) 94%,var(--surface-muted)); }
+.propertyHighlight { min-width: 0; padding: .78rem 1rem; }
+.propertyHighlight + .propertyHighlight { border-left: 1px solid var(--line-soft); }
+.propertyHighlight dt { color: var(--ink-subtle); font-size: .6rem; font-weight: 760; letter-spacing: .07em; text-transform: uppercase; }
+.propertyHighlight dd { margin-top: .22rem; color: var(--ink-strong); font-size: .86rem; font-weight: 720; line-height: 1.25; overflow-wrap: anywhere; }
+.propertyHighlightState { background: color-mix(in oklch,var(--surface-accent-soft) 58%,transparent); }
+.propertyHighlightState dd { color: var(--surface-accent); }
 .propertyBody { display: grid; flex: 1; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .recordColumn { padding: .9rem 1rem; }
 .recordColumn + .recordColumn { border-top: 1px solid var(--line-soft); }
@@ -599,7 +606,7 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
   .mapToolbar { flex-direction: row; align-items: center; justify-content: space-between; }
   .entityTitleRow { flex-direction: row; align-items: flex-end; justify-content: space-between; }
   .propertyPriority { grid-template-columns: minmax(13rem,.45fr) minmax(0,1.55fr); align-items: center; }
-  .propertySignals { grid-template-columns: repeat(5,minmax(0,1fr)); }
+  .propertySignals { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
 
 @media (min-width: 768px) {
@@ -625,6 +632,7 @@ textarea.input { min-height: 5.5rem; padding-block: .65rem; resize: vertical; }
   .matchingTopGrid { grid-template-columns: minmax(20rem,.8fr) minmax(0,1.2fr); align-items: stretch; }
   .propertyWorkspace { grid-template-columns: minmax(0,1.5fr) minmax(19rem,.5fr); }
   .propertyEssentials { border-top: 0; border-left: 1px solid var(--line-soft); }
+  .propertySignals { grid-template-columns: repeat(6,minmax(0,1fr)); }
 }
 
 @media (min-width: 1180px) {

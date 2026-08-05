@@ -192,7 +192,10 @@ export async function backfillRequestZonesAction() {
 }
 
 async function getPropertyZones(supabase: ReturnType<typeof requireMatchingDatabase>) {
-  const { data, error } = await supabase.from("internal_zones").select("*");
+  const { data, error } = await supabase.from("internal_zones").select("*")
+    .eq("is_active", true)
+    .not("zone_number", "is", null)
+    .order("zone_number", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as import("@/lib/matching/types").InternalZone[];
 }

@@ -1,4 +1,4 @@
-import { ArrowLeft, Bath, BedDouble, DoorOpen, Layers3, MapPin, Ruler } from "lucide-react";
+import { ArrowLeft, Bath, BedDouble, DoorOpen, Layers3, MapPin, Ruler, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -6,6 +6,7 @@ import { MatchCard } from "@/components/matching/match-card";
 import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
 import styles from "@/components/matching/section-design.module.css";
 import { ZoneMap } from "@/components/matching/zone-map";
+import { propertyConditionLabel, propertyCrmCondition } from "@/lib/matching/property-presentation";
 import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
 import type { MatchClassification, MatchStatus, PortfolioProperty } from "@/lib/matching/types";
 
@@ -29,6 +30,8 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
   const propertyPoint = property.latitude != null && property.longitude != null
     ? { latitude: Number(property.latitude), longitude: Number(property.longitude) }
     : null;
+  const internalCondition = propertyCrmCondition(property as PortfolioProperty, "Stato Interno");
+  const externalCondition = propertyCrmCondition(property as PortfolioProperty, "Stato Esterno");
 
   return (
     <div className={styles.page}>
@@ -54,13 +57,14 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
             <PropertySignal icon={BedDouble} label="Camere" value={numberValue(property.bedrooms)} />
             <PropertySignal icon={Bath} label="Bagni" value={numberValue(property.bathrooms)} />
             <PropertySignal icon={Layers3} label="Piano" value={numberValue(property.floor)} />
+            <PropertySignal icon={Sparkles} label="Stato" value={propertyConditionLabel(property.condition)} />
           </div>
         </div>
         <div className={styles.entityContext}>
           <span><strong>{mandateLabel(property.mandate_status)}</strong> incarico</span>
           <span>Disponibilità: {availabilityLabel(property.availability_status)}</span>
           <span>Zona: {property.zone?.name || property.municipality || "da indicare"}</span>
-          <span>Condizione: {conditionLabel(property.condition)}</span>
+          <span>Stato finale: {propertyConditionLabel(property.condition)}</span>
         </div>
       </header>
 
@@ -75,6 +79,9 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <aside className={styles.propertyEssentials}>
           <div><p className={styles.sectionEyebrow}>Quadro operativo</p><h2 className={styles.panelTitle}>Cosa sapere prima di proporlo</h2></div>
           <dl className={styles.essentialList}>
+            <Essential label="Esito finale" value={propertyConditionLabel(property.condition)} />
+            <Essential label="Stato interno · CRM" value={internalCondition || "Non indicato"} />
+            <Essential label="Stato esterno · CRM" value={externalCondition || "Non indicato"} />
             <Essential label="Tipologia" value={propertyTypeLabel(property.property_type)} />
             <Essential label="Superficie commerciale" value={property.commercial_sqm ? `${property.commercial_sqm} mq` : "Non indicata"} />
             <Essential label="Edificio" value={property.building_floors ? `${property.building_floors} piani` : "Piani non indicati"} />
@@ -115,4 +122,3 @@ function numberValue(value: number | null) { return value === null ? "Non indica
 function propertyTypeLabel(value: string) { return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile", commercial_space: "Locale commerciale", office: "Ufficio", warehouse: "Deposito / magazzino", garage: "Garage / box", land: "Terreno", other: "Altra tipologia" }[value] ?? value); }
 function mandateLabel(value: string) { return ({ draft: "Bozza", active: "Disponibile", suspended: "Sospeso", expired: "Scaduto", sold: "Venduto", rented: "Affittato", archived: "Archiviato" }[value] ?? value); }
 function availabilityLabel(value: string | null) { return ({ available_now: "Disponibile subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Disponibilità futura" }[value ?? ""] ?? "Non indicata"); }
-function conditionLabel(value: string | null) { return ({ new: "Nuovo", excellent: "Ottimo", good: "Buono", habitable: "Abitabile", renovated: "Ristrutturato", to_renovate: "Da ristrutturare" }[value ?? ""] ?? value ?? "Non indicata"); }

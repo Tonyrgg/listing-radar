@@ -3,7 +3,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { describe, expect, it } from "vitest";
 
-import { collectCrmMandateArchive, extractCrmMandateDetail, normalizeCrmMandate } from "../src/adapters/crm/mandates.js";
+import { collectCrmMandateArchive, extractCrmMandateDetail, normalizeCrmMandate, resolveCrmPropertyCondition } from "../src/adapters/crm/mandates.js";
 import { mandateItemsStillToProcess } from "../src/services/mandate-archive-importer.js";
 
 const fixture = (name: string) => path.resolve("src", "fixtures", name);
@@ -47,8 +47,18 @@ describe("archivio incarichi CRM", () => {
       expect(normalizeCrmMandate(detail)).toMatchObject({
         external_crm_id: "PROP-1", external_mandate_id: "MAN-1", contract_type: "sale",
         property_type: "apartment", price: 120000, commercial_sqm: 95, rooms: 3,
-        floor: 2, availability_status: "available_now", mandate_status: "active",
+        floor: 2, availability_status: "available_now", mandate_status: "active", condition: "normal",
+        description: "Soggiorno luminoso con balcone angolare.",
       });
     } finally { await browser.close(); }
+  });
+
+  it("riduce gli stati CRM ai cinque esiti operativi senza perdere gli originali nel payload", () => {
+    expect(resolveCrmPropertyCondition("Nuovo", "Usato")).toBe("new");
+    expect(resolveCrmPropertyCondition("Ristrutturato", "Nuovo")).toBe("renovated");
+    expect(resolveCrmPropertyCondition("Buono", "Usato")).toBe("normal");
+    expect(resolveCrmPropertyCondition("Normale", "Usato")).toBe("normal");
+    expect(resolveCrmPropertyCondition("Da Ristrutturare", "Usato")).toBe("to_renovate");
+    expect(resolveCrmPropertyCondition("Scarso", "Usato")).toBe("poor");
   });
 });

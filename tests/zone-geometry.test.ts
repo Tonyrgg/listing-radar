@@ -109,4 +109,28 @@ describe("zone geometry", () => {
       raw_payload: { fields: { Esigenze: "No zona Villa" } },
     }, [zone])).toEqual([{ zoneId: "zone-villa", preferenceLevel: "excluded" }]);
   });
+
+  it("keeps longer zone names distinct and reads exclusions from activity descriptions", () => {
+    const center: InternalZone = { ...zone, id: "zone-center", name: "Centro", aliases: [], landmarks: [], associated_streets: [] };
+    const historicCenter: InternalZone = { ...zone, id: "zone-historic-center", name: "Centro Storico", aliases: [], landmarks: [], associated_streets: [] };
+    expect(suggestedZonePreferencesForRequest({
+      title: "RR - 2 locali - Carmine",
+      notes: null,
+      raw_payload: {
+        fields: { Esigenze: "NO CENTRO STORICO" },
+        activities: [{ externalId: null, subject: "Telefonata", mode: null, type: null, status: null, date: null, assignedTo: null, agency: null, description: "Valuta zona Villa" }],
+      },
+    }, [center, historicCenter, zone])).toEqual([
+      { zoneId: "zone-historic-center", preferenceLevel: "excluded" },
+      { zoneId: "zone-villa", preferenceLevel: "preferred" },
+    ]);
+  });
+
+  it("does not infer a zone from a property type or destination", () => {
+    expect(suggestedZonePreferencesForRequest({
+      title: "RR - Villa singola",
+      notes: null,
+      raw_payload: { fields: { Esigenze: "Cerca una villa indipendente", "Destinazione Richiesta": "Investimento" } },
+    }, [zone])).toEqual([]);
+  });
 });

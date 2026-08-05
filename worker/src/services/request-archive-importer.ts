@@ -14,6 +14,20 @@ export function requestItemsStillToProcess<T extends { status: string }>(items: 
   return items.filter((item) => item.status !== "completed");
 }
 
+async function openAndExtractRequestDetail(page: Page, sourceUrl: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.goto(sourceUrl, { waitUntil: "commit", timeout: 45_000 });
+      return await extractCrmRequestDetail(page);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await page.goto("about:blank", { waitUntil: "commit", timeout: 10_000 }).catch(() => undefined);
+    }
+  }
+  throw lastError;
+}
+
 export class RequestArchiveImporter {
   constructor(
     private readonly config: WorkerConfig,
@@ -80,8 +94,7 @@ export class RequestArchiveImporter {
           title: item.title ?? item.external_crm_id, externalId: item.external_crm_id, failed,
         });
         try {
-          await detailPage.goto(item.source_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-          const detail = await extractCrmRequestDetail(detailPage);
+          const detail = await openAndExtractRequestDetail(detailPage, item.source_url);
           const requestId = await this.repository.saveArchivedCrmRequest(item.id, detail, normalizeCrmRequest(detail));
           processed += 1;
           await this.repository.markRequestImportItem(item.id, {
@@ -92,6 +105,8 @@ export class RequestArchiveImporter {
           await this.repository.markRequestImportItem(item.id, {
             status: "failed", error_message: error instanceof Error ? error.message : String(error), completed_at: new Date().toISOString(),
           });
+          await detailPage.close().catch(() => undefined);
+          detailPage = await context.newPage();
         }
         await this.repository.updateRequestImportRun(run.id, { processed_requests: processed, failed_requests: failed });
       }

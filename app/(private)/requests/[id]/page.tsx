@@ -53,8 +53,11 @@ export default async function RequestDetailPage({
   const headers = payload.headerFields ?? {};
   const contact = clientContact(request.clients);
   const activities = requestActivities(request);
+  const zoneInference = payload._zone_inference ?? [];
   const clientSection = payload.relatedSections?.find((section) => section.heading === "Cliente")?.text ?? "";
   const workflowIndex = currentWorkflowIndex(payload.status, request.status);
+  const desiredZoneCount = detail.zones.filter((item) => item.preference_level !== "excluded").length;
+  const excludedZoneCount = detail.zones.filter((item) => item.preference_level === "excluded").length;
   const zones = detail.zones.filter((item) => item.preference_level !== "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
   const excludedZones = detail.zones.filter((item) => item.preference_level === "excluded").map((item) => item.zone?.name).filter(Boolean).join(", ");
   const clientName = request.clients?.full_name || displayValue(fields.Cliente, "Cliente da collegare");
@@ -112,7 +115,7 @@ export default async function RequestDetailPage({
         <div className={styles.requestFocusMain}>
           <p className={styles.sectionEyebrow}>Obiettivo del cliente</p>
           <h2 className={styles.focusStatement}>{targetType}</h2>
-          <p className={styles.focusLocation}><MapPinned aria-hidden="true" className="size-4" /> {zones || request.municipality || "Tutta Bitonto"}</p>
+          <p className={styles.focusLocation}><MapPinned aria-hidden="true" className="size-4" /> {zones || "Nessuna zona preferita"}</p>
           <div className={styles.prioritySignals}>
             <Signal icon={Banknote} label="Budget" value={requestBudget(request)} />
             <Signal icon={Ruler} label="Superficie" value={requestArea(request)} />
@@ -142,11 +145,19 @@ export default async function RequestDetailPage({
         <header className={styles.sectionHeader}>
           <div>
             <p className={styles.sectionEyebrow}>Localizzazione</p>
-            <h2 className={styles.sectionTitle}>Zone immobiliari desiderate</h2>
+            <h2 className={styles.sectionTitle}>Zone desiderate e zone da evitare</h2>
           </div>
-          <span className={styles.sectionCount}>{detail.zones.length} selezionate</span>
+          <span className={styles.sectionCount}>{desiredZoneCount} desiderate · {excludedZoneCount} escluse</span>
         </header>
         <div className={styles.sectionBody}>
+          {zoneInference.length ? (
+            <div className={styles.zoneEvidence}>
+              <p className={styles.fieldLabel}>Riconosciute automaticamente dal testo CRM</p>
+              <ul>
+                {zoneInference.map((item) => <li key={item.zone_id}><strong>{item.zone_name}</strong><span>{item.preference_level === "excluded" ? "Da evitare" : "Desiderata"}</span><q>{item.evidence}</q></li>)}
+              </ul>
+            </div>
+          ) : null}
           <RequestZonePicker
             requestId={id}
             zones={allZones}
@@ -192,14 +203,20 @@ export default async function RequestDetailPage({
             {activities.length ? (
               <div className={styles.activityList}>
                 {activities.map((activity, index) => (
-                  <article className={styles.activityItem} key={`${activity.heading}-${index}`}>
+                  <article className={styles.activityItem} key={activity.id || `${activity.heading}-${index}`}>
+                    <div className={styles.activityMeta}>
+                      {activity.date ? <time>{activity.date}</time> : null}
+                      {activity.type ? <span>{activity.type}</span> : null}
+                      {activity.status ? <span>{activity.status}</span> : null}
+                    </div>
                     <h3 className={styles.activityTitle}>{activity.heading}</h3>
                     <p className={styles.activityText}>{activity.text}</p>
+                    {activity.assignedTo || activity.agency ? <p className={styles.activityOwner}>{[activity.assignedTo, activity.agency].filter(Boolean).join(" · ")}</p> : null}
                   </article>
                 ))}
               </div>
             ) : (
-              <p className={styles.emptyInline}>Nessuna attività completa è stata importata dal CRM per questa richiesta.</p>
+              <p className={styles.emptyInline}>{payload.activityCaptureError ? "Lo storico attività non è stato leggibile durante l’ultima sincronizzazione." : "Nessuna attività completa è stata importata dal CRM per questa richiesta."}</p>
             )}
           </div>
         </section>

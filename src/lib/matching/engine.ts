@@ -81,7 +81,8 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     add(config.weights.floor, scoreRange(property.floor, request.floor_min, null, request.floor_max), "piano", "piano non preferito");
   }
   if (request.accepted_conditions.length) {
-    add(config.weights.condition, property.condition && request.accepted_conditions.includes(property.condition) ? 1 : 0, "stato immobile", "stato immobile diverso");
+    const acceptedConditions = request.accepted_conditions.map(canonicalCondition);
+    add(config.weights.condition, property.condition && acceptedConditions.includes(canonicalCondition(property.condition)) ? 1 : 0, "stato immobile", "stato immobile diverso");
   }
   if (request.availability_requirement) {
     add(config.weights.availability, property.availability_status === request.availability_requirement ? 1 : 0.25, "disponibilità", "disponibilità diversa");
@@ -118,4 +119,8 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     explanation: buildExplanation(score, classification, matched, missing, conflicts),
     warnings,
   };
+}
+
+function canonicalCondition(value: string) {
+  return ({ good: "normal", habitable: "normal", excellent: "renovated" }[value] ?? value);
 }
