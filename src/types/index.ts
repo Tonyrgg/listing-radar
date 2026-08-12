@@ -33,6 +33,12 @@ export interface ListingSource {
   source: string;
   url: string;
   sourceListingId: string | null;
+  canonicalUrl?: string | null;
+  title?: string | null;
+  price?: number | null;
+  sqm?: number | null;
+  rooms?: number | null;
+  sellerType?: SellerType | null;
   sellerName: string | null;
   firstSeenAt: string | null;
   lastSeenAt: string | null;

@@ -187,12 +187,17 @@
 
   function extractSellerType(sellerName, sellerContext, description) {
     const text = `${sellerName || ""} ${sellerContext || ""} ${description || ""}`;
+    const classified = utils.sellerTypeFrom(sellerName, text);
 
-    if (/\b(?:privato|proprietario|no agenzie|vendita diretta)\b/i.test(text)) {
+    if (classified === "agency") {
+      return "agency";
+    }
+
+    if (/\b(?:no agenzie|no intermediari|privato vende|vendita da privato|vendita diretta)\b/i.test(text)) {
       return "private";
     }
 
-    return utils.sellerTypeFrom(sellerName, text) || "unknown";
+    return classified || "unknown";
   }
 
   function extractDeclaredDate(pageText) {

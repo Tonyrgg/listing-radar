@@ -171,14 +171,14 @@
     const text = `${name || ""} ${context || ""}`.toLowerCase();
 
     if (
-      /\b(?:agenzia|immobiliare|re\/max|tecnocasa|professionista|impresa)\b/i.test(
+      /\b(?:agenzia|immobiliare|real\s+estate|re\/max|tecnocasa|tecnorete|tempocasa|gabetti|professionecasa|professionista|impresa|intermediazione|mediazione|s\.?r\.?l\.?|s\.?a\.?s\.?|s\.?n\.?c\.?)\b/i.test(
         text,
       )
     ) {
       return "agency";
     }
 
-    if (/\b(?:privato|proprietario|vendita diretta|no agenzie)\b/i.test(text)) {
+    if (/\b(?:privato vende|vendita da privato|vendita diretta|no agenzie|no intermediari|senza agenzia)\b/i.test(text)) {
       return "private";
     }
 

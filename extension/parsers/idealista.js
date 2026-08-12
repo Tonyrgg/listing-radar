@@ -259,12 +259,17 @@
 
   function extractSellerType(name, context, description) {
     const text = `${name || ""} ${context || ""} ${description || ""}`;
+    const classified = utils.sellerTypeFrom(name, text);
 
-    if (/\b(?:no agenzie|privato|proprietario|vendita diretta)\b/i.test(text)) {
+    if (classified === "agency") {
+      return "agency";
+    }
+
+    if (/\b(?:no agenzie|no intermediari|privato vende|vendita da privato|vendita diretta)\b/i.test(text)) {
       return "private";
     }
 
-    return utils.sellerTypeFrom(name, text) || "unknown";
+    return classified || "unknown";
   }
 
   function extractFloor(details, description) {

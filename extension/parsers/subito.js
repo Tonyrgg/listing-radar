@@ -170,12 +170,17 @@
 
   function extractSellerType(sellerName, sellerContext, description) {
     const text = `${sellerName || ""} ${sellerContext || ""} ${description || ""}`;
+    const classified = utils.sellerTypeFrom(sellerName, text);
 
-    if (/\b(?:privato|proprietario|no agenzie|non voglio essere contattato da agenzie)\b/i.test(text)) {
+    if (classified === "agency") {
+      return "agency";
+    }
+
+    if (/\b(?:privato vende|vendita da privato|no agenzie|no intermediari|non voglio essere contattato da agenzie)\b/i.test(text)) {
       return "private";
     }
 
-    return utils.sellerTypeFrom(sellerName, text) || "unknown";
+    return classified || "unknown";
   }
 
   function extractAddress(pageText) {

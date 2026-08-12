@@ -49,7 +49,7 @@ describe("duplicate detection", () => {
     expect(confidence).toBeLessThan(6);
   });
 
-  it("matches listings with partial address and close metrics", () => {
+  it("does not auto-merge a partial address without a civic number", () => {
     const confidence = duplicateConfidence(
       {
         title: "Appartamento tre vani ristrutturato zona stazione",
@@ -69,6 +69,6 @@ describe("duplicate detection", () => {
       },
     );
 
-    expect(confidence).toBeGreaterThanOrEqual(6);
+    expect(confidence).toBeLessThan(6);
   });
 });

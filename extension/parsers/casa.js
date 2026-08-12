@@ -200,19 +200,19 @@
     const text = generic.clean(value).toLowerCase();
 
     if (
-      /\b(?:inserzionista privato|venditore privato|da privato|privato|proprietario|private seller|privateperson|private_person)\b/i.test(
-        text,
-      )
-    ) {
-      return "private";
-    }
-
-    if (
       /\b(?:agenzia|immobiliare|professionista|impresa|societ|srl|s\.r\.l|sas|s\.a\.s|snc|s\.n\.c|studio|mediazion|real estate|agency|organization|realestateagent|broker)\b/i.test(
         text,
       )
     ) {
       return "agency";
+    }
+
+    if (
+      /\b(?:inserzionista privato|venditore privato|da privato|private seller|privateperson|private_person|no agenzie|no intermediari)\b/i.test(
+        text,
+      )
+    ) {
+      return "private";
     }
 
     return null;

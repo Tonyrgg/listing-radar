@@ -186,6 +186,7 @@
       const isPrivate = /\b(?:Privato Vende|da Privato|senza agenzia|senza intermediari)\b/i.test(
         pageText,
       );
+      const detectedSellerType = utils.sellerTypeFrom(sellerName, pageText);
       const extracted = {
         title: extractTitle(pageText),
         description,
@@ -204,7 +205,12 @@
         zone: addressRaw,
         addressRaw,
         sellerName,
-        sellerType: isPrivate ? "private" : "unknown",
+        sellerType:
+          detectedSellerType === "agency"
+            ? "agency"
+            : isPrivate
+              ? "private"
+              : detectedSellerType || "unknown",
         phone: generic.visiblePhone(),
         imageUrl: imageUrls[0] || null,
         imageUrls,

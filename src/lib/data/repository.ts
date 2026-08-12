@@ -92,6 +92,12 @@ type ListingSourceRow = {
   source: string;
   url: string;
   source_listing_id: string | null;
+  canonical_url?: string | null;
+  title?: string | null;
+  price?: number | null;
+  sqm?: number | null;
+  rooms?: number | null;
+  seller_type?: SellerType | null;
   seller_name: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;
@@ -166,6 +172,12 @@ function mapSourceRow(row: ListingSourceRow): ListingSource {
     source: row.source,
     url: row.url,
     sourceListingId: row.source_listing_id,
+    canonicalUrl: row.canonical_url ?? null,
+    title: row.title ?? null,
+    price: row.price ?? null,
+    sqm: row.sqm ?? null,
+    rooms: row.rooms ?? null,
+    sellerType: row.seller_type ?? null,
     sellerName: row.seller_name,
     firstSeenAt: row.first_seen_at,
     lastSeenAt: row.last_seen_at,

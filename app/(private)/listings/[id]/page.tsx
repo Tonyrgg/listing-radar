@@ -328,6 +328,67 @@ export default async function ListingDetailPage({
         </article>
       </section>
 
+      {(listing.sources ?? []).length ? (
+        <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--surface-accent)]">
+                Un immobile, più portali
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
+                Dove è pubblicato
+              </h2>
+            </div>
+            <span className="text-sm text-[var(--ink-soft)]">
+              {(listing.sources ?? []).length === 1
+                ? "1 annuncio collegato"
+                : `${formatNumber((listing.sources ?? []).length)} annunci collegati`}
+            </span>
+          </div>
+          <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+            {(listing.sources ?? [])
+              .toSorted((left, right) =>
+                (right.lastSeenAt ?? "").localeCompare(left.lastSeenAt ?? ""),
+              )
+              .map((source) => (
+                <a
+                  key={source.id}
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group rounded-lg border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4 transition-colors hover:border-[var(--surface-accent)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--surface-accent)]">
+                        {getSourceLabel(source.source)}
+                      </p>
+                      <p className="mt-2 line-clamp-2 text-sm font-semibold text-[var(--ink-strong)]">
+                        {source.title ?? listing.title}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-[var(--ink-strong)]">
+                      {formatCurrency(source.price ?? listing.price)}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-soft)]">
+                    <span>{source.sqm ?? listing.sqm ?? "—"} mq</span>
+                    <span>{source.rooms ?? listing.rooms ?? "—"} locali</span>
+                    <span>
+                      {source.sellerType
+                        ? getSellerTypeLabel(source.sellerType)
+                        : "Venditore da verificare"}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-[var(--ink-subtle)]">
+                    Ultimo controllo {formatDateTime(source.lastSeenAt)}
+                  </p>
+                </a>
+              ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
         <article className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5">
           <ListingScoreBreakdown listing={listing} scoringConfig={scoringConfig} />

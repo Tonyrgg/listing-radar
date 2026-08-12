@@ -1,5 +1,6 @@
 import { parseItalianDate } from "@/lib/scrapers/date-parser";
 import { normalizeListingCoordinates } from "@/lib/listings/coordinates";
+import { classifySeller } from "@/lib/listings/seller-classification";
 import { resolveListingSource } from "@/lib/listing-sources";
 import {
   cleanText,
@@ -286,6 +287,18 @@ export function normalizeImportedRows(
         options.provider,
     });
 
+    const sellerName = toStringValue(getValue(row, ["sellerName", "seller_name"]));
+    const declaredSellerType = toSellerType(
+      getValue(row, ["sellerType", "seller_type"]),
+    );
+    const sellerClassification = classifySeller({
+      source,
+      declaredType: declaredSellerType,
+      sellerName,
+      title,
+      description,
+    });
+
     listings.push({
       source,
       sourceListingId: toStringValue(
@@ -307,8 +320,8 @@ export function normalizeImportedRows(
       latitude: coordinates?.latitude ?? null,
       longitude: coordinates?.longitude ?? null,
       coordinatesSource: coordinates?.source ?? null,
-      sellerType: toSellerType(getValue(row, ["sellerType", "seller_type"])),
-      sellerName: toStringValue(getValue(row, ["sellerName", "seller_name"])),
+      sellerType: sellerClassification.sellerType,
+      sellerName,
       phone: toStringValue(getValue(row, ["phone", "telefono"])),
       imageUrls: toStringArray(
         getValue(row, [
@@ -355,6 +368,7 @@ export function normalizeImportedRows(
       rawPayload: {
         provider: options.provider,
         importedAt: now,
+        sellerClassification,
         row,
       },
     });

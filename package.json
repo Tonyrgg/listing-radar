@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:email-parser": "tsx scripts/smoke-email-parser.ts",
     "backup:data": "node --env-file=.env.local scripts/backup-data.mjs",
+    "listings:reconcile": "tsx --env-file=.env.local scripts/reconcile-listing-identities.ts",
     "worker:check": "npm --prefix worker run worker:check",
     "worker:start": "npm --prefix worker run worker:start",
     "worker:start:assisted": "npm --prefix worker run worker:start:assisted",
