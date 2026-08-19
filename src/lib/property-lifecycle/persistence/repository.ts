@@ -836,7 +836,14 @@ export class PropertyLifecycleRepository {
               limitation:
                 "coherent gallery upload batches can predate a relaunch; media may still be reused",
             }
-          : null;
+          : listing.adapterKey === "garofalo"
+            ? {
+                method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
+                confidence: 0.65,
+                limitation:
+                  "only original globaluserfiles media is eligible; media may predate publication or be reused",
+              }
+            : null;
 
     if (originalMediaMarketStartPolicy) {
       const observedTime = Date.parse(listing.observedAt);

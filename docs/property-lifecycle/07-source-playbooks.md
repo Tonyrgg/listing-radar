@@ -94,6 +94,18 @@ Inventory URL: <https://www.futurabitonto.it/web/immobili.asp?language=ita&pagre
 - Use only original `agestanet.risorseimmobiliari.it/public/annunci/10116/{cod_annuncio}/...` gallery assets. During deep sync, a coherent original-asset `Last-Modified` batch may provide an older observable market-age bound; transformed/cache URLs are not eligible, and media reuse remains an explicit limitation.
 - `Vendita` identifies the transaction, not a dedicated lifecycle state. Keep status `UNKNOWN` unless a future source-specific status marker is validated.
 
+## Garofalo Immobiliare
+
+Inventory URL: <https://garofaloimmobiliare.com/immobili>
+
+- The visible inventory is client-rendered by Flazio. Use the same public `RealEstateManager/services/reader_realestate` endpoint as the page, preserve its complete sale filter contract, page with `start`/`length`, and reconcile `properties_count_all_filtered` before permitting absence decisions. On 2026-08-19 it exposed 40 visible sale records in one 100-record API page.
+- Use the global numeric property `id` as source publication identity. Codes such as `T`, `D`, `I`, `L`, and `LT` are category/family references and are not one chronological sequence; retain the full code only as the agency reference.
+- Strict geography is mandatory. The validated inventory contained 37 Bitonto records and 3 out-of-scope records in Bari, Bisceglie, or Cassano delle Murge. Public map coordinates are approximate and are omitted when they are geographically inconsistent with the declared monitored municipality.
+- The API `created_at` value is a day-bounded start for the current Flazio source record. It can represent an import or relaunch and must not erase older property evidence. Preserve `updated_at` separately and never substitute it for creation/start.
+- The API `sold=1` flag is deterministic sold evidence. Catalog presence and visible/active flags do not prove a dedicated active lifecycle state, so other current records remain `UNKNOWN`.
+- Build gallery URLs only from original `https://globaluserfiles.com/media/{source}` records. Never ingest `/v1/...` derivatives: their `Last-Modified` reflects image transformation/cache creation rather than original upload. During deep sync, original-file `Last-Modified` is bounded market-age evidence, with media reuse retained as a limitation.
+- Classify floorplans from the original source filename when it contains a dedicated plan label. Strip publisher contact calls-to-action, telephone numbers, email addresses, and links from normalized descriptions.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

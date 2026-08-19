@@ -1,0 +1,8 @@
+{
+  "result":true,
+  "data":{
+    "property":{"id":"14297","property_id":"14297","realestate_id":"50","code":"Q95","city_name":"Bitonto","province_name":"Bari - BA","address":"Via Giovanna da Durazzo: 4 Vani","lat":"41.1140282","lng":"16.6940569","price":"155000","surface":"130","agreement_id":"1","rooms_n":"4","restrooms_n":"1","sold":"1","price_on_request":"0","is_visible":"1","is_active":"1","created_at":"2026-04-24 15:48:19","updated_at":"2026-06-19 07:28:40","title":"Via Giovanna da Durazzo: 4 Vani + Cantinola","description":"Appartamento con cantinola.","images":[{"id":"177048","property_id":"14297","source":"4350_40269816ecdd8dfb0da11b2e13153a0a6c3f81d9.png","name":"foto-immobili-x-sito-(14).png","is_main":"1","is_active":"1","create_dt":"2026-06-19 07:28:40","updated_dt":"2026-06-19 07:28:40"}]},
+    "options":{"Tipologia":["Appartamento"],"Stato":["Libero"],"Piano":["1"]}
+  },
+  "message":""
+}

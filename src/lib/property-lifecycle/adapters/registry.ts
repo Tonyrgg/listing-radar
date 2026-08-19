@@ -1,5 +1,6 @@
 import { AdMaioraAdapter } from "@/lib/property-lifecycle/adapters/admaiora";
 import { FuturaAdapter } from "@/lib/property-lifecycle/adapters/futura";
+import { GarofaloAdapter } from "@/lib/property-lifecycle/adapters/garofalo";
 import { IconacasaAdapter } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { PuntoCasaAdapter } from "@/lib/property-lifecycle/adapters/puntocasa";
 import { StudioCasaAdapter } from "@/lib/property-lifecycle/adapters/studiocasa";
@@ -15,6 +16,8 @@ export function createPropertyLifecycleAdapter(
       return new AdMaioraAdapter();
     case "futura":
       return new FuturaAdapter();
+    case "garofalo":
+      return new GarofaloAdapter();
     case "iconacasa":
       return new IconacasaAdapter();
     case "puntocasa":

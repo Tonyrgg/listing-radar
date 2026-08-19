@@ -27,6 +27,10 @@ const KNOWN_OUT_OF_SCOPE = [
   "modugno",
   "palo del colle",
   "ruvo di puglia",
+  "binetto",
+  "bisceglie",
+  "cassano delle murge",
+  "grumo appula",
 ];
 
 function normalize(value: string | null | undefined): string {

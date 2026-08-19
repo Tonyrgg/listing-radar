@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import type { HttpResponse } from "@/lib/http/client";
 import { normalizeFuturaDetail } from "@/lib/property-lifecycle/adapters/futura";
+import { normalizeGarofaloDetail } from "@/lib/property-lifecycle/adapters/garofalo";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { normalizePuntoCasaDetail } from "@/lib/property-lifecycle/adapters/puntocasa";
 import { normalizeVistocasaDetail } from "@/lib/property-lifecycle/adapters/vistocasa";
@@ -220,6 +221,22 @@ function futuraAdapter(): FixtureAdapter {
   );
 }
 
+function garofaloAdapter(): FixtureAdapter {
+  const sourceKey = "14164";
+  const url =
+    "https://garofaloimmobiliare.com/realestate-detail/reid/14164/largo-teatro-umberto-4-vani";
+  return new FixtureAdapter(
+    "garofalo",
+    "garofalo-immobiliare-bitonto",
+    [{ sourceKey, externalId: sourceKey, url, summary: {} }],
+    new Map([[sourceKey, fixture("garofalo-active-detail.json")]]),
+    normalizeGarofaloDetail,
+    "HEALTHY",
+    true,
+    "2026-08-19T09:00:00.000Z",
+  );
+}
+
 async function countRows(db: SupabaseClient, table: string): Promise<number> {
   const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
   if (error) {
@@ -236,7 +253,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
 
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
-    expect(await countRows(db, "agencies")).toBe(7);
+    expect(await countRows(db, "agencies")).toBe(8);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -676,5 +693,66 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       source_recorded_at: "2026-07-17T15:17:44+00:00",
       extraction_method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
     });
+  });
+
+  it("accepts Garofalo original-media headers but never transformed derivative timestamps", async () => {
+    await runAgencySync({
+      adapter: garofaloAdapter(),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl:
+              listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/original.png",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "d".repeat(64),
+            perceptualHash: "04".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "png",
+            etag: '"garofalo-original-fixture"',
+            lastModified: "Mon, 30 Mar 2026 08:30:00 GMT",
+            contentType: "image/png",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "14164")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    const property = await db
+      .from("properties")
+      .select("true_market_start_upper_bound,true_market_start_method")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data).toMatchObject({
+      true_market_start_upper_bound: "2026-03-30T08:30:00+00:00",
+      true_market_start_method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
+
+    const mediaEvidence = await db
+      .from("evidence")
+      .select("source_url,source_recorded_at,extraction_method")
+      .eq("extraction_method", "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED")
+      .single();
+    expect(mediaEvidence.data).toMatchObject({
+      source_recorded_at: "2026-03-30T08:30:00+00:00",
+      extraction_method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
+    expect(mediaEvidence.data?.source_url).not.toContain("/v1/");
   });
 });

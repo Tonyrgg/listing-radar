@@ -1,6 +1,6 @@
 import { load, type CheerioAPI } from "cheerio";
 
-export type HttpMethod = "GET" | "HEAD";
+export type HttpMethod = "GET" | "HEAD" | "POST";
 
 export interface HttpClientOptions {
   headers?: HeadersInit;
@@ -12,6 +12,7 @@ export interface HttpClientOptions {
 
 export interface HttpRequestOptions extends HttpClientOptions {
   method?: HttpMethod;
+  body?: BodyInit;
 }
 
 export interface HttpResponse {
@@ -63,7 +64,12 @@ export class HttpClient {
       this.lastRequestAt = Date.now();
 
       try {
-        const response = await fetch(url, { method, headers, signal: controller.signal });
+        const response = await fetch(url, {
+          method,
+          headers,
+          body: options.body,
+          signal: controller.signal,
+        });
         const body = method === "HEAD" ? "" : await response.text();
 
         if (shouldRetry(response.status) && attempt < retries) {
@@ -105,6 +111,14 @@ export class HttpClient {
 
   head(url: string, options: Omit<HttpRequestOptions, "method"> = {}): Promise<HttpResponse> {
     return this.request(url, { ...options, method: "HEAD" });
+  }
+
+  post(
+    url: string,
+    body: BodyInit,
+    options: Omit<HttpRequestOptions, "method" | "body"> = {},
+  ): Promise<HttpResponse> {
+    return this.request(url, { ...options, method: "POST", body });
   }
 }
 

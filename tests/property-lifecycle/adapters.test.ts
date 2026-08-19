@@ -14,6 +14,10 @@ import {
   parseFuturaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/futura";
 import {
+  normalizeGarofaloDetail,
+  parseGarofaloInventoryJson,
+} from "@/lib/property-lifecycle/adapters/garofalo";
+import {
   normalizeIconacasaDetail,
   parseIconacasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/iconacasa";
@@ -512,6 +516,118 @@ describe("Futura Immobiliare V2 adapter", () => {
 
   it("freezes absence decisions when the Agesta inventory structure disappears", () => {
     const result = parseFuturaInventoryHtml("<html><body>maintenance</body></html>");
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Garofalo Immobiliare V2 adapter", () => {
+  it("extracts a complete 20-record Flazio golden sale inventory using numeric identity", () => {
+    const result = parseGarofaloInventoryJson(fixture("garofalo-inventory.json"));
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.complete).toBe(true);
+    expect(result.items).toHaveLength(20);
+    expect(result.items[0]).toMatchObject({
+      sourceKey: "16104",
+      externalId: "16104",
+      summary: {
+        agencyReference: "I69",
+        municipality: "Bitonto",
+        priceAmount: 95_000,
+        surfaceSqm: 120,
+      },
+    });
+    expect(result.items.find((item) => item.externalId === "14297")?.summary).toMatchObject({
+      agencyReference: "Q95",
+      sold: true,
+    });
+  });
+
+  it("does not call one API page healthy when the reported total requires pagination", () => {
+    const paginated = fixture("garofalo-inventory.json").replace(
+      '"properties_count_all_filtered": "20"',
+      '"properties_count_all_filtered": "140"',
+    );
+    const result = parseGarofaloInventoryJson(paginated);
+    expect(result.healthState).toBe("DEGRADED");
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 2 });
+  });
+
+  it("normalizes Flazio facts, source creation, and original-only gallery media", () => {
+    const url =
+      "https://garofaloimmobiliare.com/realestate-detail/reid/14164/largo-teatro-umberto-4-vani";
+    const result = normalizeGarofaloDetail(
+      sourceDocument("garofalo-active-detail.json", url, "14164"),
+    );
+
+    expect(result.source).toMatchObject({
+      externalId: "14164",
+      agencyReference: "LT8",
+      transactionType: "SALE",
+    });
+    expect(result.commercial).toMatchObject({
+      propertyType: "Appartamento",
+      priceAmount: 55_000,
+      surfaceSqm: 85,
+      rooms: 4,
+      bathrooms: 1,
+      floor: "1",
+    });
+    expect(result.commercial.description).not.toMatch(/080|garofaloimmobiliare\.com/);
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      streetName: "Largo Teatro Umberto",
+      scope: "IN_SCOPE",
+      precision: "STREET_ONLY",
+    });
+    expect(result.marketStart).toMatchObject({
+      method: "FLAZIO_PROPERTY_CREATED_AT",
+      lowerBound: "2026-04-01T00:00:00.000Z",
+      upperBound: "2026-04-01T23:59:59.999Z",
+      confidence: 0.88,
+    });
+    expect(result.marketStart.evidence[0]?.metadata).toMatchObject({
+      sourceUpdatedAtIgnoredForStart: "2026-04-01 08:44:15",
+    });
+    expect(result.assets).toHaveLength(2);
+    expect(result.assets.some((asset) => asset.kind === "FLOORPLAN")).toBe(true);
+    expect(
+      result.assets.every(
+        (asset) =>
+          asset.canonicalUrl.startsWith("https://globaluserfiles.com/media/4350_") &&
+          !asset.canonicalUrl.includes("/v1/"),
+      ),
+    ).toBe(true);
+    expect(result.status.value).toBe("UNKNOWN");
+    expect(result.provenance).toMatchObject({
+      categoryPrefixedAgencyReferenceNotChronological: true,
+      transformedV1MediaExcluded: true,
+      publisherContactDataExcluded: true,
+    });
+  });
+
+  it("uses the deterministic Flazio sold flag", () => {
+    const url =
+      "https://garofaloimmobiliare.com/realestate-detail/reid/14297/via-giovanna-da-durazzo-4-vani-cantinola";
+    const result = normalizeGarofaloDetail(
+      sourceDocument("garofalo-sold-detail.json", url, "14297"),
+    );
+    expect(result.status.value).toBe("SOLD");
+    expect(result.status.evidence[0]?.extractionMethod).toBe("FLAZIO_SOLD_FLAG");
+    expect(result.location.streetName).toBe("Via Giovanna da Durazzo");
+  });
+
+  it("strictly excludes an out-of-scope Bari publication", () => {
+    const url = "https://garofaloimmobiliare.com/realestate-detail/reid/14368/via-savona-villa";
+    const result = normalizeGarofaloDetail(
+      sourceDocument("garofalo-out-of-scope-detail.json", url, "14368"),
+    );
+    expect(result.location).toMatchObject({ scope: "OUT_OF_SCOPE", municipality: null });
+  });
+
+  it("freezes absence decisions when the Flazio API structure disappears", () => {
+    const result = parseGarofaloInventoryJson('{"result":false,"message":"maintenance"}');
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
     expect(result.complete).toBe(false);
   });
