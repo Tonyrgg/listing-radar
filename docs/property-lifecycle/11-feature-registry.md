@@ -26,6 +26,8 @@
 | Identity review UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
 | Property timeline UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
 | Target agency set | Phase 3 complete | Adapter registry | All ten requested agencies onboarded through one-at-a-time live and local gates |
+| Bootstrap dry run | Phase 3 complete | Read-only bootstrap simulator + local CLI | Predicts imports and identity outcomes; database non-mutation is integration-tested |
+| Real V2 bootstrap | Approval-gated | Bootstrap jobs | Requires approved=true after dry-run review; no historical absence inference |
 | Production scheduler | Deferred Phase 4 | External scheduler/enqueue API | Explicit authorization required |
 | Legacy backfill | Deferred | Repeatable migration job | Preserve timestamp uncertainty |
 | Building enrichment | Schema/job only | Approved future provider | No automated conclusions yet |

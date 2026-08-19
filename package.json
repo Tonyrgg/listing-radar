@@ -21,6 +21,7 @@
     "backup:data": "node --env-file=.env.local scripts/backup-data.mjs",
     "listings:reconcile": "tsx --env-file=.env.local scripts/reconcile-listing-identities.ts",
     "lifecycle:worker": "tsx scripts/property-lifecycle-worker.ts",
+    "lifecycle:bootstrap:dry-run": "tsx --env-file=.env.local scripts/property-lifecycle-bootstrap-dry-run.ts",
     "worker:check": "npm --prefix worker run worker:check",
     "worker:start": "npm --prefix worker run worker:start",
     "worker:start:assisted": "npm --prefix worker run worker:start:assisted",

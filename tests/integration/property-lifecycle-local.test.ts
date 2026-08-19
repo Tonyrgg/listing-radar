@@ -23,6 +23,7 @@ import type {
   AdapterHealthState,
   NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
+import { runBootstrapDryRun } from "@/lib/property-lifecycle/bootstrap/dry-run";
 import { rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
 import { runLifecycleWorkerOnce } from "@/lib/property-lifecycle/jobs/worker";
@@ -286,6 +287,50 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
     expect(await countRows(db, "agencies")).toBe(10);
+  });
+
+  it("produces a bootstrap prediction without writing any lifecycle state", async () => {
+    const protectedTables = [
+      "sync_runs",
+      "properties",
+      "agency_listings",
+      "publications",
+      "snapshots",
+      "evidence",
+      "events",
+      "image_fingerprints",
+      "floorplan_fingerprints",
+      "review_queue",
+      "lifecycle_jobs",
+    ];
+    const before = Object.fromEntries(
+      await Promise.all(
+        protectedTables.map(async (table) => [table, await countRows(db, table)]),
+      ),
+    );
+    const report = await runBootstrapDryRun({
+      adapters: [iconacasaAdapter()],
+      existingState: await repository.loadBootstrapState(),
+      generatedAt: "2026-08-19T09:00:00.000Z",
+      assetProcessor: async () => ({ assets: [], warnings: [] }),
+    });
+    const after = Object.fromEntries(
+      await Promise.all(
+        protectedTables.map(async (table) => [table, await countRows(db, table)]),
+      ),
+    );
+
+    expect(report).toMatchObject({
+      nonMutating: true,
+      totals: {
+        rawListings: 2,
+        acceptedListings: 2,
+        predictedNewProperties: 2,
+        predictedPublications: 2,
+        sourceFailures: 0,
+      },
+    });
+    expect(after).toEqual(before);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -607,6 +652,30 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .eq("id", expiring.id)
       .single();
     expect(deadLetter.data?.status).toBe("DEAD_LETTER");
+  });
+
+  it("refuses a real bootstrap job until dry-run approval is explicit", async () => {
+    const queue = new LifecycleJobQueue(db);
+    const agency = await repository.getAgencyBySlug("iconacasa-bitonto");
+    const syncRunsBefore = await countRows(db, "sync_runs");
+    const queued = await queue.enqueue({
+      jobType: "BOOTSTRAP_AGENCY",
+      agencyId: agency.id,
+      maxAttempts: 1,
+      priority: 100,
+      dedupeKey: "integration:unapproved-bootstrap",
+    });
+
+    await expect(
+      runLifecycleWorkerOnce("unapproved-bootstrap-worker", { db }),
+    ).rejects.toThrow("payload.approved=true");
+    const rejected = await db
+      .from("lifecycle_jobs")
+      .select("status")
+      .eq("id", queued.id)
+      .single();
+    expect(rejected.data?.status).toBe("DEAD_LETTER");
+    expect(await countRows(db, "sync_runs")).toBe(syncRunsBefore);
   });
 
   it("records Vistocasa original-media Last-Modified as bounded age evidence", async () => {

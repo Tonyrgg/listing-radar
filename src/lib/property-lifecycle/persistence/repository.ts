@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ProcessedAsset } from "@/lib/property-lifecycle/assets/pipeline";
+import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/dry-run";
 import {
   hashValue,
   normalizedListingV2Schema,
@@ -105,6 +106,25 @@ function requiredData<T>(data: T | null, error: DatabaseError | null, context: s
   return data;
 }
 
+async function allDatabaseRows<T>(
+  fetchPage: (
+    from: number,
+    to: number,
+  ) => Promise<{ data: T[] | null; error: DatabaseError | null }>,
+): Promise<T[]> {
+  const pageSize = 1_000;
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+    throwIfError(error);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) {
+      return rows;
+    }
+  }
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -121,7 +141,7 @@ function sameStringSet(left: string[], right: string[]): boolean {
   );
 }
 
-function observationFromListing(
+export function identityObservationFromListing(
   listing: NormalizedListingV2,
   processedAssets: ProcessedAsset[],
 ): IdentityObservation {
@@ -161,6 +181,133 @@ export class PropertyLifecycleRepository {
       .eq("slug", slug)
       .single();
     return requiredData(data as AgencyRow | null, error, `Agency ${slug}`);
+  }
+
+  async loadBootstrapState(): Promise<BootstrapExistingState> {
+    type AgencyStateRow = {
+      id: string;
+      slug: string;
+    };
+    type PropertyStateRow = {
+      id: string;
+      property_type: string | null;
+      canonical_attributes: Record<string, unknown>;
+    };
+    type AgencyListingStateRow = {
+      property_id: string;
+      agency_id: string;
+      agency_reference: string | null;
+    };
+    type PublicationStateRow = {
+      agency_id: string;
+      source_key: string;
+    };
+    type FingerprintStateRow = {
+      property_id: string;
+      algorithm: string;
+      fingerprint: string;
+    };
+    const [agencies, properties, agencyListings, publications, images, floorplans] =
+      await Promise.all([
+        allDatabaseRows<AgencyStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("agencies")
+            .select("id,slug")
+            .order("id")
+            .range(from, to);
+          return { data: data as AgencyStateRow[] | null, error };
+        }),
+        allDatabaseRows<PropertyStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("properties")
+            .select("id,property_type,canonical_attributes")
+            .neq("identity_status", "MERGED")
+            .order("id")
+            .range(from, to);
+          return { data: data as PropertyStateRow[] | null, error };
+        }),
+        allDatabaseRows<AgencyListingStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("agency_listings")
+            .select("property_id,agency_id,agency_reference")
+            .order("id")
+            .range(from, to);
+          return { data: data as AgencyListingStateRow[] | null, error };
+        }),
+        allDatabaseRows<PublicationStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("publications")
+            .select("agency_id,source_key")
+            .order("id")
+            .range(from, to);
+          return { data: data as PublicationStateRow[] | null, error };
+        }),
+        allDatabaseRows<FingerprintStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("image_fingerprints")
+            .select("property_id,algorithm,fingerprint")
+            .order("id")
+            .range(from, to);
+          return { data: data as FingerprintStateRow[] | null, error };
+        }),
+        allDatabaseRows<FingerprintStateRow>(async (from, to) => {
+          const { data, error } = await this.db
+            .from("floorplan_fingerprints")
+            .select("property_id,algorithm,fingerprint")
+            .order("id")
+            .range(from, to);
+          return { data: data as FingerprintStateRow[] | null, error };
+        }),
+      ]);
+    const agencySlugs = new Map(agencies.map((agency) => [agency.id, agency.slug]));
+
+    return {
+      properties: properties.map((property) => {
+        const references = agencyListings.filter(
+          (listing) => listing.property_id === property.id,
+        );
+        const referencesByAgency: Record<string, string[]> = {};
+        for (const reference of references) {
+          const slug = agencySlugs.get(reference.agency_id);
+          if (!slug || !reference.agency_reference) {
+            continue;
+          }
+          referencesByAgency[slug] = [
+            ...new Set([
+              ...(referencesByAgency[slug] ?? []),
+              reference.agency_reference,
+            ]),
+          ];
+        }
+        return {
+          propertyId: property.id,
+          agencySlugs: [
+            ...new Set(
+              references
+                .map((reference) => agencySlugs.get(reference.agency_id))
+                .filter((slug): slug is string => Boolean(slug)),
+            ),
+          ],
+          agencyReferences: referencesByAgency,
+          address: stringValue(property.canonical_attributes.address),
+          locality: stringValue(property.canonical_attributes.locality),
+          propertyType: property.property_type,
+          surfaceSqm: numberValue(property.canonical_attributes.surfaceSqm),
+          rooms: numberValue(property.canonical_attributes.rooms),
+          imageFingerprints: images
+            .filter((image) => image.property_id === property.id)
+            .map((image) => image.algorithm + ":" + image.fingerprint),
+          floorplanFingerprints: floorplans
+            .filter((floorplan) => floorplan.property_id === property.id)
+            .map((floorplan) => floorplan.algorithm + ":" + floorplan.fingerprint),
+        };
+      }),
+      publicationKeys: publications.flatMap((publication) => {
+        const slug = agencySlugs.get(publication.agency_id);
+        return slug ? [slug + "\u0000" + publication.source_key] : [];
+      }),
+      warnings: [],
+    };
   }
 
   async createSyncRun(input: {
@@ -1017,7 +1164,7 @@ export class PropertyLifecycleRepository {
     } else {
       const candidates = await this.identityCandidates(agencyId);
       identityDecision = decidePropertyIdentity(
-        observationFromListing(listing, processedAssets),
+        identityObservationFromListing(listing, processedAssets),
         candidates,
       );
       propertyId = identityDecision.propertyId;

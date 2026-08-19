@@ -10,6 +10,11 @@ Completed foundation milestone: additive schema, queue, contracts, source health
 
 Current expansion: content/perceptual media evidence, location and sale intelligence, post-exit monitoring, opportunities, and one-at-a-time agency onboarding. All ten target agencies have now passed their source-specific fixture, live inventory, geography, and health gates; migration/database validation is repeated at each checkpoint. Portal-backed agencies remain explicitly scoped to their observable publication source.
 
+Day Zero dry-run support is complete. It simulates all import decisions in memory,
+reports source failures and review candidates, and is integration-tested to leave
+every lifecycle table unchanged. A real V2 bootstrap remains approval-gated and
+has not been run.
+
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 
 ## Phase 2 — Read-only application surfaces

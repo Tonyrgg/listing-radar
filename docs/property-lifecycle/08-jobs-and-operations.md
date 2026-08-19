@@ -26,6 +26,21 @@ The job payload is validated by type before execution. Unknown fields are ignore
 - Adapter health history and latest agency health.
 - Dry-run/fixture mode for parser validation.
 
+## Bootstrap dry run
+
+Day Zero starts with the local-only lifecycle:bootstrap:dry-run command. It reads
+enabled agencies and existing V2 identity state, then performs health validation,
+normalization, strict geography filtering, bounded asset fingerprinting, and
+in-memory identity simulation. It prints a versioned JSON report containing raw
+and accepted counts, predicted property/publication writes, existing-publication
+duplicates, cross-agency matches, review cases, source failures, and warnings.
+
+The pipeline never creates sync runs, snapshots, evidence, events, jobs, or
+operational records. Actual BOOTSTRAP_AGENCY and BOOTSTRAP_ALL jobs require an
+explicit payload flag, approved=true, after the report has been reviewed. Bootstrap
+mode still disables absence evaluation, so first ingestion cannot manufacture
+historical disappearance.
+
 ## Scheduler boundary
 
 The future scheduler/API only enqueues jobs and returns quickly. It never performs a full crawl. Production scheduling is deferred; local CLI execution is sufficient for this milestone.

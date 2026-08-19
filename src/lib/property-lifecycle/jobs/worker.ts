@@ -57,11 +57,19 @@ async function executeFanout(
   }
 
   const childType = fanoutType(job.job_type);
+  if (childType === "BOOTSTRAP_AGENCY" && job.payload.approved !== true) {
+    throw new Error(
+      "BOOTSTRAP_ALL requires payload.approved=true after dry-run validation.",
+    );
+  }
   for (const agency of (data ?? []) as Array<{ id: string; slug: string }>) {
     await queue.enqueue({
       jobType: childType,
       agencyId: agency.id,
-      payload: { parentJobId: job.id },
+      payload: {
+        parentJobId: job.id,
+        ...(childType === "BOOTSTRAP_AGENCY" ? { approved: true } : {}),
+      },
       dedupeKey: `${childType}:${agency.slug}`,
     });
   }
@@ -74,6 +82,11 @@ async function executeAgencySync(
 ): Promise<void> {
   if (!job.agency_id) {
     throw new Error(`Job ${job.id} requires agency_id.`);
+  }
+  if (job.job_type === "BOOTSTRAP_AGENCY" && job.payload.approved !== true) {
+    throw new Error(
+      "BOOTSTRAP_AGENCY requires payload.approved=true after dry-run validation.",
+    );
   }
   const { data, error } = await db
     .from("agencies")

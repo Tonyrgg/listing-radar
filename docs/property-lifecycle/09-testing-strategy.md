@@ -3,7 +3,7 @@
 ## Test layers
 
 1. **Contract tests:** runtime validation, null semantics, stable content hashing, and invalid-adapter-output rejection.
-2. **Golden parser tests:** captured representative Iconacasa, PuntoCasa, Vistocasa, Studi Santi, Ad Maiora, Studio Casa, and Futura inventory/detail HTML, XML, or public REST responses for status, media, date, identity, and geography cases. Fixtures are sanitized, versioned, and never refreshed silently.
+2. **Golden parser tests:** captured representative fixtures for all ten target agencies, covering their current HTML, XML, JSON/API, or public-portal contracts. Fixtures validate status, media, date, identity, geography, and source-specific failure behavior; they are sanitized, versioned, and never refreshed silently.
 3. **Geography tests:** Bitonto, Palombaio, and Mariotto accepted; same-name ambiguity, province-only matches, Santo Spirito, Bari, and unknowns rejected.
 4. **Health tests:** selector loss, count collapse, pagination failure, duplicate explosion, transport failure, and degraded partial output.
 5. **Sync tests:** idempotent snapshots/events, repeated healthy missing transitions, unhealthy-run freeze, reappearance, explicit sold, and no false sold conclusion.
@@ -11,6 +11,7 @@
 7. **Age tests:** crawler first-seen, bounded historical evidence, republish, agency switch, and true-age preservation.
 8. **Local database integration:** clean migration reset, constraints, RLS assumptions, queue claim/lease, immutable history, and one fixture-backed end-to-end sync.
 9. **Regression gates:** root lint/typecheck/tests/build plus the existing desktop-worker suite.
+10. **Bootstrap dry run:** deterministic in-memory identity simulation, unhealthy-source exclusion, cross-agency prediction, review prediction, existing-publication detection, and before/after table counts proving no lifecycle writes.
 
 ## Fixture policy
 
