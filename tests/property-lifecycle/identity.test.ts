@@ -97,4 +97,48 @@ describe("Property Identity v1", () => {
     expect(decision.outcome).toBe("REVIEW_REQUIRED");
     expect(decision.propertyId).toBeNull();
   });
+
+  it("recognizes near-identical perceptual hashes", () => {
+    const image = `DHASH64:${"0".repeat(64)}`;
+    const nearlySameImage = `DHASH64:${"1"}${"0".repeat(63)}`;
+    const decision = decidePropertyIdentity(
+      { ...observation, imageFingerprints: [image], floorplanFingerprints: [] },
+      [
+        candidate({
+          imageFingerprints: [nearlySameImage],
+          floorplanFingerprints: [],
+        }),
+      ],
+    );
+    expect(decision.outcome).toBe("AUTO_MATCH");
+    expect(decision.candidates[0]?.features.image.value).toBeCloseTo(63 / 64);
+  });
+
+  it("never auto-merges on a floorplan alone", () => {
+    const plan = `DHASH64:${"01".repeat(32)}`;
+    const sparse: IdentityObservation = {
+      agencyReference: null,
+      address: null,
+      locality: null,
+      propertyType: null,
+      surfaceSqm: null,
+      rooms: null,
+      imageFingerprints: [],
+      floorplanFingerprints: [plan],
+    };
+    const decision = decidePropertyIdentity(sparse, [
+      candidate({
+        agencyReference: null,
+        knownAgencyReferences: [],
+        address: null,
+        locality: null,
+        propertyType: null,
+        surfaceSqm: null,
+        rooms: null,
+        imageFingerprints: [],
+        floorplanFingerprints: [plan],
+      }),
+    ]);
+    expect(decision.outcome).toBe("REVIEW_REQUIRED");
+  });
 });

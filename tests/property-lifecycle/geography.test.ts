@@ -31,4 +31,29 @@ describe("strict monitored geography", () => {
     const result = resolveMonitoredGeography({ rawText: "SP Bitonto - Santo Spirito" });
     expect(result.scope).toBe("REVIEW");
   });
+
+  it.each([
+    ["Bitonto, Via Mazzini 10", "EXACT_ADDRESS", "Via Mazzini", "10"],
+    ["Bitonto, Via Mazzini", "STREET_ONLY", "Via Mazzini", null],
+    ["Bitonto zona centro", "APPROXIMATE_AREA", null, null],
+  ] as const)(
+    "represents location precision for %s",
+    (rawText, precision, streetName, streetNumber) => {
+      expect(resolveMonitoredGeography({ rawText })).toMatchObject({
+        precision,
+        streetName,
+        streetNumber,
+      });
+    },
+  );
+
+  it("does not call unverified coordinates exact", () => {
+    expect(
+      resolveMonitoredGeography({
+        rawText: "Bitonto",
+        latitude: 41.11,
+        longitude: 16.69,
+      }).precision,
+    ).toBe("APPROXIMATE_AREA");
+  });
 });

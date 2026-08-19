@@ -74,12 +74,41 @@ function jaccard(left: Set<string>, right: Set<string>): number {
   return intersection / union;
 }
 
+function perceptualSimilarity(left: string, right: string): number {
+  if (left === right) {
+    return 1;
+  }
+  const [leftAlgorithm, leftValue] = left.split(":", 2);
+  const [rightAlgorithm, rightValue] = right.split(":", 2);
+  if (
+    leftAlgorithm !== "DHASH64" ||
+    rightAlgorithm !== "DHASH64" ||
+    !leftValue ||
+    !rightValue ||
+    leftValue.length !== rightValue.length ||
+    !/^[01]+$/.test(leftValue) ||
+    !/^[01]+$/.test(rightValue)
+  ) {
+    return 0;
+  }
+  let differences = 0;
+  for (let index = 0; index < leftValue.length; index += 1) {
+    if (leftValue[index] !== rightValue[index]) {
+      differences += 1;
+    }
+  }
+  return 1 - differences / leftValue.length;
+}
+
 function overlap(left: string[], right: string[]): number {
   if (left.length === 0 || right.length === 0) {
     return 0;
   }
-  const rightSet = new Set(right);
-  return left.some((value) => rightSet.has(value)) ? 1 : 0;
+  return Math.max(
+    ...left.flatMap((leftValue) =>
+      right.map((rightValue) => perceptualSimilarity(leftValue, rightValue)),
+    ),
+  );
 }
 
 function comparableText(left: string | null, right: string | null): boolean {
@@ -240,11 +269,21 @@ export function decidePropertyIdentity(
     top.features.image,
     top.features.floorplan,
   ].some((featureScore) => featureScore.available && featureScore.value >= 0.8);
+  const floorplanNeedsCorroboration =
+    top.features.floorplan.available &&
+    top.features.floorplan.value >= 0.8 &&
+    ![
+      top.features.agencyReference,
+      top.features.address,
+      top.features.image,
+      top.features.surface,
+    ].some((featureScore) => featureScore.available && featureScore.value >= 0.8);
   const autoMatch =
     top.score >= 0.86 &&
     margin >= 0.12 &&
     availableWeight >= 0.35 &&
     hasStrongEvidence &&
+    !floorplanNeedsCorroboration &&
     top.contradictions.length === 0;
 
   return {

@@ -6,7 +6,9 @@ Complete: dedicated branch, local Supabase/Docker validation, migration reset/li
 
 ## Phase 1 — Local V2 foundation
 
-Current milestone: additive schema, queue, contracts, source health, Iconacasa and PuntoCasa adapters, sync/lifecycle rules, identity v1, true age, deterministic fixtures, and local end-to-end tests.
+Completed foundation milestone: additive schema, queue, contracts, source health, Iconacasa and PuntoCasa adapters, sync/lifecycle rules, identity v1, true age, deterministic fixtures, and local end-to-end tests.
+
+Current expansion: content/perceptual media evidence, location and sale intelligence, post-exit monitoring, opportunities, and one-at-a-time agency onboarding. Vistocasa and Studi Santi have passed their source-specific fixture, live inventory, geography, health, migration, and local database gates.
 
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 

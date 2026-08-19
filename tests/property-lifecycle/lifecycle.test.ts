@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agencyStateForPublication,
   evaluatePublicationPresence,
   type PublicationPresence,
 } from "@/lib/property-lifecycle/lifecycle/transitions";
@@ -9,6 +10,7 @@ import {
   trueMarketAgeDays,
 } from "@/lib/property-lifecycle/lifecycle/market-age";
 import { resolveAuthoritativeValue } from "@/lib/property-lifecycle/lifecycle/manual-overrides";
+import { classifyPriceChange } from "@/lib/property-lifecycle/lifecycle/price-history";
 
 const ACTIVE: PublicationPresence = {
   state: "ACTIVE",
@@ -87,6 +89,14 @@ describe("publication lifecycle safety", () => {
     expect(result.next.state).toBe("SOLD_MARKED");
     expect(result.events).toEqual(["SOURCE_MARKED_SOLD"]);
   });
+
+  it("keeps an agency listing active while another publication remains active", () => {
+    expect(
+      agencyStateForPublication("REMOVED", "ACTIVE", {
+        hasOtherActivePublication: true,
+      }),
+    ).toBe("ACTIVE");
+  });
 });
 
 describe("true market age", () => {
@@ -153,5 +163,31 @@ describe("manual override authority", () => {
       source: "MANUAL_OVERRIDE",
       overrideId: "override-2",
     });
+  });
+});
+
+describe("immutable price history classification", () => {
+  it("classifies a price drop with transparent deltas", () => {
+    expect(classifyPriceChange(200_000, 180_000)).toEqual({
+      eventType: "PRICE_DROP",
+      oldPrice: 200_000,
+      newPrice: 180_000,
+      absoluteDelta: 20_000,
+      percentageDelta: -10,
+    });
+  });
+
+  it("classifies a price increase with transparent deltas", () => {
+    expect(classifyPriceChange(180_000, 198_000)).toEqual({
+      eventType: "PRICE_INCREASE",
+      oldPrice: 180_000,
+      newPrice: 198_000,
+      absoluteDelta: 18_000,
+      percentageDelta: 10,
+    });
+  });
+
+  it("emits no event for an unchanged price", () => {
+    expect(classifyPriceChange(180_000, 180_000)).toBeNull();
   });
 });

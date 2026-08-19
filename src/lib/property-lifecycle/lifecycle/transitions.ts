@@ -135,11 +135,16 @@ export type AgencyListingState =
 export function agencyStateForPublication(
   publicationState: PublicationState,
   current: AgencyListingState,
+  context: { hasOtherActivePublication?: boolean } = {},
 ): AgencyListingState {
   if (publicationState === "SOLD_MARKED") {
-    return "CLOSED_SOLD";
+    return context.hasOtherActivePublication ? "ACTIVE" : "CLOSED_SOLD";
   }
-  if (publicationState === "REMOVED" && current === "ACTIVE") {
+  if (
+    publicationState === "REMOVED" &&
+    current === "ACTIVE" &&
+    !context.hasOtherActivePublication
+  ) {
     return "EXIT_PENDING";
   }
   if (publicationState === "ACTIVE" && current === "EXIT_PENDING") {

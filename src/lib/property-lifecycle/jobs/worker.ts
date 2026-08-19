@@ -92,6 +92,25 @@ async function executeAgencySync(
   });
 }
 
+async function executePostExitCheck(
+  db: SupabaseClient,
+  job: LifecycleJob,
+): Promise<void> {
+  const agencyListingId = job.payload.agencyListingId;
+  const publicationId = job.payload.publicationId;
+  if (typeof agencyListingId !== "string") {
+    throw new Error(`POST_EXIT_CHECK job ${job.id} requires payload.agencyListingId.`);
+  }
+  if (publicationId != null && typeof publicationId !== "string") {
+    throw new Error(`POST_EXIT_CHECK job ${job.id} has invalid payload.publicationId.`);
+  }
+  await new PropertyLifecycleRepository(db).runPostExitCheck({
+    jobId: job.id,
+    agencyListingId,
+    publicationId: publicationId ?? null,
+  });
+}
+
 export async function runLifecycleWorkerOnce(
   workerId: string,
   dependencies: WorkerDependencies,
@@ -110,6 +129,8 @@ export async function runLifecycleWorkerOnce(
       ["SYNC_AGENCY", "DEEP_SYNC_AGENCY", "BOOTSTRAP_AGENCY"].includes(job.job_type)
     ) {
       await executeAgencySync(dependencies.db, job, adapterFactory);
+    } else if (job.job_type === "POST_EXIT_CHECK") {
+      await executePostExitCheck(dependencies.db, job);
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);
     }

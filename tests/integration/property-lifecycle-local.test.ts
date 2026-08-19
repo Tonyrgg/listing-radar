@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { HttpResponse } from "@/lib/http/client";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { normalizePuntoCasaDetail } from "@/lib/property-lifecycle/adapters/puntocasa";
+import { normalizeVistocasaDetail } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type {
   AdapterHealthResult,
   InventoryItem,
@@ -18,7 +19,9 @@ import type {
   AdapterHealthState,
   NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
+import { rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
+import { runLifecycleWorkerOnce } from "@/lib/property-lifecycle/jobs/worker";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
 import { runAgencySync } from "@/lib/property-lifecycle/sync/engine";
 
@@ -148,14 +151,55 @@ function emptyHealthyIconacasaAdapter(observedAt: string): FixtureAdapter {
   );
 }
 
-function puntoCasaAdapter(sourceKey = "bitonto-zona-via-mazzini"): FixtureAdapter {
+function puntoCasaAdapter(
+  sourceKey = "bitonto-zona-via-mazzini",
+  priceAmount: number | null = null,
+  observedAt = "2026-08-19T09:00:00.000Z",
+): FixtureAdapter {
   const url = "https://www.puntocasagroup.it/property-item/bitonto-zona-via-mazzini/";
   return new FixtureAdapter(
     "puntocasa",
     "puntocasa-bitonto",
     [{ sourceKey, externalId: sourceKey, url, summary: {} }],
     new Map([[sourceKey, fixture("puntocasa-active-detail.html")]]),
-    normalizePuntoCasaDetail,
+    (document) => {
+      const listing = normalizePuntoCasaDetail(document);
+      return priceAmount == null
+        ? listing
+        : rehashNormalizedListing(listing, (input) => ({
+            ...input,
+            commercial: { ...input.commercial, priceAmount },
+          }));
+    },
+    "HEALTHY",
+    true,
+    observedAt,
+  );
+}
+
+function vistocasaAdapter(): FixtureAdapter {
+  const sourceKey = "10002";
+  const url = "https://www.vistocasa.com/it/immobile.aspx?articoliid=10002";
+  return new FixtureAdapter(
+    "vistocasa",
+    "vistocasa-bitonto",
+    [
+      {
+        sourceKey,
+        externalId: sourceKey,
+        url,
+        summary: {
+          latitude: 41.106875,
+          longitude: 16.697617,
+          imageUrl: "https://www.vistocasa.com/immobili/fotoimmobile10002/1.jpg",
+        },
+      },
+    ],
+    new Map([[sourceKey, fixture("vistocasa-active-detail.html")]]),
+    normalizeVistocasaDetail,
+    "HEALTHY",
+    true,
+    "2026-08-28T09:00:00.000Z",
   );
 }
 
@@ -175,7 +219,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
 
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
-    expect(await countRows(db, "agencies")).toBe(2);
+    expect(await countRows(db, "agencies")).toBe(4);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -216,9 +260,70 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     expect(immutableUpdate.error?.message).toContain("append-only");
   });
 
+  it("persists deep-sync content fingerprints and compact representative media", async () => {
+    await runAgencySync({
+      adapter: puntoCasaAdapter(
+        "bitonto-zona-via-mazzini",
+        null,
+        "2026-08-20T09:00:00.000Z",
+      ),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl: listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/image.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "a".repeat(64),
+            perceptualHash: "01".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: '"fixture"',
+            lastModified: "Wed, 19 Aug 2026 09:00:00 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: new Uint8Array([1, 2, 3, 4]),
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const fingerprints = await db
+      .from("image_fingerprints")
+      .select("algorithm,fingerprint,width,height")
+      .in("algorithm", ["SHA256", "DHASH64"]);
+    expect(fingerprints.error).toBeNull();
+    expect(fingerprints.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ algorithm: "SHA256", fingerprint: "a".repeat(64) }),
+        expect.objectContaining({ algorithm: "DHASH64", fingerprint: "01".repeat(32) }),
+      ]),
+    );
+
+    const propertyWithVisual = await db
+      .from("properties")
+      .select("representative_image_paths")
+      .not("representative_image_paths", "eq", "{}")
+      .single();
+    expect(propertyWithVisual.data?.representative_image_paths).toHaveLength(1);
+    const visualPath = propertyWithVisual.data?.representative_image_paths?.[0];
+    const storedVisual = await db.storage
+      .from("property-lifecycle-visuals")
+      .download(visualPath ?? "missing");
+    expect(storedVisual.error).toBeNull();
+  });
+
   it("recognizes a relaunch without resetting true market age", async () => {
     await runAgencySync({
-      adapter: puntoCasaAdapter("bitonto-zona-via-mazzini-relaunch"),
+      adapter: puntoCasaAdapter(
+        "bitonto-zona-via-mazzini-relaunch",
+        null,
+        "2026-08-21T09:00:00.000Z",
+      ),
       repository,
       mode: "SYNC",
       observedAt: "2026-08-20T09:00:00.000Z",
@@ -246,12 +351,66 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .single();
     const property = await db
       .from("properties")
-      .select("true_market_start_lower_bound,true_market_start_method")
+      .select("true_market_start_lower_bound,true_market_start_method,relaunch_count")
       .eq("id", puntoAgencyListing.data?.property_id)
       .single();
     expect(property.data).toMatchObject({
       true_market_start_lower_bound: "2024-03-01T00:00:00+00:00",
       true_market_start_method: "WORDPRESS_UPLOAD_PATH_YYYY_MM",
+      relaunch_count: 1,
+    });
+  });
+
+  it("emits immutable price drop and increase events but no event when unchanged", async () => {
+    await runAgencySync({
+      adapter: puntoCasaAdapter(
+        "bitonto-zona-via-mazzini",
+        425_000,
+        "2026-08-22T09:00:00.000Z",
+      ),
+      repository,
+      mode: "SYNC",
+    });
+    await runAgencySync({
+      adapter: puntoCasaAdapter(
+        "bitonto-zona-via-mazzini",
+        425_000,
+        "2026-08-23T09:00:00.000Z",
+      ),
+      repository,
+      mode: "SYNC",
+    });
+    await runAgencySync({
+      adapter: puntoCasaAdapter(
+        "bitonto-zona-via-mazzini",
+        460_000,
+        "2026-08-24T09:00:00.000Z",
+      ),
+      repository,
+      mode: "SYNC",
+    });
+
+    const priceEvents = await db
+      .from("events")
+      .select("event_type,payload")
+      .in("event_type", ["PRICE_DROP", "PRICE_INCREASE"])
+      .order("occurred_at");
+    expect(priceEvents.data).toHaveLength(2);
+    expect(priceEvents.data?.[0]).toMatchObject({
+      event_type: "PRICE_DROP",
+      payload: {
+        oldPrice: 450_000,
+        newPrice: 425_000,
+        absoluteDelta: 25_000,
+      },
+    });
+    expect(priceEvents.data?.[1]).toMatchObject({
+      event_type: "PRICE_INCREASE",
+      payload: {
+        oldPrice: 425_000,
+        newPrice: 460_000,
+        absoluteDelta: 35_000,
+      },
     });
   });
 
@@ -306,6 +465,50 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     });
   });
 
+  it("runs the post-exit monitor and creates a high transparent opportunity", async () => {
+    const queuedExit = await db
+      .from("lifecycle_jobs")
+      .select("id,status,job_type")
+      .eq("job_type", "POST_EXIT_CHECK")
+      .eq("status", "QUEUED")
+      .single();
+    expect(queuedExit.error).toBeNull();
+    expect(await runLifecycleWorkerOnce("post-exit-worker", { db })).toBe(true);
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "45212")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("state,property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    expect(agencyListing.data?.state).toBe("OFF_MARKET_NO_SALE_EVIDENCE");
+
+    const postExitCheck = await db
+      .from("post_exit_checks")
+      .select("outcome,technical_disappearance_confirmed")
+      .eq("agency_listing_id", publication.data?.agency_listing_id)
+      .single();
+    expect(postExitCheck.data).toEqual({
+      outcome: "OFF_MARKET_NO_SALE_EVIDENCE",
+      technical_disappearance_confirmed: true,
+    });
+
+    const opportunity = await db
+      .from("opportunities")
+      .select("level,reasons,status")
+      .eq("property_id", agencyListing.data?.property_id)
+      .single();
+    expect(opportunity.data).toMatchObject({
+      level: "HIGH",
+      status: "OPEN",
+      reasons: expect.arrayContaining(["agency_exit_confirmed", "no_sale_evidence"]),
+    });
+  });
+
   it("claims and completes a durable leased job", async () => {
     const queue = new LifecycleJobQueue(db);
     const agency = await repository.getAgencyBySlug("iconacasa-bitonto");
@@ -338,5 +541,64 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .eq("id", expiring.id)
       .single();
     expect(deadLetter.data?.status).toBe("DEAD_LETTER");
+  });
+
+  it("records Vistocasa original-media Last-Modified as bounded age evidence", async () => {
+    await runAgencySync({
+      adapter: vistocasaAdapter(),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl: listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/image.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "b".repeat(64),
+            perceptualHash: "02".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: '"vistocasa-fixture"',
+            lastModified: "Thu, 30 Jul 2026 10:57:16 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "10002")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    const property = await db
+      .from("properties")
+      .select("true_market_start_upper_bound,true_market_start_method")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data).toMatchObject({
+      true_market_start_upper_bound: "2026-07-30T10:57:16+00:00",
+      true_market_start_method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
+
+    const mediaEvidence = await db
+      .from("evidence")
+      .select("source_recorded_at,extraction_method")
+      .eq("extraction_method", "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED")
+      .single();
+    expect(mediaEvidence.data).toMatchObject({
+      source_recorded_at: "2026-07-30T10:57:16+00:00",
+      extraction_method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
   });
 });

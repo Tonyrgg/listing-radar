@@ -17,6 +17,14 @@ export const geographyScopeSchema = z.enum([
   "REVIEW",
 ]);
 
+export const locationPrecisionSchema = z.enum([
+  "EXACT_ADDRESS",
+  "EXACT_COORDINATES",
+  "STREET_ONLY",
+  "APPROXIMATE_AREA",
+  "UNKNOWN",
+]);
+
 export const sourceStatusSchema = z.enum([
   "ACTIVE",
   "NEGOTIATION",
@@ -51,6 +59,7 @@ export const normalizedLocationSchema = z.object({
   streetNumber: nullableText,
   latitude: z.number().min(-90).max(90).nullable(),
   longitude: z.number().min(-180).max(180).nullable(),
+  precision: locationPrecisionSchema,
   scope: geographyScopeSchema,
   resolutionMethod: z.string().trim().min(1),
   resolutionConfidence: confidenceSchema,
@@ -133,7 +142,7 @@ export type NormalizedListingV2 = z.infer<typeof normalizedListingV2Schema>;
 export type NormalizedLocation = z.infer<typeof normalizedLocationSchema>;
 export type SourceStatus = z.infer<typeof sourceStatusSchema>;
 
-type ListingWithoutHash = Omit<NormalizedListingV2, "contentHash">;
+export type ListingWithoutHash = Omit<NormalizedListingV2, "contentHash">;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -202,4 +211,15 @@ export function finalizeNormalizedListing(input: ListingWithoutHash): Normalized
     ...input,
     contentHash: hashValue(hashInput),
   });
+}
+
+export function rehashNormalizedListing(
+  listing: NormalizedListingV2,
+  transform: (input: ListingWithoutHash) => ListingWithoutHash,
+): NormalizedListingV2 {
+  const { contentHash, ...input } = listing;
+  if (!contentHash) {
+    throw new Error("Cannot rehash a listing without its prior content hash.");
+  }
+  return finalizeNormalizedListing(transform(input));
 }

@@ -1,4 +1,9 @@
 import type { AdapterHealthState } from "@/lib/property-lifecycle/contracts/normalized-listing";
+import {
+  processListingAssets,
+  type AssetProcessingResult,
+} from "@/lib/property-lifecycle/assets/pipeline";
+import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 import {
   PropertyLifecycleRepository,
@@ -30,6 +35,7 @@ export async function runAgencySync(input: {
   mode?: SyncMode;
   jobId?: string | null;
   observedAt?: string;
+  assetProcessor?: (listing: NormalizedListingV2) => Promise<AssetProcessingResult>;
 }): Promise<SyncResult> {
   const mode = input.mode ?? "SYNC";
   const agency = await input.repository.getAgencyBySlug(input.adapter.agencySlug);
@@ -55,6 +61,7 @@ export async function runAgencySync(input: {
     transitionedCount: 0,
   };
   const detailErrors: Array<{ sourceKey: string; message: string }> = [];
+  const assetWarnings: string[] = [];
 
   try {
     const inventory = await input.adapter.fetchInventory();
@@ -80,10 +87,15 @@ export async function runAgencySync(input: {
         }
 
         counts.inScopeCount += 1;
+        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)
+          ? await (input.assetProcessor ?? processListingAssets)(listing)
+          : { assets: [], warnings: [] };
+        assetWarnings.push(...assetResult.warnings);
         const persisted = await input.repository.persistObservation(
           agency.id,
           syncRunId,
           listing,
+          assetResult.assets,
         );
         if (persisted.createdPublication) {
           counts.transitionedCount += 1;
@@ -153,6 +165,7 @@ export async function runAgencySync(input: {
         inventory: inventory.diagnostics,
         detailErrorRatio,
         detailErrors,
+        assetWarnings,
       },
     });
 

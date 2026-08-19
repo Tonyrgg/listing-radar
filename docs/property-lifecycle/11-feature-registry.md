@@ -9,6 +9,8 @@
 | Strict geography | Phase 1 | Geography resolver | Bitonto, Palombaio, Mariotto only |
 | Iconacasa adapter | Phase 1 | Golden fixtures + adapter | Sale inventory/detail |
 | PuntoCasa adapter | Phase 1 | Golden fixtures + adapter | Dedicated status parsing |
+| Vistocasa adapter | Phase 3 complete | Embedded-map golden fixtures + adapter | Sold graphic and original-media header evidence |
+| Studi Santi adapter | Phase 3 complete | Sitemap golden fixtures + adapter | Miogest identity and filename batch dates |
 | Snapshots and evidence | Phase 1 | V2 history tables | Append-only observations |
 | Missing crawl safety | Phase 1 | Sync engine | Repeated complete healthy runs |
 | Explicit sold status | Phase 1 | Lifecycle policy | No sale inferred from disappearance |
@@ -17,7 +19,7 @@
 | Manual overrides | Phase 1 schema/domain | Override ledger | Append-only authority |
 | Identity review UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
 | Property timeline UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
-| Additional agencies | Deferred Phase 3 | Adapter registry | One gated source at a time |
+| Additional agencies | Phase 3 active | Adapter registry | Ad Maiora is next; continue one gated source at a time |
 | Production scheduler | Deferred Phase 4 | External scheduler/enqueue API | Explicit authorization required |
 | Legacy backfill | Deferred | Repeatable migration job | Preserve timestamp uncertainty |
 | Building enrichment | Schema/job only | Approved future provider | No automated conclusions yet |

@@ -29,6 +29,32 @@ Inventory URL: <https://www.puntocasagroup.it/acquista-la-tua-casa-2/>
 - WordPress `/uploads/YYYY/MM/` paths provide weak bounded media-date evidence, not definitive publication start. Preserve the path and method.
 - Ignore theme chrome, logos, avatars, and related-card media.
 
+## Vistocasa Bitonto
+
+Inventory URL: <https://www.vistocasa.com/it/ricerca.aspx?catalogoproduttoriid=56>
+
+- The visible WebForms cards are paged, but the first response embeds the complete agency result set as map `marker` elements. On 2026-08-19 this contained 115 unique records: 112 sale and 3 rental records.
+- Treat the embedded map payload as the inventory mechanism; require every marker transaction to classify and every sale marker to yield a numeric `ArticoliId`. Loss of those markers freezes absence decisions.
+- Use numeric `ArticoliId` as source identity and the dedicated `BIT.*` detail field as agency reference.
+- Scope gallery extraction to `/immobili/fotoimmobile{ArticoliId}/`; never ingest related-card media.
+- `Venduto.jpg` inside that scoped gallery is strong sold evidence. It is retained as evidence/fingerprint input but classified as a sold graphic and never selected as a representative property photo.
+- Catalog presence without the sold graphic is not promoted to an explicit active source status because this catalog also retains sold records.
+- During deep sync, original gallery `Last-Modified` is bounded market-age evidence with source-specific semantics. Generic detail-page `Last-Modified` is ignored.
+- Map coordinates are retained as approximate evidence unless another public source proves they are exact.
+
+## Studi Santi Immobiliare
+
+Inventory URL: <https://studisantiimmobiliare.it/sitemap.xml>
+
+- The public sitemap is the complete sale inventory mechanism. On 2026-08-19 it exposed 107 sale detail URLs after excluding the `/it/Vendite/` index itself.
+- Most URLs contain both a `V000xxx` agency reference and a global numeric Miogest ID. The numeric ID is source identity; the agency code remains a matching hint. One currently public historical URL lacks the agency-code segment and safely falls back to its numeric ID plus detail breadcrumb.
+- Fetch every sale detail from the sitemap, then enforce strict geography. The sitemap includes municipalities outside Bitonto, Palombaio, and Mariotto.
+- Read facts from dedicated detail list items and preserve exact public civics where present.
+- Scope media to the `img-lighbox` gallery and collapse thumbnail/crop variants by Miogest image ID. Related listing thumbnails are excluded.
+- Miogest image filenames embed `YYYYMMDDHHMMSS`. Use the earliest scoped batch as a day-bounded commercial-start estimate; preserve the raw filename timestamp and note that timezone is absent and media may be reused.
+- Sitemap `lastmod` is not market-start evidence: current entries expose a common value that does not agree with newer gallery batches.
+- No reliable dedicated status marker is currently exposed, so status remains `UNKNOWN` rather than inferred from catalog presence.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

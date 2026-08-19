@@ -9,6 +9,7 @@ export interface GeographyInput {
   streetNumber?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  coordinatesExact?: boolean;
 }
 
 const LOCALITY_NAMES = new Map([
@@ -41,6 +42,19 @@ function hasPlace(haystack: string, place: string): boolean {
   return new RegExp(`(?:^|\\s)${place.replace(/ /g, "\\s+")}(?:$|\\s)`, "i").test(haystack);
 }
 
+function extractStreet(rawText: string | null | undefined): {
+  streetName: string | null;
+  streetNumber: string | null;
+} {
+  const match = rawText?.match(
+    /\b((?:via|viale|piazza|corso|largo|strada|contrada)\s+[a-zà-ÿ' .-]+?)(?:\s*(?:(?:,|\bn\.?|\bn°)\s*)?(\d+[a-z]?))?(?=\s*[|,;-]|$)/i,
+  );
+  return {
+    streetName: match?.[1]?.replace(/\s+/g, " ").trim() ?? null,
+    streetNumber: match?.[2]?.trim() ?? null,
+  };
+}
+
 export function resolveMonitoredGeography(input: GeographyInput): NormalizedLocation {
   const raw = normalize(input.rawText);
   const municipality = normalize(input.municipality);
@@ -54,6 +68,9 @@ export function resolveMonitoredGeography(input: GeographyInput): NormalizedLoca
   let resolutionConfidence = 0.35;
   let normalizedLocality: string | null = null;
   let normalizedMunicipality: string | null = null;
+  const extractedStreet = extractStreet(input.rawText);
+  const streetName = input.streetName?.trim() || extractedStreet.streetName;
+  const streetNumber = input.streetNumber?.trim() || extractedStreet.streetNumber;
 
   if (inScopeMatches.length > 0 && outOfScopeMatches.length > 0) {
     reasons.push("conflicting_in_scope_and_out_of_scope_place_names");
@@ -80,10 +97,20 @@ export function resolveMonitoredGeography(input: GeographyInput): NormalizedLoca
     municipality: normalizedMunicipality,
     locality: normalizedLocality,
     postalCode: input.postalCode?.trim() || null,
-    streetName: input.streetName?.trim() || null,
-    streetNumber: input.streetNumber?.trim() || null,
+    streetName,
+    streetNumber,
     latitude: input.latitude ?? null,
     longitude: input.longitude ?? null,
+    precision:
+      streetName && streetNumber
+        ? "EXACT_ADDRESS"
+        : input.coordinatesExact && input.latitude != null && input.longitude != null
+          ? "EXACT_COORDINATES"
+          : streetName
+            ? "STREET_ONLY"
+            : input.rawText
+              ? "APPROXIMATE_AREA"
+              : "UNKNOWN",
     scope,
     resolutionMethod: "STRICT_PLACE_NAME_V1",
     resolutionConfidence,
