@@ -8,7 +8,7 @@ Complete: dedicated branch, local Supabase/Docker validation, migration reset/li
 
 Completed foundation milestone: additive schema, queue, contracts, source health, Iconacasa and PuntoCasa adapters, sync/lifecycle rules, identity v1, true age, deterministic fixtures, and local end-to-end tests.
 
-Current expansion: content/perceptual media evidence, location and sale intelligence, post-exit monitoring, opportunities, and one-at-a-time agency onboarding. Vistocasa, Studi Santi, Ad Maiora, Studio Casa, Futura, and Garofalo have passed their source-specific fixture, live inventory, geography, and health gates; migration/database validation is repeated at each checkpoint.
+Current expansion: content/perceptual media evidence, location and sale intelligence, post-exit monitoring, opportunities, and one-at-a-time agency onboarding. Vistocasa, Studi Santi, Ad Maiora, Studio Casa, Futura, Garofalo, and Trio Casa have passed their source-specific fixture, live inventory, geography, and health gates; migration/database validation is repeated at each checkpoint.
 
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 

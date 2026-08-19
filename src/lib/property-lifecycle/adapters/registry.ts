@@ -5,6 +5,7 @@ import { IconacasaAdapter } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { PuntoCasaAdapter } from "@/lib/property-lifecycle/adapters/puntocasa";
 import { StudioCasaAdapter } from "@/lib/property-lifecycle/adapters/studiocasa";
 import { StudiSantiAdapter } from "@/lib/property-lifecycle/adapters/studisanti";
+import { TrioAdapter } from "@/lib/property-lifecycle/adapters/trio";
 import { VistocasaAdapter } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 
@@ -26,6 +27,8 @@ export function createPropertyLifecycleAdapter(
       return new StudioCasaAdapter();
     case "studisanti":
       return new StudiSantiAdapter();
+    case "trio":
+      return new TrioAdapter();
     case "vistocasa":
       return new VistocasaAdapter();
     default:

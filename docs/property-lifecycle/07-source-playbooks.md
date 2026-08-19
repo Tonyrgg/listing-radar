@@ -106,6 +106,18 @@ Inventory URL: <https://garofaloimmobiliare.com/immobili>
 - Build gallery URLs only from original `https://globaluserfiles.com/media/{source}` records. Never ingest `/v1/...` derivatives: their `Last-Modified` reflects image transformation/cache creation rather than original upload. During deep sync, original-file `Last-Modified` is bounded market-age evidence, with media reuse retained as a limitation.
 - Classify floorplans from the original source filename when it contains a dedicated plan label. Strip publisher contact calls-to-action, telephone numbers, email addresses, and links from normalized descriptions.
 
+## Trio Casa
+
+Inventory URL: <https://www.trovacasa.it/agenzie-immobiliari/trio-casa-s-a-s-bitonto-tc-92459/case-in-vendita>
+
+- Trio Casa has no independently discoverable agency inventory site. Casa.it's former publisher page now returns a publisher 404, while Immobiliare.it blocks the local crawler. Use Trio Casa's dedicated, publicly accessible TrovaCasa sale page as a portal-publication baseline, not as proof of the agency's complete mandate inventory.
+- Reconcile the page title count with every agency card and traverse an explicit `rel=next` paginator if it appears. On 2026-08-19 the live page exposed 10/10 unique sale records in one page: 8 Bitonto, 1 Bisceglie, and 1 Palo del Colle.
+- Use the numeric TrovaCasa ID from `/annunci/{province}-tc-92459-{id}` as publication identity. Validate agency `92459` in inventory image tokens and on every detail. Preserve the numeric upstream portal `Riferimento` only as cross-portal provenance; it is not an agency reference.
+- Parse facts from the labelled detail rows and retain an exact public civic when one is present. Strict geography excludes Bisceglie and Palo del Colle.
+- The portal exposes no reliable public creation timestamp or dedicated lifecycle state. Market start remains low-confidence `CRAWLER_FIRST_SEEN`, and status remains `UNKNOWN`; neither catalog presence nor an external portal's update date proves contractual start or active mandate state.
+- Scope media to the detail gallery token `X_92459_{listingId}_{imageId}`. TrovaCasa serves resized images with coherent `Last-Modified` values; during deep sync these are low-confidence public-availability bounds only, never exact contractual start. The source exposes neither original assets nor deterministic floorplan roles.
+- Exclude publisher phone/email/link data from normalized descriptions and provenance payloads.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

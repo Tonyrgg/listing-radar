@@ -9,6 +9,7 @@ import { normalizeFuturaDetail } from "@/lib/property-lifecycle/adapters/futura"
 import { normalizeGarofaloDetail } from "@/lib/property-lifecycle/adapters/garofalo";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { normalizePuntoCasaDetail } from "@/lib/property-lifecycle/adapters/puntocasa";
+import { normalizeTrioDetail } from "@/lib/property-lifecycle/adapters/trio";
 import { normalizeVistocasaDetail } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type {
   AdapterHealthResult,
@@ -237,6 +238,21 @@ function garofaloAdapter(): FixtureAdapter {
   );
 }
 
+function trioAdapter(): FixtureAdapter {
+  const sourceKey = "72461820";
+  const url = "https://www.trovacasa.it/annunci/ba-tc-92459-72461820";
+  return new FixtureAdapter(
+    "trio",
+    "trio-casa-bitonto",
+    [{ sourceKey, externalId: sourceKey, url, summary: {} }],
+    new Map([[sourceKey, fixture("trio-active-detail.html")]]),
+    normalizeTrioDetail,
+    "HEALTHY",
+    true,
+    "2026-08-19T09:00:00.000Z",
+  );
+}
+
 async function countRows(db: SupabaseClient, table: string): Promise<number> {
   const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
   if (error) {
@@ -253,7 +269,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
 
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
-    expect(await countRows(db, "agencies")).toBe(8);
+    expect(await countRows(db, "agencies")).toBe(9);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -754,5 +770,67 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       extraction_method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
     });
     expect(mediaEvidence.data?.source_url).not.toContain("/v1/");
+  });
+
+  it("uses Trio portal-gallery availability only as bounded public evidence", async () => {
+    await runAgencySync({
+      adapter: trioAdapter(),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl:
+              listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/portal-media.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "e".repeat(64),
+            perceptualHash: "05".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: null,
+            lastModified: "Wed, 15 Jul 2026 12:18:43 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "72461820")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    const property = await db
+      .from("properties")
+      .select("true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data).toMatchObject({
+      true_market_start_lower_bound: null,
+      true_market_start_upper_bound: "2026-07-15T12:18:43+00:00",
+      true_market_start_method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
+    });
+
+    const mediaEvidence = await db
+      .from("evidence")
+      .select("claim_key,source_recorded_at,extraction_method")
+      .eq("extraction_method", "TRIO_TROVACASA_MEDIA_LAST_MODIFIED")
+      .single();
+    expect(mediaEvidence.data).toMatchObject({
+      claim_key: "publication.portalMediaAvailableBy",
+      source_recorded_at: "2026-07-15T12:18:43+00:00",
+      extraction_method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
+    });
   });
 });

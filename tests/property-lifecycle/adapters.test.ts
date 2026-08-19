@@ -34,6 +34,10 @@ import {
   parseStudiSantiSitemap,
 } from "@/lib/property-lifecycle/adapters/studisanti";
 import {
+  normalizeTrioDetail,
+  parseTrioInventoryHtml,
+} from "@/lib/property-lifecycle/adapters/trio";
+import {
   normalizeVistocasaDetail,
   parseVistocasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/vistocasa";
@@ -628,6 +632,94 @@ describe("Garofalo Immobiliare V2 adapter", () => {
 
   it("freezes absence decisions when the Flazio API structure disappears", () => {
     const result = parseGarofaloInventoryJson('{"result":false,"message":"maintenance"}');
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Trio Casa V2 adapter", () => {
+  it("extracts a complete 10-record TrovaCasa agency sale inventory", () => {
+    const result = parseTrioInventoryHtml(fixture("trio-inventory.html"));
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.complete).toBe(true);
+    expect(result.items).toHaveLength(10);
+    expect(result.items[0]).toMatchObject({
+      sourceKey: "72626464",
+      externalId: "72626464",
+      summary: {
+        priceAmount: 189_000,
+        surfaceSqm: 103,
+        rooms: 3,
+        portalPublisherId: 92459,
+      },
+    });
+  });
+
+  it("does not call the first portal page healthy when a next page remains", () => {
+    const paginated = fixture("trio-inventory.html")
+      .replace("10 case in vendita", "25 case in vendita")
+      .replace("</head>", '<link rel="next" href="?pagina=2"></head>');
+    const result = parseTrioInventoryHtml(paginated);
+    expect(result.healthState).toBe("DEGRADED");
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 2 });
+  });
+
+  it("normalizes portal facts while preserving uncertain market start", () => {
+    const url = "https://www.trovacasa.it/annunci/ba-tc-92459-72461820";
+    const result = normalizeTrioDetail(
+      sourceDocument("trio-active-detail.html", url, "72461820"),
+    );
+
+    expect(result.source).toMatchObject({
+      externalId: "72461820",
+      agencyReference: null,
+      transactionType: "SALE",
+    });
+    expect(result.commercial).toMatchObject({
+      propertyType: "Appartamento",
+      priceAmount: 145_000,
+      surfaceSqm: 100,
+      rooms: 3,
+      bathrooms: 1,
+    });
+    expect(result.commercial.description).not.toMatch(/080|example\.invalid/);
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      streetName: "Via Ammiraglio Vacca",
+      streetNumber: "28",
+      precision: "EXACT_ADDRESS",
+      scope: "IN_SCOPE",
+    });
+    expect(result.marketStart).toMatchObject({
+      method: "CRAWLER_FIRST_SEEN",
+      lowerBound: null,
+      confidence: 0.25,
+    });
+    expect(result.assets).toHaveLength(2);
+    expect(
+      result.assets.every((asset) =>
+        asset.canonicalUrl.startsWith("https://pic.trovacasa.it/image/"),
+      ),
+    ).toBe(true);
+    expect(result.status.value).toBe("UNKNOWN");
+    expect(result.provenance).toMatchObject({
+      upstreamPortalReference: "130992652",
+      upstreamPortalReferenceNotAgencyCode: true,
+      publisherContactDataExcluded: true,
+    });
+  });
+
+  it("strictly excludes a Bisceglie portal publication", () => {
+    const url = "https://www.trovacasa.it/annunci/bt-tc-92459-72023818";
+    const result = normalizeTrioDetail(
+      sourceDocument("trio-out-of-scope-detail.html", url, "72023818"),
+    );
+    expect(result.location).toMatchObject({ scope: "OUT_OF_SCOPE", municipality: null });
+  });
+
+  it("freezes absence decisions when publisher markers disappear", () => {
+    const result = parseTrioInventoryHtml("<html><body>maintenance</body></html>");
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
     expect(result.complete).toBe(false);
   });

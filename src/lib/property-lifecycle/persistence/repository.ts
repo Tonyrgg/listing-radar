@@ -822,16 +822,18 @@ export class PropertyLifecycleRepository {
       throwIfError(error);
     }
 
-    const originalMediaMarketStartPolicy =
+    const mediaMarketStartPolicy =
       listing.adapterKey === "vistocasa"
         ? {
             method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+            claimKey: "publication.originalMediaAvailableBy",
             confidence: 0.55,
             limitation: "media may be prepared before publication or reused",
           }
         : listing.adapterKey === "futura"
           ? {
               method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
+              claimKey: "publication.originalMediaAvailableBy",
               confidence: 0.6,
               limitation:
                 "coherent gallery upload batches can predate a relaunch; media may still be reused",
@@ -839,13 +841,22 @@ export class PropertyLifecycleRepository {
           : listing.adapterKey === "garofalo"
             ? {
                 method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
+                claimKey: "publication.originalMediaAvailableBy",
                 confidence: 0.65,
                 limitation:
                   "only original globaluserfiles media is eligible; media may predate publication or be reused",
               }
-            : null;
+            : listing.adapterKey === "trio"
+              ? {
+                  method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
+                  claimKey: "publication.portalMediaAvailableBy",
+                  confidence: 0.5,
+                  limitation:
+                    "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
+                }
+              : null;
 
-    if (originalMediaMarketStartPolicy) {
+    if (mediaMarketStartPolicy) {
       const observedTime = Date.parse(listing.observedAt);
       const earliestMediaDate = processedAssets
         .filter((asset) => asset.classification !== "SOLD_GRAPHIC" && asset.lastModified)
@@ -862,16 +873,16 @@ export class PropertyLifecycleRepository {
         const sourceRecordedAt = new Date(earliestMediaDate.time).toISOString();
         const claim = {
           kind: "MARKET_START_BOUND",
-          claimKey: "publication.originalMediaAvailableBy",
+          claimKey: mediaMarketStartPolicy.claimKey,
           sourceUrl: earliestMediaDate.asset.canonicalUrl,
-          extractionMethod: originalMediaMarketStartPolicy.method,
+          extractionMethod: mediaMarketStartPolicy.method,
           rawValue: earliestMediaDate.asset.lastModified,
           normalizedValue: { lowerBound: null, upperBound: sourceRecordedAt },
-          confidence: originalMediaMarketStartPolicy.confidence,
+          confidence: mediaMarketStartPolicy.confidence,
           observedAt: listing.observedAt,
           sourceRecordedAt,
           metadata: {
-            limitation: originalMediaMarketStartPolicy.limitation,
+            limitation: mediaMarketStartPolicy.limitation,
             classification: earliestMediaDate.asset.classification,
           },
         };
@@ -907,8 +918,8 @@ export class PropertyLifecycleRepository {
           {
             lowerBound: null,
             upperBound: sourceRecordedAt,
-            method: originalMediaMarketStartPolicy.method,
-            confidence: originalMediaMarketStartPolicy.confidence,
+            method: mediaMarketStartPolicy.method,
+            confidence: mediaMarketStartPolicy.confidence,
           },
         );
         const { error: propertyError } = await this.db

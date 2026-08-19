@@ -15,6 +15,7 @@
 | Studio Casa adapter | Phase 3 complete | Casa.it publisher-search + detail golden fixtures | Portal modification is not market-start evidence; contact data excluded |
 | Futura adapter | Phase 3 complete | Agesta paginated inventory + original-gallery fixtures | Current-cycle article date plus original-media age bound |
 | Garofalo adapter | Phase 3 complete | Flazio API golden fixtures + original-gallery fixtures | Numeric identity, sold flag, original-media age bound; transformed `/v1/` media excluded |
+| Trio Casa adapter | Phase 3 complete | TrovaCasa publisher-sale golden fixtures | Portal-only baseline, strict geography, uncertain start, resized-media public bound |
 | Snapshots and evidence | Phase 1 | V2 history tables | Append-only observations |
 | Missing crawl safety | Phase 1 | Sync engine | Repeated complete healthy runs |
 | Explicit sold status | Phase 1 | Lifecycle policy | No sale inferred from disappearance |
@@ -23,7 +24,7 @@
 | Manual overrides | Phase 1 schema/domain | Override ledger | Append-only authority |
 | Identity review UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
 | Property timeline UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
-| Additional agencies | Phase 3 active | Adapter registry | Trio Casa is next; continue one gated source at a time |
+| Additional agencies | Phase 3 active | Adapter registry | Momento Casa is next; continue one gated source at a time |
 | Production scheduler | Deferred Phase 4 | External scheduler/enqueue API | Explicit authorization required |
 | Legacy backfill | Deferred | Repeatable migration job | Preserve timestamp uncertainty |
 | Building enrichment | Schema/job only | Approved future provider | No automated conclusions yet |
