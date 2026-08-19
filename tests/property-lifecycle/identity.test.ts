@@ -141,4 +141,76 @@ describe("Property Identity v1", () => {
     ]);
     expect(decision.outcome).toBe("REVIEW_REQUIRED");
   });
+
+  it("does not treat a municipality-only raw location as an address match", () => {
+    const generic = {
+      ...observation,
+      agencyReference: null,
+      address: "Bitonto",
+      imageFingerprints: [],
+      floorplanFingerprints: [],
+    };
+    const decision = decidePropertyIdentity(generic, [
+      candidate({
+        agencyReference: null,
+        knownAgencyReferences: [],
+        address: "BITONTO",
+        imageFingerprints: [],
+        floorplanFingerprints: [],
+      }),
+    ]);
+
+    expect(decision.candidates[0]?.features.address.available).toBe(false);
+    expect(decision.outcome).not.toBe("AUTO_MATCH");
+  });
+
+  it("keeps cross-agency street matches in review without strong media", () => {
+    const leftHash = `DHASH64:${"0".repeat(64)}`;
+    const weakHash = `DHASH64:${"1".repeat(24)}${"0".repeat(40)}`;
+    const crossAgency = {
+      ...observation,
+      agencyReference: null,
+      imageFingerprints: [leftHash],
+      floorplanFingerprints: [],
+    };
+    const decision = decidePropertyIdentity(crossAgency, [
+      candidate({
+        agencyReference: null,
+        knownAgencyReferences: [],
+        imageFingerprints: [weakHash],
+        floorplanFingerprints: [],
+      }),
+    ]);
+
+    expect(decision.candidates[0]?.features.image.value).toBe(0.625);
+    expect(decision.outcome).toBe("REVIEW_REQUIRED");
+  });
+
+  it("allows a private-radar match on an exact civic with coherent facts", () => {
+    const privateObservation: IdentityObservation = {
+      agencyReference: null,
+      address: "Via Ammiraglio Vacca 56e",
+      locality: "Bitonto",
+      propertyType: "Appartamento",
+      surfaceSqm: 100,
+      rooms: 4,
+      imageFingerprints: [],
+      floorplanFingerprints: [],
+    };
+    const decision = decidePropertyIdentity(
+      privateObservation,
+      [
+        candidate({
+          agencyReference: null,
+          knownAgencyReferences: [],
+          address: "Via Ammiraglio Vacca 56e",
+          imageFingerprints: [],
+          floorplanFingerprints: [],
+        }),
+      ],
+      { allowExactCivicAddressEvidence: true },
+    );
+
+    expect(decision.outcome).toBe("AUTO_MATCH");
+  });
 });

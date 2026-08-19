@@ -32,6 +32,118 @@ import {
 export const ICONACASA_BASE_URL = "https://www.iconacasa.com";
 export const ICONACASA_INVENTORY_URL =
   "https://www.iconacasa.com/index.php/agenzie/companyproperties/13-iconacasa-bitonto-piazza-aldo-moro";
+const ICONACASA_TOKEN_URL =
+  `${ICONACASA_BASE_URL}/index.php?option=com_iproperty&task=ajax.getToken&format=raw`;
+const ICONACASA_BACKEND_URL =
+  `${ICONACASA_BASE_URL}/index.php?option=com_iproperty&task=ajax.ajaxSearchCustomByAgenzia&format=raw&filter_listing_office=13`;
+
+interface IconacasaBackendRecord {
+  id: string;
+  title: string | null;
+  street_num: string | null;
+  street: string | null;
+  city: string | null;
+  region: string | null;
+  stype: string | null;
+  beds: string | null;
+  baths: string | null;
+  sqft: string | null;
+  modified: string | null;
+  available: string | null;
+  name: string | null;
+  alias: string | null;
+  publish_up: string | null;
+  cat_title: string | null;
+  cat_id: string | null;
+  img: string | null;
+}
+
+function backendString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" ? cleanText(value) : null;
+}
+
+export function parseIconacasaBackendJson(body: string): IconacasaBackendRecord[] {
+  const parsed = JSON.parse(body) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Iconacasa public backend returned a non-object payload.");
+  }
+  const root = parsed as Record<string, unknown>;
+  if (root.success !== true || !Array.isArray(root.data)) {
+    throw new Error("Iconacasa public backend did not return a successful data array.");
+  }
+
+  return root.data.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const record = value as Record<string, unknown>;
+    const id = backendString(record, "id");
+    if (!id || !/^\d+$/.test(id)) return [];
+    return [{
+      id,
+      title: backendString(record, "title"),
+      street_num: backendString(record, "street_num"),
+      street: backendString(record, "street"),
+      city: backendString(record, "city"),
+      region: backendString(record, "region"),
+      stype: backendString(record, "stype"),
+      beds: backendString(record, "beds"),
+      baths: backendString(record, "baths"),
+      sqft: backendString(record, "sqft"),
+      modified: backendString(record, "modified"),
+      available: backendString(record, "available"),
+      name: backendString(record, "name"),
+      alias: backendString(record, "alias"),
+      publish_up: backendString(record, "publish_up"),
+      cat_title: backendString(record, "cat_title"),
+      cat_id: backendString(record, "cat_id"),
+      img: backendString(record, "img"),
+    }];
+  });
+}
+
+function backendSummary(item: InventoryItem): IconacasaBackendRecord | null {
+  const value = item.summary.publicBackend;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = backendString(record, "id");
+  if (!id) return null;
+  return {
+    id,
+    title: backendString(record, "title"),
+    street_num: backendString(record, "street_num"),
+    street: backendString(record, "street"),
+    city: backendString(record, "city"),
+    region: backendString(record, "region"),
+    stype: backendString(record, "stype"),
+    beds: backendString(record, "beds"),
+    baths: backendString(record, "baths"),
+    sqft: backendString(record, "sqft"),
+    modified: backendString(record, "modified"),
+    available: backendString(record, "available"),
+    name: backendString(record, "name"),
+    alias: backendString(record, "alias"),
+    publish_up: backendString(record, "publish_up"),
+    cat_title: backendString(record, "cat_title"),
+    cat_id: backendString(record, "cat_id"),
+    img: backendString(record, "img"),
+  };
+}
+
+function sourceDayBounds(value: string | null): { lowerBound: string; upperBound: string } | null {
+  const day = value?.match(/^(\d{4})-(\d{2})-(\d{2})/)?.[0];
+  if (!day) return null;
+  const lower = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(lower.getTime())) return null;
+  return {
+    lowerBound: lower.toISOString(),
+    upperBound: new Date(lower.getTime() + 86_399_999).toISOString(),
+  };
+}
+
+function cookieHeader(headers: Headers): string | null {
+  const raw = headers.get("set-cookie");
+  return raw?.split(",").map((cookie) => cookie.split(";", 1)[0]?.trim()).filter(Boolean).join("; ") || null;
+}
 
 function extractExternalId(url: string): string | null {
   return new URL(url).pathname.match(/\/property\/(\d+)(?:-|\/|$)/)?.[1] ?? null;
@@ -220,6 +332,7 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
     ICONACASA_BASE_URL,
   );
   const externalId = extractExternalId(canonical) ?? document.item.externalId;
+  const backend = backendSummary(document.item);
   const title =
     cleanText($("h3.page_title").first().text()) ??
     cleanText($("h4.property-title").first().text()) ??
@@ -232,7 +345,8 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
   const locationText =
     cleanText($(".page_location").first().text()) ??
     labeledValue($, "Località") ??
-    labeledValue($, "Zona");
+    labeledValue($, "Zona") ??
+    backend?.city;
   const statusLabel = labeledValue($, "Disponibilità") ?? labeledValue($, "Stato");
   const status = iconacasaStatus(statusLabel);
   const description =
@@ -253,16 +367,20 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
         }),
       ]
     : [];
+  const publishBounds = sourceDayBounds(backend?.publish_up ?? null);
   const marketEvidence = createEvidence({
     kind: "MARKET_START_BOUND",
-    claimKey: "publication.firstObservedActiveAt",
-    sourceUrl: canonical,
-    extractionMethod: "CRAWLER_FIRST_SEEN",
-    rawValue: document.observedAt,
-    normalizedValue: { lowerBound: null, upperBound: document.observedAt },
-    confidence: 0.3,
+    claimKey: publishBounds ? "publication.publishUp" : "publication.firstObservedActiveAt",
+    sourceUrl: publishBounds ? ICONACASA_BACKEND_URL : canonical,
+    extractionMethod: publishBounds ? "ICONACASA_PUBLISH_UP" : "CRAWLER_FIRST_SEEN",
+    rawValue: publishBounds ? backend?.publish_up ?? null : document.observedAt,
+    normalizedValue: publishBounds ?? { lowerBound: null, upperBound: document.observedAt },
+    confidence: publishBounds ? 0.85 : 0.3,
     observedAt: document.observedAt,
     sourceRecordedAt: null,
+    metadata: publishBounds
+      ? { timezoneUnavailable: true, modifiedNotUsedAsMarketStart: backend?.modified ?? null }
+      : {},
   });
 
   return finalizeNormalizedListing({
@@ -283,10 +401,10 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
     commercial: {
       title,
       description,
-      propertyType: labeledValue($, "Tipo"),
+      propertyType: labeledValue($, "Tipo") ?? backend?.cat_title ?? null,
       priceAmount: parseInteger(labeledValue($, "Prezzo") ?? title),
       priceCurrency: "EUR",
-      surfaceSqm: parseItalianNumber(areaText),
+      surfaceSqm: parseItalianNumber(backend?.sqft ?? areaText),
       rooms: parseItalianNumber(labeledValue($, "Locali")),
       bedrooms: parseItalianNumber(labeledValue($, "Camere")),
       bathrooms: parseItalianNumber(labeledValue($, "Bagni")),
@@ -306,10 +424,10 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
     },
     assets: iconacasaAssets($, externalId),
     marketStart: {
-      lowerBound: null,
-      upperBound: document.observedAt,
-      method: "CRAWLER_FIRST_SEEN",
-      confidence: 0.3,
+      lowerBound: publishBounds?.lowerBound ?? null,
+      upperBound: publishBounds?.upperBound ?? document.observedAt,
+      method: publishBounds ? "ICONACASA_PUBLISH_UP" : "CRAWLER_FIRST_SEEN",
+      confidence: publishBounds ? 0.85 : 0.3,
       evidence: [marketEvidence],
     },
     observedAt: document.observedAt,
@@ -322,7 +440,13 @@ export function normalizeIconacasaDetail(document: SourceDocument): NormalizedLi
     extractionWarnings: status.value === "UNKNOWN" ? ["missing_dedicated_source_status"] : [],
     provenance: {
       inventorySummary: document.item.summary,
-      reportedSource: "public_html",
+      reportedSource: backend ? "public_html_and_public_json_backend" : "public_html",
+      backendPublishUp: backend?.publish_up ?? null,
+      backendModified: backend?.modified ?? null,
+      backendModifiedIgnoredForMarketStart: true,
+      backendAvailable: backend?.available ?? null,
+      backendSaleLabel: backend?.name ?? null,
+      backendInventoryPresenceIsNotLifecycleStatus: true,
     },
   });
 }
@@ -372,6 +496,33 @@ export class IconacasaAdapter implements PropertyLifecycleAdapter {
     let perPageDuplicateCount = firstPage.diagnostics.duplicateCount;
     let pagesVisited = 1;
     const reasons = [...firstPage.diagnostics.reasons];
+    let backendRecords: IconacasaBackendRecord[] = [];
+    let backendAvailable = false;
+
+    try {
+      const tokenResponse = await this.http.get(ICONACASA_TOKEN_URL);
+      const token = cleanText(tokenResponse.body)?.replace(/^"|"$/g, "");
+      const cookie = cookieHeader(tokenResponse.headers);
+      if (!tokenResponse.ok || !token || !/^[a-f0-9]{32}$/i.test(token) || !cookie) {
+        throw new Error(`token_contract_invalid:http=${tokenResponse.status}`);
+      }
+      const backendResponse = await this.http.get(`${ICONACASA_BACKEND_URL}&${token}=1`, {
+        headers: {
+          "user-agent": "ListingRadarLifecycle/2.0 (+local validation)",
+          accept: "application/json,text/plain,*/*",
+          cookie,
+        },
+      });
+      if (!backendResponse.ok) {
+        throw new Error(`backend_http_status:${backendResponse.status}`);
+      }
+      backendRecords = parseIconacasaBackendJson(backendResponse.body);
+      backendAvailable = true;
+    } catch (error) {
+      reasons.push(
+        `public_backend_unavailable:${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     for (const pageUrl of paginationUrls) {
       const pageResponse = await this.http.get(pageUrl);
@@ -389,23 +540,50 @@ export class IconacasaAdapter implements PropertyLifecycleAdapter {
     }
 
     const deduplicated = deduplicateInventoryItems(allItems);
+    const saleBackendRecords = backendRecords.filter(
+      (record) => record.stype === "1" || /vendita/i.test(record.name ?? ""),
+    );
+    const backendById = new Map(saleBackendRecords.map((record) => [record.id, record]));
+    const enrichedItems = deduplicated.items.map((item) => ({
+      ...item,
+      summary: {
+        ...item.summary,
+        ...(backendById.has(item.externalId)
+          ? { publicBackend: backendById.get(item.externalId) }
+          : {}),
+      },
+    }));
+    const backendSaleCountReconciled =
+      backendAvailable &&
+      saleBackendRecords.length === deduplicated.items.length &&
+      deduplicated.items.every((item) => backendById.has(item.externalId));
+    reasons.push(`public_backend_records:${backendRecords.length}`);
+    reasons.push(`public_backend_sale_records:${saleBackendRecords.length}`);
+    if (!backendSaleCountReconciled) reasons.push("public_backend_sale_inventory_mismatch");
+    const requiredMarkers = {
+      ...firstPage.diagnostics.requiredMarkers,
+      publicBackendJson: backendAvailable,
+      backendSaleCountReconciled,
+    };
     const diagnostics = {
       ...firstPage.diagnostics,
-      expectedCount: null,
+      expectedCount: backendAvailable ? saleBackendRecords.length : null,
       observedCount: deduplicated.items.length,
       duplicateCount: perPageDuplicateCount + deduplicated.duplicateCount,
       parseErrorCount,
       pagesVisited,
       expectedPages: paginationUrls.length + 1,
+      requiredMarkers,
       reasons,
     };
     const health = classifyInventoryHealth(diagnostics);
 
     return {
       ...firstPage,
-      items: deduplicated.items,
+      items: enrichedItems,
       healthState: health.state,
       complete: health.complete,
+      structureFingerprint: structureFingerprint(requiredMarkers),
       diagnostics,
     };
   }

@@ -25,6 +25,7 @@ import {
 import { assessOpportunity } from "@/lib/property-lifecycle/opportunities/rules";
 import {
   agencyStateForPublication,
+  classifyPostExit,
   evaluatePublicationPresence,
   type AgencyListingState,
   type PublicationPresence,
@@ -125,6 +126,16 @@ async function allDatabaseRows<T>(
       return rows;
     }
   }
+}
+
+const POSTGREST_ID_BATCH_SIZE = 75;
+
+function batchesOf<T>(values: T[], size = POSTGREST_ID_BATCH_SIZE): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    batches.push(values.slice(index, index + size));
+  }
+  return batches;
 }
 
 function stringValue(value: unknown): string | null {
@@ -540,25 +551,37 @@ export class PropertyLifecycleRepository {
       return [];
     }
 
-    const propertyIds = rows.map((row) => row.id);
-    const [{ data: refsData, error: refsError }, { data: imagesData, error: imagesError }, { data: plansData, error: plansError }] =
-      await Promise.all([
-        this.db
-          .from("agency_listings")
-          .select("property_id,agency_id,agency_reference")
-          .in("property_id", propertyIds),
-        this.db
-          .from("image_fingerprints")
-          .select("property_id,algorithm,fingerprint")
-          .in("property_id", propertyIds),
-        this.db
-          .from("floorplan_fingerprints")
-          .select("property_id,algorithm,fingerprint")
-          .in("property_id", propertyIds),
-      ]);
-    throwIfError(refsError);
-    throwIfError(imagesError);
-    throwIfError(plansError);
+    const propertyIdBatches = batchesOf(rows.map((row) => row.id));
+    const batchResults = await Promise.all(
+      propertyIdBatches.map(async (propertyIds) => {
+        const [refs, images, plans] = await Promise.all([
+          this.db
+            .from("agency_listings")
+            .select("property_id,agency_id,agency_reference")
+            .in("property_id", propertyIds),
+          this.db
+            .from("image_fingerprints")
+            .select("property_id,algorithm,fingerprint")
+            .in("property_id", propertyIds),
+          this.db
+            .from("floorplan_fingerprints")
+            .select("property_id,algorithm,fingerprint")
+            .in("property_id", propertyIds),
+        ]);
+        throwIfError(refs.error);
+        throwIfError(images.error);
+        throwIfError(plans.error);
+        return {
+          references: refs.data ?? [],
+          images: images.data ?? [],
+          plans: plans.data ?? [],
+        };
+      }),
+    );
+
+    const refsData = batchResults.flatMap((result) => result.references);
+    const imagesData = batchResults.flatMap((result) => result.images);
+    const plansData = batchResults.flatMap((result) => result.plans);
 
     const references = (refsData ?? []) as Array<{
       property_id: string;
@@ -795,9 +818,10 @@ export class PropertyLifecycleRepository {
     decision: IdentityDecision,
     provisionalPropertyId: string,
   ): Promise<void> {
-    if (decision.candidates.length > 0) {
+    const persistedCandidates = decision.candidates.slice(0, 10);
+    if (persistedCandidates.length > 0) {
       const { error } = await this.db.from("property_match_candidates").upsert(
-        decision.candidates.map((candidate) => ({
+        persistedCandidates.map((candidate) => ({
           publication_id: publicationId,
           candidate_property_id: candidate.propertyId,
           evaluation_version: 1,
@@ -826,7 +850,11 @@ export class PropertyLifecycleRepository {
           details: {
             score: decision.score,
             margin: decision.margin,
-            candidates: decision.candidates.map((candidate) => candidate.propertyId),
+            candidates: persistedCandidates.slice(0, 3).map((candidate) => ({
+              propertyId: candidate.propertyId,
+              score: candidate.score,
+              contradictions: candidate.contradictions,
+            })),
           },
           dedupe_key: `identity:${publicationId}:v1`,
         },
@@ -1955,29 +1983,22 @@ export class PropertyLifecycleRepository {
       key: "state",
       derivedValue: null,
     });
-    const reappeared = publication.state === "ACTIVE";
     const explicitSold =
       publication.state === "SOLD_MARKED" || publication.source_status === "SOLD";
     const switched = (switchedCount ?? 0) > 0;
     const privateRelist = (privateCount ?? 0) > 0;
-    const outcome = manualOutcome ??
-      (reappeared
-        ? "ACTIVE"
-        : explicitSold
-          ? "CLOSED_SOLD"
-          : switched
-            ? "CLOSED_SWITCHED"
-            : privateRelist
-              ? "CLOSED_TO_PRIVATE"
-              : "OFF_MARKET_NO_SALE_EVIDENCE");
-    const checkOutcome = outcome === "ACTIVE" ? "REAPPEARED" : outcome;
-    const confidence = manualOutcome
-      ? 1
-      : explicitSold || switched || privateRelist
-        ? 0.95
-        : reappeared
-          ? 1
-          : 0.85;
+    const {
+      agencyListingState: outcome,
+      checkOutcome,
+      confidence,
+    } = classifyPostExit({
+      publicationState: publication.state,
+      sourceStatus: publication.source_status as NormalizedListingV2["status"]["value"],
+      switchedAgencyEvidence: switched,
+      privateRelistEvidence: privateRelist,
+      manualOutcome,
+    });
+    const reappeared = checkOutcome === "REAPPEARED";
     const { error: checkError } = await this.db.from("post_exit_checks").insert({
       agency_listing_id: agencyListing.id,
       publication_id: publication.id,

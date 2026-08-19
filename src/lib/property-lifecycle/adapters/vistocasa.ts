@@ -54,7 +54,7 @@ function numericSummaryValue(item: InventoryItem, key: string): number | null {
 
 function parseCoordinate(value: string | null | undefined): number | null {
   const parsed = Number(cleanText(value)?.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed) && Math.abs(parsed) <= 180 ? parsed : null;
 }
 
 function detailValue($: CheerioAPI, key: string): string | null {
@@ -212,7 +212,10 @@ export function parseVistocasaInventoryHtml(
         summary: {
           title,
           priceAmount: parseInteger(marker.attr("prezzo")),
-          latitude: parseCoordinate(marker.attr("lat")),
+          latitude: (() => {
+            const value = parseCoordinate(marker.attr("lat"));
+            return value != null && Math.abs(value) <= 90 ? value : null;
+          })(),
           longitude: parseCoordinate(marker.attr("lng")),
           imageUrl,
           soldGraphic: Boolean(imageUrl && /vendut|sold/i.test(imageUrl)),

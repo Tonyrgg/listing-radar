@@ -1028,6 +1028,7 @@ export class PrivateRadarBridge {
       const decision = decidePropertyIdentity(
         privateObservation,
         candidates.map(asIdentityCandidate),
+        { allowExactCivicAddressEvidence: true },
       );
       let propertyId = decision.propertyId;
       if (decision.outcome === "AUTO_MATCH" && propertyId) {

@@ -114,6 +114,24 @@ function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
+const POSTGREST_ID_BATCH_SIZE = 75;
+
+async function rowsByIdBatches<T>(
+  ids: string[],
+  fetchBatch: (
+    batch: string[],
+  ) => Promise<{ data: T[] | null; error: DatabaseError | null }>,
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const batches: string[][] = [];
+  for (let index = 0; index < ids.length; index += POSTGREST_ID_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + POSTGREST_ID_BATCH_SIZE));
+  }
+  const results = await Promise.all(batches.map((batch) => fetchBatch(batch)));
+  results.forEach((result) => throwIfError(result.error));
+  return results.flatMap((result) => result.data ?? []);
+}
+
 interface ReviewCandidateDescriptor {
   propertyId: string;
   score: number | null;
@@ -124,7 +142,7 @@ function reviewCandidateDescriptors(
   details: Record<string, unknown>,
 ): ReviewCandidateDescriptor[] {
   if (!Array.isArray(details.candidates)) return [];
-  return details.candidates.flatMap((candidate) => {
+  return details.candidates.slice(0, 3).flatMap((candidate) => {
     if (typeof candidate === "string" && candidate) {
       return [{ propertyId: candidate, score: null, contradictions: [] }];
     }
@@ -158,15 +176,15 @@ export class PropertyLifecycleReadRepository {
   constructor(private readonly db: SupabaseClient) {}
 
   private async propertiesByIds(ids: string[]): Promise<PropertyRow[]> {
-    if (ids.length === 0) return [];
-    const { data, error } = await this.db
-      .from("properties")
-      .select(
-        "id,building_id,primary_location_id,property_type,identity_status,sale_status,property_state,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method,true_market_start_confidence,relaunch_count,first_seen_at,last_seen_at,representative_image_paths,canonical_attributes",
-      )
-      .in("id", ids);
-    throwIfError(error);
-    return (data ?? []) as PropertyRow[];
+    return rowsByIdBatches<PropertyRow>(ids, async (batch) => {
+      const { data, error } = await this.db
+        .from("properties")
+        .select(
+          "id,building_id,primary_location_id,property_type,identity_status,sale_status,property_state,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method,true_market_start_confidence,relaunch_count,first_seen_at,last_seen_at,representative_image_paths,canonical_attributes",
+        )
+        .in("id", batch);
+      return { data: data as PropertyRow[] | null, error };
+    });
   }
 
   private async hydrateProperties(
@@ -174,58 +192,64 @@ export class PropertyLifecycleReadRepository {
   ): Promise<LifecyclePropertySummary[]> {
     if (properties.length === 0) return [];
     const propertyIds = properties.map((property) => property.id);
-    const [agencyListingResult, privateResult] = await Promise.all([
-      this.db
-        .from("agency_listings")
-        .select(
-          "id,agency_id,property_id,agency_reference,state,first_seen_at,last_seen_at",
-        )
-        .in("property_id", propertyIds),
-      this.db
-        .from("private_publications")
-        .select(
-          "id,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
-        )
-        .in("property_id", propertyIds),
+    const [agencyListings, privatePublications] = await Promise.all([
+      rowsByIdBatches<AgencyListingRow>(propertyIds, async (batch) => {
+        const { data, error } = await this.db
+          .from("agency_listings")
+          .select(
+            "id,agency_id,property_id,agency_reference,state,first_seen_at,last_seen_at",
+          )
+          .in("property_id", batch);
+        return { data: data as AgencyListingRow[] | null, error };
+      }),
+      rowsByIdBatches<PrivatePublicationRow>(propertyIds, async (batch) => {
+        const { data, error } = await this.db
+          .from("private_publications")
+          .select(
+            "id,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
+          )
+          .in("property_id", batch);
+        return { data: data as PrivatePublicationRow[] | null, error };
+      }),
     ]);
-    throwIfError(agencyListingResult.error);
-    throwIfError(privateResult.error);
-    const agencyListings = (agencyListingResult.data ?? []) as AgencyListingRow[];
-    const privatePublications = (privateResult.data ?? []) as PrivatePublicationRow[];
     const agencyIds = unique(agencyListings.map((listing) => listing.agency_id));
     const agencyListingIds = agencyListings.map((listing) => listing.id);
-    const [agencyResult, publicationResult] = await Promise.all([
+    const [agencyResult, publicationRows] = await Promise.all([
       agencyIds.length
         ? this.db
             .from("agencies")
             .select("id,slug,name,website_url,enabled")
             .in("id", agencyIds)
         : Promise.resolve({ data: [], error: null }),
-      agencyListingIds.length
-        ? this.db
+      rowsByIdBatches<{ id: string; agency_listing_id: string }>(
+        agencyListingIds,
+        async (batch) => {
+          const { data, error } = await this.db
             .from("publications")
             .select("id,agency_listing_id")
-            .in("agency_listing_id", agencyListingIds)
-        : Promise.resolve({ data: [], error: null }),
+            .in("agency_listing_id", batch);
+          return {
+            data: data as Array<{ id: string; agency_listing_id: string }> | null,
+            error,
+          };
+        },
+      ),
     ]);
     throwIfError(agencyResult.error);
-    throwIfError(publicationResult.error);
     const agencies = (agencyResult.data ?? []) as AgencyRow[];
-    const publicationRows = (publicationResult.data ?? []) as Array<{
-      id: string;
-      agency_listing_id: string;
-    }>;
     const publicationIds = publicationRows.map((publication) => publication.id);
-    const snapshotResult = publicationIds.length
-      ? await this.db
+    const snapshots = await rowsByIdBatches<SnapshotRow>(
+      publicationIds,
+      async (batch) => {
+        const { data, error } = await this.db
           .from("snapshots")
           .select("publication_id,title,price_amount,surface_sqm,rooms,observed_at")
-          .in("publication_id", publicationIds)
+          .in("publication_id", batch)
           .order("observed_at", { ascending: false })
-          .limit(2_000)
-      : { data: [], error: null };
-    throwIfError(snapshotResult.error);
-    const snapshots = (snapshotResult.data ?? []) as SnapshotRow[];
+          .limit(2_000);
+        return { data: data as SnapshotRow[] | null, error };
+      },
+    );
     const agencyById = new Map(agencies.map((agency) => [agency.id, agency]));
     const propertyByListing = new Map(
       agencyListings.map((listing) => [listing.id, listing.property_id]),

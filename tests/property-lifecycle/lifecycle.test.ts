@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   agencyStateForPublication,
+  classifyPostExit,
   evaluatePublicationPresence,
   type PublicationPresence,
 } from "@/lib/property-lifecycle/lifecycle/transitions";
@@ -96,6 +97,42 @@ describe("publication lifecycle safety", () => {
         hasOtherActivePublication: true,
       }),
     ).toBe("ACTIVE");
+  });
+
+  it.each([
+    ["ACTIVE", "ACTIVE", false, false, "REAPPEARED"],
+    ["SOLD_MARKED", "SOLD", false, false, "CLOSED_SOLD"],
+    ["REMOVED", "ACTIVE", true, false, "CLOSED_SWITCHED"],
+    ["REMOVED", "ACTIVE", false, true, "CLOSED_TO_PRIVATE"],
+    ["REMOVED", "ACTIVE", false, false, "OFF_MARKET_NO_SALE_EVIDENCE"],
+  ] as const)(
+    "classifies post-exit %s/%s evidence as %s",
+    (publicationState, sourceStatus, switchedAgencyEvidence, privateRelistEvidence, expected) => {
+      expect(
+        classifyPostExit({
+          publicationState,
+          sourceStatus,
+          switchedAgencyEvidence,
+          privateRelistEvidence,
+        }).checkOutcome,
+      ).toBe(expected);
+    },
+  );
+
+  it("maps a manual pending exit to a valid needs-verification check", () => {
+    expect(
+      classifyPostExit({
+        publicationState: "REMOVED",
+        sourceStatus: "UNKNOWN",
+        switchedAgencyEvidence: false,
+        privateRelistEvidence: false,
+        manualOutcome: "EXIT_PENDING",
+      }),
+    ).toMatchObject({
+      agencyListingState: "EXIT_PENDING",
+      checkOutcome: "NEEDS_VERIFICATION",
+      confidence: 1,
+    });
   });
 });
 

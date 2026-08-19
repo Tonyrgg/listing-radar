@@ -176,11 +176,35 @@ export function parsePuntoCasaInventoryHtml(
   const $ = load(html);
   const extracted: InventoryItem[] = [];
   let parseErrorCount = 0;
+  let excludedTransactionCount = 0;
+  const propertyCards = $(".agent-properties .grid > ul > li, .agent-properties .property-list > li")
+    .toArray()
+    .filter((element) => $(element).find("a[href*='/property-item/']").length > 0);
+  const links =
+    propertyCards.length > 0
+      ? propertyCards.map((card) => {
+          const container = $(card);
+          const transactionLabel = cleanText(
+            container.find("a[href*='/property-status/']").first().text(),
+          );
+          if (/affitt|locaz|rent\s*to\s*buy/i.test(transactionLabel ?? "")) {
+            excludedTransactionCount += 1;
+            return null;
+          }
+          const anchor = container.find("a[href*='/property-item/']").first();
+          return { anchor, transactionLabel };
+        })
+      : $("a[href*='/property-item/']")
+          .toArray()
+          .map((element) => ({ anchor: $(element), transactionLabel: null }));
 
-  $("a[href*='/property-item/']").each((_, element) => {
-    const href = $(element).attr("href");
+  for (const entry of links) {
+    if (!entry) {
+      continue;
+    }
+    const href = entry.anchor.attr("href");
     if (!href) {
-      return;
+      continue;
     }
 
     try {
@@ -188,19 +212,22 @@ export function parsePuntoCasaInventoryHtml(
       const externalId = slugFromUrl(url);
       if (!externalId) {
         parseErrorCount += 1;
-        return;
+        continue;
       }
 
       extracted.push({
         sourceKey: externalId,
         externalId,
         url,
-        summary: { anchorText: cleanText($(element).text()) },
+        summary: {
+          anchorText: cleanText(entry.anchor.text()),
+          transactionLabel: entry.transactionLabel,
+        },
       });
     } catch {
       parseErrorCount += 1;
     }
-  });
+  }
 
   const deduplicated = deduplicateInventoryItems(extracted);
   const visibleText = cleanText($.root().text());
@@ -221,7 +248,12 @@ export function parsePuntoCasaInventoryHtml(
     pagesVisited: 1,
     expectedPages: paginationUrls.length + 1,
     requiredMarkers: markers,
-    reasons: [],
+    reasons: [
+      ...(expectedCount != null ? [`source_reported_total_all_contracts:${expectedCount}`] : []),
+      ...(excludedTransactionCount > 0
+        ? [`non_sale_inventory_records_excluded:${excludedTransactionCount}`]
+        : []),
+    ],
   };
   const health = classifyInventoryHealth(diagnostics);
 
@@ -285,6 +317,9 @@ export function normalizePuntoCasaDetail(document: SourceDocument): NormalizedLi
     cleanText($("h4.subtitle label, .property-address").first().text()) ??
     dedicatedInfoValue($, "Località");
   const statusLabel = dedicatedStatusLabel($);
+  if (/affitt|locaz|rent\s*to\s*buy/i.test(statusLabel ?? "")) {
+    throw new Error(`PuntoCasa detail ${canonical} is not a sale publication (${statusLabel}).`);
+  }
   const status = puntoCasaStatus(statusLabel);
   const assets = puntoCasaAssets($);
   const assetDate = earliestAssetDate(assets);
@@ -444,6 +479,11 @@ export class PuntoCasaAdapter implements PropertyLifecycleAdapter {
     let perPageDuplicateCount = firstPage.diagnostics.duplicateCount;
     let pagesVisited = 1;
     const reasons = [...firstPage.diagnostics.reasons];
+    let excludedTransactionCount = Number(
+      firstPage.diagnostics.reasons
+        .find((reason) => reason.startsWith("non_sale_inventory_records_excluded:"))
+        ?.split(":")[1] ?? 0,
+    );
 
     for (const pageUrl of paginationUrls) {
       const pageResponse = await this.http.get(pageUrl);
@@ -458,17 +498,34 @@ export class PuntoCasaAdapter implements PropertyLifecycleAdapter {
       parseErrorCount += page.diagnostics.parseErrorCount;
       perPageDuplicateCount += page.diagnostics.duplicateCount;
       pagesVisited += 1;
+      excludedTransactionCount += Number(
+        page.diagnostics.reasons
+          .find((reason) => reason.startsWith("non_sale_inventory_records_excluded:"))
+          ?.split(":")[1] ?? 0,
+      );
     }
 
     const deduplicated = deduplicateInventoryItems(allItems);
+    const rawExpectedCount = firstPage.diagnostics.expectedCount;
     const diagnostics = {
       ...firstPage.diagnostics,
+      expectedCount:
+        rawExpectedCount == null
+          ? null
+          : Math.max(0, rawExpectedCount - excludedTransactionCount),
       observedCount: deduplicated.items.length,
       duplicateCount: perPageDuplicateCount + deduplicated.duplicateCount,
       parseErrorCount,
       pagesVisited,
       expectedPages: paginationUrls.length + 1,
-      reasons,
+      reasons: [
+        ...reasons.filter(
+          (reason) => !reason.startsWith("non_sale_inventory_records_excluded:"),
+        ),
+        ...(excludedTransactionCount > 0
+          ? [`non_sale_inventory_records_excluded:${excludedTransactionCount}`]
+          : []),
+      ],
     };
     const health = classifyInventoryHealth(diagnostics);
 

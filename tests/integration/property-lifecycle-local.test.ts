@@ -1631,4 +1631,33 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     expect(dossier?.privatePublications.length).toBeGreaterThan(0);
     expect(dossier?.events.length).toBeGreaterThan(0);
   });
+
+  it("persists observations when the identity candidate set exceeds one PostgREST URI", async () => {
+    const filler = Array.from({ length: 240 }, (_, index) => ({
+      property_type: "Appartamento",
+      identity_status: "PROVISIONAL",
+      canonical_attributes: {
+        address: `Via Batch ${index + 1}`,
+        locality: "Bitonto",
+        surfaceSqm: 50 + (index % 100),
+        rooms: 2 + (index % 4),
+        propertyType: "Appartamento",
+      },
+    }));
+    const inserted = await db.from("properties").insert(filler);
+    expect(inserted.error).toBeNull();
+
+    const result = await runAgencySync({
+      adapter: puntoCasaAdapter("postgrest-id-batch-regression"),
+      repository,
+      mode: "SYNC",
+    });
+
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.counts).toMatchObject({
+      normalizedCount: 1,
+      inScopeCount: 1,
+      errorCount: 0,
+    });
+  });
 });

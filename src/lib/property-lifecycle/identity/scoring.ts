@@ -39,6 +39,10 @@ export interface IdentityDecision {
   candidates: RankedIdentityCandidate[];
 }
 
+export interface IdentityDecisionOptions {
+  allowExactCivicAddressEvidence?: boolean;
+}
+
 const FEATURE_WEIGHTS = {
   agencyReference: 0.3,
   address: 0.25,
@@ -61,6 +65,21 @@ function normalizedTokens(value: string | null): Set<string> {
       .trim()
       .split(/\s+/)
       .filter((token) => token.length > 1),
+  );
+}
+
+function normalizedAddressTokens(value: string | null): Set<string> {
+  const tokens = normalizedTokens(value);
+  for (const genericPlace of ["bitonto", "palombaio", "mariotto", "bari", "ba"]) {
+    tokens.delete(genericPlace);
+  }
+  return tokens;
+}
+
+function sharesCivicToken(left: string | null, right: string | null): boolean {
+  const rightTokens = normalizedAddressTokens(right);
+  return [...normalizedAddressTokens(left)].some(
+    (token) => /\d/.test(token) && rightTokens.has(token),
   );
 }
 
@@ -138,8 +157,8 @@ export function scoreIdentityCandidate(
   observation: IdentityObservation,
   candidate: IdentityCandidate,
 ): Omit<RankedIdentityCandidate, "rank"> {
-  const addressTokens = normalizedTokens(observation.address);
-  const candidateAddressTokens = normalizedTokens(candidate.address);
+  const addressTokens = normalizedAddressTokens(observation.address);
+  const candidateAddressTokens = normalizedAddressTokens(candidate.address);
   const agencyReferenceAvailable = Boolean(
     observation.agencyReference && candidate.knownAgencyReferences.length > 0,
   );
@@ -242,6 +261,7 @@ export function scoreIdentityCandidate(
 export function decidePropertyIdentity(
   observation: IdentityObservation,
   candidates: IdentityCandidate[],
+  options: IdentityDecisionOptions = {},
 ): IdentityDecision {
   const ranked = candidates
     .map((candidate) => scoreIdentityCandidate(observation, candidate))
@@ -260,15 +280,24 @@ export function decidePropertyIdentity(
   }
 
   const margin = Number((top.score - (ranked[1]?.score ?? 0)).toFixed(4));
+  const topCandidate = candidates.find(
+    (candidate) => candidate.propertyId === top.propertyId,
+  );
   const availableWeight = Object.values(top.features)
     .filter((featureScore) => featureScore.available)
     .reduce((sum, featureScore) => sum + featureScore.weight, 0);
   const hasStrongEvidence = [
     top.features.agencyReference,
-    top.features.address,
     top.features.image,
     top.features.floorplan,
   ].some((featureScore) => featureScore.available && featureScore.value >= 0.8);
+  const hasExactCivicEvidence = Boolean(
+    options.allowExactCivicAddressEvidence &&
+      topCandidate &&
+      top.features.address.available &&
+      top.features.address.value >= 0.8 &&
+      sharesCivicToken(observation.address, topCandidate.address),
+  );
   const floorplanNeedsCorroboration =
     top.features.floorplan.available &&
     top.features.floorplan.value >= 0.8 &&
@@ -282,7 +311,7 @@ export function decidePropertyIdentity(
     top.score >= 0.86 &&
     margin >= 0.12 &&
     availableWeight >= 0.35 &&
-    hasStrongEvidence &&
+    (hasStrongEvidence || hasExactCivicEvidence) &&
     !floorplanNeedsCorroboration &&
     top.contradictions.length === 0;
 

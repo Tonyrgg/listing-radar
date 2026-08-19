@@ -152,3 +152,54 @@ export function agencyStateForPublication(
   }
   return current;
 }
+
+export type PostExitCheckOutcome =
+  | "REAPPEARED"
+  | "CLOSED_SOLD"
+  | "CLOSED_SWITCHED"
+  | "CLOSED_TO_PRIVATE"
+  | "CLOSED_WITHDRAWN"
+  | "OFF_MARKET_NO_SALE_EVIDENCE"
+  | "NEEDS_VERIFICATION";
+
+export function classifyPostExit(input: {
+  publicationState: PublicationState;
+  sourceStatus: SourceStatus;
+  switchedAgencyEvidence: boolean;
+  privateRelistEvidence: boolean;
+  manualOutcome?: AgencyListingState | null;
+}): {
+  agencyListingState: AgencyListingState;
+  checkOutcome: PostExitCheckOutcome;
+  confidence: number;
+} {
+  const reappeared = input.publicationState === "ACTIVE";
+  const explicitSold =
+    input.publicationState === "SOLD_MARKED" || input.sourceStatus === "SOLD";
+  const agencyListingState =
+    input.manualOutcome ??
+    (reappeared
+      ? "ACTIVE"
+      : explicitSold
+        ? "CLOSED_SOLD"
+        : input.switchedAgencyEvidence
+          ? "CLOSED_SWITCHED"
+          : input.privateRelistEvidence
+            ? "CLOSED_TO_PRIVATE"
+            : "OFF_MARKET_NO_SALE_EVIDENCE");
+  const checkOutcome =
+    agencyListingState === "ACTIVE"
+      ? "REAPPEARED"
+      : agencyListingState === "EXIT_PENDING"
+        ? "NEEDS_VERIFICATION"
+        : agencyListingState;
+  const confidence = input.manualOutcome
+    ? 1
+    : explicitSold || input.switchedAgencyEvidence || input.privateRelistEvidence
+      ? 0.95
+      : reappeared
+        ? 1
+        : 0.85;
+
+  return { agencyListingState, checkOutcome, confidence };
+}

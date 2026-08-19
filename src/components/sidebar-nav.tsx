@@ -44,7 +44,7 @@ export function SidebarNav({ collapsed = false }: Readonly<{ collapsed?: boolean
             href={item.href}
             title={item.label}
             className={clsx(
-              "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-[7px] px-3 text-center text-xs font-semibold transition-colors lg:h-11 lg:w-full lg:justify-start lg:px-3.5 lg:text-[13px]",
+              "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-[7px] px-3 text-center text-xs font-semibold transition-colors lg:h-11 lg:w-full lg:justify-start lg:px-3.5 lg:text-[13px]",
               collapsed && "lg:justify-center lg:px-0",
               isActive
                 ? "bg-[var(--surface-panel)] text-[var(--ink-strong)] shadow-[inset_0_0_0_1px_var(--line-soft)]"

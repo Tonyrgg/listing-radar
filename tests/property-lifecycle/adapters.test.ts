@@ -19,6 +19,7 @@ import {
 } from "@/lib/property-lifecycle/adapters/garofalo";
 import {
   normalizeIconacasaDetail,
+  parseIconacasaBackendJson,
   parseIconacasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/iconacasa";
 import {
@@ -108,6 +109,46 @@ describe("Iconacasa V2 adapter", () => {
     expect(result.status.evidence[0]?.extractionMethod).toBe("ICONACASA_DEDICATED_LABEL");
   });
 
+  it("uses public backend publish_up and sqft while keeping modified separate", () => {
+    const url =
+      "https://www.iconacasa.com/index.php/opportunita/property/45212-bitonto-palombaio-vendita-appartamento";
+    const [backend] = parseIconacasaBackendJson(JSON.stringify({
+      success: true,
+      data: [{
+        id: "45212",
+        title: "Trilocale Palombaio",
+        city: "Palombaio",
+        region: "Bitonto",
+        stype: "1",
+        beds: "3",
+        baths: "2.00",
+        sqft: "144",
+        modified: "2026-08-06 10:53:20",
+        available: "2026-06-18",
+        name: "In vendita",
+        publish_up: "2026-06-18 00:00:00",
+        cat_title: "APPARTAMENTO",
+      }],
+    }));
+    const result = normalizeIconacasaDetail(
+      sourceDocument("iconacasa-active-detail.html", url, "45212", undefined, {
+        publicBackend: backend,
+      }),
+    );
+
+    expect(result.commercial.surfaceSqm).toBe(144);
+    expect(result.marketStart).toMatchObject({
+      method: "ICONACASA_PUBLISH_UP",
+      lowerBound: "2026-06-18T00:00:00.000Z",
+      upperBound: "2026-06-18T23:59:59.999Z",
+      confidence: 0.85,
+    });
+    expect(result.provenance).toMatchObject({
+      backendModified: "2026-08-06 10:53:20",
+      backendModifiedIgnoredForMarketStart: true,
+    });
+  });
+
   it("reports a structure change when required inventory markers disappear", () => {
     const result = parseIconacasaInventoryHtml("<html><body>maintenance</body></html>");
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
@@ -194,6 +235,17 @@ describe("Vistocasa V2 adapter", () => {
     );
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
     expect(result.complete).toBe(false);
+  });
+
+  it("drops malformed out-of-range map coordinates without dropping the publication", () => {
+    const result = parseVistocasaInventoryHtml(`
+      <html><body>Agenzia Vistocasa Bitonto catalogoproduttoriid=56
+        <marker lat="410638" lng="164041" titolo="Box auto in Vendita"
+          prezzo="19000,00 €" img_small="/immobili/fotoimmobile6285/Venduto.jpg" id="6285" />
+      </body></html>
+    `);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.summary).toMatchObject({ latitude: null, longitude: null });
   });
 });
 
@@ -425,6 +477,28 @@ describe("Studio Casa Bitonto V2 adapter", () => {
       sourceDocument("studiocasa-out-of-scope-detail.html", url, "54121668"),
     );
     expect(result.location).toMatchObject({ scope: "OUT_OF_SCOPE", municipality: null });
+  });
+
+  it("falls back to the complete public inventory payload when Casa.it blocks detail", () => {
+    const item = parseStudioCasaInventoryHtml(fixture("studiocasa-inventory.html")).items[0]!;
+    const result = normalizeStudioCasaDetail({
+      item,
+      observedAt: "2026-08-19T09:00:00.000Z",
+      response: {
+        body: "blocked",
+        headers: new Headers(),
+        ok: false,
+        status: 403,
+        url: item.url,
+      },
+    });
+
+    expect(result.source.externalId).toBe(item.externalId);
+    expect(result.commercial).toMatchObject({ priceAmount: 109_000, surfaceSqm: 112 });
+    expect(result.location.scope).toBe("IN_SCOPE");
+    expect(result.assets).not.toHaveLength(0);
+    expect(result.extractionWarnings).toContain("detail_http_403_inventory_summary_fallback");
+    expect(result.provenance).toMatchObject({ detailHttpStatus: 403 });
   });
 
   it("freezes absence decisions when Casa.it state markers disappear", () => {
@@ -822,6 +896,20 @@ describe("PuntoCasa V2 adapter", () => {
     const result = parsePuntoCasaInventoryHtml(paginated);
     expect(result.healthState).toBe("DEGRADED");
     expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 22 });
+  });
+
+  it("excludes rental cards from a mixed WordPress inventory", () => {
+    const result = parsePuntoCasaInventoryHtml(`
+      <html><body class="acquista-la-tua-casa property-list" data-v2-property-count="2">
+        <div class="agent-properties"><div class="grid"><ul>
+          <li><a href="/property-item/casa-in-vendita/">Casa</a><h4><a href="/property-status/vendita/">Vendita</a></h4></li>
+          <li><a href="/property-item/ufficio-in-affitto/">Ufficio</a><h4><a href="/property-status/affitto/">Affitto</a></h4></li>
+        </ul></div></div>
+      </body></html>
+    `);
+
+    expect(result.items.map((item) => item.sourceKey)).toEqual(["casa-in-vendita"]);
+    expect(result.diagnostics.reasons).toContain("non_sale_inventory_records_excluded:1");
   });
 
   it("uses dedicated status and ignores sold text in related cards", () => {

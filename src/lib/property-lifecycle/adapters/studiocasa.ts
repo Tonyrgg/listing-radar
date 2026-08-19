@@ -339,6 +339,147 @@ function casaAssets(pdp: JsonObject): NormalizedAsset[] {
   });
 }
 
+function casaInventoryAssets(summary: Record<string, unknown>): NormalizedAsset[] {
+  const media = Array.isArray(summary.media) ? summary.media : [];
+  const seen = new Set<string>();
+  return media.slice(0, 60).flatMap((value) => {
+    if (!isObject(value)) return [];
+    const uri = stringValue(value.uri);
+    if (!uri || !/^\/listing\/[a-z0-9/_-]+\.(?:jpe?g|png|webp)$/i.test(uri)) return [];
+    const url = `https://images-1.casa.it/800x600${uri}`;
+    if (seen.has(url)) return [];
+    seen.add(url);
+    return [{
+      kind: value.hasFloorplan === true ? "FLOORPLAN" as const : "IMAGE" as const,
+      url,
+      canonicalUrl: url,
+      sourceRecordedAt: null,
+      dateEvidenceMethod: null,
+      metadata: {
+        portalMediaType: value.hasFloorplan === true ? "floorplan" : "image",
+        alt: stringValue(value.alt),
+        transformedPublicAssetRequired: true,
+        inventoryPayloadFallback: true,
+      },
+    }];
+  });
+}
+
+function studioCasaLocalityHint(title: string | null, description: string | null): string | null {
+  const titleMatch = title?.match(/\b(Palombaio|Mariotto)\b/i)?.[1];
+  if (titleMatch) return titleMatch;
+  return description?.match(/^\s*(Palombaio|Mariotto)\b/i)?.[1] ?? null;
+}
+
+function normalizeStudioCasaInventoryFallback(document: SourceDocument): NormalizedListingV2 {
+  const summary = document.item.summary;
+  const title = typeof summary.title === "string" ? summary.title : null;
+  const description = typeof summary.description === "string" ? summary.description : null;
+  if (!title) {
+    throw new Error(`Studio Casa inventory fallback ${document.item.url} has no title.`);
+  }
+  const municipality = typeof summary.municipality === "string" ? summary.municipality : null;
+  const district = typeof summary.district === "string" ? summary.district : null;
+  const street = typeof summary.street === "string" ? summary.street : null;
+  const localityHint = district ?? studioCasaLocalityHint(title, description);
+  const observedAt = document.observedAt;
+  const inventoryPrimary =
+    document.response.headers.get("x-listing-radar-source") === "casa-it-inventory";
+  const marketEvidence = createEvidence({
+    kind: "MARKET_START_BOUND",
+    claimKey: "publication.firstPublicEvidenceAt",
+    sourceUrl: document.item.url,
+    extractionMethod: "CRAWLER_FIRST_SEEN",
+    rawValue: observedAt,
+    normalizedValue: { lowerBound: null, upperBound: observedAt },
+    confidence: 0.2,
+    observedAt,
+    sourceRecordedAt: null,
+    metadata: {
+      sourceLimitation: inventoryPrimary
+        ? "normalized from complete public publisher inventory to avoid detail rate limiting"
+        : "detail blocked; normalized from public publisher inventory",
+    },
+  });
+  const agencyReference = cleanAgencyReference(
+    typeof summary.portalReference === "string" ? summary.portalReference : null,
+  );
+
+  return finalizeNormalizedListing({
+    contractVersion: CONTRACT_VERSION,
+    adapterKey: "studiocasa",
+    source: {
+      agencySlug: "studio-casa-bitonto",
+      sourceKey: document.item.sourceKey,
+      externalId: document.item.externalId,
+      canonicalUrl: document.item.url,
+      agencyReference,
+      transactionType: summary.channel === "vendita" ? "SALE" : "UNKNOWN",
+    },
+    commercial: {
+      title,
+      description,
+      propertyType: typeof summary.propertyType === "string" ? summary.propertyType : null,
+      priceAmount: numberValue(summary.priceAmount),
+      priceCurrency: "EUR",
+      surfaceSqm: numberValue(summary.surfaceSqm),
+      rooms: numberValue(summary.rooms),
+      bedrooms: null,
+      bathrooms: numberValue(summary.bathrooms),
+      floor: typeof summary.floor === "string" ? summary.floor : null,
+      features: {
+        partnerId: integerValue(summary.partnerId),
+        availability: typeof summary.availability === "string" ? summary.availability : null,
+        portalPositionAccuracy: integerValue(summary.coordinateVisibilityLevel),
+      },
+    },
+    location: resolveMonitoredGeography({
+      rawText: [street, localityHint, municipality].filter(Boolean).join(", "),
+      municipality,
+      locality: localityHint,
+      latitude: numberValue(summary.latitude),
+      longitude: numberValue(summary.longitude),
+      coordinatesExact: false,
+    }),
+    status: { value: "UNKNOWN", sourceLabel: null, confidence: 0.2, evidence: [] },
+    assets: casaInventoryAssets(summary),
+    marketStart: {
+      lowerBound: null,
+      upperBound: observedAt,
+      method: "CRAWLER_FIRST_SEEN",
+      confidence: 0.2,
+      evidence: [marketEvidence],
+    },
+    observedAt,
+    response: {
+      url: document.response.url,
+      status: document.response.status,
+      etag: cleanText(document.response.headers.get("etag")),
+      lastModified: cleanText(document.response.headers.get("last-modified")),
+    },
+    extractionWarnings: [
+      "portal_only_source",
+      inventoryPrimary
+        ? "inventory_payload_primary_detail_not_requested"
+        : `detail_http_${document.response.status}_inventory_summary_fallback`,
+      "portal_modified_date_not_market_start",
+      "missing_dedicated_source_status",
+      ...(agencyReference ? [] : ["missing_agency_reference"]),
+    ],
+    provenance: {
+      inventorySummary: summary,
+      reportedSource: inventoryPrimary
+        ? "public_casa_it_agency_inventory"
+        : "public_casa_it_agency_inventory_fallback",
+      publisherId: STUDIO_CASA_PUBLISHER_ID,
+      detailHttpStatus: inventoryPrimary ? null : document.response.status,
+      detailRequestSkippedForSourceSafety: inventoryPrimary,
+      sourceCreatedAtUnavailable: true,
+      publisherContactDataExcluded: true,
+    },
+  });
+}
+
 function numericField(parent: JsonObject | null, key: string): number | null {
   const field = objectValue(parent, key);
   return numberValue(field?.value);
@@ -348,6 +489,12 @@ export function normalizeStudioCasaDetail(document: SourceDocument): NormalizedL
   const { body, headers, status: responseStatus, url: responseUrl } = document.response;
   const pdp = decodeCasaDetail(body);
   if (!pdp) {
+    if (
+      [403, 429].includes(responseStatus) ||
+      headers.get("x-listing-radar-source") === "casa-it-inventory"
+    ) {
+      return normalizeStudioCasaInventoryFallback(document);
+    }
     throw new Error(`Studio Casa detail ${document.item.url} has no Casa.it detail payload.`);
   }
 
@@ -381,6 +528,7 @@ export function normalizeStudioCasaDetail(document: SourceDocument): NormalizedL
   const rawStreet = stringValue(address?.street);
   const municipality = stringValue(address?.town);
   const district = stringValue(address?.block ?? address?.zone);
+  const localityHint = district ?? studioCasaLocalityHint(title, stringValue(description?.text));
   const status = portalStatus(pdp);
   const statusEvidence = status.method
     ? [createEvidence({
@@ -451,9 +599,9 @@ export function normalizeStudioCasaDetail(document: SourceDocument): NormalizedL
       },
     },
     location: resolveMonitoredGeography({
-      rawText: [rawStreet, district, municipality].filter(Boolean).join(", "),
+      rawText: [rawStreet, localityHint, municipality].filter(Boolean).join(", "),
       municipality,
-      locality: district,
+      locality: localityHint,
       latitude: numberValue(address?.lat),
       longitude: numberValue(address?.lon),
       coordinatesExact: false,
@@ -627,11 +775,17 @@ export class StudioCasaAdapter implements PropertyLifecycleAdapter {
   }
 
   async fetchDetail(item: InventoryItem): Promise<SourceDocument> {
-    const response = await this.http.get(item.url);
-    if (!response.ok) {
-      throw new Error(`Studio Casa detail ${item.url} returned HTTP ${response.status}.`);
-    }
-    return { item, response, observedAt: new Date().toISOString() };
+    return {
+      item,
+      observedAt: new Date().toISOString(),
+      response: {
+        body: "",
+        headers: new Headers({ "x-listing-radar-source": "casa-it-inventory" }),
+        ok: true,
+        status: 200,
+        url: item.url,
+      },
+    };
   }
 
   async normalize(document: SourceDocument): Promise<NormalizedListingV2> {
