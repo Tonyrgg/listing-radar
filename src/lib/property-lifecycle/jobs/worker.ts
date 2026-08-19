@@ -3,6 +3,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/registry";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 import {
+  BuildingIntelligenceImporter,
+  DEFAULT_BUILDING_PRACTICE_SOURCE_KEY,
+  DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+} from "@/lib/property-lifecycle/buildings/importer";
+import {
   LifecycleJobQueue,
   type LifecycleJob,
   type LifecycleJobType,
@@ -14,6 +19,7 @@ export interface WorkerDependencies {
   db: SupabaseClient;
   queue?: LifecycleJobQueue;
   adapterFactory?: (adapterKey: string) => PropertyLifecycleAdapter;
+  fetcher?: typeof fetch;
 }
 
 function fanoutType(jobType: LifecycleJobType): LifecycleJobType {
@@ -124,6 +130,75 @@ async function executePostExitCheck(
   });
 }
 
+function buildingSource(job: LifecycleJob): { sourceKey: string; sourceUrl: string } {
+  const sourceKey =
+    typeof job.payload.sourceKey === "string" && job.payload.sourceKey.trim()
+      ? job.payload.sourceKey.trim()
+      : DEFAULT_BUILDING_PRACTICE_SOURCE_KEY;
+  const sourceUrl =
+    typeof job.payload.sourceUrl === "string" && job.payload.sourceUrl.trim()
+      ? job.payload.sourceUrl.trim()
+      : DEFAULT_BUILDING_PRACTICE_SOURCE_URL;
+  const parsed = new URL(sourceUrl);
+  const allowedHosts = new Set([
+    "www.opendata.maggioli.cloud",
+    "dati.puglia.it",
+    "opendata.comune.bitonto.ba.it",
+  ]);
+  if (parsed.protocol !== "https:" || !allowedHosts.has(parsed.hostname)) {
+    throw new Error(
+      "BUILDING_DATA_SYNC source must be an approved HTTPS public-data host.",
+    );
+  }
+  return { sourceKey, sourceUrl };
+}
+
+async function executeBuildingDataSync(
+  db: SupabaseClient,
+  job: LifecycleJob,
+  fetcher: typeof fetch,
+): Promise<void> {
+  const { sourceKey, sourceUrl } = buildingSource(job);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetcher(sourceUrl, {
+      signal: controller.signal,
+      headers: {
+        "user-agent": "ListingRadarLifecycle/2.0 (+building intelligence)",
+        accept: "text/csv,text/plain;q=0.9",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        "BUILDING_DATA_SYNC source returned HTTP " + response.status + ".",
+      );
+    }
+    const maximumBytes = 25 * 1024 * 1024;
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+      throw new Error("BUILDING_DATA_SYNC source exceeds the 25 MB limit.");
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maximumBytes) {
+      throw new Error("BUILDING_DATA_SYNC response exceeds the 25 MB limit.");
+    }
+    await new BuildingIntelligenceImporter(db).importCsv({
+      sourceKey,
+      sourceUrl,
+      csv: new TextDecoder("utf-8").decode(bytes),
+      sourceEtag: response.headers.get("etag"),
+      sourceLastModified: response.headers.get("last-modified"),
+      applicationCode:
+        typeof job.payload.applicationCode === "string"
+          ? job.payload.applicationCode
+          : "ape",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function runLifecycleWorkerOnce(
   workerId: string,
   dependencies: WorkerDependencies,
@@ -144,6 +219,12 @@ export async function runLifecycleWorkerOnce(
       await executeAgencySync(dependencies.db, job, adapterFactory);
     } else if (job.job_type === "POST_EXIT_CHECK") {
       await executePostExitCheck(dependencies.db, job);
+    } else if (job.job_type === "BUILDING_DATA_SYNC") {
+      await executeBuildingDataSync(
+        dependencies.db,
+        job,
+        dependencies.fetcher ?? fetch,
+      );
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);
     }

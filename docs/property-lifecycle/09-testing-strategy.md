@@ -12,6 +12,7 @@
 8. **Local database integration:** clean migration reset, constraints, RLS assumptions, queue claim/lease, immutable history, and one fixture-backed end-to-end sync.
 9. **Regression gates:** root lint/typecheck/tests/build plus the existing desktop-worker suite.
 10. **Bootstrap dry run:** deterministic in-memory identity simulation, unhealthy-source exclusion, cross-agency prediction, review prediction, existing-publication detection, and before/after table counts proving no lifecycle writes.
+11. **Building intelligence:** exact-civic building identity, multi-civic parsing, intervention classification, referent-row deduplication, PII-field exclusion, incremental replay, append-only observations/events, and queued-source execution.
 
 ## Fixture policy
 
@@ -32,6 +33,8 @@ Aim for roughly 20 representative records per source as lawful and stable exampl
 - A new publication matched to an existing property does not reset `true_market_start_at`.
 - An ambiguous candidate creates review work and does not auto-merge.
 - Replaying the same observation creates no duplicate snapshot or event.
+- Replaying the same municipal practice feed creates no duplicate practice observation or building event.
+- Street-only practices remain unmatched, and no practice is attached directly to a property without unit-level evidence.
 
 ## Evidence of completion
 

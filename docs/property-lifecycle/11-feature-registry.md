@@ -30,7 +30,8 @@
 | Real V2 bootstrap | Approval-gated | Bootstrap jobs | Requires approved=true after dry-run review; no historical absence inference |
 | Production scheduler | Deferred Phase 4 | External scheduler/enqueue API | Explicit authorization required |
 | Legacy backfill | Deferred | Repeatable migration job | Preserve timestamp uncertainty |
-| Building enrichment | Schema/job only | Approved future provider | No automated conclusions yet |
+| Building Memory | Phase 3 complete | Exact-civic building identity | Shared across properties and public-practice events; approximate locations excluded |
+| Building Intelligence importer | Phase 3 complete | Sanitized Comune CSV importer + BUILDING_DATA_SYNC | APE-first, incremental, deduplicated, no direct personal fields or automatic property conclusions |
 | External notifications/actions | Deferred | Audited automation | Separate approval required |
 
 ## Change protocol

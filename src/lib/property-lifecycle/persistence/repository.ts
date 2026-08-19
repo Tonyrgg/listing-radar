@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ProcessedAsset } from "@/lib/property-lifecycle/assets/pipeline";
 import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/dry-run";
+import { canonicalBuildingAddress } from "@/lib/property-lifecycle/buildings/address";
 import {
   hashValue,
   normalizedListingV2Schema,
@@ -62,6 +63,7 @@ interface AgencyListingRow {
 
 interface PropertyRow {
   id: string;
+  building_id: string | null;
   property_type: string | null;
   primary_location_id: string | null;
   true_market_start_lower_bound: string | null;
@@ -426,6 +428,57 @@ export class PropertyLifecycleRepository {
     return requiredData(data as { id: string } | null, error, "Upsert location").id;
   }
 
+  private async upsertBuilding(
+    listing: NormalizedListingV2,
+    locationId: string,
+  ): Promise<string | null> {
+    const address = canonicalBuildingAddress(listing.location);
+    if (!address) {
+      return null;
+    }
+    const existing = await this.db
+      .from("buildings")
+      .select("id,attributes")
+      .eq("normalized_key", address.normalizedKey)
+      .maybeSingle();
+    throwIfError(existing.error);
+    const attributes = {
+      ...((existing.data as { attributes?: Record<string, unknown> } | null)
+        ?.attributes ?? {}),
+      municipality: address.municipality,
+      locality: address.locality,
+      streetName: address.streetName,
+      streetNumber: address.streetNumber,
+    };
+    if (existing.data) {
+      const row = existing.data as { id: string };
+      const { error } = await this.db
+        .from("buildings")
+        .update({
+          location_id: locationId,
+          display_name: address.displayName,
+          attributes,
+          last_seen_at: listing.observedAt,
+        })
+        .eq("id", row.id);
+      throwIfError(error);
+      return row.id;
+    }
+    const { data, error } = await this.db
+      .from("buildings")
+      .insert({
+        location_id: locationId,
+        normalized_key: address.normalizedKey,
+        display_name: address.displayName,
+        attributes,
+        first_seen_at: listing.observedAt,
+        last_seen_at: listing.observedAt,
+      })
+      .select("id")
+      .single();
+    return requiredData(data as { id: string } | null, error, "Create building").id;
+  }
+
   private async publicationBySource(
     agencyId: string,
     sourceKey: string,
@@ -455,7 +508,7 @@ export class PropertyLifecycleRepository {
     const { data, error } = await this.db
       .from("properties")
       .select(
-        "id,property_type,primary_location_id,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method,true_market_start_confidence,first_public_evidence_at,canonical_attributes",
+        "id,building_id,property_type,primary_location_id,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method,true_market_start_confidence,first_public_evidence_at,canonical_attributes",
       )
       .eq("id", id)
       .single();
@@ -541,12 +594,14 @@ export class PropertyLifecycleRepository {
   private async createProperty(
     listing: NormalizedListingV2,
     locationId: string,
+    buildingId: string | null,
     identityStatus: "PROVISIONAL" | "REVIEW",
   ): Promise<string> {
     const { data, error } = await this.db
       .from("properties")
       .insert({
         primary_location_id: locationId,
+        building_id: buildingId,
         property_type: listing.commercial.propertyType,
         identity_status: identityStatus,
         true_market_start_lower_bound: listing.marketStart.lowerBound,
@@ -609,6 +664,7 @@ export class PropertyLifecycleRepository {
     propertyId: string,
     listing: NormalizedListingV2,
     locationId: string,
+    buildingId: string | null,
   ): Promise<void> {
     const existing = await this.property(propertyId);
     const marketStart = mergeTrueMarketStart(
@@ -630,6 +686,10 @@ export class PropertyLifecycleRepository {
       .from("properties")
       .update({
         primary_location_id: primaryLocationId,
+        building_id:
+          primaryLocationId === locationId && buildingId
+            ? buildingId
+            : existing.building_id,
         property_type: existing.property_type ?? listing.commercial.propertyType,
         true_market_start_lower_bound: marketStart.lowerBound,
         true_market_start_upper_bound: marketStart.upperBound,
@@ -1144,6 +1204,7 @@ export class PropertyLifecycleRepository {
     processedAssets: ProcessedAsset[] = [],
   ): Promise<PersistedObservation> {
     const locationId = await this.upsertLocation(listing);
+    const buildingId = await this.upsertBuilding(listing, locationId);
     const existingPublication = await this.publicationBySource(
       agencyId,
       listing.source.sourceKey,
@@ -1172,13 +1233,14 @@ export class PropertyLifecycleRepository {
         propertyId = await this.createProperty(
           listing,
           locationId,
+          buildingId,
           identityDecision.outcome === "REVIEW_REQUIRED" ? "REVIEW" : "PROVISIONAL",
         );
         createdProperty = true;
       }
     }
 
-    await this.updatePropertyObservation(propertyId, listing, locationId);
+    await this.updatePropertyObservation(propertyId, listing, locationId, buildingId);
     const agencyListing = existingPublication
       ? await this.agencyListing(existingPublication.agency_listing_id)
       : await this.ensureAgencyListing(agencyId, propertyId, listing);

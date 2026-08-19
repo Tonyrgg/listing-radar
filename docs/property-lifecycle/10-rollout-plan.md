@@ -15,6 +15,11 @@ reports source failures and review candidates, and is integration-tested to leav
 every lifecycle table unchanged. A real V2 bootstrap remains approval-gated and
 has not been run.
 
+Building Memory and the municipal Building Intelligence importer are complete
+locally. Exact civic listings reuse durable buildings; the official weekly CSV is
+sanitized, grouped by stable practice identity, incrementally versioned, and
+linked only at building level. Current-feed import and replay both passed locally.
+
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 
 ## Phase 2 — Read-only application surfaces

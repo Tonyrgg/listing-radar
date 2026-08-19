@@ -129,6 +129,16 @@ Inventory URL: <https://www.trovacasa.it/agenzie-immobiliari/momento-casa-bitont
 - No reliable creation date or dedicated lifecycle state is exposed. Keep adapter market start at `CRAWLER_FIRST_SEEN` and status `UNKNOWN`. During deep sync, coherent resized-gallery `Last-Modified` values are low-confidence public-availability bounds, with reuse and portal-ingestion delay explicitly preserved as limitations.
 - Exclude publisher contact fields and contact-like text from normalized output. Gallery media is source-scoped but does not expose original files or deterministic floorplan roles.
 
+## Comune di Bitonto building practices
+
+Current catalog: <https://dati.puglia.it/ckan/dataset/comune-di-bitonto-elenco-pratiche-edilizie_20241>
+
+- The weekly CC BY 4.0 CSV is an enrichment source, not competitor inventory. BUILDING_DATA_SYNC accepts only approved HTTPS civic-data hosts, a 60-second fetch, and a 25 MB response ceiling.
+- Prefer application code APE by default. Group rows by year plus Numero Pratica; Codice Pratica/Numero are fallbacks. Multiple raw rows commonly represent referents or repeated attributes and must not become duplicate practices.
+- Never persist Cognome, Nome, Ragione Sociale, R.U.P., or the unfiltered free-text object. Persist only sanitized identifiers, dates, classification, address, status, and cadastral references.
+- Create civic links only for exact addresses inside Bitonto, Palombaio, or Mariotto. Street-only records remain unmatched. Cadastral data stays at building-practice level and does not automatically identify a PROPERTY.
+- On 2026-08-19 the current feed contained 11,326 rows: 8,935 APE rows grouped into 1,190 practices, with 7,745 duplicate/referent rows removed. A local import produced 497 civic links and safely left 695 practices unmatched; immediate replay produced zero new events.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

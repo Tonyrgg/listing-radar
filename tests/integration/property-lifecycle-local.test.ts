@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { HttpResponse } from "@/lib/http/client";
 import { normalizeFuturaDetail } from "@/lib/property-lifecycle/adapters/futura";
@@ -24,6 +24,10 @@ import type {
   NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { runBootstrapDryRun } from "@/lib/property-lifecycle/bootstrap/dry-run";
+import {
+  BuildingIntelligenceImporter,
+  DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+} from "@/lib/property-lifecycle/buildings/importer";
 import { rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
 import { runLifecycleWorkerOnce } from "@/lib/property-lifecycle/jobs/worker";
@@ -42,6 +46,17 @@ const localDescribe = localConfiguration ? describe.sequential : describe.skip;
 
 function fixture(name: string): string {
   return readFileSync(join(FIXTURE_ROOT, name), "utf8");
+}
+
+function buildingPracticeCsv(): string {
+  return [
+    "Applicazione,Numero Pratica,Oggetto,Data Protocollo,Numero Protocollo,Anno,Tipo Pratica,Via,Civico,Lettera,Cognome,Nome,Ragione Sociale,Situazione Pratica,Comune,Tipo Catasto,Foglio,Particella,Subalterno,Sezione,Lotto",
+    'ape,P-1,"FRAZIONAMENTO, manutenzione straordinaria",15/02/2026,100,2026,CILA,Via Luigi Galvani,26/28/30,,Rossi,Mario,,Aperta,Bitonto,Fabbricati,50,2279,2,,',
+    'ape,P-1,"FRAZIONAMENTO, manutenzione straordinaria",15/02/2026,100,2026,CILA,Via Luigi Galvani,26/28/30,,Bianchi,Anna,Impresa privata,Aperta,Bitonto,Fabbricati,50,2279,3,,',
+    'ape,P-2,"Cambio destinazione d uso da laboratorio a residenza",01/03/2026,101,2026,SCIA,"Palombaio - Corso Vittorio Emanuele",51,,,Persona,,,Chiusa,Bitonto,Fabbricati,51,100,1,,',
+    "ape,P-3,Fine lavori,04/03/2026,102,2026,CILA,Via Mazzini,,,,,,,Chiusa,Bitonto,Fabbricati,52,101,,,",
+    "sue,P-4,Nuova costruzione,05/03/2026,103,2026,PDC,Via Verdi,10,,,,,Aperta,Bitonto,Fabbricati,53,102,1,,",
+  ].join("\n");
 }
 
 function response(url: string, body: string): HttpResponse {
@@ -270,8 +285,14 @@ function momentoAdapter(): FixtureAdapter {
   );
 }
 
-async function countRows(db: SupabaseClient, table: string): Promise<number> {
-  const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
+async function countRows(
+  db: SupabaseClient,
+  table: string,
+  column = "id",
+): Promise<number> {
+  const { count, error } = await db
+    .from(table)
+    .select(column, { count: "exact", head: true });
   if (error) {
     throw new Error(error.message);
   }
@@ -898,7 +919,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .single();
     const property = await db
       .from("properties")
-      .select("true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
+      .select("building_id,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
       .eq("id", agencyListing.data?.property_id)
       .single();
     expect(property.data).toMatchObject({
@@ -960,13 +981,23 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .single();
     const property = await db
       .from("properties")
-      .select("true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
+      .select("building_id,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
       .eq("id", agencyListing.data?.property_id)
       .single();
     expect(property.data).toMatchObject({
       true_market_start_lower_bound: null,
       true_market_start_upper_bound: "2026-03-02T14:38:01+00:00",
       true_market_start_method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
+    });
+    expect(property.data?.building_id).not.toBeNull();
+    const building = await db
+      .from("buildings")
+      .select("display_name,normalized_key")
+      .eq("id", property.data?.building_id)
+      .single();
+    expect(building.data).toMatchObject({
+      display_name: "Via Ammiraglio Vacca 56e, Bitonto",
+      normalized_key: "it|ba|bitonto|bitonto|via ammiraglio vacca|56e",
     });
 
     const mediaEvidence = await db
@@ -979,5 +1010,123 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       source_recorded_at: "2026-03-02T14:38:01+00:00",
       extraction_method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
     });
+  });
+
+  it("imports municipal practices incrementally at building level without personal data", async () => {
+    const importer = new BuildingIntelligenceImporter(db);
+    const sourceKey = "integration-bitonto-practices";
+    const first = await importer.importCsv({
+      sourceKey,
+      sourceUrl: DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+      csv: buildingPracticeCsv(),
+      observedAt: "2026-08-19T10:00:00.000Z",
+    });
+    expect(first).toMatchObject({
+      status: "SUCCEEDED",
+      inputRows: 5,
+      eligibleRows: 4,
+      groupedRecords: 3,
+      insertedRecords: 3,
+      updatedRecords: 0,
+      unchangedRecords: 0,
+      duplicateRows: 1,
+      unmatchedRecords: 1,
+      buildingLinks: 4,
+      eventCount: 4,
+    });
+
+    const repeated = await importer.importCsv({
+      sourceKey,
+      sourceUrl: DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+      csv: buildingPracticeCsv(),
+      observedAt: "2026-08-20T10:00:00.000Z",
+    });
+    expect(repeated).toMatchObject({
+      insertedRecords: 0,
+      updatedRecords: 0,
+      unchangedRecords: 3,
+      eventCount: 0,
+    });
+
+    const changedCsv = buildingPracticeCsv().replace(
+      ",Aperta,Bitonto,Fabbricati,50,2279,2",
+      ",Chiusa,Bitonto,Fabbricati,50,2279,2",
+    );
+    const changed = await importer.importCsv({
+      sourceKey,
+      sourceUrl: DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+      csv: changedCsv,
+      observedAt: "2026-08-21T10:00:00.000Z",
+    });
+    expect(changed).toMatchObject({
+      insertedRecords: 0,
+      updatedRecords: 1,
+      unchangedRecords: 2,
+      eventCount: 3,
+    });
+
+    expect(await countRows(db, "building_practice_records")).toBe(3);
+    expect(await countRows(db, "building_practice_observations")).toBe(4);
+    expect(
+      await countRows(db, "building_practice_buildings", "practice_record_id"),
+    ).toBe(4);
+    const practices = await db
+      .from("building_practice_records")
+      .select("sanitized_payload")
+      .eq("source_key", sourceKey);
+    expect(practices.error).toBeNull();
+    expect(JSON.stringify(practices.data)).not.toMatch(
+      /Rossi|Mario|Bianchi|Anna|Impresa privata|Persona/,
+    );
+    const links = await db
+      .from("building_practice_buildings")
+      .select("practice_record_id,building_id");
+    expect(links.data).toHaveLength(4);
+    const linkedProperties = await db
+      .from("properties")
+      .select("id")
+      .in("building_id", (links.data ?? []).map((link) => link.building_id));
+    expect(linkedProperties.data).toEqual([]);
+
+    const event = await db
+      .from("building_events")
+      .select("id")
+      .eq("source_url", DEFAULT_BUILDING_PRACTICE_SOURCE_URL)
+      .limit(1)
+      .single();
+    const immutableUpdate = await db
+      .from("building_events")
+      .update({ payload: { invalidRewrite: true } })
+      .eq("id", event.data?.id);
+    expect(immutableUpdate.error?.message).toContain("append-only");
+
+    const fetcher = vi.fn(
+      async () =>
+        new Response(changedCsv, {
+          status: 200,
+          headers: { "content-type": "text/csv", etag: '"fixture-building-data"' },
+        }),
+    );
+    const queue = new LifecycleJobQueue(db);
+    const queued = await queue.enqueue({
+      jobType: "BUILDING_DATA_SYNC",
+      maxAttempts: 1,
+      priority: 100,
+      payload: { sourceKey },
+      dedupeKey: "integration:building-data-sync",
+    });
+    expect(
+      await runLifecycleWorkerOnce("building-data-worker", { db, fetcher }),
+    ).toBe(true);
+    expect(fetcher).toHaveBeenCalledWith(
+      DEFAULT_BUILDING_PRACTICE_SOURCE_URL,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    const completed = await db
+      .from("lifecycle_jobs")
+      .select("status")
+      .eq("id", queued.id)
+      .single();
+    expect(completed.data?.status).toBe("SUCCEEDED");
   });
 });

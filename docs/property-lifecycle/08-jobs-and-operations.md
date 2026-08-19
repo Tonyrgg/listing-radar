@@ -9,7 +9,7 @@
 - `BOOTSTRAP_AGENCY`: initial history-safe ingestion without absence transitions.
 - `BOOTSTRAP_ALL`: fan out bootstrap jobs.
 - `POST_EXIT_CHECK`: gather follow-up evidence for an unresolved exit.
-- `BUILDING_DATA_SYNC`: enrich a known building through an approved provider.
+- `BUILDING_DATA_SYNC`: incrementally import the approved public Bitonto building-practice feed.
 
 ## Queue semantics
 
@@ -44,6 +44,12 @@ historical disappearance.
 ## Scheduler boundary
 
 The future scheduler/API only enqueues jobs and returns quickly. It never performs a full crawl. Production scheduling is deferred; local CLI execution is sufficient for this milestone.
+
+BUILDING_DATA_SYNC is implemented as a bounded public CSV fetch followed by a
+sanitized, deduplicating importer. It records import counts, appends changed
+practice observations, reuses civic buildings, and creates idempotent building
+events. The source URL may be overridden only to an allowlisted HTTPS civic-data
+host.
 
 ## Local safety
 

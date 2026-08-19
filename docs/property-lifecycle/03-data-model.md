@@ -18,6 +18,9 @@ agencies -> agency_listings -> publications -> snapshots
 properties -> property_match_candidates -> review_queue
 properties -> manual_overrides
 buildings   -> building_events
+buildings   <- building_practice_buildings <- building_practice_records
+building_practice_records -> building_practice_observations
+building_data_import_runs -> building_practice_observations
 lifecycle_jobs drives work independently of HTTP requests
 ```
 
@@ -38,6 +41,10 @@ lifecycle_jobs drives work independently of HTTP requests
 - `review_queue`: actionable ambiguity, parser anomaly, identity review, or lifecycle review.
 - `opportunities`: derived business opportunities; recomputable from history.
 - `building_events`: append-only building-level observations.
+- `building_data_import_runs`: source/version/count diagnostics for each incremental civic-data import.
+- `building_practice_records`: current sanitized projection of one deduplicated public practice.
+- `building_practice_observations`: append-only content versions for changed practices.
+- `building_practice_buildings`: civic-level links; these never imply a specific unit/property.
 - `sync_runs`: run scope, completeness, counts, outcome, and diagnostics.
 - `adapter_health`: time-series health checks and structural signals.
 - `lifecycle_jobs`: leased durable queue with attempts and deduplication.
@@ -72,3 +79,5 @@ Job type: `SYNC_AGENCY`, `SYNC_ALL`, `DEEP_SYNC_AGENCY`, `DEEP_SYNC_ALL`, `BOOTS
 - Absence counters advance only from complete `HEALTHY` sync runs.
 - Manual overrides outrank derived state while preserving both records.
 - Core foreign keys use restricted deletion or nullification; history is never cascade-deleted accidentally.
+- A property receives a building only from an exact, in-scope civic address. Street-only and approximate locations never create building identity.
+- Municipal-practice storage excludes direct person/company/RUP fields and keeps property association null unless future unit-level evidence supports it.
