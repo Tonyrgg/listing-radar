@@ -10,6 +10,7 @@
 - `BOOTSTRAP_ALL`: fan out bootstrap jobs.
 - `POST_EXIT_CHECK`: gather follow-up evidence for an unresolved exit.
 - `BUILDING_DATA_SYNC`: incrementally import the approved public Bitonto building-practice feed.
+- `SYNC_PRIVATE_RADAR`: reconcile legacy private listings into privacy-minimized V2 publications and lifecycle events.
 
 ## Queue semantics
 
@@ -50,6 +51,12 @@ sanitized, deduplicating importer. It records import counts, appends changed
 practice observations, reuses civic buildings, and creates idempotent building
 events. The source URL may be overridden only to an allowlisted HTTPS civic-data
 host.
+
+SYNC_PRIVATE_RADAR is a local/backend database reconciliation job and performs no
+portal crawl itself. It reads the preserved legacy archive, pages all private
+records, trusts only explicit availability/archive state, excludes out-of-scope
+geography, and writes idempotent V2 identity/lifecycle state. Scheduling remains
+deferred; the job is available for controlled local execution.
 
 ## Local safety
 

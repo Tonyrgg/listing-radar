@@ -13,6 +13,7 @@
 9. **Regression gates:** root lint/typecheck/tests/build plus the existing desktop-worker suite.
 10. **Bootstrap dry run:** deterministic in-memory identity simulation, unhealthy-source exclusion, cross-agency prediction, review prediction, existing-publication detection, and before/after table counts proving no lifecycle writes.
 11. **Building intelligence:** exact-civic building identity, multi-civic parsing, intervention classification, referent-row deduplication, PII-field exclusion, incremental replay, append-only observations/events, and queued-source execution.
+12. **Private Radar:** agency-to-private and simultaneous-private transitions, explicit removal, unchanged replay, strict geography, ambiguous identity, sold/manual conflicts, PII redaction, manual private-state precedence, and queued execution.
 
 ## Fixture policy
 
@@ -35,6 +36,10 @@ Aim for roughly 20 representative records per source as lawful and stable exampl
 - Replaying the same observation creates no duplicate snapshot or event.
 - Replaying the same municipal practice feed creates no duplicate practice observation or building event.
 - Street-only practices remain unmatched, and no practice is attached directly to a property without unit-level evidence.
+- A private advert can close an exited agency listing as `CLOSED_TO_PRIVATE`, while simultaneous agency/private marketing leaves the agency active.
+- Historical private events cannot keep a removed publication active; current property state follows `private_publications.state`.
+- Private seller name, phone, email, and contact URL never enter V2 private-publication content.
+- Equal private identity candidates enter review, sold/manual evidence is not overwritten, and out-of-scope private records are excluded.
 
 ## Evidence of completion
 

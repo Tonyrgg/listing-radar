@@ -32,6 +32,7 @@ import { rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/norm
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
 import { runLifecycleWorkerOnce } from "@/lib/property-lifecycle/jobs/worker";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
+import { PrivateRadarBridge } from "@/lib/property-lifecycle/private-radar/bridge";
 import { runAgencySync } from "@/lib/property-lifecycle/sync/engine";
 
 const FIXTURE_ROOT = join(process.cwd(), "tests", "fixtures", "property-lifecycle");
@@ -297,6 +298,69 @@ async function countRows(
     throw new Error(error.message);
   }
   return count ?? 0;
+}
+
+async function insertPrivateListing(
+  db: SupabaseClient,
+  input: {
+    sourceKey: string;
+    title: string;
+    address: string;
+    sqm: number;
+    rooms: number;
+    status?: string;
+    firstSeenAt?: string;
+    lastSeenAt?: string;
+    available?: boolean | null;
+  },
+): Promise<string> {
+  const firstSeenAt = input.firstSeenAt ?? "2026-08-20T09:00:00.000Z";
+  const lastSeenAt = input.lastSeenAt ?? "2026-08-21T09:00:00.000Z";
+  const url = `https://private-fixture.invalid/${input.sourceKey}`;
+  const listing = await db
+    .from("listings")
+    .insert({
+      source: "private-fixture",
+      source_listing_id: input.sourceKey,
+      url,
+      canonical_url: url,
+      title: input.title,
+      description:
+        "Contatto Mario Rossi: 333 123 4567, mario.rossi@example.com, https://contact.invalid/owner",
+      price: 135_000,
+      sqm: input.sqm,
+      rooms: input.rooms,
+      floor: "2",
+      zone: "Bitonto",
+      address_raw: input.address,
+      seller_type: "private",
+      seller_name: "Mario Rossi",
+      phone: "+39 333 123 4567",
+      first_seen_at: firstSeenAt,
+      last_seen_at: lastSeenAt,
+      status: input.status ?? "new",
+      seller_classification_confidence: 0.99,
+      seller_classification_reasons: ["owner_language", "direct_contact"],
+    })
+    .select("id")
+    .single();
+  if (listing.error || !listing.data?.id) {
+    throw new Error(listing.error?.message ?? "Private fixture insert returned no id.");
+  }
+  if (input.available != null) {
+    const snapshot = await db.from("listing_snapshots").insert({
+      listing_id: listing.data.id,
+      checked_at: lastSeenAt,
+      source: "private-fixture",
+      url,
+      title: input.title,
+      is_available: input.available,
+    });
+    if (snapshot.error) {
+      throw new Error(snapshot.error.message);
+    }
+  }
+  return listing.data.id;
 }
 
 localDescribe("Property Lifecycle local Supabase end-to-end", () => {
@@ -1128,5 +1192,408 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .eq("id", queued.id)
       .single();
     expect(completed.data?.status).toBe("SUCCEEDED");
+  });
+
+  it("bridges an agency exit to the same private property without copying contact data", async () => {
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "70534492")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("id,property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    expect(agencyListing.error).toBeNull();
+    const agencyExit = await db
+      .from("agency_listings")
+      .update({
+        state: "OFF_MARKET_NO_SALE_EVIDENCE",
+        closed_at: "2026-08-19T18:00:00.000Z",
+        exit_confirmed_at: "2026-08-19T18:00:00.000Z",
+        outcome_source: "INTEGRATION_FIXTURE",
+        outcome_confidence: 1,
+      })
+      .eq("id", agencyListing.data?.id);
+    expect(agencyExit.error).toBeNull();
+
+    const legacyListingId = await insertPrivateListing(db, {
+      sourceKey: "agency-to-private-56e",
+      title: "Appartamento privato a Bitonto in Via Ammiraglio Vacca 56e",
+      address: "Via Ammiraglio Vacca 56e, Bitonto",
+      sqm: 100,
+      rooms: 4,
+      available: true,
+    });
+    const first = await new PrivateRadarBridge(db).sync();
+    expect(first).toMatchObject({
+      scannedListings: 1,
+      inScopeListings: 1,
+      createdPublications: 1,
+      autoMatches: 1,
+      agencyToPrivateEvents: 1,
+      soldOrManualConflicts: 0,
+    });
+
+    const privatePublication = await db
+      .from("private_publications")
+      .select("id,property_id,state,identity_outcome,description,metadata")
+      .eq("legacy_listing_id", legacyListingId)
+      .single();
+    expect(privatePublication.data).toMatchObject({
+      property_id: agencyListing.data?.property_id,
+      state: "ACTIVE",
+      identity_outcome: "AUTO_MATCH",
+      metadata: { contactDataExcluded: true },
+    });
+    expect(JSON.stringify(privatePublication.data)).not.toMatch(
+      /Mario Rossi|333 123 4567|mario\.rossi@example\.com|contact\.invalid/,
+    );
+    const convertedAgencyListing = await db
+      .from("agency_listings")
+      .select("state,outcome_source")
+      .eq("id", agencyListing.data?.id)
+      .single();
+    expect(convertedAgencyListing.data).toEqual({
+      state: "CLOSED_TO_PRIVATE",
+      outcome_source: "PRIVATE_RADAR_IDENTITY_V1",
+    });
+    const property = await db
+      .from("properties")
+      .select("property_state")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data?.property_state).toBe("ACTIVE_PRIVATE");
+    const opportunity = await db
+      .from("opportunities")
+      .select("level,reasons,status")
+      .eq("property_id", agencyListing.data?.property_id)
+      .single();
+    expect(opportunity.data).toMatchObject({
+      level: "HOT",
+      status: "OPEN",
+      reasons: ["agency_to_private_confirmed"],
+    });
+
+    const replay = await new PrivateRadarBridge(db).sync();
+    expect(replay).toMatchObject({
+      createdPublications: 0,
+      updatedPublications: 0,
+      unchangedPublications: 1,
+      agencyToPrivateEvents: 0,
+      simultaneousPrivateEvents: 0,
+    });
+    const agencyToPrivateEvents = await db
+      .from("events")
+      .select("id")
+      .eq("property_id", agencyListing.data?.property_id)
+      .eq("event_type", "AGENCY_TO_PRIVATE");
+    expect(agencyToPrivateEvents.data).toHaveLength(1);
+
+    const queue = new LifecycleJobQueue(db);
+    const queued = await queue.enqueue({
+      jobType: "SYNC_PRIVATE_RADAR",
+      priority: 100,
+      maxAttempts: 1,
+      dedupeKey: "integration:sync-private-radar",
+    });
+    expect(await runLifecycleWorkerOnce("private-radar-worker", { db })).toBe(true);
+    const completed = await db
+      .from("lifecycle_jobs")
+      .select("status")
+      .eq("id", queued.id)
+      .single();
+    expect(completed.data?.status).toBe("SUCCEEDED");
+  });
+
+  it("distinguishes simultaneous private marketing and explicit private removal", async () => {
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "72461820")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("id,property_id,state")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    expect(agencyListing.data?.state).toBe("ACTIVE");
+    const simultaneousLegacyId = await insertPrivateListing(db, {
+      sourceKey: "simultaneous-28",
+      title: "Appartamento privato a Bitonto in Via Ammiraglio Vacca 28",
+      address: "Via Ammiraglio Vacca 28, Bitonto",
+      sqm: 100,
+      rooms: 3,
+      available: true,
+    });
+
+    const simultaneous = await new PrivateRadarBridge(db).sync();
+    expect(simultaneous).toMatchObject({
+      createdPublications: 1,
+      autoMatches: 1,
+      simultaneousPrivateEvents: 1,
+    });
+    const unchangedAgencyListing = await db
+      .from("agency_listings")
+      .select("state")
+      .eq("id", agencyListing.data?.id)
+      .single();
+    expect(unchangedAgencyListing.data?.state).toBe("ACTIVE");
+    const simultaneousProperty = await db
+      .from("properties")
+      .select("property_state")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(simultaneousProperty.data?.property_state).toBe(
+      "ACTIVE_AGENCY_AND_PRIVATE",
+    );
+
+    const firstPrivate = await db
+      .from("listings")
+      .select("id,url")
+      .eq("source_listing_id", "agency-to-private-56e")
+      .single();
+    const archived = await db
+      .from("listings")
+      .update({
+        status: "archived",
+        last_seen_at: "2026-08-23T09:00:00.000Z",
+      })
+      .eq("id", firstPrivate.data?.id);
+    expect(archived.error).toBeNull();
+    const unavailable = await db.from("listing_snapshots").insert({
+      listing_id: firstPrivate.data?.id,
+      checked_at: "2026-08-23T09:00:00.000Z",
+      source: "private-fixture",
+      url: firstPrivate.data?.url,
+      is_available: false,
+    });
+    expect(unavailable.error).toBeNull();
+
+    const removed = await new PrivateRadarBridge(db).sync();
+    expect(removed).toMatchObject({
+      activePublications: 1,
+      removedPublications: 1,
+      removedEvents: 1,
+    });
+    const removedPublication = await db
+      .from("private_publications")
+      .select("state,property_id")
+      .eq("legacy_listing_id", firstPrivate.data?.id)
+      .single();
+    expect(removedPublication.data?.state).toBe("REMOVED");
+    const removedProperty = await db
+      .from("properties")
+      .select("property_state")
+      .eq("id", removedPublication.data?.property_id)
+      .single();
+    expect(removedProperty.data?.property_state).toBe("OFF_MARKET_UNKNOWN");
+    const historicalEvents = await db
+      .from("events")
+      .select("event_type")
+      .eq("property_id", removedPublication.data?.property_id)
+      .in("event_type", ["AGENCY_TO_PRIVATE", "PRIVATE_PUBLICATION_REMOVED"]);
+    expect(historicalEvents.data).toEqual(
+      expect.arrayContaining([
+        { event_type: "AGENCY_TO_PRIVATE" },
+        { event_type: "PRIVATE_PUBLICATION_REMOVED" },
+      ]),
+    );
+    expect(simultaneousLegacyId).toBeTruthy();
+  });
+
+  it("preserves a manually confirmed private state across automated syncs", async () => {
+    const privatePublication = await db
+      .from("private_publications")
+      .select("id,property_id")
+      .eq("legacy_listing_id", (
+        await db
+          .from("listings")
+          .select("id")
+          .eq("source_listing_id", "simultaneous-28")
+          .single()
+      ).data?.id)
+      .single();
+    const user = await db.auth.admin.createUser({
+      email: "private-radar-reviewer@example.test",
+      password: "Local-only-Private-Radar-123!",
+      email_confirm: true,
+    });
+    expect(user.error).toBeNull();
+    const overrideId = await repository.recordManualOverride({
+      targetType: "PRIVATE_PUBLICATION",
+      targetId: privatePublication.data?.id ?? "",
+      overrideKey: "state",
+      overrideValue: "REMOVED",
+      previousValue: "ACTIVE",
+      reason: "Owner confirmed the advert is no longer available.",
+      source: "OWNER_PHONE_CONFIRMATION",
+      createdBy: user.data.user?.id ?? "",
+    });
+    expect(overrideId).toBeTruthy();
+
+    const replay = await new PrivateRadarBridge(db).sync();
+    expect(replay.removedPublications).toBe(2);
+    const preserved = await db
+      .from("private_publications")
+      .select("state,metadata")
+      .eq("id", privatePublication.data?.id)
+      .single();
+    expect(preserved.data).toMatchObject({
+      state: "REMOVED",
+      metadata: { observedState: "ACTIVE", manualStateApplied: true },
+    });
+    const property = await db
+      .from("properties")
+      .select("property_state")
+      .eq("id", privatePublication.data?.property_id)
+      .single();
+    expect(property.data?.property_state).toBe("ACTIVE_AGENCY");
+  });
+
+  it("routes ambiguous, sold-conflict, and out-of-scope private records safely", async () => {
+    const ambiguousProperties = await db
+      .from("properties")
+      .insert([
+        {
+          property_type: "Appartamento",
+          identity_status: "CONFIRMED",
+          canonical_attributes: {
+            address: "Via Ambigua 42",
+            locality: "Bitonto",
+            surfaceSqm: 90,
+            rooms: 3,
+            propertyType: "Appartamento",
+          },
+        },
+        {
+          property_type: "Appartamento",
+          identity_status: "CONFIRMED",
+          canonical_attributes: {
+            address: "Via Ambigua 42",
+            locality: "Bitonto",
+            surfaceSqm: 90,
+            rooms: 3,
+            propertyType: "Appartamento",
+          },
+        },
+      ])
+      .select("id");
+    expect(ambiguousProperties.error).toBeNull();
+    const soldProperty = await db
+      .from("properties")
+      .insert({
+        property_type: "Appartamento",
+        identity_status: "CONFIRMED",
+        sale_status: "SOLD_CONFIRMED",
+        canonical_attributes: {
+          address: "Via Venduta 77",
+          locality: "Bitonto",
+          surfaceSqm: 110,
+          rooms: 4,
+          propertyType: "Appartamento",
+        },
+      })
+      .select("id")
+      .single();
+    expect(soldProperty.error).toBeNull();
+    const ambiguousLegacyId = await insertPrivateListing(db, {
+      sourceKey: "ambiguous-42",
+      title: "Appartamento privato in Via Ambigua 42 a Bitonto",
+      address: "Via Ambigua 42, Bitonto",
+      sqm: 90,
+      rooms: 3,
+      available: true,
+    });
+    const soldLegacyId = await insertPrivateListing(db, {
+      sourceKey: "sold-conflict-77",
+      title: "Appartamento privato in Via Venduta 77 a Bitonto",
+      address: "Via Venduta 77, Bitonto",
+      sqm: 110,
+      rooms: 4,
+      available: true,
+    });
+    const outOfScopeLegacyId = await insertPrivateListing(db, {
+      sourceKey: "out-of-scope-bari",
+      title: "Appartamento privato a Bari",
+      address: "Via Sparano 10, Bari",
+      sqm: 90,
+      rooms: 3,
+      available: true,
+    });
+
+    const result = await new PrivateRadarBridge(db).sync();
+    expect(result).toMatchObject({
+      excludedListings: 1,
+      createdPublications: 2,
+      autoMatches: 1,
+      newProperties: 1,
+      reviewRequired: 1,
+      soldOrManualConflicts: 1,
+    });
+    const ambiguousPublication = await db
+      .from("private_publications")
+      .select("id,property_id,identity_outcome")
+      .eq("legacy_listing_id", ambiguousLegacyId)
+      .single();
+    expect(ambiguousPublication.data?.identity_outcome).toBe("REVIEW_REQUIRED");
+    expect(
+      ambiguousProperties.data?.some(
+        (property) => property.id === ambiguousPublication.data?.property_id,
+      ),
+    ).toBe(false);
+    const candidates = await db
+      .from("private_property_match_candidates")
+      .select("outcome,score")
+      .eq("private_publication_id", ambiguousPublication.data?.id)
+      .order("candidate_rank");
+    expect(candidates.data?.filter((candidate) => candidate.score === 1)).toHaveLength(2);
+    expect(candidates.data?.[0]?.outcome).toBe("REVIEW_REQUIRED");
+    const identityReview = await db
+      .from("review_queue")
+      .select("status")
+      .eq("dedupe_key", `private-identity:${ambiguousPublication.data?.id}:v1`)
+      .single();
+    expect(identityReview.data?.status).toBe("OPEN");
+    const fabricatedRelist = await db
+      .from("events")
+      .select("id")
+      .eq("property_id", ambiguousPublication.data?.property_id)
+      .eq("event_type", "PRIVATE_RELIST");
+    expect(fabricatedRelist.data).toEqual([]);
+
+    const soldPublication = await db
+      .from("private_publications")
+      .select("property_id,identity_outcome")
+      .eq("legacy_listing_id", soldLegacyId)
+      .single();
+    expect(soldPublication.data).toMatchObject({
+      property_id: soldProperty.data?.id,
+      identity_outcome: "AUTO_MATCH",
+    });
+    const preservedSoldProperty = await db
+      .from("properties")
+      .select("sale_status")
+      .eq("id", soldProperty.data?.id)
+      .single();
+    expect(preservedSoldProperty.data?.sale_status).toBe("SOLD_CONFIRMED");
+    const conflictReview = await db
+      .from("review_queue")
+      .select("status")
+      .eq("dedupe_key", `private-sold-conflict:${(
+        await db
+          .from("private_publications")
+          .select("id")
+          .eq("legacy_listing_id", soldLegacyId)
+          .single()
+      ).data?.id}:v1`)
+      .single();
+    expect(conflictReview.data?.status).toBe("OPEN");
+    const outOfScopePublication = await db
+      .from("private_publications")
+      .select("id")
+      .eq("legacy_listing_id", outOfScopeLegacyId);
+    expect(outOfScopePublication.data).toEqual([]);
   });
 });

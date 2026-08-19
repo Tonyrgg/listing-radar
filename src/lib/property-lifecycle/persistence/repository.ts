@@ -143,13 +143,22 @@ function sameStringSet(left: string[], right: string[]): boolean {
   );
 }
 
+function identityAddress(listing: NormalizedListingV2): string | null {
+  if (listing.location.streetName) {
+    return [listing.location.streetName, listing.location.streetNumber]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return listing.location.rawText;
+}
+
 export function identityObservationFromListing(
   listing: NormalizedListingV2,
   processedAssets: ProcessedAsset[],
 ): IdentityObservation {
   return {
     agencyReference: listing.source.agencyReference,
-    address: listing.location.streetName ?? listing.location.rawText,
+    address: identityAddress(listing),
     locality: listing.location.locality,
     propertyType: listing.commercial.propertyType,
     surfaceSqm: listing.commercial.surfaceSqm,
@@ -613,7 +622,7 @@ export class PropertyLifecycleRepository {
         first_seen_at: listing.observedAt,
         last_seen_at: listing.observedAt,
         canonical_attributes: {
-          address: listing.location.streetName ?? listing.location.rawText,
+          address: identityAddress(listing),
           locality: listing.location.locality,
           surfaceSqm: listing.commercial.surfaceSqm,
           rooms: listing.commercial.rooms,
@@ -706,8 +715,7 @@ export class PropertyLifecycleRepository {
           ...existing.canonical_attributes,
           address:
             existing.canonical_attributes.address ??
-            listing.location.streetName ??
-            listing.location.rawText,
+            identityAddress(listing),
           locality: existing.canonical_attributes.locality ?? listing.location.locality,
           surfaceSqm: listing.commercial.surfaceSqm,
           rooms: listing.commercial.rooms,
@@ -1698,6 +1706,18 @@ export class PropertyLifecycleRepository {
     }).value;
   }
 
+  async authoritativePrivatePublicationState(
+    privatePublicationId: string,
+    derivedState: "ACTIVE" | "REMOVED",
+  ): Promise<"ACTIVE" | "REMOVED"> {
+    return this.authoritativeManualValue({
+      targetType: "PRIVATE_PUBLICATION",
+      targetId: privatePublicationId,
+      key: "state",
+      derivedValue: derivedState,
+    });
+  }
+
   private async updateSaleFromObservation(input: {
     propertyId: string;
     publicationId: string;
@@ -1798,10 +1818,10 @@ export class PropertyLifecycleRepository {
         .map((agencyListing) => agencyListing.agency_id),
     ).size;
     const { count: privateCount, error: privateError } = await this.db
-      .from("events")
+      .from("private_publications")
       .select("id", { count: "exact", head: true })
       .eq("property_id", propertyId)
-      .in("event_type", ["PRIVATE_RELIST", "AGENCY_TO_PRIVATE"]);
+      .eq("state", "ACTIVE");
     throwIfError(privateError);
     const activePrivate = (privateCount ?? 0) > 0;
     const propertyState =
@@ -1923,10 +1943,10 @@ export class PropertyLifecycleRepository {
       .eq("state", "ACTIVE");
     throwIfError(switchedError);
     const { count: privateCount, error: privateError } = await this.db
-      .from("events")
+      .from("private_publications")
       .select("id", { count: "exact", head: true })
       .eq("property_id", agencyListing.property_id)
-      .in("event_type", ["PRIVATE_RELIST", "AGENCY_TO_PRIVATE"]);
+      .eq("state", "ACTIVE");
     throwIfError(privateError);
 
     const manualOutcome = await this.authoritativeManualValue<AgencyListingState | null>({
@@ -2006,6 +2026,7 @@ export class PropertyLifecycleRepository {
       | "PROPERTY"
       | "AGENCY_LISTING"
       | "PUBLICATION"
+      | "PRIVATE_PUBLICATION"
       | "EVENT"
       | "IDENTITY_MATCH"
       | "MARKET_AGE";
@@ -2021,6 +2042,14 @@ export class PropertyLifecycleRepository {
   }): Promise<string> {
     if (!input.reason.trim()) {
       throw new Error("Manual override reason is required.");
+    }
+    if (
+      input.targetType === "PRIVATE_PUBLICATION" &&
+      input.overrideKey === "state" &&
+      input.overrideValue !== "ACTIVE" &&
+      input.overrideValue !== "REMOVED"
+    ) {
+      throw new Error("Private publication state must be ACTIVE or REMOVED.");
     }
     const { data, error } = await this.db
       .from("manual_overrides")
@@ -2080,6 +2109,28 @@ export class PropertyLifecycleRepository {
           (publicationData as { agency_listing_id: string }).agency_listing_id,
         )
       ).property_id;
+    } else if (input.targetType === "PRIVATE_PUBLICATION") {
+      const { data: privatePublicationData, error: privatePublicationError } =
+        await this.db
+          .from("private_publications")
+          .select("property_id")
+          .eq("id", input.targetId)
+          .single();
+      throwIfError(privatePublicationError);
+      propertyId = (
+        privatePublicationData as { property_id: string }
+      ).property_id;
+      if (input.overrideKey === "state") {
+        const state = input.overrideValue as "ACTIVE" | "REMOVED";
+        const { error: updateError } = await this.db
+          .from("private_publications")
+          .update({
+            state,
+            removed_at: state === "REMOVED" ? new Date().toISOString() : null,
+          })
+          .eq("id", input.targetId);
+        throwIfError(updateError);
+      }
     }
 
     if (propertyId) {

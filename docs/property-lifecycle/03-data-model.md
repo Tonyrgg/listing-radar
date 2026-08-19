@@ -16,6 +16,8 @@ agencies -> agency_listings -> publications -> snapshots
     +-> sync_runs -> adapter_health
 
 properties -> property_match_candidates -> review_queue
+listings -> private_publications -> properties
+private_publications -> private_property_match_candidates -> review_queue
 properties -> manual_overrides
 buildings   -> building_events
 buildings   <- building_practice_buildings <- building_practice_records
@@ -37,6 +39,8 @@ lifecycle_jobs drives work independently of HTTP requests
 - `buildings`: optional building identity shared by properties.
 - fingerprint tables: perceptual or cryptographic identity hints for images and floorplans.
 - `property_match_candidates`: identity score, outcome, feature contributions, and competing candidate rank.
+- `private_publications`: privacy-minimized bridge to one legacy private advert, including current `ACTIVE`/`REMOVED` state; seller names and contacts stay outside V2.
+- `private_property_match_candidates`: ranked, auditable private-to-property identity candidates.
 - `manual_overrides`: explicit human authority with author, reason, effective time, and supersession chain.
 - `review_queue`: actionable ambiguity, parser anomaly, identity review, or lifecycle review.
 - `opportunities`: derived business opportunities; recomputable from history.
@@ -59,7 +63,9 @@ Adapter health: `HEALTHY`, `DEGRADED`, `FAILED`, `STRUCTURE_CHANGED`.
 
 Identity outcome: `AUTO_MATCH`, `REVIEW_REQUIRED`, `NEW_PROPERTY`.
 
-Job type: `SYNC_AGENCY`, `SYNC_ALL`, `DEEP_SYNC_AGENCY`, `DEEP_SYNC_ALL`, `BOOTSTRAP_AGENCY`, `BOOTSTRAP_ALL`, `POST_EXIT_CHECK`, `BUILDING_DATA_SYNC`.
+Private publication: `ACTIVE`, `REMOVED`.
+
+Job type: `SYNC_AGENCY`, `SYNC_ALL`, `DEEP_SYNC_AGENCY`, `DEEP_SYNC_ALL`, `BOOTSTRAP_AGENCY`, `BOOTSTRAP_ALL`, `POST_EXIT_CHECK`, `BUILDING_DATA_SYNC`, `SYNC_PRIVATE_RADAR`.
 
 ## Time semantics
 
@@ -81,3 +87,5 @@ Job type: `SYNC_AGENCY`, `SYNC_ALL`, `DEEP_SYNC_AGENCY`, `DEEP_SYNC_ALL`, `BOOTS
 - Core foreign keys use restricted deletion or nullification; history is never cascade-deleted accidentally.
 - A property receives a building only from an exact, in-scope civic address. Street-only and approximate locations never create building identity.
 - Municipal-practice storage excludes direct person/company/RUP fields and keeps property association null unless future unit-level evidence supports it.
+- Current private property state is derived from active `private_publications`, never from historical private events. Only explicit archive state or the latest unavailable snapshot removes a private publication.
+- Private identity ambiguity and any relist against sold or manually confirmed agency evidence enter review instead of silently rewriting authoritative state.

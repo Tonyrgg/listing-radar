@@ -139,6 +139,14 @@ Current catalog: <https://dati.puglia.it/ckan/dataset/comune-di-bitonto-elenco-p
 - Create civic links only for exact addresses inside Bitonto, Palombaio, or Mariotto. Street-only records remain unmatched. Cadastral data stays at building-practice level and does not automatically identify a PROPERTY.
 - On 2026-08-19 the current feed contained 11,326 rows: 8,935 APE rows grouped into 1,190 practices, with 7,745 duplicate/referent rows removed. A local import produced 497 civic links and safely left 695 practices unmatched; immediate replay produced zero new events.
 
+## Legacy Private Radar
+
+- Keep the existing email/portal ingestion and legacy `listings` archive intact. The V2 bridge is a downstream reconciliation layer, not a replacement collector.
+- Read only records explicitly classified as `seller_type=private`, page the entire archive, and accept only explicit monitored geography. Bari and other known municipalities never enter operational V2 state.
+- Use an explicit archived status or the latest unavailable legacy snapshot for removal. Never expire a private advert merely because `last_seen_at` is old.
+- Copy only property/publication facts needed for identity and lifecycle. Redact the known seller name, phone-like text, email, and contact links; never copy legacy seller-name or phone columns into V2.
+- Auto-match only through the conservative Property Identity thresholds. Equal/uncertain candidates create review work. A match against sold or manually confirmed evidence also creates review and preserves the authoritative value.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

@@ -9,6 +9,7 @@ export const LIFECYCLE_JOB_TYPES = [
   "BOOTSTRAP_ALL",
   "POST_EXIT_CHECK",
   "BUILDING_DATA_SYNC",
+  "SYNC_PRIVATE_RADAR",
 ] as const;
 
 export type LifecycleJobType = (typeof LIFECYCLE_JOB_TYPES)[number];

@@ -20,6 +20,12 @@ locally. Exact civic listings reuse durable buildings; the official weekly CSV i
 sanitized, grouped by stable practice identity, incrementally versioned, and
 linked only at building level. Current-feed import and replay both passed locally.
 
+Private Radar integration is complete locally. The existing private ingestion
+path remains unchanged; a queued bridge now creates privacy-minimized current
+private publications, participates conservatively in Property Identity, records
+agency-to-private acquisition signals, and routes ambiguity/conflicts to review.
+No production schedule or legacy replacement has been enabled.
+
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 
 ## Phase 2 — Read-only application surfaces

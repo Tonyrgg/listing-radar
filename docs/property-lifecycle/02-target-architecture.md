@@ -36,6 +36,10 @@ All adapters return the same versioned observation type. The contract separates 
 
 The sync engine records a `sync_run`, validates source health, persists snapshots/evidence, diffs publications, emits immutable events, and applies missing-run rules. It owns publication and agency-listing state transitions.
 
+### Private Radar bridge
+
+The bridge reads the existing private-listing archive without replacing its ingestion path. It applies strict geography, removes seller contact data, resolves the same property identity model, and persists a first-class current private-publication state. It emits agency-to-private, simultaneous-private, removal, reappearance, or conflict events only from explicit observations; record age alone never marks a private advert removed.
+
 ### Identity engine
 
 Identity compares an observation to existing properties, stores scored candidates and feature contributions, and returns `AUTO_MATCH`, `REVIEW_REQUIRED`, or `NEW_PROPERTY`. It does not mutate historical observations to manufacture certainty.

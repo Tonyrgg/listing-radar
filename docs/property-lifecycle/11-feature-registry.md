@@ -32,6 +32,7 @@
 | Legacy backfill | Deferred | Repeatable migration job | Preserve timestamp uncertainty |
 | Building Memory | Phase 3 complete | Exact-civic building identity | Shared across properties and public-practice events; approximate locations excluded |
 | Building Intelligence importer | Phase 3 complete | Sanitized Comune CSV importer + BUILDING_DATA_SYNC | APE-first, incremental, deduplicated, no direct personal fields or automatic property conclusions |
+| Private Radar integration | Phase 3 complete | `private_publications` + `SYNC_PRIVATE_RADAR` | Legacy ingestion preserved; strict geography, PII minimization, current-state reconciliation, conservative identity, agency-to-private events |
 | External notifications/actions | Deferred | Audited automation | Separate approval required |
 
 ## Change protocol

@@ -13,6 +13,7 @@ import {
   type LifecycleJobType,
 } from "@/lib/property-lifecycle/jobs/queue";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
+import { PrivateRadarBridge } from "@/lib/property-lifecycle/private-radar/bridge";
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
 
 export interface WorkerDependencies {
@@ -225,6 +226,8 @@ export async function runLifecycleWorkerOnce(
         job,
         dependencies.fetcher ?? fetch,
       );
+    } else if (job.job_type === "SYNC_PRIVATE_RADAR") {
+      await new PrivateRadarBridge(dependencies.db).sync();
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);
     }
