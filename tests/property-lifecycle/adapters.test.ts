@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 
 import type { HttpResponse } from "@/lib/http/client";
 import {
+  enrichAdMaioraInventoryWithRest,
+  normalizeAdMaioraDetail,
+  parseAdMaioraInventoryHtml,
+} from "@/lib/property-lifecycle/adapters/admaiora";
+import {
+  normalizeFuturaDetail,
+  parseFuturaInventoryHtml,
+} from "@/lib/property-lifecycle/adapters/futura";
+import {
   normalizeIconacasaDetail,
   parseIconacasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/iconacasa";
@@ -12,6 +21,10 @@ import {
   normalizePuntoCasaDetail,
   parsePuntoCasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/puntocasa";
+import {
+  normalizeStudioCasaDetail,
+  parseStudioCasaInventoryHtml,
+} from "@/lib/property-lifecycle/adapters/studiocasa";
 import {
   normalizeStudiSantiDetail,
   parseStudiSantiSitemap,
@@ -231,6 +244,274 @@ describe("Studi Santi V2 adapter", () => {
 
   it("freezes absence decisions when the sitemap contract changes", () => {
     const result = parseStudiSantiSitemap("<html><body>maintenance</body></html>");
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Ad Maiora V2 adapter", () => {
+  it("extracts a 20-record golden public-sale inventory and joins stable WordPress IDs", () => {
+    const parsed = parseAdMaioraInventoryHtml(fixture("admaiora-inventory.html"));
+    expect(parsed.healthState).toBe("HEALTHY");
+    expect(parsed.complete).toBe(true);
+    expect(parsed.items).toHaveLength(20);
+    expect(parsed.diagnostics.duplicateCount).toBe(0);
+
+    const enriched = enrichAdMaioraInventoryWithRest(
+      parsed.items,
+      fixture("admaiora-rest.json"),
+    );
+    expect(enriched.unmatchedCount).toBe(0);
+    expect(enriched.items).toHaveLength(20);
+    expect(enriched.items[0]).toMatchObject({
+      sourceKey: "17425",
+      externalId: "17425",
+      summary: {
+        wordpressPostId: 17425,
+        wordpressPublishedGmt: "2026-07-29T09:38:41",
+      },
+    });
+  });
+
+  it("does not call the first visible archive page complete when pagination remains", () => {
+    const page = fixture("admaiora-inventory.html")
+      .replace('data-v2-property-count="20"', 'data-v2-property-count="44"')
+      .replace("</body>", '<a href="/vendita/page/8/">Ultimo</a></body>');
+    const result = parseAdMaioraInventoryHtml(page);
+    expect(result.healthState).toBe("DEGRADED");
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 8 });
+  });
+
+  it("normalizes WordPress identity, explicit publication date, facts, and scoped media", () => {
+    const url =
+      "https://www.admaioraimmobiliare.it/immobile/elegante-trivani-ristrutturato-in-vendita-a-bitonto-zona-centro/";
+    const result = normalizeAdMaioraDetail(
+      sourceDocument("admaiora-active-detail.html", url, "17425"),
+    );
+
+    expect(result.source).toMatchObject({ externalId: "17425", agencyReference: "0954" });
+    expect(result.commercial).toMatchObject({
+      priceAmount: 170_000,
+      surfaceSqm: 70,
+      rooms: 3,
+      bathrooms: 1,
+      floor: "2",
+    });
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      scope: "IN_SCOPE",
+      precision: "APPROXIMATE_AREA",
+    });
+    expect(result.marketStart).toMatchObject({
+      method: "WORDPRESS_JSON_LD_DATE_PUBLISHED",
+      lowerBound: "2026-07-29T09:38:41.000Z",
+      upperBound: "2026-07-29T09:38:41.000Z",
+      confidence: 0.9,
+    });
+    expect(result.marketStart.evidence[0]?.metadata).toMatchObject({
+      dateModifiedIgnoredForStart: "2026-08-04T17:17:51.000Z",
+    });
+    expect(result.assets).toHaveLength(4);
+    expect(result.assets.some((asset) => asset.kind === "FLOORPLAN")).toBe(true);
+    expect(result.assets.some((asset) => asset.canonicalUrl.includes("unrelated"))).toBe(false);
+    expect(result.status.value).toBe("UNKNOWN");
+  });
+
+  it("strictly excludes Santo Spirito after detail normalization", () => {
+    const url =
+      "https://www.admaioraimmobiliare.it/immobile/villa-indipendente-di-nuova-costruzione-con-ampio-giardino-privato-a-santo-spirito/";
+    const result = normalizeAdMaioraDetail(
+      sourceDocument("admaiora-out-of-scope-detail.html", url, "17294"),
+    );
+    expect(result.location.scope).toBe("OUT_OF_SCOPE");
+  });
+
+  it("freezes absence decisions when sale archive markers disappear", () => {
+    const result = parseAdMaioraInventoryHtml("<html><body>maintenance</body></html>");
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Studio Casa Bitonto V2 adapter", () => {
+  it("extracts a 20-sale portal golden inventory and excludes rentals", () => {
+    const result = parseStudioCasaInventoryHtml(fixture("studiocasa-inventory.html"));
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.complete).toBe(true);
+    expect(result.items).toHaveLength(20);
+    expect(result.diagnostics).toMatchObject({
+      expectedCount: 21,
+      pagesVisited: 1,
+      expectedPages: 1,
+    });
+    expect(result.items.some((item) => item.externalId === "52803979")).toBe(false);
+    expect(result.items[0]).toMatchObject({
+      sourceKey: "54520194",
+      summary: {
+        partnerId: 36397664,
+        portalReference: "SC-101",
+        priceAmount: 109_000,
+      },
+    });
+  });
+
+  it("does not call an incomplete first portal page healthy", () => {
+    const paginated = fixture("studiocasa-inventory.html")
+      .replace('\\"total\\":21', '\\"total\\":53')
+      .replace('\\"totalPages\\":1', '\\"totalPages\\":3');
+    const result = parseStudioCasaInventoryHtml(paginated);
+    expect(result.healthState).toBe("DEGRADED");
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 3 });
+  });
+
+  it("normalizes portal facts while keeping modification separate from market start", () => {
+    const url = "https://www.casa.it/immobili/54520194/";
+    const result = normalizeStudioCasaDetail(
+      sourceDocument("studiocasa-active-detail.html", url, "54520194"),
+    );
+
+    expect(result.source).toMatchObject({
+      externalId: "54520194",
+      agencyReference: "SC-101",
+      transactionType: "SALE",
+    });
+    expect(result.commercial).toMatchObject({
+      propertyType: "Appartamento",
+      priceAmount: 109_000,
+      surfaceSqm: 112,
+      rooms: 3,
+      bathrooms: 1,
+      floor: "1Â° piano",
+    });
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      streetName: "Corso Vittorio Emanuele",
+      scope: "IN_SCOPE",
+      precision: "STREET_ONLY",
+    });
+    expect(result.status.value).toBe("UNKNOWN");
+    expect(result.assets).toHaveLength(2);
+    expect(result.assets.some((asset) => asset.kind === "FLOORPLAN")).toBe(true);
+    expect(result.marketStart).toMatchObject({
+      method: "CRAWLER_FIRST_SEEN",
+      lowerBound: null,
+      confidence: 0.25,
+    });
+    expect(result.provenance).toMatchObject({
+      portalModifiedAt: "2026-08-04T00:00:00.000Z",
+      portalModifiedIgnoredForMarketStart: true,
+      sourceCreatedAtUnavailable: true,
+      publisherContactDataExcluded: true,
+    });
+  });
+
+  it("strictly excludes a portal listing in Santo Spirito", () => {
+    const url = "https://www.casa.it/immobili/54121668/";
+    const result = normalizeStudioCasaDetail(
+      sourceDocument("studiocasa-out-of-scope-detail.html", url, "54121668"),
+    );
+    expect(result.location).toMatchObject({ scope: "OUT_OF_SCOPE", municipality: null });
+  });
+
+  it("freezes absence decisions when Casa.it state markers disappear", () => {
+    const result = parseStudioCasaInventoryHtml("<html><body>challenge</body></html>");
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Futura Immobiliare V2 adapter", () => {
+  it("extracts a complete 20-record Agesta golden sale inventory", () => {
+    const result = parseFuturaInventoryHtml(fixture("futura-inventory.html"));
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.complete).toBe(true);
+    expect(result.items).toHaveLength(20);
+    expect(result.items[0]).toMatchObject({
+      sourceKey: "2587000",
+      externalId: "2587000",
+      summary: {
+        agencyReference: "10116RA46927",
+        municipality: "Bitonto",
+        priceAmount: 179_000,
+        surfaceSqm: 94,
+      },
+    });
+  });
+
+  it("does not call an incomplete Agesta page healthy", () => {
+    const paginated = fixture("futura-inventory.html")
+      .replace("Sono stati trovati 20", "Sono stati trovati 49")
+      .replace(
+        "</select>",
+        '<option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select>',
+      );
+    const result = parseFuturaInventoryHtml(paginated);
+    expect(result.healthState).toBe("DEGRADED");
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics).toMatchObject({ pagesVisited: 1, expectedPages: 6 });
+  });
+
+  it("normalizes Agesta identity, facts, publication cycle, and original gallery", () => {
+    const url =
+      "https://www.futurabitonto.it/web/immobile_dettaglio.asp?cod_annuncio=2587000&language=ita";
+    const result = normalizeFuturaDetail(
+      sourceDocument("futura-active-detail.html", url, "2587000"),
+    );
+
+    expect(result.source).toMatchObject({
+      externalId: "2587000",
+      agencyReference: "10116RA46927",
+      transactionType: "SALE",
+    });
+    expect(result.commercial).toMatchObject({
+      propertyType: "Appartamento",
+      priceAmount: 179_000,
+      surfaceSqm: 94,
+      rooms: 4,
+      bedrooms: 2,
+      bathrooms: 1,
+      floor: "2",
+    });
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      streetName: "Via Cavallotti",
+      scope: "IN_SCOPE",
+      precision: "STREET_ONLY",
+    });
+    expect(result.marketStart).toMatchObject({
+      method: "AGESTA_ARTICLE_PUBLISHED_DATE",
+      lowerBound: "2026-08-04T00:00:00.000Z",
+      upperBound: "2026-08-04T23:59:59.999Z",
+      confidence: 0.85,
+    });
+    expect(result.marketStart.evidence[0]?.metadata).toMatchObject({
+      articleModifiedIgnoredForStart: "2026-08-04",
+    });
+    expect(result.assets).toHaveLength(3);
+    expect(result.assets.some((asset) => asset.kind === "FLOORPLAN")).toBe(true);
+    expect(
+      result.assets.every((asset) =>
+        asset.canonicalUrl.startsWith(
+          "https://agestanet.risorseimmobiliari.it/public/annunci/10116/2587000/",
+        ),
+      ),
+    ).toBe(true);
+    expect(result.status.value).toBe("UNKNOWN");
+  });
+
+  it("strictly excludes a Futura publication in Bari/Palese", () => {
+    const url =
+      "https://www.futurabitonto.it/web/immobile_dettaglio.asp?cod_annuncio=2549038&language=ita";
+    const result = normalizeFuturaDetail(
+      sourceDocument("futura-out-of-scope-detail.html", url, "2549038"),
+    );
+    expect(result.location).toMatchObject({ scope: "OUT_OF_SCOPE", municipality: null });
+  });
+
+  it("freezes absence decisions when the Agesta inventory structure disappears", () => {
+    const result = parseFuturaInventoryHtml("<html><body>maintenance</body></html>");
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
     expect(result.complete).toBe(false);
   });

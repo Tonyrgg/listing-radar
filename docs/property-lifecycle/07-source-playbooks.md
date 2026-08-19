@@ -55,6 +55,45 @@ Inventory URL: <https://studisantiimmobiliare.it/sitemap.xml>
 - Sitemap `lastmod` is not market-start evidence: current entries expose a common value that does not agree with newer gallery batches.
 - No reliable dedicated status marker is currently exposed, so status remains `UNKNOWN` rather than inferred from catalog presence.
 
+## Ad Maiora Immobiliare
+
+Inventory URL: <https://www.admaioraimmobiliare.it/vendita/>
+
+- Traverse every `/vendita/page/{n}/` page and reconcile unique public cards with the archive count. On 2026-08-19 the archive exposed 44 records over 8 pages.
+- The public WordPress REST collection currently contains more published property records than the visible sale archive (72 versus 44). Use it only to join stable WordPress post IDs and source timestamps to visible URLs; never include backend-only records in the active/absence baseline.
+- Use WordPress post ID as source identity and the dedicated `ID Immobile` value as agency reference.
+- Strict geography remains mandatory because the archive includes Santo Spirito and other out-of-scope locations.
+- Public JSON-LD `datePublished` is the strongest current page-publication evidence. Preserve `dateModified` separately and never reset market age from it.
+- If `datePublished` is unavailable, a WordPress `/uploads/YYYY/MM/` gallery path is weak month-bounded evidence. Original gallery `Last-Modified` is retained during deep sync for audit, not allowed to override a stronger explicit publication date.
+- Scope media to the property slider, normalize safe size variants, and exclude related cards/chrome. Renderings and reused new-development imagery carry the same media-reuse limitation.
+- `Vendita` is transaction taxonomy, not an explicit active status. Without a dedicated lifecycle label, normalized status remains `UNKNOWN`.
+
+## Studio Casa Bitonto
+
+Inventory URL: <https://www.casa.it/srp/?pId=1098672>
+
+- Studio Casa currently has no independently discoverable public inventory site beyond its social profile. Use the public Casa.it publisher search as a portal-backed publication source, not as proof of the agency's entire mandate inventory.
+- Do not use the agency landing page as the absence baseline: it is a ten-card preview. Traverse the publisher search's complete paginator and reconcile every raw record before permitting absence decisions. On 2026-08-19 it exposed 53 records over 3 pages: 52 sale and 1 rental.
+- Use Casa.it listing ID as stable publication identity. Preserve the portal partner ID and agency reference, when present, as separate provenance/matching hints.
+- Exclude non-sale records before operational ingestion. Strict geography remains mandatory: the validated sale inventory contained 47 Bitonto records and 5 out-of-scope records in Bari/Santo Spirito, Giovinazzo, or Grumo Appula.
+- Parse facts and gallery roles from the public `__NEXT_DATA__` detail payload. Casa.it marks floorplans explicitly; use only property gallery media and exclude related recommendations.
+- The source exposes a human-readable `modified` date but no reliable public creation/publication date. Preserve portal modification as provenance and never use it to reset market age. Market start remains low-confidence `CRAWLER_FIRST_SEEN` until stronger independent public evidence exists.
+- Publisher-search presence is inventory evidence, not a dedicated lifecycle status. Status remains `UNKNOWN` unless a dedicated status/disabled field supplies an explicit signal.
+- Portal map coordinates are retained as approximate/street-level evidence; portal position values do not by themselves prove an exact civic or exact property coordinates.
+- Do not persist publisher phone/contact fields from the portal payload. The adapter retains only publisher identity and listing facts needed for lifecycle intelligence.
+
+## Futura Immobiliare Bitonto
+
+Inventory URL: <https://www.futurabitonto.it/web/immobili.asp?language=ita&pagref=88306&tipo_contratto=V>
+
+- The AgestaNET/RisorseImmobiliari sale search is GET-pageable with `num_page={n}` even though its controls submit a form. Traverse every advertised page and reconcile the heading count. On 2026-08-19 it exposed 49 unique sale records over 6 pages.
+- Use numeric `cod_annuncio` as source publication identity. Preserve the `10116...` agency reference separately; its category letters are not a global chronological sequence.
+- Strict geography is mandatory. The validated inventory contained 41 Bitonto/Palombaio/Mariotto records and 8 out-of-scope records in Bari/Palese, Palo del Colle, Modugno, or Binetto.
+- Parse commercial facts from dedicated `det_*` fields and hidden Agesta values. Coordinates embedded in the public map are retained as approximate evidence unless an exact civic is independently established.
+- Public `article:published_time` is a day-bounded start for the current public cycle. It can represent a relaunch and must not erase older property evidence. Preserve `article:modified_time` separately and never substitute it for publication start.
+- Use only original `agestanet.risorseimmobiliari.it/public/annunci/10116/{cod_annuncio}/...` gallery assets. During deep sync, a coherent original-asset `Last-Modified` batch may provide an older observable market-age bound; transformed/cache URLs are not eligible, and media reuse remains an explicit limitation.
+- `Vendita` identifies the transaction, not a dedicated lifecycle state. Keep status `UNKNOWN` unless a future source-specific status marker is validated.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

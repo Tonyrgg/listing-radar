@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
 import type { HttpResponse } from "@/lib/http/client";
+import { normalizeFuturaDetail } from "@/lib/property-lifecycle/adapters/futura";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
 import { normalizePuntoCasaDetail } from "@/lib/property-lifecycle/adapters/puntocasa";
 import { normalizeVistocasaDetail } from "@/lib/property-lifecycle/adapters/vistocasa";
@@ -203,6 +204,22 @@ function vistocasaAdapter(): FixtureAdapter {
   );
 }
 
+function futuraAdapter(): FixtureAdapter {
+  const sourceKey = "2587000";
+  const url =
+    "https://www.futurabitonto.it/web/immobile_dettaglio.asp?cod_annuncio=2587000&language=ita";
+  return new FixtureAdapter(
+    "futura",
+    "futura-immobiliare-bitonto",
+    [{ sourceKey, externalId: sourceKey, url, summary: {} }],
+    new Map([[sourceKey, fixture("futura-active-detail.html")]]),
+    normalizeFuturaDetail,
+    "HEALTHY",
+    true,
+    "2026-08-19T09:00:00.000Z",
+  );
+}
+
 async function countRows(db: SupabaseClient, table: string): Promise<number> {
   const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
   if (error) {
@@ -219,7 +236,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
 
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
-    expect(await countRows(db, "agencies")).toBe(4);
+    expect(await countRows(db, "agencies")).toBe(7);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -599,6 +616,65 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     expect(mediaEvidence.data).toMatchObject({
       source_recorded_at: "2026-07-30T10:57:16+00:00",
       extraction_method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
+  });
+
+  it("keeps Futura publication date while allowing an older original gallery batch to bound true age", async () => {
+    await runAgencySync({
+      adapter: futuraAdapter(),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl: listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/image.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "c".repeat(64),
+            perceptualHash: "03".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: '"futura-fixture"',
+            lastModified: "Fri, 17 Jul 2026 15:17:44 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "2587000")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    const property = await db
+      .from("properties")
+      .select("true_market_start_upper_bound,true_market_start_method")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data).toMatchObject({
+      true_market_start_upper_bound: "2026-07-17T15:17:44+00:00",
+      true_market_start_method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
+    });
+
+    const mediaEvidence = await db
+      .from("evidence")
+      .select("source_recorded_at,extraction_method")
+      .eq("extraction_method", "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED")
+      .single();
+    expect(mediaEvidence.data).toMatchObject({
+      source_recorded_at: "2026-07-17T15:17:44+00:00",
+      extraction_method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
     });
   });
 });

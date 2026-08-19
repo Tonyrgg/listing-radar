@@ -822,7 +822,23 @@ export class PropertyLifecycleRepository {
       throwIfError(error);
     }
 
-    if (listing.adapterKey === "vistocasa") {
+    const originalMediaMarketStartPolicy =
+      listing.adapterKey === "vistocasa"
+        ? {
+            method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+            confidence: 0.55,
+            limitation: "media may be prepared before publication or reused",
+          }
+        : listing.adapterKey === "futura"
+          ? {
+              method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
+              confidence: 0.6,
+              limitation:
+                "coherent gallery upload batches can predate a relaunch; media may still be reused",
+            }
+          : null;
+
+    if (originalMediaMarketStartPolicy) {
       const observedTime = Date.parse(listing.observedAt);
       const earliestMediaDate = processedAssets
         .filter((asset) => asset.classification !== "SOLD_GRAPHIC" && asset.lastModified)
@@ -841,14 +857,14 @@ export class PropertyLifecycleRepository {
           kind: "MARKET_START_BOUND",
           claimKey: "publication.originalMediaAvailableBy",
           sourceUrl: earliestMediaDate.asset.canonicalUrl,
-          extractionMethod: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+          extractionMethod: originalMediaMarketStartPolicy.method,
           rawValue: earliestMediaDate.asset.lastModified,
           normalizedValue: { lowerBound: null, upperBound: sourceRecordedAt },
-          confidence: 0.55,
+          confidence: originalMediaMarketStartPolicy.confidence,
           observedAt: listing.observedAt,
           sourceRecordedAt,
           metadata: {
-            limitation: "media may be prepared before publication or reused",
+            limitation: originalMediaMarketStartPolicy.limitation,
             classification: earliestMediaDate.asset.classification,
           },
         };
@@ -884,8 +900,8 @@ export class PropertyLifecycleRepository {
           {
             lowerBound: null,
             upperBound: sourceRecordedAt,
-            method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
-            confidence: 0.55,
+            method: originalMediaMarketStartPolicy.method,
+            confidence: originalMediaMarketStartPolicy.confidence,
           },
         );
         const { error: propertyError } = await this.db
