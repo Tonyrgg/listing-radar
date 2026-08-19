@@ -14,6 +14,7 @@
 10. **Bootstrap dry run:** deterministic in-memory identity simulation, unhealthy-source exclusion, cross-agency prediction, review prediction, existing-publication detection, and before/after table counts proving no lifecycle writes.
 11. **Building intelligence:** exact-civic building identity, multi-civic parsing, intervention classification, referent-row deduplication, PII-field exclusion, incremental replay, append-only observations/events, and queued-source execution.
 12. **Private Radar:** agency-to-private and simultaneous-private transitions, explicit removal, unchanged replay, strict geography, ambiguous identity, sold/manual conflicts, PII redaction, manual private-state precedence, and queued execution.
+13. **Application read models:** dashboard metrics, ten-agency health summaries, archive dossiers, hydrated identity candidates, private-publication state, event timelines, and graceful missing-schema behavior. Route validation covers desktop/mobile rendering and browser console errors against local Supabase.
 
 ## Fixture policy
 
@@ -40,6 +41,8 @@ Aim for roughly 20 representative records per source as lawful and stable exampl
 - Historical private events cannot keep a removed publication active; current property state follows `private_publications.state`.
 - Private seller name, phone, email, and contact URL never enter V2 private-publication content.
 - Equal private identity candidates enter review, sold/manual evidence is not overwritten, and out-of-scope private records are excluded.
+- Lifecycle refresh controls enqueue jobs without performing source network work in the request.
+- Human review decisions are audit records; they do not silently merge or erase property history.
 
 ## Evidence of completion
 

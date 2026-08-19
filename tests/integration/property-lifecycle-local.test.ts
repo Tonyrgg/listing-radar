@@ -33,6 +33,7 @@ import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
 import { runLifecycleWorkerOnce } from "@/lib/property-lifecycle/jobs/worker";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
 import { PrivateRadarBridge } from "@/lib/property-lifecycle/private-radar/bridge";
+import { PropertyLifecycleReadRepository } from "@/lib/property-lifecycle/read-models/repository";
 import { runAgencySync } from "@/lib/property-lifecycle/sync/engine";
 
 const FIXTURE_ROOT = join(process.cwd(), "tests", "fixtures", "property-lifecycle");
@@ -1595,5 +1596,39 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .select("id")
       .eq("legacy_listing_id", outOfScopeLegacyId);
     expect(outOfScopePublication.data).toEqual([]);
+  });
+
+  it("serves the lifecycle dashboard, archive, review, and private radar read models", async () => {
+    const readRepository = new PropertyLifecycleReadRepository(db);
+    const [dashboard, agencies, archive, reviews, privatePublications] =
+      await Promise.all([
+        readRepository.dashboard(),
+        readRepository.agencies(),
+        readRepository.archive(),
+        readRepository.reviews(),
+        readRepository.privateRadar(),
+      ]);
+
+    expect(dashboard.metrics.totalProperties).toBeGreaterThan(0);
+    expect(dashboard.recentEvents.length).toBeGreaterThan(0);
+    expect(agencies).toHaveLength(10);
+    expect(agencies.map((agency) => agency.slug)).toContain("momento-casa-bitonto");
+    expect(archive.length).toBeGreaterThan(0);
+    expect(reviews.some((review) => review.reviewType === "IDENTITY")).toBe(true);
+    expect(reviews.some((review) => review.candidates.length >= 2)).toBe(true);
+    expect(privatePublications.length).toBeGreaterThan(0);
+    expect(
+      privatePublications.every(
+        (publication) => publication.property.id && publication.canonicalUrl,
+      ),
+    ).toBe(true);
+
+    const agency = await readRepository.agency("momento-casa-bitonto");
+    expect(agency?.agency.slug).toBe("momento-casa-bitonto");
+
+    const dossier = await readRepository.property(privatePublications[0].property.id);
+    expect(dossier?.property.id).toBe(privatePublications[0].property.id);
+    expect(dossier?.privatePublications.length).toBeGreaterThan(0);
+    expect(dossier?.events.length).toBeGreaterThan(0);
   });
 });

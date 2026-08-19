@@ -17,7 +17,9 @@ Scheduler / CLI
                             v
                   Local Supabase V2 tables
                             |
-                   Read models / future UI
+                  Server-only read models
+                            |
+                  Lifecycle operator UI
 ```
 
 The scheduler only enqueues work. A headless worker claims jobs atomically, invokes a source adapter, validates its health and output contract, then commits a sync transaction. Network crawling is not tied to a browser request lifetime.
@@ -48,6 +50,12 @@ Identity compares an observation to existing properties, stores scored candidate
 
 V2 uses normalized core entities and append-only history. JSONB is reserved for source payloads, extraction metadata, scoring explanations, and evolving optional attributes—not as a substitute for core relational fields.
 
+### Application surfaces
+
+The `/lifecycle` route group reads V2 through a server-only repository. It exposes the signal briefing, acquisition opportunities, per-agency health and inventory, physical-property dossiers, the identity review queue, and the privacy-minimized Private Radar. Database credentials and raw queries never cross the server-component boundary.
+
+Refresh actions enqueue `DEEP_SYNC_ALL` or `DEEP_SYNC_AGENCY`; they never crawl within a browser request. Authenticated manual sale, agency-outcome, verification, and review decisions append auditable overrides or queue records. A review decision records human judgment but does not silently merge or delete properties.
+
 ## Reliability model
 
 - Jobs are retryable, leased, and idempotent by deterministic deduplication keys.
@@ -59,4 +67,4 @@ V2 uses normalized core entities and append-only history. JSONB is reserved for 
 
 ## Coexistence
 
-The legacy cron, tables, pages, and desktop worker continue unchanged. V2 code lives under `src/lib/property-lifecycle`, V2 jobs use their own table, and V2 migrations are additive. A later rollout may add a scheduler/API enqueue endpoint and UI after local acceptance.
+The legacy cron, tables, pages, and desktop worker continue unchanged. V2 code lives under `src/lib/property-lifecycle`, V2 jobs use their own table, and V2 migrations are additive. Lifecycle pages coexist under their own route group and degrade safely when the configured database has not received V2 migrations. Production scheduling, bootstrap, deployment, and legacy replacement still require separate approval.

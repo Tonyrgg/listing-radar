@@ -28,9 +28,11 @@ No production schedule or legacy replacement has been enabled.
 
 Exit criteria: all checks in `09-testing-strategy.md` pass and legacy behavior remains green. No production deployment follows automatically.
 
-## Phase 2 — Read-only application surfaces
+## Phase 2 — Application surfaces
 
-After explicit approval, add read models and UI for agency health, property timelines, identity review, and evidence. Follow the repository’s installed Next.js documentation before implementing routes/components. Existing Listing Radar remains available during comparison.
+Complete locally: server-only read models and a dedicated `/lifecycle` workspace now cover the signal briefing, opportunities, agency health/inventory, physical-property archive and timelines, evidence, identity review, and Private Radar. Existing Listing Radar remains available for side-by-side comparison, with a dashboard entry point and no sidebar migration.
+
+Refresh controls enqueue deep-sync jobs and never execute crawler work in the request. Authenticated corrections and review decisions are audit-preserving; unauthenticated local sessions remain read-only. These surfaces have not triggered a real bootstrap, enabled a scheduler, deployed production code, or replaced legacy behavior.
 
 ## Phase 3 — Additional agencies
 

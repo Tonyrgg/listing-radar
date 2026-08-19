@@ -23,8 +23,12 @@
 | Property Identity v1 | Phase 1 | Candidate scorer | Auto/review/new outcomes |
 | True market age | Phase 1 | Property age interval | Survives relaunch/switch |
 | Manual overrides | Phase 1 schema/domain | Override ledger | Append-only authority |
-| Identity review UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
-| Property timeline UI | Deferred Phase 2 | Future UI/read model | No UI in first milestone |
+| Identity review UI | Phase 2 complete locally | `/lifecycle/review` + server read model | Hydrated candidate comparison; audited decision does not auto-merge |
+| Property timeline UI | Phase 2 complete locally | `/lifecycle/archive/[id]` | Immutable events, provenance, price history, publications, representative media |
+| Lifecycle dashboard and opportunities | Phase 2 complete locally | `/lifecycle` + `/lifecycle/opportunities` | Signal briefing and explainable priorities |
+| Agency operations UI | Phase 2 complete locally | `/lifecycle/agencies` | Ten-agency health, run history, inventory, queued deep sync |
+| Private Radar UI | Phase 2 complete locally | `/lifecycle/private` | Privacy-minimized current state and property links |
+| Manual correction UI | Phase 2 complete locally | Dossier/review server actions | Authenticated, reason-required, append-only audit authority |
 | Target agency set | Phase 3 complete | Adapter registry | All ten requested agencies onboarded through one-at-a-time live and local gates |
 | Bootstrap dry run | Phase 3 complete | Read-only bootstrap simulator + local CLI | Predicts imports and identity outcomes; database non-mutation is integration-tested |
 | Real V2 bootstrap | Approval-gated | Bootstrap jobs | Requires approved=true after dry-run review; no historical absence inference |
