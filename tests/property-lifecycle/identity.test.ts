@@ -59,9 +59,13 @@ describe("Property Identity v1", () => {
       }),
     ]);
     expect(decision.outcome).toBe("NEW_PROPERTY");
-    expect(decision.candidates[0]?.contradictions).toEqual(
-      expect.arrayContaining(["explicit_address_conflict", "locality_conflict"]),
-    );
+    expect(decision.candidates).toHaveLength(0);
+    expect(decision.retrieval).toMatchObject({
+      inputCount: 1,
+      includedCount: 0,
+      discardedCount: 1,
+      discardedReasons: { locality_conflict: 1 },
+    });
   });
 
   it("creates a new property when no candidates exist", () => {
@@ -94,8 +98,11 @@ describe("Property Identity v1", () => {
         floorplanFingerprints: [],
       }),
     ]);
-    expect(decision.outcome).toBe("REVIEW_REQUIRED");
+    expect(decision.outcome).toBe("NEW_PROPERTY");
     expect(decision.propertyId).toBeNull();
+    expect(decision.retrieval?.discardedReasons).toEqual({
+      insufficient_blocking_evidence: 1,
+    });
   });
 
   it("recognizes near-identical perceptual hashes", () => {
@@ -160,8 +167,9 @@ describe("Property Identity v1", () => {
       }),
     ]);
 
-    expect(decision.candidates[0]?.features.address.available).toBe(false);
-    expect(decision.outcome).not.toBe("AUTO_MATCH");
+    expect(decision.candidates).toHaveLength(0);
+    expect(decision.retrieval?.discardedCount).toBe(1);
+    expect(decision.outcome).toBe("NEW_PROPERTY");
   });
 
   it("keeps cross-agency street matches in review without strong media", () => {
@@ -212,5 +220,94 @@ describe("Property Identity v1", () => {
     );
 
     expect(decision.outcome).toBe("AUTO_MATCH");
+  });
+
+  it("does not confuse two similar units in the same building", () => {
+    const leftImage = `DHASH64:${"0".repeat(64)}`;
+    const unrelatedImage = `DHASH64:${"01".repeat(32)}`;
+    const unit = {
+      ...observation,
+      agencyReference: null,
+      address: "Via Ammiraglio Vacca 56e",
+      floor: "2",
+      priceAmount: 159_000,
+      imageFingerprints: [leftImage],
+      floorplanFingerprints: [],
+    };
+    const decision = decidePropertyIdentity(unit, [
+      candidate({
+        agencyReference: null,
+        knownAgencyReferences: [],
+        address: "Via Ammiraglio Vacca 56e",
+        floor: "2",
+        priceAmount: 160_000,
+        imageFingerprints: [unrelatedImage],
+        floorplanFingerprints: [],
+      }),
+    ]);
+
+    expect(decision.retrieval?.includedCount).toBe(1);
+    expect(decision.outcome).toBe("REVIEW_REQUIRED");
+    expect(decision.propertyId).toBeNull();
+  });
+
+  it("can recognize the same unit with new photos when civic and floorplan agree", () => {
+    const plan = `DHASH64:${"0011".repeat(16)}`;
+    const decision = decidePropertyIdentity(
+      {
+        ...observation,
+        agencyReference: null,
+        address: "Via Ammiraglio Vacca 56e",
+        floor: "2",
+        priceAmount: 159_000,
+        imageFingerprints: [`DHASH64:${"0".repeat(64)}`],
+        floorplanFingerprints: [plan],
+      },
+      [
+        candidate({
+          agencyReference: null,
+          knownAgencyReferences: [],
+          address: "Via Ammiraglio Vacca 56e",
+          floor: "2",
+          priceAmount: 155_000,
+          imageFingerprints: [`DHASH64:${"1".repeat(64)}`],
+          floorplanFingerprints: [plan],
+        }),
+      ],
+    );
+
+    expect(decision.outcome).toBe("AUTO_MATCH");
+    expect(decision.candidates[0]?.features.floorplan.value).toBe(1);
+  });
+
+  it("keeps a reused project reference in review when UNIT evidence is missing", () => {
+    const projectObservation: IdentityObservation = {
+      agencyReference: "ARYA",
+      address: "Via Mazzini",
+      locality: "Bitonto",
+      propertyType: null,
+      surfaceSqm: 112,
+      rooms: 4,
+      floor: null,
+      priceAmount: 350_000,
+      imageFingerprints: [`DHASH64:${"0".repeat(64)}`],
+      floorplanFingerprints: [],
+    };
+    const decision = decidePropertyIdentity(projectObservation, [
+      candidate({
+        agencyReference: null,
+        knownAgencyReferences: ["ARYA"],
+        address: "Via Mazzini",
+        propertyType: null,
+        surfaceSqm: null,
+        floor: null,
+        priceAmount: null,
+        imageFingerprints: [`DHASH64:${"1".repeat(64)}`],
+        floorplanFingerprints: [],
+      }),
+    ]);
+
+    expect(decision.outcome).toBe("REVIEW_REQUIRED");
+    expect(decision.propertyId).toBeNull();
   });
 });

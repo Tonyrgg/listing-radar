@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 
 import { inspectImage } from "../src/lib/image/inspection";
 import {
+  retrieveIdentityCandidates,
   scoreIdentityCandidate,
   type IdentityObservation,
 } from "../src/lib/property-lifecycle/identity/scoring";
@@ -182,12 +183,16 @@ async function main(): Promise<void> {
       propertyType: record.propertyType,
       surfaceSqm: record.surfaceSqm,
       rooms: record.rooms,
+      floor: record.floor,
+      priceAmount: record.price,
       imageFingerprints: imageHash ? [imageHash] : [],
       floorplanFingerprints: floorplanHash ? [floorplanHash] : [],
     });
   }
 
   const pairs: Array<Record<string, unknown> & { finalScore: number; imageScore: number | null }> = [];
+  let retrievedCandidateCount = 0;
+  let discardedCandidateCount = 0;
   for (let leftIndex = 0; leftIndex < liveRecords.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < liveRecords.length; rightIndex += 1) {
       const left = liveRecords[leftIndex]!;
@@ -195,11 +200,18 @@ async function main(): Promise<void> {
       if (left.key === right.key) continue;
       const leftObservation = observations.get(left)!;
       const rightObservation = observations.get(right)!;
-      const scored = scoreIdentityCandidate(leftObservation, {
+      const candidate = {
         ...rightObservation,
         propertyId: `${right.key}:${right.externalId}`,
         knownAgencyReferences: [],
-      });
+      };
+      const retrieval = retrieveIdentityCandidates(leftObservation, [candidate]);
+      if (retrieval.candidates.length === 0) {
+        discardedCandidateCount += 1;
+        continue;
+      }
+      retrievedCandidateCount += 1;
+      const scored = scoreIdentityCandidate(leftObservation, candidate);
       if (scored.score < 0.55) continue;
       pairs.push({
         propertyCandidate: `${left.key}:${left.externalId} <> ${right.key}:${right.externalId}`,
@@ -292,6 +304,8 @@ async function main(): Promise<void> {
     assetFingerprintsProduced: [...hashes.values()].filter(Boolean).length,
     deepAssetUrlsAttempted: deepUrls.length,
     crossAgencyPairsAbove055: pairs.length,
+    retrievedCandidateCount,
+    discardedCandidateCount,
     top,
     highScoringNonMatches,
     strongMediaPairCount: strongMediaPairs.length,

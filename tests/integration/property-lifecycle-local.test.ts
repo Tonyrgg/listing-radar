@@ -158,21 +158,6 @@ function iconacasaAdapter(
   );
 }
 
-function emptyHealthyIconacasaAdapter(observedAt: string): FixtureAdapter {
-  return new FixtureAdapter(
-    "iconacasa",
-    "iconacasa-bitonto",
-    [],
-    new Map(),
-    () => {
-      throw new Error("Empty inventory has no details.");
-    },
-    "HEALTHY",
-    true,
-    observedAt,
-  );
-}
-
 function puntoCasaAdapter(
   sourceKey = "bitonto-zona-via-mazzini",
   priceAmount: number | null = null,
@@ -522,8 +507,30 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
         "2026-08-21T09:00:00.000Z",
       ),
       repository,
-      mode: "SYNC",
+      mode: "DEEP_SYNC",
       observedAt: "2026-08-20T09:00:00.000Z",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl:
+              listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/image.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "a".repeat(64),
+            perceptualHash: "01".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: '"fixture"',
+            lastModified: "Wed, 19 Aug 2026 09:00:00 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
     });
 
     expect(await countRows(db, "properties")).toBe(3);
@@ -611,7 +618,137 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     });
   });
 
+  it("rolls back every critical observation checkpoint and retries idempotently", async () => {
+    const adapter = puntoCasaAdapter(
+      "bitonto-zona-via-mazzini",
+      440_000,
+      "2026-08-25T09:00:00.000Z",
+    );
+    const inventory = await adapter.fetchInventory();
+    const item = inventory.items[0];
+    if (!item) {
+      throw new Error("Atomic fixture inventory is empty.");
+    }
+    const listing = await adapter.normalize(await adapter.fetchDetail(item));
+    const agency = await repository.getAgencyBySlug("puntocasa-bitonto");
+    const protectedTables = [
+      "locations",
+      "buildings",
+      "properties",
+      "agency_listings",
+      "publications",
+      "snapshots",
+      "evidence",
+      "events",
+      "image_fingerprints",
+      "floorplan_fingerprints",
+      "property_match_candidates",
+      "review_queue",
+      "opportunities",
+    ];
+
+    for (const failurePoint of [
+      "AFTER_PUBLICATION",
+      "AFTER_SNAPSHOT",
+      "DURING_EVENT_GENERATION",
+      "DURING_LIFECYCLE_UPDATE",
+    ] as const) {
+      const before = Object.fromEntries(
+        await Promise.all(
+          protectedTables.map(async (table) => [table, await countRows(db, table)]),
+        ),
+      );
+      const syncRunId = await repository.createSyncRun({
+        agencyId: agency.id,
+        adapterKey: "puntocasa",
+        mode: "FIXTURE",
+      });
+      await expect(
+        repository.persistObservation(agency.id, syncRunId, listing, [], {
+          failurePoint,
+        }),
+      ).rejects.toThrow(`Injected observation failure ${failurePoint}`);
+      const after = Object.fromEntries(
+        await Promise.all(
+          protectedTables.map(async (table) => [table, await countRows(db, table)]),
+        ),
+      );
+      expect(after).toEqual(before);
+      const failedRun = await db
+        .from("sync_runs")
+        .select("observation_commit_count,observation_failure_count")
+        .eq("id", syncRunId)
+        .single();
+      expect(failedRun.data).toEqual({
+        observation_commit_count: 0,
+        observation_failure_count: 1,
+      });
+    }
+
+    const retryRunId = await repository.createSyncRun({
+      agencyId: agency.id,
+      adapterKey: "puntocasa",
+      mode: "FIXTURE",
+    });
+    const snapshotsBefore = await countRows(db, "snapshots");
+    const eventsBefore = await countRows(db, "events");
+    const first = await repository.persistObservation(
+      agency.id,
+      retryRunId,
+      listing,
+    );
+    const snapshotsAfterCommit = await countRows(db, "snapshots");
+    const eventsAfterCommit = await countRows(db, "events");
+    const replay = await repository.persistObservation(
+      agency.id,
+      retryRunId,
+      listing,
+    );
+
+    expect(replay.snapshotId).toBe(first.snapshotId);
+    expect(snapshotsAfterCommit).toBe(snapshotsBefore + 1);
+    expect(await countRows(db, "snapshots")).toBe(snapshotsAfterCommit);
+    expect(eventsAfterCommit).toBeGreaterThan(eventsBefore);
+    expect(await countRows(db, "events")).toBe(eventsAfterCommit);
+    const retryRun = await db
+      .from("sync_runs")
+      .select("observation_commit_count,observation_failure_count")
+      .eq("id", retryRunId)
+      .single();
+    expect(retryRun.data).toEqual({
+      observation_commit_count: 1,
+      observation_failure_count: 0,
+    });
+  });
+
   it("freezes missing state on failed health, then requires two healthy absences", async () => {
+    // La prima sync ha creato la baseline; due osservazioni sane aggiuntive la
+    // stabilizzano senza inventare storico precedente.
+    await runAgencySync({
+      adapter: iconacasaAdapter(),
+      repository,
+      mode: "SYNC",
+      observedAt: "2026-08-19T12:00:00.000Z",
+    });
+    await runAgencySync({
+      adapter: iconacasaAdapter(),
+      repository,
+      mode: "SYNC",
+      observedAt: "2026-08-20T09:00:00.000Z",
+    });
+    const agency = await repository.getAgencyBySlug("iconacasa-bitonto");
+    const stableBaseline = await db
+      .from("adapter_health_baselines")
+      .select("successful_run_count,recent_inventory_counts,rolling_median,schema_version,consecutive_healthy_runs")
+      .eq("agency_id", agency.id)
+      .single();
+    expect(stableBaseline.data).toEqual({
+      successful_run_count: 3,
+      recent_inventory_counts: [2, 2, 2],
+      rolling_median: 2,
+      schema_version: 1,
+      consecutive_healthy_runs: 3,
+    });
     await runAgencySync({
       adapter: iconacasaAdapter("FAILED", false),
       repository,
@@ -620,33 +757,73 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     });
     let active = await db
       .from("publications")
-      .select("state,missing_healthy_run_count")
+      .select("id,state,missing_healthy_run_count")
       .eq("source_key", "45212")
       .single();
     expect(active.data).toMatchObject({ state: "ACTIVE", missing_healthy_run_count: 0 });
 
-    await runAgencySync({
-      adapter: emptyHealthyIconacasaAdapter("2026-08-22T09:00:00.000Z"),
-      repository,
-      mode: "SYNC",
+    const firstMissingRun = await repository.createSyncRun({
+      agencyId: agency.id,
+      adapterKey: "iconacasa",
+      mode: "FIXTURE",
+    });
+    await repository.applyMissingObservations({
+      agencyId: agency.id,
+      syncRunId: firstMissingRun,
+      observedSourceKeys: new Set(["45213"]),
       observedAt: "2026-08-22T09:00:00.000Z",
+      healthState: "HEALTHY",
+      inventoryComplete: true,
+      missingHealthyRunThreshold: 2,
     });
     active = await db
+      .from("publications")
+      .select("id,state,missing_healthy_run_count")
+      .eq("source_key", "45212")
+      .single();
+    expect(active.data).toMatchObject({ state: "MISSING_PENDING", missing_healthy_run_count: 1 });
+    await repository.applyMissingObservations({
+      agencyId: agency.id,
+      syncRunId: firstMissingRun,
+      observedSourceKeys: new Set(["45213"]),
+      observedAt: "2026-08-22T09:00:00.000Z",
+      healthState: "HEALTHY",
+      inventoryComplete: true,
+      missingHealthyRunThreshold: 2,
+    });
+    const replayedMissing = await db
       .from("publications")
       .select("state,missing_healthy_run_count")
       .eq("source_key", "45212")
       .single();
-    expect(active.data).toMatchObject({ state: "MISSING_PENDING", missing_healthy_run_count: 1 });
+    expect(replayedMissing.data).toMatchObject({
+      state: "MISSING_PENDING",
+      missing_healthy_run_count: 1,
+    });
+    const firstMissingEvents = await db
+      .from("events")
+      .select("id")
+      .eq("publication_id", active.data?.id ?? "")
+      .eq("event_type", "PUBLICATION_MISSING_PENDING");
+    expect(firstMissingEvents.data).toHaveLength(1);
 
-    await runAgencySync({
-      adapter: emptyHealthyIconacasaAdapter("2026-08-23T09:00:00.000Z"),
-      repository,
-      mode: "SYNC",
+    const secondMissingRun = await repository.createSyncRun({
+      agencyId: agency.id,
+      adapterKey: "iconacasa",
+      mode: "FIXTURE",
+    });
+    await repository.applyMissingObservations({
+      agencyId: agency.id,
+      syncRunId: secondMissingRun,
+      observedSourceKeys: new Set(["45213"]),
       observedAt: "2026-08-23T09:00:00.000Z",
+      healthState: "HEALTHY",
+      inventoryComplete: true,
+      missingHealthyRunThreshold: 2,
     });
     active = await db
       .from("publications")
-      .select("state,missing_healthy_run_count")
+      .select("id,state,missing_healthy_run_count")
       .eq("source_key", "45212")
       .single();
     expect(active.data).toMatchObject({ state: "REMOVED", missing_healthy_run_count: 2 });
@@ -665,12 +842,27 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
   it("runs the post-exit monitor and creates a high transparent opportunity", async () => {
     const queuedExit = await db
       .from("lifecycle_jobs")
-      .select("id,status,job_type")
+      .select("id,status,job_type,run_after,payload")
       .eq("job_type", "POST_EXIT_CHECK")
       .eq("status", "QUEUED")
       .single();
     expect(queuedExit.error).toBeNull();
-    expect(await runLifecycleWorkerOnce("post-exit-worker", { db })).toBe(true);
+    const scheduledListing = await db
+      .from("agency_listings")
+      .select("monitoring_phase,next_check_at,check_attempt")
+      .eq("id", queuedExit.data?.payload?.agencyListingId)
+      .single();
+    expect(scheduledListing.data).toMatchObject({
+      monitoring_phase: "WAITING_CONFIRMATION",
+      next_check_at: queuedExit.data?.run_after,
+      check_attempt: 0,
+    });
+    await repository.runPostExitCheck({
+      jobId: queuedExit.data?.id ?? "",
+      agencyListingId: queuedExit.data?.payload?.agencyListingId ?? "",
+      publicationId: queuedExit.data?.payload?.publicationId ?? null,
+      checkedAt: queuedExit.data?.run_after,
+    });
 
     const publication = await db
       .from("publications")
@@ -704,6 +896,209 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       status: "OPEN",
       reasons: expect.arrayContaining(["agency_exit_confirmed", "no_sale_evidence"]),
     });
+  });
+
+  it("persists every Post-Exit branch independently from worker memory", async () => {
+    const primaryAgency = await repository.getAgencyBySlug("iconacasa-bitonto");
+    const secondaryAgency = await repository.getAgencyBySlug("ad-maiora-bitonto");
+    const dueAt = "2026-09-02T09:00:00.000Z";
+
+    async function exitFixture(key: string) {
+      const property = await db
+        .from("properties")
+        .insert({
+          property_type: "Appartamento",
+          canonical_attributes: { address: `Via Post Exit ${key}`, locality: "Bitonto" },
+        })
+        .select("id")
+        .single();
+      if (property.error || !property.data?.id) throw new Error(property.error?.message);
+      const agencyListing = await db
+        .from("agency_listings")
+        .insert({
+          agency_id: primaryAgency.id,
+          property_id: property.data.id,
+          state: "EXIT_PENDING",
+          monitoring_phase: "WAITING_CONFIRMATION",
+          post_exit_check_due_at: dueAt,
+          next_check_at: dueAt,
+        })
+        .select("id")
+        .single();
+      if (agencyListing.error || !agencyListing.data?.id) {
+        throw new Error(agencyListing.error?.message);
+      }
+      const publication = await db
+        .from("publications")
+        .insert({
+          agency_id: primaryAgency.id,
+          agency_listing_id: agencyListing.data.id,
+          source_key: `post-exit-${key}`,
+          external_id: `post-exit-${key}`,
+          canonical_url: `https://fixture.invalid/post-exit-${key}`,
+          state: "REMOVED",
+          source_status: "ACTIVE",
+          missing_healthy_run_count: 2,
+          missing_since: "2026-08-30T09:00:00.000Z",
+          removed_at: "2026-08-31T09:00:00.000Z",
+        })
+        .select("id")
+        .single();
+      if (publication.error || !publication.data?.id) {
+        throw new Error(publication.error?.message);
+      }
+      const job = await db
+        .from("lifecycle_jobs")
+        .insert({
+          job_type: "POST_EXIT_CHECK",
+          agency_id: primaryAgency.id,
+          payload: {
+            agencyListingId: agencyListing.data.id,
+            publicationId: publication.data.id,
+          },
+          run_after: dueAt,
+          dedupe_key: `integration:post-exit:${key}`,
+        })
+        .select("id")
+        .single();
+      if (job.error || !job.data?.id) throw new Error(job.error?.message);
+      return {
+        propertyId: property.data.id,
+        agencyListingId: agencyListing.data.id,
+        publicationId: publication.data.id,
+        jobId: job.data.id,
+      };
+    }
+
+    const premature = await exitFixture("premature");
+    expect(
+      await repository.runPostExitCheck({
+        ...premature,
+        checkedAt: "2026-09-01T09:00:00.000Z",
+      }),
+    ).toBe("NEEDS_VERIFICATION");
+    const prematureState = await db
+      .from("agency_listings")
+      .select("state,monitoring_phase,next_check_at,check_attempt")
+      .eq("id", premature.agencyListingId)
+      .single();
+    expect(prematureState.data).toMatchObject({
+      state: "EXIT_PENDING",
+      monitoring_phase: "WAITING_CONFIRMATION",
+      check_attempt: 1,
+    });
+    expect(new Date(prematureState.data?.next_check_at ?? "").getTime()).toBe(
+      new Date(dueAt).getTime(),
+    );
+    const recheckJob = await db
+      .from("lifecycle_jobs")
+      .select("id,run_after")
+      .eq("dedupe_key", `POST_EXIT_RECHECK:${premature.agencyListingId}:1`)
+      .single();
+    expect(new Date(recheckJob.data?.run_after ?? "").getTime()).toBe(
+      new Date(dueAt).getTime(),
+    );
+    expect(
+      await repository.runPostExitCheck({
+        jobId: recheckJob.data?.id ?? "",
+        agencyListingId: premature.agencyListingId,
+        publicationId: premature.publicationId,
+        checkedAt: dueAt,
+      }),
+    ).toBe("OFF_MARKET_NO_SALE_EVIDENCE");
+
+    const reappeared = await exitFixture("reappeared");
+    await db
+      .from("publications")
+      .update({ state: "ACTIVE", missing_healthy_run_count: 0, missing_since: null, removed_at: null })
+      .eq("id", reappeared.publicationId);
+    expect(
+      await repository.runPostExitCheck({
+        ...reappeared,
+        checkedAt: dueAt,
+      }),
+    ).toBe("REAPPEARED");
+
+    const sold = await exitFixture("sold");
+    await db
+      .from("publications")
+      .update({ state: "SOLD_MARKED", source_status: "SOLD" })
+      .eq("id", sold.publicationId);
+    expect(
+      await repository.runPostExitCheck({ ...sold, checkedAt: dueAt }),
+    ).toBe("CLOSED_SOLD");
+
+    const switched = await exitFixture("switched");
+    await db.from("agency_listings").insert({
+      agency_id: secondaryAgency.id,
+      property_id: switched.propertyId,
+      state: "ACTIVE",
+    });
+    expect(
+      await repository.runPostExitCheck({ ...switched, checkedAt: dueAt }),
+    ).toBe("CLOSED_SWITCHED");
+
+    const privateRelist = await exitFixture("private");
+    const legacyListingId = await insertPrivateListing(db, {
+      sourceKey: "post-exit-private",
+      title: "Privato via Post Exit",
+      address: "Via Post Exit private",
+      sqm: 100,
+      rooms: 4,
+    });
+    const privatePublication = await db.from("private_publications").insert({
+      legacy_listing_id: legacyListingId,
+      property_id: privateRelist.propertyId,
+      source: "private-fixture",
+      source_listing_id: "post-exit-private",
+      canonical_url: "https://private-fixture.invalid/post-exit-private",
+      state: "ACTIVE",
+      identity_outcome: "AUTO_MATCH",
+      identity_score: 1,
+      identity_margin: 1,
+      title: "Privato via Post Exit",
+      surface_sqm: 100,
+      rooms: 4,
+      first_seen_at: "2026-09-01T09:00:00.000Z",
+      last_seen_at: "2026-09-01T09:00:00.000Z",
+      content_hash: "f".repeat(64),
+    });
+    expect(privatePublication.error).toBeNull();
+    expect(
+      await repository.runPostExitCheck({ ...privateRelist, checkedAt: dueAt }),
+    ).toBe("CLOSED_TO_PRIVATE");
+
+    const results = await db
+      .from("agency_listings")
+      .select("id,state,monitoring_phase,next_check_at,check_attempt")
+      .in("id", [
+        reappeared.agencyListingId,
+        sold.agencyListingId,
+        switched.agencyListingId,
+        privateRelist.agencyListingId,
+      ]);
+    expect(results.error).toBeNull();
+    expect(results.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: reappeared.agencyListingId, state: "ACTIVE", monitoring_phase: "NONE", next_check_at: null, check_attempt: 1 }),
+        expect.objectContaining({ id: sold.agencyListingId, state: "CLOSED_SOLD", monitoring_phase: "COMPLETE", next_check_at: null, check_attempt: 1 }),
+        expect.objectContaining({ id: switched.agencyListingId, state: "CLOSED_SWITCHED", monitoring_phase: "COMPLETE", next_check_at: null, check_attempt: 1 }),
+        expect.objectContaining({ id: privateRelist.agencyListingId, state: "CLOSED_TO_PRIVATE", monitoring_phase: "COMPLETE", next_check_at: null, check_attempt: 1 }),
+      ]),
+    );
+    const privateCleanup = await db
+      .from("private_publications")
+      .delete()
+      .eq("legacy_listing_id", legacyListingId);
+    expect(privateCleanup.error).toBeNull();
+    // La tabella legacy non concede DELETE al service role: neutralizziamo la
+    // fixture senza alterare i privilegi di produzione e senza inquinare i test
+    // successivi del bridge Private Radar.
+    const legacyCleanup = await db
+      .from("listings")
+      .update({ seller_type: "agency", status: "archived" })
+      .eq("id", legacyListingId);
+    expect(legacyCleanup.error).toBeNull();
   });
 
   it("claims and completes a durable leased job", async () => {

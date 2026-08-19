@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const baseUrl = process.env.LIFECYCLE_E2E_BASE_URL;
+const e2eEmail = process.env.LIFECYCLE_E2E_EMAIL;
+const e2ePassword = process.env.LIFECYCLE_E2E_PASSWORD;
 const routes = [
   "/lifecycle",
   "/lifecycle/opportunities",
@@ -21,8 +23,32 @@ function captureRuntimeErrors(page: Page): string[] {
   return errors;
 }
 
+async function openAuthenticatedRoute(
+  page: Page,
+  route: (typeof routes)[number] | string,
+) {
+  let response = await page.goto(`${baseUrl}${route}`, {
+    waitUntil: "domcontentloaded",
+  });
+  if (await page.getByRole("heading", { name: "Accesso privato" }).isVisible()) {
+    expect(e2eEmail, "Set LIFECYCLE_E2E_EMAIL for authenticated UI validation.").toBeTruthy();
+    expect(
+      e2ePassword,
+      "Set LIFECYCLE_E2E_PASSWORD for authenticated UI validation.",
+    ).toBeTruthy();
+    await page.getByLabel("Email").fill(e2eEmail ?? "");
+    await page.getByLabel("Password").fill(e2ePassword ?? "");
+    await page.getByRole("button", { name: "Entra" }).click();
+    await expect(page.getByRole("heading", { name: "Accesso privato" })).toHaveCount(0);
+    response = await page.goto(`${baseUrl}${route}`, {
+      waitUntil: "domcontentloaded",
+    });
+  }
+  return response;
+}
+
 async function expectHealthyRoute(page: Page, route: (typeof routes)[number]) {
-  const response = await page.goto(`${baseUrl}${route}`, { waitUntil: "domcontentloaded" });
+  const response = await openAuthenticatedRoute(page, route);
   expect(response?.status(), route).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
   await expect(page.locator(`a[aria-current="page"][href="${route}"]`)).toBeVisible();
@@ -55,22 +81,22 @@ test("opens agency and physical-property dossiers", async ({ page }, testInfo) =
   await page.waitForTimeout(650);
   await page.screenshot({ path: testInfo.outputPath("lifecycle-desktop.png"), fullPage: true });
 
-  await page.goto(`${baseUrl}/lifecycle/agencies`, { waitUntil: "domcontentloaded" });
+  await openAuthenticatedRoute(page, "/lifecycle/agencies");
   const agencyHref = await page.locator('a[href^="/lifecycle/agencies/"]').first().getAttribute("href");
   expect(agencyHref).toBeTruthy();
-  const agencyResponse = await page.goto(`${baseUrl}${agencyHref}`, { waitUntil: "domcontentloaded" });
+  const agencyResponse = await openAuthenticatedRoute(page, agencyHref ?? "");
   expect(agencyResponse?.status()).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
 
-  await page.goto(`${baseUrl}/lifecycle/archive`, { waitUntil: "domcontentloaded" });
+  await openAuthenticatedRoute(page, "/lifecycle/archive");
   const propertyHref = await page.locator('a[href^="/lifecycle/archive/"]').first().getAttribute("href");
   expect(propertyHref).toBeTruthy();
-  const propertyResponse = await page.goto(`${baseUrl}${propertyHref}`, { waitUntil: "domcontentloaded" });
+  const propertyResponse = await openAuthenticatedRoute(page, propertyHref ?? "");
   expect(propertyResponse?.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Timeline completa" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/lifecycle`, { waitUntil: "domcontentloaded" });
+  await openAuthenticatedRoute(page, "/lifecycle");
   await expect(page.locator("h1")).toBeVisible();
   await page.waitForTimeout(650);
   await page.screenshot({ path: testInfo.outputPath("lifecycle-mobile.png"), fullPage: true });

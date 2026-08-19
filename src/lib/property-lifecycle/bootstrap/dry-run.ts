@@ -24,6 +24,8 @@ export interface BootstrapExistingProperty {
   propertyType: string | null;
   surfaceSqm: number | null;
   rooms: number | null;
+  floor?: string | null;
+  priceAmount?: number | null;
   imageFingerprints: string[];
   floorplanFingerprints: string[];
 }
@@ -48,6 +50,7 @@ export interface BootstrapDryRunDecision {
   score: number;
   margin: number;
   candidateCount: number;
+  discardedCandidateCount: number;
   crossAgencyMatch: boolean;
   warnings: string[];
 }
@@ -88,6 +91,8 @@ export interface BootstrapDryRunReport {
     reviewRequiredCases: number;
     sourceFailures: number;
     warningCount: number;
+    scoredCandidatePairs: number;
+    discardedCandidatePairs: number;
   };
   agencies: BootstrapDryRunAgencyReport[];
   decisions: BootstrapDryRunDecision[];
@@ -118,6 +123,8 @@ function identityCandidate(
     propertyType: candidate.propertyType,
     surfaceSqm: candidate.surfaceSqm,
     rooms: candidate.rooms,
+    floor: candidate.floor,
+    priceAmount: candidate.priceAmount,
     imageFingerprints: candidate.imageFingerprints,
     floorplanFingerprints: candidate.floorplanFingerprints,
   };
@@ -139,6 +146,8 @@ function candidateFromObservation(input: {
     propertyType: input.observation.propertyType,
     surfaceSqm: input.observation.surfaceSqm,
     rooms: input.observation.rooms,
+    floor: input.observation.floor,
+    priceAmount: input.observation.priceAmount,
     imageFingerprints: input.observation.imageFingerprints,
     floorplanFingerprints: input.observation.floorplanFingerprints,
   };
@@ -161,6 +170,8 @@ function mergeObservation(
   candidate.propertyType ??= observation.propertyType;
   candidate.surfaceSqm ??= observation.surfaceSqm;
   candidate.rooms ??= observation.rooms;
+  candidate.floor ??= observation.floor;
+  candidate.priceAmount ??= observation.priceAmount;
   candidate.imageFingerprints = unique([
     ...candidate.imageFingerprints,
     ...observation.imageFingerprints,
@@ -217,6 +228,8 @@ export async function runBootstrapDryRun(input: {
   let reviewRequiredCases = 0;
   let rawListings = 0;
   let acceptedListings = 0;
+  let scoredCandidatePairs = 0;
+  let discardedCandidatePairs = 0;
 
   for (const adapter of input.adapters) {
     const inventory = await adapter.fetchInventory();
@@ -281,6 +294,7 @@ export async function runBootstrapDryRun(input: {
             score: 1,
             margin: 1,
             candidateCount: 0,
+            discardedCandidateCount: 0,
             crossAgencyMatch: false,
             warnings: listing.extractionWarnings,
           });
@@ -295,6 +309,8 @@ export async function runBootstrapDryRun(input: {
           observation,
           candidates.map((candidate) => identityCandidate(candidate, adapter.agencySlug)),
         );
+        scoredCandidatePairs += identity.candidates.length;
+        discardedCandidatePairs += identity.retrieval?.discardedCount ?? 0;
         let predictedPropertyId = identity.propertyId;
         let action: BootstrapDryRunDecision["action"];
         let crossAgencyMatch = false;
@@ -353,6 +369,7 @@ export async function runBootstrapDryRun(input: {
           score: identity.score,
           margin: identity.margin,
           candidateCount: identity.candidates.length,
+          discardedCandidateCount: identity.retrieval?.discardedCount ?? 0,
           crossAgencyMatch,
           warnings: decisionWarnings,
         });
@@ -403,6 +420,8 @@ export async function runBootstrapDryRun(input: {
       reviewRequiredCases,
       sourceFailures: sourceFailures.length,
       warningCount: warnings.size,
+      scoredCandidatePairs,
+      discardedCandidatePairs,
     },
     agencies,
     decisions,

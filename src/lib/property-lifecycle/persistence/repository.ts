@@ -5,7 +5,6 @@ import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/
 import { canonicalBuildingAddress } from "@/lib/property-lifecycle/buildings/address";
 import {
   hashValue,
-  normalizedListingV2Schema,
   type NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import {
@@ -14,19 +13,21 @@ import {
   type IdentityDecision,
   type IdentityObservation,
 } from "@/lib/property-lifecycle/identity/scoring";
+import {
+  emptyHealthBaseline,
+  evaluateHealthBaseline,
+  type AdapterHealthBaseline,
+  type HealthBaselineEvaluation,
+} from "@/lib/property-lifecycle/health/baseline";
 import { mergeTrueMarketStart } from "@/lib/property-lifecycle/lifecycle/market-age";
 import { trueMarketAgeDays } from "@/lib/property-lifecycle/lifecycle/market-age";
 import { resolveAuthoritativeValue } from "@/lib/property-lifecycle/lifecycle/manual-overrides";
-import { classifyPriceChange } from "@/lib/property-lifecycle/lifecycle/price-history";
 import {
   assessSaleStatus,
   type SaleStatus,
 } from "@/lib/property-lifecycle/lifecycle/sale-intelligence";
 import { assessOpportunity } from "@/lib/property-lifecycle/opportunities/rules";
 import {
-  agencyStateForPublication,
-  classifyPostExit,
-  evaluatePublicationPresence,
   type AgencyListingState,
   type PublicationPresence,
   type PublicationState,
@@ -95,6 +96,12 @@ export interface PersistedObservation {
   createdPublication: boolean;
 }
 
+export type ObservationFailurePoint =
+  | "AFTER_PUBLICATION"
+  | "AFTER_SNAPSHOT"
+  | "DURING_EVENT_GENERATION"
+  | "DURING_LIFECYCLE_UPDATE";
+
 function throwIfError(error: DatabaseError | null): void {
   if (error) {
     throw new Error(error.message);
@@ -146,14 +153,6 @@ function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function sameStringSet(left: string[], right: string[]): boolean {
-  const leftSet = new Set(left);
-  const rightSet = new Set(right);
-  return (
-    leftSet.size === rightSet.size && [...leftSet].every((value) => rightSet.has(value))
-  );
-}
-
 function identityAddress(listing: NormalizedListingV2): string | null {
   if (listing.location.streetName) {
     return [listing.location.streetName, listing.location.streetNumber]
@@ -174,6 +173,8 @@ export function identityObservationFromListing(
     propertyType: listing.commercial.propertyType,
     surfaceSqm: listing.commercial.surfaceSqm,
     rooms: listing.commercial.rooms,
+    floor: listing.commercial.floor,
+    priceAmount: listing.commercial.priceAmount,
     imageFingerprints:
       processedAssets.length > 0
         ? processedAssets
@@ -190,6 +191,85 @@ export function identityObservationFromListing(
         : listing.assets
             .filter((asset) => asset.kind === "FLOORPLAN")
             .map((asset) => `SOURCE_URL_SHA256:${hashValue(asset.canonicalUrl)}`),
+  };
+}
+
+function mediaMarketStartEvidence(
+  listing: NormalizedListingV2,
+  processedAssets: ProcessedAsset[],
+): Record<string, unknown> | null {
+  const policy =
+    listing.adapterKey === "vistocasa"
+      ? {
+          method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
+          claimKey: "publication.originalMediaAvailableBy",
+          confidence: 0.55,
+          limitation: "media may be prepared before publication or reused",
+        }
+      : listing.adapterKey === "futura"
+        ? {
+            method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
+            claimKey: "publication.originalMediaAvailableBy",
+            confidence: 0.6,
+            limitation:
+              "coherent gallery upload batches can predate a relaunch; media may still be reused",
+          }
+        : listing.adapterKey === "garofalo"
+          ? {
+              method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
+              claimKey: "publication.originalMediaAvailableBy",
+              confidence: 0.65,
+              limitation:
+                "only original globaluserfiles media is eligible; media may predate publication or be reused",
+            }
+          : listing.adapterKey === "trio"
+            ? {
+                method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
+                claimKey: "publication.portalMediaAvailableBy",
+                confidence: 0.5,
+                limitation:
+                  "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
+              }
+            : listing.adapterKey === "momento"
+              ? {
+                  method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
+                  claimKey: "publication.portalMediaAvailableBy",
+                  confidence: 0.5,
+                  limitation:
+                    "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
+                }
+              : null;
+  if (!policy) {
+    return null;
+  }
+  const observedTime = Date.parse(listing.observedAt);
+  const earliest = processedAssets
+    .filter((asset) => asset.classification !== "SOLD_GRAPHIC" && asset.lastModified)
+    .map((asset) => ({ asset, time: Date.parse(asset.lastModified as string) }))
+    .filter(
+      (candidate) =>
+        Number.isFinite(candidate.time) &&
+        candidate.time >= Date.UTC(2000, 0, 1) &&
+        candidate.time <= observedTime,
+    )
+    .sort((left, right) => left.time - right.time)[0];
+  if (!earliest) {
+    return null;
+  }
+  const sourceRecordedAt = new Date(earliest.time).toISOString();
+  return {
+    sourceUrl: earliest.asset.canonicalUrl,
+    method: policy.method,
+    claimKey: policy.claimKey,
+    rawValue: earliest.asset.lastModified,
+    normalizedValue: { lowerBound: null, upperBound: sourceRecordedAt },
+    confidence: policy.confidence,
+    observedAt: listing.observedAt,
+    sourceRecordedAt,
+    metadata: {
+      limitation: policy.limitation,
+      classification: earliest.asset.classification,
+    },
   };
 }
 
@@ -316,6 +396,8 @@ export class PropertyLifecycleRepository {
           propertyType: property.property_type,
           surfaceSqm: numberValue(property.canonical_attributes.surfaceSqm),
           rooms: numberValue(property.canonical_attributes.rooms),
+          floor: stringValue(property.canonical_attributes.floor),
+          priceAmount: numberValue(property.canonical_attributes.priceAmount),
           imageFingerprints: images
             .filter((image) => image.property_id === property.id)
             .map((image) => image.algorithm + ":" + image.fingerprint),
@@ -355,6 +437,7 @@ export class PropertyLifecycleRepository {
     agencyId: string;
     syncRunId: string;
     state: string;
+    sourceComplete: boolean;
     observedCount: number;
     expectedCount: number | null;
     parseErrorCount: number;
@@ -362,18 +445,75 @@ export class PropertyLifecycleRepository {
     reasons: string[];
     diagnostics: Record<string, unknown>;
     responseStatus?: number | null;
-  }): Promise<void> {
-    const { error } = await this.db.from("adapter_health").insert({
-      agency_id: input.agencyId,
-      sync_run_id: input.syncRunId,
-      state: input.state,
-      observed_count: input.observedCount,
-      expected_count: input.expectedCount,
-      parse_error_count: input.parseErrorCount,
-      structure_fingerprint: input.structureFingerprint,
-      response_status: input.responseStatus ?? null,
-      reasons: input.reasons,
-      diagnostics: input.diagnostics,
+  }): Promise<HealthBaselineEvaluation> {
+    const { data: baselineData, error: baselineError } = await this.db
+      .from("adapter_health_baselines")
+      .select(
+        "successful_run_count,recent_inventory_counts,rolling_median,variability,schema_fingerprint,schema_version,pending_schema_fingerprint,pending_schema_run_count,consecutive_failures,consecutive_healthy_runs",
+      )
+      .eq("agency_id", input.agencyId)
+      .maybeSingle();
+    throwIfError(baselineError);
+    const row = baselineData as {
+      successful_run_count: number;
+      recent_inventory_counts: number[];
+      rolling_median: number | null;
+      variability: number | null;
+      schema_fingerprint: string | null;
+      schema_version: number;
+      pending_schema_fingerprint: string | null;
+      pending_schema_run_count: number;
+      consecutive_failures: number;
+      consecutive_healthy_runs: number;
+    } | null;
+    const baseline: AdapterHealthBaseline = row
+      ? {
+          successfulRunCount: row.successful_run_count,
+          recentInventoryCounts: row.recent_inventory_counts,
+          rollingMedian: row.rolling_median,
+          variability: row.variability,
+          schemaFingerprint: row.schema_fingerprint,
+          schemaVersion: row.schema_version,
+          pendingSchemaFingerprint: row.pending_schema_fingerprint,
+          pendingSchemaRunCount: row.pending_schema_run_count,
+          consecutiveFailures: row.consecutive_failures,
+          consecutiveHealthyRuns: row.consecutive_healthy_runs,
+        }
+      : emptyHealthBaseline();
+    const evaluation = evaluateHealthBaseline({
+      baseline,
+      sourceState: input.state as "HEALTHY" | "DEGRADED" | "FAILED" | "STRUCTURE_CHANGED",
+      sourceComplete: input.sourceComplete,
+      observedCount: input.observedCount,
+      structureFingerprint: input.structureFingerprint,
+    });
+    const { error } = await this.db.rpc("record_adapter_health_observation", {
+      p_agency_id: input.agencyId,
+      p_sync_run_id: input.syncRunId,
+      p_state: evaluation.effectiveState,
+      p_observed_count: input.observedCount,
+      p_expected_count: input.expectedCount,
+      p_parse_error_count: input.parseErrorCount,
+      p_structure_fingerprint: input.structureFingerprint,
+      p_reasons: [...new Set([...input.reasons, ...evaluation.reasons])],
+      p_diagnostics: {
+        ...input.diagnostics,
+        sourceState: input.state,
+        sourceComplete: input.sourceComplete,
+        baselineReady: evaluation.baselineReady,
+        anomalyRatio: evaluation.anomalyRatio,
+      },
+      p_response_status: input.responseStatus ?? null,
+      p_baseline: evaluation.next,
+      p_observed_at: new Date().toISOString(),
+    });
+    throwIfError(error);
+    return evaluation;
+  }
+
+  async recordObservationCommitFailure(syncRunId: string): Promise<void> {
+    const { error } = await this.db.rpc("record_observation_commit_failure", {
+      p_sync_run_id: syncRunId,
     });
     throwIfError(error);
   }
@@ -614,6 +754,8 @@ export class PropertyLifecycleRepository {
       propertyType: row.property_type,
       surfaceSqm: numberValue(row.canonical_attributes.surfaceSqm),
       rooms: numberValue(row.canonical_attributes.rooms),
+      floor: stringValue(row.canonical_attributes.floor),
+      priceAmount: numberValue(row.canonical_attributes.priceAmount),
       imageFingerprints: images
         .filter((image) => image.property_id === row.id)
         .map((image) => `${image.algorithm}:${image.fingerprint}`),
@@ -1238,19 +1380,17 @@ export class PropertyLifecycleRepository {
     syncRunId: string,
     listing: NormalizedListingV2,
     processedAssets: ProcessedAsset[] = [],
+    options: { failurePoint?: ObservationFailurePoint } = {},
   ): Promise<PersistedObservation> {
-    const locationId = await this.upsertLocation(listing);
-    const buildingId = await this.upsertBuilding(listing, locationId);
     const existingPublication = await this.publicationBySource(
       agencyId,
       listing.source.sourceKey,
     );
-    let propertyId: string | null = null;
     let identityDecision: IdentityDecision;
-    let createdProperty = false;
-
     if (existingPublication) {
-      propertyId = (await this.agencyListing(existingPublication.agency_listing_id)).property_id;
+      const propertyId = (
+        await this.agencyListing(existingPublication.agency_listing_id)
+      ).property_id;
       identityDecision = {
         outcome: "AUTO_MATCH",
         propertyId,
@@ -1259,415 +1399,117 @@ export class PropertyLifecycleRepository {
         candidates: [],
       };
     } else {
-      const candidates = await this.identityCandidates(agencyId);
       identityDecision = decidePropertyIdentity(
         identityObservationFromListing(listing, processedAssets),
-        candidates,
+        await this.identityCandidates(agencyId),
       );
-      propertyId = identityDecision.propertyId;
-      if (!propertyId) {
-        propertyId = await this.createProperty(
-          listing,
-          locationId,
-          buildingId,
-          identityDecision.outcome === "REVIEW_REQUIRED" ? "REVIEW" : "PROVISIONAL",
-        );
-        createdProperty = true;
-      }
     }
 
-    await this.updatePropertyObservation(propertyId, listing, locationId, buildingId);
-    const agencyListing = existingPublication
-      ? await this.agencyListing(existingPublication.agency_listing_id)
-      : await this.ensureAgencyListing(agencyId, propertyId, listing);
-    let priorPublicationIds: string[] = [];
-    let priorOtherAgencyListings: AgencyListingRow[] = [];
-    if (!existingPublication) {
-      const { data: priorPublications, error: priorPublicationsError } = await this.db
-        .from("publications")
-        .select("id")
-        .eq("agency_listing_id", agencyListing.id);
-      throwIfError(priorPublicationsError);
-      priorPublicationIds = ((priorPublications ?? []) as Array<{ id: string }>).map(
-        (row) => row.id,
-      );
-      if (!createdProperty) {
-        const { data: priorAgencyData, error: priorAgencyError } = await this.db
-          .from("agency_listings")
-          .select("id,agency_id,property_id,state")
-          .eq("property_id", propertyId)
-          .neq("agency_id", agencyId);
-        throwIfError(priorAgencyError);
-        priorOtherAgencyListings = (priorAgencyData ?? []) as AgencyListingRow[];
-      }
-    }
-    let publication = existingPublication;
-    let createdPublication = false;
-    const initialState: PublicationState = listing.status.value === "SOLD" ? "SOLD_MARKED" : "ACTIVE";
-
-    if (!publication) {
-      const { data, error } = await this.db
-        .from("publications")
-        .insert({
-          agency_id: agencyId,
-          agency_listing_id: agencyListing.id,
-          source_key: listing.source.sourceKey,
-          external_id: listing.source.externalId,
-          canonical_url: listing.source.canonicalUrl,
-          transaction_type: listing.source.transactionType,
-          state: initialState,
-          source_status: listing.status.value,
-          first_seen_at: listing.observedAt,
-          last_seen_at: listing.observedAt,
-        })
-        .select(
-          "id,agency_listing_id,source_key,state,source_status,missing_healthy_run_count,missing_since,removed_at",
-        )
-        .single();
-      publication = requiredData(data as PublicationRow | null, error, "Create publication");
-      createdPublication = true;
-    } else {
-      const transition = evaluatePublicationPresence({
-        current: {
-          state: publication.state,
-          sourceStatus: publication.source_status,
-          missingHealthyRunCount: publication.missing_healthy_run_count,
-          missingSince: publication.missing_since,
-          removedAt: publication.removed_at,
-        },
-        healthState: "HEALTHY",
-        inventoryComplete: true,
-        observedPresent: true,
-        observedSourceStatus: listing.status.value,
-        observedAt: listing.observedAt,
-      });
-      const { error } = await this.db
-        .from("publications")
-        .update({
-          external_id: listing.source.externalId,
-          canonical_url: listing.source.canonicalUrl,
-          state: transition.next.state,
-          source_status: transition.next.sourceStatus,
-          missing_healthy_run_count: transition.next.missingHealthyRunCount,
-          missing_since: transition.next.missingSince,
-          removed_at: transition.next.removedAt,
-          last_seen_at: listing.observedAt,
-        })
-        .eq("id", publication.id);
-      throwIfError(error);
-      for (const eventType of transition.events) {
-        await this.recordEvent({
-          propertyId,
-          agencyListingId: agencyListing.id,
-          publicationId: publication.id,
-          syncRunId,
-          eventType,
-          occurredAt: listing.observedAt,
-          dedupeKey: `${publication.id}:${eventType}:${listing.contentHash}`,
-          payload: { sourceStatus: listing.status.value },
-        });
-      }
-      publication = { ...publication, state: transition.next.state };
-    }
-
-    const { count: otherActivePublicationCount, error: otherActivePublicationError } =
-      await this.db
-        .from("publications")
-        .select("id", { count: "exact", head: true })
-        .eq("agency_listing_id", agencyListing.id)
-        .neq("id", publication.id)
-        .in("state", ["ACTIVE", "MISSING_PENDING"]);
-    throwIfError(otherActivePublicationError);
-    const nextAgencyState = agencyStateForPublication(
-      publication.state,
-      agencyListing.state,
-      { hasOtherActivePublication: (otherActivePublicationCount ?? 0) > 0 },
+    const processedPayload = processedAssets.map(
+      ({ representativeThumbnail, ...asset }) => {
+        void representativeThumbnail;
+        return asset;
+      },
     );
-    if (nextAgencyState !== agencyListing.state) {
-      const { error } = await this.db
-        .from("agency_listings")
-        .update({
-          state: nextAgencyState,
-          last_seen_at: listing.observedAt,
-          closed_at: nextAgencyState === "CLOSED_SOLD" ? listing.observedAt : null,
-          state_confidence: listing.status.confidence,
-          state_reason: { sourceStatus: listing.status.value },
-        })
-        .eq("id", agencyListing.id);
-      throwIfError(error);
-    }
-
-    if (!existingPublication) {
-      await this.recordIdentityDecision(publication.id, identityDecision, propertyId);
-    }
-    const previousSnapshot = await this.latestSnapshot(publication.id);
-    const { snapshotId, evidenceIds } = await this.recordSnapshotAndEvidence(
-      listing,
-      propertyId,
-      publication.id,
-      syncRunId,
-    );
-    await this.recordAssetFingerprints(
-      listing,
-      propertyId,
-      publication.id,
-      snapshotId,
-      syncRunId,
-      processedAssets,
-    );
-
-    if (previousSnapshot) {
-      const previousListingResult = normalizedListingV2Schema.safeParse(
-        previousSnapshot.normalized_payload,
-      );
-      const previousListing = previousListingResult.success
-        ? previousListingResult.data
-        : null;
-      const previousPerceptual = await this.previousPerceptualFingerprints(
-        previousSnapshot.id,
-      );
-      const currentPerceptual = {
-        images: processedAssets
-          .filter((asset) => asset.classification !== "FLOORPLAN")
-          .map((asset) => asset.perceptualHash),
-        floorplans: processedAssets
-          .filter((asset) => asset.classification === "FLOORPLAN")
-          .map((asset) => asset.perceptualHash),
-      };
-      const photoUrlsChanged = previousListing
-        ? !sameStringSet(
-            previousListing.assets
-              .filter((asset) => asset.kind === "IMAGE")
-              .map((asset) => asset.canonicalUrl),
-            listing.assets
-              .filter((asset) => asset.kind === "IMAGE")
-              .map((asset) => asset.canonicalUrl),
-          )
-        : false;
-      const floorplanUrlsChanged = previousListing
-        ? !sameStringSet(
-            previousListing.assets
-              .filter((asset) => asset.kind === "FLOORPLAN")
-              .map((asset) => asset.canonicalUrl),
-            listing.assets
-              .filter((asset) => asset.kind === "FLOORPLAN")
-              .map((asset) => asset.canonicalUrl),
-          )
-        : false;
-      const photoContentChanged =
-        previousPerceptual.images.length > 0 &&
-        currentPerceptual.images.length > 0 &&
-        !sameStringSet(previousPerceptual.images, currentPerceptual.images);
-      const floorplanContentChanged =
-        previousPerceptual.floorplans.length > 0 &&
-        currentPerceptual.floorplans.length > 0 &&
-        !sameStringSet(previousPerceptual.floorplans, currentPerceptual.floorplans);
-
-      for (const change of [
-        {
-          changed: photoUrlsChanged || photoContentChanged,
-          eventType: "PHOTO_CHANGED",
-          method: photoContentChanged ? "PERCEPTUAL_HASH" : "CANONICAL_URL_SET",
-        },
-        {
-          changed: floorplanUrlsChanged || floorplanContentChanged,
-          eventType: "FLOORPLAN_CHANGED",
-          method: floorplanContentChanged ? "PERCEPTUAL_HASH" : "CANONICAL_URL_SET",
-        },
-      ]) {
-        if (change.changed) {
-          await this.recordEvent({
-            propertyId,
-            agencyListingId: agencyListing.id,
-            publicationId: publication.id,
-            syncRunId,
-            eventType: change.eventType,
-            occurredAt: listing.observedAt,
-            dedupeKey: `${publication.id}:${change.eventType}:${previousSnapshot.id}:${snapshotId}`,
-            payload: {
-              previousSnapshotId: previousSnapshot.id,
-              snapshotId,
-              method: change.method,
-            },
-            evidenceIds,
-          });
-        }
-      }
-    }
-
-    if (previousSnapshot && previousSnapshot.content_hash !== listing.contentHash) {
-      await this.recordEvent({
-        propertyId,
-        agencyListingId: agencyListing.id,
-        publicationId: publication.id,
-        syncRunId,
-        eventType: "PUBLICATION_CONTENT_CHANGED",
-        occurredAt: listing.observedAt,
-        dedupeKey: `${publication.id}:PUBLICATION_CONTENT_CHANGED:${previousSnapshot.id}:${listing.contentHash}`,
-        payload: {
-          previousSnapshotId: previousSnapshot.id,
-          snapshotId,
-        },
-        evidenceIds,
-      });
-    }
-    const priceChange = previousSnapshot
-      ? classifyPriceChange(previousSnapshot.price_amount, listing.commercial.priceAmount)
-      : null;
-    if (previousSnapshot && priceChange) {
-      await this.recordEvent({
-        propertyId,
-        agencyListingId: agencyListing.id,
-        publicationId: publication.id,
-        syncRunId,
-        eventType: priceChange.eventType,
-        occurredAt: listing.observedAt,
-        dedupeKey: `${publication.id}:${priceChange.eventType}:${previousSnapshot.id}:${listing.commercial.priceAmount}`,
-        payload: {
-          oldPrice: priceChange.oldPrice,
-          newPrice: priceChange.newPrice,
-          absoluteDelta: priceChange.absoluteDelta,
-          percentageDelta: priceChange.percentageDelta,
-          currency: listing.commercial.priceCurrency,
-        },
-        evidenceIds,
-      });
-    }
-
-    if (createdProperty) {
-      await this.recordEvent({
-        propertyId,
-        agencyListingId: agencyListing.id,
-        publicationId: publication.id,
-        syncRunId,
-        eventType: "PROPERTY_DISCOVERED",
-        occurredAt: listing.observedAt,
-        dedupeKey: `${propertyId}:PROPERTY_DISCOVERED`,
-        payload: { identityOutcome: identityDecision.outcome },
-        evidenceIds,
-      });
-    }
-    if (createdPublication) {
-      await this.recordEvent({
-        propertyId,
-        agencyListingId: agencyListing.id,
-        publicationId: publication.id,
-        syncRunId,
-        eventType: "PUBLICATION_DISCOVERED",
-        occurredAt: listing.observedAt,
-        dedupeKey: `${publication.id}:PUBLICATION_DISCOVERED`,
-        payload: { sourceKey: listing.source.sourceKey },
-        evidenceIds,
-      });
-      if (priorPublicationIds.length > 0) {
-        const relaunchEventId = await this.recordEvent({
-          propertyId,
-          agencyListingId: agencyListing.id,
-          publicationId: publication.id,
-          syncRunId,
-          eventType: "PUBLICATION_RELAUNCHED",
-          occurredAt: listing.observedAt,
-          dedupeKey: `${publication.id}:PUBLICATION_RELAUNCHED`,
-          payload: { priorPublicationIds },
-          evidenceIds,
-        });
-        if (relaunchEventId) {
-          const { error } = await this.db.rpc("increment_property_relaunch_count", {
-            p_property_id: propertyId,
-          });
-          throwIfError(error);
-        }
-      }
-      if (priorOtherAgencyListings.length > 0) {
-        const switchable = priorOtherAgencyListings.filter((prior) =>
-          ["EXIT_PENDING", "OFF_MARKET_NO_SALE_EVIDENCE"].includes(prior.state),
-        );
-        const activeElsewhere = priorOtherAgencyListings.filter(
-          (prior) => prior.state === "ACTIVE",
-        );
-        if (switchable.length > 0) {
-          const switchedIds: string[] = [];
-          for (const prior of switchable) {
-            const manualState = await this.authoritativeManualValue<AgencyListingState | null>({
-              targetType: "AGENCY_LISTING",
-              targetId: prior.id,
-              key: "state",
-              derivedValue: null,
-            });
-            if (!manualState) {
-              const { error } = await this.db
-                .from("agency_listings")
-                .update({
-                  state: "CLOSED_SWITCHED",
-                  closed_at: listing.observedAt,
-                  outcome_source: "CROSS_AGENCY_IDENTITY_V1",
-                  outcome_confidence: identityDecision.score,
-                })
-                .eq("id", prior.id);
-              throwIfError(error);
-              switchedIds.push(prior.id);
-            }
-          }
-          if (switchedIds.length > 0) {
-            await this.recordEvent({
-              propertyId,
-              agencyListingId: agencyListing.id,
-              publicationId: publication.id,
-              syncRunId,
-              eventType: "AGENCY_SWITCH_DETECTED",
-              occurredAt: listing.observedAt,
-              dedupeKey: `${publication.id}:AGENCY_SWITCH_DETECTED`,
-              confidence: identityDecision.score,
-              payload: { previousAgencyListingIds: switchedIds },
-              evidenceIds,
-            });
-          }
-        } else if (activeElsewhere.length > 0) {
-          await this.recordEvent({
-            propertyId,
-            agencyListingId: agencyListing.id,
-            publicationId: publication.id,
-            syncRunId,
-            eventType: "MULTI_AGENCY_PUBLICATION_OBSERVED",
-            occurredAt: listing.observedAt,
-            dedupeKey: `${publication.id}:MULTI_AGENCY_PUBLICATION_OBSERVED`,
-            confidence: identityDecision.score,
-            payload: { otherAgencyListingIds: activeElsewhere.map((row) => row.id) },
-            evidenceIds,
-          });
-        }
-      }
-      if (listing.status.value === "SOLD") {
-        await this.recordEvent({
-          propertyId,
-          agencyListingId: agencyListing.id,
-          publicationId: publication.id,
-          syncRunId,
-          eventType: "SOURCE_MARKED_SOLD",
-          occurredAt: listing.observedAt,
-          dedupeKey: `${publication.id}:SOURCE_MARKED_SOLD:${listing.contentHash}`,
-          confidence: listing.status.confidence,
-          evidenceIds,
-        });
-      }
-    }
-
-    await this.updateSaleFromObservation({
-      propertyId,
-      publicationId: publication.id,
-      listing,
+    const locationNormalizedKey = hashValue({
+      municipality: listing.location.municipality,
+      locality: listing.location.locality,
+      postalCode: listing.location.postalCode,
+      streetName: listing.location.streetName,
+      streetNumber: listing.location.streetNumber,
+      rawText: listing.location.rawText,
     });
-    await this.refreshPropertyIntelligence(propertyId);
+    const building = canonicalBuildingAddress(listing.location);
 
+    const { data, error } = await this.db.rpc(
+      "persist_property_lifecycle_observation_atomic",
+      {
+        p_agency_id: agencyId,
+        p_sync_run_id: syncRunId,
+        p_listing: listing,
+        p_identity_decision: identityDecision,
+        p_processed_assets: processedPayload,
+        p_location_normalized_key: locationNormalizedKey,
+        p_building: building,
+        p_media_market_start: mediaMarketStartEvidence(listing, processedAssets),
+        p_failure_point: options.failurePoint ?? null,
+      },
+    );
+    if (error) {
+      await this.recordObservationCommitFailure(syncRunId);
+      throwIfError(error);
+    }
+    const result = requiredData(
+      data as {
+        propertyId: string;
+        agencyListingId: string;
+        publicationId: string;
+        snapshotId: string;
+        createdProperty: boolean;
+        createdPublication: boolean;
+      } | null,
+      null,
+      "Atomic observation",
+    );
+
+    await this.uploadRepresentativeThumbnails(result.propertyId, processedAssets);
     return {
-      propertyId,
-      agencyListingId: agencyListing.id,
-      publicationId: publication.id,
-      snapshotId,
+      propertyId: result.propertyId,
+      agencyListingId: result.agencyListingId,
+      publicationId: result.publicationId,
+      snapshotId: result.snapshotId,
       identityDecision,
-      createdProperty,
-      createdPublication,
+      createdProperty: result.createdProperty,
+      createdPublication: result.createdPublication,
     };
+  }
+
+  private async uploadRepresentativeThumbnails(
+    propertyId: string,
+    processedAssets: ProcessedAsset[],
+  ): Promise<void> {
+    const representatives = processedAssets
+      .filter(
+        (asset) => asset.classification === "IMAGE" && asset.representativeThumbnail,
+      )
+      .sort((left, right) => left.position - right.position)
+      .slice(0, 2);
+    if (representatives.length === 0) {
+      return;
+    }
+    try {
+      const paths: string[] = [];
+      for (const representative of representatives) {
+        const path = `${propertyId}/${representative.sha256}.webp`;
+        const { error } = await this.db.storage
+          .from("property-lifecycle-visuals")
+          .upload(path, representative.representativeThumbnail as Uint8Array, {
+            contentType: "image/webp",
+            upsert: true,
+          });
+        throwIfError(error);
+        paths.push(path);
+      }
+      const { data, error } = await this.db
+        .from("properties")
+        .select("representative_image_paths")
+        .eq("id", propertyId)
+        .single();
+      throwIfError(error);
+      const existingPaths =
+        ((data as { representative_image_paths: string[] } | null)
+          ?.representative_image_paths ?? []);
+      const { error: updateError } = await this.db
+        .from("properties")
+        .update({
+          representative_image_paths: [...new Set([...existingPaths, ...paths])].slice(0, 2),
+        })
+        .eq("id", propertyId);
+      throwIfError(updateError);
+    } catch {
+      // Storage is recoverable enrichment and cannot participate in PostgreSQL's transaction.
+      // The committed observation remains authoritative and a later deep sync can retry it.
+    }
   }
 
   async recordGeographyReview(input: {
@@ -1937,109 +1779,19 @@ export class PropertyLifecycleRepository {
     jobId: string;
     agencyListingId: string;
     publicationId?: string | null;
+    checkedAt?: string;
   }): Promise<string> {
-    const { data: agencyListingData, error: agencyListingError } = await this.db
-      .from("agency_listings")
-      .select("id,agency_id,property_id,state")
-      .eq("id", input.agencyListingId)
-      .single();
-    const agencyListing = requiredData(
-      agencyListingData as AgencyListingRow | null,
-      agencyListingError,
-      "Post-exit agency listing",
-    );
-    const publicationQuery = this.db
-      .from("publications")
-      .select("id,state,source_status")
-      .eq("agency_listing_id", agencyListing.id)
-      .order("last_seen_at", { ascending: false })
-      .limit(1);
-    const { data: publicationData, error: publicationError } = input.publicationId
-      ? await publicationQuery.eq("id", input.publicationId).single()
-      : await publicationQuery.single();
-    throwIfError(publicationError);
-    const publication = requiredData(
-      publicationData as { id: string; state: PublicationState; source_status: string } | null,
-      null,
-      "Post-exit publication",
-    );
-    const { count: switchedCount, error: switchedError } = await this.db
-      .from("agency_listings")
-      .select("id", { count: "exact", head: true })
-      .eq("property_id", agencyListing.property_id)
-      .neq("agency_id", agencyListing.agency_id)
-      .eq("state", "ACTIVE");
-    throwIfError(switchedError);
-    const { count: privateCount, error: privateError } = await this.db
-      .from("private_publications")
-      .select("id", { count: "exact", head: true })
-      .eq("property_id", agencyListing.property_id)
-      .eq("state", "ACTIVE");
-    throwIfError(privateError);
-
-    const manualOutcome = await this.authoritativeManualValue<AgencyListingState | null>({
-      targetType: "AGENCY_LISTING",
-      targetId: agencyListing.id,
-      key: "state",
-      derivedValue: null,
+    const { data, error } = await this.db.rpc("run_post_exit_check_atomic", {
+      p_job_id: input.jobId,
+      p_agency_listing_id: input.agencyListingId,
+      p_publication_id: input.publicationId ?? null,
+      p_checked_at: input.checkedAt ?? new Date().toISOString(),
     });
-    const explicitSold =
-      publication.state === "SOLD_MARKED" || publication.source_status === "SOLD";
-    const switched = (switchedCount ?? 0) > 0;
-    const privateRelist = (privateCount ?? 0) > 0;
-    const {
-      agencyListingState: outcome,
-      checkOutcome,
-      confidence,
-    } = classifyPostExit({
-      publicationState: publication.state,
-      sourceStatus: publication.source_status as NormalizedListingV2["status"]["value"],
-      switchedAgencyEvidence: switched,
-      privateRelistEvidence: privateRelist,
-      manualOutcome,
-    });
-    const reappeared = checkOutcome === "REAPPEARED";
-    const { error: checkError } = await this.db.from("post_exit_checks").insert({
-      agency_listing_id: agencyListing.id,
-      publication_id: publication.id,
-      job_id: input.jobId,
-      technical_disappearance_confirmed: publication.state === "REMOVED",
-      explicit_sale_evidence: explicitSold,
-      switched_agency_evidence: switched,
-      private_relist_evidence: privateRelist,
-      reappearance_evidence: reappeared,
-      outcome: checkOutcome,
-      confidence,
-      evidence_summary: { manualOutcome },
-    });
-    throwIfError(checkError);
-
-    if (outcome !== "ACTIVE") {
-      const { error } = await this.db
-        .from("agency_listings")
-        .update({
-          state: outcome,
-          closed_at: new Date().toISOString(),
-          exit_confirmed_at: new Date().toISOString(),
-          outcome_source: manualOutcome ? "MANUAL_OVERRIDE" : "POST_EXIT_MONITOR_V1",
-          outcome_confidence: confidence,
-        })
-        .eq("id", agencyListing.id);
-      throwIfError(error);
+    throwIfError(error);
+    if (typeof data !== "string") {
+      throw new Error("Atomic post-exit check returned no outcome.");
     }
-    await this.recordEvent({
-      propertyId: agencyListing.property_id,
-      agencyListingId: agencyListing.id,
-      publicationId: publication.id,
-      eventType:
-        checkOutcome === "REAPPEARED" ? "PUBLICATION_REAPPEARED" : "POST_EXIT_CLASSIFIED",
-      occurredAt: new Date().toISOString(),
-      dedupeKey: `${agencyListing.id}:POST_EXIT:${input.jobId}`,
-      confidence,
-      payload: { outcome: checkOutcome },
-    });
-    await this.refreshPropertyIntelligence(agencyListing.property_id);
-    return checkOutcome;
+    return data;
   }
 
   async recordManualOverride(input: {
@@ -2187,116 +1939,36 @@ export class PropertyLifecycleRepository {
     healthState: "HEALTHY" | "DEGRADED" | "FAILED" | "STRUCTURE_CHANGED";
     inventoryComplete: boolean;
     missingHealthyRunThreshold: number;
+    postExitDelayHours?: number;
+    failurePoint?: "AFTER_MISSING_PUBLICATION";
   }): Promise<{ missingCount: number; transitionedCount: number }> {
     if (input.healthState !== "HEALTHY" || !input.inventoryComplete) {
       return { missingCount: 0, transitionedCount: 0 };
     }
-
-    const { data, error } = await this.db
-      .from("publications")
-      .select(
-        "id,agency_listing_id,source_key,state,source_status,missing_healthy_run_count,missing_since,removed_at",
-      )
-      .eq("agency_id", input.agencyId)
-      .in("state", ["ACTIVE", "MISSING_PENDING"]);
-    throwIfError(error);
-    const publications = (data ?? []) as PublicationRow[];
-    let missingCount = 0;
-    let transitionedCount = 0;
-    const affectedPropertyIds = new Set<string>();
-
-    for (const publication of publications) {
-      if (input.observedSourceKeys.has(publication.source_key)) {
-        continue;
-      }
-      const agencyListing = await this.agencyListing(publication.agency_listing_id);
-      affectedPropertyIds.add(agencyListing.property_id);
-      const transition = evaluatePublicationPresence({
-        current: {
-          state: publication.state,
-          sourceStatus: publication.source_status,
-          missingHealthyRunCount: publication.missing_healthy_run_count,
-          missingSince: publication.missing_since,
-          removedAt: publication.removed_at,
-        },
-        healthState: input.healthState,
-        inventoryComplete: input.inventoryComplete,
-        observedPresent: false,
-        observedAt: input.observedAt,
-        missingHealthyRunThreshold: input.missingHealthyRunThreshold,
-      });
-      const { error: updateError } = await this.db
-        .from("publications")
-        .update({
-          state: transition.next.state,
-          missing_healthy_run_count: transition.next.missingHealthyRunCount,
-          missing_since: transition.next.missingSince,
-          removed_at: transition.next.removedAt,
-        })
-        .eq("id", publication.id);
-      throwIfError(updateError);
-      missingCount += 1;
-
-      const { count: otherActiveCount, error: otherActiveError } = await this.db
-        .from("publications")
-        .select("id", { count: "exact", head: true })
-        .eq("agency_listing_id", agencyListing.id)
-        .neq("id", publication.id)
-        .in("state", ["ACTIVE", "MISSING_PENDING"]);
-      throwIfError(otherActiveError);
-      const nextAgencyState = agencyStateForPublication(
-        transition.next.state,
-        agencyListing.state,
-        { hasOtherActivePublication: (otherActiveCount ?? 0) > 0 },
-      );
-      if (nextAgencyState !== agencyListing.state) {
-        const { error: agencyError } = await this.db
-          .from("agency_listings")
-          .update({ state: nextAgencyState, state_reason: { publicationState: transition.next.state } })
-          .eq("id", agencyListing.id);
-        throwIfError(agencyError);
-      }
-
-      if (
-        transition.next.state === "REMOVED" &&
-        nextAgencyState === "EXIT_PENDING" &&
-        (otherActiveCount ?? 0) === 0
-      ) {
-        const { error: jobError } = await this.db.from("lifecycle_jobs").insert({
-          job_type: "POST_EXIT_CHECK",
-          agency_id: input.agencyId,
-          payload: {
-            agencyListingId: agencyListing.id,
-            publicationId: publication.id,
-          },
-          dedupe_key: `POST_EXIT_CHECK:${agencyListing.id}:${publication.id}:${transition.next.missingHealthyRunCount}`,
-        });
-        if (jobError?.code !== "23505") {
-          throwIfError(jobError);
-        }
-      }
-
-      for (const eventType of transition.events) {
-        const event = await this.recordEvent({
-          propertyId: agencyListing.property_id,
-          agencyListingId: agencyListing.id,
-          publicationId: publication.id,
-          syncRunId: input.syncRunId,
-          eventType,
-          occurredAt: input.observedAt,
-          dedupeKey: `${publication.id}:${eventType}:${transition.next.missingHealthyRunCount}`,
-          payload: { missingHealthyRunCount: transition.next.missingHealthyRunCount },
-        });
-        if (event) {
-          transitionedCount += 1;
-        }
-      }
+    const { data, error } = await this.db.rpc("apply_missing_observations_atomic", {
+      p_agency_id: input.agencyId,
+      p_sync_run_id: input.syncRunId,
+      p_observed_source_keys: [...input.observedSourceKeys],
+      p_observed_at: input.observedAt,
+      p_missing_threshold: input.missingHealthyRunThreshold,
+      p_post_exit_delay_hours: input.postExitDelayHours ?? 48,
+      p_failure_point: input.failurePoint ?? null,
+    });
+    if (error) {
+      await this.recordObservationCommitFailure(input.syncRunId);
+      throwIfError(error);
     }
-
-    for (const propertyId of affectedPropertyIds) {
-      await this.refreshPropertyIntelligence(propertyId);
+    const result = data as { missingCount?: unknown; transitionedCount?: unknown } | null;
+    if (
+      typeof result?.missingCount !== "number" ||
+      typeof result.transitionedCount !== "number"
+    ) {
+      throw new Error("Atomic missing observation returned invalid counts.");
     }
-
-    return { missingCount, transitionedCount };
+    return {
+      missingCount: result.missingCount,
+      transitionedCount: result.transitionedCount,
+    };
   }
+
 }

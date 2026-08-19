@@ -111,19 +111,17 @@ export async function runAgencySync(input: {
 
     const detailErrorRatio =
       counts.discoveredCount === 0 ? 0 : counts.errorCount / counts.discoveredCount;
-    const healthState: AdapterHealthState =
+    const sourceHealthState: AdapterHealthState =
       inventory.healthState === "HEALTHY" && detailErrorRatio > 0.1
         ? "DEGRADED"
         : inventory.healthState;
-    const inventoryComplete = inventory.complete && healthState === "HEALTHY";
-    const absenceEvaluationAllowed =
-      healthState === "HEALTHY" && inventoryComplete && mode !== "BOOTSTRAP";
     const observedAt = input.observedAt ?? new Date().toISOString();
 
-    await input.repository.recordAdapterHealth({
+    const healthEvaluation = await input.repository.recordAdapterHealth({
       agencyId: agency.id,
       syncRunId,
-      state: healthState,
+      state: sourceHealthState,
+      sourceComplete: inventory.complete,
       observedCount: inventory.diagnostics.observedCount,
       expectedCount: inventory.diagnostics.expectedCount,
       parseErrorCount: inventory.diagnostics.parseErrorCount + counts.errorCount,
@@ -132,6 +130,10 @@ export async function runAgencySync(input: {
       diagnostics: { ...inventory.diagnostics },
       responseStatus: inventory.response?.status,
     });
+    const healthState = healthEvaluation.effectiveState;
+    const inventoryComplete = healthEvaluation.inventoryComplete;
+    const absenceEvaluationAllowed =
+      healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP";
 
     if (absenceEvaluationAllowed) {
       const missing = await input.repository.applyMissingObservations({
