@@ -22,6 +22,10 @@ import {
   parseIconacasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/iconacasa";
 import {
+  normalizeMomentoDetail,
+  parseMomentoInventoryHtml,
+} from "@/lib/property-lifecycle/adapters/momento";
+import {
   normalizePuntoCasaDetail,
   parsePuntoCasaInventoryHtml,
 } from "@/lib/property-lifecycle/adapters/puntocasa";
@@ -720,6 +724,83 @@ describe("Trio Casa V2 adapter", () => {
 
   it("freezes absence decisions when publisher markers disappear", () => {
     const result = parseTrioInventoryHtml("<html><body>maintenance</body></html>");
+    expect(result.healthState).toBe("STRUCTURE_CHANGED");
+    expect(result.complete).toBe(false);
+  });
+});
+
+describe("Momento Casa V2 adapter", () => {
+  it("extracts the complete four-record TrovaCasa publisher-sale baseline", () => {
+    const result = parseMomentoInventoryHtml(fixture("momento-inventory.html"));
+    expect(result.healthState).toBe("HEALTHY");
+    expect(result.complete).toBe(true);
+    expect(result.items).toHaveLength(4);
+    expect(result.items[0]).toMatchObject({
+      sourceKey: "70534497",
+      externalId: "70534497",
+      summary: {
+        priceAmount: 147_000,
+        surfaceSqm: 115,
+        rooms: 4,
+        portalPublisherId: 96100,
+      },
+    });
+  });
+
+  it("rejects cross-agency gallery tokens from the publication baseline", () => {
+    const contaminated = fixture("momento-inventory.html").replace(
+      "X_96100_70534497_1877995969",
+      "X_92459_70534497_1877995969",
+    );
+    const result = parseMomentoInventoryHtml(contaminated);
+    expect(result.complete).toBe(false);
+    expect(result.diagnostics.parseErrorCount).toBe(1);
+  });
+
+  it("normalizes exact civic and portal evidence without inventing publication start", () => {
+    const url = "https://www.trovacasa.it/annunci/ba-tc-96100-70534492";
+    const result = normalizeMomentoDetail(
+      sourceDocument("momento-active-detail.html", url, "70534492"),
+    );
+
+    expect(result).toMatchObject({ adapterKey: "momento" });
+    expect(result.source).toMatchObject({
+      agencySlug: "momento-casa-bitonto",
+      externalId: "70534492",
+      agencyReference: null,
+      transactionType: "SALE",
+    });
+    expect(result.commercial).toMatchObject({
+      propertyType: "Appartamento",
+      priceAmount: 110_000,
+      surfaceSqm: 100,
+      rooms: 4,
+      bathrooms: 2,
+    });
+    expect(result.commercial.description).not.toMatch(/080|example\.invalid/);
+    expect(result.location).toMatchObject({
+      municipality: "Bitonto",
+      streetName: "Via Ammiraglio Vacca",
+      streetNumber: "56e",
+      precision: "EXACT_ADDRESS",
+      scope: "IN_SCOPE",
+    });
+    expect(result.marketStart).toMatchObject({
+      method: "CRAWLER_FIRST_SEEN",
+      lowerBound: null,
+      confidence: 0.25,
+    });
+    expect(result.assets).toHaveLength(5);
+    expect(result.status.value).toBe("UNKNOWN");
+    expect(result.provenance).toMatchObject({
+      trovaCasaAgencyId: 96100,
+      upstreamPortalReference: "127156489",
+      sourceCreatedAtUnavailable: true,
+    });
+  });
+
+  it("freezes absence decisions when the Momento publisher contract disappears", () => {
+    const result = parseMomentoInventoryHtml("<html><body>maintenance</body></html>");
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
     expect(result.complete).toBe(false);
   });

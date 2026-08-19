@@ -854,7 +854,15 @@ export class PropertyLifecycleRepository {
                   limitation:
                     "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
                 }
-              : null;
+              : listing.adapterKey === "momento"
+                ? {
+                    method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
+                    claimKey: "publication.portalMediaAvailableBy",
+                    confidence: 0.5,
+                    limitation:
+                      "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
+                  }
+                : null;
 
     if (mediaMarketStartPolicy) {
       const observedTime = Date.parse(listing.observedAt);

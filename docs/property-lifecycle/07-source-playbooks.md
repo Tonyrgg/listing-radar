@@ -118,6 +118,17 @@ Inventory URL: <https://www.trovacasa.it/agenzie-immobiliari/trio-casa-s-a-s-bit
 - Scope media to the detail gallery token `X_92459_{listingId}_{imageId}`. TrovaCasa serves resized images with coherent `Last-Modified` values; during deep sync these are low-confidence public-availability bounds only, never exact contractual start. The source exposes neither original assets nor deterministic floorplan roles.
 - Exclude publisher phone/email/link data from normalized descriptions and provenance payloads.
 
+## Momento Casa
+
+Inventory URL: <https://www.trovacasa.it/agenzie-immobiliari/momento-casa-bitonto-tc-96100/case-in-vendita>
+
+- Momento Casa has no independently discoverable inventory site. Idealista currently exposes a broader publisher view but blocks the local crawler; use the directly crawlable dedicated TrovaCasa sale page as a portal-publication baseline, never as proof of the agency's full mandate inventory.
+- Reconcile the title count with agency-scoped cards and follow an explicit `rel=next` paginator if present. On 2026-08-19 TrovaCasa exposed 4/4 unique sale publications, all in Bitonto. Other public portals showed additional records, which is why absence conclusions remain source-specific.
+- Use the numeric TrovaCasa ID from `/annunci/{province}-tc-96100-{id}` as publication identity. Validate agency `96100` in each gallery token and detail publisher link. Preserve the upstream numeric `Riferimento` only for cross-portal matching, not as an agency reference.
+- Parse labelled facts and retain exact public civics such as `Via Ammiraglio Vacca 56 e`; normalize a spaced civic suffix without changing the displayed source address. Strict geography remains mandatory even though the currently validated TrovaCasa subset is entirely in Bitonto.
+- No reliable creation date or dedicated lifecycle state is exposed. Keep adapter market start at `CRAWLER_FIRST_SEEN` and status `UNKNOWN`. During deep sync, coherent resized-gallery `Last-Modified` values are low-confidence public-availability bounds, with reuse and portal-ingestion delay explicitly preserved as limitations.
+- Exclude publisher contact fields and contact-like text from normalized output. Gallery media is source-scoped but does not expose original files or deterministic floorplan roles.
+
 ## Responsible access
 
 Respect each source’s public robots policy, keep concurrency and request rates low, use bounded retries/timeouts, identify the application where configuration permits, cache detail responses during a run, and never use forbidden/private endpoints or attempt authentication bypass.

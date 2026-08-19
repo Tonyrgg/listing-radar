@@ -8,6 +8,7 @@ import type { HttpResponse } from "@/lib/http/client";
 import { normalizeFuturaDetail } from "@/lib/property-lifecycle/adapters/futura";
 import { normalizeGarofaloDetail } from "@/lib/property-lifecycle/adapters/garofalo";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
+import { normalizeMomentoDetail } from "@/lib/property-lifecycle/adapters/momento";
 import { normalizePuntoCasaDetail } from "@/lib/property-lifecycle/adapters/puntocasa";
 import { normalizeTrioDetail } from "@/lib/property-lifecycle/adapters/trio";
 import { normalizeVistocasaDetail } from "@/lib/property-lifecycle/adapters/vistocasa";
@@ -253,6 +254,21 @@ function trioAdapter(): FixtureAdapter {
   );
 }
 
+function momentoAdapter(): FixtureAdapter {
+  const sourceKey = "70534492";
+  const url = "https://www.trovacasa.it/annunci/ba-tc-96100-70534492";
+  return new FixtureAdapter(
+    "momento",
+    "momento-casa-bitonto",
+    [{ sourceKey, externalId: sourceKey, url, summary: {} }],
+    new Map([[sourceKey, fixture("momento-active-detail.html")]]),
+    normalizeMomentoDetail,
+    "HEALTHY",
+    true,
+    "2026-08-19T09:00:00.000Z",
+  );
+}
+
 async function countRows(db: SupabaseClient, table: string): Promise<number> {
   const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
   if (error) {
@@ -269,7 +285,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
 
   it("starts from a clean local V2 schema with seeded agencies", async () => {
     expect(await countRows(db, "sync_runs")).toBe(0);
-    expect(await countRows(db, "agencies")).toBe(9);
+    expect(await countRows(db, "agencies")).toBe(10);
   });
 
   it("persists both adapters, sold evidence, snapshots, and immutable events", async () => {
@@ -831,6 +847,68 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       claim_key: "publication.portalMediaAvailableBy",
       source_recorded_at: "2026-07-15T12:18:43+00:00",
       extraction_method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
+    });
+  });
+
+  it("uses Momento portal-gallery headers as uncertain public-history evidence", async () => {
+    await runAgencySync({
+      adapter: momentoAdapter(),
+      repository,
+      mode: "DEEP_SYNC",
+      assetProcessor: async (listing) => ({
+        assets: [
+          {
+            canonicalUrl:
+              listing.assets[0]?.canonicalUrl ?? "https://fixture.invalid/portal-media.jpg",
+            position: 0,
+            classification: "IMAGE",
+            sha256: "f".repeat(64),
+            perceptualHash: "06".repeat(32),
+            width: 1200,
+            height: 800,
+            format: "jpeg",
+            etag: null,
+            lastModified: "Mon, 02 Mar 2026 14:38:01 GMT",
+            contentType: "image/jpeg",
+            sourceRecordedAt: null,
+            exif: null,
+            representativeThumbnail: null,
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    const publication = await db
+      .from("publications")
+      .select("agency_listing_id")
+      .eq("source_key", "70534492")
+      .single();
+    const agencyListing = await db
+      .from("agency_listings")
+      .select("property_id")
+      .eq("id", publication.data?.agency_listing_id)
+      .single();
+    const property = await db
+      .from("properties")
+      .select("true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method")
+      .eq("id", agencyListing.data?.property_id)
+      .single();
+    expect(property.data).toMatchObject({
+      true_market_start_lower_bound: null,
+      true_market_start_upper_bound: "2026-03-02T14:38:01+00:00",
+      true_market_start_method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
+    });
+
+    const mediaEvidence = await db
+      .from("evidence")
+      .select("claim_key,source_recorded_at,extraction_method")
+      .eq("extraction_method", "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED")
+      .single();
+    expect(mediaEvidence.data).toMatchObject({
+      claim_key: "publication.portalMediaAvailableBy",
+      source_recorded_at: "2026-03-02T14:38:01+00:00",
+      extraction_method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
     });
   });
 });
