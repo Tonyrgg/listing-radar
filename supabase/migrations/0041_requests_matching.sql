@@ -1,3 +1,4 @@
+-- Migration version normalized from duplicate 004 prefix; SQL preserved.
 -- Richieste, portafoglio e matching. Applicare dopo le migration esistenti.
 create extension if not exists pgcrypto;
 

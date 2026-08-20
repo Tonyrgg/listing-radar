@@ -1,3 +1,4 @@
+-- Migration version normalized from duplicate 003 prefix; SQL preserved.
 -- Property Data Worker: persistent queue, normalized cadastral data and audit log.
 -- The local worker uses the service role; the web UI uses the authenticated policies below.
 

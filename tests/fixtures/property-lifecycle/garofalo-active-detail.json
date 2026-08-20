@@ -1,0 +1,15 @@
+{
+  "result": true,
+  "data": {
+    "property": {
+      "id":"14164","property_id":"14164","realestate_id":"50","code":"LT8","city_name":"Bitonto","province_name":"Bari - BA","address":"Largo Teatro Umberto","lat":"41.1062920","lng":"16.6920525","price":"55000","surface":"85","agreement_id":"1","rooms_n":"4","restrooms_n":"1","on_sale":"0","sold":"0","price_on_request":"0","is_visible":"1","is_active":"1","created_at":"2026-04-01 08:44:15","updated_at":"2026-04-01 08:44:15","title":"Largo Teatro Umberto: 4 Vani","description":"Appartamento di circa 85 mq, sito al primo piano.<br />Completa la proprietà un terrazzo a livello di circa 56 mq.<br />Per ulteriori informazioni contattaci al numero 080 000 00 00 oppure visita https://example.invalid/immobili","type":"Appartamento",
+      "images":[
+        {"id":"170504","property_id":"14164","source":"4350_bba0c1be0fed8bef101b9e5b16e3e4618e04ea6f.png","name":"foto-immobili-x-sito-(31).png","is_main":"1","is_active":"1","create_dt":"2026-04-01 08:44:15","updated_dt":"2026-04-01 08:44:15"},
+        {"id":"170505","property_id":"14164","source":"4350_c00f6143dbedb7823ad560bb6c2757a19d888e0f.jpeg","name":"planimetria-rutigliano-matteo_page-0001.jpeg","is_main":"0","is_active":"1","create_dt":"2026-04-01 08:44:15","updated_dt":"2026-04-01 08:44:15"},
+        {"id":"bad-transform","property_id":"14164","source":"4350_bad.png/v1/w_620,h_0/bad.webp","name":"bad.webp","is_main":"0","is_active":"1"}
+      ]
+    },
+    "options":{"Terrazzo":["1"],"Tipologia":["Appartamento"],"Stato":["Occupato"],"Cucina":["Abitabile"],"Piano":["1"]}
+  },
+  "message":""
+}

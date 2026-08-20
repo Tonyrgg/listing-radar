@@ -256,7 +256,19 @@ export default async function DashboardPage() {
         eyebrow="Dashboard"
         title="Pannello operativo"
         description="Solo lavoro aperto, automazioni e opportunita da valutare."
-        actions={<div className="flex flex-wrap gap-2"><RefreshEmailButton /><QuickRequestButton /></div>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/lifecycle"
+              className="inline-flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]"
+            >
+              Lifecycle V2
+              <ArrowRight aria-hidden="true" className="size-3.5" />
+            </Link>
+            <RefreshEmailButton />
+            <QuickRequestButton />
+          </div>
+        }
       />
 
       <section className="grid gap-4 md:grid-cols-3">

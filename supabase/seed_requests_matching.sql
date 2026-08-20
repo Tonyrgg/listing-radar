@@ -1,4 +1,4 @@
--- SOLO SVILUPPO: eseguire manualmente dopo 004_requests_matching.sql.
+-- SOLO SVILUPPO: eseguire manualmente dopo 0041_requests_matching.sql.
 insert into public.internal_zones (name, description, landmarks, aliases, associated_streets)
 select seed.*
 from (values

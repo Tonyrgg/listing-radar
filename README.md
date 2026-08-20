@@ -120,7 +120,7 @@ The schema is split into:
 
 - `supabase/migrations/001_initial_schema.sql`
 - `supabase/migrations/002_incoming_listings.sql`
-- `supabase/migrations/002_map_zones.sql`
+- `supabase/migrations/0021_map_zones.sql`
 - `supabase/migrations/003_app_settings.sql`
 - `supabase/migrations/004_listing_crm_status.sql`
 
@@ -171,7 +171,7 @@ Apply the map migration with the rest of the schema:
 supabase db push
 ```
 
-Or run `supabase/migrations/002_map_zones.sql` once in the Supabase SQL editor.
+Or run `supabase/migrations/0021_map_zones.sql` once in the Supabase SQL editor.
 The migration seeds two agents when missing:
 
 - Tony, `#2563eb`
@@ -587,7 +587,7 @@ La sezione privata comprende:
 Applicare in Supabase la migration:
 
 ```text
-supabase/migrations/004_requests_matching.sql
+supabase/migrations/0041_requests_matching.sql
 ```
 
 Il pulsante globale **Nuova richiesta rapida** apre un percorso in quattro

@@ -1,3 +1,4 @@
+-- Migration version normalized from duplicate 002 prefix; SQL preserved.
 create extension if not exists pgcrypto;
 
 create or replace function public.set_updated_at()

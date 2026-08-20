@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "marketObservedAt": "2026-08-19T21:41:29.551Z",
+  "scope": "Bitonto, Palombaio e Mariotto",
+  "method": "Solo etichette supportate da identità pubblica stabile o da differenze UNIT verificabili; i casi ambigui sono UNKNOWN ed esclusi dalle metriche.",
+  "cases": [
+    {
+      "id": "same-iconacasa-45212-reobservation",
+      "groundTruth": "SAME",
+      "category": "SAME_PUBLICATION_REOBSERVATION",
+      "evidence": "Stesso dominio, external_id 45212, reference BTN150 e URL pubblico stabile in due osservazioni live consecutive.",
+      "urls": ["https://www.iconacasa.com/index.php/opportunita/property/45212-bitonto-palombaio-vendita-appartamento"],
+      "observation": {"agencyReference":"BTN150","address":"Palombaio","locality":"Palombaio","propertyType":"Appartamento","surfaceSqm":144,"rooms":3,"floor":"Terra","priceAmount":137000,"imageFingerprints":["SOURCE_URL_SHA256:iconacasa-45212-primary"],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-same-1","agencyReference":null,"knownAgencyReferences":["BTN150"],"address":"Palombaio","locality":"Palombaio","propertyType":"Appartamento","surfaceSqm":144,"rooms":3,"floor":"Terra","priceAmount":137000,"imageFingerprints":["SOURCE_URL_SHA256:iconacasa-45212-primary"],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "same-vistocasa-9931-reobservation",
+      "groundTruth": "SAME",
+      "category": "SAME_PUBLICATION_REOBSERVATION",
+      "evidence": "Stesso ArticoliId 9931, reference BIT.T284 e URL WebForms pubblico stabile.",
+      "urls": ["https://www.vistocasa.com/it/immobile.aspx?articoliid=9931"],
+      "observation": {"agencyReference":"BIT.T284","address":"Bitonto","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":100,"rooms":3,"floor":"5","priceAmount":290000,"imageFingerprints":["SOURCE_URL_SHA256:vistocasa-9931-primary"],"floorplanFingerprints":["SOURCE_URL_SHA256:vistocasa-9931-plan"]},
+      "candidate": {"propertyId":"golden-same-2","agencyReference":null,"knownAgencyReferences":["BIT.T284"],"address":"Bitonto","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":100,"rooms":3,"floor":"5","priceAmount":290000,"imageFingerprints":["SOURCE_URL_SHA256:vistocasa-9931-primary"],"floorplanFingerprints":["SOURCE_URL_SHA256:vistocasa-9931-plan"]}
+    },
+    {
+      "id": "same-admaiora-17361-reobservation",
+      "groundTruth": "SAME",
+      "category": "SAME_PUBLICATION_REOBSERVATION",
+      "evidence": "Stesso WordPress property ID 17361, reference 0953, civico 57 e URL pubblico stabile.",
+      "urls": ["https://www.admaioraimmobiliare.it/immobile/trivani-con-terrazzino-in-vendita-in-zona-ospedale-a-bitonto"],
+      "observation": {"agencyReference":"0953","address":"Via Damascelli 57","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":94,"rooms":3,"floor":"3","priceAmount":128000,"imageFingerprints":["SOURCE_URL_SHA256:admaiora-17361-primary"],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-same-3","agencyReference":null,"knownAgencyReferences":["0953"],"address":"Via Damascelli 57","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":94,"rooms":3,"floor":"3","priceAmount":128000,"imageFingerprints":["SOURCE_URL_SHA256:admaiora-17361-primary"],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-same-building-ambrosi-24",
+      "groundTruth": "DIFFERENT",
+      "category": "SAME_BUILDING_DIFFERENT_UNIT",
+      "evidence": "Stesso civico ma reference V000750/V000752, 90/230 mq, 3/6 vani e piano 2/3.",
+      "urls": ["https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000750/3846","https://studisantiimmobiliare.it/it/Vendite/bitonto/duplex/v000752/3848"],
+      "observation": {"agencyReference":"V000750","address":"Via Dottor Luigi Ambrosi 24","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":90,"rooms":3,"floor":"2","priceAmount":145000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-1","agencyReference":null,"knownAgencyReferences":["V000752"],"address":"Via Dottor Luigi Ambrosi 24","locality":"Bitonto","propertyType":"Duplex","surfaceSqm":230,"rooms":6,"floor":"3","priceAmount":330000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-same-building-aporti-42-a",
+      "groundTruth": "DIFFERENT",
+      "category": "SAME_BUILDING_DIFFERENT_UNIT",
+      "evidence": "Stesso civico ma reference V000766/V000783, 270/105 mq, 5/3 vani e piano 1/rialzato.",
+      "urls": ["https://studisantiimmobiliare.it/it/Vendite/bitonto/casa-singola/v000766/3863","https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000783/3886"],
+      "observation": {"agencyReference":"V000766","address":"Via Ferrante Aporti 42","locality":"Bitonto","propertyType":"Casa singola","surfaceSqm":270,"rooms":5,"floor":"1","priceAmount":280000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-2","agencyReference":null,"knownAgencyReferences":["V000783"],"address":"Via Ferrante Aporti 42","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":105,"rooms":3,"floor":"Rialzato","priceAmount":95000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-same-building-aporti-42-b",
+      "groundTruth": "DIFFERENT",
+      "category": "SAME_BUILDING_DIFFERENT_UNIT",
+      "evidence": "Stesso civico ma reference V000783/V000784, 105/165 mq, 3/4 vani e piano rialzato/1.",
+      "urls": ["https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000783/3886","https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000784/3887"],
+      "observation": {"agencyReference":"V000783","address":"Via Ferrante Aporti 42","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":105,"rooms":3,"floor":"Rialzato","priceAmount":95000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-3","agencyReference":null,"knownAgencyReferences":["V000784"],"address":"Via Ferrante Aporti 42","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":165,"rooms":4,"floor":"1","priceAmount":200000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-same-building-cioffrese-89",
+      "groundTruth": "DIFFERENT",
+      "category": "SAME_BUILDING_DIFFERENT_UNIT",
+      "evidence": "Due box separati con property ID 17274/17267, reference 0946/0945 e superfici 28/15 mq.",
+      "urls": ["https://www.admaioraimmobiliare.it/immobile/box-auto-di-28-mq-in-vendita-a-bitonto-zona-centro-2","https://www.admaioraimmobiliare.it/immobile/box-auto-di-15-mq-in-vendita-a-bitonto-zona-centro"],
+      "observation": {"agencyReference":"0946","address":"Via Pasquale Cioffrese 89","locality":"Bitonto","propertyType":"Box auto","surfaceSqm":28,"rooms":1,"floor":null,"priceAmount":32000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-4","agencyReference":null,"knownAgencyReferences":["0945"],"address":"Via Pasquale Cioffrese 89","locality":"Bitonto","propertyType":"Box auto","surfaceSqm":15,"rooms":1,"floor":null,"priceAmount":22000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-cross-agency-largo-teatro",
+      "groundTruth": "DIFFERENT",
+      "category": "HIGH_SCORING_NON_MATCH",
+      "evidence": "Pubblicazioni contemporanee: piano 1/terra, 88.000/50.000 euro e gallery senza corrispondenza forte (deep dHash 0,7031).",
+      "urls": ["https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000719/3813","https://garofaloimmobiliare.com/realestate-detail/reid/14139/largo-teatro-umberto-2-vani"],
+      "observation": {"agencyReference":"V000719","address":"Largo Teatro Umberto I 1","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":60,"rooms":2,"floor":"1","priceAmount":88000,"imageFingerprints":["DHASH64:0000000000000000000000000000000000000000000000000000000000000000"],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-5","agencyReference":null,"knownAgencyReferences":[],"address":"Largo Teatro Umberto","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":60,"rooms":2,"floor":"Terra","priceAmount":50000,"imageFingerprints":["DHASH64:1111111111111111111000000000000000000000000000000000000000000000"],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-cross-agency-via-balice",
+      "groundTruth": "DIFFERENT",
+      "category": "HIGH_SCORING_NON_MATCH",
+      "evidence": "Stessa via e mq ma 345.000/150.000 euro, piano rialzato contro 1-2 e nessuna media evidence forte.",
+      "urls": ["https://www.futurabitonto.it/web/immobile_dettaglio.asp?cod_annuncio=2540073&language=ita","https://www.puntocasagroup.it/property-item/bitonto-via-balice"],
+      "observation": {"agencyReference":"10116RA00000","address":"Via Balice","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":120,"rooms":4,"floor":"Rialzato","priceAmount":345000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-6","agencyReference":null,"knownAgencyReferences":[],"address":"Via Balice","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":120,"rooms":null,"floor":"1-2","priceAmount":150000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "different-cross-agency-centro-storico",
+      "groundTruth": "DIFFERENT",
+      "category": "HIGH_SCORING_NON_MATCH",
+      "evidence": "120 mq e 4 vani, ma 50.000/202.000 euro, piano 1/rialzato e gallery non corrispondente.",
+      "urls": ["https://www.vistocasa.com/it/immobile.aspx?articoliid=7465","https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000642/3728"],
+      "observation": {"agencyReference":"BIT.T000","address":"Bitonto Centro Storico","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":120,"rooms":4,"floor":"1","priceAmount":50000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-different-7","agencyReference":null,"knownAgencyReferences":[],"address":"Bitonto","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":120,"rooms":4,"floor":"Rialzato","priceAmount":202000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "unknown-puntocasa-arya-building-level",
+      "groundTruth": "UNKNOWN",
+      "category": "BUILDING_LEVEL_REFERENCE_REUSE",
+      "evidence": "Reference ARYA condivisa, ma la pagina descrive quattro appartamenti indipendenti: non prova la stessa UNIT.",
+      "urls": ["https://www.puntocasagroup.it/property-item/bitonto-via-mazzini-2","https://www.puntocasagroup.it/property-item/bitonto-via-mazzini"],
+      "observation": {"agencyReference":"ARYA","address":"Via Mazzini","locality":"Bitonto","propertyType":null,"surfaceSqm":112,"rooms":4,"floor":null,"priceAmount":350000,"imageFingerprints":["SOURCE_URL_SHA256:arya-active"],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-unknown-1","agencyReference":null,"knownAgencyReferences":["ARYA"],"address":"Via Mazzini","locality":"Bitonto","propertyType":null,"surfaceSqm":null,"rooms":4,"floor":null,"priceAmount":null,"imageFingerprints":["SOURCE_URL_SHA256:arya-sold"],"floorplanFingerprints":[]}
+    },
+    {
+      "id": "unknown-cross-agency-vacca",
+      "groundTruth": "UNKNOWN",
+      "category": "PLAUSIBLE_CROSS_AGENCY",
+      "evidence": "Via, 100 mq, 3 vani, piano e prezzo coincidono; deep dHash 0,7188 non basta a provare la stessa UNIT.",
+      "urls": ["https://garofaloimmobiliare.com/realestate-detail/reid/10991/via-ammiraglio-vacca-3-vani","https://www.puntocasagroup.it/property-item/bitonto-via-ammiraglio-vacca-4"],
+      "observation": {"agencyReference":"T00","address":"Via Ammiraglio Vacca","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":100,"rooms":3,"floor":"2","priceAmount":159000,"imageFingerprints":[],"floorplanFingerprints":[]},
+      "candidate": {"propertyId":"golden-unknown-2","agencyReference":null,"knownAgencyReferences":[],"address":"Via Ammiraglio Vacca","locality":"Bitonto","propertyType":"Appartamento","surfaceSqm":100,"rooms":3,"floor":"2","priceAmount":159000,"imageFingerprints":[],"floorplanFingerprints":[]}
+    }
+  ]
+}

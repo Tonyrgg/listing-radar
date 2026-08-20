@@ -18,6 +18,9 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
+*.har
 
 # next.js
 /.next/
@@ -31,6 +34,10 @@
 *.pem
 /.runtime/
 /.backups/
+/supabase/.branches/
+/supabase/.temp/
+/.crawler-tmp/
+/tmp/crawlers/
 
 # debug
 npm-debug.log*

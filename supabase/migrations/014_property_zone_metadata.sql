@@ -1,5 +1,5 @@
 -- Completa numerazione e metadati delle zone immobiliari disegnate manualmente.
--- IMPORTANTE: questa migration non modifica geometry, non inserisce e non elimina zone.
+-- Preserva la geometry esistente e riusa le righe già presenti per numero o UUID.
 
 begin;
 
@@ -158,6 +158,23 @@ with zone_metadata (
     '["Strada Provinciale Bitonto-Mariotto-Mellitto", "Strada Provinciale Terlizzi-Mariotto", "Via Cavour", "Via Giuseppe Garibaldi", "Via Fontana", "Via Michelangelo"]'::jsonb,
     '["Frazione Mariotto", "Mariotto centro"]'::jsonb,
     '["Centro abitato di Mariotto", "Farmacia Dott. Centrone", "Delegazione comunale", "Stazione di servizio Esso"]'::jsonb)
+),
+missing_zones as (
+  insert into public.internal_zones (
+    id, zone_number, name, description, color,
+    associated_streets, aliases, landmarks, is_active
+  )
+  select
+    metadata.id, metadata.zone_number, metadata.name, metadata.description, metadata.color,
+    metadata.associated_streets, metadata.aliases, metadata.landmarks, true
+  from zone_metadata metadata
+  where not exists (
+    select 1
+    from public.internal_zones existing
+    where existing.id = metadata.id
+       or existing.zone_number = metadata.zone_number
+  )
+  returning id
 )
 update public.internal_zones zone
 set zone_number = metadata.zone_number,
@@ -169,7 +186,13 @@ set zone_number = metadata.zone_number,
     landmarks = metadata.landmarks,
     updated_at = now()
 from zone_metadata metadata
-where zone.id = metadata.id;
+where zone.id = metadata.id
+   or (
+     zone.zone_number = metadata.zone_number
+     and not exists (
+       select 1 from public.internal_zones fixed where fixed.id = metadata.id
+     )
+   );
 
 do $$
 declare
@@ -177,24 +200,14 @@ declare
 begin
   select count(*) into configured_count
   from public.internal_zones
-  where id = any(array[
-    'bde7477d-a226-43e2-a24e-9b06123caf2e', 'd41616cb-df7d-4644-b182-2a345165f806',
-    'f5e5cbd9-48ce-4ce3-9a14-693adc1917c5', 'd7ab3544-c080-4344-b141-df0f1af4854b',
-    '93c50d24-5a3b-4d20-ad4a-926bdca84a15', '07874ea3-ea40-4b3d-b5cf-1396e43078dd',
-    '6bdc519c-9ce9-484c-bea9-716d96401af2', 'f0e9407d-e8e4-43fe-a30d-046b9bb83e2b',
-    '529908dd-8ba9-4b72-90c2-d29a479c5254', '47bfbe4b-9e74-4614-bab7-182f294e4647',
-    'bda9b75c-5748-441d-996d-f25349d165dd', 'b135fe31-62e6-4258-a070-05ad2fbc835f',
-    '7f9688ea-cbdc-4e77-a088-19d374d5d751', 'e0624fda-989f-4462-8892-9bb4fe123047',
-    '4fc4027d-bfbe-4123-9b6d-cff113f3a5af'
-  ]::uuid[])
-    and zone_number between 1 and 15;
+  where zone_number between 1 and 15;
 
   if configured_count <> 15 then
     raise exception 'Aggiornamento metadati incompleto: configurate % zone su 15.', configured_count;
   end if;
 
-  if not exists (select 1 from public.internal_zones where id = 'e0624fda-989f-4462-8892-9bb4fe123047' and zone_number = 14)
-     or not exists (select 1 from public.internal_zones where id = '4fc4027d-bfbe-4123-9b6d-cff113f3a5af' and zone_number = 15) then
+  if not exists (select 1 from public.internal_zones where zone_number = 14 and lower(name) = 'palombaio')
+     or not exists (select 1 from public.internal_zones where zone_number = 15 and lower(name) = 'mariotto') then
     raise exception 'Numerazione finale non valida: Palombaio e Mariotto devono essere le ultime zone.';
   end if;
 end $$;
