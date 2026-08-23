@@ -28,7 +28,8 @@
     "worker:start:auto": "npm --prefix worker run worker:start:auto",
     "worker:resume": "npm --prefix worker run worker:resume --",
     "worker:desktop": "npm --prefix worker run desktop:dev",
-    "worker:desktop:build": "npm --prefix worker run desktop:build"
+    "worker:desktop:build": "npm --prefix worker run desktop:build",
+    "lifecycle:bootstrap:live": "tsx --env-file=.env.local scripts/property-lifecycle-live-bootstrap.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
