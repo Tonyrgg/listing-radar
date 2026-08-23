@@ -1,0 +1,72 @@
+name: Property Lifecycle Radar
+
+# Cron is UTC and GitHub does not shift it for DST. Times below are chosen for
+# Europe/Rome in CEST (UTC+2); in CET (UTC+1) each run lands one hour earlier.
+#
+# The deep pass rotates one agency per day rather than walking the whole market
+# daily: a full-gallery sweep of every agency does not fit the Actions budget for
+# a private repository.
+on:
+  schedule:
+    - cron: "0 4,9,13,17 * * *"   # FAST SYNC   -> Rome 06:00 / 11:00 / 15:00 / 19:00
+    - cron: "30 1 * * *"          # DEEP SYNC   -> Rome 03:30, one agency per day
+    - cron: "30 2 * * 1"          # BUILDING    -> Rome 04:30 on Mondays
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: "Job da accodare manualmente"
+        required: true
+        default: SYNC_ALL
+        type: choice
+        options: [SYNC_ALL, DEEP_SYNC_ALL, DEEP_SYNC_AGENCY, BUILDING_DATA_SYNC, SYNC_PRIVATE_RADAR]
+
+concurrency:
+  # Never let two workers drain the same queue concurrently.
+  group: property-lifecycle-worker
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      LIFECYCLE_DEEP_MAX_ASSETS: "6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Decide job
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job_type=${{ inputs.job_type }}" >> "$GITHUB_OUTPUT"
+            echo "rotate=" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "30 1 * * *" ]; then
+            echo "job_type=DEEP_SYNC_AGENCY" >> "$GITHUB_OUTPUT"
+            echo "rotate=--agency-rotation" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "30 2 * * 1" ]; then
+            echo "job_type=BUILDING_DATA_SYNC" >> "$GITHUB_OUTPUT"
+            echo "rotate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "job_type=SYNC_ALL" >> "$GITHUB_OUTPUT"
+            echo "rotate=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enqueue and drain
+        run: |
+          npx tsx scripts/property-lifecycle-remote-worker.ts \
+            --confirm-project="$SUPABASE_PROJECT_REF" \
+            --enqueue="${{ steps.decide.outputs.job_type }}" \
+            ${{ steps.decide.outputs.rotate }} \
+            --drain \
+            --max-seconds=18000 \
+            --max-jobs=200
