@@ -158,9 +158,13 @@ Le publication in trattativa sono **4**, con `source_status = NEGOTIATION` e sta
 
 ## M. Image fingerprint count
 
-**7.345 immagini** effettivamente scaricate, decodificate e hashate, ciascuna con SHA-256 e DHASH64, per 14.690 righe. In più **1.583** asset registrati con il solo `SOURCE_URL_SHA256` perché non scaricabili. Totale righe in `image_fingerprints`: **16.273**.
+**7.345 immagini** effettivamente scaricate, decodificate e hashate, ciascuna con SHA-256 e DHASH64, per 14.690 righe.
 
 Il cap è `maxAssets = 24` per publication, con delay di 250 ms fra le richieste.
+
+A queste si aggiungono **9.452 righe `SOURCE_URL_SHA256`**, che registrano un asset per solo URL quando il file non viene scaricato. Erano 1.583 dopo il bootstrap — i soli asset non scaricabili — e sono salite dopo il primo FAST SYNC, che per definizione non scarica alcun asset e quindi produce un record a livello di URL per ogni immagine nota. Totale righe in `image_fingerprints` dopo il primo ciclo completo: **24.142**.
+
+**La crescita è deduplicata, non illimitata.** Verificato su una publication campione: 20 URL distinti osservati su 2 snapshot producono ancora 20 righe per algoritmo, non 40. Le righe `SHA256` e `DHASH64` sono rimaste esattamente a 7.345 ciascuna dopo il secondo sync, quindi i fingerprint reali non vengono riscritti a ogni passaggio.
 
 ## N. Floorplan fingerprint count
 
@@ -390,4 +394,6 @@ Non è possibile eseguire la suite contro un build di produzione senza credenzia
 
 6. **Zero inventario in Palombaio e Mariotto.** Nessun record del mercato corrente ricade in quelle frazioni. Da riverificare ai prossimi cicli per escludere un limite di parsing delle località.
 
-7. **Deploy Vercel non modificato.** Il database Lifecycle è popolato e la workspace è raggiungibile, ma nessuna configurazione di produzione né alcun dominio è stato toccato. La sostituzione visiva del Listing Radar legacy resta una decisione separata.
+7. **Credenziali Supabase locali tracciate in git.** `supabase/.temp/start-secrets/.../docker.env` è versionato e contiene service role key e JWT secret. Sono credenziali dello stack **locale** — gli host sono `kong` e `supabase_db_listing-radar`, interni a Docker — quindi l'esposizione è a bassa severità, ma resta in contrasto con `AGENTS.md` e con `environment-setup.md`. Il file è entrato nella history con il commit `7fd9d7c`, precedente a questa attivazione. Rimuoverlo richiede una riscrittura della history e va deciso separatamente; nel frattempo andrebbe aggiunto a `.gitignore`.
+
+8. **Deploy Vercel non modificato.** Il database Lifecycle è popolato e la workspace è raggiungibile, ma nessuna configurazione di produzione né alcun dominio è stato toccato. La sostituzione visiva del Listing Radar legacy resta una decisione separata.
