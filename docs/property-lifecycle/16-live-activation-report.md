@@ -230,24 +230,41 @@ Nessun `AGENCY_TO_PRIVATE` è stato dichiarato: richiederebbe un'identità dimos
 
 ## T. Adapter Health baseline
 
-Tutte e 10 le agenzie hanno una baseline persistita con `successful_run_count = 1` e `consecutive_healthy_runs = 1`. Tutti i run risultano `HEALTHY` con reason `baseline_warmup`.
+Stato dopo il bootstrap e dopo il primo FAST SYNC reale eseguito dallo scheduler.
 
-| Agenzia | Inventory osservato | Run |
-|---|---:|---:|
-| Iconacasa | 101 | 1 |
-| Vistocasa | 112 | 1 |
-| Studi Santi | 107 | 1 |
-| Ad Maiora | 44 | 1 |
-| Studio Casa | 52 | 1 |
-| Futura | 49 | 1 |
-| Garofalo | 40 | 1 |
-| Trio Casa | 10 | 1 |
-| PuntoCasa | 120 | 2 |
-| Momento Casa | 4 | 1 |
+| Agenzia | Finestra inventory | Run | Healthy streak |
+|---|---|---:|---:|
+| Iconacasa | [101, 101] | 2 | 2 |
+| Vistocasa | [112, 112] | 2 | 2 |
+| Studi Santi | [107, 107] | 2 | 2 |
+| Ad Maiora | [44, 44] | 2 | 2 |
+| **Studio Casa** | **[52]** | **1** | **0** |
+| Futura | [49, 49] | 2 | 2 |
+| Garofalo | [40, 40] | 2 | 2 |
+| Trio Casa | [10, 10] | 2 | 2 |
+| PuntoCasa | [120, 120, 120] | 3 | 3 |
+| Momento Casa | [4, 4] | 2 | 2 |
 
 **Nota terminologica:** il doc 15 parla di uno stato `WARMING_UP`, ma quella stringa non esiste nel codice. Il meccanismo equivalente è `HEALTH_BASELINE_MIN_SAMPLES = 3` con il flag `baselineReady`, che richiede almeno 3 campioni **e** 3 run sani consecutivi; finché è falso, `absenceEvaluationAllowed` è falso e le transizioni di assenza restano bloccate.
 
-**PuntoCasa ha 2 run** perché è stata ri-sincronizzata dopo la correzione descritta nella sezione W. È una seconda osservazione reale, non un run fabbricato. Nessun run #2 o #3 è stato inventato per portare artificialmente la baseline a READY.
+I run #2 sono stati prodotti dal primo FAST SYNC reale dello scheduler, non fabbricati. PuntoCasa è a 3 perché ri-sincronizzata dopo la correzione W.4.
+
+### Studio Casa: primo guasto reale, gestito correttamente
+
+Durante il FAST SYNC la fonte ha risposto **HTTP 403**, il blocco intermittente del publisher Casa.it già previsto dal doc 15 e dal paragrafo 15. Il sistema ha reagito esattamente come progettato:
+
+| Campo | Valore |
+|---|---|
+| `health_state` | `FAILED` |
+| `inventory_complete` | `false` |
+| `absence_evaluation_allowed` | **`false`** |
+| `discovered_count` | 0 |
+| `missing_count` | **0** |
+| `transitioned_count` | **0** |
+| `consecutive_healthy_runs` | azzerato da 1 a 0 |
+| Reasons | `http_status:403`, `inventory_zero` |
+
+**Nessuna delle 46 publication di Studio Casa è stata marcata come scomparsa**, nonostante l'inventario osservato fosse zero. È la regola di `AGENTS.md` — non inferire mai una scomparsa da un crawler o da una fonte in errore — verificata in produzione sotto un guasto reale e non simulato. Le altre nove agenzie non sono state influenzate: il fallimento di una fonte non blocca le altre.
 
 ## U. Stato scheduler / worker
 
@@ -267,6 +284,17 @@ Il POST_EXIT non ha bisogno di uno scheduler dedicato: la migration 031 accoda i
 Il crawling massivo **non** passa da richieste sincrone Vercel.
 
 I secret `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_PROJECT_REF` sono configurati nel repository.
+
+### Validazione end-to-end dello scheduler
+
+Il workflow è stato eseguito realmente, non solo committato. Il primo tentativo è **fallito** e ha rivelato un difetto che il solo commit non avrebbe mai mostrato: vedi W.6. Dopo la correzione, il run `32661537208` si è concluso con esito `success`:
+
+- `SYNC_ALL` eseguito e fan-out completato;
+- **10 job `SYNC_AGENCY` creati e tutti conclusi `SUCCEEDED`**;
+- 9 `sync_run` in stato `SUCCEEDED`, 1 `FAILED` (Studio Casa, HTTP 403, vedi sezione T);
+- baseline health avanzate da run 1 a run 2 per otto agenzie.
+
+Questo è ciò che distingue un sistema attivo da un sistema soltanto configurato: i job vengono realmente accodati ed eseguiti da infrastruttura esterna contro il database di produzione, senza intervento manuale.
 
 ## V. Campione manuale 30 listing
 
@@ -316,6 +344,14 @@ Corretto con la migration `032`, che aggiunge un ramo di conflitto: se un sold g
 
 `run_after` veniva impostato dall'orologio del client mentre la coda lo confronta con l'orologio del database: il drain che segue nello stesso secondo non trovava nulla da reclamare. È un difetto reale anche per il workflow schedulato, dove enqueue e drain sono consecutivi. Corretto retrodatando `run_after` di 60 secondi.
 
+### W.6 — `npm ci` impossibile sul runner Linux
+
+Il primo run reale del workflow è fallito prima ancora di raggiungere il worker. Il `package-lock.json` committato è stato generato su Windows e **non contiene le entry di pacchetto** per `@emnapi/runtime` e `@emnapi/core`, che su Linux diventano necessarie per `sharp` e per il binario oxide di Tailwind; `npm ci` rifiuta di procedere.
+
+È una condizione preesistente del repository, mai emersa perché nessuna CI aveva mai girato. **Senza questa verifica lo scheduler sarebbe fallito silenziosamente a ogni cron** e il sistema sarebbe stato dichiarato "live" a torto.
+
+Sono state valutate due strade. Rigenerare il lockfile risolve il problema ma sposta **155 versioni** di pacchetti, incluse `@babel/*`, `esbuild`, `vite` e `tsx`: una deriva che l'attivazione dello scheduler non ha alcun titolo per imporre a un repository di produzione. Il workflow usa quindi `npm install` invece di `npm ci`, e il lockfile resta esattamente com'era. Il vincolo è documentato in un commento nel workflow.
+
 ## X. Quality Gate
 
 | Gate | Esito |
@@ -342,7 +378,9 @@ Non è possibile eseguire la suite contro un build di produzione senza credenzia
 
 1. **Suite Playwright Lifecycle non completabile in questo ambiente.** Serve eseguirla con `LIFECYCLE_E2E_BASE_URL`, `LIFECYCLE_E2E_EMAIL` e `LIFECYCLE_E2E_PASSWORD` contro un server di produzione autenticato. In alternativa, l'asserzione dovrebbe filtrare il rumore HMR quando gira in dev.
 
-2. **Adapter Health non è ancora READY.** Nove agenzie su dieci hanno un solo run osservato, PuntoCasa due. Servono almeno 3 run sani consecutivi per agenzia prima che le transizioni di assenza siano abilitate. Con la cadenza FAST 4 volte al giorno la soglia si raggiunge entro il primo giorno di esercizio. **Fino ad allora nessuna scomparsa definitiva può essere generata**, ed è il comportamento voluto.
+2. **Adapter Health non è ancora READY.** Otto agenzie sono a 2 run sani, PuntoCasa a 3, Studio Casa tornata a 0 dopo il 403. Servono 3 run sani consecutivi per agenzia prima che le transizioni di assenza siano abilitate: con la cadenza FAST 4 volte al giorno la soglia si raggiunge entro il primo giorno di esercizio per tutte tranne Studio Casa, che deve ripartire da zero. **Fino ad allora nessuna scomparsa definitiva può essere generata**, ed è il comportamento voluto.
+
+2-bis. **Studio Casa è la fonte più fragile.** Un HTTP 403 al primo FAST SYNC conferma il limite già noto del publisher Casa.it. Il sistema degrada correttamente, ma se i 403 fossero frequenti quella agenzia resterebbe indefinitamente sotto soglia e non potrebbe mai produrre disappearance affidabili. Da monitorare nei primi giorni di esercizio; potrebbe servire un backoff più conservativo o una finestra di retry dedicata.
 
 3. **Nessun SAME cross-agency ancora dimostrato.** Il limite centrale del doc 15 resta aperto: 0 auto-match e 171 review di identità da valutare operativamente. Il volume di review è cresciuto rispetto alla baseline perché ora esiste evidence fotografica reale, ma nessuna di queste coppie è stata confermata.
 
