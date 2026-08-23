@@ -103,3 +103,33 @@ describe("transparent opportunity rules", () => {
     });
   });
 });
+
+describe("opportunities without any agency history", () => {
+  it("does not claim an agency exit for a property no agency ever listed", () => {
+    const assessment = assessOpportunity({
+      saleStatus: "UNKNOWN",
+      agencyListingState: null,
+      agencyToPrivate: false,
+      trueMarketAgeDays: null,
+      priceDropCount: 0,
+      relaunchCount: 0,
+    });
+
+    expect(assessment.level).toBe("NONE");
+    expect(assessment.reasons).not.toContain("agency_exit_confirmed");
+  });
+
+  it("still scores age and price signals without an agency listing", () => {
+    const assessment = assessOpportunity({
+      saleStatus: "UNKNOWN",
+      agencyListingState: null,
+      agencyToPrivate: false,
+      trueMarketAgeDays: 400,
+      priceDropCount: 2,
+      relaunchCount: 0,
+    });
+
+    expect(assessment.level).toBe("WATCH");
+    expect(assessment.reasons).not.toContain("agency_exit_confirmed");
+  });
+});

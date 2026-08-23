@@ -1747,7 +1747,10 @@ export class PropertyLifecycleRepository {
     )[0] ??
       assessOpportunity({
         saleStatus: property.sale_status,
-        agencyListingState: "OFF_MARKET_NO_SALE_EVIDENCE",
+        // No agency listing has ever existed for this property, so no agency
+        // exit was ever observed. Claiming one here fabricated history the
+        // Radar never saw for private-only properties.
+        agencyListingState: null,
         agencyToPrivate: false,
         trueMarketAgeDays: age,
         priceDropCount: priceDropCount ?? 0,

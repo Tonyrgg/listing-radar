@@ -89,6 +89,10 @@ async function enqueue(db: SupabaseClient, jobType: LifecycleJobType): Promise<v
     agencyId: agency?.id ?? null,
     priority: jobType === "SYNC_ALL" ? 10 : 5,
     dedupeKey: agency ? `${slotKey(jobType)}:${agency.slug}` : slotKey(jobType),
+    // run_after comes from this client's clock while the queue compares it to the
+    // database clock. Enqueueing at "now" leaves the job unclaimable for the
+    // drain that follows in the same second, so backdate it past any skew.
+    runAfter: new Date(Date.now() - 60_000).toISOString(),
   });
   console.info(
     JSON.stringify({
