@@ -5,7 +5,12 @@ export type OpportunityLevel = "NONE" | "WATCH" | "INTERESTING" | "HIGH" | "HOT"
 
 export interface OpportunityInput {
   saleStatus: SaleStatus;
-  agencyListingState: AgencyListingState;
+  /**
+   * Null when no agency has ever listed this property. That is not an agency
+   * exit: the exit branches below must not fire for a property whose departure
+   * from an agency was never observed.
+   */
+  agencyListingState: AgencyListingState | null;
   agencyToPrivate: boolean;
   trueMarketAgeDays: number | null;
   priceDropCount: number;

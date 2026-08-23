@@ -14,14 +14,47 @@ import {
 } from "@/lib/property-lifecycle/jobs/queue";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
 import { PrivateRadarBridge } from "@/lib/property-lifecycle/private-radar/bridge";
+import {
+  processListingAssets,
+  type AssetProcessingResult,
+} from "@/lib/property-lifecycle/assets/pipeline";
+import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
+
+export type LifecycleAssetProcessor = (
+  listing: NormalizedListingV2,
+  jobType: LifecycleJobType,
+) => Promise<AssetProcessingResult>;
 
 export interface WorkerDependencies {
   db: SupabaseClient;
   queue?: LifecycleJobQueue;
   adapterFactory?: (adapterKey: string) => PropertyLifecycleAdapter;
   fetcher?: typeof fetch;
+  assetProcessor?: LifecycleAssetProcessor;
 }
+
+/**
+ * The sync engine only reaches for assets in DEEP_SYNC and BOOTSTRAP mode, so a
+ * fast sync never pays this cost. Without a processor here those two modes ran
+ * with the pipeline default and the scheduled deep sync persisted publications
+ * with no image fingerprint, so image evidence stopped accumulating after
+ * Day Zero. LIFECYCLE_DEEP_MAX_ASSETS bounds the gallery walk per run.
+ */
+function deepSyncMaxAssets(): number {
+  const configured = Number(process.env.LIFECYCLE_DEEP_MAX_ASSETS);
+  return Number.isInteger(configured) && configured > 0 && configured <= 24
+    ? configured
+    : 24;
+}
+
+const defaultAssetProcessor: LifecycleAssetProcessor = (listing) =>
+  processListingAssets(listing, {
+    maxAssets: deepSyncMaxAssets(),
+    requestDelayMs: 250,
+    timeoutMs: 20_000,
+    representativeImageCount: 2,
+  });
 
 function fanoutType(jobType: LifecycleJobType): LifecycleJobType {
   switch (jobType) {
@@ -86,6 +119,7 @@ async function executeAgencySync(
   db: SupabaseClient,
   job: LifecycleJob,
   adapterFactory: (adapterKey: string) => PropertyLifecycleAdapter,
+  assetProcessor: LifecycleAssetProcessor,
 ): Promise<void> {
   if (!job.agency_id) {
     throw new Error(`Job ${job.id} requires agency_id.`);
@@ -109,6 +143,7 @@ async function executeAgencySync(
     repository: new PropertyLifecycleRepository(db),
     mode: syncMode(job.job_type),
     jobId: job.id,
+    assetProcessor: (listing) => assetProcessor(listing, job.job_type),
   });
 }
 
@@ -217,7 +252,12 @@ export async function runLifecycleWorkerOnce(
     } else if (
       ["SYNC_AGENCY", "DEEP_SYNC_AGENCY", "BOOTSTRAP_AGENCY"].includes(job.job_type)
     ) {
-      await executeAgencySync(dependencies.db, job, adapterFactory);
+      await executeAgencySync(
+        dependencies.db,
+        job,
+        adapterFactory,
+        dependencies.assetProcessor ?? defaultAssetProcessor,
+      );
     } else if (job.job_type === "POST_EXIT_CHECK") {
       await executePostExitCheck(dependencies.db, job);
     } else if (job.job_type === "BUILDING_DATA_SYNC") {
