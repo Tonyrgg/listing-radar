@@ -42,7 +42,12 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - run: npm ci
+      # Not npm ci: the committed lock file was generated on Windows and omits
+      # the Linux-only optional dependencies that sharp and the tailwind oxide
+      # binary resolve here, so a clean install refuses to run. Regenerating the
+      # lock file to fix that drifts 155 package versions, which this workflow
+      # has no business doing.
+      - run: npm install --no-audit --no-fund
 
       - name: Decide job
         id: decide
