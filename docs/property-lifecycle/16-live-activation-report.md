@@ -392,6 +392,8 @@ Non è possibile eseguire la suite contro un build di produzione senza credenzia
 
 5. **Il cron di GitHub non segue l'ora legale.** Gli orari indicati sono corretti in CEST; in CET ogni run cade un'ora prima.
 
+5-bis. **I rami schedulati dello step `Decide job` non sono ancora stati eseguiti.** Le tre validazioni end-to-end sono partite da `workflow_dispatch`, che prende il ramo `inputs.job_type`. I confronti su `github.event.schedule`, quelli che selezionano `DEEP_SYNC_AGENCY` e `BUILDING_DATA_SYNC`, saranno esercitati solo al primo cron reale. Un eventuale errore nel confronto delle stringhe cron farebbe cadere il run nell'`else`, cioè in un `SYNC_ALL`: fallback innocuo, ma deep sync e building sync non partirebbero. **Da verificare dopo il primo cron delle 01:30 UTC.**
+
 6. **Zero inventario in Palombaio e Mariotto.** Nessun record del mercato corrente ricade in quelle frazioni. Da riverificare ai prossimi cicli per escludere un limite di parsing delle località.
 
 7. **Credenziali Supabase locali tracciate in git.** `supabase/.temp/start-secrets/.../docker.env` è versionato e contiene service role key e JWT secret. Sono credenziali dello stack **locale** — gli host sono `kong` e `supabase_db_listing-radar`, interni a Docker — quindi l'esposizione è a bassa severità, ma resta in contrasto con `AGENTS.md` e con `environment-setup.md`. Il file è entrato nella history con il commit `7fd9d7c`, precedente a questa attivazione. Rimuoverlo richiede una riscrittura della history e va deciso separatamente; nel frattempo andrebbe aggiunto a `.gitignore`.
