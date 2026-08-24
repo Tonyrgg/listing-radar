@@ -738,3 +738,90 @@ export async function getRecentScrapeErrors(limit = 8) {
     return [];
   }
 }
+
+/**
+ * Per ogni annuncio visibile, dice se la stessa casa si vede anche da
+ * un'altra parte — e a che prezzo.
+ *
+ * Un doppione dichiarato è informazione utile: sapere che due agenzie tengono
+ * lo stesso immobile a quattromila euro di differenza vale più di una fusione.
+ * Una query sola per tutta la lista, non una per riga.
+ */
+export type DuplicateSibling = {
+  count: number;
+  source: string;
+  price: number | null;
+  otherId: string;
+};
+
+export async function getDuplicateSiblings(
+  listings: Listing[],
+): Promise<Map<string, DuplicateSibling>> {
+  const siblings = new Map<string, DuplicateSibling>();
+  const groups = [
+    ...new Set(
+      listings
+        .map((listing) => listing.duplicateGroupId)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+
+  if (!groups.length || !hasSupabaseReadConfig()) {
+    return siblings;
+  }
+
+  try {
+    const supabase = getSupabaseServiceClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("id, duplicate_group_id, source, price, status")
+      .in("duplicate_group_id", groups);
+
+    if (error || !data) return siblings;
+
+    const byGroup = new Map<string, Array<{ id: string; source: string; price: number | null }>>();
+
+    for (const row of data as Array<{
+      id: string;
+      duplicate_group_id: string | null;
+      source: string;
+      price: number | null;
+      status: string;
+    }>) {
+      if (!row.duplicate_group_id || row.status === "archived") continue;
+      const bucket = byGroup.get(row.duplicate_group_id) ?? [];
+      bucket.push({ id: row.id, source: row.source, price: row.price });
+      byGroup.set(row.duplicate_group_id, bucket);
+    }
+
+    for (const listing of listings) {
+      if (!listing.duplicateGroupId) continue;
+
+      const others = (byGroup.get(listing.duplicateGroupId) ?? []).filter(
+        (row) => row.id !== listing.id,
+      );
+
+      if (!others.length) continue;
+
+      /* Si mostra quello che differisce di più nel prezzo: è il confronto
+       * che serve davvero quando si decide chi chiamare. */
+      const mostDifferent = others.reduce((best, row) => {
+        if (listing.price == null || row.price == null) return best;
+        const bestGap = best.price == null ? -1 : Math.abs(best.price - listing.price);
+        const rowGap = Math.abs(row.price - listing.price);
+        return rowGap > bestGap ? row : best;
+      }, others[0]);
+
+      siblings.set(listing.id, {
+        count: others.length,
+        source: mostDifferent.source,
+        price: mostDifferent.price,
+        otherId: mostDifferent.id,
+      });
+    }
+  } catch {
+    return siblings;
+  }
+
+  return siblings;
+}

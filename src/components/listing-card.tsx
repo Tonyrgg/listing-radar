@@ -7,6 +7,8 @@ import { ListingScoreSummary } from "@/components/listing-score";
 import { LoadingAnchor, PendingSubmitButton } from "@/components/loading-controls";
 import { ConfirmSubmit } from "@/components/ui/feedback";
 import { Chip, Meta, Stripe, buttonClass, type Tone } from "@/components/ui/primitives";
+import { Dato, Fonte, Periodo } from "@/components/ui/atoms";
+import type { DuplicateSibling } from "@/lib/data/repository";
 import {
   archiveListing,
   updateListingCrmStatus,
@@ -153,10 +155,13 @@ export function ListingCard({
   listing,
   scoringConfig,
   density = "list",
+  duplicate,
 }: Readonly<{
   listing: Listing;
   scoringConfig: ScoringConfig;
   density?: ListingDensity;
+  /** La stessa casa vista da un'altra fonte, quando c'è. */
+  duplicate?: DuplicateSibling;
 }>) {
   const isTreated = listing.crmStatus === "treated";
   const tone = attentionTone(listing, isTreated);
@@ -191,16 +196,20 @@ export function ListingCard({
           />
 
           <div className="min-w-0 flex-1">
-            <div className="relative z-10 flex flex-wrap items-center gap-2">
+            <div className="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
               {isTreated ? (
                 <Chip tone="neutral">✓ Trattato</Chip>
               ) : (
                 <Badge tone={getSellerTypeTone(listing.sellerType)}>
-                  {getSellerTypeLabel(listing.sellerType)}
+                  {/* Il tipo di venditore è quasi sempre dedotto dal testo
+                    * dell'annuncio: lo schermo non deve spacciarlo per un fatto. */}
+                  <Dato certainty={listing.sellerType === "unknown" ? "unknown" : "guess"}>
+                    {getSellerTypeLabel(listing.sellerType)}
+                  </Dato>
                 </Badge>
               )}
               <Meta className="truncate">
-                {getSourceLabel(listing.source)}
+                <Fonte name={getSourceLabel(listing.source)} />
                 {listing.status !== "new" ? ` · ${getListingStatusLabel(listing.status)}` : ""}
                 {listing.isNewToday ? " · nuovo oggi" : ""}
               </Meta>
@@ -218,7 +227,27 @@ export function ListingCard({
               {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
               {listing.rooms != null ? <span>{formatNumber(listing.rooms)} locali</span> : null}
               {perSqm ? <span>{perSqm}</span> : null}
+              <Periodo
+                from={`da almeno ${formatNumber(listing.minimumDaysOnline)} giorni`}
+                uncertain
+              />
             </div>
+
+            {/* Un doppione dichiarato è informazione, non un problema da risolvere:
+              * due prezzi per la stessa casa dicono più di una fusione. */}
+            {duplicate ? (
+              <p className="relative z-10 mt-1.5 flex flex-wrap items-baseline gap-x-2 text-[length:var(--lr-text-meta)] text-[var(--lr-info)]">
+                <span>
+                  Anche da {getSourceLabel(duplicate.source)}
+                  {duplicate.price != null ? ` a ${formatCurrency(duplicate.price)}` : ""}
+                </span>
+                {duplicate.count > 1 ? (
+                  <span className="text-[var(--lr-ink-3)]">
+                    · e altre {duplicate.count - 1} pubblicazioni
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
 
             {/* Il motivo resta visibile anche a lavoro concluso: è quello che fa scegliere. */}
             <p
