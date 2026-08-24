@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -19,6 +19,7 @@ import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.j
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
+import { SisterStreetRun, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -106,6 +107,10 @@ let mandateImportActive = false;
 let mandateImportCancellationRequested = false;
 let mandateImportError: string | null = null;
 let mandateImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
+let streetRunActive = false;
+let streetRunCancellationRequested = false;
+let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
+let streetRunError: string | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -127,6 +132,27 @@ function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
 
 function preferencesPath() {
   return path.join(app.getPath("userData"), "desktop-preferences.json");
+}
+
+function streetRunCheckpointPath() {
+  return path.join(app.getPath("userData"), "sister-street-run.json");
+}
+
+async function loadStreetRunCheckpoint() {
+  try {
+    streetRunCheckpoint = JSON.parse(await readFile(streetRunCheckpointPath(), "utf8")) as SisterStreetRunCheckpoint;
+  } catch {
+    streetRunCheckpoint = null;
+  }
+}
+
+async function persistStreetRunCheckpoint(checkpoint: SisterStreetRunCheckpoint) {
+  const target = streetRunCheckpointPath();
+  const temporary = `${target}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(temporary, JSON.stringify(checkpoint, null, 2), "utf8");
+  await rename(temporary, target);
+  streetRunCheckpoint = checkpoint;
 }
 
 async function loadPreferences() {
@@ -304,6 +330,13 @@ async function stateSnapshot() {
       latestRun: latestMandateImport,
       schemaError: mandateImportSchemaError,
     },
+    streetRun: {
+      active: streetRunActive,
+      cancelling: streetRunCancellationRequested,
+      checkpoint: streetRunCheckpoint,
+      lastError: streetRunError,
+      checkpointPath: streetRunCheckpointPath(),
+    },
     version: app.getVersion(),
   };
 }
@@ -327,7 +360,7 @@ function initializeDesktopUpdater() {
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
       serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
       updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-      isWorkerActive: () => active || requestImportActive || mandateImportActive,
+      isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive,
       quitApp: () => app.quit(),
       onState: (state) => {
         if (state.status !== previousStatus) {
@@ -357,7 +390,7 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
 }
 
 async function runRequestArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
   requestImportActive = true;
   requestImportCancellationRequested = false;
   requestImportError = null;
@@ -394,7 +427,7 @@ async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
 }
 
 async function runMandateArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
   mandateImportActive = true;
   mandateImportCancellationRequested = false;
   mandateImportError = null;
@@ -415,6 +448,55 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   }).finally(async () => {
     mandateImportActive = false;
     mandateImportCancellationRequested = false;
+    await publishState();
+  });
+}
+
+async function runSisterStreet(input: { street: string; resume: boolean }) {
+  if (active || requestImportActive || mandateImportActive || streetRunActive) {
+    throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  }
+  const street = input.street.replace(/\s+/g, " ").trim();
+  if (street.length < 4) throw new Error("Inserisci il nome completo della via");
+  const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
+  if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
+
+  streetRunActive = true;
+  streetRunCancellationRequested = false;
+  streetRunError = null;
+  pushActivity(input.resume ? `Ripresa dry-run via ${street}` : `Dry-run via ${street} avviato`, "info");
+  await publishState();
+
+  const config = workerConfig({ dryRun: true });
+  void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+    try {
+      const scanner = new SisterStreetRun(tabs.sisterPage, {
+        emptyWindow: 50,
+        startCivic: 1,
+        maximumCivic: 5_000,
+        acquireOwners: true,
+        isCancelled: () => streetRunCancellationRequested,
+        onCheckpoint: async (checkpoint) => {
+          await persistStreetRunCheckpoint(checkpoint);
+          if (checkpoint.currentVariantIndex === 0 || checkpoint.status !== "running") await publishState();
+        },
+      });
+      const result = await scanner.run(street, resumeCheckpoint);
+      pushActivity(
+        result.status === "completed"
+          ? `Dry-run via completato: ${result.totalAcceptedProperties} immobili e ${result.totalOwnersRead} proprietari letti`
+          : `Dry-run via sospeso al civico ${result.nextCivicNumber}`,
+        result.status === "completed" ? "success" : "warning",
+      );
+    } finally {
+      await tabs.browser.close().catch(() => undefined);
+    }
+  }).catch((error) => {
+    streetRunError = error instanceof Error ? error.message : String(error);
+    pushActivity(streetRunError, "error");
+  }).finally(async () => {
+    streetRunActive = false;
+    streetRunCancellationRequested = false;
     await publishState();
   });
 }
@@ -628,10 +710,15 @@ function handleRunnerEvent(event: RunnerEvent) {
     if (retry && retry.jobId === event.jobId && retry.propertyId === failedPropertyId && retry.attempt >= 3) {
       clearAutoRetry();
       void skipAfterAutomaticRetries(event.jobId, retry.propertyId, event.message, retry.attempt);
-    } else if (preferences.autoRetryEnabled) {
+    } else if (preferences.autoRetryEnabled && failedPropertyId && ["portal_error", "failed"].includes(event.status)) {
       void scheduleAutoRetry(event.jobId);
     } else {
-      pushActivity("Riprova automatico disattivato: il lavoro resta fermo finché non decidi tu", "warning");
+      pushActivity(
+        preferences.autoRetryEnabled
+          ? "Questo errore richiede un controllo umano e non verrà trasformato in retry o skip automatico"
+          : "Riprova automatico disattivato: il lavoro resta fermo finché non decidi tu",
+        "warning",
+      );
     }
   }
   void publishState();
@@ -727,7 +814,7 @@ async function resetCrmAfterSkippedCase() {
 }
 
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
-  if (active || requestImportActive || mandateImportActive) throw new Error("È già presente una lavorazione in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
   active = true;
   cancellingJobId = null;
@@ -922,6 +1009,17 @@ function registerIpc() {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
   });
+  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean }) => {
+    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true });
+    return true;
+  });
+  ipcMain.handle("desktop:cancel-street-run", async () => {
+    if (!streetRunActive) return false;
+    streetRunCancellationRequested = true;
+    pushActivity("Pausa dry-run via richiesta: completo il passaggio corrente e salvo il cursore", "warning");
+    await publishState();
+    return true;
+  });
   ipcMain.handle("desktop:start-request-archive-import", async (_event, resumeRunId?: string) => {
     await runRequestArchiveImport(resumeRunId || undefined);
     return true;
@@ -1016,7 +1114,21 @@ function registerIpc() {
   ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {
     if (!values.jobId || !values.propertyId) throw new Error("Immobile da saltare non riconosciuto");
     const repo = repository();
-    if (!active) await resetCrmAfterSkippedCase();
+    if (active) {
+      if (activeJobId !== values.jobId) throw new Error("La riga indicata non appartiene alla lavorazione attiva");
+      if (propertyProgress?.propertyId !== values.propertyId) throw new Error("La riga indicata non Ã¨ piÃ¹ quella corrente");
+      if (skippingPropertyId && skippingPropertyId !== values.propertyId) throw new Error("Attendi il completamento dello skip giÃ  richiesto");
+      skippingPropertyId = values.propertyId;
+      pushActivity(
+        currentStep === "owners_extracted"
+          ? `Skip richiesto per la riga ${propertyProgress.index}: terminerÃ² in sicurezza il passaggio corrente e continuerÃ²`
+          : "Skip richiesto per l'immobile corrente: terminerÃ² in sicurezza il passaggio corrente e continuerÃ²",
+        "warning",
+      );
+      await publishState();
+      return { pending: true };
+    }
+    await resetCrmAfterSkippedCase();
     const skipped = await markCaseSkipped(values.jobId, values.propertyId, {
       source: "manual",
       reason: "Saltato manualmente dall'utente",
@@ -1030,7 +1142,7 @@ function registerIpc() {
       await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
     }
     await publishState();
-    return true;
+    return { pending: false };
   });
   ipcMain.handle("desktop:load-more-completed", async () => {
     completedImportsLimit += 6;
@@ -1111,6 +1223,7 @@ function registerIpc() {
 app.whenReady().then(async () => {
   app.setAppUserModelId("it.listingradar.propertyworker");
   await loadPreferences();
+  await loadStreetRunCheckpoint();
   registerIpc();
   await createWindow();
   scheduleDesktopKeepAlive(3_000);

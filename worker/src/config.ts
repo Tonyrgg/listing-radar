@@ -31,8 +31,8 @@ const configSchema = z.object({
   SISTER_TAB_MATCH: z.string().min(1),
   CRM_TAB_MATCH: z.string().min(1),
   SISTER_KEEPALIVE_ENABLED: booleanFromEnv,
-  SISTER_KEEPALIVE_MIN_SECONDS: z.coerce.number().int().min(30).max(3_600).default(120),
-  SISTER_KEEPALIVE_MAX_SECONDS: z.coerce.number().int().min(30).max(3_600).default(180),
+  SISTER_KEEPALIVE_MIN_SECONDS: z.coerce.number().int().min(30).max(3_600).default(60),
+  SISTER_KEEPALIVE_MAX_SECONDS: z.coerce.number().int().min(30).max(3_600).default(90),
   SISTER_KEEPALIVE_URL: optionalUrlFromEnv,
 }).superRefine((value, context) => {
   if (value.SISTER_KEEPALIVE_MAX_SECONDS < value.SISTER_KEEPALIVE_MIN_SECONDS) {

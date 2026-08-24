@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   savePreferences: (values) => ipcRenderer.invoke("desktop:save-preferences", values),
   saveInternalConfiguration: (values) => ipcRenderer.invoke("desktop:save-internal-configuration", values),
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
+  startStreetRun: (values) => ipcRenderer.invoke("desktop:start-street-run", values),
+  cancelStreetRun: () => ipcRenderer.invoke("desktop:cancel-street-run"),
   startRequestArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-request-archive-import", runId),
   cancelRequestArchiveImport: () => ipcRenderer.invoke("desktop:cancel-request-archive-import"),
   startMandateArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-mandate-archive-import", runId),

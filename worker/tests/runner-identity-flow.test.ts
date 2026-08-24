@@ -61,7 +61,7 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
-  it("su un vecchio caso duplicato riparte dalla ricerca e sceglie il primo risultato con CF verificato", async () => {
+  it("non sceglie alla cieca tra due schede con lo stesso CF", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const repository = {
       updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
@@ -87,16 +87,40 @@ describe("flusso identità nominativo e immobile", () => {
       createPerson: vi.fn(),
     };
 
-    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
+    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm))
+      .rejects.toMatchObject({ status: "needs_review", details: { action: "person-multiple-exact-matches" } });
 
     expect(crm.findPerson).toHaveBeenCalledOnce();
-    expect(crm.openExistingPerson).toHaveBeenCalledTimes(1);
-    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-1");
+    expect(crm.openExistingPerson).toHaveBeenCalledTimes(2);
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBe("CRM-PERSON-1");
+    expect(row.crm_record_id).toBeNull();
+  });
+
+  it("risolve due schede con lo stesso CF soltanto quando il cellulare identifica un candidato unico", async () => {
+    const { runner } = runnerWithRepository();
+    const row = { ...personRow(), mobiles: ["3331234567"] };
+    const crm = {
+      findPerson: vi.fn().mockResolvedValue({
+        matches: [
+          { id: "CRM-PERSON-1", label: "Mario Rossi", confidence: "certain", data: {} },
+          { id: "CRM-PERSON-2", label: "Mario Rossi", confidence: "certain", data: {} },
+        ],
+      }),
+      openExistingPerson: vi.fn(async (_input: unknown, expectedId?: string) => ({
+        id: expectedId,
+        data: { taxCodeVerified: true, nameVerified: true },
+      })),
+      findPhoneAssignments: vi.fn().mockResolvedValue([
+        { phone: "3331234567", personId: "CRM-PERSON-2", label: "Mario Rossi" },
+      ]),
+      createPerson: vi.fn(),
+    };
+
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
+
+    expect(row.crm_record_id).toBe("CRM-PERSON-2");
     expect(row.raw_payload?.person_flow).toMatchObject({
-      version: 3,
-      selectionPolicy: "first-verified-tax-code-result",
+      selectionPolicy: "unique-phone-among-exact-tax-code",
       identityVerified: true,
     });
   });
@@ -156,7 +180,7 @@ describe("flusso identità nominativo e immobile", () => {
     );
   });
 
-  it("con più profili verificati usa il primo e non apre i risultati successivi", async () => {
+  it("con più profili verificati apre tutti i candidati e richiede una disambiguazione", async () => {
     const { runner } = runnerWithRepository();
     const row = personRow();
     const crm = {
@@ -173,20 +197,18 @@ describe("flusso identità nominativo e immobile", () => {
       createPerson: vi.fn(),
     };
 
-    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
+    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm))
+      .rejects.toMatchObject({ status: "needs_review" });
 
-    expect(crm.openExistingPerson).toHaveBeenCalledTimes(1);
+    expect(crm.openExistingPerson).toHaveBeenCalledTimes(2);
     expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-FIRST");
+    expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-SECOND");
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBe("CRM-PERSON-FIRST");
-    expect(row.raw_payload?.person_flow).toMatchObject({
-      version: 3,
-      selectionPolicy: "first-verified-tax-code-result",
-    });
+    expect(row.crm_record_id).toBeNull();
     expect(row.raw_payload?.person_search).toMatchObject({
       candidateCount: 2,
-      selectedPersonId: "CRM-PERSON-FIRST",
-      ignoredLaterCandidates: 1,
+      verifiedCount: 2,
+      selectionPolicy: "manual-review-multiple-exact-tax-code",
     });
   });
 
@@ -383,5 +405,76 @@ describe("flusso identità nominativo e immobile", () => {
     expect(contacts.findByTaxCode).not.toHaveBeenCalled();
     expect(crm.updateProperty).toHaveBeenCalledOnce();
     expect(crm.createPropertyActivity).toHaveBeenCalledOnce();
+  });
+
+  it("verifica tutti i proprietari e collega i comproprietari dopo immobile e attività", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const primary = { ...personRow(), id: "primary", crm_record_id: "CRM-PRIMARY", share_percentage: 70 };
+    const coowner = {
+      ...personRow(),
+      id: "coowner",
+      full_name: "BIANCHI LUCA",
+      tax_code: "BNCLCU80A01A893X",
+      crm_record_id: "CRM-COOWNER",
+      share_percentage: 30,
+      mobiles: ["3331234567"],
+    };
+    const property = propertyRow();
+    const ownerships = [
+      { id: "ownership-primary", property_id: property.id, person_id: primary.id, right_type: "Proprietà", share_percentage: 70, crm_link_id: null, processing_status: "normalized" },
+      { id: "ownership-coowner", property_id: property.id, person_id: coowner.id, right_type: "Proprietà", share_percentage: 30, crm_link_id: null, processing_status: "normalized" },
+    ];
+    const repository = {
+      loadGraph: vi.fn().mockResolvedValue({ properties: [property], people: [primary, coowner], ownerships }),
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
+      updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+      updateOwnership: vi.fn().mockResolvedValue(undefined),
+      updateJob: vi.fn().mockResolvedValue(undefined),
+      logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const internals = runner as unknown as {
+      ensureContacts: ReturnType<typeof vi.fn>;
+      ensurePerson: ReturnType<typeof vi.fn>;
+      ensureProperty: ReturnType<typeof vi.fn>;
+      ensurePropertyActivity: ReturnType<typeof vi.fn>;
+      processPropertiesInOrder: Function;
+    };
+    internals.ensureContacts = vi.fn().mockResolvedValue(undefined);
+    internals.ensurePerson = vi.fn().mockResolvedValue(undefined);
+    internals.ensureProperty = vi.fn().mockImplementation(async () => { property.crm_record_id = "CRM-PROPERTY"; });
+    internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
+    const crm = {
+      linkOwner: vi.fn().mockResolvedValue({
+        linkId: "owner-link-CRM-COOWNER",
+        selection: "phone",
+        candidateCount: 2,
+        note: null,
+      }),
+    };
+
+    await internals.processPropertiesInOrder(
+      { ...job, total_properties: 1, processed_properties: 0 },
+      crm,
+      { findByTaxCode: vi.fn() },
+    );
+
+    expect(internals.ensurePerson).toHaveBeenCalledTimes(2);
+    expect(internals.ensurePropertyActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      property,
+      primary,
+      [primary, coowner],
+      crm,
+    );
+    expect(crm.linkOwner).toHaveBeenCalledWith(
+      "CRM-PROPERTY",
+      expect.objectContaining({ personId: "CRM-COOWNER", phones: ["3331234567"] }),
+      30,
+    );
+    expect(repository.updateOwnership).toHaveBeenCalledWith(
+      "ownership-coowner",
+      expect.objectContaining({ crm_link_id: "owner-link-CRM-COOWNER", processing_status: "linked" }),
+    );
   });
 });

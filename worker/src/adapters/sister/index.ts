@@ -110,7 +110,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     await this.checkSession();
   }
 
-  private async ensureResultsPage() {
+  async ensureResultsPage() {
     await this.checkSession();
     if (await this.page.locator(this.selectors.resultsPageMarker).count()) return;
     if (this.selectors.ownersPageMarker && await this.page.locator(this.selectors.ownersPageMarker).count()) {
@@ -118,6 +118,22 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       await this.page.locator(this.selectors.ownersBackButton).click();
       await this.waitForMarker(this.selectors.resultsPageMarker, "il ritorno ai risultati");
       return;
+    }
+    if (
+      /\/Visure\/vind\/SceltaVisuraImmSoggIND\.do(?:\?|$)/i.test(this.page.url())
+      && !(await this.page.locator("form").count())
+    ) {
+      await this.page.goBack({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null);
+      if (await this.page.locator(this.selectors.resultsPageMarker).count()) {
+        logger.warn({ url: this.page.url() }, "Pagina intestatari SISTER vuota: recuperati i risultati tramite cronologia");
+        return;
+      }
+      if (this.selectors.ownersPageMarker && await this.page.locator(this.selectors.ownersPageMarker).count()) {
+        await this.page.locator(this.selectors.ownersBackButton).click();
+        await this.waitForMarker(this.selectors.resultsPageMarker, "il recupero dei risultati dopo una risposta vuota");
+        logger.warn({ url: this.page.url() }, "Pagina intestatari SISTER vuota: recuperati i risultati dalla pagina precedente");
+        return;
+      }
     }
     throw new WorkerError(
       "La scheda SISTER non mostra né i risultati né gli intestatari",
@@ -208,7 +224,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         consistency: raw.consistency || null,
         cadastralIncome: parseIncome(raw.cadastralIncome),
         sourceRef: String(index),
-        rawPayload: { rowIndex: index, sourceOrder: index, searchContext: context },
+        rawPayload: { rowIndex: index, sourceOrder: index, searchContext: context, rawCells: raw },
       });
     }
     return properties;
@@ -217,10 +233,11 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   async extractOwners(property: CadastralProperty): Promise<CadastralOwner[]> {
     this.require("propertyRows");
     await this.ensureResultsPage();
-    const rowIndex = Number(property.sourceRef ?? property.rawPayload.rowIndex);
-    if (!Number.isInteger(rowIndex)) {
+    const sourceRowIndex = Number(property.sourceRef ?? property.rawPayload.rowIndex);
+    if (!Number.isInteger(sourceRowIndex)) {
       throw new WorkerError("Riferimento riga SISTER non disponibile", "data_incomplete", { property: property.rawPayload });
     }
+    const rowIndex = await this.resolvePropertyRowIndex(property, sourceRowIndex);
     const owners: CadastralOwner[] = [];
     if (this.selectors.ownersWithinRow) {
       const blocks = this.page.locator(this.selectors.propertyRows).nth(rowIndex).locator(this.selectors.ownersWithinRow);
@@ -236,9 +253,23 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     );
     const row = this.page.locator(this.selectors.propertyRows).nth(rowIndex);
     await row.locator(this.selectors.propertyRadioWithinRow).check();
+    if (!process.env.VITEST) await this.page.waitForTimeout(250);
     await this.page.locator(this.selectors.ownersButton).click();
+    await this.page.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => undefined);
+    if (
+      /\/Visure\/vind\/SceltaVisuraImmSoggIND\.do(?:\?|$)/i.test(this.page.url())
+      && !(await this.page.locator("form").count())
+    ) {
+      throw new WorkerError(
+        "SISTER ha restituito una pagina intestatari vuota",
+        "portal_error",
+        { portal: "SISTER", action: "owners-empty-response", rowIndex },
+        false,
+      );
+    }
     await this.waitForMarker(this.selectors.ownersPageMarker, "l'apertura degli intestatari");
 
+    let extractionError: unknown = null;
     try {
       const ownerRows = this.page.locator(this.selectors.ownerRows);
       const ownerColumns = this.selectors.ownersTable
@@ -260,13 +291,63 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         ].join("\n");
         this.addOwner(owners, parseOwnerBlock(block), rowIndex);
       }
+    } catch (error) {
+      extractionError = error;
+      throw error;
     } finally {
       if (await this.page.locator(this.selectors.ownersPageMarker).count()) {
-        await this.page.locator(this.selectors.ownersBackButton).click();
-        await this.waitForMarker(this.selectors.resultsPageMarker, "il ritorno ai risultati");
+        try {
+          await this.page.locator(this.selectors.ownersBackButton).click();
+          await this.waitForMarker(this.selectors.resultsPageMarker, "il ritorno ai risultati");
+        } catch (returnError) {
+          if (!extractionError) throw returnError;
+          logger.error({
+            rowIndex,
+            error: returnError instanceof Error ? returnError.message : String(returnError),
+          }, "Ritorno ai risultati SISTER fallito dopo un errore di estrazione");
+        }
       }
     }
     return owners;
+  }
+
+  private async resolvePropertyRowIndex(property: CadastralProperty, preferredIndex: number): Promise<number> {
+    const rows = this.page.locator(this.selectors.propertyRows);
+    const expected = [property.sheet, property.parcel, property.subaltern].map((value) => value.trim());
+    const matches = async (index: number) => {
+      if (index < 0 || index >= await rows.count()) return false;
+      const row = rows.nth(index);
+      const actual = await Promise.all([
+        text(row, this.selectors.sheet),
+        text(row, this.selectors.parcel),
+        text(row, this.selectors.subaltern),
+      ]);
+      return actual.every((value, position) => value.trim() === expected[position]);
+    };
+    if (await matches(preferredIndex)) return preferredIndex;
+
+    const matchingIndexes: number[] = [];
+    for (let index = 0; index < await rows.count(); index += 1) {
+      if (await matches(index)) matchingIndexes.push(index);
+    }
+    if (matchingIndexes.length === 1) {
+      logger.warn({ preferredIndex, resolvedIndex: matchingIndexes[0], cadastralKey: expected.join("|") }, "Ordine righe SISTER cambiato: immobile ritrovato tramite terna catastale");
+      return matchingIndexes[0]!;
+    }
+    throw new WorkerError(
+      matchingIndexes.length
+        ? "La terna catastale compare piÃ¹ volte nei risultati SISTER: impossibile scegliere la riga in sicurezza"
+        : "La riga SISTER non coincide piÃ¹ con la terna catastale acquisita",
+      "needs_review",
+      {
+        portal: "SISTER",
+        action: "property-row-identity",
+        preferredIndex,
+        cadastralKey: expected.join("|"),
+        matchingIndexes,
+      },
+      true,
+    );
   }
 
   private addOwner(owners: CadastralOwner[], owner: CadastralOwner, rowIndex: number) {

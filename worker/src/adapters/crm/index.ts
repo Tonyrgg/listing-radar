@@ -1,6 +1,7 @@
 import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
+import { selectOwnerLookupCandidate } from "../../core/owner-link-selection.js";
 import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, normalizePhone, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
 import { propertyFormValues } from "../../core/property-form.js";
 import type {
@@ -11,6 +12,8 @@ import type {
   CrmPhoneAssignment,
   NormalizedPerson,
   NormalizedProperty,
+  OwnerLinkInput,
+  OwnerLinkResult,
   PersonCreationResult,
   PersonMatchResult,
   PersonMergeResult,
@@ -44,6 +47,10 @@ function activityRelationMatchesProperty(value: string, expectedAddress: string 
   const street = normalizedUiText(identity.street);
   const civic = normalizedUiText(identity.civic);
   return relation.includes(street) && relation.split(" ").includes(civic);
+}
+
+function isPropertyActivityRelation(value: string) {
+  return /^\s*IM\s*-/i.test(value);
 }
 
 function comparableCadastralValue(value: string | null | undefined) {
@@ -1870,7 +1877,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             await this.page.waitForTimeout(250);
             correlatedProperty = (await relatedInput.inputValue()).trim();
           }
-          if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
+          // The runner has already verified the property by cadastral identity and this
+          // modal is opened from that property's own activity card. Tecnocloud may
+          // abbreviate the address, so an IM prefill is stronger evidence than text equality.
+          if (!isPropertyActivityRelation(correlatedProperty)) {
             await relatedInput.click();
             const propertyOptions = this.visible(this.selectors.activityOption).filter({ hasText: "IM -" });
             await propertyOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
@@ -1884,7 +1894,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             await this.page.waitForTimeout(350);
             correlatedProperty = (await relatedInput.inputValue()).trim();
           }
-          if (!activityRelationMatchesProperty(correlatedProperty, input.propertyAddress)) {
+          if (!isPropertyActivityRelation(correlatedProperty)) {
             throw new WorkerError(
               "Il gestionale non ha ancora collegato l’attività all’immobile aperto; il worker riproverà automaticamente.",
               "portal_error",
@@ -2030,9 +2040,14 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
-  async linkOwner(propertyId: string, personId: string, share: number): Promise<string> {
-    if ((await this.findLinkedOwnerIds(propertyId)).includes(personId)) return `existing-link-${personId}`;
-    if (this.dryRun) return `dry-link-${personId}`;
+  async linkOwner(propertyId: string, personInput: OwnerLinkInput, share: number): Promise<OwnerLinkResult> {
+    const { personId, searchLabel, phones } = personInput;
+    if ((await this.findLinkedOwnerIds(propertyId)).includes(personId)) {
+      return { linkId: `existing-link-${personId}`, selection: "existing", candidateCount: 1, note: null };
+    }
+    if (this.dryRun) {
+      return { linkId: `dry-link-${personId}`, selection: "dry_run", candidateCount: 0, note: null };
+    }
     return this.friendly("property-owner-link", "Non riesco a collegare il comproprietario.", async () => {
       this.require(
         "propertyOwnersCard", "ownerCreate", "ownerDialog", "ownerPersonId", "ownerPersonOption",
@@ -2048,15 +2063,31 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const dialog = await this.uniqueVisible("ownerDialog", "Soggetto correlato", 15_000);
       const person = await this.uniqueVisible("ownerPersonId", "Cliente comproprietario", 10_000);
       await person.fill("");
-      await person.pressSequentially(personId, { delay: 45 });
-      const exactOption = this.visible(this.selectors.ownerPersonOption).filter({
-        has: this.page.locator(`[data-item-id="${personId}"]`),
-      });
-      await exactOption.first().waitFor({ state: "visible", timeout: 8_000 });
-      if (await exactOption.count() !== 1) {
-        throw new WorkerError("Il gestionale non ha restituito un solo nominativo corrispondente alla scheda già verificata.", "needs_review", { portal: "CRM", action: "property-owner-person", personId, matches: await exactOption.count() }, true);
+      await person.pressSequentially(searchLabel, { delay: 70 });
+      const options = this.visible(this.selectors.ownerPersonOption);
+      await options.first().waitFor({ state: "visible", timeout: 10_000 });
+      const candidateCount = await options.count();
+      const candidates: Array<{ option: Locator; personId: string; text: string }> = [];
+      for (let index = 0; index < candidateCount; index += 1) {
+        const option = options.nth(index);
+        candidates.push({
+          option,
+          personId: await option.locator("[data-item-id]").first().getAttribute("data-item-id").catch(() => null) ?? "",
+          text: await option.innerText().catch(() => ""),
+        });
       }
-      await exactOption.click();
+      const selectionResult = selectOwnerLookupCandidate(candidates, personId, phones, searchLabel);
+      if (!selectionResult) {
+        throw new WorkerError(
+          "Il gestionale non ha restituito alcun nominativo selezionabile per il comproprietario.",
+          "needs_review",
+          { portal: "CRM", action: "property-owner-person", personId, searchLabel, candidateCount },
+          true,
+        );
+      }
+      const selected = candidates[selectionResult.index]!;
+      const { selection, note } = selectionResult;
+      await selected.option.click();
 
       const right = await this.uniqueVisible("ownerRight", "Diritto", 8_000);
       await right.fill("Proprietà");
@@ -2076,10 +2107,19 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         const cancel = dialog.locator(this.selectors.ownerCancel).filter({ visible: true });
         if (await cancel.count() === 1) await cancel.click();
         await dialog.waitFor({ state: "hidden", timeout: 10_000 });
-        return `existing-link-${personId}`;
+        return { linkId: `existing-link-${personId}`, selection: "existing", candidateCount, note };
       }
       await this.checkSession();
-      return `owner-link-${Date.now()}`;
+      const linkedIds = await this.findLinkedOwnerIds(propertyId);
+      if (!linkedIds.includes(personId)) {
+        throw new WorkerError(
+          "Il comproprietario è stato salvato ma non compare ancora tra i soggetti collegati. Il worker riproverà senza crearne un altro.",
+          "portal_error",
+          { portal: "CRM", action: "property-owner-post-save", propertyId, personId },
+          true,
+        );
+      }
+      return { linkId: `owner-link-${personId}`, selection, candidateCount, note };
     });
   }
 }

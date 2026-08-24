@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import { logger } from "../logger.js";
 
 const EXPIRED_PATTERN = /sessione\s+(?:e\s+)?scaduta|errorfiltrosessionescaduta|iampe\.agenziaentrate\.gov\.it\/sam\/ui\/login|name=["']?(?:username|password)/i;
+const AUTHENTICATED_PATTERN = /\/Visure\/SceltaLink\.do|Riepilogo\s+Visure|Area\s+riservata\s+SISTER/i;
 
 export type SisterKeepAliveResult = {
   ok: boolean;
@@ -36,7 +37,11 @@ export async function pingSisterSession(page: Page, configuredUrl?: string): Pro
     });
     const location = response.headers().location ?? "";
     const body = response.status() === 200 ? await response.text() : "";
-    const sessionExpired = EXPIRED_PATTERN.test(`${location}\n${body}`);
+    const cookieNames = new Set((await page.context().cookies(url)).map((cookie) => cookie.name));
+    const authenticatedResponse = Boolean(configuredUrl)
+      || (AUTHENTICATED_PATTERN.test(body) && cookieNames.has("JSESSIONID"));
+    const sessionExpired = EXPIRED_PATTERN.test(`${location}\n${body}`)
+      || (response.status() === 200 && !authenticatedResponse);
     const ok = response.status() >= 200 && response.status() < 400 && !sessionExpired;
     const result = {
       ok,
@@ -63,6 +68,7 @@ export async function pingSisterSession(page: Page, configuredUrl?: string): Pro
 export class SisterKeepAliveScheduler {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stopped = true;
+  private running = false;
 
   constructor(
     private readonly page: Page,
@@ -95,9 +101,14 @@ export class SisterKeepAliveScheduler {
   }
 
   private async run() {
-    if (this.stopped) return;
-    const result = await pingSisterSession(this.page, this.options.url);
-    await this.options.onResult?.(result);
-    this.schedule();
+    if (this.stopped || this.running) return;
+    this.running = true;
+    try {
+      const result = await pingSisterSession(this.page, this.options.url);
+      await this.options.onResult?.(result);
+    } finally {
+      this.running = false;
+      this.schedule();
+    }
   }
 }

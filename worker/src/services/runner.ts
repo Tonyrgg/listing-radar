@@ -1,5 +1,5 @@
 import { WorkerError } from "../core/errors.js";
-import { buildCadastralKey, normalizeTaxCode } from "../core/normalize.js";
+import { buildCadastralKey, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
 import { logger } from "../logger.js";
 import type { AcquisitionReview, CadastralProperty, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
@@ -73,6 +73,20 @@ function normalizedWords(value: string) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAcquisitionExcluded(property: PropertyRow): boolean {
+  return ["acquisition_skipped", "acquisition_failed"].includes(property.processing_status);
+}
+
+function sameContextValue(left: string | null, right: string | null): boolean {
+  const normalize = (value: string | null) => String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+  return normalize(left) === normalize(right);
 }
 
 export type RunnerEvent =
@@ -233,19 +247,94 @@ export class PropertyWorkerRunner {
       case "owners_extracted": {
         const graph = await this.repository.loadGraph(job.id);
         const ignoredBusinessProperties: string[] = [];
-        for (const property of graph.properties) {
+        const skippedRows: Array<{ propertyId: string; cadastralKey: string; reason: string; source: "manual" | "parachute" }> = [];
+        const liveContext = await sister.extractSearchContext();
+        if (
+          !sameContextValue(liveContext.municipality, job.municipality)
+          || !sameContextValue(liveContext.street, job.street)
+          || !sameContextValue(liveContext.civicNumber, job.civic_number)
+        ) {
+          throw new WorkerError(
+            "La pagina SISTER aperta non corrisponde piÃ¹ alla ricerca salvata. Nessuna riga verrÃ  acquisita.",
+            "needs_review",
+            { portal: "SISTER", action: "search-context-identity", expected: { municipality: job.municipality, street: job.street, civicNumber: job.civic_number }, actual: liveContext },
+            true,
+          );
+        }
+        for (const [propertyIndex, property] of graph.properties.entries()) {
           this.throwIfCancellationRequested(job.id);
-          const owners = await sister.extractOwners(asProperty(property));
+          const acquisition = isRecord(property.raw_payload?.acquisition) ? property.raw_payload.acquisition : {};
+          if (isAcquisitionExcluded(property) || acquisition.status === "owners_acquired") continue;
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "acquisition", `Leggo i proprietari della riga ${propertyIndex + 1}`);
+          if (this.isPropertySkipRequested(job.id, property.id)) {
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_skipped", "Riga saltata manualmente durante l'acquisizione");
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason: "Riga saltata manualmente durante l'acquisizione", source: "manual" });
+            continue;
+          }
+          let owners: Awaited<ReturnType<PlaywrightSisterAdapter["extractOwners"]>> | null = null;
+          let lastExtractionError: WorkerError | null = null;
+          let extractionAttempts = 0;
+          for (let attempt = 1; attempt <= 2; attempt += 1) {
+            extractionAttempts = attempt;
+            try {
+              owners = await sister.extractOwners(asProperty(property));
+              break;
+            } catch (error) {
+              const workerError = error instanceof WorkerError
+                ? error
+                : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+              if (workerError.status === "session_expired" || workerError.details.action === "property-row-identity") throw workerError;
+              try {
+                await sister.ensureResultsPage();
+              } catch {
+                throw workerError;
+              }
+              lastExtractionError = workerError;
+              if (attempt < 2) {
+                this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "acquisition_recovery", `Riga ${propertyIndex + 1}: ripristino la pagina SISTER e riprovo`);
+                await new Promise((resolve) => setTimeout(resolve, 600));
+              }
+            }
+          }
+          if (!owners) {
+            const reason = `Acquisizione isolata dopo 2 tentativi: ${lastExtractionError?.message ?? "errore non riconosciuto"}`;
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_failed", reason, lastExtractionError?.details);
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason, source: "parachute" });
+            continue;
+          }
+          if (this.isPropertySkipRequested(job.id, property.id)) {
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_skipped", "Riga saltata manualmente durante l'acquisizione");
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason: "Riga saltata manualmente durante l'acquisizione", source: "manual" });
+            continue;
+          }
           const sourceRow = Number(property.raw_payload?.sourceOrder ?? property.raw_payload?.rowIndex);
           if (!owners.length && Number.isInteger(sourceRow) && sister.hasIgnoredBusinessOnRow(sourceRow)) {
-            await this.repository.removePropertyFromJob(job.id, property.id);
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_skipped", "Riga esclusa: presenti soltanto intestatari aziendali");
             ignoredBusinessProperties.push(property.cadastral_key);
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason: "Presenti soltanto intestatari aziendali", source: "parachute" });
+            continue;
+          }
+          if (!owners.length) {
+            const reason = "Nessun diritto di proprietÃ  interpretabile nella riga SISTER";
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_failed", reason);
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason, source: "parachute" });
             continue;
           }
           for (const owner of owners) {
             this.throwIfCancellationRequested(job.id);
+            if (this.isPropertySkipRequested(job.id, property.id)) break;
             await this.repository.insertOwner(job.id, property.id, owner);
           }
+          if (this.isPropertySkipRequested(job.id, property.id)) {
+            await this.markAcquisitionPropertyExcluded(property, "acquisition_skipped", "Riga saltata manualmente durante il salvataggio dell'acquisizione");
+            skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason: "Riga saltata manualmente durante il salvataggio dell'acquisizione", source: "manual" });
+            continue;
+          }
+          property.raw_payload = {
+            ...(property.raw_payload ?? {}),
+            acquisition: { status: "owners_acquired", attempts: extractionAttempts, acquiredAt: new Date().toISOString() },
+          };
+          await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload, processing_status: "extracted" });
         }
         const finalGraph = await this.repository.loadGraph(job.id);
         const total = finalGraph.people.length;
@@ -255,25 +344,31 @@ export class PropertyWorkerRunner {
           ignoredRights: sister.getIgnoredRights(),
           ignoredBusinesses: sister.getIgnoredBusinesses(),
           ignoredBusinessProperties,
+          skippedRows,
         };
       }
       case "data_normalized": {
         const graph = await this.repository.loadGraph(job.id);
-        const incompleteProperties = graph.properties.filter((item) => !item.sheet || !item.parcel || !item.subaltern);
-        const incompletePeople = graph.people.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
-        const propertiesWithoutOwners = graph.properties.filter((property) => !graph.ownerships.some((ownership) => ownership.property_id === property.id));
-        const nothingToImport = !graph.properties.length && !graph.people.length;
-        if ((!nothingToImport && !graph.people.length) || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
+        const activeProperties = graph.properties.filter((property) => !isAcquisitionExcluded(property));
+        const activePropertyIds = new Set(activeProperties.map((property) => property.id));
+        const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+        const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+        const activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
+        const incompleteProperties = activeProperties.filter((item) => !item.sheet || !item.parcel || !item.subaltern);
+        const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
+        const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+        const nothingToImport = !activeProperties.length && !activePeople.length;
+        if ((!nothingToImport && !activePeople.length) || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
           throw new WorkerError("Dati obbligatori mancanti o quota non interpretabile", "data_incomplete", {
             propertyIds: incompleteProperties.map((item) => item.id), personIds: incompletePeople.map((item) => item.id),
             propertiesWithoutOwners: propertiesWithoutOwners.map((item) => item.id), noOwnersFound: !graph.people.length,
           });
         }
         await Promise.all([
-          ...graph.properties.map((item) => this.repository.updatePropertyProcessing(item.id, { processing_status: "normalized" })),
-          ...graph.people.map((item) => this.repository.updatePersonProcessing(item.id, { tax_code: normalizeTaxCode(item.tax_code), processing_status: "normalized" })),
+          ...activeProperties.map((item) => this.repository.updatePropertyProcessing(item.id, { processing_status: "normalized" })),
+          ...activePeople.map((item) => this.repository.updatePersonProcessing(item.id, { tax_code: normalizeTaxCode(item.tax_code), processing_status: "normalized" })),
         ]);
-        return { properties: graph.properties.length, people: graph.people.length, nothingToImport };
+        return { properties: activeProperties.length, people: activePeople.length, excludedProperties: graph.properties.length - activeProperties.length, nothingToImport };
       }
       case "acquisition_reviewed": {
         const graph = await this.repository.loadGraph(job.id);
@@ -281,7 +376,7 @@ export class PropertyWorkerRunner {
           municipality: job.municipality,
           street: job.street,
           civicNumber: job.civic_number,
-          properties: graph.properties.map((property) => ({
+          properties: graph.properties.filter((property) => !isAcquisitionExcluded(property)).map((property) => ({
             id: property.id,
             cadastralKey: property.cadastral_key,
             address: property.address,
@@ -301,6 +396,13 @@ export class PropertyWorkerRunner {
                 birthDate: person.birth_date,
                 sharePercentage: graph.ownerships.find((ownership) => ownership.property_id === property.id && ownership.person_id === person.id)?.share_percentage ?? null,
               })),
+          })),
+          acquisitionIssues: graph.properties.filter(isAcquisitionExcluded).map((property) => ({
+            id: property.id,
+            cadastralKey: property.cadastral_key,
+            address: property.address,
+            status: property.processing_status,
+            reason: String((isRecord(property.raw_payload?.acquisition) ? property.raw_payload.acquisition.reason : null) ?? "Riga esclusa dall'acquisizione"),
           })),
         };
         const decision = await this.prompts.reviewAcquisition(review);
@@ -679,6 +781,42 @@ export class PropertyWorkerRunner {
     this.onEvent({ type: "property-progress", jobId: job.id, propertyId: property.id, index, total, address: property.address, stage, message });
   }
 
+  private async markAcquisitionPropertyExcluded(
+    property: PropertyRow,
+    status: "acquisition_skipped" | "acquisition_failed",
+    reason: string,
+    details: Record<string, unknown> = {},
+  ) {
+    const graph = await this.repository.loadGraph(property.job_id);
+    const excludedAt = new Date().toISOString();
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      acquisition: {
+        status,
+        reason,
+        details,
+        excludedAt,
+        sourceRow: property.raw_payload?.sourceOrder ?? property.raw_payload?.rowIndex ?? null,
+      },
+    };
+    await this.repository.updatePropertyProcessing(property.id, {
+      processing_status: status,
+      raw_payload: property.raw_payload,
+    });
+    const relatedOwnerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
+    for (const ownership of relatedOwnerships) {
+      await this.repository.updateOwnership(ownership.id, { processing_status: status });
+      const hasAnotherActiveProperty = graph.ownerships.some((candidate) => {
+        if (candidate.person_id !== ownership.person_id || candidate.property_id === property.id) return false;
+        const otherProperty = graph.properties.find((candidateProperty) => candidateProperty.id === candidate.property_id);
+        return Boolean(otherProperty && !isAcquisitionExcluded(otherProperty));
+      });
+      if (!hasAnotherActiveProperty) {
+        await this.repository.updatePersonProcessing(ownership.person_id, { processing_status: status });
+      }
+    }
+  }
+
   private async withAutomaticRecovery<T>(
     job: JobRow,
     property: PropertyRow,
@@ -730,12 +868,39 @@ export class PropertyWorkerRunner {
   private async markPropertyStage(property: PropertyRow, stage: string) {
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
-      property_flow: { version: 2, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
+      property_flow: { version: 3, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
     };
     await this.repository.updatePropertyProcessing(property.id, {
       raw_payload: property.raw_payload,
       ...(stage === "completed" || stage === "skipped" ? { processing_status: stage } : {}),
     });
+  }
+
+  private async markImportPropertySkipped(property: PropertyRow, reason: string) {
+    const graph = await this.repository.loadGraph(property.job_id);
+    const skippedAt = new Date().toISOString();
+    const relatedOwnerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
+    const relatedPersonIds = [...new Set(relatedOwnerships.map((ownership) => ownership.person_id))];
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      property_flow: { version: 3, stage: "skipped", dryRun: this.config.WORKER_DRY_RUN, updatedAt: skippedAt },
+      skip_details: { source: "manual", reason, attempts: 0, personIds: relatedPersonIds, skippedAt },
+    };
+    await this.repository.updatePropertyProcessing(property.id, {
+      processing_status: "skipped",
+      raw_payload: property.raw_payload,
+    });
+    for (const ownership of relatedOwnerships) {
+      await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" });
+    }
+    for (const personId of relatedPersonIds) {
+      const hasAnotherActiveProperty = graph.ownerships.some((ownership) => {
+        if (ownership.person_id !== personId || ownership.property_id === property.id) return false;
+        const otherProperty = graph.properties.find((candidate) => candidate.id === ownership.property_id);
+        return Boolean(otherProperty && !["skipped", "acquisition_skipped", "acquisition_failed"].includes(otherProperty.processing_status));
+      });
+      if (!hasAnotherActiveProperty) await this.repository.updatePersonProcessing(personId, { processing_status: "skipped" });
+    }
   }
 
   private async processPropertiesInOrder(job: JobRow, crm: PlaywrightCrmAdapter, contacts: ExcelContactsAdapter) {
@@ -765,32 +930,36 @@ export class PropertyWorkerRunner {
       );
     }
     let completed = graph.properties.filter((property) =>
-      ["completed", "skipped"].includes(property.processing_status)
+      ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
       || ["completed", "skipped"].includes(String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "")),
     ).length;
     const plan = buildPropertyWorkPlan(graph);
-    const primaryPersonIds = new Set(plan.map((item) => item.primary.person.id));
-    await Promise.all(graph.people
-      .filter((person) => !primaryPersonIds.has(person.id))
-      .map((person) => this.repository.updatePersonProcessing(person.id, { processing_status: "deferred_correlated_owner" })));
+    const activePersonIds = new Set(plan.flatMap((item) => item.owners.map((owner) => owner.person.id)));
     propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
-      const { property, primary, coowners } = item;
+      const { property, primary, coowners, owners } = item;
       const stageOrder = [
         "ready",
-        "primary_contacts_ready",
-        "primary_ready",
+        "owner_contacts_ready",
+        "owners_ready",
         "contacts_synced",
         "property_ready",
         "activity_ready",
+        "owners_linked",
         "completed",
       ];
       const savedPropertyFlow = property.raw_payload?.property_flow as { stage?: string; version?: number } | undefined;
       let propertyStage = String(savedPropertyFlow?.stage ?? "ready");
-      if (
-        Number(savedPropertyFlow?.version ?? 0) < 2
-        && ["contacts_synced", "property_ready"].includes(propertyStage)
-      ) propertyStage = "primary_ready";
+      if (Number(savedPropertyFlow?.version ?? 0) < 3 && !["completed", "skipped"].includes(propertyStage)) {
+        const singleOwnerStageMap: Record<string, string> = {
+          primary_contacts_ready: "owner_contacts_ready",
+          primary_ready: "owners_ready",
+          contacts_synced: "contacts_synced",
+          property_ready: "property_ready",
+          activity_ready: "activity_ready",
+        };
+        propertyStage = coowners.length ? "ready" : singleOwnerStageMap[propertyStage] ?? "ready";
+      }
       const stageReached = (target: string) => stageOrder.indexOf(propertyStage) >= stageOrder.indexOf(target);
       const advanceStage = async (stage: string) => {
         await this.markPropertyStage(property, stage);
@@ -798,27 +967,42 @@ export class PropertyWorkerRunner {
       };
       if (["completed", "skipped"].includes(property.processing_status) || stageReached("completed")) continue;
       try {
-        if (!stageReached("primary_contacts_ready")) {
+        if (!stageReached("owner_contacts_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Leggo da Excel i recapiti di ${primary.person.full_name}, senza ancora toccare il gestionale`);
-          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Recapiti Excel", () =>
-            this.ensureContacts(job, primary.person, crm, contacts, false));
-          await advanceStage("primary_contacts_ready");
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Leggo da Excel i recapiti di tutti i ${owners.length} proprietari, senza ancora toccare il gestionale`);
+          for (const owner of owners) {
+            await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Recapiti Excel di ${owner.person.full_name}`, () =>
+              this.ensureContacts(job, owner.person, crm, contacts, false));
+          }
+          await advanceStage("owner_contacts_ready");
         }
 
-        if (!stageReached("primary_ready")) {
+        if (!stageReached("owners_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "primary", `Cerco una sola volta e verifico il proprietario: ${primary.person.full_name}`);
-          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Scheda nominativo", () =>
-            this.ensurePerson(job, primary.person, crm));
-          await advanceStage("primary_ready");
+          for (const [ownerIndex, owner] of owners.entries()) {
+            this.throwIfPropertySkipRequested(job.id, property.id);
+            this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "owners", `Verifico il proprietario ${ownerIndex + 1} di ${owners.length}: ${owner.person.full_name}`);
+            await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Scheda nominativo ${owner.person.full_name}`, () =>
+              this.ensurePerson(job, owner.person, crm));
+            if (!owner.person.crm_record_id) {
+              throw new WorkerError(
+                "Tutti i proprietari devono avere una scheda verificata prima di creare l'immobile.",
+                "needs_review",
+                { personId: owner.person.id, propertyId: property.id, action: "property-owner-missing-person" },
+                true,
+              );
+            }
+          }
+          await advanceStage("owners_ready");
         }
 
         if (!stageReached("contacts_synced")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Confronto ogni recapito con tutti i campi del nominativo e aggiungo solo quelli assenti");
-          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Assegnazione recapiti", () =>
-            this.ensureContacts(job, primary.person, crm, contacts, true));
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Confronto i recapiti di tutti i proprietari e aggiungo solo quelli assenti");
+          for (const owner of owners) {
+            await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Assegnazione recapiti di ${owner.person.full_name}`, () =>
+              this.ensureContacts(job, owner.person, crm, contacts, true));
+          }
           await advanceStage("contacts_synced");
         }
 
@@ -834,33 +1018,67 @@ export class PropertyWorkerRunner {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Apro l’attività dall’immobile verificato, compilo la descrizione e salvo");
           await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Attività immobile", () =>
-            this.ensurePropertyActivity(job, property, primary.person, [primary.person], crm), 1);
+            this.ensurePropertyActivity(job, property, primary.person, owners.map((owner) => owner.person), crm), 1);
           await advanceStage("activity_ready");
         }
         this.throwIfPropertySkipRequested(job.id, property.id);
 
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale con la quota più alta`);
-        if (!primary.ownership.crm_link_id && primary.person.crm_record_id) {
-          primary.ownership.crm_link_id = `existing-link-${primary.person.crm_record_id}`;
-          await this.repository.updateOwnership(primary.ownership.id, {
-            crm_link_id: primary.ownership.crm_link_id,
-            processing_status: "verified_existing",
-          });
+        if (!stageReached("owners_linked")) {
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale e collego ${coowners.length} comproprietari`);
+          if (!property.crm_record_id || !primary.person.crm_record_id) {
+            throw new WorkerError("Immobile o proprietario principale non disponibili per collegare i comproprietari", "data_incomplete", { propertyId: property.id });
+          }
+          if (!primary.ownership.crm_link_id) {
+            primary.ownership.crm_link_id = `existing-link-${primary.person.crm_record_id}`;
+            await this.repository.updateOwnership(primary.ownership.id, {
+              crm_link_id: primary.ownership.crm_link_id,
+              processing_status: "verified_existing",
+            });
+          }
+          const notes: string[] = [];
+          for (const owner of coowners) {
+            this.throwIfPropertySkipRequested(job.id, property.id);
+            if (!owner.person.crm_record_id || owner.ownership.share_percentage == null) {
+              throw new WorkerError(
+                "Scheda o quota del comproprietario non disponibile",
+                "data_incomplete",
+                { propertyId: property.id, personId: owner.person.id, ownershipId: owner.ownership.id },
+              );
+            }
+            if (owner.ownership.crm_link_id && ["linked", "verified_existing"].includes(owner.ownership.processing_status)) continue;
+            const name = splitPersonName(owner.person.full_name, owner.person.tax_code);
+            const searchLabel = [name.firstName, name.lastName].filter(Boolean).join(" ") || owner.person.full_name;
+            const link = await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Collegamento comproprietario ${owner.person.full_name}`, () =>
+              crm.linkOwner(property.crm_record_id!, {
+                personId: owner.person.crm_record_id!,
+                searchLabel,
+                phones: [...owner.person.mobiles, ...owner.person.landlines],
+              }, owner.ownership.share_percentage!));
+            owner.ownership.crm_link_id = link.linkId;
+            await this.repository.updateOwnership(owner.ownership.id, {
+              crm_link_id: link.linkId,
+              processing_status: link.selection === "existing" ? "verified_existing" : "linked",
+            });
+            if (link.note) {
+              notes.push(link.note);
+              await this.repository.logChange(job.id, "property", property.cadastral_key, "correlated_owner_selection_note", null, link.note, "WORKER");
+            }
+          }
+          property.raw_payload = {
+            ...(property.raw_payload ?? {}),
+            correlated_owners: {
+              state: "linked",
+              count: coowners.length,
+              linked: coowners.filter((owner) => Boolean(owner.ownership.crm_link_id)).length,
+              primaryPersonId: primary.person.id,
+              primarySharePercentage: primary.ownership.share_percentage,
+              notes,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+          await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
+          await advanceStage("owners_linked");
         }
-        for (const owner of coowners) {
-          await this.repository.updateOwnership(owner.ownership.id, { processing_status: "deferred_correlated_owner" });
-        }
-        property.raw_payload = {
-          ...(property.raw_payload ?? {}),
-          correlated_owners: {
-            state: "deferred",
-            count: coowners.length,
-            primaryPersonId: primary.person.id,
-            primarySharePercentage: primary.ownership.share_percentage,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-        await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
         await advanceStage("completed");
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
@@ -869,7 +1087,7 @@ export class PropertyWorkerRunner {
         const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
         if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
           await crm.resetToCrmHome();
-          await this.markPropertyStage(property, "skipped");
+          await this.markImportPropertySkipped(property, "Saltato manualmente dall'utente");
           completed += 1;
           await this.repository.updateJob(job.id, { processed_properties: completed });
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", "Immobile saltato; continuo con il successivo");
@@ -887,12 +1105,12 @@ export class PropertyWorkerRunner {
         }, workerError.captureScreenshot);
       }
     }
-    await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: primaryPersonIds.size });
+    await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: activePersonIds.size });
     return {
       processedProperties: completed,
       totalProperties: graph.properties.length,
-      processedPrimaryPeople: primaryPersonIds.size,
-      deferredCorrelatedPeople: graph.people.length - primaryPersonIds.size,
+      processedPeople: activePersonIds.size,
+      linkedCorrelatedPeople: Math.max(0, activePersonIds.size - new Set(plan.map((item) => item.primary.person.id)).size),
       dryRun: this.config.WORKER_DRY_RUN,
     };
   }
@@ -972,12 +1190,51 @@ export class PropertyWorkerRunner {
     const result = await crm.findPerson(searchInput);
     const phoneAssignments = result.matches.filter((match) => isRecord(match.data) && match.data.source === "crm-phone-search");
     const candidates = result.matches.filter((match) => !phoneAssignments.includes(match));
-    let selectedMatch: (typeof candidates)[number] | null = null;
+    const verifiedCandidates: Array<(typeof candidates)[number]> = [];
     for (const candidate of candidates) {
       const verified = await crm.openExistingPerson(searchInput, candidate.id);
       if (!verified) continue;
-      selectedMatch = { ...candidate, id: verified.id, data: { ...candidate.data, ...verified.data } };
-      break;
+      verifiedCandidates.push({ ...candidate, id: verified.id, data: { ...candidate.data, ...verified.data } });
+    }
+    let selectedMatch: (typeof candidates)[number] | null = verifiedCandidates[0] ?? null;
+    if (verifiedCandidates.length > 1) {
+      const desiredPhones = [...person.mobiles, ...person.landlines];
+      const assignments = desiredPhones.length ? await crm.findPhoneAssignments(desiredPhones) : [];
+      const candidateIdsByPhone = [...new Set(assignments
+        .filter((assignment) => verifiedCandidates.some((candidate) => candidate.id === assignment.personId))
+        .map((assignment) => assignment.personId))];
+      selectedMatch = candidateIdsByPhone.length === 1
+        ? verifiedCandidates.find((candidate) => candidate.id === candidateIdsByPhone[0]) ?? null
+        : null;
+      if (!selectedMatch) {
+        row.raw_payload = {
+          ...(row.raw_payload ?? {}),
+          crm_matches: verifiedCandidates,
+          person_search: {
+            searchedAt: new Date().toISOString(),
+            candidateCount: candidates.length,
+            verifiedCount: verifiedCandidates.length,
+            exactTaxCodeRequired: true,
+            selectionPolicy: "manual-review-multiple-exact-tax-code",
+            phoneCandidateIds: candidateIdsByPhone,
+          },
+        };
+        await this.repository.updatePersonProcessing(row.id, {
+          crm_record_id: null,
+          processing_status: "duplicate_candidates",
+          raw_payload: row.raw_payload,
+        });
+        throw new WorkerError(
+          "Esistono piÃ¹ schede verificate con lo stesso codice fiscale. Il worker non creerÃ  un altro nominativo e non sceglierÃ  alla cieca.",
+          "needs_review",
+          {
+            action: "person-multiple-exact-matches",
+            personId: row.id,
+            alternatives: verifiedCandidates.map((candidate) => ({ id: candidate.id, label: candidate.label })),
+          },
+          true,
+        );
+      }
     }
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
@@ -986,11 +1243,11 @@ export class PropertyWorkerRunner {
       person_search: {
         searchedAt: new Date().toISOString(),
         candidateCount: candidates.length,
-        verifiedCount: selectedMatch ? 1 : 0,
+        verifiedCount: verifiedCandidates.length,
         exactTaxCodeRequired: true,
-        selectionPolicy: "first-verified-tax-code-result",
+        selectionPolicy: verifiedCandidates.length > 1 ? "unique-phone-among-exact-tax-code" : "single-verified-tax-code-result",
         selectedPersonId: selectedMatch?.id ?? null,
-        ignoredLaterCandidates: Math.max(0, candidates.length - (selectedMatch ? 1 : 0)),
+        ignoredLaterCandidates: Math.max(0, candidates.length - verifiedCandidates.length),
       },
     };
     if (selectedMatch) {
@@ -1003,7 +1260,7 @@ export class PropertyWorkerRunner {
           complete: true,
           existing: true,
           identityVerified: true,
-          selectionPolicy: "first-verified-tax-code-result",
+          selectionPolicy: verifiedCandidates.length > 1 ? "unique-phone-among-exact-tax-code" : "single-verified-tax-code-result",
           dryRun: this.config.WORKER_DRY_RUN,
           crmPersonId: row.crm_record_id,
           updatedAt: new Date().toISOString(),

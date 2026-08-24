@@ -15,6 +15,7 @@ const baseState = {
   preferences: { mode: "assisted", dryRun: true, contactsExcelPath: "C:\\Dati\\Book1.xlsx" },
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
   configError: null, jobs: [], completedImports: [], version: "0.5.0",
+  streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
 };
 const graph = {
@@ -49,6 +50,7 @@ await page.addInitScript(({ initialState, details }) => {
     ],
     openChrome: async () => true, chooseExcel: async () => null, savePreferences: async () => true,
     startJob: async () => true, resumeJob: async () => true, pauseJob: async () => true, cancelJob: async () => true,
+    startStreetRun: async () => true, cancelStreetRun: async () => true,
     startRequestArchiveImport: async () => true, cancelRequestArchiveImport: async () => true,
     answerPrompt: async () => true, getJobDetails: async () => details, saveManualCorrections: async () => true,
     removeJobProperty: async () => ({ propertyId: details.properties[0].id, removedPersonIds: [details.people[0].id], remainingProperties: 0 }),
@@ -69,6 +71,21 @@ await page.addInitScript(({ initialState, details }) => {
     state = { ...state, active: false, softwareUpdate: { status: "available", currentVersion: "0.6.0", availableVersion: "0.7.0", percent: null, transferred: null, total: null, message: "Versione 0.7.0 disponibile", checkedAt: new Date().toISOString() } };
     listeners.forEach((callback) => callback(state));
   };
+  window.__showStreetRunState = () => {
+    state = { ...state, streetRun: { active: true, cancelling: false, lastError: null, checkpoint: {
+      version: 2, requestedStreet: "VIA BORGO SAN FRANCESCO", municipality: "BITONTO", status: "running",
+      startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: null,
+      nextCivicNumber: 36, currentVariantIndex: 0, emptyWindow: 50,
+      consecutiveEmptyByVariant: { "542250:1": 4, "557509:1": 1 },
+      variants: [
+        { key: "542250:1", value: "542250#236#VIA BORGO SAN FRANCESCO", text: "VIA BORGO SAN FRANCESCO", sourceId: "542250", occurrence: 1 },
+        { key: "557509:1", value: "557509#236#VIA BORGO SAN FRANCESCO", text: "VIA BORGO SAN FRANCESCO", sourceId: "557509", occurrence: 1 },
+      ],
+      results: [], totalRawRecords: 70, totalAcceptedOccurrences: 70, totalAcceptedProperties: 68, uniquePropertyKeys: [], totalOwnersRead: 117,
+      totalSkippedPropertyRows: 0, lastError: null, inferredLastUsefulCivic: null,
+    } } };
+    listeners.forEach((callback) => callback(state));
+  };
   window.__showCompletedState = () => {
     const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", total_properties: 1, processed_properties: 1, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const completedGraph = { ...details, job: completedJob, properties: details.properties.map((property) => ({ ...property, cadastral_key: "BITONTO|58|1234|7", raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
@@ -79,6 +96,13 @@ await page.addInitScript(({ initialState, details }) => {
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.evaluate(() => window.__showStreetRunState());
+await page.locator("#streetRun").screenshot({ path: path.join(output, "street-run.png") });
+const streetRunOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.setViewportSize({ width: 390, height: 844 });
+await page.locator("#streetRun").screenshot({ path: path.join(output, "street-run-mobile.png") });
+const streetRunMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.setViewportSize({ width: 1440, height: 1000 });
 await page.getByRole("button", { name: "Controlla se è tutto pronto" }).click();
 await page.screenshot({ path: path.join(output, "connections.png"), fullPage: false });
 await page.evaluate(() => window.__showPropertyState());
@@ -96,5 +120,5 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();

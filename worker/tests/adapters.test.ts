@@ -259,6 +259,25 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("accetta il prefill IM della scheda immobile verificata anche se il testo indirizzo è abbreviato", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace("IM - Via Roma 12 [2]", "IM - Via T. Traetta 47");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "VIA TOMMASO TRAETTA n. 47-49 Piano T-1",
+        fallbackPersonId: "P-42",
+        description: "Inserire attività",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "simulated", correlatedProperty: "IM - Via T. Traetta 47" });
+    } finally { await browser.close(); }
+  });
+
   it("chiude, ricarica e ritenta da solo quando il primo caricamento dell'attività è incompleto", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -524,7 +543,11 @@ describe("adattatori con fixture HTML", () => {
       await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
       await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
       const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
-      await expect(adapter.linkOwner("I-42", "P-99", 33.3)).resolves.toMatch(/^owner-link-/);
+      await expect(adapter.linkOwner("I-42", {
+        personId: "P-99",
+        searchLabel: "Mario Rossi",
+        phones: ["3331234567"],
+      }, 33.3)).resolves.toMatchObject({ linkId: "owner-link-P-99", selection: "crm_id", note: null });
       expect(await page.locator('[data-worker-crm="ownerPersonId"]').inputValue()).toBe("Persona P-99");
       expect(await page.locator('[data-worker-crm="ownerRight"]').inputValue()).toBe("Proprietà");
       expect(await page.locator('[data-worker-crm="ownerRole"] input').inputValue()).toBe("Comproprietario");

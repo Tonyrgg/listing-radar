@@ -34,8 +34,18 @@ describe("piano di lavorazione per immobile", () => {
 
   it("mantiene la sequenza richiesta per ciascun immobile", () => {
     expect(PROPERTY_WORK_SEQUENCE).toEqual([
-      "primary_contacts", "primary_person", "property", "property_activity", "primary_ownership", "correlated_owners_deferred",
+      "all_owner_contacts", "all_owners", "property", "property_activity", "primary_ownership", "correlated_owners_linked",
     ]);
+  });
+
+  it("a quote pari conserva l'ordine acquisito senza applicare preferenze anagrafiche", () => {
+    const properties = [property("p1")];
+    const people = [person("owner-z"), person("owner-a")];
+    const ownerships = [
+      { id: "o-z", property_id: "p1", person_id: "owner-z", share_percentage: 50, processing_status: "extracted", crm_link_id: null },
+      { id: "o-a", property_id: "p1", person_id: "owner-a", share_percentage: 50, processing_status: "extracted", crm_link_id: null },
+    ];
+    expect(buildPropertyWorkPlan({ properties, people, ownerships })[0]?.primary.person.id).toBe("owner-z");
   });
 
   it("non rimette in coda gli immobili completati o saltati", () => {
