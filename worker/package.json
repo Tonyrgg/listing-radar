@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.9.27",
+  "version": "0.9.28",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "sister:street:dry-run": "tsx scripts/dry-run-sister-street.ts",
     "mandates:backfill-locations": "tsx scripts/backfill-property-locations.ts",
     "mandates:backfill-condition": "tsx scripts/backfill-property-condition.ts",
     "requests:sync-archive": "tsx scripts/sync-request-archive.ts",

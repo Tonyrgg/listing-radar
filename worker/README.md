@@ -25,7 +25,8 @@ L'interfaccia permette di:
 - fermare o riattivare il riprova automatico; dopo tre tentativi falliti sullo stesso immobile, il caso viene saltato e annotato nel riepilogo;
 - consultare avanzamento, lavorazioni recenti e diagnostica;
 - sincronizzare l’intero archivio delle richieste immobiliari, aprendo ogni scheda in una pagina dedicata e riprendendo solo gli elementi non completati;
-- mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 2-3 minuti, senza ricaricare la pagina visibile.
+- mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 60-90 secondi, senza ricaricare la pagina visibile;
+- eseguire un dry-run autonomo di una via completa, conservando civico, variante omonima e contatori dopo ogni interrogazione.
 - conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
 
 Per generare l'installer Windows:
@@ -55,6 +56,8 @@ npm run desktop:verify-update:full
 L'app installata controlla automaticamente il canale ogni sei ore. L'utente può anche usare **Controlla aggiornamenti**; il download e l'installazione restano bloccati durante una lavorazione attiva. Dopo il download, **Installa e riavvia** aggiorna l'app senza richiedere la disinstallazione e conserva le preferenze cifrate in Windows.
 
 Quando un errore riguarda un immobile identificato, il desktop esegue al massimo tre riprove a distanza di 60 secondi. Se il terzo tentativo fallisce, immobile, collegamenti e nominativi esclusivi del caso vengono marcati come saltati; i nominativi condivisi con altri immobili restano utilizzabili. Il riepilogo conserva motivo, numero di tentativi e soggetti coinvolti. Errori globali come una sessione scaduta non provocano skip automatici.
+
+Durante l'acquisizione SISTER ogni riga viene verificata tramite foglio, particella e subalterno prima di aprire gli intestatari. Una risposta vuota o un errore isolabile viene riprovato due volte sulla sola riga; se resta illeggibile, la riga viene annotata nel riepilogo e la raccolta continua. Il pulsante **Salta riga corrente** permette lo stesso comportamento su richiesta. Cambio di Comune/via/civico, sessione scaduta, struttura globale non riconoscibile o identità catastale ambigua fermano invece l'intero processo: non vengono mai convertiti in skip.
 
 Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, conserva localmente ogni parte valida per riprendere un download interrotto senza nuovo traffico, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
 
@@ -95,19 +98,22 @@ Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTE
 
 Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca resta nell'archivio con immobili, proprietari, quote e ordine SISTER; il pulsante **Importa** riparte direttamente dai dati conservati senza una nuova acquisizione. Le ricerche possono essere eliminate dall'archivio dopo l'importazione.
 
-1. cerca o crea il proprietario principale, scelto in modo deterministico dalla quota più alta;
-2. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
-3. crea una sola attività `Da eseguire` partendo dalla scheda dell'immobile;
-4. cerca nel file Excel i recapiti del proprietario principale;
-5. cerca o crea gli altri comproprietari e controlla anche i loro recapiti;
-6. collega tutti i proprietari all'immobile con le quote corrette;
-7. salva il checkpoint dell'immobile e passa al successivo.
+1. legge dal file Excel i recapiti di tutti i proprietari;
+2. cerca, verifica o crea tutti i proprietari e sincronizza i recapiti mancanti;
+3. sceglie come principale la quota più alta; a quote pari conserva l'ordine SISTER senza applicare preferenze anagrafiche;
+4. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
+5. crea una sola attività `Da eseguire` partendo dalla scheda dell'immobile;
+6. collega gli altri proprietari come `Comproprietario`, usando nome e cognome, identificativo della scheda verificata e, se necessario, il cellulare per distinguere gli omonimi;
+7. compila la quota percentuale e verifica che il collegamento sia visibile;
+8. salva il checkpoint dell'immobile e passa al successivo.
+
+Se più omonimi non sono distinguibili neppure tramite cellulare, viene selezionato il primo risultato soltanto come ultima risorsa e il worker conserva una nota auditabile sul caso.
 
 Persone già elaborate vengono riutilizzate senza duplicarle. Se il processo si interrompe, i checkpoint di persona, immobile, attività, recapiti e collegamenti permettono di riprendere il singolo immobile senza ripetere le operazioni concluse.
 
 Una scheda nominativo già aperta viene riutilizzata soltanto dopo la corrispondenza esatta del codice fiscale e del nome. Prima di creare un immobile, il worker legge sempre la sezione **Immobili/Notizie/Incarichi**: se trova la stessa chiave catastale o lo stesso indirizzo la riutilizza; se la card dichiara immobili ma non permette di leggerli, si ferma prima della creazione per evitare duplicati.
 
-Finché l'app desktop resta aperta, il worker richiama in background una pagina neutra di SISTER tra 120 e 180 secondi. Non automatizza il login e segnala subito una sessione scaduta. L'intervallo e l'eventuale URL sicuro possono essere personalizzati con `SISTER_KEEPALIVE_MIN_SECONDS`, `SISTER_KEEPALIVE_MAX_SECONDS` e `SISTER_KEEPALIVE_URL`.
+Finché l'app desktop resta aperta, il worker richiama in background una pagina neutra di SISTER tra 60 e 90 secondi, senza navigare o ricaricare la scheda visibile. Il controllo considera valida la risposta soltanto se conserva il cookie applicativo e restituisce un marker autenticato. Non automatizza credenziali o login: se il server revoca comunque la sessione, una run lunga si mette in pausa conservando il civico e la variante esatti da cui riprendere. L'intervallo e l'eventuale URL sicuro possono essere personalizzati con `SISTER_KEEPALIVE_MIN_SECONDS`, `SISTER_KEEPALIVE_MAX_SECONDS` e `SISTER_KEEPALIVE_URL`.
 
 ## Adattatori dei portali
 
@@ -138,6 +144,16 @@ npm run build
 Gli stessi comandi `worker:*` sono disponibili anche dalla root del progetto.
 
 Il check verifica configurazione, file e colonne Excel, Supabase/migration, collegamento CDP, schede aperte e presenza apparente delle sessioni. Elenca titolo e URL delle schede senza stampare cookie o token.
+
+## Dry-run di una via completa
+
+Prima porta manualmente SISTER fino alla pagina **Elenco indirizzi**, come nella schermata che contiene il menu delle vie e i campi dei civici. Nella scheda **Scansiona una via completa** inserisci quindi la dizione esatta già presente nel menu, per esempio `via borgo san francesco`. Il desktop non compila Comune, toponimo o indirizzo e non torna al form precedente: legge esclusivamente le opzioni attualmente visibili e applica un confronto testuale normalizzato. Vie simili, traverse e varianti private vengono escluse.
+
+La preparazione automatica del form precedente resta disponibile soltanto per diagnostica da riga di comando tramite `--auto-prepare-search`; non è attivata dal software desktop.
+
+Se SISTER restituisce più opzioni con lo stesso testo, ciascun identificativo viene interrogato per ogni civico. Il civico avanza di uno soltanto dopo che tutte le opzioni esatte sono state completate. La fine della via viene dichiarata esclusivamente dopo 50 civici consecutivi verificati come vuoti su tutte le opzioni; timeout, sessione scaduta, HTML inatteso e query fallite non valgono mai come risultato vuoto.
+
+Questa funzione è sempre un dry-run SISTER: legge immobili e proprietari per esercitare realmente lo scraper, ma non avvia import né salvataggi nel CRM. Un checkpoint locale viene aggiornato dopo ogni opzione/civico. **Metti in pausa** conclude il passaggio corrente e conserva il cursore; dopo un nuovo accesso SISTER, oppure dopo aver ripristinato manualmente **Elenco indirizzi**, **Riprendi dal checkpoint** riparte dalla query non conclusa. Errori isolati su una query o su un immobile vengono ritentati e poi circoscritti senza interrompere gli altri civici; sessione scaduta e pagina globale non ripristinabile mettono invece la run in pausa, perché non devono mai essere interpretate come cinquanta risultati vuoti.
 
 ## Flusso sicuro iniziale
 

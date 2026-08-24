@@ -145,6 +145,13 @@ export interface AcquisitionReview {
       sharePercentage: number | null;
     }>;
   }>;
+  acquisitionIssues?: Array<{
+    id: string;
+    cadastralKey: string;
+    address: string | null;
+    status: string;
+    reason: string;
+  }>;
 }
 
 export type PersonMergeStatus = "not_required" | "pending" | "ready" | "blocked" | "completed" | "simulated";
@@ -178,6 +185,19 @@ export interface CrmActivityResult {
   attempts: number;
 }
 
+export interface OwnerLinkInput {
+  personId: string;
+  searchLabel: string;
+  phones: string[];
+}
+
+export interface OwnerLinkResult {
+  linkId: string;
+  selection: "existing" | "crm_id" | "phone" | "single" | "first_ambiguous" | "dry_run";
+  candidateCount: number;
+  note: string | null;
+}
+
 export interface SisterAdapter {
   detectPage(): Promise<boolean>;
   extractSearchContext(): Promise<SearchContext>;
@@ -205,7 +225,7 @@ export interface CrmAdapter {
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;
   createPropertyActivity(input: CrmActivityInput): Promise<CrmActivityResult>;
   findLinkedOwnerIds(propertyId: string): Promise<string[]>;
-  linkOwner(propertyId: string, personId: string, share: number): Promise<string>;
+  linkOwner(propertyId: string, person: OwnerLinkInput, share: number): Promise<OwnerLinkResult>;
 }
 
 export interface ContactsAdapter {

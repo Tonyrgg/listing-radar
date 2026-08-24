@@ -69,6 +69,20 @@
           </div>
         </section>
 
+        <section id="streetRun" class="street-run-card">
+          <header>
+            <div><p class="eyebrow">Dry-run autonomo SISTER</p><h2>Scansiona una via completa</h2><p>Inserisci la dizione esatta. Verranno percorse tutte le omonimie esatte e tutti i civici; il CRM non verrà modificato.</p></div>
+            <span id="streetRunBadge" class="status-pill is-idle"><span></span>Mai avviato</span>
+          </header>
+          <div class="street-run-controls">
+            <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
+            <button id="streetRunStart" class="button primary">Avvia dry-run</button>
+            <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
+          </div>
+          <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante e civico.</p></div>
+          <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
+        </section>
+
         <section id="actionPanel" class="now-card" aria-live="polite"></section>
 
         <section id="manualCorrectionPanel" class="correction-card is-hidden" aria-live="polite">

@@ -30,8 +30,10 @@ export function genderFromTaxCode(value: unknown): "M" | "F" | null {
 export function normalizePhone(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
-  const leadingPlus = raw.startsWith("+") ? "+" : "";
-  return leadingPlus + raw.replace(/\D/g, "");
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("0039")) digits = digits.slice(4);
+  else if (raw.startsWith("+39") || (digits.startsWith("39") && digits.length >= 11 && digits.length <= 13)) digits = digits.slice(2);
+  return digits;
 }
 
 export function normalizeEmail(value: unknown): string {

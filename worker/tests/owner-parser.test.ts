@@ -1,9 +1,42 @@
 import { describe, expect, it } from "vitest";
 
 import { isOwnershipRight, parseOwnerBlock } from "../src/core/owner-parser.js";
+import { normalizePhone } from "../src/core/normalize.js";
 import { businessOwnerReason, isBusinessOwner, maskOwnerTaxCode } from "../src/core/owner-kind.js";
 
 describe("parsing titolare", () => {
+  it("normalizza lo stesso cellulare italiano con o senza prefisso internazionale", () => {
+    expect([
+      normalizePhone("+39 333 123 4567"),
+      normalizePhone("0039 3331234567"),
+      normalizePhone("3331234567"),
+    ]).toEqual(["3331234567", "3331234567", "3331234567"]);
+  });
+
+  it("riconosce le varianti in comunione legale incontrate nella run live di Via Don Luigi Sturzo 22", () => {
+    expect(isOwnershipRight("proprietario per 1/2 com. leg. con altra persona")).toBe(true);
+    expect(isOwnershipRight("proprietaria per 1/2 com. leg. con altra persona")).toBe(true);
+    expect(isOwnershipRight("piena proprietÃ  per 1/3")).toBe(true);
+    expect(isOwnershipRight("usufrutto per 1/2")).toBe(false);
+  });
+
+  it("estrae CF etichettato, data invertita e quota annotata senza inventare dati", () => {
+    const owner = parseOwnerBlock(`ROSSI MARIO nato il 01-02-1960 a BITONTO (BA)
+Codice fiscale: RSSMRA60B01A893X
+Proprietario per 1/2 in comunione legale
+Quota 1/2 bene personale`);
+    expect(owner).toMatchObject({
+      fullName: "ROSSI MARIO",
+      birthPlace: "BITONTO",
+      birthProvince: "BA",
+      birthDate: "1960-02-01",
+      taxCode: "RSSMRA60B01A893X",
+      shareOriginal: "1/2",
+      sharePercentage: 50,
+    });
+    expect(isOwnershipRight(owner.rightType)).toBe(true);
+  });
+
   it("estrae anagrafica, CF, diritto e quota", () => {
     const owner = parseOwnerBlock(`ACQUAVIVA MARIA ROSARIA nata a BITONTO (BA) il 26/07/1949
 CQVMRS49L66A893R

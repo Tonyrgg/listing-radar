@@ -611,3 +611,35 @@
   .completed-session { grid-template-columns: auto 1fr; }
   .completed-session .button { grid-column: 1 / -1; width: 100%; }
 }
+.street-run-card {
+  background: oklch(0.995 0.004 145);
+  border: 1px solid oklch(0.86 0.018 145);
+  border-radius: 18px;
+  margin-top: 18px;
+  padding: 24px;
+}
+.street-run-card > header { align-items: flex-start; display: flex; gap: 24px; justify-content: space-between; }
+.street-run-card h2 { margin: 3px 0 7px; }
+.street-run-card header p:last-child { color: oklch(0.5 0.018 145); margin: 0; max-width: 72ch; }
+.street-run-controls { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(300px, 1fr) auto auto; margin-top: 20px; }
+.street-run-controls label { color: oklch(0.4 0.02 145); display: grid; font-size: 12px; font-weight: 700; gap: 7px; }
+.street-run-controls input { border: 1px solid oklch(0.82 0.02 145); border-radius: 10px; font: inherit; min-height: 44px; padding: 11px 13px; text-transform: uppercase; }
+.street-run-controls input:focus-visible { outline: 3px solid oklch(0.74 0.105 145 / .35); outline-offset: 2px; }
+.street-run-summary { margin-top: 18px; }
+.street-run-current { align-items: stretch; display: grid; gap: 24px; grid-template-columns: minmax(180px, .45fr) 1fr; }
+.street-run-current > div { border-right: 1px solid oklch(0.88 0.015 145); display: grid; padding-right: 24px; }
+.street-run-current strong { font-size: 30px; line-height: 1.15; }
+.street-run-current small, .street-run-current span { color: oklch(0.49 0.018 145); }
+.street-run-current dl { align-items: center; display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.street-run-current dl div { display: grid; gap: 3px; }
+.street-run-current dt { color: oklch(0.49 0.018 145); font-size: 12px; }
+.street-run-current dd { font-size: 18px; font-weight: 700; margin: 0; }
+.street-run-variants { color: oklch(0.44 0.018 145); font-size: 13px; margin: 14px 0 0; }
+.street-run-progress { background: oklch(0.92 0.018 145); border-radius: 999px; height: 6px; margin-top: 16px; overflow: hidden; }
+.street-run-progress span { background: oklch(0.63 0.12 145); display: block; height: 100%; transition: width .2s cubic-bezier(.16, 1, .3, 1); }
+@media (max-width: 900px) {
+  .street-run-controls { grid-template-columns: 1fr; }
+  .street-run-current { grid-template-columns: 1fr; }
+  .street-run-current > div { border-bottom: 1px solid oklch(0.88 0.015 145); border-right: 0; padding-bottom: 14px; padding-right: 0; }
+  .street-run-current dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
