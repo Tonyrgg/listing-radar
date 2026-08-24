@@ -87,3 +87,30 @@ Una scansione completa dei 1.743 immobili non è stata eseguita perché avrebbe 
 - installer Windows `0.11.1`: build PASS;
 - canale aggiornamenti: pubblicazione PASS;
 - verifica binaria completa da canale remoto: 3 parti, 97.955.892 byte, hash e ricomposizione PASS.
+
+## Tracciabilità operativa e affidabilità dei comandi — versione 0.12.0
+
+Ogni pulsante del worker passa ora da un unico dispatcher. Il clic produce immediatamente uno stato visibile e viene classificato come `received`, `completed`, `cancelled` oppure `failed`. Un pulsante introdotto senza comando non viene più ignorato: genera un errore parlante e una voce diagnostica.
+
+Il pannello **Tracciamento in tempo reale**, sempre visibile nella schermata di lavoro, mostra:
+
+- tipo di operazione in corso;
+- numero totale di voci previste;
+- posizione corrente nel formato `voce N di M`;
+- indirizzo o titolo della voce corrente;
+- stato di pausa o skip acquisito;
+- percentuale di avanzamento quando il totale è noto.
+
+La copertura include import immobili, acquisizione di una via completa, archivio richieste, archivio incarichi e download degli aggiornamenti. Tutti gli eventi operativi vengono inoltre aggiunti al file persistente `worker-operations.ndjson`, apribile dalla sezione Impostazioni. Il registro degli arresti continua a conservare separatamente gli errori con i dettagli sanitizzati.
+
+Durante questa verifica è stato trovato e corretto un difetto ulteriore: i pulsanti laterali diretti a una sezione `<details>` scorrevano fino alla destinazione senza aprirla, facendo sembrare inattivi i controlli contenuti. Ora la destinazione viene aperta prima dello scorrimento.
+
+Gate aggiuntivi della versione 0.12.0:
+
+- routing reale di modalità, Chrome, avvio lavoro, long mode, richieste, incarichi, pausa e skip: PASS, una sola invocazione per clic;
+- rilevamento automatico dei pulsanti privi di comando: PASS;
+- contatori visuali `N/M` per 1.743 immobili long mode, 1.000 richieste, 250 incarichi e import immobili: PASS;
+- controllo visuale desktop/mobile e assenza di errori JavaScript: PASS;
+- suite worker: 22 file e 156 test PASS;
+- lint, typecheck, 190 test root e build Next.js: PASS;
+- reset Supabase locale fino alla migration 032, DB lint e 29 integrazioni locali: PASS.

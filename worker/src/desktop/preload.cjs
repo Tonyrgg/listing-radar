@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("propertyWorker", {
   getState: () => ipcRenderer.invoke("desktop:get-state"),
+  recordUiAction: (values) => ipcRenderer.invoke("desktop:record-ui-action", values),
   runChecks: () => ipcRenderer.invoke("desktop:run-checks"),
   openChrome: () => ipcRenderer.invoke("desktop:open-chrome"),
   chooseExcel: () => ipcRenderer.invoke("desktop:choose-excel"),

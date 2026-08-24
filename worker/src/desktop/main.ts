@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -45,7 +45,7 @@ type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"
 type DiagnosticErrorItem = {
   id: string;
   at: string;
-  source: "worker" | "street-run" | "request-archive" | "mandate-archive";
+  source: "worker" | "street-run" | "request-archive" | "mandate-archive" | "desktop-ui";
   status: string;
   message: string;
   jobId: string | null;
@@ -94,6 +94,12 @@ const internalConfigurationSchema = z.object({
   sisterTabMatch: z.string().min(1),
   crmTabMatch: z.string().min(1),
 });
+const uiActionSchema = z.object({
+  action: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(160),
+  status: z.enum(["started", "completed", "failed", "cancelled"]),
+  detail: z.string().trim().max(500).nullable().optional(),
+});
 
 let mainWindow: BrowserWindow | null = null;
 let preferences: Preferences = defaultPreferences;
@@ -140,11 +146,19 @@ let sisterKeepAlive: KeepAliveState = {
   message: "Primo controllo in attesa",
 };
 const activity: ActivityItem[] = [];
+let activityLogWrite: Promise<void> = Promise.resolve();
 let diagnosticErrors: DiagnosticErrorItem[] = [];
 
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
-  activity.unshift({ at: new Date().toISOString(), tone, message });
-  activity.splice(80);
+  const entry = { at: new Date().toISOString(), tone, message } satisfies ActivityItem;
+  activity.unshift(entry);
+  activity.splice(300);
+  activityLogWrite = activityLogWrite
+    .then(async () => {
+      await mkdir(path.dirname(operationLogPath()), { recursive: true });
+      await appendFile(operationLogPath(), `${JSON.stringify(entry)}\n`, "utf8");
+    })
+    .catch(() => undefined);
 }
 
 function preferencesPath() {
@@ -157,6 +171,10 @@ function streetRunCheckpointPath() {
 
 function diagnosticErrorsPath() {
   return path.join(app.getPath("userData"), "worker-errors.json");
+}
+
+function operationLogPath() {
+  return path.join(app.getPath("userData"), "worker-operations.ndjson");
 }
 
 async function loadDiagnosticErrors() {
@@ -324,6 +342,7 @@ async function stateSnapshot() {
       contactsExcelPath: config.CONTACTS_EXCEL_PATH,
       chromeCdpUrl: config.CHROME_CDP_URL,
       screenshotDirectory: config.ERROR_SCREENSHOT_DIR,
+      operationLogPath: operationLogPath(),
       sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
       sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
     };
@@ -454,8 +473,10 @@ function initializeDesktopUpdater() {
 async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
   if (event.type === "index") {
     requestImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} richieste individuate`, externalId: null, failed: 0, phase: "index" };
+    pushActivity(`Archivio richieste: pagina ${event.page}, ${event.discovered} voci individuate`);
   } else if (event.type === "progress") {
     requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
+    pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     requestImportProgress = { runId: event.run.id, index: event.run.processed_requests + event.run.failed_requests, total: event.run.total_requests, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_requests, phase: "detail" };
   }
@@ -498,8 +519,10 @@ async function runRequestArchiveImport(resumeRunId?: string) {
 async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
   if (event.type === "index") {
     mandateImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} incarichi individuati`, externalId: null, failed: 0, phase: "index" };
+    pushActivity(`Archivio incarichi: pagina ${event.page}, ${event.discovered} voci individuate`);
   } else if (event.type === "progress") {
     mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
+    pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     mandateImportProgress = { runId: event.run.id, index: event.run.processed_mandates + event.run.failed_mandates, total: event.run.total_mandates, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_mandates, phase: "detail" };
   }
@@ -721,6 +744,9 @@ function publishPrompt(value: DesktopPrompt | null) {
 
 function publishStreetRunProgress(value: SisterStreetRunProgress) {
   streetRunProgress = value;
+  const position = value.total ? ` ${value.current}/${value.total}` : "";
+  const address = value.address ? ` · ${value.address}` : "";
+  pushActivity(`Acquisizione via: ${value.phase}${position}${address}`);
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("desktop:street-run-progress", value);
 }
@@ -886,7 +912,13 @@ async function skipAfterAutomaticRetries(
 function handleRunnerEvent(event: RunnerEvent) {
   if (event.type === "job-ready") {
     activeJobId = event.job.id;
-    pushActivity(`Lavorazione ${event.job.id.slice(0, 8)} pronta`, "success");
+    const total = event.job.total_properties ?? 0;
+    pushActivity(
+      total > 0
+        ? `Lavorazione ${event.job.id.slice(0, 8)} pronta: ${total} immobili totali da importare`
+        : `Lavorazione ${event.job.id.slice(0, 8)} pronta`,
+      "success",
+    );
   } else if (event.type === "step-started") {
     currentStep = event.step;
     pushActivity(`Inizio: ${friendlyStepLabel(event.step)}`);
@@ -1196,6 +1228,25 @@ async function createWindow() {
 
 function registerIpc() {
   ipcMain.handle("desktop:get-state", () => stateSnapshot());
+  ipcMain.handle("desktop:record-ui-action", async (_event, rawValues: unknown) => {
+    const values = uiActionSchema.parse(rawValues);
+    const suffix = values.detail ? ` · ${values.detail}` : "";
+    if (values.status === "started") pushActivity(`Comando ricevuto: ${values.label}`);
+    else if (values.status === "completed") pushActivity(`Comando eseguito: ${values.label}`, "success");
+    else if (values.status === "cancelled") pushActivity(`Comando annullato: ${values.label}`, "warning");
+    else {
+      const message = `Comando fallito: ${values.label}${suffix}`;
+      pushActivity(message, "error");
+      await recordDiagnosticErrorSafely({
+        source: "desktop-ui",
+        status: "failed",
+        message,
+        jobId: activeJobId,
+        details: { action: values.action, operationLabel: values.label, detail: values.detail ?? null },
+      }, { publish: false });
+    }
+    return true;
+  });
   ipcMain.handle("desktop:run-checks", () => healthChecks());
   ipcMain.handle("desktop:choose-excel", async () => {
     const selection = await dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "File Excel", extensions: ["xlsx", "xls"] }] });

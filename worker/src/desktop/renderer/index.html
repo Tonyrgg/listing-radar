@@ -16,7 +16,7 @@
       </div>
       <div class="header-actions">
         <span id="versionLabel" class="version">v—</span>
-        <button id="updateButton" class="button secondary">Controlla aggiornamenti</button>
+        <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
         <button id="checkButton" class="button secondary">Controlla collegamenti</button>
         <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
       </div>
@@ -41,6 +41,17 @@
             <p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p>
           </div>
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
+        </section>
+
+        <section id="commandMonitor" class="command-monitor is-idle" aria-live="polite" aria-atomic="true">
+          <div class="command-monitor-indicator"><span></span></div>
+          <div class="command-monitor-copy">
+            <p class="eyebrow">Tracciamento in tempo reale</p>
+            <h2 id="commandMonitorTitle">In attesa di un comando</h2>
+            <p id="commandMonitorDetail">Ogni clic, avanzamento ed errore verrà mostrato qui.</p>
+            <div id="commandMonitorProgress" class="command-monitor-progress is-hidden"><span></span></div>
+          </div>
+          <strong id="commandMonitorPosition">Pronto</strong>
         </section>
 
         <!-- Il passo successivo viene prima di tutto il resto. -->
@@ -166,6 +177,7 @@
               </div>
               <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
               <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>
+              <div class="setting-row"><div><b>Registro operativo completo</b><small id="operationLogPath">Percorso non disponibile</small></div><button id="openOperationLogButton" class="button secondary">Apri registro</button></div>
               <div class="setting-row"><div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo automatico in attesa</small></div></div>
               <details id="advancedConfiguration"><summary>Configurazione avanzata (solo se richiesta)</summary><form id="configurationForm" class="configuration-form"><label>Indirizzo Supabase<input name="supabaseUrl" type="url" autocomplete="off" /></label><label>Chiave locale protetta<input name="serviceRoleKey" type="password" autocomplete="new-password" /></label><label>File Excel<input name="contactsExcelPath" type="text" /></label><label>Come riconoscere SISTER<input name="sisterTabMatch" type="text" /></label><label>Come riconoscere il gestionale<input name="crmTabMatch" type="text" /></label><button class="button primary" type="submit">Salva configurazione</button></form></details>
             </section>
@@ -182,7 +194,5 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
-    <script src="./request-archive.js"></script>
-    <script src="./mandate-archive.js"></script>
   </body>
 </html>

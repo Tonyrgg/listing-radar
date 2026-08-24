@@ -115,6 +115,26 @@ small,
   cursor: not-allowed;
 }
 
+button[data-command-running="true"] {
+  position: relative;
+  cursor: progress;
+  opacity: 0.72;
+}
+
+button[data-command-running="true"]::after {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: "";
+  animation: command-spin 700ms linear infinite;
+}
+
+@keyframes command-spin {
+  to { transform: rotate(360deg); }
+}
+
 .button.primary {
   background: var(--lr-accent);
   border-color: var(--lr-accent);
@@ -891,6 +911,87 @@ section > header p:last-child {
   font-size: var(--lr-text-meta);
 }
 
+.command-monitor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lr-space-3);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-raised);
+  padding: var(--lr-space-3) var(--lr-space-4);
+}
+
+.command-monitor-indicator {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lr-surface);
+}
+
+.command-monitor-indicator span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lr-ink-3);
+}
+
+.command-monitor h2 {
+  margin-top: 2px;
+  font-size: var(--lr-text-section);
+}
+
+.command-monitor-copy > p:last-of-type {
+  margin-top: 3px;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.command-monitor > strong {
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-label);
+  white-space: nowrap;
+}
+
+.command-monitor.is-running {
+  border-color: var(--lr-accent);
+  background: var(--lr-accent-soft);
+}
+
+.command-monitor.is-running .command-monitor-indicator span {
+  background: var(--lr-accent);
+  animation: command-pulse 1.1s ease-in-out infinite;
+}
+
+.command-monitor.is-success .command-monitor-indicator span { background: var(--lr-accent); }
+.command-monitor.is-error { border-color: var(--lr-danger); background: var(--lr-danger-soft); }
+.command-monitor.is-error .command-monitor-indicator span { background: var(--lr-danger); }
+.command-monitor.is-warning { border-color: var(--lr-warn); background: var(--lr-warn-soft); }
+.command-monitor.is-warning .command-monitor-indicator span { background: var(--lr-warn); }
+
+.command-monitor-progress {
+  height: 5px;
+  margin-top: var(--lr-space-2);
+  overflow: hidden;
+  border-radius: var(--lr-radius-pill);
+  background: var(--lr-line);
+}
+
+.command-monitor-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--lr-accent);
+  transition: width 180ms ease;
+}
+
+@keyframes command-pulse {
+  50% { transform: scale(1.55); opacity: 0.6; }
+}
+
 .diagnostic-error-list {
   display: grid;
   gap: 12px;
@@ -1464,6 +1565,14 @@ dialog[open] {
 
   .workspace {
     padding: var(--lr-space-4);
+  }
+
+  .command-monitor {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .command-monitor > strong {
+    grid-column: 2;
   }
 }
 

@@ -39,8 +39,11 @@ await page.addInitScript(({ initialState, details }) => {
   let state = initialState;
   const listeners = [];
   const streetRunProgressListeners = [];
+  const calls = {};
+  const called = (name, result = true) => { calls[name] = (calls[name] ?? 0) + 1; return result; };
   window.propertyWorker = {
     getState: async () => state,
+    recordUiAction: async (entry) => { (calls.uiActions ??= []).push(entry); return true; },
     onState: (callback) => { listeners.push(callback); return () => {}; },
     runChecks: async () => [
       { id: "chrome", ok: false, detail: "Chrome non raggiungibile su http://127.0.0.1:9222. Avvialo con il pulsante in alto." },
@@ -49,12 +52,12 @@ await page.addInitScript(({ initialState, details }) => {
       { id: "excel", ok: true, detail: "File Excel pronto" },
       { id: "supabase", ok: true, detail: "Connesso" },
     ],
-    openChrome: async () => true, chooseExcel: async () => null, savePreferences: async () => true,
-    startJob: async () => true, resumeJob: async () => true, pauseJob: async () => true, cancelJob: async () => true,
-    startStreetRun: async () => true, cancelStreetRun: async () => true,
-    startRequestArchiveImport: async () => true, cancelRequestArchiveImport: async () => true,
-    startMandateArchiveImport: async () => true, cancelMandateArchiveImport: async () => true,
-    setAutoRetryEnabled: async () => true, skipProperty: async () => ({ pending: true }),
+    openChrome: async () => called("openChrome"), chooseExcel: async () => { called("chooseExcel"); return null; }, savePreferences: async () => called("savePreferences"),
+    startJob: async () => called("startJob"), resumeJob: async () => called("resumeJob"), pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
+    startStreetRun: async () => called("startStreetRun"), cancelStreetRun: async () => called("cancelStreetRun"),
+    startRequestArchiveImport: async () => called("startRequestArchiveImport"), cancelRequestArchiveImport: async () => called("cancelRequestArchiveImport"),
+    startMandateArchiveImport: async () => called("startMandateArchiveImport"), cancelMandateArchiveImport: async () => called("cancelMandateArchiveImport"),
+    setAutoRetryEnabled: async () => called("setAutoRetryEnabled"), skipProperty: async () => { called("skipProperty"); return { pending: true }; },
     loadMoreCompleted: async () => true,
     answerPrompt: async () => true, getJobDetails: async () => details, saveManualCorrections: async () => true,
     removeJobProperty: async () => ({ propertyId: details.properties[0].id, removedPersonIds: [details.people[0].id], remainingProperties: 0 }),
@@ -62,6 +65,7 @@ await page.addInitScript(({ initialState, details }) => {
     checkUpdate: async () => true, downloadUpdate: async () => true, installUpdate: async () => true,
     onStreetRunProgress: (callback) => { streetRunProgressListeners.push(callback); return () => {}; },
   };
+  window.__workerCalls = () => structuredClone(calls);
   window.__showErrorState = () => {
     state = { ...state, activeJobId: "33333333-3333-4333-8333-333333333333", currentStep: "person_searched", lastError: "Codice fiscale mancante", jobs: [{ id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "data_incomplete", current_step: "person_searched", last_completed_step: "acquisition_reviewed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", error_message: "Codice fiscale mancante", updated_at: new Date().toISOString() }] };
     listeners.forEach((callback) => callback(state));
@@ -97,6 +101,14 @@ await page.addInitScript(({ initialState, details }) => {
       current: 413, total: 1743, address: "VIA BORGO SAN FRANCESCO n. 29",
     }));
   };
+  window.__showRequestProgress = () => {
+    state = { ...state, active: false, streetRun: { ...state.streetRun, active: false }, requestArchive: { active: true, cancelling: false, progress: { phase: "detail", index: 413, total: 1000, title: "Richiesta Via Roma", failed: 2 } }, mandateArchive: { active: false } };
+    listeners.forEach((callback) => callback(state));
+  };
+  window.__showMandateProgress = () => {
+    state = { ...state, active: false, requestArchive: { active: false }, mandateArchive: { active: true, cancelling: false, progress: { phase: "detail", index: 88, total: 250, title: "Incarico Via Traetta", failed: 0 } } };
+    listeners.forEach((callback) => callback(state));
+  };
   window.__showCompletedState = () => {
     const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", total_properties: 1, processed_properties: 1, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const completedGraph = { ...details, job: completedJob, properties: details.properties.map((property) => ({ ...property, cadastral_key: "BITONTO|58|1234|7", raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
@@ -107,18 +119,40 @@ await page.addInitScript(({ initialState, details }) => {
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.locator('[data-mode="automatic"]').click();
+await page.locator("#chromeButton").click();
+await page.locator("#startButton").click();
+await page.locator("#streetRunInput").fill("via borgo san francesco");
+await page.locator("#streetRunStart").click();
+await page.locator('[data-scroll="sync"]').click();
+await page.locator("#requestArchiveStart").click();
+await page.locator("#mandateArchiveStart").click();
+const commandMonitorAcknowledged = await page.getByText("Sincronizza archivio incarichi", { exact: true }).count();
+await page.evaluate(() => { const button = document.createElement("button"); button.id = "unroutedTestButton"; button.textContent = "Comando di prova non collegato"; document.body.appendChild(button); });
+await page.locator("#unroutedTestButton").click();
+await page.waitForFunction(() => window.__workerCalls().uiActions?.some((entry) => entry.action === "unroutedTestButton" && entry.status === "failed"));
+const unknownCommandFailureRecorded = (await page.evaluate(() => window.__workerCalls().uiActions.filter((entry) => entry.action === "unroutedTestButton" && entry.status === "failed").length));
 await page.evaluate(() => window.__showStreetRunState());
 await page.evaluate(() => window.__showStreetRunProgress());
 await page.locator("#streetRun").screenshot({ path: path.join(output, "street-run.png") });
 const streetRunProgressVisible = await page.getByText("Leggo gli intestatari 413 di 1743", { exact: false }).count();
+const streetMonitorText = await page.locator("#commandMonitor").innerText();
 const streetRunOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 390, height: 844 });
 await page.locator("#streetRun").screenshot({ path: path.join(output, "street-run-mobile.png") });
 const streetRunMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
+await page.evaluate(() => window.__showRequestProgress());
+const requestMonitorVisible = await page.getByText("Importazione di 1.000 richieste", { exact: true }).count();
+await page.evaluate(() => window.__showMandateProgress());
+const mandateMonitorVisible = await page.getByText("Importazione di 250 incarichi", { exact: true }).count();
 await page.getByRole("button", { name: "Controlla se è tutto pronto" }).click();
 await page.screenshot({ path: path.join(output, "connections.png"), fullPage: false });
 await page.evaluate(() => window.__showPropertyState());
+await page.locator('#actionPanel [data-action="pause"]').click();
+await page.getByRole("button", { name: "Salta immobile" }).click();
+const workerCalls = await page.evaluate(() => window.__workerCalls());
+const propertyMonitorVisible = await page.getByText("Importazione di 7 immobili", { exact: true }).count();
 await page.screenshot({ path: path.join(output, "property-progress.png"), fullPage: false });
 await page.evaluate(() => window.__showUpdateState());
 await page.screenshot({ path: path.join(output, "update-available.png"), fullPage: true });
@@ -133,13 +167,21 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
   ...([readyOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(streetRunProgressVisible !== 1 ? ["Avanzamento interno long mode non visibile"] : []),
+  ...(!streetMonitorText.includes("Voce 413 di 1.743") ? ["Contatore voce/totale della long mode non visibile"] : []),
+  ...(requestMonitorVisible !== 1 ? ["Totale import richieste non visibile"] : []),
+  ...(mandateMonitorVisible !== 1 ? ["Totale import incarichi non visibile"] : []),
+  ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
+  ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
+  ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
+  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "startRequestArchiveImport", "startMandateArchiveImport", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),
   ...(staleErrorVisible !== 0 ? ["Errore obsoleto ancora visibile"] : []),
   ...(removalConfirmationVisible !== 1 ? ["Conferma rimozione immobile non visibile"] : []),
