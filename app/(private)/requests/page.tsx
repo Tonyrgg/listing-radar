@@ -31,6 +31,10 @@ import { listCompatibleMatchReferences, listRequests } from "@/lib/matching/repo
 
 import styles from "./requests.module.css";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Richieste clienti" };
+
 const PAGE_SIZE = 24;
 
 export default async function RequestsPage({
@@ -159,11 +163,8 @@ export default async function RequestsPage({
             .filter((name): name is string => Boolean(name));
 
           return (
-            <Link
-              className={styles.requestCard}
+            <Link               className={styles.requestCard}
               href={`/requests/${request.id}`}
-              target="_blank"
-              rel="noreferrer"
               key={request.id}
               aria-label={`Apri la richiesta ${cleanRequestTitle(request.title)}`}
             >
@@ -221,8 +222,8 @@ export default async function RequestsPage({
         {!pageRequests.length ? (
           <div className={styles.emptyState}>
             <div>
-              <UsersRound aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" />
-              <h2 className="mt-4 font-semibold text-[var(--ink-strong)]">Nessuna richiesta trovata</h2>
+              <UsersRound aria-hidden="true" className="mx-auto size-6 text-[var(--lr-accent)]" />
+              <h2 className="mt-4 font-semibold text-[var(--lr-ink)]">Nessuna richiesta trovata</h2>
               <p className="mt-2 text-sm">Prova a modificare la ricerca o ad azzerare i filtri.</p>
             </div>
           </div>

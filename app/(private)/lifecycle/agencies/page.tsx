@@ -14,7 +14,7 @@ import {
 } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Agencies · Lifecycle" };
+export const metadata: Metadata = { title: "Agenzie" };
 
 function healthTone(state: string | null): "good" | "high" | "default" {
   if (state === "HEALTHY") return "good";
@@ -31,10 +31,10 @@ export default async function LifecycleAgenciesPage() {
   return (
     <>
       <LifecycleHeader
-        eyebrow="Source operations"
+        eyebrow="Agenzie"
         title="Dieci agenzie, salute visibile."
         description="Inventario, uscite e segnali di vendita restano separati dalla salute tecnica del crawler. Una fonte degradata non può produrre false sparizioni."
-        actions={<Activity aria-hidden="true" className="size-6 text-[var(--surface-accent)]" />}
+        actions={<Activity aria-hidden="true" className="size-6 text-[var(--lr-accent)]" />}
       />
       {agencies.length ? (
         <section className={styles.agencyGrid} aria-label="Agenzie monitorate">
@@ -60,7 +60,7 @@ export default async function LifecycleAgenciesPage() {
                 <div><strong>{agency.soldCount}</strong><span>venduti</span></div>
               </div>
               {agency.latestSyncCounts?.errors ? (
-                <p className="flex items-center gap-2 text-xs text-[var(--status-warning)]">
+                <p className="flex items-center gap-2 text-xs text-[var(--lr-warn)]">
                   <ShieldAlert aria-hidden="true" className="size-3.5" />
                   {agency.latestSyncCounts.errors} errori nell&apos;ultimo run
                 </p>

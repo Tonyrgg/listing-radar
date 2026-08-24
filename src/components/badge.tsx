@@ -1,46 +1,42 @@
-import { clsx } from "clsx";
+import type { ReactNode } from "react";
 import type { SellerType } from "@/types";
 
+import { Chip, type Tone } from "@/components/ui/primitives";
+
+/**
+ * Nome storico conservato per non riscrivere ogni chiamata,
+ * ma il disegno e i toni sono quelli del chip unico.
+ */
 export type BadgeTone = "slate" | "green" | "amber" | "blue" | "red";
 
-const toneClasses: Record<BadgeTone, string> = {
-  slate:
-    "border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)]",
-  green:
-    "border-[oklch(0.44_0.07_150)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
-  amber:
-    "border-[oklch(0.42_0.07_80)] bg-[oklch(0.235_0.035_80)] text-[var(--status-warning)]",
-  blue:
-    "border-[oklch(0.42_0.045_230)] bg-[oklch(0.235_0.025_230)] text-[oklch(0.76_0.06_230)]",
-  red:
-    "border-[oklch(0.42_0.07_28)] bg-[oklch(0.235_0.035_28)] text-[var(--status-error)]",
+const toneMap: Record<BadgeTone, Tone> = {
+  slate: "neutral",
+  green: "action",
+  amber: "warn",
+  blue: "info",
+  red: "danger",
 };
 
 export function Badge({
   children,
   tone = "slate",
 }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
   tone?: BadgeTone;
 }>) {
   return (
-    <span
-      className={clsx(
-        "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.06em]",
-        toneClasses[tone],
-      )}
-    >
+    <Chip tone={toneMap[tone]} dot={tone !== "slate"}>
       {children}
-    </span>
+    </Chip>
   );
 }
 
 export function getSellerTypeTone(sellerType: SellerType): BadgeTone {
   switch (sellerType) {
     case "private":
-      return "green";
-    case "agency":
       return "blue";
+    case "agency":
+      return "slate";
     default:
       return "amber";
   }
@@ -49,12 +45,12 @@ export function getSellerTypeTone(sellerType: SellerType): BadgeTone {
 export function getStatusTone(status: string): BadgeTone {
   switch (status) {
     case "new":
-      return "green";
+      return "blue";
     case "review":
       return "amber";
     case "contacted":
     case "negotiating":
-      return "blue";
+      return "slate";
     case "archived":
       return "red";
     default:

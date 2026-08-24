@@ -6,9 +6,9 @@
 .map {
   width: 100%;
   min-height: 31rem;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--lr-line-quiet);
   border-radius: .55rem;
-  background: var(--surface-muted);
+  background: var(--lr-raised);
   z-index: 0;
 }
 
@@ -17,7 +17,7 @@
   inset: 0;
   z-index: 1400;
   padding: .75rem;
-  background: var(--surface-canvas);
+  background: var(--lr-canvas);
 }
 
 .fullscreen .map,
@@ -44,14 +44,14 @@
   width: 2.75rem;
   height: 2.75rem;
   place-items: center;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--lr-line);
   border-radius: .5rem;
-  background: color-mix(in oklch, var(--surface-panel) 94%, transparent);
-  color: var(--ink-strong);
+  background: color-mix(in oklch, var(--lr-surface) 94%, transparent);
+  color: var(--lr-ink);
   cursor: pointer;
 }
 
-.fullscreenButton:hover { border-color: var(--surface-accent); color: var(--surface-accent); }
+.fullscreenButton:hover { border-color: var(--lr-accent); color: var(--lr-accent); }
 .fullscreenButton svg { width: 1rem; height: 1rem; }
 
 .compact { min-height: 22rem; }
@@ -62,10 +62,10 @@
   align-items: center;
   justify-content: center;
   gap: .55rem;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--lr-line-quiet);
   border-radius: .55rem;
-  background: var(--surface-muted);
-  color: var(--ink-soft);
+  background: var(--lr-raised);
+  color: var(--lr-ink-2);
   font-size: .78rem;
   font-weight: 650;
 }
@@ -86,11 +86,11 @@
 .map :global(.leaflet-draw-tooltip) { display: none; }
 
 .zoneLabel {
-  border: 1px solid color-mix(in oklch, var(--ink-strong) 58%, transparent);
+  border: 1px solid color-mix(in oklch, var(--lr-ink) 58%, transparent);
   border-radius: .42rem;
-  background: color-mix(in oklch, var(--surface-canvas) 92%, transparent);
+  background: color-mix(in oklch, var(--lr-canvas) 92%, transparent);
   box-shadow: none;
-  color: var(--ink-strong);
+  color: var(--lr-ink);
   font-size: .66rem;
   font-weight: 760;
   letter-spacing: .025em;
@@ -110,15 +110,15 @@
   height: 1.45rem;
   flex: none;
   place-items: center;
-  border: 1px solid color-mix(in oklch, var(--ink-strong) 70%, transparent);
+  border: 1px solid color-mix(in oklch, var(--lr-ink) 70%, transparent);
   border-radius: 50%;
   font-size: .65rem;
   font-weight: 820;
 }
 .zoneLabelName { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
 .zoneLabelHighlighted {
-  border-color: var(--surface-accent);
-  outline: 2px solid color-mix(in oklch, var(--surface-accent) 28%, transparent);
+  border-color: var(--lr-accent);
+  outline: 2px solid color-mix(in oklch, var(--lr-accent) 28%, transparent);
 }
 
 @media (max-width: 639px) {

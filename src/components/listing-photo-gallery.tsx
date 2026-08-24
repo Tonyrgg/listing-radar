@@ -41,8 +41,8 @@ export function ListingPhotoGallery({
 
   if (!activeUrl) {
     return (
-      <section className="flex h-56 items-center justify-center rounded-[7px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-muted)] sm:h-72 xl:h-[360px]">
-        <div className="text-center text-[var(--ink-subtle)]">
+      <section className="flex h-56 items-center justify-center rounded-[7px] border border-dashed border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]">
+        <div className="text-center text-[var(--lr-ink-3)]">
           <ImageOff aria-hidden="true" className="mx-auto size-7" />
           <p className="mt-3 text-sm font-medium">Nessuna foto acquisita</p>
         </div>
@@ -59,7 +59,7 @@ export function ListingPhotoGallery({
         href={activeUrl}
         target="_blank"
         rel="noreferrer"
-        className="group relative block h-56 overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-72 xl:h-[360px]"
+        className="group relative block h-56 overflow-hidden rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]"
       >
         <img
           src={activeUrl}
@@ -68,7 +68,7 @@ export function ListingPhotoGallery({
           referrerPolicy="no-referrer"
           onError={() => markFailed(activeUrl)}
         />
-        <span className="absolute bottom-3 right-3 rounded-md bg-[var(--surface-canvas)] px-3 py-2 text-xs font-medium text-[var(--ink-strong)] opacity-90 transition-opacity group-hover:opacity-100">
+        <span className="absolute bottom-3 right-3 rounded-md bg-[var(--lr-canvas)] px-3 py-2 text-xs font-medium text-[var(--lr-ink)] opacity-90 transition-opacity group-hover:opacity-100">
           Apri foto
           <span className="sr-only">Apri la foto originale</span>
         </span>
@@ -82,7 +82,7 @@ export function ListingPhotoGallery({
               event.preventDefault();
               selectAdjacent(-1);
             }}
-            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-canvas)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--lr-line)] bg-[var(--lr-canvas)] text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)]"
             aria-label="Foto precedente"
           >
             <ChevronLeft aria-hidden="true" className="size-4" />
@@ -93,7 +93,7 @@ export function ListingPhotoGallery({
               event.preventDefault();
               selectAdjacent(1);
             }}
-            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--line-soft)] bg-[var(--surface-canvas)] text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)]"
+            className="pointer-events-auto inline-flex size-9 items-center justify-center rounded-full border border-[var(--lr-line)] bg-[var(--lr-canvas)] text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)]"
             aria-label="Foto successiva"
           >
             <ChevronRight aria-hidden="true" className="size-4" />
@@ -110,8 +110,8 @@ export function ListingPhotoGallery({
               onClick={() => setSelectedUrl(url)}
               className={
                 url === activeUrl
-                  ? "h-16 w-24 shrink-0 overflow-hidden rounded-md border-2 border-[var(--surface-accent)] bg-[var(--surface-muted)] sm:h-20 sm:w-28"
-                  : "h-16 w-24 shrink-0 overflow-hidden rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] sm:h-20 sm:w-28"
+                  ? "h-16 w-24 shrink-0 overflow-hidden rounded-md border-2 border-[var(--lr-accent)] bg-[var(--lr-raised)] sm:h-20 sm:w-28"
+                  : "h-16 w-24 shrink-0 overflow-hidden rounded-md border border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-20 sm:w-28"
               }
               aria-label={`Mostra foto ${index + 1}`}
             >

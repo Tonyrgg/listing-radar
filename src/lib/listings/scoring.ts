@@ -207,7 +207,7 @@ export function getPriorityScoreBreakdown(
     {
       id: "missing-price",
       label: "Prezzo non rilevato",
-      explanation: "Senza prezzo e piu difficile confrontare l'opportunita.",
+      explanation: "Senza prezzo e più difficile confrontare l'opportunità.",
       points: config.missingPrice,
       active: input.price == null,
     },

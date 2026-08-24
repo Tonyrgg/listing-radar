@@ -1,80 +1,93 @@
 ---
 name: Listing Radar
 description: CRM operativo privato per completare e valutare annunci immobiliari.
+source: src/styles/tokens.css
+verify: npm run design:check
 colors:
-  operations-canvas: "oklch(0.135 0.009 155)"
-  operations-panel: "oklch(0.17 0.01 155)"
-  operations-muted: "oklch(0.215 0.012 155)"
-  operations-elevated: "oklch(0.245 0.013 155)"
-  sage-action: "oklch(0.74 0.105 145)"
-  sage-action-hover: "oklch(0.8 0.11 145)"
-  sage-action-soft: "oklch(0.23 0.035 145)"
-  warm-ink: "oklch(0.93 0.008 105)"
-  soft-ink: "oklch(0.74 0.012 120)"
-  subtle-ink: "oklch(0.58 0.012 135)"
-  soft-line: "oklch(0.255 0.012 155)"
-  strong-line: "oklch(0.34 0.016 155)"
-  warning: "oklch(0.78 0.11 80)"
-  error: "oklch(0.72 0.14 24)"
+  canvas: "#0e1411"
+  surface: "#1f2823"
+  raised: "#2e3831"
+  line: "#6d746e"
+  line-quiet: "#454e47"
+  ink: "#f1f4ef"
+  ink-2: "#b7c2ba"
+  ink-3: "#96a29b"
+  accent: "#74c495"
+  accent-ink: "#0d1410"
+  warn: "#e6b655"
+  danger: "#f08872"
+  info: "#84b9db"
 typography:
-  headline:
+  page:
     fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "1.875rem"
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: "0"
-  title:
+    fontSize: "1.75rem"
+    fontWeight: 650
+    lineHeight: 1.2
+    letterSpacing: "-0.015em"
+  section:
     fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 600
-    lineHeight: 1.5
-    letterSpacing: "0"
+    fontSize: "1.25rem"
+    fontWeight: 650
+    lineHeight: 1.2
+    letterSpacing: "-0.015em"
+  record:
+    fontFamily: "Geist, Arial, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 650
+    lineHeight: 1.35
   body:
     fontFamily: "Geist, Arial, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "0"
+    lineHeight: 1.55
+  meta:
+    fontFamily: "Geist, Arial, sans-serif"
+    fontSize: "0.8125rem"
+    fontWeight: 400
+    lineHeight: 1.55
   label:
     fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "0.75rem"
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: "0.14em"
+    fontSize: "0.6875rem"
+    fontWeight: 650
+    lineHeight: 1.2
+    letterSpacing: "0.09em"
 rounded:
   control: "6px"
-  panel: "8px"
+  container: "10px"
   pill: "9999px"
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "20px"
-  xxl: "24px"
+  1: "4px"
+  2: "8px"
+  3: "12px"
+  4: "16px"
+  5: "20px"
+  6: "24px"
+  8: "32px"
 components:
   button-primary:
-    backgroundColor: "{colors.sage-action}"
-    textColor: "{colors.operations-panel}"
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.accent-ink}"
     rounded: "{rounded.control}"
     padding: "0 16px"
     height: "44px"
   button-secondary:
-    backgroundColor: "{colors.operations-panel}"
-    textColor: "{colors.warm-ink}"
+    backgroundColor: "transparent"
+    borderColor: "{colors.line}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.control}"
     padding: "0 16px"
     height: "44px"
-  panel:
-    backgroundColor: "{colors.operations-panel}"
-    textColor: "{colors.warm-ink}"
-    rounded: "{rounded.panel}"
-    padding: "20px"
-  status-chip:
-    backgroundColor: "{colors.sage-action-soft}"
-    textColor: "{colors.sage-action}"
+  card:
+    backgroundColor: "{colors.surface}"
+    borderColor: "{colors.line}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.container}"
+    padding: "16px"
+  chip:
+    borderColor: "{colors.line}"
+    textColor: "{colors.ink-2}"
     rounded: "{rounded.pill}"
-    padding: "4px 10px"
+    padding: "2px 10px"
 ---
 
 # Design System: Listing Radar
@@ -84,7 +97,7 @@ components:
 **Creative North Star: "La Sala Operativa"**
 
 Listing Radar deve sembrare uno spazio di lavoro privato, calmo e sempre sotto
-controllo. La densita serve a ridurre i passaggi: la coda corrente domina, i
+controllo. La densità serve a ridurre i passaggi: la coda corrente domina, i
 segnali di acquisizione restano visibili e le statistiche non competono con la
 prossima azione.
 
@@ -93,113 +106,166 @@ gratuite, pannelli analitici equivalenti o score tecnici privi di una
 motivazione leggibile.
 
 **Key Characteristics:**
-- Tema scuro grafite con un solo accento salvia operativo.
-- Layout full width, gerarchia asimmetrica e alta densita controllata.
+- Una sola cosa grida per schermata; tutto il resto sussurra in modo leggibile.
+- Grafite verdastra in scuro, carta in chiaro: due temi, gli stessi token.
+- Un solo accento salvia, riservato al passo successivo.
 - Azioni esplicite, foto reali e motivazioni comprensibili.
 - Target interattivi di almeno 44 pixel e focus sempre visibile.
+
+## The single source
+
+Tutti i valori di questo documento vivono in **`src/styles/tokens.css`**.
+
+Quel file viene copiato in `worker/src/desktop/renderer/tokens.css` e in
+`extension/tokens.css` da `npm run design:sync`. Le copie non si modificano a
+mano: `npm run design:check` fallisce se divergono, e lo stesso controllo gira
+nei test (`tests/design-system.test.ts`).
+
+Un valore di colore scritto dentro un componente è un errore, non una scorciatoia.
 
 ## Colors
 
 La palette usa superfici grafite verdastre, testo caldo e un accento salvia
-riservato alle azioni e agli stati positivi.
+riservato alle azioni. Ogni coppia è verificata in sRGB contro WCAG 2.1 AA da
+`scripts/check-design-contrast.mjs`.
 
-### Primary
-- **Salvia operativa:** azioni primarie, stato attivo, icone e collegamenti ad alta priorita.
+### Surfaces
+Tre livelli — canvas, superficie, rialzata — separati da salti percettibili ma
+contenuti (≥ 1,2:1). La calma nasce da questa vicinanza.
 
-### Neutral
-- **Grafite profonda:** fondo continuo dell'applicazione.
-- **Grafite pannello:** navigazione, pannelli e righe operative.
-- **Inchiostro caldo:** titoli, valori e contenuto essenziale.
-- **Inchiostro attenuato:** metadati, descrizioni e informazioni secondarie.
+### Lines
+`--lr-line` è il confine di un componente e resta **≥ 3:1** sulla superficie che
+lo circonda: è la linea a separare, non il riempimento (WCAG 1.4.11).
+`--lr-line-quiet` divide contenuto dentro la stessa superficie ed è decorativa.
+
+### Action vs. state
+Due famiglie separate.
+- **Azione**: il solo `--lr-accent`. Significa «questo è il passo successivo».
+- **Stato**: `--lr-warn`, `--lr-danger`, `--lr-info` e il neutro. Significano
+  «ecco come stanno le cose».
+
+### Data
+`--lr-data-*` e `src/lib/design/map-palette.ts` servono a distinguere categorie
+sulla mappa. Non appartengono né all'azione né allo stato, e non entrano
+nell'interfaccia fuori dalla mappa.
 
 ### Named Rules
 
-**The One Accent Rule.** L'accento salvia deve restare raro e funzionale; non
-deve diventare un colore decorativo di superficie.
+**The One Accent Rule.** Un solo elemento pieno d'accento per regione di
+schermo. L'accento non colora occhielli, icone decorative, categorie o hover.
 
 **The Semantic Status Rule.** Warning ed errori usano sempre i token semantici e
-non dipendono soltanto dal colore: testo o icona devono esplicitare lo stato.
+non dipendono soltanto dal colore: il chip porta un pallino, la riga porta una
+banda laterale, il testo dice lo stato a parole.
+
+**The Measured Palette Rule.** Nessun token entra nel sistema senza passare
+`npm run design:check`. Il documento non può più divergere dal codice.
 
 ## Typography
 
-**Display Font:** Geist (con fallback Arial e sans-serif)
-**Body Font:** Geist (con fallback Arial e sans-serif)
+**Display e Body:** Geist (con fallback Arial e sans-serif).
 
 **Character:** Una singola famiglia sans mantiene il CRM tecnico ma non freddo.
 Peso, dimensione e contrasto creano la gerarchia; il viewport non modifica la
 dimensione dei caratteri.
 
-### Hierarchy
-- **Headline:** titoli pagina, massimo due righe sui viewport mobili.
-- **Title:** intestazioni di pannelli e titoli degli annunci.
-- **Body:** descrizioni e dati operativi, con interlinea ariosa.
-- **Label:** soprattitoli e categorie in maiuscolo con tracking positivo.
+### Scale — sei gradini, nessuna eccezione
+- **Page** 28 px · titolo di pagina, uno solo per schermata.
+- **Section** 20 px · titoli di pannello e prima azione.
+- **Record** 16 px · titolo di un annuncio, di una richiesta, di un immobile.
+- **Body** 14 px · testo corrente. È il default del prodotto.
+- **Meta** 13 px · date, fonti, contesto.
+- **Label** 11 px · occhielli in maiuscoletto, con tracking positivo.
+
+### Weights — tre, non diciotto
+400 regolare · 500 medio · 650 forte. Sono i tre che l'occhio distingue.
 
 ### Named Rules
 
-**The Operational Type Rule.** Il testo piu grande appartiene solo alla pagina;
+**The Operational Type Rule.** Il testo più grande appartiene solo alla pagina;
 card, pannelli e righe usano titoli compatti adatti alla scansione ripetuta.
+
+**The No Whisper Rule.** Sotto gli 11 px non si scrive niente, e l'11 px è
+riservato alle etichette. Il metadato parte da 13 px.
 
 ## Elevation
 
-Il sistema non usa ombre. La profondita nasce da differenze tonali contenute,
-bordi sottili e separatori; modali e overlay futuri devono seguire la stessa
-logica senza bagliori.
+Due soli livelli, dichiarati.
+- **Piano**: tutto ciò che appartiene alla pagina. Nessuna ombra.
+- **Flottante**: mappa, drawer, finestre di dialogo e conferme. Usa
+  `--lr-floating`, e solo quello.
 
 ### Named Rules
 
-**The Flat By Default Rule.** Ogni superficie resta piatta; hover e focus
-cambiano colore o bordo senza sollevare fisicamente il componente.
+**The Flat By Default Rule.** Ogni superficie di pagina resta piatta; hover e
+focus cambiano colore o bordo senza sollevare il componente. Niente gradienti.
 
 ## Components
 
+Un componente per ogni lavoro, e uno solo. Vivono in
+`src/components/ui/primitives.tsx` e `src/components/ui/feedback.tsx`.
+
 ### Buttons
-- **Shape:** angoli contenuti e altezza tattile costante.
-- **Primary:** salvia piena con testo scuro, riservato all'azione successiva.
-- **Hover / Focus:** variazione tonale breve e anello di focus salvia visibile.
-- **Secondary:** superficie del pannello, bordo forte e testo caldo.
+`primary` · `secondary` · `quiet` · `danger`. Altezza 44 px, 36 px in versione
+compatta. Un solo `primary` per regione di schermo.
 
 ### Chips
-- **Style:** pillole compatte con fondo tonale, bordo e testo semantico.
-- **State:** comunicano fonte o stato; non sostituiscono un pulsante.
+Pillole compatte con cinque toni. Comunicano stato o categoria e portano sempre
+una forma oltre al colore. Non sostituiscono mai un pulsante.
 
-### Cards / Containers
-- **Corner Style:** raggio contenuto.
-- **Background:** pannello grafite distinto dal canvas.
-- **Shadow Strategy:** nessuna ombra.
-- **Border:** un pixel, sempre tramite i token di linea.
-- **Internal Padding:** compatto, normalmente tra 16 e 20 pixel.
+### Cards
+Un raggio, un bordo, nessuna ombra. `CardHeader` porta titolo, metadato e al
+massimo un'azione.
 
-### Inputs / Fields
-- **Style:** fondo grafite, bordo forte, raggio da controllo e altezza minima di 44 pixel.
-- **Focus:** anello salvia esterno; nessun glow.
-- **Error / Disabled:** token semantico con spiegazione testuale.
+### Stripe
+La banda laterale da 3 px indica l'urgenza di una riga senza consumare
+l'accento. È il segnale che permette di lasciare la struttura identica fra uno
+stato e l'altro.
+
+### Feedback
+- **Riuscito**: conferma breve, con «Annulla» dove l'operazione è reversibile.
+- **Fallito**: cosa è andato storto, cosa non è andato perso, cosa fare ora.
+- **Vuoto**: cosa è successo e cosa succederà dopo. Mai finte barre di caricamento.
+- **Irreversibile**: `ConfirmDialog` del prodotto. Mai `window.confirm`.
 
 ### Navigation
+Cinque destinazioni — Oggi, Immobili, Segnali, Commerciale, Territorio — più le
+impostazioni tenute separate in fondo. Ogni sezione porta dentro le proprie
+sotto-pagine: nessuna pagina è raggiungibile solo da un link nel testo.
 
-La navigazione e verticale e persistente su desktop; su mobile diventa una riga
-orizzontale scorrevole. Lo stato attivo usa fondo salvia attenuato, icona e
-testo salvia.
+### Density
+Tre densità dichiarate — coda, lista, dettaglio — scelte dalla schermata, non
+subite dal singolo componente.
 
-### Operational Queue
+## Voice
 
-La coda mostra foto, fonte, data, titolo, dati essenziali e una sola azione. Su
-mobile la miniatura resta compatta e il pulsante occupa una riga separata; su
-desktop l'azione resta allineata a destra.
+Una sola voce, in italiano, per tutte e tre le superfici.
+
+- I bottoni dicono cosa succede: «Apri e completa», «Metti da parte».
+- Se una stringa è in `MAIUSCOLO_CON_UNDERSCORE`, non è pronta per l'utente:
+  passa da `presentation.ts`.
+- Nessun punteggio senza la frase che lo spiega.
+- Gli accenti si scrivono: à è ì ò ù.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** mettere la coda da completare prima delle statistiche.
-- **Do** usare tutta la larghezza disponibile sui monitor desktop.
-- **Do** spiegare ogni opportunita con una motivazione comprensibile.
-- **Do** mantenere foto, titolo, prezzo e azione visibili durante la scansione.
+- **Do** far gridare una cosa sola per schermata.
+- **Do** tenere identica la struttura di una riga fra i suoi stati.
+- **Do** spiegare ogni opportunità con una motivazione comprensibile.
+- **Do** confermare ogni azione riuscita, e offrire «Annulla» dove è reversibile.
 - **Do** verificare sempre 390, 1024 e 1600 pixel senza overflow orizzontale.
+- **Do** eseguire `npm run design:check` prima di toccare la palette.
 
 ### Don't:
-- **Don't** creare griglie di metriche tutte equivalenti e prive di una priorita operativa.
-- **Don't** usare dashboard decorative con gradienti, bagliori, vetro o colori neon.
-- **Don't** mostrare pannelli pieni di score tecnici senza una motivazione comprensibile.
-- **Don't** introdurre layout stretti che sprecano spazio disponibile su monitor desktop.
+- **Don't** scrivere un colore dentro un componente.
+- **Don't** usare l'accento per categorie, occhielli o decorazione.
+- **Don't** aprire una scheda nuova del browser per un link interno.
+- **Don't** usare la finestra di conferma del browser.
+- **Don't** creare griglie di metriche tutte equivalenti e prive di priorità.
+- **Don't** usare dashboard decorative con gradienti, bagliori, vetro o neon.
+- **Don't** mostrare pannelli pieni di score tecnici senza una motivazione.
 - **Don't** nascondere il prossimo passo dietro statistiche descrittive.
-- **Don't** annidare card dentro altre card o usare pannelli flottanti come sezioni di pagina.
+- **Don't** annidare card dentro altre card o usare pannelli flottanti come
+  sezioni di pagina.

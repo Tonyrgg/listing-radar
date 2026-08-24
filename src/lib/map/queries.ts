@@ -495,7 +495,7 @@ export async function createMapActivityLog(input: CreateMapActivityLogInput) {
     .select("*")
     .single();
 
-  assertNoError(error, "Impossibile registrare l'attivita");
+  assertNoError(error, "Impossibile registrare l'attività");
   return mapActivityLog(data as MapActivityLogRow);
 }
 
@@ -507,6 +507,6 @@ export async function listMapActivityLogs(limit = 20) {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  assertNoError(error, "Impossibile caricare le attivita");
+  assertNoError(error, "Impossibile caricare le attività");
   return ((data ?? []) as MapActivityLogRow[]).map(mapActivityLog);
 }

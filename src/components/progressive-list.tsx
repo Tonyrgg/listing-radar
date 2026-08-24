@@ -25,11 +25,11 @@ export function ProgressiveList({
     <>
       <div className={className}>{visible}</div>
       {remaining ? (
-        <div className="mt-5 flex justify-center border-t border-[var(--line-soft)] pt-5">
+        <div className="mt-5 flex justify-center border-t border-[var(--lr-line-quiet)] pt-5">
           <button
             type="button"
             onClick={() => setVisibleCount((current) => Math.min(items.length, current + step))}
-            className="inline-flex min-h-11 items-center gap-2 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-panel)] px-5 text-sm font-bold text-[var(--ink-strong)] hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-5 text-sm font-bold text-[var(--lr-ink)] hover:border-[var(--lr-accent)] hover:text-[var(--lr-accent)]"
           >
             Mostra altri {Math.min(step, remaining)} {noun}
             <ChevronDown aria-hidden="true" className="size-4" />

@@ -26,6 +26,10 @@ import type { MatchClassification, PortfolioProperty, PropertyRequest } from "@/
 
 import styles from "./match-detail.module.css";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Dettaglio abbinamento" };
+
 export default async function MatchDetailPage({ params }: PageProps<"/matching/[id]">) {
   const { id } = await params;
   const match = await getMatch(id);
@@ -77,7 +81,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
             <EntitySignal icon={DoorOpen} label="Locali" value={requestRooms(request)} />
             <EntitySignal icon={MapPin} label="Zona" value={desiredZones} />
           </div>
-          <Link href={`/requests/${request.id}`} target="_blank" rel="noreferrer">Apri richiesta <ArrowRight aria-hidden="true" className="size-4" /></Link>
+          <Link href={`/requests/${request.id}`}>Apri richiesta <ArrowRight aria-hidden="true" className="size-4" /></Link>
         </article>
 
         <article className={styles.pairEntity}>
@@ -89,7 +93,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
             <EntitySignal icon={DoorOpen} label="Locali" value={numberLabel(property.rooms)} />
             <EntitySignal icon={MapPin} label="Zona" value={propertyZone} />
           </div>
-          <Link href={`/portfolio/${property.id}`} target="_blank" rel="noreferrer">Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
+          <Link href={`/portfolio/${property.id}`}>Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
         </article>
       </section>
 

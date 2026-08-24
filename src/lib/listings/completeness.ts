@@ -82,21 +82,21 @@ const recommendedFields: Array<{
     key: "imageUrls",
     label: "Fotografie",
     reason:
-      "Non ci sono foto acquisite. Le immagini aiutano a verificare stato, qualita e coerenza dell'annuncio.",
+      "Non ci sono foto acquisite. Le immagini aiutano a verificare stato, qualità e coerenza dell'annuncio.",
     isMissing: (listing) => !listing.imageUrls?.length,
   },
   {
     key: "sellerType",
     label: "Tipo venditore",
     reason:
-      "Il venditore e ancora da verificare. Incide sulla priorita e sul flusso di controllo.",
+      "Il venditore e ancora da verificare. Incide sulla priorità e sul flusso di controllo.",
     isMissing: (listing) => listing.sellerType === "unknown",
   },
   {
     key: "sellerName",
     label: "Nome venditore",
     reason:
-      "Il nome venditore e vuoto o non acquisito. Aiuta a riconoscere duplicati e contatti gia trattati.",
+      "Il nome venditore e vuoto o non acquisito. Aiuta a riconoscere duplicati e contatti già trattati.",
     isMissing: (listing) => !hasText(listing.sellerName),
   },
   {

@@ -11,6 +11,10 @@ import { cleanRequestTitle } from "@/lib/matching/request-presentation";
 import { getMatchingConfig, getMatchingStats, listMatches, listProperties, listRequests } from "@/lib/matching/repository";
 import type { RequestPropertyMatch } from "@/lib/matching/types";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Abbinamenti" };
+
 export default async function MatchingPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   const query = await searchParams;
   const view = value(query.view) === "property" ? "property" : "request";
@@ -64,7 +68,7 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
         </section>
 
         <section className={styles.panel} aria-labelledby="logic-title">
-          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Logica attiva</p><h2 className={styles.panelTitle} id="logic-title">Come nasce la percentuale</h2></div><Link className={styles.textAction} href="/matching-settings" target="_blank" rel="noreferrer">Modifica regole <ArrowRight aria-hidden="true" className="size-4" /></Link></header>
+          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Logica attiva</p><h2 className={styles.panelTitle} id="logic-title">Come nasce la percentuale</h2></div><Link className={styles.textAction} href="/matching-settings">Modifica regole <ArrowRight aria-hidden="true" className="size-4" /></Link></header>
           <div className={styles.logicBody}>
             <div className={styles.thresholdLine}><span>Compatibile da <strong>{config.thresholds.compatible}%</strong></span><span>Alternativa da <strong>{config.thresholds.almostCompatible}%</strong></span><span>Valutabile da <strong>{config.thresholds.weak}%</strong></span></div>
             <div className={styles.weightList}>
@@ -110,7 +114,7 @@ export default async function MatchingPage({ searchParams }: Readonly<{ searchPa
               </section>
             );
           })}
-          {!groups.length ? <div className={styles.emptyState}><div><CheckCircle2 aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" /><h2 className="mt-4 font-semibold text-[var(--ink-strong)]">Nessun abbinamento da mostrare</h2><p className="mt-2 text-sm">{canCalculate ? "Avvia il calcolo oppure modifica i filtri applicati." : "Servono almeno una richiesta attiva e un immobile disponibile."}</p></div></div> : null}
+          {!groups.length ? <div className={styles.emptyState}><div><CheckCircle2 aria-hidden="true" className="mx-auto size-6 text-[var(--lr-accent)]" /><h2 className="mt-4 font-semibold text-[var(--lr-ink)]">Nessun abbinamento da mostrare</h2><p className="mt-2 text-sm">{canCalculate ? "Avvia il calcolo oppure modifica i filtri applicati." : "Servono almeno una richiesta attiva e un immobile disponibile."}</p></div></div> : null}
         </ProgressiveList>
       </section>
     </div>
@@ -135,7 +139,7 @@ function MatchRecord({ match, request, property, view, leading }: Readonly<{ mat
           <h3>{counterpartTitle}</h3>
           <p>{counterpartSubtitle}</p>
         </div>
-        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`} target="_blank" rel="noreferrer">Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
+        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`}>Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
       </div>
       <div className={styles.matchFacts}>
         {showProperty ? (

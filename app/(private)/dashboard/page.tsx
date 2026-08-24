@@ -8,6 +8,16 @@ import { Badge, getSellerTypeTone } from "@/components/badge";
 import { ListingScoreSummary } from "@/components/listing-score";
 import { PageHeader } from "@/components/page-header";
 import { QuickRequestButton } from "@/components/matching/quick-request";
+import {
+  Card,
+  CardHeader,
+  Chip,
+  EmptyState,
+  Label,
+  Meta,
+  Stripe,
+  buttonClass,
+} from "@/components/ui/primitives";
 import { getDashboardSummary, getLastScrapeRun } from "@/lib/data/repository";
 import { getEmailAlertsConfig } from "@/lib/email-alerts/config";
 import {
@@ -17,22 +27,17 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import { getIncomingDashboardData } from "@/lib/incoming/repository";
-import {
-  getRunStatusLabel,
-  getSellerTypeLabel,
-  getSourceLabel,
-} from "@/lib/labels";
-import type { ScoringConfig } from "@/lib/listings/scoring-config";
-import { getScraperRuntimeConfig } from "@/lib/scrapers/config";
+import { getSellerTypeLabel, getSourceLabel } from "@/lib/labels";
+import { getListingAttentionReason } from "@/lib/listings/operational";
+import { readNow } from "@/lib/clock";
+import { getNextAction } from "@/lib/next-action";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
 import type { IncomingListing, Listing } from "@/types";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Inizio",
-};
+export const metadata: Metadata = { title: "Oggi" };
 
-function getPortalImportUrl(listing: IncomingListing) {
+function portalImportUrl(listing: IncomingListing) {
   const value = listing.canonicalUrl ?? listing.url;
 
   try {
@@ -46,351 +51,291 @@ function getPortalImportUrl(listing: IncomingListing) {
   }
 }
 
-function getOpportunityReason(listing: Listing) {
-  if (listing.isPriceDropped) return "Prezzo ridotto";
-  if (listing.sellerType === "private") return "Privato probabile";
-  if (listing.minimumDaysOnline >= 60) return `${listing.minimumDaysOnline} giorni online`;
-  if (listing.isNewToday) return "Nuovo oggi";
-  if (listing.phone) return "Telefono visibile";
-  return "Da valutare";
+function waitedFor(listing: IncomingListing) {
+  const value = listing.emailReceivedAt ?? listing.createdAt;
+  const time = value ? new Date(value).getTime() : Number.NaN;
+
+  if (Number.isNaN(time)) return "arrivato di recente";
+
+  const days = Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000));
+
+  if (days <= 0) return "arrivato oggi";
+  if (days === 1) return "in attesa da ieri";
+  return `in attesa da ${days} giorni`;
 }
 
-function TextLines({ rows = 4 }: Readonly<{ rows?: number }>) {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: rows }).map((_, index) => (
-        <span
-          key={index}
-          className="block h-1.5 rounded-full bg-[var(--line-soft)]"
-          style={{ width: `${92 - index * 11}%` }}
-        />
-      ))}
-    </div>
-  );
-}
+function QueueRow({
+  listing,
+  now,
+}: Readonly<{ listing: IncomingListing; now: number }>) {
+  const receivedAt = listing.emailReceivedAt ?? listing.createdAt;
+  const receivedTime = receivedAt ? new Date(receivedAt).getTime() : Number.NaN;
+  const days = Number.isNaN(receivedTime)
+    ? 0
+    : Math.floor((now - receivedTime) / (24 * 60 * 60 * 1000));
 
-function SummaryCard({
-  value,
-  label,
-  detail,
-}: Readonly<{
-  value: number;
-  label: string;
-  detail: string;
-}>) {
   return (
-    <article className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-4">
-      <p className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ink-strong)]">
-        {formatNumber(value)}
-      </p>
-      <div className="mt-3 min-w-0">
-        <p className="text-sm font-semibold text-[var(--ink-strong)]">{label}</p>
-        <p className="mt-1 text-xs font-medium text-[var(--surface-accent)]">
-          {detail}
+    <div className="flex items-start gap-3 border-t border-[var(--lr-line-quiet)] p-3 first:border-t-0">
+      <Stripe tone={days >= 2 ? "warn" : "neutral"} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[length:var(--lr-text-record)] font-[650] leading-snug tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
+          <span className="line-clamp-2">{listing.title}</span>
         </p>
-      </div>
-    </article>
-  );
-}
-
-function SectionCard({
-  title,
-  action,
-  children,
-}: Readonly<{
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}>) {
-  return (
-    <section className="overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-      <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--line-soft)] px-4">
-        <h2 className="text-sm font-semibold text-[var(--ink-strong)]">{title}</h2>
-        {action}
-      </div>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
-function EmptyState({ text }: Readonly<{ text: string }>) {
-  return (
-    <div className="min-h-36 rounded-[6px] bg-[var(--surface-muted)] p-4">
-      <div className="max-w-xs">
-        <p className="text-sm font-medium text-[var(--ink-strong)]">{text}</p>
-        <div className="mt-5 max-w-64">
-          <TextLines rows={5} />
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(listing.price)}</b>
+          {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
+          {listing.zone ? <span>{formatPlainText(listing.zone)}</span> : null}
         </div>
+        <Meta className="mt-1">
+          {getSourceLabel(listing.source)} · {waitedFor(listing)}
+        </Meta>
       </div>
-    </div>
-  );
-}
-
-function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
-  return (
-    <article className="grid gap-2 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="blue">{getSourceLabel(listing.source)}</Badge>
-        <span className="text-xs text-[var(--ink-subtle)]">
-          {formatDateTime(listing.emailReceivedAt ?? listing.createdAt)}
-        </span>
-      </div>
-      <Link
-        href={getPortalImportUrl(listing)}
+      <a
+        href={portalImportUrl(listing)}
         target="_blank"
-        className="line-clamp-2 text-sm font-semibold leading-5 text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
+        rel="noreferrer"
+        className={buttonClass("secondary", { compact: true })}
       >
-        {listing.title}
-      </Link>
-      <p className="text-xs text-[var(--ink-soft)]">
-        {formatCurrency(listing.price)}
-        {listing.sqm ? ` - ${formatNumber(listing.sqm)} mq` : ""}
-        {listing.zone ? ` - ${listing.zone}` : ""}
-      </p>
-    </article>
+        Completa
+      </a>
+    </div>
   );
 }
 
 function OpportunityRow({
   listing,
   scoringConfig,
-}: Readonly<{ listing: Listing; scoringConfig: ScoringConfig }>) {
-  return (
-    <article className="grid gap-3 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
-        <Link
-          href={`/listings/${listing.id}`}
-          target="_blank"
-          rel="noreferrer"
-          className="block h-24 overflow-hidden rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] transition-colors hover:border-[var(--line-strong)]"
-          aria-label={`Apri scheda ${listing.title}`}
-        >
-          {listing.imageUrls[0] ? (
-            <span
-              className="block size-full bg-cover bg-center"
-              style={{ backgroundImage: `url("${listing.imageUrls[0]}")` }}
-            />
-          ) : (
-            <span className="flex size-full items-center justify-center px-3 text-center text-[11px] font-medium leading-4 text-[var(--ink-subtle)]">
-              Foto non disponibile
-            </span>
-          )}
-        </Link>
-
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={getSellerTypeTone(listing.sellerType)}>
-              {getSellerTypeLabel(listing.sellerType)}
-            </Badge>
-            <span className="text-xs font-medium text-[var(--status-warning)]">
-              {getOpportunityReason(listing)}
-            </span>
-          </div>
-          <Link
-            href={`/listings/${listing.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 block truncate text-sm font-semibold text-[var(--ink-strong)] hover:text-[var(--surface-accent)]"
-          >
-            {listing.title}
-          </Link>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-soft)]">
-            <span className="font-semibold text-[var(--ink-strong)]">
-              {formatCurrency(listing.price)}
-            </span>
-            <span>{formatNumber(listing.sqm)} mq</span>
-            <span>{formatPlainText(listing.zone)}</span>
-          </div>
-          <p className="mt-1 text-xs text-[var(--ink-subtle)]">
-            Aggiunto il {formatDateTime(listing.firstSeenAt)}
-          </p>
-        </div>
-      </div>
-      <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
-    </article>
-  );
-}
-
-function SystemRow({
-  label,
-  value,
-  ok = true,
 }: Readonly<{
-  label: string;
-  value: string;
-  ok?: boolean;
+  listing: Listing;
+  scoringConfig: Awaited<ReturnType<typeof getPersistedScoringConfig>>;
 }>) {
   return (
-    <div className="flex items-start justify-between gap-4 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0">
-      <div>
-        <p className="text-sm font-semibold text-[var(--ink-strong)]">{label}</p>
-        <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">{value}</p>
+    <div className="flex items-start gap-3 border-t border-[var(--lr-line-quiet)] p-3 first:border-t-0">
+      <Stripe tone={listing.isPriceDropped ? "warn" : "neutral"} />
+      <Link
+        href={`/listings/${listing.id}`}
+        className="block h-16 w-24 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]"
+        aria-label={`Apri la scheda di ${listing.title}`}
+      >
+        {listing.imageUrls[0] ? (
+          <span
+            className="block size-full bg-cover bg-center"
+            style={{ backgroundImage: `url("${listing.imageUrls[0]}")` }}
+          />
+        ) : (
+          <span className="grid size-full place-items-center px-2 text-center text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
+            Foto non disponibile
+          </span>
+        )}
+      </Link>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={getSellerTypeTone(listing.sellerType)}>
+            {getSellerTypeLabel(listing.sellerType)}
+          </Badge>
+          <Meta className="truncate">{getSourceLabel(listing.source)}</Meta>
+        </div>
+        <Link
+          href={`/listings/${listing.id}`}
+          className="mt-1 block truncate text-[length:var(--lr-text-record)] font-[650] tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)] hover:underline"
+        >
+          {listing.title}
+        </Link>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(listing.price)}</b>
+          {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
+          <span
+            className={
+              listing.isPriceDropped ? "text-[var(--lr-warn)]" : "text-[var(--lr-ink-3)]"
+            }
+          >
+            {getListingAttentionReason(listing)}
+          </span>
+        </div>
       </div>
-      <span
-        className={
-          ok
-            ? "mt-1 size-2.5 rounded-full bg-[var(--surface-accent)]"
-            : "mt-1 size-2.5 rounded-full bg-[var(--status-error)]"
-        }
-      />
+      <div className="shrink-0">
+        <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
+      </div>
     </div>
   );
 }
 
-export default async function DashboardPage() {
+export default async function TodayPage() {
   await connection();
 
-  const [summary, incoming, lastScrapeRun, scoringConfig] = await Promise.all([
+  const [summary, incoming, lastScrapeRun, scoringConfig, now] = await Promise.all([
     getDashboardSummary(),
     getIncomingDashboardData(),
     getLastScrapeRun(),
     getPersistedScoringConfig(),
+    readNow(),
   ]);
+
   const emailConfig = getEmailAlertsConfig();
-  const scraperConfig = getScraperRuntimeConfig();
-  const opportunities = summary.watchlist.slice(0, 5);
+  const opportunities = summary.watchlist.slice(0, 4);
+  const lastEmailCheckAt = incoming.lastEmailCheck?.processedAt ?? null;
+  const lastRunHadErrors = Boolean(lastScrapeRun?.errorCount);
+
+  const next = getNextAction({
+    pendingListings: incoming.pendingListings,
+    pendingCount: incoming.pendingCount,
+    opportunities,
+    lastEmailCheckAt,
+    emailEnabled: emailConfig.enabled,
+    lastRunHadErrors,
+  });
+
+  const today = new Intl.DateTimeFormat("it-IT", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(now));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
-        eyebrow="Dashboard"
-        title="Pannello operativo"
-        description="Solo lavoro aperto, automazioni e opportunita da valutare."
+        eyebrow={today.charAt(0).toUpperCase() + today.slice(1)}
+        title="Oggi"
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/lifecycle"
-              className="inline-flex min-h-10 items-center gap-2 rounded-[7px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-xs font-semibold text-[var(--ink-strong)] transition-colors hover:border-[var(--surface-accent)] hover:text-[var(--surface-accent)]"
-            >
-              Lifecycle V2
-              <ArrowRight aria-hidden="true" className="size-3.5" />
-            </Link>
+          <>
+            <Chip tone={lastRunHadErrors ? "warn" : "neutral"} dot>
+              {lastRunHadErrors ? "Una fonte da controllare" : "Tutto in funzione"}
+            </Chip>
             <RefreshEmailButton />
             <QuickRequestButton />
-          </div>
+          </>
         }
       />
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <SummaryCard
-          value={incoming.pendingCount}
-          label="Annunci da completare"
-          detail="ultimi 5 giorni"
-        />
-        <SummaryCard
-          value={incoming.recentCount}
-          label="Nuovi arrivi"
-          detail="ultime 24 ore"
-        />
-        <SummaryCard
-          value={summary.highPriority}
-          label="Occasioni in evidenza"
-          detail="priorita alta"
-        />
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
-        <SectionCard
-          title="Nuovi arrivi da completare"
-          action={
-            <Link
-              href="/incoming"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
-            >
-              Vedi tutti
-              <ArrowRight aria-hidden="true" className="size-3.5" />
+      {/* Una sola cosa grida per schermata: è questa. */}
+      <Card className="p-5">
+        <Label tone="action">Da fare adesso</Label>
+        <h2 className="mt-2 max-w-2xl text-[length:var(--lr-text-section)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-balance text-[var(--lr-ink)]">
+          {next.title}
+        </h2>
+        <p className="mt-2 max-w-prose text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+          {next.reason}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href={next.href} className={buttonClass("primary")}>
+            {next.actionLabel}
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+          {next.secondaryHref && next.secondaryLabel ? (
+            <Link href={next.secondaryHref} className={buttonClass("quiet")}>
+              {next.secondaryLabel}
             </Link>
-          }
-        >
+          ) : null}
+        </div>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]">
+        <Card>
+          <CardHeader
+            title="La coda"
+            meta={
+              incoming.pendingCount
+                ? `${incoming.pendingCount} in attesa · ${incoming.recentCount} arrivati oggi`
+                : "Nessuna segnalazione in attesa"
+            }
+            action={
+              incoming.pendingListings.length ? (
+                <Link href="/incoming" className={buttonClass("quiet", { compact: true })}>
+                  Vedi tutti
+                  <ArrowRight aria-hidden="true" className="size-4" />
+                </Link>
+              ) : null
+            }
+          />
           {incoming.pendingListings.length ? (
-            incoming.pendingListings.map((listing) => (
-              <IncomingRow key={listing.id} listing={listing} />
-            ))
+            <div>
+              {incoming.pendingListings.slice(0, 5).map((listing) => (
+                <QueueRow key={listing.id} listing={listing} now={now} />
+              ))}
+            </div>
           ) : (
-            <EmptyState text="Non ci sono annunci in attesa di import." />
+            <EmptyState
+              title="La coda è vuota"
+              description={
+                lastEmailCheckAt
+                  ? `Nessuna segnalazione da completare. L'ultimo controllo delle email è delle ${new Intl.DateTimeFormat(
+                      "it-IT",
+                      { hour: "2-digit", minute: "2-digit" },
+                    ).format(new Date(lastEmailCheckAt))} e il prossimo parte da solo.`
+                  : "Nessuna segnalazione da completare. Il controllo automatico parte da solo."
+              }
+              action={<RefreshEmailButton />}
+            />
           )}
-        </SectionCard>
+        </Card>
 
-        <SectionCard
-          title="Stato automazioni"
-          action={
-            <Link
-              href="/settings"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
-            >
-              Dettagli
-            </Link>
-          }
-        >
-          <SystemRow
-            label="Email"
-            ok={emailConfig.enabled}
-            value={
-              emailConfig.enabled
-                ? incoming.lastEmailCheck
-                  ? `Ultimo controllo: ${formatDateTime(incoming.lastEmailCheck.processedAt)}`
-                  : "Controllo email attivo"
-                : "Email non configurata"
+        <Card>
+          <CardHeader
+            title="Occasioni da valutare"
+            meta={`${summary.highPriority} in evidenza`}
+            action={
+              opportunities.length ? (
+                <Link
+                  href="/listings?onlyHighPriority=on&sortBy=score_desc"
+                  className={buttonClass("quiet", { compact: true })}
+                >
+                  Tutte
+                  <ArrowRight aria-hidden="true" className="size-4" />
+                </Link>
+              ) : null
             }
           />
-          <SystemRow
-            label="Siti locali"
-            value={
-              lastScrapeRun
-                ? `${getRunStatusLabel(lastScrapeRun.status)} - ${formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)}`
-                : "Nessun controllo registrato"
-            }
-          />
-          <SystemRow
-            label="Fonti"
-            value={
-              scraperConfig.provider === "all"
-                ? "Email e siti locali"
-                : getSourceLabel(scraperConfig.provider)
-            }
-          />
-          <SystemRow
-            label="Errori ultimo run"
-            ok={!lastScrapeRun?.errorCount}
-            value={
-              lastScrapeRun?.errorCount
-                ? `${formatNumber(lastScrapeRun.errorCount)} problemi`
-                : "Nessun problema rilevato"
-            }
-          />
-        </SectionCard>
+          {opportunities.length ? (
+            <div>
+              {opportunities.map((listing) => (
+                <OpportunityRow
+                  key={listing.id}
+                  listing={listing}
+                  scoringConfig={scoringConfig}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="Nessuna occasione in evidenza"
+              description="Nessuna scheda supera oggi la soglia di appetibilità. La soglia si regola dalle impostazioni."
+              action={
+                <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
+                  Regola la soglia
+                </Link>
+              }
+            />
+          )}
+        </Card>
       </div>
 
-      <SectionCard
-        title="Occasioni da valutare"
-        action={
-          <Link
-            href="/listings?onlyHighPriority=on"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--surface-accent)] hover:text-[var(--surface-accent-hover)]"
-          >
-            Archivio
-            <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Link>
-        }
-      >
-        {opportunities.length ? (
-          opportunities.map((listing) => (
-            <OpportunityRow
-              key={listing.id}
-              listing={listing}
-              scoringConfig={scoringConfig}
-            />
-          ))
-        ) : (
-          <EmptyState text="Nessuna occasione in evidenza al momento." />
-        )}
-      </SectionCard>
+      {/* Le statistiche rassicurano, non decidono: stanno in fondo, su una riga. */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">
+          <Meta>
+            Email{" "}
+            {emailConfig.enabled
+              ? lastEmailCheckAt
+                ? formatDateTime(lastEmailCheckAt)
+                : "attive"
+              : "non configurate"}
+          </Meta>
+          <Meta>
+            Siti locali{" "}
+            {lastScrapeRun
+              ? formatDateTime(lastScrapeRun.finishedAt ?? lastScrapeRun.startedAt)
+              : "mai controllati"}
+          </Meta>
+          <Meta className={lastRunHadErrors ? "text-[var(--lr-warn)]" : undefined}>
+            {lastRunHadErrors
+              ? `${formatNumber(lastScrapeRun?.errorCount ?? 0)} problemi nell'ultimo giro`
+              : "Nessun problema rilevato"}
+          </Meta>
+        </div>
+        <Link href="/settings" className={buttonClass("quiet", { compact: true })}>
+          Dettagli
+        </Link>
+      </Card>
     </div>
   );
 }

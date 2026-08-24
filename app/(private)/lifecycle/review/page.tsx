@@ -4,7 +4,11 @@ import { connection } from "next/server";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { getCurrentUser } from "@/lib/auth";
-import { humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import {
+  humanize,
+  reviewStatusLabel,
+  reviewTypeLabel,
+} from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
 import { recordReviewDecision } from "../actions";
@@ -20,7 +24,7 @@ import {
 } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Review queue · Lifecycle" };
+export const metadata: Metadata = { title: "Da decidere" };
 
 function detailSummary(details: Record<string, unknown>): string[] {
   const reasons = Array.isArray(details.reasons)
@@ -48,24 +52,24 @@ export default async function LifecycleReviewPage() {
   return (
     <>
       <LifecycleHeader
-        eyebrow="Human review queue"
-        title="L'ambiguità resta visibile."
-        description="Confronta i dossier candidati e registra una decisione auditabile. La revisione non fonde né elimina automaticamente alcuna proprietà."
+        eyebrow="Da decidere"
+        title="Casi che aspettano una tua decisione"
+        description="Confronta le schede candidate e registra la scelta. Niente viene unito o eliminato in automatico: decidi tu, e la decisione resta tracciata."
         actions={<SignalPill tone={reviews.length ? "high" : "good"}>{reviews.length} aperte</SignalPill>}
       />
 
       <section className={styles.briefingStrip} aria-label="Sintesi revisioni">
         <div className={styles.metric}><strong>{reviews.length}</strong><span>casi aperti</span></div>
-        <div className={styles.metric}><strong>{identityCount}</strong><span>identità</span></div>
-        <div className={styles.metric}><strong>{geographyCount}</strong><span>geografia</span></div>
-        <div className={styles.metric}><strong>{reviews.filter((review) => review.reviewType === "LIFECYCLE").length}</strong><span>lifecycle</span></div>
-        <div className={styles.metric}><strong>{reviews.filter((review) => review.status === "IN_REVIEW").length}</strong><span>in revisione</span></div>
+        <div className={styles.metric}><strong>{identityCount}</strong><span>stesso immobile</span></div>
+        <div className={styles.metric}><strong>{geographyCount}</strong><span>posizione</span></div>
+        <div className={styles.metric}><strong>{reviews.filter((review) => review.reviewType === "LIFECYCLE").length}</strong><span>stato incerto</span></div>
+        <div className={styles.metric}><strong>{reviews.filter((review) => review.status === "IN_REVIEW").length}</strong><span>in esame</span></div>
       </section>
 
       <LifecycleSection
         title="Casi da decidere"
         description="Priorità più alta per prima"
-        action={<Scale aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />}
+        action={<Scale aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />}
       >
         {reviews.length ? (
           <div className={styles.rows}>
@@ -75,8 +79,8 @@ export default async function LifecycleReviewPage() {
                 <article key={review.id} className={styles.reviewCase}>
                   <div className={styles.rowTop}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <SignalPill tone={review.priority >= 100 ? "hot" : "high"}>{humanize(review.reviewType)}</SignalPill>
-                      <SignalPill>{humanize(review.status)}</SignalPill>
+                      <SignalPill tone={review.priority >= 100 ? "hot" : "high"}>{reviewTypeLabel(review.reviewType)}</SignalPill>
+                      <SignalPill>{reviewStatusLabel(review.status)}</SignalPill>
                     </div>
                     <span className={styles.rowMeta}>Priorità {review.priority} · {formatDate(review.createdAt)}</span>
                   </div>

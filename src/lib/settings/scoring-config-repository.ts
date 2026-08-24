@@ -48,6 +48,6 @@ export async function savePersistedScoringConfig(config: ScoringConfig) {
   });
 
   if (error) {
-    throw new Error("Impossibile salvare le regole di appetibilita.");
+    throw new Error("Impossibile salvare le regole di appetibilità.");
   }
 }

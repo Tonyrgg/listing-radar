@@ -99,7 +99,7 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
                   <div className="flex items-center gap-3">
                     <FeatureMark featureKey={feature.key} label={feature.label} />
                     <div>
-                      <p className="text-sm font-semibold text-[var(--ink-strong)]">{feature.label}</p>
+                      <p className="text-sm font-semibold text-[var(--lr-ink)]">{feature.label}</p>
                       <p className={styles.muted}>{feature.applies_to === "both" ? "Richieste e immobili" : feature.applies_to === "request" ? "Solo richieste" : "Solo immobili"}</p>
                     </div>
                   </div>
@@ -122,7 +122,7 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
 function RuleGroup({ icon: Icon, title, fields }: Readonly<{ icon: typeof Gauge; title: string; fields: Array<[string, string, number]> }>) {
   return (
     <section className={styles.ruleGroup}>
-      <h3 className={styles.ruleTitle}><Icon aria-hidden="true" className="size-4 text-[var(--surface-accent)]" /> {title}</h3>
+      <h3 className={styles.ruleTitle}><Icon aria-hidden="true" className="size-4 text-[var(--lr-accent)]" /> {title}</h3>
       <div className={styles.ruleFields}>
         {fields.map(([name, label, value]) => (
           <label className={styles.numberField} key={name}>{label}<input className={styles.input} name={name} type="number" step="any" defaultValue={value} /></label>

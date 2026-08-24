@@ -2,12 +2,8 @@ import Link from "next/link";
 import { Archive, ArchiveRestore, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 
-import { Badge, type BadgeTone } from "@/components/badge";
-import {
-  LoadingAnchor,
-  LoadingLink,
-  PendingSubmitButton,
-} from "@/components/loading-controls";
+import { Chip, Card, CardHeader, EmptyState, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
+import { PendingSubmitButton } from "@/components/loading-controls";
 import { PageHeader } from "@/components/page-header";
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import {
@@ -15,28 +11,16 @@ import {
   restoreIncomingListing,
 } from "@/app/(private)/incoming/actions";
 import { getIncomingListings } from "@/lib/incoming/repository";
-import {
-  formatCurrency,
-  formatDateTime,
-  formatNumber,
-} from "@/lib/formatting";
-import {
-  getIncomingStatusLabel,
-  getSourceLabel,
-} from "@/lib/labels";
+import { formatCurrency, formatNumber, formatPlainText } from "@/lib/formatting";
+import { getIncomingStatusLabel, getSourceLabel } from "@/lib/labels";
 import type { IncomingListing, IncomingListingStatus } from "@/types";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Annunci da completare",
-};
+export const metadata: Metadata = { title: "Da completare" };
 
-const FILTERS: Array<{
-  value: IncomingListingStatus | "all";
-  label: string;
-}> = [
-  { value: "pending", label: "In attesa" },
-  { value: "enriched", label: "Completati" },
+const FILTERS: Array<{ value: IncomingListingStatus | "all"; label: string }> = [
+  { value: "pending", label: "Da completare" },
+  { value: "enriched", label: "Già completati" },
   { value: "dismissed", label: "Messi da parte" },
   { value: "all", label: "Tutti" },
 ];
@@ -48,20 +32,14 @@ function readStatus(value: string | string[] | undefined) {
     : "pending";
 }
 
-function getIncomingTone(status: IncomingListingStatus): BadgeTone {
-  switch (status) {
-    case "enriched":
-      return "green";
-    case "error":
-      return "red";
-    case "dismissed":
-      return "slate";
-    default:
-      return "amber";
-  }
+function statusTone(status: IncomingListingStatus) {
+  if (status === "enriched") return "action" as const;
+  if (status === "error") return "danger" as const;
+  if (status === "dismissed") return "neutral" as const;
+  return "warn" as const;
 }
 
-function getPortalImportUrl(listing: IncomingListing) {
+function portalImportUrl(listing: IncomingListing) {
   const value = listing.canonicalUrl ?? listing.url;
 
   try {
@@ -75,97 +53,106 @@ function getPortalImportUrl(listing: IncomingListing) {
   }
 }
 
-function IncomingCard({ listing }: Readonly<{ listing: IncomingListing }>) {
+function waitedFor(listing: IncomingListing) {
+  const value = listing.emailReceivedAt ?? listing.createdAt;
+  const time = value ? new Date(value).getTime() : Number.NaN;
+
+  if (Number.isNaN(time)) return { text: "arrivato di recente", days: 0 };
+
+  const days = Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000));
+
+  if (days <= 0) return { text: "arrivato oggi", days };
+  if (days === 1) return { text: "in attesa da ieri", days };
+  return { text: `in attesa da ${days} giorni`, days };
+}
+
+function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
   const isEnriched = listing.status === "enriched" && listing.listingId;
   const canDismiss = listing.status !== "dismissed" && !isEnriched;
   const canRestore = listing.status === "dismissed";
+  const waited = waitedFor(listing);
 
   return (
-    <article className="grid gap-4 border-b border-[var(--line-soft)] py-4 last:border-b-0 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="min-w-0">
+    <div className="flex items-start gap-3 border-t border-[var(--lr-line-quiet)] p-3 first:border-t-0">
+      <Stripe tone={isEnriched ? "neutral" : waited.days >= 2 ? "warn" : "neutral"} />
+
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="blue">{getSourceLabel(listing.source)}</Badge>
-          <Badge tone={getIncomingTone(listing.status)}>
+          <Chip tone={statusTone(listing.status)} dot>
             {getIncomingStatusLabel(listing.status)}
-          </Badge>
-          <span className="text-xs text-[var(--ink-subtle)]">
-            {formatDateTime(listing.emailReceivedAt ?? listing.createdAt)}
-          </span>
+          </Chip>
+          <Meta className="truncate">
+            {getSourceLabel(listing.source)} · {waited.text}
+          </Meta>
         </div>
-        <h3 className="mt-2 text-base font-semibold text-[var(--ink-strong)]">
+
+        <h3 className="mt-1.5 text-[length:var(--lr-text-record)] font-[650] leading-snug tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
           {listing.title}
         </h3>
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--ink-soft)]">
-          <span className="font-semibold text-[var(--ink-strong)]">
-            {formatCurrency(listing.price)}
-          </span>
-          {listing.sqm != null ? (
-            <span>{formatNumber(listing.sqm)} mq</span>
-          ) : null}
-          {listing.rooms != null ? (
-            <span>{formatNumber(listing.rooms)} locali</span>
-          ) : null}
-          {listing.zone ? <span>{listing.zone}</span> : null}
+
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(listing.price)}</b>
+          {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
+          {listing.rooms != null ? <span>{formatNumber(listing.rooms)} locali</span> : null}
+          {listing.zone ? <span>{formatPlainText(listing.zone)}</span> : null}
         </div>
+
         {listing.emailSubject ? (
-          <p className="mt-4 line-clamp-2 text-xs leading-5 text-[var(--ink-subtle)]">
-            Segnalazione ricevuta: {listing.emailSubject}
-          </p>
+          <Meta className="mt-1 line-clamp-1">Segnalazione: {listing.emailSubject}</Meta>
         ) : null}
       </div>
 
-      <div className="grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 md:w-[230px] md:grid-cols-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {isEnriched ? (
-          <LoadingLink
+          <Link
             href={`/listings/${listing.listingId}`}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
-            pendingLabel="Apertura scheda"
+            className={buttonClass("secondary", { compact: true })}
           >
-            Vedi scheda completa
+            Vedi la scheda
             <ArrowRight aria-hidden="true" className="size-4" />
-          </LoadingLink>
+          </Link>
         ) : (
           <>
-            <LoadingAnchor
-              href={getPortalImportUrl(listing)}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
-              pendingLabel="Apertura portale"
-            >
-              Apri e completa la scheda
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </LoadingAnchor>
             {canDismiss ? (
-              <form action={dismissIncomingListing} className="w-full">
+              <form action={dismissIncomingListing}>
                 <input type="hidden" name="incomingId" value={listing.id} />
                 <PendingSubmitButton
                   type="submit"
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
                   pendingLabel="Sposto"
+                  aria-label="Metti da parte"
+                  title="Metti da parte"
                   icon={<Archive aria-hidden="true" className="size-4" />}
+                  className={buttonClass("quiet", { compact: true, icon: true })}
                 >
-                  Metti da parte
+                  <span className="sr-only">Metti da parte</span>
                 </PendingSubmitButton>
               </form>
             ) : null}
             {canRestore ? (
-              <form action={restoreIncomingListing} className="w-full">
+              <form action={restoreIncomingListing}>
                 <input type="hidden" name="incomingId" value={listing.id} />
                 <PendingSubmitButton
                   type="submit"
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
                   pendingLabel="Ripristino"
                   icon={<ArchiveRestore aria-hidden="true" className="size-4" />}
+                  className={buttonClass("secondary", { compact: true })}
                 >
                   Rimetti in attesa
                 </PendingSubmitButton>
               </form>
             ) : null}
+            <a
+              href={portalImportUrl(listing)}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonClass("primary", { compact: true })}
+            >
+              Apri e completa
+            </a>
           </>
         )}
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -179,51 +166,72 @@ export default async function IncomingPage({
   const listings = await getIncomingListings(status);
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-5">
-        <PageHeader
-          eyebrow="Passaggio 1"
-          title="Annunci da completare"
-          description={`${listings.length} annunci nella sezione selezionata.`}
-          actions={<RefreshEmailButton />}
+    <div className="space-y-5">
+      <PageHeader
+        eyebrow="Oggi"
+        title="Annunci da completare"
+        description="Segnalazioni parziali arrivate dalle email e dai siti locali. Aprile sul portale e completa la scheda."
+        backHref="/dashboard"
+        backLabel="Torna a Oggi"
+        actions={<RefreshEmailButton />}
+        nav={
+          <nav className="flex gap-1 overflow-x-auto pb-0.5" aria-label="Filtra i nuovi arrivi">
+            {FILTERS.map((filter) => (
+              <Link
+                key={filter.value}
+                href={`/incoming?status=${filter.value}`}
+                aria-current={status === filter.value ? "page" : undefined}
+                className={
+                  status === filter.value
+                    ? "inline-flex min-h-9 shrink-0 items-center rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink)] shadow-[inset_0_0_0_1px_var(--lr-line)]"
+                    : "inline-flex min-h-9 shrink-0 items-center rounded-[var(--lr-radius-control)] px-3 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)] transition-colors hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]"
+                }
+              >
+                {filter.label}
+              </Link>
+            ))}
+          </nav>
+        }
+      />
+
+      <Card>
+        <CardHeader
+          title={status === "pending" ? "In attesa" : FILTERS.find((f) => f.value === status)?.label ?? "Tutti"}
+          meta={`${listings.length} ${listings.length === 1 ? "annuncio" : "annunci"}`}
         />
-
-        <nav
-          className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap"
-          aria-label="Filtra nuovi arrivi"
-        >
-          {FILTERS.map((filter) => (
-            <Link
-              key={filter.value}
-              href={`/incoming?status=${filter.value}`}
-              className={
-                status === filter.value
-                  ? "rounded-md bg-[var(--surface-accent-soft)] px-3 py-2 text-center text-sm font-medium text-[var(--surface-accent)]"
-                  : "rounded-md border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 py-2 text-center text-sm font-medium text-[var(--ink-soft)]"
-              }
-            >
-              {filter.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-
-      <section className="rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-4">
         {listings.length ? (
-          listings.map((listing) => (
-            <IncomingCard key={listing.id} listing={listing} />
-          ))
-        ) : (
-          <div className="px-6 py-14 text-center">
-            <p className="text-sm font-medium text-[var(--ink-strong)]">
-              Non ci sono annunci in questa sezione
-            </p>
-            <p className="mt-2 text-sm text-[var(--ink-soft)]">
-              Prova un&apos;altra sezione oppure cerca nuovi annunci.
-            </p>
+          <div>
+            {listings.map((listing) => (
+              <IncomingRow key={listing.id} listing={listing} />
+            ))}
           </div>
+        ) : (
+          <EmptyState
+            title={
+              status === "pending"
+                ? "Hai completato tutta la coda"
+                : "Non c'è niente in questa sezione"
+            }
+            description={
+              status === "pending"
+                ? "Nessuna segnalazione da completare. Il controllo automatico parte da solo; puoi anche lanciarlo adesso."
+                : "Prova un'altra sezione: gli annunci potrebbero trovarsi fra quelli in attesa o già completati."
+            }
+            action={
+              status === "pending" ? (
+                <RefreshEmailButton />
+              ) : (
+                <Link
+                  href="/incoming?status=pending"
+                  className={buttonClass("secondary", { compact: true })}
+                >
+                  Vai a quelli da completare
+                </Link>
+              )
+            }
+          />
         )}
-      </section>
+      </Card>
     </div>
   );
 }

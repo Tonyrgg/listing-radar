@@ -1,3 +1,5 @@
+import { MAP_DATA_COLORS } from "@/lib/design/map-palette";
+
 import type {
   AreaStatus,
   MapStatus,
@@ -103,16 +105,16 @@ export const PIN_PRIORITY_LABELS: Record<PinPriority, string> = {
 };
 
 export const PIN_PRIORITY_COLORS: Record<PinPriority, string> = {
-  low: "#94a3b8",
-  medium: "#22c55e",
-  high: "#f59e0b",
-  urgent: "#ef4444",
+  low: MAP_DATA_COLORS.muted,
+  medium: MAP_DATA_COLORS.positive,
+  high: MAP_DATA_COLORS.attention,
+  urgent: MAP_DATA_COLORS.critical,
 };
 
-export const DEFAULT_AGENT_COLORS = ["#2563eb", "#16a34a"];
+export const DEFAULT_AGENT_COLORS = [MAP_DATA_COLORS.info, MAP_DATA_COLORS.accentuated];
 
-export const FALLBACK_AREA_COLOR = "#0ea5e9";
-export const FALLBACK_STREET_COLOR = "#22c55e";
+export const FALLBACK_AREA_COLOR = MAP_DATA_COLORS.info;
+export const FALLBACK_STREET_COLOR = MAP_DATA_COLORS.positive;
 
 export const DEFAULT_MAP_FILTERS: MapFiltersState = {
   agentId: "all",

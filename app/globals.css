@@ -1,32 +1,21 @@
 @import "tailwindcss";
-
-:root {
-  color-scheme: dark;
-  --surface-canvas: oklch(0.155 0.012 160);
-  --surface-panel: oklch(0.215 0.014 160);
-  --surface-muted: oklch(0.265 0.015 160);
-  --surface-elevated: oklch(0.315 0.016 160);
-  --surface-strong: oklch(0.38 0.02 160);
-  --surface-accent: oklch(0.71 0.13 150);
-  --surface-accent-hover: oklch(0.77 0.14 150);
-  --surface-accent-soft: oklch(0.31 0.052 150);
-  --button-ink: oklch(0.15 0.018 160);
-  --ink-strong: oklch(0.965 0.006 135);
-  --ink-soft: oklch(0.78 0.014 150);
-  --ink-subtle: oklch(0.61 0.014 155);
-  --line-soft: oklch(0.36 0.015 160);
-  --line-strong: oklch(0.48 0.018 160);
-  --status-warning: oklch(0.76 0.12 82);
-  --status-error: oklch(0.7 0.15 28);
-  --focus-ring: oklch(0.76 0.14 150);
-  --shadow-panel: 0 1px 0 oklch(1 0 0 / 0.03), 0 12px 30px oklch(0.04 0.012 160 / 0.16);
-}
+@import "../src/styles/tokens.css";
 
 @theme inline {
-  --color-background: var(--surface-canvas);
-  --color-foreground: var(--ink-strong);
+  --color-background: var(--lr-canvas);
+  --color-foreground: var(--lr-ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --radius-control: var(--lr-radius-control);
+  --radius-container: var(--lr-radius-container);
+
+  --text-page: var(--lr-text-page);
+  --text-section: var(--lr-text-section);
+  --text-record: var(--lr-text-record);
+  --text-body: var(--lr-text-body);
+  --text-meta: var(--lr-text-meta);
+  --text-label: var(--lr-text-label);
 }
 
 * {
@@ -34,18 +23,18 @@
 }
 
 html {
-  background: var(--surface-canvas);
+  background: var(--lr-canvas);
 }
 
+/* Nessun gradiente: la profondità nasce da superfici e linee.
+ * DESIGN.md — The Flat By Default Rule. */
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at top right, oklch(0.24 0.035 150 / 0.45), transparent 360px),
-    linear-gradient(180deg, oklch(0.19 0.014 160) 0, var(--surface-canvas) 240px),
-    linear-gradient(90deg, oklch(0.145 0.012 160) 0, oklch(0.17 0.014 160) 100%),
-    var(--surface-canvas);
-  color: var(--ink-strong);
+  background: var(--lr-canvas);
+  color: var(--lr-ink);
   font-family: var(--font-geist-sans), sans-serif;
+  font-size: var(--lr-text-body);
+  line-height: var(--lr-leading-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -54,23 +43,20 @@ body {
     text-decoration: none;
   }
 
-  :where(a, button, input, select, textarea):focus-visible {
-    outline: 2px solid var(--focus-ring);
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--lr-accent);
     outline-offset: 2px;
+    border-radius: 3px;
   }
 
   :where(input, select, textarea) {
-    color: var(--ink-strong);
-  }
-
-  select {
-    color-scheme: dark;
+    color: var(--lr-ink);
   }
 
   select option,
   select optgroup {
-    background: var(--surface-panel);
-    color: var(--ink-strong);
+    background: var(--lr-surface);
+    color: var(--lr-ink);
   }
 
   :where(input, select, textarea) {
@@ -80,23 +66,27 @@ body {
   }
 
   :where(input, select, textarea):hover {
-    border-color: var(--line-strong);
+    border-color: var(--lr-line);
+  }
+
+  :where(input, textarea)::placeholder {
+    color: var(--lr-ink-3);
   }
 }
 
 ::selection {
-  background: var(--surface-accent-soft);
-  color: var(--ink-strong);
+  background: var(--lr-accent-soft);
+  color: var(--lr-ink);
 }
 
 @layer components {
   summary {
-    border-radius: 6px;
+    border-radius: var(--lr-radius-control);
   }
 
   .leaflet-container {
     font-family: var(--font-geist-sans), sans-serif;
-    background: var(--surface-panel);
+    background: var(--lr-surface);
   }
 
   .leaflet-interactive:focus {
@@ -105,22 +95,22 @@ body {
 
   .leaflet-control-zoom a,
   .leaflet-bar a {
-    border-color: var(--line-soft);
-    background: var(--surface-panel);
-    color: var(--ink-strong);
+    border-color: var(--lr-line);
+    background: var(--lr-surface);
+    color: var(--lr-ink);
   }
 
   .leaflet-control-zoom a:hover,
   .leaflet-bar a:hover {
-    background: var(--surface-muted);
-    color: var(--ink-strong);
+    background: var(--lr-raised);
+    color: var(--lr-ink);
   }
 
   .leaflet-popup-content-wrapper,
   .leaflet-popup-tip {
-    background: var(--surface-panel);
-    color: var(--ink-strong);
-    box-shadow: var(--shadow-panel);
+    background: var(--lr-surface);
+    color: var(--lr-ink);
+    box-shadow: var(--lr-floating);
   }
 
   .leaflet-popup-content {
@@ -128,37 +118,37 @@ body {
   }
 
   .leaflet-popup-content button {
-    min-height: 28px;
-    border: 1px solid var(--line-strong);
-    border-radius: 6px;
-    padding: 4px 8px;
-    background: var(--surface-muted);
-    color: var(--ink-strong);
-    font-size: 12px;
-    font-weight: 650;
+    min-height: var(--lr-control-height-compact);
+    border: 1px solid var(--lr-line);
+    border-radius: var(--lr-radius-control);
+    padding: 4px 10px;
+    background: var(--lr-raised);
+    color: var(--lr-ink);
+    font-size: var(--lr-text-meta);
+    font-weight: var(--lr-weight-strong);
   }
 
   .leaflet-popup-content button:hover {
-    background: var(--surface-elevated);
+    background: var(--lr-surface);
   }
 
   .leaflet-tooltip {
-    border: 1px solid var(--line-soft);
-    border-radius: 6px;
-    background: var(--surface-panel);
-    color: var(--ink-strong);
-    box-shadow: var(--shadow-panel);
+    border: 1px solid var(--lr-line);
+    border-radius: var(--lr-radius-control);
+    background: var(--lr-surface);
+    color: var(--lr-ink);
+    box-shadow: var(--lr-floating);
   }
 
   .leaflet-tooltip.map-snap-point-label {
-    border-color: oklch(0.18 0.012 155);
-    border-radius: 9999px;
-    padding: 1px 6px;
-    background: oklch(0.92 0.12 88);
-    color: oklch(0.16 0.018 95);
-    font-size: 11px;
-    font-weight: 750;
-    line-height: 1.25;
+    border-color: var(--lr-line);
+    border-radius: var(--lr-radius-pill);
+    padding: 1px 7px;
+    background: var(--lr-warn);
+    color: var(--lr-canvas);
+    font-size: var(--lr-text-label);
+    font-weight: var(--lr-weight-strong);
+    line-height: 1.35;
     box-shadow: none;
   }
 
@@ -171,18 +161,18 @@ body {
     border: 0;
     padding: 0;
     background: transparent;
-    color: white;
-    font-size: 12px;
-    font-weight: 800;
+    color: #ffffff;
+    font-size: var(--lr-text-meta);
+    font-weight: var(--lr-weight-strong);
     line-height: 1;
-    text-shadow: 0 1px 2px oklch(0.12 0.02 250 / 0.65);
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.7);
     box-shadow: none;
   }
 
   .leaflet-draw-tooltip {
-    background: var(--surface-panel);
-    border: 1px solid var(--line-soft);
-    color: var(--ink-strong);
+    background: var(--lr-surface);
+    border: 1px solid var(--lr-line);
+    color: var(--lr-ink);
   }
 }
 
@@ -196,11 +186,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--surface-canvas);
+  background: var(--lr-canvas);
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 2px solid var(--surface-canvas);
-  border-radius: 999px;
-  background: var(--surface-strong);
+  border: 2px solid var(--lr-canvas);
+  border-radius: var(--lr-radius-pill);
+  background: var(--lr-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

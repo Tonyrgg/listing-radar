@@ -13,6 +13,8 @@ import {
   lifecycleEventLabel,
   opportunityReasonLabel,
   propertyStateLabel,
+  claimKeyLabel,
+  locationPrecisionLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
@@ -34,7 +36,7 @@ import {
 } from "../../_components/ui";
 import styles from "../../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Property dossier · Lifecycle" };
+export const metadata: Metadata = { title: "Dossier proprietà" };
 
 function payloadSummary(payload: Record<string, unknown>): string | null {
   const oldPrice = typeof payload.oldPrice === "number" ? payload.oldPrice : null;
@@ -73,7 +75,7 @@ export default async function LifecyclePropertyPage({
         Torna all&apos;archivio
       </Link>
       <LifecycleHeader
-        eyebrow="Property dossier"
+        eyebrow="Dossier proprietà"
         title={property.title}
         description={`${[property.address, property.locality].filter(Boolean).join(" · ") || "Posizione da verificare"} · ${propertyStateLabel(property.propertyState)}`}
         actions={
@@ -143,11 +145,11 @@ export default async function LifecyclePropertyPage({
             {detail.location ? (
               <div className="py-4">
                 <div className="flex items-center gap-2">
-                  <MapPin aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+                  <MapPin aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />
                   <p className={styles.rowTitle}>{detail.location.rawText ?? property.address ?? "Posizione parziale"}</p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <SignalPill tone={detail.location.manuallyVerified ? "good" : "default"}>{humanize(detail.location.precision)}</SignalPill>
+                  <SignalPill tone={detail.location.manuallyVerified ? "good" : "default"}>{locationPrecisionLabel(detail.location.precision)}</SignalPill>
                   {detail.location.manuallyVerified ? <SignalPill tone="good">Verificata</SignalPill> : null}
                 </div>
                 {detail.building ? <p className={`${styles.muted} mt-3`}>Edificio: {detail.building.displayName ?? detail.building.id}</p> : null}
@@ -215,11 +217,11 @@ export default async function LifecyclePropertyPage({
 
         <LifecycleSection title="Prove e prezzo" description="Provenienza prima della certezza">
           {detail.priceHistory.length ? (
-            <div className="border-b border-[var(--line-soft)] py-4">
+            <div className="border-b border-[var(--lr-line-quiet)] py-4">
               {detail.priceHistory.map((price) => (
                 <div key={`${price.eventType}:${price.occurredAt}`} className="flex items-center justify-between gap-4 py-1 text-xs">
-                  <span className="text-[var(--ink-soft)]">{formatDate(price.occurredAt)}</span>
-                  <strong className="text-[var(--ink-strong)]">{formatCurrency(price.oldPrice)} → {formatCurrency(price.newPrice)}</strong>
+                  <span className="text-[var(--lr-ink-2)]">{formatDate(price.occurredAt)}</span>
+                  <strong className="text-[var(--lr-ink)]">{formatCurrency(price.oldPrice)} → {formatCurrency(price.newPrice)}</strong>
                 </div>
               ))}
             </div>
@@ -229,7 +231,7 @@ export default async function LifecyclePropertyPage({
               {detail.evidence.slice(0, 12).map((evidence) => (
                 <article key={evidence.id} className={styles.row}>
                   <div className={styles.rowTop}>
-                    <p className={styles.rowTitle}>{humanize(evidence.claimKey)}</p>
+                    <p className={styles.rowTitle}>{claimKeyLabel(evidence.claimKey)}</p>
                     <span className={styles.rowMeta}>{Math.round(evidence.confidence * 100)}%</span>
                   </div>
                   <p className={styles.muted}>{evidence.extractionMethod} · {formatDate(evidence.sourceRecordedAt ?? evidence.observedAt)}</p>

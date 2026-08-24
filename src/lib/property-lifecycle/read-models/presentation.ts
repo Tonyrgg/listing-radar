@@ -86,3 +86,88 @@ export function humanize(value: string): string {
   const normalized = value.replaceAll("_", " ").toLocaleLowerCase("it");
   return normalized.charAt(0).toLocaleUpperCase("it") + normalized.slice(1);
 }
+
+/* ---------------------------------------------------------------------------
+ * Nessuna costante del database raggiunge lo schermo.
+ * Se una stringa è in MAIUSCOLO_CON_UNDERSCORE, non è pronta per l'utente.
+ * ------------------------------------------------------------------------- */
+
+const OPPORTUNITY_LEVEL_LABELS: Record<string, string> = {
+  ALL: "Tutte",
+  HOT: "Da chiamare subito",
+  HIGH: "Priorità alta",
+  INTERESTING: "Da valutare",
+  WATCH: "Da tenere d'occhio",
+};
+
+const REVIEW_TYPE_LABELS: Record<string, string> = {
+  IDENTITY: "Stesso immobile?",
+  GEOGRAPHY: "Posizione incerta",
+  LIFECYCLE: "Stato incerto",
+};
+
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  OPEN: "Da aprire",
+  IN_REVIEW: "In esame",
+  RESOLVED: "Decisa",
+  DISMISSED: "Archiviata",
+};
+
+const PUBLICATION_STATE_LABELS: Record<string, string> = {
+  ACTIVE: "Ancora online",
+  REMOVED: "Uscito dal mercato",
+  PENDING: "Da verificare",
+};
+
+const IDENTITY_OUTCOME_LABELS: Record<string, string> = {
+  MATCHED: "Collegato con certezza",
+  REVIEW_REQUIRED: "Da confermare a mano",
+  NEW_PROPERTY: "Proprietà nuova",
+  NO_MATCH: "Nessun collegamento",
+};
+
+const PRECISION_LABELS: Record<string, string> = {
+  EXACT: "Posizione esatta",
+  STREET: "Via individuata",
+  ZONE: "Solo la zona",
+  MUNICIPALITY: "Solo il comune",
+  UNKNOWN: "Posizione ignota",
+};
+
+const CLAIM_KEY_LABELS: Record<string, string> = {
+  price: "Prezzo",
+  surface_sqm: "Superficie",
+  rooms: "Locali",
+  floor: "Piano",
+  address: "Indirizzo",
+  seller_type: "Tipo di venditore",
+  energy_class: "Classe energetica",
+};
+
+export function opportunityLevelLabel(value: string): string {
+  return OPPORTUNITY_LEVEL_LABELS[value] ?? humanize(value);
+}
+
+export function reviewTypeLabel(value: string): string {
+  return REVIEW_TYPE_LABELS[value] ?? humanize(value);
+}
+
+export function reviewStatusLabel(value: string): string {
+  return REVIEW_STATUS_LABELS[value] ?? humanize(value);
+}
+
+export function publicationStateLabel(value: string): string {
+  return PUBLICATION_STATE_LABELS[value] ?? humanize(value);
+}
+
+export function identityOutcomeLabel(value: string): string {
+  return IDENTITY_OUTCOME_LABELS[value] ?? humanize(value);
+}
+
+export function locationPrecisionLabel(value: string): string {
+  return PRECISION_LABELS[value] ?? humanize(value);
+}
+
+export function claimKeyLabel(value: string): string {
+  return CLAIM_KEY_LABELS[value] ?? humanize(value);
+}

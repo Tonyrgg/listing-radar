@@ -1,5 +1,7 @@
 "use client";
 
+import { ConfirmDialog } from "@/components/ui/feedback";
+
 import dynamic from "next/dynamic";
 import { clsx } from "clsx";
 import {
@@ -73,8 +75,8 @@ const MapCanvas = dynamic<MapCanvasProps>(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-[620px] items-center justify-center rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-        <div className="flex items-center gap-3 text-sm font-semibold text-[var(--ink-soft)]">
+      <div className="flex min-h-[620px] items-center justify-center rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]">
+        <div className="flex items-center gap-3 text-sm font-semibold text-[var(--lr-ink-2)]">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           Carico mappa
         </div>
@@ -156,8 +158,8 @@ function modeButtonClass(active: boolean) {
   return clsx(
     "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold transition-colors",
     active
-      ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
-      : "border-[var(--line-soft)] bg-[var(--surface-panel)] text-[var(--ink-strong)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)]",
+      ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]"
+      : "border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] text-[var(--lr-ink)] hover:border-[var(--lr-line)] hover:bg-[var(--lr-raised)]",
   );
 }
 
@@ -170,7 +172,7 @@ function drawModeHint(mode: MapDrawMode) {
     case "street_snap":
       return "Clicca i punti della strada: ogni punto e un vincolo della linea.";
     default:
-      return "Seleziona elementi gia presenti oppure scegli uno strumento.";
+      return "Seleziona elementi già presenti oppure scegli uno strumento.";
   }
 }
 
@@ -614,11 +616,21 @@ export function MapClient() {
     [writeLog],
   );
 
+  const [pendingDelete, setPendingDelete] = useState<Exclude<
+    SelectedMapElement,
+    null
+  > | null>(null);
+
+  /* La conferma è disegnata nel prodotto: niente finestra grigia del browser. */
   const handleDelete = useCallback(
     async (nextSelected: Exclude<SelectedMapElement, null>) => {
-      const ok = window.confirm("Eliminare questo elemento dalla mappa?");
-      if (!ok) return;
+      setPendingDelete(nextSelected);
+    },
+    [],
+  );
 
+  const performDelete = useCallback(
+    async (nextSelected: Exclude<SelectedMapElement, null>) => {
       if (nextSelected.type === "pin") {
         const pin = pins.find((item) => item.id === nextSelected.id);
         if (pin) {
@@ -673,11 +685,11 @@ export function MapClient() {
   return (
     <div
       className={clsx(
-        "grid h-[calc(100vh-40px)] min-h-[720px] gap-3",
+        "grid h-[calc(100vh-190px)] min-h-[620px] gap-3",
         sidePanelOpen ? "xl:grid-cols-[minmax(0,1fr)_380px]" : "xl:grid-cols-1",
       )}
     >
-      <section className="relative min-h-[620px] min-w-0 overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]">
+      <section className="relative min-h-[620px] min-w-0 overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]">
         <MapCanvas
           className="min-h-full rounded-none border-0"
           agents={agents}
@@ -702,13 +714,10 @@ export function MapClient() {
         />
 
         <div className="absolute left-3 right-3 top-3 z-[850] flex flex-col gap-2 2xl:flex-row 2xl:items-start 2xl:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] p-2 shadow-[var(--shadow-panel)]">
-            <div className="min-w-40 px-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--surface-accent)]">
-                Ricerca sul territorio
-              </p>
-              <h1 className="text-sm font-semibold text-[var(--ink-strong)]">Aree operative</h1>
-            </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-2 shadow-[var(--lr-floating)]">
+            <p className="px-2 text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+              Strumenti
+            </p>
             <button
               type="button"
               onClick={() => activateDrawMode("select")}
@@ -745,18 +754,18 @@ export function MapClient() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="hidden rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] p-1.5 shadow-[var(--shadow-panel)] md:flex md:items-center md:gap-1.5">
-              <span className="rounded-[7px] bg-[var(--surface-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-strong)]">
+            <div className="hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-1.5 shadow-[var(--lr-floating)] md:flex md:items-center md:gap-1.5">
+              <span className="rounded-[7px] bg-[var(--lr-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--lr-ink)]">
                 Aree {stats.completedAreas}/{stats.totalAreas}
               </span>
-              <span className="rounded-[7px] bg-[var(--surface-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-strong)]">
+              <span className="rounded-[7px] bg-[var(--lr-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--lr-ink)]">
                 Strade {stats.completedStreets}/{stats.totalStreets}
               </span>
-              <span className="rounded-[7px] bg-[var(--surface-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-strong)]">
+              <span className="rounded-[7px] bg-[var(--lr-canvas)] px-2.5 py-2 text-xs font-semibold text-[var(--lr-ink)]">
                 Pin {stats.totalPins}
               </span>
               {stats.overdueFollowUps ? (
-                <span className="rounded-[7px] bg-[oklch(0.29_0.06_55)] px-2.5 py-2 text-xs font-semibold text-[var(--status-warning)]">
+                <span className="rounded-[7px] bg-[var(--lr-warn-soft)] px-2.5 py-2 text-xs font-semibold text-[var(--lr-warn)]">
                   Scaduti {stats.overdueFollowUps}
                 </span>
               ) : null}
@@ -768,15 +777,15 @@ export function MapClient() {
               aria-pressed={showListingPins}
               title={`${listingPins.length} annunci con coordinate precise su ${listingMapData.totalListings} totali`}
               className={clsx(
-                "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--shadow-panel)] transition-colors",
+                "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--lr-floating)] transition-colors",
                 showListingPins
-                  ? "border-[#38bdf8] bg-[oklch(0.22_0.06_235_/_0.96)] text-[#bae6fd]"
-                  : "border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] text-[var(--ink-strong)] hover:border-[var(--line-strong)]",
+                  ? "border-[var(--lr-info)] bg-[var(--lr-info-soft)] text-[var(--lr-info)]"
+                  : "border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] text-[var(--lr-ink)] hover:border-[var(--lr-line)]",
               )}
             >
               <Building2 className="size-4" aria-hidden="true" />
               Annunci
-              <span className="rounded-full bg-[var(--surface-canvas)] px-1.5 text-[10px] text-[var(--ink-soft)]">
+              <span className="rounded-full bg-[var(--lr-canvas)] px-1.5 text-[10px] text-[var(--lr-ink-2)]">
                 {listingPins.length}/{listingMapData.totalListings}
               </span>
             </button>
@@ -785,16 +794,16 @@ export function MapClient() {
               type="button"
               onClick={() => setFiltersOpen((current) => !current)}
               className={clsx(
-                "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--shadow-panel)] transition-colors",
+                "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--lr-floating)] transition-colors",
                 filtersOpen || filterCount > 0
-                  ? "border-[var(--surface-accent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]"
-                  : "border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] text-[var(--ink-strong)] hover:border-[var(--line-strong)]",
+                  ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]"
+                  : "border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] text-[var(--lr-ink)] hover:border-[var(--lr-line)]",
               )}
             >
               <Filter className="size-4" aria-hidden="true" />
               Filtri
               {filterCount ? (
-                <span className="rounded-full bg-[var(--surface-accent)] px-1.5 text-[10px] text-[var(--button-ink)]">
+                <span className="rounded-full bg-[var(--lr-accent)] px-1.5 text-[10px] text-[var(--lr-accent-ink)]">
                   {filterCount}
                 </span>
               ) : null}
@@ -806,7 +815,7 @@ export function MapClient() {
               disabled={loading}
               aria-label="Ricarica dati mappa"
               title="Ricarica"
-              className="inline-flex size-10 items-center justify-center rounded-[7px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] text-[var(--ink-strong)] shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex size-10 items-center justify-center rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-surface)] text-[var(--lr-ink)] shadow-[var(--lr-floating)] transition-colors hover:border-[var(--lr-line)] hover:bg-[var(--lr-raised)] disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCcw className={clsx("size-4", loading && "animate-spin")} aria-hidden="true" />
             </button>
@@ -816,7 +825,7 @@ export function MapClient() {
               onClick={() => setSidePanelOpen((current) => !current)}
               aria-label={sidePanelOpen ? "Nascondi pannello" : "Apri pannello"}
               title={sidePanelOpen ? "Nascondi pannello" : "Apri pannello"}
-              className="inline-flex size-10 items-center justify-center rounded-[7px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] text-[var(--ink-strong)] shadow-[var(--shadow-panel)] transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)]"
+              className="inline-flex size-10 items-center justify-center rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-surface)] text-[var(--lr-ink)] shadow-[var(--lr-floating)] transition-colors hover:border-[var(--lr-line)] hover:bg-[var(--lr-raised)]"
             >
               {sidePanelOpen ? (
                 <PanelRightClose className="size-4" aria-hidden="true" />
@@ -828,11 +837,11 @@ export function MapClient() {
         </div>
 
         {filtersOpen ? (
-          <div className="absolute left-3 top-[148px] z-[840] max-h-[calc(100%-170px)] w-[min(520px,calc(100%-24px))] overflow-y-auto rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.98)] p-4 shadow-[var(--shadow-panel)] 2xl:top-[76px]">
+          <div className="absolute left-3 top-[148px] z-[840] max-h-[calc(100%-170px)] w-[min(520px,calc(100%-24px))] overflow-y-auto rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-4 shadow-[var(--lr-floating)] 2xl:top-[76px]">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-[var(--ink-strong)]">Filtri e legenda</p>
-                <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
+                <p className="text-sm font-semibold text-[var(--lr-ink)]">Filtri e legenda</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-2)]">
                   Riduci la mappa agli elementi che stai lavorando adesso.
                 </p>
               </div>
@@ -841,53 +850,53 @@ export function MapClient() {
                 onClick={() => setFiltersOpen(false)}
                 aria-label="Chiudi filtri"
                 title="Chiudi"
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-[6px] border border-[var(--line-strong)] text-[var(--ink-strong)] hover:bg-[var(--surface-muted)]"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-[6px] border border-[var(--lr-line)] text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>
             </div>
             <MapFilters agents={agents} filters={filters} onChange={setFilters} />
-            <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-4">
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--lr-line-quiet)] pt-4">
               <button
                 type="button"
                 onClick={() => setFilters(DEFAULT_MAP_FILTERS)}
-                className="inline-flex h-9 items-center rounded-[6px] border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)]"
+                className="inline-flex h-9 items-center rounded-[6px] border border-[var(--lr-line)] px-3 text-xs font-semibold text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
               >
                 Azzera filtri
               </button>
-              <p className="text-xs text-[var(--ink-subtle)]">
+              <p className="text-xs text-[var(--lr-ink-3)]">
                 {visibleAreas.length + visibleStreets.length + visiblePins.length} visibili
               </p>
             </div>
-            <div className="mt-4 border-t border-[var(--line-soft)] pt-4">
+            <div className="mt-4 border-t border-[var(--lr-line-quiet)] pt-4">
               <MapLegend agents={agents} />
             </div>
           </div>
         ) : null}
 
-        <div className="absolute bottom-3 left-3 z-[830] max-w-[min(520px,calc(100%-24px))] rounded-[10px] border border-[var(--line-soft)] bg-[oklch(0.13_0.01_160_/_0.96)] px-3 py-2 shadow-[var(--shadow-panel)]">
-          <p className="text-sm font-semibold text-[var(--ink-strong)]">{drawModeHint(drawMode)}</p>
+        <div className="absolute bottom-3 left-3 z-[830] max-w-[min(520px,calc(100%-24px))] rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 py-2 shadow-[var(--lr-floating)]">
+          <p className="text-sm font-semibold text-[var(--lr-ink)]">{drawModeHint(drawMode)}</p>
           {drawMode === "street_snap" || snapPoints.length ? (
-            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--line-soft)] pt-2">
-              <span className="rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--lr-line-quiet)] pt-2">
+              <span className="rounded-full bg-[var(--lr-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--lr-ink-2)]">
                 Punti {snapPoints.length}
               </span>
-              <span className="rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+              <span className="rounded-full bg-[var(--lr-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--lr-ink-2)]">
                 Aree nascoste
               </span>
               {snapLoading ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--surface-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-soft)]">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--lr-canvas)] px-2.5 py-1 text-xs font-semibold text-[var(--lr-ink-2)]">
                   <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                   Aggancio
                 </span>
               ) : null}
               {snapRoute ? (
-                <span className="rounded-full bg-[var(--surface-accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--surface-accent)]">
+                <span className="rounded-full bg-[var(--lr-accent-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--lr-accent)]">
                   Pronta {formatMeters(snapRoute.distance)}
                 </span>
               ) : null}
               {snapError ? (
-                <span className="text-xs font-semibold text-[var(--status-error)]">
+                <span className="text-xs font-semibold text-[var(--lr-danger)]">
                   {snapError}
                 </span>
               ) : null}
@@ -895,7 +904,7 @@ export function MapClient() {
                 type="button"
                 onClick={removeLastSnapPoint}
                 disabled={!snapPoints.length}
-                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--line-strong)] px-2.5 text-xs font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--lr-line)] px-2.5 text-xs font-semibold text-[var(--lr-ink)] hover:bg-[var(--lr-raised)] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Indietro
               </button>
@@ -906,7 +915,7 @@ export function MapClient() {
                   setDrawMode("select");
                 }}
                 disabled={!snapPoints.length && drawMode !== "street_snap"}
-                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--line-strong)] px-2.5 text-xs font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-8 items-center rounded-[6px] border border-[var(--lr-line)] px-2.5 text-xs font-semibold text-[var(--lr-ink)] hover:bg-[var(--lr-raised)] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Annulla
               </button>
@@ -914,14 +923,14 @@ export function MapClient() {
                 type="button"
                 onClick={openSnapStreetModal}
                 disabled={!snapRoute}
-                className="inline-flex h-8 items-center rounded-[6px] bg-[var(--surface-accent)] px-3 text-xs font-semibold text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-8 items-center rounded-[6px] bg-[var(--lr-accent)] px-3 text-xs font-semibold text-[var(--lr-accent-ink)] hover:bg-[var(--lr-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Salva strada
               </button>
             </div>
           ) : null}
           {showListingPins && listingMapData.totalListings > 0 && !listingPins.length ? (
-            <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
+            <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-2)]">
               0 annunci con coordinate precise su {listingMapData.totalListings}.{" "}
               {listingMapData.streetAddressListings
                 ? `${listingMapData.streetAddressListings} hanno indirizzo con numero civico ma non coordinate salvate.`
@@ -929,21 +938,21 @@ export function MapClient() {
             </p>
           ) : null}
           {!hasAnyVisibleElement && !loading ? (
-            <p className="mt-1 text-xs leading-5 text-[var(--ink-soft)]">
+            <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-2)]">
               Parti da Area o Pin. I dati restano interni a Listing Radar.
             </p>
           ) : null}
         </div>
 
         {error ? (
-          <div className="absolute bottom-3 right-3 z-[830] max-w-md rounded-[8px] border border-[oklch(0.48_0.08_28)] bg-[oklch(0.22_0.035_28)] p-3 text-sm font-medium leading-6 text-[var(--status-error)] shadow-[var(--shadow-panel)]">
+          <div className="absolute bottom-3 right-3 z-[830] max-w-md rounded-[8px] border border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] p-3 text-sm font-medium leading-6 text-[var(--lr-danger)] shadow-[var(--lr-floating)]">
             {error}
           </div>
         ) : null}
 
         {loading ? (
-          <div className="pointer-events-none absolute inset-0 z-[820] flex items-center justify-center bg-[oklch(0.08_0.01_160_/_0.18)]">
-            <div className="inline-flex items-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 py-2 text-xs font-semibold text-[var(--ink-soft)]">
+          <div className="pointer-events-none absolute inset-0 z-[820] flex items-center justify-center bg-[var(--lr-raised)]">
+            <div className="inline-flex items-center gap-2 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 py-2 text-xs font-semibold text-[var(--lr-ink-2)]">
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               Sincronizzo
             </div>
@@ -978,6 +987,25 @@ export function MapClient() {
         onSavePin={handleSavePin}
         onSaveArea={handleSaveArea}
         onSaveStreet={handleSaveStreet}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={
+          pendingDelete?.type === "pin"
+            ? "Eliminare questo segnaposto?"
+            : pendingDelete?.type === "area"
+              ? "Eliminare quest'area?"
+              : "Eliminare questa strada?"
+        }
+        description="Sparirà dalla mappa insieme alle note collegate. L'operazione resta registrata nel diario delle attività, ma l'elemento non si può recuperare."
+        confirmLabel="Sì, elimina"
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void performDelete(target);
+        }}
+        onCancel={() => setPendingDelete(null)}
       />
     </div>
   );

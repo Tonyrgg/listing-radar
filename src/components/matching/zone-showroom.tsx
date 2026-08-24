@@ -1,5 +1,9 @@
 "use client";
 
+import { MAP_DATA_COLORS } from "@/lib/design/map-palette";
+
+import { ConfirmAction } from "@/components/ui/feedback";
+
 import {
   Check,
   Eraser,
@@ -34,7 +38,7 @@ import type { GeoJsonGeometry } from "@/lib/map/types";
 import styles from "./section-design.module.css";
 import { ZoneMap } from "./zone-map";
 
-const DEFAULT_COLOR = "#5fbf7a";
+const DEFAULT_COLOR: string = MAP_DATA_COLORS.positive;
 export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -217,7 +221,6 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
   }
 
   function runBackfill() {
-    if (!window.confirm("Recuperare dalle richieste CRM solo le zone immobiliari riconosciute esplicitamente per nome, alias, via o riferimento?")) return;
     start(async () => {
       try {
         setError("");
@@ -327,8 +330,8 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
         <p className={styles.coverageCopy}><strong>{zones.filter((zone) => zone.geometry).length}/{zones.length}</strong> zone immobiliari hanno un perimetro. Il recupero CRM non sovrascrive selezioni già presenti.</p>
         <button type="button" className={styles.secondaryButton} onClick={runBackfill} disabled={pending}><ScanSearch aria-hidden="true" className="size-4" /> Recupera zone dal CRM</button>
       </div>
-      {message ? <p className="text-sm text-[var(--surface-accent)]">{message}</p> : null}
-      {error ? <p className="text-sm text-[var(--status-error)]">{error}</p> : null}
+      {message ? <p className="text-sm text-[var(--lr-accent)]">{message}</p> : null}
+      {error ? <p className="text-sm text-[var(--lr-danger)]">{error}</p> : null}
 
       <div className={styles.workspace}>
         <section className={styles.zoneList} aria-label="Zone immobiliari configurate">
@@ -378,7 +381,7 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
           <footer className={styles.editorFooter}>
             <button className={styles.primaryButton} disabled={pending}><Save aria-hidden="true" className="size-4" /> {pending ? "Salvataggio…" : "Salva zona immobiliare"}</button>
             {editing?.geometry ? <button type="button" className={styles.secondaryButton} onClick={() => start(async () => { await clearZoneGeometryAction(editing.id); chooseZone(null); router.refresh(); })}><Eraser aria-hidden="true" className="size-4" /> Rimuovi perimetro</button> : null}
-            {editing ? <button type="button" className={styles.dangerButton} onClick={() => { if (window.confirm("Eliminare questa zona immobiliare? È possibile solo se non è utilizzata.")) start(async () => { await deleteZoneAction(editing.id); chooseZone(null); router.refresh(); }); }}><Trash2 aria-hidden="true" className="size-4" /> Elimina</button> : null}
+            {editing ? <ConfirmAction className={styles.dangerButton} title="Eliminare questa zona immobiliare?" description="Si può eliminare solo una zona che non è usata da immobili o richieste. Se è in uso, l'operazione non andrà a buon fine." confirmLabel="Sì, elimina" onConfirm={() => start(async () => { await deleteZoneAction(editing.id); chooseZone(null); router.refresh(); })}><Trash2 aria-hidden="true" className="size-4" /> Elimina</ConfirmAction> : null}
           </footer>
         </form>
       </div>
@@ -387,5 +390,5 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
 }
 
 function Field({ label, hint, children }: Readonly<{ label: string; hint?: string; children: React.ReactNode }>) {
-  return <label className={styles.field}><span>{label}{hint ? <span className="ml-1 font-normal text-[var(--ink-subtle)]">({hint})</span> : null}</span>{children}</label>;
+  return <label className={styles.field}><span>{label}{hint ? <span className="ml-1 font-normal text-[var(--lr-ink-3)]">({hint})</span> : null}</span>{children}</label>;
 }

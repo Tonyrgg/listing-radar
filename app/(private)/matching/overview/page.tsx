@@ -8,6 +8,10 @@ import { MatchingSectionNav } from "@/components/matching/section-nav";
 import styles from "@/components/matching/section-design.module.css";
 import { getMatchingStats, listProperties, listRequests } from "@/lib/matching/repository";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Panoramica commerciale" };
+
 export default async function MatchingOverviewPage() {
   await connection();
   const [requests, properties, matching] = await Promise.all([listRequests(), listProperties(), getMatchingStats()]);
@@ -54,7 +58,7 @@ export default async function MatchingOverviewPage() {
         </div>
         <div className={styles.focusAction}>
           {recommendation.kind === "calculate" ? <RecalculateButton scope="all" /> : (
-            <Link className={styles.primaryButton} href={recommendation.href} target="_blank" rel="noreferrer">Apri attività <ArrowRight aria-hidden="true" className="size-4" /></Link>
+            <Link className={styles.primaryButton} href={recommendation.href}>Apri attività <ArrowRight aria-hidden="true" className="size-4" /></Link>
           )}
         </div>
       </section>
@@ -105,7 +109,7 @@ function ReadinessRow({ icon: Icon, label, value, total, detail, href }: Readonl
         <div className={styles.readinessTrack}><span style={{ width: `${percentage}%` }} /></div>
         <p>{detail}</p>
       </div>
-      <Link className={styles.textAction} href={href} target="_blank" rel="noreferrer">Apri <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <Link className={styles.textAction} href={href}>Apri <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </div>
   );
 }
@@ -114,9 +118,9 @@ function AttentionBlock({ title, href, items }: Readonly<{ title: string; href: 
   const total = items.reduce((sum, [count]) => sum + count, 0);
   return (
     <section className={styles.attentionBlock}>
-      <header><div><p className={styles.sectionEyebrow}>Da completare</p><h2 className={styles.panelTitle}>{title}</h2></div><CircleAlert aria-hidden="true" className={total ? "size-5 text-[var(--status-warning)]" : "size-5 text-[var(--surface-accent)]"} /></header>
+      <header><div><p className={styles.sectionEyebrow}>Da completare</p><h2 className={styles.panelTitle}>{title}</h2></div><CircleAlert aria-hidden="true" className={total ? "size-5 text-[var(--lr-warn)]" : "size-5 text-[var(--lr-accent)]"} /></header>
       <ul>{items.map(([count, label]) => <li key={label}><span>{label}</span><strong>{count}</strong></li>)}</ul>
-      <Link className={styles.textAction} href={href} target="_blank" rel="noreferrer">Vai all&apos;archivio <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <Link className={styles.textAction} href={href}>Vai all&apos;archivio <ArrowRight aria-hidden="true" className="size-4" /></Link>
     </section>
   );
 }

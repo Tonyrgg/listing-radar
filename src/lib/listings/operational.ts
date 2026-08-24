@@ -5,22 +5,22 @@ export function getOperationalSuggestion(listing: Pick<
   "sellerType" | "minimumDaysOnline" | "isPriceDropped" | "priorityScore"
 >) {
   if (listing.sellerType === "private" && listing.minimumDaysOnline <= 7) {
-    return "L'annuncio e recente e sembra pubblicato da un privato. Controlla prezzo, foto e recapito prima di decidere il prossimo passo.";
+    return "L'annuncio è recente e sembra pubblicato da un privato. Controlla prezzo, foto e recapito prima di decidere il prossimo passo.";
   }
 
   if (listing.isPriceDropped) {
-    return "Il prezzo e sceso. Controlla il nuovo valore e valuta se il venditore potrebbe essere piu disponibile a trattare.";
+    return "Il prezzo è sceso. Controlla il nuovo valore e valuta se il venditore potrebbe essere più disponibile a trattare.";
   }
 
   if (listing.sellerType === "private" && listing.minimumDaysOnline >= 60) {
-    return "L'annuncio di un privato e online da molto tempo. Potrebbe esserci piu disponibilita a trattare.";
+    return "L'annuncio di un privato è online da molto tempo. Potrebbe esserci più disponibilità a trattare.";
   }
 
   if (listing.sellerType === "agency" && listing.minimumDaysOnline >= 60) {
-    return "L'annuncio dell'agenzia e online da molto tempo. Controlla se prezzo o condizioni sono cambiati.";
+    return "L'annuncio dell'agenzia è online da molto tempo. Controlla se prezzo o condizioni sono cambiati.";
   }
 
-  return "La scheda e completa. Controlla i dati principali e tieni l'annuncio sotto osservazione.";
+  return "La scheda è completa. Controlla i dati principali e tieni l'annuncio sotto osservazione.";
 }
 
 export function getListingAttentionReason(listing: Pick<
@@ -28,7 +28,7 @@ export function getListingAttentionReason(listing: Pick<
   "sellerType" | "minimumDaysOnline" | "isPriceDropped" | "isNewToday" | "phone"
 >) {
   if (listing.isPriceDropped) {
-    return "Il prezzo e sceso";
+    return "Il prezzo è sceso";
   }
 
   if (listing.sellerType === "private") {

@@ -13,11 +13,9 @@ type ScoreFactor = {
 type ScoreTone = "red" | "amber" | "green";
 
 const pillToneClasses: Record<ScoreTone, string> = {
-  red: "border-[oklch(0.48_0.12_26)] bg-[oklch(0.27_0.06_26)] text-[oklch(0.78_0.15_26)]",
-  amber:
-    "border-[oklch(0.52_0.1_82)] bg-[oklch(0.3_0.055_82)] text-[var(--status-warning)]",
-  green:
-    "border-[color-mix(in_oklch,var(--surface-accent)_35%,transparent)] bg-[var(--surface-accent-soft)] text-[var(--surface-accent)]",
+  red: "border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] text-[var(--lr-danger)]",
+  amber: "border-[var(--lr-warn)] bg-[var(--lr-warn-soft)] text-[var(--lr-warn)]",
+  green: "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]",
 };
 
 function getScoreTone(progress: number): ScoreTone {
@@ -30,20 +28,20 @@ function FactorRow({ factor }: Readonly<{ factor: ScoreFactor }>) {
   const isPositive = factor.points > 0;
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-[var(--line-soft)] py-3 first:border-t-0 first:pt-0">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-[var(--lr-line-quiet)] py-3 first:border-t-0 first:pt-0">
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-[var(--ink-strong)]">
+        <p className="text-sm font-semibold text-[var(--lr-ink)]">
           {factor.label}
         </p>
-        <p className="mt-1 text-xs leading-5 text-[var(--ink-subtle)]">
+        <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-3)]">
           {factor.explanation}
         </p>
       </div>
       <strong
         className={
           isPositive
-            ? "text-sm tabular-nums text-[var(--surface-accent)]"
-            : "text-sm tabular-nums text-[var(--status-error)]"
+            ? "text-sm tabular-nums text-[var(--lr-accent)]"
+            : "text-sm tabular-nums text-[var(--lr-danger)]"
         }
       >
         {isPositive ? `+${factor.points}` : factor.points}
@@ -86,17 +84,17 @@ export function ListingScorePopover({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="w-full cursor-pointer rounded-[8px] border border-[var(--line-soft)] bg-[color-mix(in_oklch,var(--surface-muted)_82%,var(--surface-accent-soft))] p-3 text-left transition-colors hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]"
+        className="w-full cursor-pointer rounded-[8px] border border-[var(--lr-line)] bg-[color-mix(in_oklch,var(--lr-raised)_82%,var(--lr-accent-soft))] p-3 text-left transition-colors hover:border-[var(--lr-line)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
         aria-haspopup="dialog"
       >
-        <span className="block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
-          Appetibilita
+        <span className="block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--lr-ink-3)]">
+          Appetibilità
         </span>
         <span className="mt-2 flex items-end justify-center gap-2">
-          <strong className="text-[32px] font-semibold leading-none tabular-nums text-[var(--ink-strong)]">
+          <strong className="text-[32px] font-semibold leading-none tabular-nums text-[var(--lr-ink)]">
             {total}
           </strong>
-          <span className="pb-1 text-xs font-semibold text-[var(--ink-soft)]">
+          <span className="pb-1 text-xs font-semibold text-[var(--lr-ink-2)]">
             pt
           </span>
           <span
@@ -105,9 +103,9 @@ export function ListingScorePopover({
             {level}
           </span>
         </span>
-        <span className="relative mt-3 block h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.17_26)_0%,oklch(0.62_0.17_26)_33%,oklch(0.78_0.14_82)_33%,oklch(0.78_0.14_82)_66%,var(--surface-accent)_66%,var(--surface-accent)_100%)]">
+        <span className="relative mt-3 block h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,var(--lr-danger)_0%,var(--lr-danger)_33%,var(--lr-warn)_33%,var(--lr-warn)_66%,var(--lr-accent)_66%,var(--lr-accent)_100%)]">
           <span
-            className="absolute top-0 block h-full w-1 rounded-full bg-[var(--ink-strong)] shadow-[0_0_0_1px_var(--surface-canvas)]"
+            className="absolute top-0 block h-full w-1 rounded-full bg-[var(--lr-ink)] shadow-[0_0_0_1px_var(--lr-canvas)]"
             style={{ left: `calc(${progress}% - 2px)` }}
           />
         </span>
@@ -116,7 +114,7 @@ export function ListingScorePopover({
       {isOpen
         ? createPortal(
             <div
-              className="fixed inset-0 z-[100] grid place-items-center bg-[oklch(0.08_0.02_154/0.72)] px-4 py-6"
+              className="fixed inset-0 z-[100] grid place-items-center bg-[rgb(0_0_0/0.6)] px-4 py-6"
               role="presentation"
               onMouseDown={() => setIsOpen(false)}
             >
@@ -124,18 +122,18 @@ export function ListingScorePopover({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
-                className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]"
+                className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
-                <div className="border-b border-[var(--line-soft)] p-5">
+                <div className="border-b border-[var(--lr-line-quiet)] p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-subtle)]">
-                        Appetibilita
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--lr-ink-3)]">
+                        Appetibilità
                       </p>
                       <h2
                         id={titleId}
-                        className="mt-2 text-xl font-semibold text-[var(--ink-strong)]"
+                        className="mt-2 text-xl font-semibold text-[var(--lr-ink)]"
                       >
                         {total} pt
                         <span
@@ -148,14 +146,14 @@ export function ListingScorePopover({
                     <button
                       type="button"
                       onClick={() => setIsOpen(false)}
-                      className="rounded-md border border-[var(--line-strong)] px-3 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-muted)]"
+                      className="rounded-md border border-[var(--lr-line)] px-3 py-2 text-xs font-semibold text-[var(--lr-ink-2)] transition-colors hover:bg-[var(--lr-raised)]"
                     >
                       Chiudi
                     </button>
                   </div>
-                  <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,oklch(0.62_0.17_26)_0%,oklch(0.62_0.17_26)_33%,oklch(0.78_0.14_82)_33%,oklch(0.78_0.14_82)_66%,var(--surface-accent)_66%,var(--surface-accent)_100%)]">
+                  <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,var(--lr-danger)_0%,var(--lr-danger)_33%,var(--lr-warn)_33%,var(--lr-warn)_66%,var(--lr-accent)_66%,var(--lr-accent)_100%)]">
                     <span
-                      className="absolute top-0 block h-full w-1 rounded-full bg-[var(--ink-strong)] shadow-[0_0_0_1px_var(--surface-canvas)]"
+                      className="absolute top-0 block h-full w-1 rounded-full bg-[var(--lr-ink)] shadow-[0_0_0_1px_var(--lr-canvas)]"
                       style={{ left: `calc(${progress}% - 2px)` }}
                     />
                   </div>
@@ -167,7 +165,7 @@ export function ListingScorePopover({
                       <FactorRow key={factor.id} factor={factor} />
                     ))
                   ) : (
-                    <p className="text-sm leading-6 text-[var(--ink-soft)]">
+                    <p className="text-sm leading-6 text-[var(--lr-ink-2)]">
                       Nessuna voce ha ancora contribuito al punteggio.
                     </p>
                   )}
