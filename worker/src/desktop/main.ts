@@ -20,7 +20,11 @@ import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.j
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
-import { SisterStreetRun, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import {
+  SisterStreetRun,
+  type SisterStreetRunCheckpoint,
+  type SisterStreetRunProgress,
+} from "../services/sister-street-run.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -122,6 +126,7 @@ let streetRunActive = false;
 let streetRunCancellationRequested = false;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
+let streetRunProgress: SisterStreetRunProgress | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -401,6 +406,7 @@ async function stateSnapshot() {
       active: streetRunActive,
       cancelling: streetRunCancellationRequested,
       checkpoint: streetRunCheckpoint,
+      progress: streetRunProgress,
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
     },
@@ -548,6 +554,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   streetRunActive = true;
   streetRunCancellationRequested = false;
   streetRunError = null;
+  streetRunProgress = null;
   pushActivity(
     input.resume
       ? `Ripresa ${longRunMode === "dry_run" ? "dry-run" : "run reale"} via ${street}`
@@ -601,6 +608,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           }
           for (const owner of owners) await liveRepository.insertOwner(importJobId!, savedProperty.id, owner);
         } : undefined,
+        onProgress: (progress) => publishStreetRunProgress(progress),
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
           await publishState();
@@ -677,6 +685,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   }).finally(async () => {
     streetRunActive = false;
     streetRunCancellationRequested = false;
+    streetRunProgress = null;
     await publishState();
     if (jobToImport) {
       try {
@@ -708,6 +717,12 @@ async function publishState() {
 function publishPrompt(value: DesktopPrompt | null) {
   prompt = value;
   void publishState();
+}
+
+function publishStreetRunProgress(value: SisterStreetRunProgress) {
+  streetRunProgress = value;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("desktop:street-run-progress", value);
 }
 
 function clearAutoRetry() {
@@ -1122,10 +1137,19 @@ async function healthChecks() {
     checks.push({ id: "sister", label: "SISTER", ok: isPresumablyAuthenticated(tabs.sisterPage), detail: await tabs.sisterPage.title() });
     checks.push({ id: "crm", label: "Gestionale", ok: isPresumablyAuthenticated(tabs.crmPage), detail: await tabs.crmPage.title() });
     const [sisterPage, crmPage] = await Promise.all([
-      new PlaywrightSisterAdapter(tabs.sisterPage).detectPage().catch(() => false),
+      new PlaywrightSisterAdapter(tabs.sisterPage).detectOperationalPage().catch(() => null),
       new PlaywrightCrmAdapter(tabs.crmPage, true).detectPage().catch(() => false),
     ]);
-    checks.push({ id: "results", label: "Risultati pronti", ok: sisterPage, detail: sisterPage ? "Pagina riconosciuta" : "Completa via, civico e ricerca" });
+    checks.push({
+      id: "results",
+      label: "SISTER pronto",
+      ok: sisterPage !== null,
+      detail: sisterPage === "results"
+        ? "Risultati pronti per l'acquisizione singola"
+        : sisterPage === "address-list"
+          ? "Elenco indirizzi pronto per acquisire una via completa"
+          : "Apri i risultati oppure l'Elenco indirizzi",
+    });
     if (!crmPage) checks.find((item) => item.id === "crm")!.detail = "Pagina gestionale non riconosciuta";
   } catch (error) {
     checks.push({ id: "chrome", label: "Chrome e schede", ok: false, detail: error instanceof Error ? error.message : String(error) });
@@ -1241,7 +1265,7 @@ function registerIpc() {
   ipcMain.handle("desktop:cancel-street-run", async () => {
     if (!streetRunActive) return false;
     streetRunCancellationRequested = true;
-    pushActivity("Pausa dry-run via richiesta: completo il passaggio corrente e salvo il cursore", "warning");
+    pushActivity("Pausa run via richiesta: completo il passaggio corrente e salvo il cursore", "warning");
     await publishState();
     return true;
   });

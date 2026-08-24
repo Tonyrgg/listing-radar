@@ -149,6 +149,14 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     return (await this.page.locator(this.selectors.resultsPageMarker).count()) > 0;
   }
 
+  async detectOperationalPage(): Promise<"results" | "address-list" | null> {
+    this.require("resultsPageMarker", "addressListMarker");
+    await this.checkSession();
+    if (await this.page.locator(this.selectors.resultsPageMarker).count()) return "results";
+    if (await this.page.locator(this.selectors.addressListMarker).count()) return "address-list";
+    return null;
+  }
+
   async extractSearchContext(): Promise<SearchContext> {
     if (this.selectors.searchContext) {
       const context = parseSearchContext(await text(this.page, this.selectors.searchContext));
@@ -177,39 +185,60 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
           class: ["Classe"], consistency: ["Consistenza"], cadastralIncome: ["Rendita"],
         }, "immobili")
       : null;
+    type RawPropertyRow = {
+      sheet: string;
+      parcel: string;
+      subaltern: string;
+      address: string;
+      censusZone: string;
+      category: string;
+      class: string;
+      consistency: string;
+      cadastralIncome: string;
+    };
+    const rawRows: RawPropertyRow[] = columns
+      ? await rows.evaluateAll((elements, indexes) => elements.map((element) => {
+          const cells = Array.from(element.querySelectorAll(":scope > td"), (cell) => (cell.textContent ?? "").trim());
+          return {
+            sheet: indexes.sheet == null ? "" : cells[indexes.sheet] ?? "",
+            parcel: indexes.parcel == null ? "" : cells[indexes.parcel] ?? "",
+            subaltern: indexes.subaltern == null ? "" : cells[indexes.subaltern] ?? "",
+            address: indexes.address == null ? "" : cells[indexes.address] ?? "",
+            censusZone: indexes.censusZone == null ? "" : cells[indexes.censusZone] ?? "",
+            category: indexes.category == null ? "" : cells[indexes.category] ?? "",
+            class: indexes.class == null ? "" : cells[indexes.class] ?? "",
+            consistency: indexes.consistency == null ? "" : cells[indexes.consistency] ?? "",
+            cadastralIncome: indexes.cadastralIncome == null ? "" : cells[indexes.cadastralIncome] ?? "",
+          };
+        }), columns)
+      : await Promise.all(Array.from({ length: await rows.count() }, async (_, index) => {
+          const row = rows.nth(index);
+          return {
+            sheet: await text(row, this.selectors.sheet),
+            parcel: await text(row, this.selectors.parcel),
+            subaltern: await text(row, this.selectors.subaltern),
+            address: await text(row, this.selectors.address),
+            censusZone: await text(row, this.selectors.censusZone),
+            category: await text(row, this.selectors.category),
+            class: await text(row, this.selectors.class),
+            consistency: await text(row, this.selectors.consistency),
+            cadastralIncome: await text(row, this.selectors.cadastralIncome),
+          };
+        }));
     const properties: CadastralProperty[] = [];
     this.ignoredCategories = [];
     this.ignoredEmptyProperties = [];
-    const rowCount = await rows.count();
-    for (let index = 0; index < rowCount; index += 1) {
-      const row = rows.nth(index);
-      const cells = columns ? await row.locator("td").allTextContents() : null;
-      const value = (key: string, selector: string) => cells
-        ? Promise.resolve(cells[columns![key]!]?.trim() ?? "")
-        : text(row, selector);
-      const raw = {
-        sheet: await value("sheet", this.selectors.sheet),
-        parcel: await value("parcel", this.selectors.parcel),
-        subaltern: await value("subaltern", this.selectors.subaltern),
-        address: await value("address", this.selectors.address),
-        censusZone: await value("censusZone", this.selectors.censusZone),
-        category: await value("category", this.selectors.category),
-        class: await value("class", this.selectors.class),
-        consistency: await value("consistency", this.selectors.consistency),
-        cadastralIncome: await value("cadastralIncome", this.selectors.cadastralIncome),
-      };
+    for (const [index, raw] of rawRows.entries()) {
       const hasCadastralData = [raw.censusZone, raw.category, raw.class, raw.consistency, raw.cadastralIncome]
         .some((item) => item.trim().length > 0);
       if (!hasCadastralData) {
         const ignored = { rowIndex: index, sheet: raw.sheet, parcel: raw.parcel, subaltern: raw.subaltern, address: raw.address };
         this.ignoredEmptyProperties.push(ignored);
-        logger.info(ignored, "Record SISTER privo di dati catastali ignorato");
         continue;
       }
       const category = normalizeCategory(raw.category);
       if (!/^[AC]\//i.test(category)) {
         this.ignoredCategories.push({ category, rowIndex: index });
-        logger.info({ category, rowIndex: index }, "Categoria catastale ignorata");
         continue;
       }
       properties.push({
@@ -227,6 +256,12 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         rawPayload: { rowIndex: index, sourceOrder: index, searchContext: context, rawCells: raw },
       });
     }
+    logger.info({
+      rawRows: rawRows.length,
+      acceptedProperties: properties.length,
+      ignoredCategories: this.ignoredCategories.length,
+      ignoredEmptyProperties: this.ignoredEmptyProperties.length,
+    }, "Inventario SISTER letto e filtrato");
     return properties;
   }
 
@@ -254,8 +289,10 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     const row = this.page.locator(this.selectors.propertyRows).nth(rowIndex);
     await row.locator(this.selectors.propertyRadioWithinRow).check();
     if (!process.env.VITEST) await this.page.waitForTimeout(250);
-    await this.page.locator(this.selectors.ownersButton).click();
-    await this.page.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => undefined);
+    await Promise.all([
+      this.page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null),
+      this.page.locator(this.selectors.ownersButton).click(),
+    ]);
     if (
       /\/Visure\/vind\/SceltaVisuraImmSoggIND\.do(?:\?|$)/i.test(this.page.url())
       && !(await this.page.locator("form").count())

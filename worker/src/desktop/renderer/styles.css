@@ -1403,6 +1403,17 @@ dialog[open] {
   font-size: var(--lr-text-meta);
 }
 
+.street-run-internal-progress {
+  margin: var(--lr-space-3) 0 0;
+  padding: var(--lr-space-3);
+  border: 1px solid color-mix(in srgb, var(--lr-accent) 30%, var(--lr-line-quiet));
+  border-radius: var(--lr-radius-control);
+  background: color-mix(in srgb, var(--lr-accent) 7%, var(--lr-surface));
+  color: var(--lr-ink-1);
+  font-size: var(--lr-text-meta);
+  overflow-wrap: anywhere;
+}
+
 .automation-plan {
   display: grid;
   gap: var(--lr-space-2);

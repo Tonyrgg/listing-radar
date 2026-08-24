@@ -1,5 +1,6 @@
 export interface SisterSelectors {
   resultsPageMarker: string;
+  addressListMarker: string;
   sessionExpiredMarker: string;
   searchContext: string;
   municipality: string;
@@ -36,6 +37,7 @@ export interface SisterSelectors {
  */
 export const sisterSelectors: SisterSelectors = {
   resultsPageMarker: 'form[name="SceltaVisuraImmSoggForm"] table.listaIsp4 input[name="visImmSel"]',
+  addressListMarker: 'form[name="SceltaIndirizzoForm"] select[name="indirizzoSel"]',
   sessionExpiredMarker: 'input[type="password"]',
   searchContext: 'fieldset:has(legend:text-is("Dati della ricerca"))',
   municipality: "",
@@ -67,6 +69,7 @@ export const sisterSelectors: SisterSelectors = {
 
 export const sisterFixtureSelectors: SisterSelectors = {
   resultsPageMarker: '[data-worker-page="sister-results"]',
+  addressListMarker: '[data-worker-page="sister-address-list"]',
   sessionExpiredMarker: '[data-worker-page="session-expired"]',
   searchContext: "",
   municipality: '[data-worker-field="municipality"]',

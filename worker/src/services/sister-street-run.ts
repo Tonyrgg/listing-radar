@@ -29,6 +29,16 @@ export type SisterStreetQueryResult = {
   elapsedMs: number;
 };
 
+export type SisterStreetRunProgress = {
+  phase: "preparing" | "loading-results" | "parsing-properties" | "reading-owners" | "returning";
+  variantIndex: number;
+  variantTotal: number;
+  variantSourceId: string | null;
+  current: number;
+  total: number;
+  address: string | null;
+};
+
 export type SisterStreetRunCheckpoint = {
   version: 3;
   strategy: "bulk_exact_variants" | "civic_fallback";
@@ -71,6 +81,7 @@ type StreetRunOptions = {
     property: CadastralProperty,
     owners: CadastralOwner[],
   ) => void | Promise<void>;
+  onProgress?: (progress: SisterStreetRunProgress) => void | Promise<void>;
   isCancelled?: () => boolean;
   onCheckpoint?: (checkpoint: SisterStreetRunCheckpoint) => void | Promise<void>;
 };
@@ -87,8 +98,10 @@ async function clickAndWait(page: Page, locator: Locator, description: string) {
       portal: "SISTER", action: "street-run-navigation", description, count: await locator.count(),
     }, true);
   }
-  await locator.click();
-  await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => undefined);
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null),
+    locator.click(),
+  ]);
 }
 
 async function readOptions(select: Locator): Promise<Array<{ text: string; value: string }>> {
@@ -122,6 +135,10 @@ export class SisterStreetRun {
   }
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
+    await this.options.onProgress?.({
+      phase: "preparing", variantIndex: 0, variantTotal: 0, variantSourceId: null,
+      current: 0, total: 0, address: null,
+    });
     const variants = this.prepareSearchAutomatically
       ? await this.prepareStreet(requestedStreet)
       : await this.readPreparedAddressList(requestedStreet, Boolean(resume));
@@ -182,9 +199,17 @@ export class SisterStreetRun {
           }
           const variant = variants[checkpoint.currentVariantIndex];
           if (!variant) break;
-          const result = await this.queryWithParachute(variant, null, normalizedRequestedStreet);
-          const replacedPartial = checkpoint.results.find((entry) =>
-            entry.variantKey === result.variantKey && entry.outcome === "paused");
+          const previousPartial = checkpoint.results.find((entry) =>
+            entry.variantKey === variant.key && entry.civicNumber == null && entry.outcome === "paused");
+          const result = await this.queryWithParachute(
+            variant,
+            null,
+            normalizedRequestedStreet,
+            checkpoint.currentVariantIndex,
+            variants.length,
+            previousPartial,
+          );
+          const replacedPartial = previousPartial;
           const previousResults = checkpoint.results.filter((entry) => entry !== replacedPartial);
           const nextResults = [...previousResults, result];
           const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => entry.propertyKeys))];
@@ -252,9 +277,36 @@ export class SisterStreetRun {
         const variantIndex = checkpoint.currentVariantIndex;
         const variant = variants[variantIndex];
         if (!variant) throw new Error("Cursore variante non valido");
-        const result = await this.queryWithParachute(variant, checkpoint.nextCivicNumber, normalizedRequestedStreet);
+        const previousPartial = checkpoint.results.find((entry) =>
+          entry.variantKey === variant.key
+          && entry.civicNumber === checkpoint.nextCivicNumber
+          && entry.outcome === "paused");
+        const result = await this.queryWithParachute(
+          variant,
+          checkpoint.nextCivicNumber,
+          normalizedRequestedStreet,
+          variantIndex,
+          variants.length,
+          previousPartial,
+        );
         if (result.outcome === "paused") {
-          checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+          const previousResults = checkpoint.results.filter((entry) => entry !== previousPartial);
+          const nextResults = [...previousResults, result];
+          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => entry.propertyKeys))];
+          checkpoint = {
+            ...checkpoint,
+            status: "paused",
+            updatedAt: new Date().toISOString(),
+            results: nextResults,
+            totalRawRecords: checkpoint.totalRawRecords - (previousPartial?.rawRecords ?? 0) + result.rawRecords,
+            totalAcceptedOccurrences: (checkpoint.totalAcceptedOccurrences ?? checkpoint.totalAcceptedProperties)
+              - (previousPartial?.acceptedProperties ?? 0) + result.acceptedProperties,
+            totalAcceptedProperties: uniquePropertyKeys.length,
+            uniquePropertyKeys,
+            totalOwnersRead: checkpoint.totalOwnersRead - (previousPartial?.ownersRead ?? 0) + result.ownersRead,
+            totalSkippedPropertyRows: checkpoint.totalSkippedPropertyRows
+              - (previousPartial?.skippedPropertyRows ?? 0) + result.skippedPropertyRows,
+          };
           await this.publish(checkpoint);
           return checkpoint;
         }
@@ -445,6 +497,9 @@ export class SisterStreetRun {
     variant: SisterStreetVariant,
     civicNumber: number | null,
     requestedStreet: string,
+    variantIndex: number,
+    variantTotal: number,
+    previousPartial?: SisterStreetQueryResult,
   ): Promise<SisterStreetQueryResult> {
     let lastError: unknown = null;
     let lastRecoveryError: unknown = null;
@@ -456,7 +511,14 @@ export class SisterStreetRun {
         const liveVariant = liveOptions.find((candidate) => candidate.key === variant.key)
           ?? liveOptions.find((candidate) => candidate.sourceId === variant.sourceId);
         if (!liveVariant) throw new Error(`Variante SISTER ${variant.sourceId} non più disponibile`);
-        return await this.queryOnce(liveVariant, civicNumber, startedAt);
+        return await this.queryOnce(
+          liveVariant,
+          civicNumber,
+          startedAt,
+          variantIndex,
+          variantTotal,
+          previousPartial,
+        );
       } catch (error) {
         lastError = error;
         if (error instanceof WorkerError && error.status === "session_expired") throw error;
@@ -493,12 +555,19 @@ export class SisterStreetRun {
     variant: SisterStreetVariant,
     civicNumber: number | null,
     startedAt: number,
+    variantIndex: number,
+    variantTotal: number,
+    previousPartial?: SisterStreetQueryResult,
   ): Promise<SisterStreetQueryResult> {
     const form = this.page.locator(ADDRESS_FORM);
     await form.locator('select[name="indirizzoSel"]').selectOption(variant.value);
     await form.locator('input[name="numCivicoDal"]').fill(civicNumber == null ? "" : String(civicNumber));
     const civicTo = form.locator('input[name="numCivicoAl"]');
     if (await civicTo.count() === 1) await civicTo.fill("");
+    await this.options.onProgress?.({
+      phase: "loading-results", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+      current: 0, total: 0, address: null,
+    });
     await clickAndWait(this.page, form.locator('input[name="ricerca"]'), civicNumber == null ? `l'intera variante ${variant.sourceId}` : `il civico ${civicNumber}`);
     await this.assertSession();
 
@@ -529,13 +598,31 @@ export class SisterStreetRun {
       };
     }
 
+    await this.options.onProgress?.({
+      phase: "parsing-properties", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+      current: 0, total: rawRecords, address: null,
+    });
     const properties = await this.adapter.extractProperties();
-    let ownersRead = 0;
-    let skippedPropertyRows = 0;
-    const acquiredPropertyKeys: string[] = [];
-    const warnings: string[] = [];
+    let ownersRead = previousPartial?.ownersRead ?? 0;
+    let skippedPropertyRows = previousPartial?.skippedPropertyRows ?? 0;
+    const acquiredPropertyKeys: string[] = [...(previousPartial?.propertyKeys ?? [])];
+    const acquiredPropertyKeySet = new Set(acquiredPropertyKeys);
+    const warnings: string[] = (previousPartial?.warnings ?? [])
+      .filter((warning) => !warning.startsWith("Pausa richiesta"));
     if (this.acquireOwners) {
-      for (const property of properties) {
+      await this.options.onProgress?.({
+        phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+        current: 0, total: properties.length, address: null,
+      });
+      for (const [propertyIndex, property] of properties.entries()) {
+        const propertyKey = buildCadastralKey(property);
+        if (acquiredPropertyKeySet.has(propertyKey)) {
+          await this.options.onProgress?.({
+            phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+            current: propertyIndex + 1, total: properties.length, address: property.address,
+          });
+          continue;
+        }
         if (this.options.isCancelled?.()) {
           await this.adapter.ensureResultsPage().catch(() => undefined);
           await this.returnToAddressList();
@@ -544,7 +631,7 @@ export class SisterStreetRun {
             variantKey: variant.key,
             variantSourceId: variant.sourceId,
             outcome: "paused",
-            rawRecords: 0,
+            rawRecords,
             acceptedProperties: acquiredPropertyKeys.length,
             propertyKeys: acquiredPropertyKeys,
             ownersRead,
@@ -573,10 +660,19 @@ export class SisterStreetRun {
           warnings.push(`Riga ${property.sourceRef ?? "?"} isolata: ${propertyError instanceof Error ? propertyError.message : String(propertyError)}`);
         } else {
           await this.options.onPropertyAcquired?.(variant, property, acquiredOwners);
-          acquiredPropertyKeys.push(buildCadastralKey(property));
+          acquiredPropertyKeys.push(propertyKey);
+          acquiredPropertyKeySet.add(propertyKey);
         }
+        await this.options.onProgress?.({
+          phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+          current: propertyIndex + 1, total: properties.length, address: property.address,
+        });
       }
     }
+    await this.options.onProgress?.({
+      phase: "returning", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+      current: properties.length, total: properties.length, address: null,
+    });
     await this.adapter.ensureResultsPage();
     await this.returnToAddressList();
     return {

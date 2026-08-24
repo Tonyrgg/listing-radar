@@ -47,6 +47,47 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("legge in blocco un inventario SISTER molto grande senza congelare la long mode", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const rows = Array.from({ length: 2_200 }, (_, index) => `
+        <tr>
+          <td><input name="visImmSel" type="radio" value="${index}" /></td>
+          <td>50</td><td>${1_000 + index}</td><td>${index + 1}</td>
+          <td>VIA TEST n. ${index + 1}</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>432,10</td>
+        </tr>`).join("");
+      await page.setContent(`<!doctype html><body>
+        <fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici</fieldset>
+        <form name="SceltaVisuraImmSoggForm"><table class="listaIsp4">
+          <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
+          ${rows}
+        </table></form>
+      </body>`);
+      const startedAt = Date.now();
+      const properties = await new PlaywrightSisterAdapter(page, sisterSelectors).extractProperties();
+      const elapsedMs = Date.now() - startedAt;
+      expect(properties).toHaveLength(2_200);
+      expect(properties[2_199]).toMatchObject({ sheet: "50", parcel: "3199", subaltern: "2200", category: "A/3" });
+      expect(elapsedMs).toBeLessThan(5_000);
+    } finally { await browser.close(); }
+  }, 10_000);
+
+  it("riconosce l'Elenco indirizzi come pagina operativa per la long mode", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <form name="SceltaIndirizzoForm">
+          <select name="indirizzoSel"><option value="1">VIA TEST</option></select>
+        </form>
+      </body>`);
+      const adapter = new PlaywrightSisterAdapter(page, sisterSelectors);
+      expect(await adapter.detectPage()).toBe(false);
+      expect(await adapter.detectOperationalPage()).toBe("address-list");
+    } finally { await browser.close(); }
+  });
+
   it("estrae le categorie A/C nell'ordine SISTER e i proprietari", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

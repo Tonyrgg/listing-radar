@@ -34,8 +34,16 @@ export async function runChecks(config: WorkerConfig): Promise<CheckResult[]> {
     results.push({ name: "Sessione SISTER", ok: isPresumablyAuthenticated(tabs.sisterPage), detail: isPresumablyAuthenticated(tabs.sisterPage) ? "presumibilmente attiva" : "pagina di accesso rilevata" });
     results.push({ name: "Sessione CRM", ok: isPresumablyAuthenticated(tabs.crmPage), detail: isPresumablyAuthenticated(tabs.crmPage) ? "presumibilmente attiva" : "pagina di accesso rilevata" });
     try {
-      const recognized = await new PlaywrightSisterAdapter(tabs.sisterPage).detectPage();
-      results.push({ name: "Pagina SISTER", ok: recognized, detail: recognized ? "pagina risultati riconosciuta" : "pagina non riconosciuta" });
+      const pageType = await new PlaywrightSisterAdapter(tabs.sisterPage).detectOperationalPage();
+      results.push({
+        name: "Pagina SISTER",
+        ok: pageType !== null,
+        detail: pageType === "results"
+          ? "pagina risultati riconosciuta (acquisizione singola)"
+          : pageType === "address-list"
+            ? "elenco indirizzi riconosciuto (acquisizione via completa)"
+            : "pagina non riconosciuta",
+      });
     } catch (error) {
       results.push({ name: "Pagina SISTER", ok: false, detail: error instanceof Error ? error.message : String(error) });
     }
