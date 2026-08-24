@@ -3,12 +3,38 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import type { LucideIcon } from "lucide-react";
+import {
+  Building2,
+  Flame,
+  Gauge,
+  MapPinned,
+  Radar,
+  Scale,
+  ScanSearch,
+  Settings2,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
+
+const icons = {
+  building: Building2,
+  flame: Flame,
+  gauge: Gauge,
+  map: MapPinned,
+  radar: Radar,
+  scale: Scale,
+  scan: ScanSearch,
+  settings: Settings2,
+  user: UserRound,
+  users: UsersRound,
+} as const;
+
+export type SectionNavIcon = keyof typeof icons;
 
 export type SectionNavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: SectionNavIcon;
 };
 
 /**
@@ -33,7 +59,7 @@ export function SectionNav({
       className="flex gap-1 overflow-x-auto pb-0.5"
     >
       {items.map((item) => {
-        const Icon = item.icon;
+        const Icon = icons[item.icon];
         const active = exact.includes(item.href)
           ? pathname === item.href
           : pathname === item.href || pathname.startsWith(`${item.href}/`);

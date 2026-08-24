@@ -1825,14 +1825,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       };
     }
     return this.friendly("property-activity-create", "Non riesco a preparare l’attività dell’immobile.", async () => {
+      const throwIfInterrupted = () => {
+        const interruption = input.interruptionRequested?.();
+        if (interruption === "skip") throw new WorkerError("Immobile saltato prima del salvataggio dell'attività", "paused", { skipProperty: true, propertyId: input.propertyId });
+        if (interruption === "pause") throw new WorkerError("Lavorazione messa in pausa prima del salvataggio dell'attività", "paused", { pauseRequested: true });
+      };
       this.require(
         "activityCard", "activityCreate", "activityDialog", "activityDescription", "activityClient",
-        "activityRelatedProperty", "activityStatus", "activityOption", "activityCancel", "activitySave",
+        "activityRelatedProperty", "activityContactMode", "activityStatus", "activityOption", "activityCancel", "activitySave",
       );
       let lastError: unknown = null;
       for (let attempt = 1; attempt <= ACTIVITY_PRE_SAVE_ATTEMPTS; attempt += 1) {
         let saveClicked = false;
         try {
+          throwIfInterrupted();
           await this.openProperty(input.propertyId, attempt > 1);
           const card = await this.uniqueVisible("activityCard", "riquadro Attività e appuntamenti", 20_000);
           const createButtons = card.locator(this.selectors.activityCreate).filter({ visible: true });
@@ -1943,6 +1949,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             );
           }
 
+          const contactMode = await this.uniqueVisible("activityContactMode", "Modalità contatto", ACTIVITY_FORM_TIMEOUT);
+          let currentContactMode = (await contactMode.inputValue()).trim();
+          if (normalizedUiText(currentContactMode) !== normalizedUiText(input.contactMode)) {
+            await contactMode.click();
+            const desiredOptions = this.visible(this.selectors.activityOption);
+            await desiredOptions.first().waitFor({ state: "visible", timeout: 8_000 }).catch(() => undefined);
+            const labels = await desiredOptions.allTextContents();
+            const indexes = labels
+              .map((label, index) => normalizedUiText(label) === normalizedUiText(input.contactMode) ? index : -1)
+              .filter((index) => index >= 0);
+            if (indexes.length === 1) await desiredOptions.nth(indexes[0]!).click();
+            await this.page.waitForTimeout(350);
+            currentContactMode = (await contactMode.inputValue()).trim();
+          }
+
           const status = await this.uniqueVisible("activityStatus", "Stato attività", ACTIVITY_FORM_TIMEOUT);
           let currentStatus = (await status.inputValue()).trim();
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
@@ -1969,6 +1990,14 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
               true,
             );
           }
+          if (normalizedUiText(currentContactMode) !== normalizedUiText(input.contactMode)) {
+            throw new WorkerError(
+              `Il modulo attività non può essere impostato automaticamente su modalità “${input.contactMode}”.`,
+              "portal_error",
+              { portal: "CRM", action: "property-activity-contact-mode", propertyId: input.propertyId, currentContactMode },
+              true,
+            );
+          }
           if (normalizedUiText(currentStatus) !== normalizedUiText(input.status)) {
             throw new WorkerError(
               `Il modulo attività non può essere impostato automaticamente su “${input.status}”.`,
@@ -1977,6 +2006,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
               true,
             );
           }
+
+          throwIfInterrupted();
 
           if (this.dryRun) {
             const cancel = await this.uniqueVisible("activityCancel", "Annulla attività", 8_000);
@@ -2042,6 +2073,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
   async linkOwner(propertyId: string, personInput: OwnerLinkInput, share: number): Promise<OwnerLinkResult> {
     const { personId, searchLabel, phones } = personInput;
+    const throwIfInterrupted = () => {
+      const interruption = personInput.interruptionRequested?.();
+      if (interruption === "skip") throw new WorkerError("Immobile saltato prima del collegamento del comproprietario", "paused", { skipProperty: true, propertyId });
+      if (interruption === "pause") throw new WorkerError("Lavorazione messa in pausa prima del collegamento del comproprietario", "paused", { pauseRequested: true });
+    };
+    throwIfInterrupted();
     if ((await this.findLinkedOwnerIds(propertyId)).includes(personId)) {
       return { linkId: `existing-link-${personId}`, selection: "existing", candidateCount: 1, note: null };
     }
@@ -2063,9 +2100,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const dialog = await this.uniqueVisible("ownerDialog", "Soggetto correlato", 15_000);
       const person = await this.uniqueVisible("ownerPersonId", "Cliente comproprietario", 10_000);
       await person.fill("");
-      await person.pressSequentially(searchLabel, { delay: 70 });
+      await person.pressSequentially(searchLabel, { delay: 180 });
       const options = this.visible(this.selectors.ownerPersonOption);
       await options.first().waitFor({ state: "visible", timeout: 10_000 });
+      let previousSnapshot = "";
+      let stableSnapshots = 0;
+      for (let wait = 0; wait < 8 && stableSnapshots < 2; wait += 1) {
+        await this.page.waitForTimeout(500);
+        const snapshot = JSON.stringify(await options.allTextContents());
+        stableSnapshots = snapshot === previousSnapshot ? stableSnapshots + 1 : 0;
+        previousSnapshot = snapshot;
+      }
       const candidateCount = await options.count();
       const candidates: Array<{ option: Locator; personId: string; text: string }> = [];
       for (let index = 0; index < candidateCount; index += 1) {
@@ -2087,13 +2132,26 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       }
       const selected = candidates[selectionResult.index]!;
       const { selection, note } = selectionResult;
+      throwIfInterrupted();
+      await this.page.waitForTimeout(500);
       await selected.option.click();
+      await this.page.waitForTimeout(500);
+      const selectedPersonLabel = (await person.inputValue()).trim();
+      if (!normalizedUiText(selectedPersonLabel).includes(normalizedUiText(searchLabel))) {
+        throw new WorkerError(
+          "Il nominativo scelto nella scheda del comproprietario non coincide con nome e cognome raccolti. Nessun collegamento è stato salvato.",
+          "needs_review",
+          { portal: "CRM", action: "property-owner-selected-identity", personId, searchLabel, selectedPersonLabel, selection },
+          true,
+        );
+      }
 
       const right = await this.uniqueVisible("ownerRight", "Diritto", 8_000);
       await right.fill("Proprietà");
       await this.propertyPicklist("ownerRole", "Ruolo", "Comproprietario");
       const quota = await this.uniqueVisible("ownerShare", "Quota", 8_000);
       await quota.fill(formatShareForUi(share));
+      throwIfInterrupted();
 
       const save = dialog.locator(this.selectors.ownerSave).filter({ visible: true });
       if (await save.count() !== 1) throw new WorkerError("Il pulsante Salva del comproprietario non è univoco.", "portal_error", { portal: "CRM", action: "property-owner-save" }, true);

@@ -15,9 +15,13 @@ import { SisterKeepAliveScheduler, type SisterKeepAliveResult } from "./sister-k
 import {
   activityCheckpoint,
   buildPropertyActivityTasks,
+  directContactOrdinalForTask,
   PROPERTY_ACTIVITY_DESCRIPTION,
+  PROPERTY_ACTIVITY_CONTACT_MODE,
   PROPERTY_ACTIVITY_STATUS,
+  propertyActivityDefinition,
   readPropertyActivityCheckpoint,
+  type PropertyActivityDefinition,
   type PropertyActivityCheckpoint,
 } from "./property-activities.js";
 import { buildPropertyWorkPlan } from "./property-workflow.js";
@@ -57,13 +61,19 @@ function personSummary(person: NormalizedPerson, property?: CadastralProperty) {
   ].filter(Boolean).join("\n");
 }
 
-function propertyActivitySummary(property: CadastralProperty, ownerNames: string[]) {
+function propertyActivitySummary(property: CadastralProperty, ownerNames: string[], definition: PropertyActivityDefinition = {
+  contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
+  status: PROPERTY_ACTIVITY_STATUS,
+  description: PROPERTY_ACTIVITY_DESCRIPTION,
+  directContactOrdinal: null,
+}) {
   return [
     `Immobile: ${buildCadastralKey(property)} — ${property.address ?? "indirizzo assente"}`,
     `Proprietari collegati: ${ownerNames.join(", ") || "nessuno"}`,
     "Modifica prevista: una sola attività dalla scheda immobile",
-    `Stato: ${PROPERTY_ACTIVITY_STATUS}`,
-    `Descrizione: ${PROPERTY_ACTIVITY_DESCRIPTION}`,
+    `Modalità contatto: ${definition.contactMode}`,
+    `Stato: ${definition.status}`,
+    `Descrizione: ${definition.description}`,
   ].join("\n");
 }
 
@@ -104,6 +114,7 @@ export interface RunnerOptions {
   onEvent?: (event: RunnerEvent) => void;
   keepAlive?: boolean;
   isCancellationRequested?: (jobId: string) => boolean;
+  isPauseRequested?: (jobId: string) => boolean;
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -113,6 +124,7 @@ export class PropertyWorkerRunner {
   private readonly onEvent: (event: RunnerEvent) => void;
   private readonly manageKeepAlive: boolean;
   private readonly isCancellationRequested: (jobId: string) => boolean;
+  private readonly isPauseRequested: (jobId: string) => boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -121,12 +133,16 @@ export class PropertyWorkerRunner {
     this.onEvent = options.onEvent ?? (() => undefined);
     this.manageKeepAlive = options.keepAlive !== false;
     this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
+    this.isPauseRequested = options.isPauseRequested ?? (() => false);
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
   private throwIfCancellationRequested(jobId: string) {
     if (this.isCancellationRequested(jobId)) {
       throw new WorkerError("Lavorazione annullata dall'utente", "paused", { cancelled: true });
+    }
+    if (this.isPauseRequested(jobId)) {
+      throw new WorkerError("Lavorazione messa in pausa dall'utente", "paused", { pauseRequested: true });
     }
   }
 
@@ -192,9 +208,12 @@ export class PropertyWorkerRunner {
           }
           if (step === "completed") break;
         } catch (error) {
-          const workerError = error instanceof WorkerError
+          let workerError = error instanceof WorkerError
             ? error
             : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+          if (workerError.status === "paused" && this.isPauseRequested(job.id) && workerError.details.pauseRequested !== true) {
+            workerError = new WorkerError(workerError.message, "paused", { ...workerError.details, pauseRequested: true });
+          }
           let screenshotPath: string | null = null;
           if (workerError.captureScreenshot) {
             const page = workerError.details.portal === "SISTER" ? tabs.sisterPage : tabs.crmPage;
@@ -637,15 +656,20 @@ export class PropertyWorkerRunner {
           for (const task of pending) {
             this.throwIfCancellationRequested(job.id);
             const property = asProperty(task.property);
+            const activityDefinition = propertyActivityDefinition(
+              task.owners,
+              directContactOrdinalForTask(tasks, task.property.id),
+            );
             const previous = task.property.raw_payload?.worker_activity as Partial<PropertyActivityCheckpoint> | undefined;
             const attempts = Number(previous?.attempts ?? 0) + 1;
             if (job.mode === "assisted" && !prompted.has(task.property.id)) {
               prompted.add(task.property.id);
-              const decision = await this.prompts.confirmSave(propertyActivitySummary(property, task.owners.map((owner) => owner.full_name)));
+              const decision = await this.prompts.confirmSave(propertyActivitySummary(property, task.owners.map((owner) => owner.full_name), activityDefinition));
               if (decision === "skip") {
                 await persist(task, activityCheckpoint({
                   state: "skipped", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
                   crmActivityId: null, correlatedProperty: null, attempts, error: null,
+                  description: activityDefinition.description, status: activityDefinition.status, contactMode: activityDefinition.contactMode,
                 }));
                 metrics.skipped += 1;
                 continue;
@@ -658,6 +682,7 @@ export class PropertyWorkerRunner {
                 await persist(task, activityCheckpoint({
                   state: "manual", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
                   crmActivityId: null, correlatedProperty: null, attempts, error: null,
+                  description: activityDefinition.description, status: activityDefinition.status, contactMode: activityDefinition.contactMode,
                 }));
                 metrics.existing += 1;
                 continue;
@@ -667,6 +692,7 @@ export class PropertyWorkerRunner {
             await persist(task, activityCheckpoint({
               state: "preparing", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
               crmActivityId: null, correlatedProperty: null, attempts, error: null,
+              description: activityDefinition.description, status: activityDefinition.status, contactMode: activityDefinition.contactMode,
             }));
             try {
               const result = await crm.createPropertyActivity({
@@ -674,13 +700,16 @@ export class PropertyWorkerRunner {
                 propertyAddress: task.property.address,
                 fallbackPersonId: task.fallbackPersonId,
                 fallbackPersonLabel: task.owners[0]?.full_name,
-                description: PROPERTY_ACTIVITY_DESCRIPTION,
-                status: PROPERTY_ACTIVITY_STATUS,
+                description: activityDefinition.description,
+                contactMode: activityDefinition.contactMode,
+                status: activityDefinition.status,
+                interruptionRequested: () => this.interruptionFor(job.id, task.property.id),
               });
               await persist(task, activityCheckpoint({
                 state: result.outcome, dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
                 crmActivityId: result.crmActivityId, correlatedProperty: result.correlatedProperty,
                 attempts: attempts + result.attempts - 1, error: null,
+                description: activityDefinition.description, status: activityDefinition.status, contactMode: activityDefinition.contactMode,
               }));
               metrics[result.outcome] += 1;
             } catch (error) {
@@ -691,6 +720,7 @@ export class PropertyWorkerRunner {
                 state: "retryable_error", dryRun: this.config.WORKER_DRY_RUN, crmPropertyId: task.property.crm_record_id!,
                 crmActivityId: null, correlatedProperty: null, attempts,
                 error: { status: workerError.status, message: workerError.message, details: workerError.details },
+                description: activityDefinition.description, status: activityDefinition.status, contactMode: activityDefinition.contactMode,
               }));
               if (["session_expired", "paused", "data_incomplete"].includes(workerError.status)) throw workerError;
               failures.push({ task, error: workerError });
@@ -1018,7 +1048,14 @@ export class PropertyWorkerRunner {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Apro l’attività dall’immobile verificato, compilo la descrizione e salvo");
           await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Attività immobile", () =>
-            this.ensurePropertyActivity(job, property, primary.person, owners.map((owner) => owner.person), crm), 1);
+            this.ensurePropertyActivity(
+              job,
+              property,
+              primary.person,
+              owners.map((owner) => owner.person),
+              crm,
+              directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
+            ), 1);
           await advanceStage("activity_ready");
         }
         this.throwIfPropertySkipRequested(job.id, property.id);
@@ -1053,6 +1090,7 @@ export class PropertyWorkerRunner {
                 personId: owner.person.crm_record_id!,
                 searchLabel,
                 phones: [...owner.person.mobiles, ...owner.person.landlines],
+                interruptionRequested: () => this.interruptionFor(job.id, property.id),
               }, owner.ownership.share_percentage!));
             owner.ownership.crm_link_id = link.linkId;
             await this.repository.updateOwnership(owner.ownership.id, {
@@ -1526,12 +1564,20 @@ export class PropertyWorkerRunner {
     await this.repository.updatePropertyProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
   }
 
-  private async ensurePropertyActivity(job: JobRow, property: PropertyRow, primary: PersonRow, owners: PersonRow[], crm: PlaywrightCrmAdapter) {
+  private async ensurePropertyActivity(
+    job: JobRow,
+    property: PropertyRow,
+    primary: PersonRow,
+    owners: PersonRow[],
+    crm: PlaywrightCrmAdapter,
+    directContactOrdinal: number,
+  ) {
     if (!property.crm_record_id) throw new WorkerError("La scheda dell'immobile non è disponibile per creare l'attività", "data_incomplete", { propertyId: property.id });
     const existing = readPropertyActivityCheckpoint(property.raw_payload, this.config.WORKER_DRY_RUN, property.crm_record_id);
     if (existing) return;
+    const definition = propertyActivityDefinition(owners, directContactOrdinal);
     if (job.mode === "assisted") {
-      const decision = await this.prompts.confirmSave(propertyActivitySummary(asProperty(property), owners.map((owner) => owner.full_name)));
+      const decision = await this.prompts.confirmSave(propertyActivitySummary(asProperty(property), owners.map((owner) => owner.full_name), definition));
       if (decision === "skip") return;
       if (decision === "review") throw new WorkerError("Attività dell'immobile segnata da verificare", "needs_review", { propertyId: property.id });
       if (decision === "manual") { await this.prompts.waitForManualEdit(); return; }
@@ -1541,8 +1587,10 @@ export class PropertyWorkerRunner {
       propertyAddress: property.address,
       fallbackPersonId: primary.crm_record_id ?? undefined,
       fallbackPersonLabel: primary.full_name,
-      description: PROPERTY_ACTIVITY_DESCRIPTION,
-      status: PROPERTY_ACTIVITY_STATUS,
+      description: definition.description,
+      contactMode: definition.contactMode,
+      status: definition.status,
+      interruptionRequested: () => this.interruptionFor(job.id, property.id),
     });
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
@@ -1554,6 +1602,9 @@ export class PropertyWorkerRunner {
         correlatedProperty: result.correlatedProperty,
         attempts: result.attempts,
         error: null,
+        description: definition.description,
+        status: definition.status,
+        contactMode: definition.contactMode,
       }),
     };
     await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
@@ -1660,6 +1711,12 @@ export class PropertyWorkerRunner {
     if (this.isPropertySkipRequested(jobId, propertyId)) {
       throw new WorkerError("Immobile saltato su richiesta dell'utente", "paused", { skipProperty: true, propertyId });
     }
+  }
+
+  private interruptionFor(jobId: string, propertyId: string): "pause" | "skip" | null {
+    if (this.isCancellationRequested(jobId) || this.isPauseRequested(jobId)) return "pause";
+    if (this.isPropertySkipRequested(jobId, propertyId)) return "skip";
+    return null;
   }
 
   private async logPersonChanges(jobId: string, row: PersonRow, person: NormalizedPerson) {

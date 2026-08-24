@@ -65,15 +65,16 @@
 
         <section id="streetRun" class="street-run-card">
           <header>
-            <div><p class="eyebrow">Dry-run autonomo SISTER</p><h2>Scansiona una via completa</h2><p>Inserisci la dizione esatta. Verranno percorse tutte le omonimie esatte e tutti i civici; il CRM non verrà modificato.</p></div>
+            <div><p class="eyebrow">Run autonoma SISTER</p><h2>Acquisisci una via completa</h2><p>Partendo dall'Elenco indirizzi, interroga senza civico ogni variante con dizione identica. SISTER restituisce in un solo blocco tutti gli immobili della variante.</p></div>
             <span id="streetRunBadge" class="status-pill is-idle"><span></span>Mai avviato</span>
           </header>
           <div class="street-run-controls">
             <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
+            <label class="safe-check"><input id="streetRunDryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Se disattivata, dopo l'acquisizione importa automaticamente nel gestionale.</small></span></label>
             <button id="streetRunStart" class="button primary">Avvia dry-run</button>
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
           </div>
-          <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante e civico.</p></div>
+          <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
 
@@ -146,6 +147,11 @@
             <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail" aria-label="Chiudi">×</button></header><div id="detailContent"></div></section>
 
             <section class="activity-card"><header><div><p class="eyebrow">Ultime operazioni</p><h2>Cosa ha fatto il programma</h2></div></header><div id="activityList" class="activity-list"></div></section>
+
+            <section class="activity-card" id="diagnosticErrors">
+              <header><div><p class="eyebrow">Diagnostica persistente</p><h2>Registro degli arresti</h2><p>Ogni blocco conserva momento, operazione, causa e dettagli tecnici utili all'assistenza. Le credenziali vengono escluse.</p></div><span id="diagnosticErrorCount" class="count">0</span></header>
+              <div id="diagnosticErrorList" class="diagnostic-error-list"><p class="empty-message">Nessun arresto registrato.</p></div>
+            </section>
           </div>
         </details>
 

@@ -63,7 +63,11 @@ export function parseShare(value: unknown): {
 }
 
 export function formatShareForUi(value: number): string {
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 }).format(value);
+  return new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(Number(value.toFixed(2)));
 }
 
 export function buildCadastralKey(key: CadastralKey): string {

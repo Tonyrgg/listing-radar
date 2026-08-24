@@ -14,6 +14,7 @@ import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact } from "../core/automatic-skip.js";
+import { normalizeTaxCode } from "../core/normalize.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
@@ -37,6 +38,15 @@ type Preferences = {
 };
 
 type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"; message: string };
+type DiagnosticErrorItem = {
+  id: string;
+  at: string;
+  source: "worker" | "street-run" | "request-archive" | "mandate-archive";
+  status: string;
+  message: string;
+  jobId: string | null;
+  details: Record<string, unknown>;
+};
 type KeepAliveState = SisterKeepAliveResult & { nextAttemptAt: string | null; statusLabel: "waiting" | "active" | "expired" | "error" | "disabled" };
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -88,6 +98,7 @@ let activeJobId: string | null = null;
 let active = false;
 let activeRunPromise: Promise<void> | null = null;
 let cancellingJobId: string | null = null;
+let pausingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
 let currentStep: string | null = null;
 let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string } | null = null;
@@ -124,6 +135,7 @@ let sisterKeepAlive: KeepAliveState = {
   message: "Primo controllo in attesa",
 };
 const activity: ActivityItem[] = [];
+let diagnosticErrors: DiagnosticErrorItem[] = [];
 
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
   activity.unshift({ at: new Date().toISOString(), tone, message });
@@ -136,6 +148,58 @@ function preferencesPath() {
 
 function streetRunCheckpointPath() {
   return path.join(app.getPath("userData"), "sister-street-run.json");
+}
+
+function diagnosticErrorsPath() {
+  return path.join(app.getPath("userData"), "worker-errors.json");
+}
+
+async function loadDiagnosticErrors() {
+  try {
+    const loaded = JSON.parse(await readFile(diagnosticErrorsPath(), "utf8"));
+    diagnosticErrors = Array.isArray(loaded) ? loaded.slice(0, 200) as DiagnosticErrorItem[] : [];
+  } catch {
+    diagnosticErrors = [];
+  }
+}
+
+function sanitizedDetails(value: unknown): Record<string, unknown> {
+  const blocked = /token|secret|password|authorization|service.?role|api.?key/i;
+  const sanitize = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(sanitize);
+    if (!entry || typeof entry !== "object") return entry;
+    return Object.fromEntries(Object.entries(entry as Record<string, unknown>)
+      .filter(([key]) => !blocked.test(key))
+      .map(([key, child]) => [key, sanitize(child)]));
+  };
+  return sanitize(value) as Record<string, unknown>;
+}
+
+async function recordDiagnosticError(values: Omit<DiagnosticErrorItem, "id" | "at">) {
+  diagnosticErrors.unshift({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    at: new Date().toISOString(),
+    ...values,
+    details: sanitizedDetails(values.details),
+  });
+  diagnosticErrors = diagnosticErrors.slice(0, 200);
+  await mkdir(path.dirname(diagnosticErrorsPath()), { recursive: true });
+  await writeFile(diagnosticErrorsPath(), JSON.stringify(diagnosticErrors, null, 2), "utf8");
+}
+
+async function recordDiagnosticErrorSafely(
+  values: Omit<DiagnosticErrorItem, "id" | "at">,
+  options: { publish?: boolean } = {},
+) {
+  try {
+    await recordDiagnosticError(values);
+    if (options.publish) await publishState();
+  } catch (error) {
+    pushActivity(
+      `Registro errori non aggiornato: ${error instanceof Error ? error.message : String(error)}`,
+      "warning",
+    );
+  }
 }
 
 async function loadStreetRunCheckpoint() {
@@ -294,6 +358,8 @@ async function stateSnapshot() {
     active,
     activeJobId,
     cancellingJobId,
+    pausingJobId,
+    skippingPropertyId,
     currentStep,
     propertyProgress,
     autoRetry: autoRetryAt && autoRetryJobId
@@ -308,6 +374,7 @@ async function stateSnapshot() {
       transferred: null, total: null, message: "Controllo aggiornamenti non inizializzato", checkedAt: null,
     },
     activity,
+    diagnosticErrors,
     preferences,
     config: publicConfig,
     configError,
@@ -408,6 +475,13 @@ async function runRequestArchiveImport(resumeRunId?: string) {
   }).catch((error) => {
     requestImportError = error instanceof Error ? error.message : String(error);
     pushActivity(requestImportError, "error");
+    void recordDiagnosticErrorSafely({
+      source: "request-archive",
+      status: "failed",
+      message: requestImportError,
+      jobId: resumeRunId ?? null,
+      details: { operation: "request-archive-import", resume: Boolean(resumeRunId) },
+    }, { publish: true });
   }).finally(async () => {
     requestImportActive = false;
     requestImportCancellationRequested = false;
@@ -445,6 +519,13 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   }).catch((error) => {
     mandateImportError = error instanceof Error ? error.message : String(error);
     pushActivity(mandateImportError, "error");
+    void recordDiagnosticErrorSafely({
+      source: "mandate-archive",
+      status: "failed",
+      message: mandateImportError,
+      jobId: resumeRunId ?? null,
+      details: { operation: "mandate-archive-import", resume: Boolean(resumeRunId) },
+    }, { publish: true });
   }).finally(async () => {
     mandateImportActive = false;
     mandateImportCancellationRequested = false;
@@ -452,7 +533,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   });
 }
 
-async function runSisterStreet(input: { street: string; resume: boolean }) {
+async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean }) {
   if (active || requestImportActive || mandateImportActive || streetRunActive) {
     throw new Error("Attendi la fine della lavorazione già in esecuzione");
   }
@@ -460,32 +541,124 @@ async function runSisterStreet(input: { street: string; resume: boolean }) {
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
+  const longRunMode = input.resume && resumeCheckpoint
+    ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
+    : (input.dryRun ? "dry_run" : "live");
 
   streetRunActive = true;
   streetRunCancellationRequested = false;
   streetRunError = null;
-  pushActivity(input.resume ? `Ripresa dry-run via ${street}` : `Dry-run via ${street} avviato`, "info");
+  pushActivity(
+    input.resume
+      ? `Ripresa ${longRunMode === "dry_run" ? "dry-run" : "run reale"} via ${street}`
+      : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via ${street} avviato`,
+    "info",
+  );
   await publishState();
 
-  const config = workerConfig({ dryRun: true });
+  const config = workerConfig({ dryRun: longRunMode === "dry_run" });
+  let jobToImport: string | null = null;
+  let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
   void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
     try {
+      const liveRepository = longRunMode === "live" ? repository(config) : null;
+      let importJobId = resumeCheckpoint?.importJobId ?? null;
+      if (liveRepository && !importJobId) {
+        const importJob = await liveRepository.createJob("automatic");
+        importJobId = importJob.id;
+        streetImportJobId = importJob.id;
+        await liveRepository.setJobContext(importJob.id, {
+          municipality: "BITONTO",
+          street,
+          civicNumber: null,
+          sourceUrl: tabs.sisterPage.url(),
+        });
+      }
       const scanner = new SisterStreetRun(tabs.sisterPage, {
-        emptyWindow: 50,
-        startCivic: 1,
-        maximumCivic: 5_000,
+        strategy: "bulk_exact_variants",
+        mode: longRunMode,
+        importJobId,
         acquireOwners: true,
         isCancelled: () => streetRunCancellationRequested,
+        onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
+          const [savedProperty] = await liveRepository.insertProperties(importJobId!, [{
+            ...property,
+            rawPayload: {
+              ...property.rawPayload,
+              long_run: { strategy: "bulk_exact_variants", variantId: variant.sourceId, acquiredAt: new Date().toISOString() },
+            },
+          }]);
+          if (!savedProperty) throw new Error("Immobile long run non salvato");
+          if (!owners.length) {
+            await liveRepository.updatePropertyProcessing(savedProperty.id, {
+              processing_status: "acquisition_failed",
+              raw_payload: {
+                ...(savedProperty.raw_payload ?? {}),
+                acquisition: { status: "acquisition_failed", reason: "Nessun proprietario interpretabile", variantId: variant.sourceId },
+              },
+            });
+            return;
+          }
+          for (const owner of owners) await liveRepository.insertOwner(importJobId!, savedProperty.id, owner);
+        } : undefined,
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
-          if (checkpoint.currentVariantIndex === 0 || checkpoint.status !== "running") await publishState();
+          await publishState();
         },
       });
       const result = await scanner.run(street, resumeCheckpoint);
+      if (liveRepository && result.importJobId) {
+        const graph = await liveRepository.loadGraph(result.importJobId);
+        const activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped"].includes(property.processing_status));
+        const activePropertyIds = new Set(activeProperties.map((property) => property.id));
+        const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+        const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+        const activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
+        const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
+        const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
+        const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+
+        await Promise.all([
+          ...activeProperties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
+          ...activePeople.map((person) => liveRepository.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
+        ]);
+        const totals = { total_properties: graph.properties.length, total_people: graph.people.length };
+        if (result.status === "completed" && activeProperties.length && !incompleteProperties.length && !incompletePeople.length && !propertiesWithoutOwners.length) {
+          await liveRepository.updateJob(result.importJobId, {
+            ...totals,
+            status: "saved",
+            saved_at: new Date().toISOString(),
+            last_completed_step: "acquisition_reviewed",
+            current_step: "properties_processed",
+            error_message: null,
+            error_details: null,
+          });
+          jobToImport = result.importJobId;
+        } else {
+          const message = result.status !== "completed"
+            ? "Run via sospesa: l'acquisizione resta salvata e riprendibile."
+            : "Run via acquisita, ma alcuni dati obbligatori richiedono una correzione prima dell'import.";
+          await liveRepository.updateJob(result.importJobId, {
+            ...totals,
+            status: result.status === "completed" ? "data_incomplete" : "paused",
+            saved_at: new Date().toISOString(),
+            last_completed_step: "owners_extracted",
+            current_step: "data_normalized",
+            error_message: message,
+            error_details: {
+              action: "long-run-acquisition-validation",
+              incompletePropertyIds: incompleteProperties.map((property) => property.id),
+              incompletePersonIds: incompletePeople.map((person) => person.id),
+              propertiesWithoutOwners: propertiesWithoutOwners.map((property) => property.id),
+            },
+          });
+          streetRunError = message;
+        }
+      }
       pushActivity(
         result.status === "completed"
-          ? `Dry-run via completato: ${result.totalAcceptedProperties} immobili e ${result.totalOwnersRead} proprietari letti`
-          : `Dry-run via sospeso al civico ${result.nextCivicNumber}`,
+          ? `${longRunMode === "dry_run" ? "Dry-run" : "Acquisizione reale"} via completata: ${result.totalAcceptedProperties} immobili unici e ${result.totalOwnersRead} proprietari letti`
+          : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via sospesa dopo ${result.currentVariantIndex} varianti`,
         result.status === "completed" ? "success" : "warning",
       );
     } finally {
@@ -494,10 +667,36 @@ async function runSisterStreet(input: { street: string; resume: boolean }) {
   }).catch((error) => {
     streetRunError = error instanceof Error ? error.message : String(error);
     pushActivity(streetRunError, "error");
+    void recordDiagnosticErrorSafely({
+      source: "street-run",
+      status: "failed",
+      message: streetRunError,
+      jobId: streetImportJobId,
+      details: { checkpointPath: streetRunCheckpointPath(), street },
+    }, { publish: true });
   }).finally(async () => {
     streetRunActive = false;
     streetRunCancellationRequested = false;
     await publishState();
+    if (jobToImport) {
+      try {
+        pushActivity("Acquisizione bulk completata: avvio l'import automatico degli immobili salvati", "success");
+        await repository(config).markImportStarted(jobToImport);
+        await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport });
+      } catch (error) {
+        const message = `Acquisizione salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
+        streetRunError = message;
+        pushActivity(message, "error");
+        await recordDiagnosticErrorSafely({
+          source: "worker",
+          status: "failed",
+          message,
+          jobId: jobToImport,
+          details: { operation: "long-run-import-start", street },
+        });
+        await publishState();
+      }
+    }
   });
 }
 
@@ -701,9 +900,20 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
   } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
     pushActivity("Arresto del processo completato", "warning");
+  } else if (event.details.pauseRequested === true && pausingJobId === event.jobId) {
+    prompt = null;
+    propertyProgress = null;
+    pushActivity("Lavorazione messa in pausa: il checkpoint è stato salvato", "warning");
   } else {
     lastError = event.message;
     pushActivity(event.message, "error");
+    void recordDiagnosticErrorSafely({
+      source: "worker",
+      status: event.status,
+      message: event.message,
+      jobId: event.jobId,
+      details: event.details,
+    }, { publish: true });
     const retry = automaticRetryInFlight;
     automaticRetryInFlight = null;
     const failedPropertyId = typeof event.details.propertyId === "string" ? event.details.propertyId : null;
@@ -818,6 +1028,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   clearAutoRetry();
   active = true;
   cancellingJobId = null;
+  pausingJobId = null;
   lastError = null;
   currentStep = null;
   propertyProgress = null;
@@ -830,6 +1041,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     onEvent: handleRunnerEvent,
     keepAlive: false,
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
+    isPauseRequested: (jobId) => pausingJobId === jobId,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
@@ -838,8 +1050,20 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     .then(() => undefined)
     .catch((error) => {
       if (cancellingJobId && cancellingJobId === activeJobId) return;
-      lastError = error instanceof Error ? error.message : String(error);
-      pushActivity(lastError, "error");
+      if (pausingJobId && pausingJobId === activeJobId) return;
+      const message = error instanceof Error ? error.message : String(error);
+      const alreadyReported = lastError === message;
+      lastError = message;
+      pushActivity(message, "error");
+      if (!alreadyReported) {
+        void recordDiagnosticErrorSafely({
+          source: "worker",
+          status: "failed",
+          message,
+          jobId: activeJobId,
+          details: { operation: "worker-start-or-run" },
+        }, { publish: true });
+      }
     })
     .finally(async () => {
       const cancelledJobId = cancellingJobId && cancellingJobId === activeJobId ? cancellingJobId : null;
@@ -865,6 +1089,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
         }
       }
       active = false;
+      pausingJobId = null;
       skippingPropertyId = null;
       activePrompts = null;
       activeRunPromise = null;
@@ -1009,8 +1234,8 @@ function registerIpc() {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
   });
-  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean }) => {
-    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true });
+  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
+    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false });
     return true;
   });
   ipcMain.handle("desktop:cancel-street-run", async () => {
@@ -1066,10 +1291,13 @@ function registerIpc() {
   ipcMain.handle("desktop:pause-job", async () => {
     clearAutoRetry();
     if (!activeJobId) return false;
-    await repository().updateJob(activeJobId, { status: "paused" });
-    activePrompts?.cancel();
-    pushActivity("Pausa richiesta", "warning");
+    const jobId = activeJobId;
+    if (pausingJobId === jobId) return true;
+    pausingJobId = jobId;
+    activePrompts?.cancel("Pausa richiesta dall'utente");
+    pushActivity("Pausa acquisita: termino soltanto l'operazione atomica già iniziata", "warning");
     await publishState();
+    await repository().updateJob(jobId, { status: "paused" });
     return true;
   });
   ipcMain.handle("desktop:cancel-job", async (_event, jobId: string) => {
@@ -1224,6 +1452,7 @@ app.whenReady().then(async () => {
   app.setAppUserModelId("it.listingradar.propertyworker");
   await loadPreferences();
   await loadStreetRunCheckpoint();
+  await loadDiagnosticErrors();
   registerIpc();
   await createWindow();
   scheduleDesktopKeepAlive(3_000);

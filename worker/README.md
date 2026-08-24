@@ -26,7 +26,7 @@ L'interfaccia permette di:
 - consultare avanzamento, lavorazioni recenti e diagnostica;
 - sincronizzare l’intero archivio delle richieste immobiliari, aprendo ogni scheda in una pagina dedicata e riprendendo solo gli elementi non completati;
 - mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 60-90 secondi, senza ricaricare la pagina visibile;
-- eseguire un dry-run autonomo di una via completa, conservando civico, variante omonima e contatori dopo ogni interrogazione.
+- eseguire dry-run o run reale di una via completa, interrogando in blocco ogni variante testuale esatta e salvando il checkpoint dopo ciascuna variante;
 - conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
 
 Per generare l'installer Windows:
@@ -102,9 +102,9 @@ Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca res
 2. cerca, verifica o crea tutti i proprietari e sincronizza i recapiti mancanti;
 3. sceglie come principale la quota più alta; a quote pari conserva l'ordine SISTER senza applicare preferenze anagrafiche;
 4. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
-5. crea una sola attività `Da eseguire` partendo dalla scheda dell'immobile;
-6. collega gli altri proprietari come `Comproprietario`, usando nome e cognome, identificativo della scheda verificata e, se necessario, il cellulare per distinguere gli omonimi;
-7. compila la quota percentuale e verifica che il collegamento sia visibile;
+5. crea una sola attività partendo dalla scheda dell'immobile: `Telefonata / Da eseguire` se esiste almeno un telefono, altrimenti `Contatto diretto / Eseguito` con descrizione ruotata;
+6. collega gli altri proprietari come `Comproprietario`, digitando lentamente nome e cognome e richiedendo anche la corrispondenza del telefono quando disponibile;
+7. compila la quota percentuale con massimo due decimali e verifica che il collegamento sia visibile;
 8. salva il checkpoint dell'immobile e passa al successivo.
 
 Se più omonimi non sono distinguibili neppure tramite cellulare, viene selezionato il primo risultato soltanto come ultima risorsa e il worker conserva una nota auditabile sul caso.
@@ -145,15 +145,15 @@ Gli stessi comandi `worker:*` sono disponibili anche dalla root del progetto.
 
 Il check verifica configurazione, file e colonne Excel, Supabase/migration, collegamento CDP, schede aperte e presenza apparente delle sessioni. Elenca titolo e URL delle schede senza stampare cookie o token.
 
-## Dry-run di una via completa
+## Acquisizione di una via completa
 
 Prima porta manualmente SISTER fino alla pagina **Elenco indirizzi**, come nella schermata che contiene il menu delle vie e i campi dei civici. Nella scheda **Scansiona una via completa** inserisci quindi la dizione esatta già presente nel menu, per esempio `via borgo san francesco`. Il desktop non compila Comune, toponimo o indirizzo e non torna al form precedente: legge esclusivamente le opzioni attualmente visibili e applica un confronto testuale normalizzato. Vie simili, traverse e varianti private vengono escluse.
 
 La preparazione automatica del form precedente resta disponibile soltanto per diagnostica da riga di comando tramite `--auto-prepare-search`; non è attivata dal software desktop.
 
-Se SISTER restituisce più opzioni con lo stesso testo, ciascun identificativo viene interrogato per ogni civico. Il civico avanza di uno soltanto dopo che tutte le opzioni esatte sono state completate. La fine della via viene dichiarata esclusivamente dopo 50 civici consecutivi verificati come vuoti su tutte le opzioni; timeout, sessione scaduta, HTML inatteso e query fallite non valgono mai come risultato vuoto.
+Se SISTER restituisce più opzioni con lo stesso testo, ciascun identificativo viene interrogato una volta lasciando vuoti entrambi i campi civico. Il portale restituisce così l'intero inventario della variante: il worker legge tutte le righe e applica il paracadute a ogni immobile. La scansione incrementale e la regola dei 50 civici vuoti restano disponibili soltanto come fallback diagnostico CLI; timeout, sessione scaduta, HTML inatteso e query fallite non valgono mai come risultato vuoto.
 
-Questa funzione è sempre un dry-run SISTER: legge immobili e proprietari per esercitare realmente lo scraper, ma non avvia import né salvataggi nel CRM. Un checkpoint locale viene aggiornato dopo ogni opzione/civico. **Metti in pausa** conclude il passaggio corrente e conserva il cursore; dopo un nuovo accesso SISTER, oppure dopo aver ripristinato manualmente **Elenco indirizzi**, **Riprendi dal checkpoint** riparte dalla query non conclusa. Errori isolati su una query o su un immobile vengono ritentati e poi circoscritti senza interrompere gli altri civici; sessione scaduta e pagina globale non ripristinabile mettono invece la run in pausa, perché non devono mai essere interpretate come cinquanta risultati vuoti.
+Il desktop offre due modalità. Il dry-run legge realmente immobili e proprietari ma non salva nel CRM. La run reale persiste progressivamente l'acquisizione in un job Supabase e avvia l'import automatico soltanto quando tutte le varianti sono concluse e i dati obbligatori superano la validazione. Un checkpoint locale viene aggiornato dopo ogni variante. **Metti in pausa** conclude il passaggio atomico corrente e conserva il cursore; dopo un nuovo accesso SISTER, oppure dopo aver ripristinato manualmente **Elenco indirizzi**, **Riprendi dal checkpoint** riparte dalla variante non conclusa. Una variante fallita mette la run in pausa e non viene mai trattata come vuota.
 
 ## Flusso sicuro iniziale
 

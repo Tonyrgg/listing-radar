@@ -1,14 +1,12 @@
-import { Building2, Gauge, MapPinned, ScanSearch, Settings2, UsersRound } from "lucide-react";
-
 import { SectionNav } from "@/components/ui/section-nav";
 
 const items = [
-  { href: "/matching/overview", label: "Panoramica", icon: Gauge },
-  { href: "/matching", label: "Abbinamenti", icon: ScanSearch },
-  { href: "/requests", label: "Richieste clienti", icon: UsersRound },
-  { href: "/portfolio", label: "Immobili disponibili", icon: Building2 },
-  { href: "/zones", label: "Zone immobiliari", icon: MapPinned },
-  { href: "/matching-settings", label: "Regole automatiche", icon: Settings2 },
+  { href: "/matching/overview", label: "Panoramica", icon: "gauge" },
+  { href: "/matching", label: "Abbinamenti", icon: "scan" },
+  { href: "/requests", label: "Richieste clienti", icon: "users" },
+  { href: "/portfolio", label: "Immobili disponibili", icon: "building" },
+  { href: "/zones", label: "Zone immobiliari", icon: "map" },
+  { href: "/matching-settings", label: "Regole automatiche", icon: "settings" },
 ] as const;
 
 export function MatchingSectionNav() {

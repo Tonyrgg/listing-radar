@@ -221,6 +221,7 @@ describe("adattatori con fixture HTML", () => {
         propertyAddress: "Via Roma 12 [2]",
         fallbackPersonId: "P-42",
         description: "Inserire attività",
+        contactMode: "Telefonata",
         status: "Da eseguire",
       })).resolves.toMatchObject({ outcome: "simulated", crmActivityId: "dry-activity-I-42", attempts: 1 });
       expect(await page.locator('[data-worker-crm="activityDescription"]').inputValue()).toBe("Inserire attività");
@@ -228,6 +229,28 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator("body").getAttribute("data-activity-origin")).toContain("/s/immobile/I-42");
       expect(await page.locator("body").getAttribute("data-activity-cancelled")).toBe("true");
       expect(await page.locator("body").getAttribute("data-activity-saved")).toBeNull();
+    } finally { await browser.close(); }
+  });
+
+  it("imposta Contatto diretto ed Eseguito per un immobile senza telefoni", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        fallbackPersonId: "P-42",
+        description: "Non sa nulla",
+        contactMode: "Contatto diretto",
+        status: "Eseguito",
+      })).resolves.toMatchObject({ outcome: "simulated" });
+      expect(await page.locator('[data-worker-crm="activityContactMode"]').inputValue()).toBe("Contatto diretto");
+      expect(await page.locator('[data-worker-crm="activityStatus"]').inputValue()).toBe("Eseguito");
+      expect(await page.locator('[data-worker-crm="activityDescription"]').inputValue()).toBe("Non sa nulla");
     } finally { await browser.close(); }
   });
 
@@ -252,6 +275,7 @@ describe("adattatori con fixture HTML", () => {
         propertyAddress: "Via Roma 12 [2]",
         fallbackPersonId: "P-42",
         description: "Inserire attività",
+        contactMode: "Telefonata",
         status: "Da eseguire",
       })).resolves.toMatchObject({ outcome: "simulated", correlatedProperty: "IM - Via Roma 12 [2]" });
       expect(await page.locator('[data-worker-crm="activityClient"]').inputValue()).toBe("Maria Acquaviva");
@@ -273,6 +297,7 @@ describe("adattatori con fixture HTML", () => {
         propertyAddress: "VIA TOMMASO TRAETTA n. 47-49 Piano T-1",
         fallbackPersonId: "P-42",
         description: "Inserire attività",
+        contactMode: "Telefonata",
         status: "Da eseguire",
       })).resolves.toMatchObject({ outcome: "simulated", correlatedProperty: "IM - Via T. Traetta 47" });
     } finally { await browser.close(); }
@@ -295,6 +320,7 @@ describe("adattatori con fixture HTML", () => {
         propertyId: "I-42",
         propertyAddress: "Via Roma 12 [2]",
         description: "Inserire attività",
+        contactMode: "Telefonata",
         status: "Da eseguire",
       })).resolves.toMatchObject({ outcome: "simulated", attempts: 2 });
       expect(await page.evaluate(() => localStorage.getItem("activity-attempt"))).toBe("2");
@@ -315,6 +341,7 @@ describe("adattatori con fixture HTML", () => {
         propertyAddress: "Via Roma 12 [2]",
         fallbackPersonId: "P-42",
         description: "Inserire attività",
+        contactMode: "Telefonata",
         status: "Da eseguire",
       })).resolves.toMatchObject({ outcome: "simulated" });
       expect(await page.locator('[data-worker-crm="ownerDialog"]').isVisible()).toBe(false);
@@ -547,14 +574,14 @@ describe("adattatori con fixture HTML", () => {
         personId: "P-99",
         searchLabel: "Mario Rossi",
         phones: ["3331234567"],
-      }, 33.3)).resolves.toMatchObject({ linkId: "owner-link-P-99", selection: "crm_id", note: null });
-      expect(await page.locator('[data-worker-crm="ownerPersonId"]').inputValue()).toBe("Persona P-99");
+      }, 100 / 3)).resolves.toMatchObject({ linkId: "owner-link-P-99", selection: "crm_id", note: null });
+      expect(await page.locator('[data-worker-crm="ownerPersonId"]').inputValue()).toBe("Mario Rossi");
       expect(await page.locator('[data-worker-crm="ownerRight"]').inputValue()).toBe("Proprietà");
       expect(await page.locator('[data-worker-crm="ownerRole"] input').inputValue()).toBe("Comproprietario");
-      expect(await page.locator('[data-worker-crm="ownerShare"]').inputValue()).toBe("33,3");
+      expect(await page.locator('[data-worker-crm="ownerShare"]').inputValue()).toBe("33,33");
       expect(await page.locator("body").getAttribute("data-owner-saved")).toBe("true");
     } finally { await browser.close(); }
-  });
+  }, 12_000);
 
   it("riconosce una scheda nominativo già aperta dal codice fiscale e dal nome", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

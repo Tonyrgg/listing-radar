@@ -27,6 +27,8 @@ describe("quota", () => {
   });
   it("mantiene un numero e usa la virgola solo per la UI", () => {
     expect(formatShareForUi(33.3)).toBe("33,3");
+    expect(formatShareForUi(100 / 3)).toBe("33,33");
+    expect(formatShareForUi(12.3456)).toBe("12,35");
   });
 });
 

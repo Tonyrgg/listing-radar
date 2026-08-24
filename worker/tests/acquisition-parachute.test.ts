@@ -94,6 +94,25 @@ function sisterWith(extractOwners: ReturnType<typeof vi.fn>) {
 }
 
 describe("paracadute acquisizione SISTER", () => {
+  it("recepisce la pausa cooperativa prima di iniziare una nuova operazione browser", async () => {
+    const rows = [property("current", 0)];
+    const runner = new PropertyWorkerRunner(config, {
+      keepAlive: false,
+      isPauseRequested: () => true,
+    });
+    Object.defineProperty(runner, "repository", { value: repositoryFor(rows) });
+    const sister = sisterWith(vi.fn().mockResolvedValue([owner()]));
+
+    await expect((runner as unknown as { executeStep: Function }).executeStep(
+      "owners_extracted",
+      job,
+      sister,
+      {},
+      {},
+    )).rejects.toMatchObject({ status: "paused", details: { pauseRequested: true } });
+    expect(sister.extractOwners).not.toHaveBeenCalled();
+  });
+
   it("isola la riga che fallisce due volte e acquisisce la successiva", async () => {
     const rows = [property("broken", 0), property("next", 1)];
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });

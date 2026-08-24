@@ -466,6 +466,7 @@ describe("flusso identità nominativo e immobile", () => {
       primary,
       [primary, coowner],
       crm,
+      1,
     );
     expect(crm.linkOwner).toHaveBeenCalledWith(
       "CRM-PROPERTY",

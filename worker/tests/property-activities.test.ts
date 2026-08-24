@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPropertyActivityTasks,
+  directContactOrdinalForTask,
+  isDirectContactNrOrdinal,
+  propertyActivityDefinition,
   readPropertyActivityCheckpoint,
 } from "../src/services/property-activities.js";
 import type { PersonRow, PropertyRow } from "../src/services/repository.js";
@@ -84,5 +87,58 @@ describe("attività property-centric", () => {
       },
     }, false, "crm-property-1");
     expect(checkpoint).toBeNull();
+  });
+
+  it("mantiene Telefonata e Da eseguire se almeno un proprietario ha un recapito", () => {
+    const owner = person("person-1", "crm-person-1", "Primo");
+    owner.mobiles = ["3331112222"];
+    expect(propertyActivityDefinition([owner], 1)).toEqual({
+      contactMode: "Telefonata",
+      status: "Da eseguire",
+      description: "Inserire attività",
+      directContactOrdinal: null,
+    });
+  });
+
+  it("usa Contatto diretto, Eseguito e rotazione soltanto quando nessun proprietario ha telefoni", () => {
+    const owners = [person("person-1", "crm-person-1", "Primo"), person("person-2", "crm-person-2", "Secondo")];
+    expect(propertyActivityDefinition(owners, 1)).toMatchObject({
+      contactMode: "Contatto diretto",
+      status: "Eseguito",
+      description: "Non sa nulla",
+      directContactOrdinal: 1,
+    });
+    expect(propertyActivityDefinition(owners, 7).description).toBe("nr");
+    expect(propertyActivityDefinition(owners, 16).description).toBe("nr");
+    expect(isDirectContactNrOrdinal(8)).toBe(false);
+  });
+
+  it("incrementa la sequenza soltanto per contatti diretti realmente completati", () => {
+    const people = [person("person-1", "crm-person-1", "Primo"), person("person-2", "crm-person-2", "Secondo")];
+    const first = property({
+      id: "property-1",
+      raw_payload: { worker_activity: { state: "skipped", contactMode: "Contatto diretto" } },
+    });
+    const second = property({ id: "property-2", cadastral_key: "BITONTO|50|1391|28" });
+    let tasks = buildPropertyActivityTasks({
+      properties: [first, second],
+      people,
+      ownerships: [
+        { property_id: "property-1", person_id: "person-1", share_percentage: 100 },
+        { property_id: "property-2", person_id: "person-2", share_percentage: 100 },
+      ],
+    });
+    expect(directContactOrdinalForTask(tasks, "property-2")).toBe(1);
+
+    first.raw_payload = { worker_activity: { state: "created", contactMode: "Contatto diretto" } };
+    tasks = buildPropertyActivityTasks({
+      properties: [first, second],
+      people,
+      ownerships: [
+        { property_id: "property-1", person_id: "person-1", share_percentage: 100 },
+        { property_id: "property-2", person_id: "person-2", share_percentage: 100 },
+      ],
+    });
+    expect(directContactOrdinalForTask(tasks, "property-2")).toBe(2);
   });
 });

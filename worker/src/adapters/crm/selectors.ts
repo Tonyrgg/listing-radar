@@ -111,6 +111,7 @@ export interface CrmSelectors {
   activityDescription: string;
   activityClient: string;
   activityRelatedProperty: string;
+  activityContactMode: string;
   activityStatus: string;
   activityOption: string;
   activitySave: string;
@@ -138,7 +139,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "personPropertiesModal", "personPropertiesModalRows", "personPropertiesModalName", "personPropertiesModalClose",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
-  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
+  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty", "activityContactMode",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
   pageMarker: 'a[href*="/CRMImmobiliareLightning/s/account/Account"], a[href*="/CRMImmobiliareLightning/s/immobile/Immobile__c"]',
@@ -202,6 +203,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   activityDescription: 'c-input-field:has-text("Descrizione") textarea',
   activityClient: 'c-input-field:has-text("Cliente") input',
   activityRelatedProperty: 'c-input-field:has-text("Correlato a")',
+  activityContactMode: 'c-input-field:has-text("Modalit"):has-text("Contatto") input',
   activityStatus: 'c-input-field:has-text("Stato") input',
   activityOption: '[role="option"]',
   activitySave: 'button:has-text("Salva")',
@@ -269,6 +271,6 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "personPropertiesModal", "personPropertiesModalRows", "personPropertiesModalName", "personPropertiesModalClose",
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
-  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty",
+  "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty", "activityContactMode",
   "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, `[data-worker-crm="${key}"]`])) as unknown as CrmSelectors;

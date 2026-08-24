@@ -6,6 +6,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Listing Radar repository rules
 
+Prima di intervenire, leggere `docs/PROJECT-ONBOARDING.md`: contiene architettura, runtime, flussi, regole operative, quality gate e procedure di rilascio dell'intero progetto.
+
 - Never expose or commit secrets. Treat every `.env*` file except `.env.example` as sensitive.
 - Never destructively mutate production Supabase. Use the local Supabase project or an explicitly approved DEV/STAGING project.
 - Database changes must use migrations in `supabase/migrations/`; do not edit production tables manually.

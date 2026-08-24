@@ -175,7 +175,9 @@ export interface CrmActivityInput {
   fallbackPersonId?: string;
   fallbackPersonLabel?: string;
   description: string;
-  status: "Da eseguire";
+  contactMode: "Telefonata" | "Contatto diretto";
+  status: "Da eseguire" | "Eseguito";
+  interruptionRequested?: () => "pause" | "skip" | null;
 }
 
 export interface CrmActivityResult {
@@ -189,6 +191,7 @@ export interface OwnerLinkInput {
   personId: string;
   searchLabel: string;
   phones: string[];
+  interruptionRequested?: () => "pause" | "skip" | null;
 }
 
 export interface OwnerLinkResult {

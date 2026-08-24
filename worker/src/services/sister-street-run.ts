@@ -3,6 +3,7 @@ import type { Locator, Page } from "playwright";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey } from "../core/normalize.js";
+import type { CadastralOwner, CadastralProperty } from "../types.js";
 import {
   exactStreetVariants,
   normalizeSisterStreet,
@@ -12,10 +13,10 @@ import {
   type SisterStreetVariant,
 } from "../core/street-scan.js";
 
-export type StreetQueryOutcome = "empty" | "found" | "failed";
+export type StreetQueryOutcome = "empty" | "found" | "failed" | "paused";
 
 export type SisterStreetQueryResult = {
-  civicNumber: number;
+  civicNumber: number | null;
   variantKey: string;
   variantSourceId: string;
   outcome: StreetQueryOutcome;
@@ -29,7 +30,10 @@ export type SisterStreetQueryResult = {
 };
 
 export type SisterStreetRunCheckpoint = {
-  version: 2;
+  version: 3;
+  strategy: "bulk_exact_variants" | "civic_fallback";
+  mode: "dry_run" | "live";
+  importJobId: string | null;
   requestedStreet: string;
   municipality: "BITONTO";
   status: "running" | "paused" | "completed" | "failed";
@@ -59,6 +63,14 @@ type StreetRunOptions = {
   maxQueryAttempts?: number;
   acquireOwners?: boolean;
   prepareSearchAutomatically?: boolean;
+  strategy?: "bulk_exact_variants" | "civic_fallback";
+  mode?: "dry_run" | "live";
+  importJobId?: string | null;
+  onPropertyAcquired?: (
+    variant: SisterStreetVariant,
+    property: CadastralProperty,
+    owners: CadastralOwner[],
+  ) => void | Promise<void>;
   isCancelled?: () => boolean;
   onCheckpoint?: (checkpoint: SisterStreetRunCheckpoint) => void | Promise<void>;
 };
@@ -94,6 +106,8 @@ export class SisterStreetRun {
   private readonly maxQueryAttempts: number;
   private readonly acquireOwners: boolean;
   private readonly prepareSearchAutomatically: boolean;
+  private readonly strategy: "bulk_exact_variants" | "civic_fallback";
+  private readonly mode: "dry_run" | "live";
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
     this.adapter = new PlaywrightSisterAdapter(page);
@@ -103,6 +117,8 @@ export class SisterStreetRun {
     this.maxQueryAttempts = options.maxQueryAttempts ?? 3;
     this.acquireOwners = options.acquireOwners !== false;
     this.prepareSearchAutomatically = options.prepareSearchAutomatically === true;
+    this.strategy = options.strategy ?? "bulk_exact_variants";
+    this.mode = options.mode ?? "dry_run";
   }
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
@@ -114,21 +130,25 @@ export class SisterStreetRun {
       throw new Error("Il checkpoint appartiene a una via diversa");
     }
     const now = new Date().toISOString();
-    let checkpoint: SisterStreetRunCheckpoint = resume
+    const compatibleResume = resume?.version === 3 && resume.strategy === this.strategy && resume.mode === this.mode ? resume : undefined;
+    let checkpoint: SisterStreetRunCheckpoint = compatibleResume
       ? {
-          ...resume,
+          ...compatibleResume,
           status: "running",
           updatedAt: now,
           completedAt: null,
           variants,
           consecutiveEmptyByVariant: Object.fromEntries(variants.map((variant) => [
             variant.key,
-            resume.consecutiveEmptyByVariant[variant.key] ?? 0,
+            compatibleResume.consecutiveEmptyByVariant[variant.key] ?? 0,
           ])),
           lastError: null,
         }
       : {
-          version: 2,
+          version: 3,
+          strategy: this.strategy,
+          mode: this.mode,
+          importJobId: this.options.importJobId ?? null,
           requestedStreet: normalizedRequestedStreet,
           municipality: "BITONTO",
           status: "running",
@@ -153,6 +173,62 @@ export class SisterStreetRun {
     await this.publish(checkpoint);
 
     try {
+      if (checkpoint.strategy === "bulk_exact_variants") {
+        while (checkpoint.currentVariantIndex < variants.length) {
+          if (this.options.isCancelled?.()) {
+            checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+            await this.publish(checkpoint);
+            return checkpoint;
+          }
+          const variant = variants[checkpoint.currentVariantIndex];
+          if (!variant) break;
+          const result = await this.queryWithParachute(variant, null, normalizedRequestedStreet);
+          const replacedPartial = checkpoint.results.find((entry) =>
+            entry.variantKey === result.variantKey && entry.outcome === "paused");
+          const previousResults = checkpoint.results.filter((entry) => entry !== replacedPartial);
+          const nextResults = [...previousResults, result];
+          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => entry.propertyKeys))];
+          checkpoint = {
+            ...checkpoint,
+            updatedAt: new Date().toISOString(),
+            currentVariantIndex: ["failed", "paused"].includes(result.outcome) ? checkpoint.currentVariantIndex : checkpoint.currentVariantIndex + 1,
+            results: nextResults,
+            totalRawRecords: checkpoint.totalRawRecords - (replacedPartial?.rawRecords ?? 0) + result.rawRecords,
+            totalAcceptedOccurrences: (checkpoint.totalAcceptedOccurrences ?? checkpoint.totalAcceptedProperties)
+              - (replacedPartial?.acceptedProperties ?? 0) + result.acceptedProperties,
+            totalAcceptedProperties: uniquePropertyKeys.length,
+            uniquePropertyKeys,
+            totalOwnersRead: checkpoint.totalOwnersRead - (replacedPartial?.ownersRead ?? 0) + result.ownersRead,
+            totalSkippedPropertyRows: checkpoint.totalSkippedPropertyRows - (replacedPartial?.skippedPropertyRows ?? 0) + result.skippedPropertyRows,
+            lastError: result.outcome === "failed" ? result.warnings.join("; ") : null,
+          };
+          await this.publish(checkpoint);
+          if (result.outcome === "paused") {
+            checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+            await this.publish(checkpoint);
+            return checkpoint;
+          }
+          if (result.outcome === "failed") {
+            checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+            await this.publish(checkpoint);
+            return checkpoint;
+          }
+        }
+        const completedAt = new Date().toISOString();
+        checkpoint = {
+          ...checkpoint,
+          status: "completed",
+          updatedAt: completedAt,
+          completedAt,
+          inferredLastUsefulCivic: null,
+          lastError: checkpoint.results.some((result) => result.outcome === "failed")
+            ? "Una o più varianti esatte non sono state verificate dopo i tentativi automatici."
+            : null,
+        };
+        await this.publish(checkpoint);
+        return checkpoint;
+      }
+
       while (!shouldStopStreetRun(
         variants,
         checkpoint.consecutiveEmptyByVariant,
@@ -177,6 +253,11 @@ export class SisterStreetRun {
         const variant = variants[variantIndex];
         if (!variant) throw new Error("Cursore variante non valido");
         const result = await this.queryWithParachute(variant, checkpoint.nextCivicNumber, normalizedRequestedStreet);
+        if (result.outcome === "paused") {
+          checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+          await this.publish(checkpoint);
+          return checkpoint;
+        }
         const counters = updateVerifiedEmptyCounters(
           checkpoint.consecutiveEmptyByVariant,
           variant.key,
@@ -362,7 +443,7 @@ export class SisterStreetRun {
 
   private async queryWithParachute(
     variant: SisterStreetVariant,
-    civicNumber: number,
+    civicNumber: number | null,
     requestedStreet: string,
   ): Promise<SisterStreetQueryResult> {
     let lastError: unknown = null;
@@ -403,29 +484,29 @@ export class SisterStreetRun {
       propertyKeys: [],
       ownersRead: 0,
       skippedPropertyRows: 0,
-      warnings: [`Civico non verificato dopo ${this.maxQueryAttempts} tentativi: ${message}`],
+      warnings: [`${civicNumber == null ? `Variante ${variant.sourceId}` : `Civico ${civicNumber}`} non verificat${civicNumber == null ? "a" : "o"} dopo ${this.maxQueryAttempts} tentativi: ${message}`],
       elapsedMs: 0,
     };
   }
 
   private async queryOnce(
     variant: SisterStreetVariant,
-    civicNumber: number,
+    civicNumber: number | null,
     startedAt: number,
   ): Promise<SisterStreetQueryResult> {
     const form = this.page.locator(ADDRESS_FORM);
     await form.locator('select[name="indirizzoSel"]').selectOption(variant.value);
-    await form.locator('input[name="numCivicoDal"]').fill(String(civicNumber));
+    await form.locator('input[name="numCivicoDal"]').fill(civicNumber == null ? "" : String(civicNumber));
     const civicTo = form.locator('input[name="numCivicoAl"]');
     if (await civicTo.count() === 1) await civicTo.fill("");
-    await clickAndWait(this.page, form.locator('input[name="ricerca"]'), `il civico ${civicNumber}`);
+    await clickAndWait(this.page, form.locator('input[name="ricerca"]'), civicNumber == null ? `l'intera variante ${variant.sourceId}` : `il civico ${civicNumber}`);
     await this.assertSession();
 
     const rawRecords = await this.page.locator(RESULTS_ROWS).count();
     const explicitEmpty = await this.page.getByText(NO_MATCH_PATTERN).count() > 0;
     if (!rawRecords && !explicitEmpty) {
       throw new WorkerError(
-        `Risposta SISTER non riconosciuta per il civico ${civicNumber}`,
+        `Risposta SISTER non riconosciuta per ${civicNumber == null ? `la variante ${variant.sourceId} senza civico` : `il civico ${civicNumber}`}`,
         "portal_error",
         { portal: "SISTER", action: "street-run-result-structure", civicNumber, variant: variant.sourceId },
         true,
@@ -451,14 +532,34 @@ export class SisterStreetRun {
     const properties = await this.adapter.extractProperties();
     let ownersRead = 0;
     let skippedPropertyRows = 0;
+    const acquiredPropertyKeys: string[] = [];
     const warnings: string[] = [];
     if (this.acquireOwners) {
       for (const property of properties) {
+        if (this.options.isCancelled?.()) {
+          await this.adapter.ensureResultsPage().catch(() => undefined);
+          await this.returnToAddressList();
+          return {
+            civicNumber,
+            variantKey: variant.key,
+            variantSourceId: variant.sourceId,
+            outcome: "paused",
+            rawRecords: 0,
+            acceptedProperties: acquiredPropertyKeys.length,
+            propertyKeys: acquiredPropertyKeys,
+            ownersRead,
+            skippedPropertyRows,
+            warnings: ["Pausa richiesta durante la lettura dei proprietari; la variante verrà ripresa in modo idempotente."],
+            elapsedMs: Date.now() - startedAt,
+          };
+        }
         let acquired = false;
+        let acquiredOwners: CadastralOwner[] = [];
         let propertyError: unknown = null;
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           try {
-            ownersRead += (await this.adapter.extractOwners(property)).length;
+            acquiredOwners = await this.adapter.extractOwners(property);
+            ownersRead += acquiredOwners.length;
             acquired = true;
             break;
           } catch (error) {
@@ -470,6 +571,9 @@ export class SisterStreetRun {
         if (!acquired) {
           skippedPropertyRows += 1;
           warnings.push(`Riga ${property.sourceRef ?? "?"} isolata: ${propertyError instanceof Error ? propertyError.message : String(propertyError)}`);
+        } else {
+          await this.options.onPropertyAcquired?.(variant, property, acquiredOwners);
+          acquiredPropertyKeys.push(buildCadastralKey(property));
         }
       }
     }

@@ -891,6 +891,42 @@ section > header p:last-child {
   font-size: var(--lr-text-meta);
 }
 
+.diagnostic-error-list {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnostic-error-item {
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--lr-danger) 28%, var(--lr-line-quiet));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--lr-danger) 5%, var(--lr-surface));
+}
+
+.diagnostic-error-item header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.diagnostic-error-item header div,
+.diagnostic-error-item header small {
+  display: grid;
+  gap: 4px;
+}
+
+.diagnostic-error-item p,
+.diagnostic-error-item details {
+  margin: 10px 0 0;
+}
+
+.diagnostic-error-item pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .activity-item:first-child {
   border-top: 0;
 }
@@ -1279,6 +1315,94 @@ dialog[open] {
   font-weight: var(--lr-weight-medium);
 }
 
+.street-run-controls {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.15fr) minmax(300px, 1fr) auto auto;
+  align-items: end;
+  gap: var(--lr-space-3);
+}
+
+.street-run-controls > label:not(.safe-check) {
+  display: grid;
+  gap: var(--lr-space-1);
+  min-width: 0;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.street-run-controls > label:not(.safe-check) input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.street-run-summary {
+  display: block;
+}
+
+.street-run-current {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.6fr) minmax(0, 2fr);
+  gap: var(--lr-space-4);
+  align-items: stretch;
+}
+
+.street-run-current > div:first-child {
+  display: grid;
+  align-content: center;
+  gap: var(--lr-space-1);
+  padding: var(--lr-space-3);
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-raised);
+}
+
+.street-run-current > div:first-child strong {
+  font-size: var(--lr-text-section);
+  font-variant-numeric: tabular-nums;
+}
+
+.street-run-current > div:first-child small,
+.street-run-current > div:first-child span {
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-label);
+}
+
+.street-run-current dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-line-quiet);
+}
+
+.street-run-current dl > div {
+  display: grid;
+  align-content: center;
+  gap: var(--lr-space-1);
+  padding: var(--lr-space-3);
+  background: var(--lr-surface);
+}
+
+.street-run-current dt {
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-label);
+}
+
+.street-run-current dd {
+  margin: 0;
+  font-size: var(--lr-text-record);
+  font-variant-numeric: tabular-nums;
+}
+
+.street-run-variants {
+  display: block;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
 .automation-plan {
   display: grid;
   gap: var(--lr-space-2);
@@ -1294,6 +1418,15 @@ dialog[open] {
 @media (max-width: 960px) {
   .app-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .street-run-controls,
+  .street-run-current {
+    grid-template-columns: 1fr;
+  }
+
+  .street-run-current dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .side-nav {

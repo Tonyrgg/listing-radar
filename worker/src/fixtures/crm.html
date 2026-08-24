@@ -21,14 +21,17 @@
       <textarea data-worker-crm="activityDescription"></textarea>
       <input data-worker-crm="activityClient" value="Maria Acquaviva">
       <div data-worker-crm="activityRelatedProperty"><input value="IM - Via Roma 12 [2]"></div>
+      <input data-worker-crm="activityContactMode" value="Telefonata">
       <input data-worker-crm="activityStatus" value="Da eseguire">
       <div data-worker-crm="activityOption">Da eseguire</div>
+      <div data-worker-crm="activityOption" onclick="document.querySelector('[data-worker-crm=activityContactMode]').value='Contatto diretto'">Contatto diretto</div>
+      <div data-worker-crm="activityOption" onclick="document.querySelector('[data-worker-crm=activityStatus]').value='Eseguito'">Eseguito</div>
       <button data-worker-crm="activitySave" onclick="document.body.dataset.activitySaved='true'">Salva</button>
       <button data-worker-crm="activityCancel" onclick="document.body.dataset.activityCancelled='true';this.closest('[role=dialog]').hidden=true">Annulla</button>
     </div>
     <article data-worker-crm="propertyOwnersCard"><a data-worker-crm="propertyOwnerLinks" href="/CRMImmobiliareLightning/s/account/P-42">Proprietario</a><button data-worker-crm="ownerCreate" onclick="document.querySelector('[data-worker-crm=ownerDialog]').hidden=false">Nuovo</button></article>
     <div role="dialog" data-worker-crm="ownerDialog" hidden>
-      <input data-worker-crm="ownerPersonId"><div role="option" data-worker-crm="ownerPersonOption" onclick="document.querySelector('[data-worker-crm=ownerPersonId]').value='Persona P-99'"><span data-item-id="P-99">Persona P-99</span></div>
+      <input data-worker-crm="ownerPersonId"><div role="option" data-worker-crm="ownerPersonOption" onclick="document.querySelector('[data-worker-crm=ownerPersonId]').value='Mario Rossi'"><span data-item-id="P-99">Mario Rossi · 3331234567</span></div>
       <input data-worker-crm="ownerRight"><div data-worker-crm="ownerRole"><label>Ruolo</label><input role="textbox"><div role="option" data-worker-crm="ownerRoleOption" onclick="this.parentElement.querySelector('input').value='Comproprietario'">Comproprietario</div></div>
       <input data-worker-crm="ownerShare"><span data-worker-crm="ownerAlreadyLinkedError" hidden>proprietario pricipale</span>
       <button data-worker-crm="ownerSave" onclick="document.body.dataset.ownerSaved='true';const a=document.createElement('a');a.dataset.workerCrm='propertyOwnerLinks';a.href='/CRMImmobiliareLightning/s/account/P-99';document.querySelector('[data-worker-crm=propertyOwnersCard]').append(a);this.closest('[role=dialog]').hidden=true">Salva</button><button data-worker-crm="ownerCancel" onclick="this.closest('[role=dialog]').hidden=true">Annulla</button>
