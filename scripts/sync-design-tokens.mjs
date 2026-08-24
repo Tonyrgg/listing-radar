@@ -24,9 +24,15 @@ const banner = `/* GENERATO DA scripts/sync-design-tokens.mjs — NON MODIFICARE
  */
 `;
 
+/* Git normalizza i fine riga su Windows: il confronto ignora la differenza,
+ * altrimenti il controllo fallirebbe senza che nessun valore sia cambiato. */
+function normalize(text) {
+  return text.split(String.fromCharCode(13)).join("");
+}
+
 function build() {
   const tokens = readFileSync(source, "utf8");
-  return `${banner}${tokens}`;
+  return normalize(`${banner}${tokens}`);
 }
 
 const checkOnly = process.argv.includes("--check");
@@ -34,7 +40,7 @@ const expected = build();
 let drifted = false;
 
 for (const target of targets) {
-  const current = existsSync(target) ? readFileSync(target, "utf8") : null;
+  const current = existsSync(target) ? normalize(readFileSync(target, "utf8")) : null;
 
   if (current === expected) {
     continue;

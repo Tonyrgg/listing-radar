@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(__dirname, "..");
 
 function read(relativePath: string) {
-  return readFileSync(path.join(root, relativePath), "utf8");
+  /* I fine riga cambiano fra sistemi: il contenuto no. */
+  return readFileSync(path.join(root, relativePath), "utf8")
+    .split(String.fromCharCode(13))
+    .join("");
 }
 
 function sourceFiles(patterns: string[]) {
