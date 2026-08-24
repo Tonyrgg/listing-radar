@@ -36,6 +36,7 @@ const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
 await page.addInitScript(({ initialState, details }) => {
+  window.confirm = () => true;
   let state = initialState;
   const listeners = [];
   const streetRunProgressListeners = [];
@@ -55,6 +56,7 @@ await page.addInitScript(({ initialState, details }) => {
     openChrome: async () => called("openChrome"), chooseExcel: async () => { called("chooseExcel"); return null; }, savePreferences: async () => called("savePreferences"),
     startJob: async () => called("startJob"), resumeJob: async () => called("resumeJob"), pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
     startStreetRun: async () => called("startStreetRun"), cancelStreetRun: async () => called("cancelStreetRun"),
+    abandonStreetRun: async () => called("abandonStreetRun"), stopAll: async () => called("stopAll"),
     startRequestArchiveImport: async () => called("startRequestArchiveImport"), cancelRequestArchiveImport: async () => called("cancelRequestArchiveImport"),
     startMandateArchiveImport: async () => called("startMandateArchiveImport"), cancelMandateArchiveImport: async () => called("cancelMandateArchiveImport"),
     setAutoRetryEnabled: async () => called("setAutoRetryEnabled"), skipProperty: async () => { called("skipProperty"); return { pending: true }; },
@@ -63,6 +65,7 @@ await page.addInitScript(({ initialState, details }) => {
     removeJobProperty: async () => ({ propertyId: details.properties[0].id, removedPersonIds: [details.people[0].id], remainingProperties: 0 }),
     saveInternalConfiguration: async () => true, revealFile: async () => true,
     checkUpdate: async () => true, downloadUpdate: async () => true, installUpdate: async () => true,
+    cancelUpdateDownload: async () => called("cancelUpdateDownload"),
     onStreetRunProgress: (callback) => { streetRunProgressListeners.push(callback); return () => {}; },
   };
   window.__workerCalls = () => structuredClone(calls);
@@ -100,6 +103,18 @@ await page.addInitScript(({ initialState, details }) => {
       phase: "reading-owners", variantIndex: 0, variantTotal: 2, variantSourceId: "542250",
       current: 413, total: 1743, address: "VIA BORGO SAN FRANCESCO n. 29",
     }));
+  };
+  window.__showPausedStreetRunState = () => {
+    state = { ...state, streetRun: { ...state.streetRun, active: false, cancelling: false, checkpoint: { ...state.streetRun.checkpoint, status: "paused" } } };
+    listeners.forEach((callback) => callback(state));
+  };
+  window.__showPartialArchives = () => {
+    state = { ...state, streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null }, requestArchive: { active: false, cancelling: false, latestRun: { id: "request-run", status: "cancelled", processed_requests: 12, failed_requests: 0 } }, mandateArchive: { active: false, cancelling: false, latestRun: { id: "mandate-run", status: "failed", processed_mandates: 5, failed_mandates: 1 } } };
+    listeners.forEach((callback) => callback(state));
+  };
+  window.__showDownloadingUpdate = () => {
+    state = { ...state, active: false, softwareUpdate: { status: "downloading", currentVersion: "0.12.0", availableVersion: "0.13.0", percent: 42, transferred: 42, total: 100, message: "Scaricamento 42%" } };
+    listeners.forEach((callback) => callback(state));
   };
   window.__showRequestProgress = () => {
     state = { ...state, active: false, streetRun: { ...state.streetRun, active: false }, requestArchive: { active: true, cancelling: false, progress: { phase: "detail", index: 413, total: 1000, title: "Richiesta Via Roma", failed: 2 } }, mandateArchive: { active: false } };
@@ -142,6 +157,15 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.locator("#streetRun").screenshot({ path: path.join(output, "street-run-mobile.png") });
 const streetRunMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
+await page.evaluate(() => window.__showPausedStreetRunState());
+await page.locator("#streetRunAbandon").click();
+await page.locator("#stopAllButton").click();
+await page.evaluate(() => window.__showPartialArchives());
+await page.locator("#requestArchiveNew").click();
+await page.locator("#mandateArchiveNew").click();
+await page.evaluate(() => window.__showDownloadingUpdate());
+await page.locator("#settings").evaluate((element) => { element.open = true; });
+await page.locator("#softwareUpdateCancel").click();
 await page.evaluate(() => window.__showRequestProgress());
 const requestMonitorVisible = await page.getByText("Importazione di 1.000 richieste", { exact: true }).count();
 await page.evaluate(() => window.__showMandateProgress());
@@ -180,7 +204,8 @@ const failures = [
   ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
   ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
-  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "startRequestArchiveImport", "startMandateArchiveImport", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),
   ...(staleErrorVisible !== 0 ? ["Errore obsoleto ancora visibile"] : []),

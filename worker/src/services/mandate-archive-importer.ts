@@ -15,6 +15,8 @@ export function mandateItemsStillToProcess<T extends { status: string }>(items: 
 }
 
 export class MandateArchiveImporter {
+  private interruptActivePages: (() => Promise<void>) | null = null;
+
   constructor(
     private readonly config: WorkerConfig,
     private readonly repository: WorkerRepository,
@@ -24,6 +26,10 @@ export class MandateArchiveImporter {
     } = {},
   ) {}
 
+  async interrupt() {
+    await this.interruptActivePages?.();
+  }
+
   async run(resumeRunId?: string): Promise<CrmMandateImportRunRow> {
     await this.repository.mandateArchiveHealthCheck();
     const chrome = await connectToMandateArchiveChrome(this.config.CHROME_CDP_URL);
@@ -31,7 +37,13 @@ export class MandateArchiveImporter {
     let listPage: Page | null = null;
     let detailPage: Page | null = null;
     let run: CrmMandateImportRunRow | null = null;
+    this.interruptActivePages = async () => {
+      await detailPage?.close().catch(() => undefined);
+      await listPage?.close().catch(() => undefined);
+      await chrome.browser.close().catch(() => undefined);
+    };
     try {
+      if (this.options.isCancelled?.()) throw new Error("Interrotta dall'operatore prima dell'avvio");
       if (resumeRunId) {
         const candidate = await this.repository.latestResumableMandateImportRun();
         if (!candidate || candidate.id !== resumeRunId) throw new Error("Sincronizzazione incarichi da riprendere non trovata");
@@ -107,11 +119,20 @@ export class MandateArchiveImporter {
       await this.options.onEvent?.({ type: "complete", run: result });
       return result;
     } catch (error) {
-      if (run) await this.repository.updateMandateImportRun(run.id, {
-        status: "failed", error_message: error instanceof Error ? error.message : String(error), completed_at: new Date().toISOString(),
-      }).catch(() => undefined);
+      if (run) {
+        const cancelled = this.options.isCancelled?.() === true;
+        await this.repository.updateMandateImportRun(run.id, {
+          status: cancelled ? "cancelled" : "failed",
+          error_message: cancelled ? "Interrotta dall'operatore" : error instanceof Error ? error.message : String(error),
+          current_external_id: null,
+          current_title: null,
+          completed_at: new Date().toISOString(),
+        }).catch(() => undefined);
+        if (cancelled) return { ...run, status: "cancelled", error_message: "Interrotta dall'operatore" };
+      }
       throw error;
     } finally {
+      this.interruptActivePages = null;
       await detailPage?.close().catch(() => undefined);
       await listPage?.close().catch(() => undefined);
       await chrome.browser.close().catch(() => undefined);

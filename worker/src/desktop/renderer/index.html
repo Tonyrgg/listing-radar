@@ -16,6 +16,7 @@
       </div>
       <div class="header-actions">
         <span id="versionLabel" class="version">v—</span>
+        <button id="stopAllButton" class="button danger is-hidden">Ferma tutto</button>
         <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
         <button id="checkButton" class="button secondary">Controlla collegamenti</button>
         <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
@@ -84,6 +85,7 @@
             <label class="safe-check"><input id="streetRunDryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Se disattivata, dopo l'acquisizione importa automaticamente nel gestionale.</small></span></label>
             <button id="streetRunStart" class="button primary">Avvia dry-run</button>
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
+            <button id="streetRunAbandon" class="button danger is-hidden">Abbandona checkpoint</button>
           </div>
           <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
@@ -122,7 +124,7 @@
               </header>
               <div class="request-archive-body">
                 <div><b id="requestArchiveTitle">Pronto per la prima sincronizzazione</b><small id="requestArchiveMessage">La scheda dell’archivio deve rimanere aperta e autenticata.</small></div>
-                <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
+                <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveNew" class="button secondary is-hidden">Avvia nuova</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
               </div>
               <div id="requestArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
             </section>
@@ -134,7 +136,7 @@
               </header>
               <div class="request-archive-body">
                 <div><b id="mandateArchiveTitle">Pronto per la prima sincronizzazione</b><small id="mandateArchiveMessage">La scheda “Incarichi aperti” deve rimanere aperta e autenticata.</small></div>
-                <div class="request-archive-actions"><button id="mandateArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="mandateArchiveStart" class="button primary">Sincronizza incarichi</button></div>
+                <div class="request-archive-actions"><button id="mandateArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="mandateArchiveNew" class="button secondary is-hidden">Avvia nuova</button><button id="mandateArchiveStart" class="button primary">Sincronizza incarichi</button></div>
               </div>
               <div id="mandateArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
             </section>
@@ -173,7 +175,7 @@
               <header><div><p class="eyebrow">Impostazioni</p><h2>Configurazione pronta all’uso</h2><p>La configurazione viene conservata dentro l’app e protetta da Windows. Non serve più selezionare un file .env dopo ogni aggiornamento.</p></div><span id="configurationStatus" class="status-pill is-idle">Da verificare</span></header>
               <div id="softwareUpdatePanel" class="software-update-row">
                 <div class="software-update-copy"><b id="softwareUpdateTitle">Aggiornamenti del programma</b><small id="softwareUpdateMessage">Controllo non ancora eseguito</small><div id="softwareUpdateProgress" class="software-update-progress is-hidden"><span></span></div></div>
-                <button id="softwareUpdateAction" class="button secondary" data-update-action="check">Controlla adesso</button>
+                <div class="request-archive-actions"><button id="softwareUpdateCancel" class="button danger is-hidden">Interrompi</button><button id="softwareUpdateAction" class="button secondary" data-update-action="check">Controlla adesso</button></div>
               </div>
               <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
               <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>

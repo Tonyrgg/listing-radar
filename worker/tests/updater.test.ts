@@ -83,4 +83,51 @@ describe("aggiornamenti desktop", () => {
       await rm(updateDirectory, { recursive: true, force: true });
     }
   });
+
+  it("interrompe un download attivo e rimuove l'installer parziale", async () => {
+    const updateDirectory = await mkdtemp(path.join(tmpdir(), "listing-radar-updater-cancel-"));
+    const chunk = Buffer.from("installer da interrompere");
+    const manifest = {
+      version: "1.2.0",
+      fileName: "setup.exe",
+      size: chunk.length,
+      sha256: createHash("sha256").update(chunk).digest("hex"),
+      releaseDate: new Date().toISOString(),
+      chunks: [{
+        path: "releases/1.2.0/part-000.bin",
+        size: chunk.length,
+        sha256: createHash("sha256").update(chunk).digest("hex"),
+      }],
+    };
+    let releaseChunk: (() => void) | null = null;
+    const chunkGate = new Promise<void>((resolve) => { releaseChunk = resolve; });
+    const download = vi.fn(async (remotePath: string) => {
+      if (remotePath === "latest.json") return { data: new Blob([JSON.stringify(manifest)]), error: null };
+      await chunkGate;
+      return { data: new Blob([Uint8Array.from(chunk)]), error: null };
+    });
+    const storageClient = {
+      storage: { from: vi.fn(() => ({ download })) },
+    } as unknown as Pick<SupabaseClient, "storage">;
+    const updater = new DesktopUpdater({
+      currentVersion: "1.0.0", packaged: true, supabaseUrl: "https://example.supabase.co",
+      serviceRoleKey: "service-role-key-not-real", updateDirectory,
+      isWorkerActive: () => false, quitApp: vi.fn(), onState: vi.fn(), storageClient,
+    });
+
+    try {
+      await updater.check();
+      const pending = updater.download();
+      await vi.waitFor(() => expect(updater.snapshot().status).toBe("downloading"));
+      expect(updater.cancelDownload()).toBe(true);
+      releaseChunk?.();
+      await expect(pending).resolves.toMatchObject({
+        status: "available",
+        message: expect.stringContaining("interrotto"),
+      });
+      await expect(readFile(path.join(updateDirectory, manifest.version, manifest.fileName))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(updateDirectory, { recursive: true, force: true });
+    }
+  });
 });

@@ -75,6 +75,7 @@ export class DesktopUpdater {
   private state: DesktopUpdateState;
   private manifest: UpdateManifest | null = null;
   private installerPath: string | null = null;
+  private cancellationRequested = false;
 
   constructor(private readonly options: DesktopUpdaterOptions) {
     this.state = {
@@ -118,6 +119,7 @@ export class DesktopUpdater {
     if (!this.storage) throw new Error("Gli aggiornamenti sono disponibili soltanto nell'app installata");
     if (this.options.isWorkerActive()) throw new Error("Termina o metti in pausa la lavorazione prima di scaricare l'aggiornamento");
     if (this.state.status !== "available" || !this.manifest) throw new Error("Non c'è un aggiornamento pronto da scaricare");
+    this.cancellationRequested = false;
     const versionDirectory = path.join(this.options.updateDirectory, this.manifest.version);
     await mkdir(versionDirectory, { recursive: true });
     this.installerPath = path.join(versionDirectory, this.manifest.fileName);
@@ -136,11 +138,13 @@ export class DesktopUpdater {
     this.setState({ status: "downloading", message: "Scaricamento dell'aggiornamento", percent: 0, transferred: 0, total: this.manifest.size });
     try {
       for (const chunk of this.manifest.chunks) {
+        if (this.cancellationRequested) throw new Error("DOWNLOAD_CANCELLED");
         const chunkFilePath = path.join(versionDirectory, path.basename(chunk.path));
         let buffer = await readVerifiedFile(chunkFilePath, chunk.size, chunk.sha256);
         if (!buffer) {
           const { data, error } = await this.storage.storage.from("property-worker-updates").download(chunk.path);
           if (error) throw error;
+          if (this.cancellationRequested) throw new Error("DOWNLOAD_CANCELLED");
           buffer = Buffer.from(await data.arrayBuffer());
           if (!hasExpectedIntegrity(buffer, chunk.size, chunk.sha256)) {
             throw new Error(`Verifica fallita per ${path.basename(chunk.path)}`);
@@ -155,6 +159,14 @@ export class DesktopUpdater {
     } catch (error) {
       await installer.close();
       await rm(this.installerPath, { force: true });
+      if (this.cancellationRequested) {
+        this.cancellationRequested = false;
+        this.setState({
+          status: "available", percent: null, transferred: null, total: null,
+          message: "Download interrotto dall'operatore; l'aggiornamento resta disponibile",
+        });
+        return this.snapshot();
+      }
       this.fail(error, "Il download dell'aggiornamento non è riuscito");
       return this.snapshot();
     }
@@ -167,6 +179,13 @@ export class DesktopUpdater {
     }
     this.setState({ status: "downloaded", availableVersion: this.manifest.version, percent: 100, transferred: complete.length, total: complete.length, message: "Aggiornamento verificato e pronto per l'installazione" });
     return this.snapshot();
+  }
+
+  cancelDownload() {
+    if (this.state.status !== "downloading") return false;
+    this.cancellationRequested = true;
+    this.setState({ message: "Interruzione del download richiesta" });
+    return true;
   }
 
   install() {

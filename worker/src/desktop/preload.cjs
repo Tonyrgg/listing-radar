@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
   startStreetRun: (values) => ipcRenderer.invoke("desktop:start-street-run", values),
   cancelStreetRun: () => ipcRenderer.invoke("desktop:cancel-street-run"),
+  abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run"),
+  stopAll: () => ipcRenderer.invoke("desktop:stop-all"),
   startRequestArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-request-archive-import", runId),
   cancelRequestArchiveImport: () => ipcRenderer.invoke("desktop:cancel-request-archive-import"),
   startMandateArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-mandate-archive-import", runId),
@@ -29,6 +31,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   revealFile: (filePath) => ipcRenderer.invoke("desktop:reveal-file", filePath),
   checkUpdate: () => ipcRenderer.invoke("desktop:check-update"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
+  cancelUpdateDownload: () => ipcRenderer.invoke("desktop:cancel-update-download"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   onState: (listener) => {
     const handler = (_event, state) => listener(state);

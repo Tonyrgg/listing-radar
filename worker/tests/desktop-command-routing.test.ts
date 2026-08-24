@@ -15,7 +15,7 @@ describe("instradamento comandi desktop", () => {
     expect(html).not.toContain("request-archive.js");
     expect(html).not.toContain("mandate-archive.js");
     expect(renderer.match(/document\.addEventListener\("click"/g)).toHaveLength(1);
-    expect(renderer).toContain("executeButtonCommand(target,command");
+    expect(renderer).toMatch(/executeButtonCommand\(target,\s*command/);
     expect(renderer).toContain("non ha un comando collegato");
   });
 
@@ -29,14 +29,19 @@ describe("instradamento comandi desktop", () => {
       "startButton",
       "streetRunStart",
       "streetRunCancel",
+      "streetRunAbandon",
+      "stopAllButton",
       "requestArchiveStart",
       "requestArchiveCancel",
+      "requestArchiveNew",
       "mandateArchiveStart",
       "mandateArchiveCancel",
+      "mandateArchiveNew",
+      "softwareUpdateCancel",
       "completedImportsLoadMore",
     ];
 
-    for (const id of routedIds) expect(renderer, `manca il comando per #${id}`).toContain(`target.id===\"${id}\"`);
+    for (const id of routedIds) expect(renderer, `manca il comando per #${id}`).toMatch(new RegExp(`target\\.id\\s*===\\s*[\"']${id}[\"']`));
     for (const action of [
       "pause",
       "toggle-auto-retry",
@@ -48,7 +53,7 @@ describe("instradamento comandi desktop", () => {
       "close-detail",
       "cancel-current",
       "close-completed-session",
-    ]) expect(renderer, `manca il comando data-action=${action}`).toContain(`target.dataset.action===\"${action}\"`);
+    ]) expect(renderer, `manca il comando data-action=${action}`).toMatch(new RegExp(`target\\.dataset\\.action\\s*===\\s*[\"']${action}[\"']`));
   });
 
   it("registra ricezione, esito, annullamento ed errore dei comandi", async () => {

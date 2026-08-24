@@ -107,6 +107,7 @@ let activePrompts: DesktopPromptController | null = null;
 let activeJobId: string | null = null;
 let active = false;
 let activeRunPromise: Promise<void> | null = null;
+let activeRunner: PropertyWorkerRunner | null = null;
 let cancellingJobId: string | null = null;
 let pausingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
@@ -122,20 +123,25 @@ let automaticRetryInFlight: { jobId: string; propertyId: string; attempt: number
 let completedImportsLimit = 6;
 let requestImportActive = false;
 let requestImportCancellationRequested = false;
+let activeRequestImporter: RequestArchiveImporter | null = null;
 let requestImportError: string | null = null;
 let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let mandateImportActive = false;
 let mandateImportCancellationRequested = false;
+let activeMandateImporter: MandateArchiveImporter | null = null;
 let mandateImportError: string | null = null;
 let mandateImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let streetRunActive = false;
 let streetRunCancellationRequested = false;
+let streetRunAbandonRequested = false;
+let activeStreetBrowser: { close: () => Promise<void> } | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
+let stoppingAll = false;
 let sisterKeepAlive: KeepAliveState = {
   ok: false,
   sessionExpired: false,
@@ -240,6 +246,39 @@ async function persistStreetRunCheckpoint(checkpoint: SisterStreetRunCheckpoint)
   await writeFile(temporary, JSON.stringify(checkpoint, null, 2), "utf8");
   await rename(temporary, target);
   streetRunCheckpoint = checkpoint;
+}
+
+async function archiveStreetRunCheckpoint(reason: string) {
+  const checkpoint = streetRunCheckpoint;
+  if (!checkpoint) return null;
+  if (checkpoint.importJobId) {
+    try {
+      await repository().updateJob(checkpoint.importJobId, {
+        status: "paused",
+        saved_at: new Date().toISOString(),
+        error_message: reason,
+        error_details: { action: "street-run-abandoned", checkpointStatus: checkpoint.status },
+      });
+    } catch {
+      pushActivity("Checkpoint locale archiviato; lo stato cloud del job non era raggiungibile", "warning");
+    }
+  }
+  const source = streetRunCheckpointPath();
+  const archived = path.join(path.dirname(source), `sister-street-run.abandoned.${Date.now()}.json`);
+  try {
+    await rename(source, archived);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  streetRunCheckpoint = null;
+  streetRunProgress = null;
+  streetRunError = null;
+  pushActivity(`Checkpoint via abbandonato e archiviato: ${checkpoint.requestedStreet}`, "success");
+  return archived;
+}
+
+function refreshStoppingAll() {
+  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive) stoppingAll = false;
 }
 
 async function loadPreferences() {
@@ -380,6 +419,7 @@ async function stateSnapshot() {
   }
   return {
     active,
+    stoppingAll,
     activeJobId,
     cancellingJobId,
     pausingJobId,
@@ -495,11 +535,16 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     isCancelled: () => requestImportCancellationRequested,
     onEvent: handleRequestImportEvent,
   });
+  activeRequestImporter = importer;
   void importer.run(resumeRunId).then((run) => {
     if (run.status === "cancelled") pushActivity("Sincronizzazione richieste interrotta: l’avanzamento è stato salvato", "warning");
     else if (run.failed_requests) pushActivity(`Sincronizzazione conclusa con ${run.failed_requests} richieste da riprovare`, "warning");
     else pushActivity(`${run.processed_requests} richieste immobiliari sincronizzate`, "success");
   }).catch((error) => {
+    if (requestImportCancellationRequested) {
+      pushActivity("Sincronizzazione richieste interrotta dall'operatore", "warning");
+      return;
+    }
     requestImportError = error instanceof Error ? error.message : String(error);
     pushActivity(requestImportError, "error");
     void recordDiagnosticErrorSafely({
@@ -510,8 +555,10 @@ async function runRequestArchiveImport(resumeRunId?: string) {
       details: { operation: "request-archive-import", resume: Boolean(resumeRunId) },
     }, { publish: true });
   }).finally(async () => {
+    activeRequestImporter = null;
     requestImportActive = false;
     requestImportCancellationRequested = false;
+    refreshStoppingAll();
     await publishState();
   });
 }
@@ -541,11 +588,16 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     isCancelled: () => mandateImportCancellationRequested,
     onEvent: handleMandateImportEvent,
   });
+  activeMandateImporter = importer;
   void importer.run(resumeRunId).then((run) => {
     if (run.status === "cancelled") pushActivity("Sincronizzazione incarichi interrotta: l'avanzamento è stato salvato", "warning");
     else if (run.failed_mandates) pushActivity(`Sincronizzazione conclusa con ${run.failed_mandates} incarichi da riprovare`, "warning");
     else pushActivity(`${run.processed_mandates} immobili con incarico sincronizzati`, "success");
   }).catch((error) => {
+    if (mandateImportCancellationRequested) {
+      pushActivity("Sincronizzazione incarichi interrotta dall'operatore", "warning");
+      return;
+    }
     mandateImportError = error instanceof Error ? error.message : String(error);
     pushActivity(mandateImportError, "error");
     void recordDiagnosticErrorSafely({
@@ -556,8 +608,10 @@ async function runMandateArchiveImport(resumeRunId?: string) {
       details: { operation: "mandate-archive-import", resume: Boolean(resumeRunId) },
     }, { publish: true });
   }).finally(async () => {
+    activeMandateImporter = null;
     mandateImportActive = false;
     mandateImportCancellationRequested = false;
+    refreshStoppingAll();
     await publishState();
   });
 }
@@ -576,6 +630,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
 
   streetRunActive = true;
   streetRunCancellationRequested = false;
+  streetRunAbandonRequested = false;
   streetRunError = null;
   streetRunProgress = null;
   pushActivity(
@@ -590,7 +645,9 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   let jobToImport: string | null = null;
   let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
   void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+    activeStreetBrowser = tabs.browser;
     try {
+      if (streetRunAbandonRequested) return;
       const liveRepository = longRunMode === "live" ? repository(config) : null;
       let importJobId = resumeCheckpoint?.importJobId ?? null;
       if (liveRepository && !importJobId) {
@@ -693,9 +750,14 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         result.status === "completed" ? "success" : "warning",
       );
     } finally {
+      activeStreetBrowser = null;
       await tabs.browser.close().catch(() => undefined);
     }
   }).catch((error) => {
+    if (streetRunAbandonRequested) {
+      pushActivity("Run via arrestata dall'operatore", "warning");
+      return;
+    }
     streetRunError = error instanceof Error ? error.message : String(error);
     pushActivity(streetRunError, "error");
     void recordDiagnosticErrorSafely({
@@ -709,6 +771,14 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     streetRunActive = false;
     streetRunCancellationRequested = false;
     streetRunProgress = null;
+    if (streetRunAbandonRequested) {
+      await archiveStreetRunCheckpoint("Run via interrotta e abbandonata dall'operatore").catch((error) => {
+        streetRunError = `Checkpoint non archiviato: ${error instanceof Error ? error.message : String(error)}`;
+      });
+      streetRunAbandonRequested = false;
+      jobToImport = null;
+    }
+    refreshStoppingAll();
     await publishState();
     if (jobToImport) {
       try {
@@ -1091,6 +1161,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
+  activeRunner = runner;
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
   await publishState();
   const runPromise = runner.run({ mode: input.mode, jobId: input.jobId, createNew: !input.jobId })
@@ -1139,11 +1210,73 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       pausingJobId = null;
       skippingPropertyId = null;
       activePrompts = null;
+      activeRunner = null;
       activeRunPromise = null;
+      refreshStoppingAll();
       await publishState();
     });
   activeRunPromise = runPromise;
   void runPromise;
+}
+
+async function abandonStreetRun() {
+  if (streetRunActive) {
+    streetRunAbandonRequested = true;
+    streetRunCancellationRequested = true;
+    pushActivity("Arresto definitivo della run via richiesto: il checkpoint verrà archiviato", "warning");
+    await activeStreetBrowser?.close().catch(() => undefined);
+    await publishState();
+    return { stopped: true, pending: true, archivedPath: null };
+  }
+  const archivedPath = await archiveStreetRunCheckpoint("Run via abbandonata dall'operatore");
+  await publishState();
+  return { stopped: Boolean(archivedPath), pending: false, archivedPath };
+}
+
+async function stopEverything() {
+  clearAutoRetry();
+  const actions: string[] = [];
+  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive;
+  stoppingAll = hadActiveOperation;
+
+  if (active && activeJobId) {
+    pausingJobId = activeJobId;
+    activePrompts?.cancel("Arresto globale richiesto dall'utente");
+    try {
+      await repository().updateJob(activeJobId, { status: "paused" });
+    } catch {
+      pushActivity("Arresto locale acquisito; stato cloud non raggiungibile", "warning");
+    }
+    actions.push("lavorazione immobili in pausa");
+  }
+  if (requestImportActive) {
+    requestImportCancellationRequested = true;
+    actions.push("archivio richieste interrotto");
+  }
+  if (mandateImportActive) {
+    mandateImportCancellationRequested = true;
+    actions.push("archivio incarichi interrotto");
+  }
+  if (streetRunActive) {
+    streetRunCancellationRequested = true;
+    streetRunAbandonRequested = true;
+    actions.push("run via arrestata");
+  } else if (streetRunCheckpoint && ["paused", "failed", "running"].includes(streetRunCheckpoint.status)) {
+    await archiveStreetRunCheckpoint("Checkpoint via abbandonato da Ferma tutto");
+    actions.push("checkpoint via archiviato");
+  }
+  if (desktopUpdater?.cancelDownload()) actions.push("download aggiornamento interrotto");
+
+  await Promise.all([
+    activeRunner?.interrupt().catch(() => undefined),
+    activeRequestImporter?.interrupt().catch(() => undefined),
+    activeMandateImporter?.interrupt().catch(() => undefined),
+    streetRunAbandonRequested ? activeStreetBrowser?.close().catch(() => undefined) : undefined,
+  ]);
+  refreshStoppingAll();
+  if (actions.length) pushActivity(`Ferma tutto eseguito: ${actions.join(", ")}`, "warning");
+  await publishState();
+  return { stopped: actions.length > 0, pending: stoppingAll, actions };
 }
 
 async function healthChecks() {
@@ -1320,6 +1453,8 @@ function registerIpc() {
     await publishState();
     return true;
   });
+  ipcMain.handle("desktop:abandon-street-run", () => abandonStreetRun());
+  ipcMain.handle("desktop:stop-all", () => stopEverything());
   ipcMain.handle("desktop:start-request-archive-import", async (_event, resumeRunId?: string) => {
     await runRequestArchiveImport(resumeRunId || undefined);
     return true;
@@ -1327,6 +1462,7 @@ function registerIpc() {
   ipcMain.handle("desktop:cancel-request-archive-import", async () => {
     if (!requestImportActive) return false;
     requestImportCancellationRequested = true;
+    await activeRequestImporter?.interrupt().catch(() => undefined);
     pushActivity("Interruzione sincronizzazione richieste richiesta", "warning");
     await publishState();
     return true;
@@ -1338,6 +1474,7 @@ function registerIpc() {
   ipcMain.handle("desktop:cancel-mandate-archive-import", async () => {
     if (!mandateImportActive) return false;
     mandateImportCancellationRequested = true;
+    await activeMandateImporter?.interrupt().catch(() => undefined);
     pushActivity("Interruzione sincronizzazione incarichi richiesta", "warning");
     await publishState();
     return true;
@@ -1520,6 +1657,7 @@ function registerIpc() {
     return desktopUpdater?.check();
   });
   ipcMain.handle("desktop:download-update", () => desktopUpdater?.download());
+  ipcMain.handle("desktop:cancel-update-download", () => desktopUpdater?.cancelDownload());
   ipcMain.handle("desktop:install-update", () => desktopUpdater?.install());
 }
 

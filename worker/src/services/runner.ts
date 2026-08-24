@@ -119,6 +119,7 @@ export interface RunnerOptions {
 }
 
 export class PropertyWorkerRunner {
+  private interruptActiveBrowser: (() => Promise<void>) | null = null;
   private readonly repository: WorkerRepository;
   private readonly prompts: PromptController;
   private readonly onEvent: (event: RunnerEvent) => void;
@@ -137,6 +138,10 @@ export class PropertyWorkerRunner {
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
+  async interrupt() {
+    await this.interruptActiveBrowser?.();
+  }
+
   private throwIfCancellationRequested(jobId: string) {
     if (this.isCancellationRequested(jobId)) {
       throw new WorkerError("Lavorazione annullata dall'utente", "paused", { cancelled: true });
@@ -150,6 +155,7 @@ export class PropertyWorkerRunner {
     const mode = input.mode ?? this.config.WORKER_MODE;
     await pruneDiagnosticScreenshots(this.config.ERROR_SCREENSHOT_DIR, this.config.ERROR_SCREENSHOT_RETENTION_DAYS);
     const tabs = await connectToChrome(this.config.CHROME_CDP_URL, this.config.SISTER_TAB_MATCH, this.config.CRM_TAB_MATCH);
+    this.interruptActiveBrowser = () => tabs.browser.close().catch(() => undefined);
     const keepAlive = new SisterKeepAliveScheduler(tabs.sisterPage, {
       enabled: this.manageKeepAlive && this.config.SISTER_KEEPALIVE_ENABLED,
       minSeconds: this.config.SISTER_KEEPALIVE_MIN_SECONDS,
@@ -228,6 +234,7 @@ export class PropertyWorkerRunner {
       this.onEvent({ type: "job-completed", jobId: job.id });
       return job.id;
     } finally {
+      this.interruptActiveBrowser = null;
       keepAlive.stop();
       this.prompts.close();
       await tabs.browser.close().catch(() => undefined);
