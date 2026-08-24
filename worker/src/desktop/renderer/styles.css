@@ -654,18 +654,26 @@ section > header p:last-child {
 }
 
 .check-item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--lr-space-2);
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: var(--lr-space-3);
+  align-items: start;
   min-width: 0;
   padding: var(--lr-space-3);
   border: 1px solid var(--lr-line-quiet);
   border-radius: var(--lr-radius-control);
 }
 
+.check-item > span:first-child {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border: 1px solid var(--lr-line);
+  border-radius: 50%;
+}
+
 .check-item > div {
   min-width: 0;
-  width: 100%;
 }
 
 .check-item b {
@@ -679,13 +687,22 @@ section > header p:last-child {
   overflow-wrap: anywhere;
 }
 
-.check-item.is-active {
+.check-item.is-ok {
   border-color: var(--lr-accent);
 }
 
-.check-item.is-destructive,
-.check-item.is-warning {
-  border-color: var(--lr-warn);
+.check-item.is-ok > span:first-child {
+  border-color: var(--lr-accent);
+  background: var(--lr-accent);
+}
+
+.check-item.is-error {
+  border-color: var(--lr-danger);
+}
+
+.check-item.is-error > span:first-child {
+  border-color: var(--lr-danger);
+  background: var(--lr-danger);
 }
 
 .progress-card > header strong {
@@ -728,11 +745,23 @@ section > header p:last-child {
   grid-template-columns: 22px minmax(0, 1fr);
   gap: var(--lr-space-3);
   align-items: start;
-  color: var(--lr-ink-3);
 }
 
-.workflow-step b {
+.workflow-step > .index {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--lr-line);
+  border-radius: 50%;
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-step > b {
   display: block;
+  min-width: 0;
   color: var(--lr-ink-2);
   font-size: var(--lr-text-body);
   font-weight: var(--lr-weight-medium);
@@ -740,31 +769,33 @@ section > header p:last-child {
 
 .workflow-step small {
   display: block;
+  margin-top: 2px;
+  font-weight: var(--lr-weight-regular);
 }
 
-.workflow-step.is-active b {
+.workflow-step.is-current > .index {
+  border-color: var(--lr-accent);
   color: var(--lr-accent);
 }
 
-.workflow-step::before {
-  content: "";
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  border: 1.5px solid var(--lr-line);
-  border-radius: 50%;
+.workflow-step.is-current > b {
+  color: var(--lr-accent);
 }
 
-.workflow-step.is-active::before {
+.workflow-step.is-done > .index {
   border-color: var(--lr-accent);
-  background: radial-gradient(circle, var(--lr-accent) 0 4px, transparent 5px);
+  background: var(--lr-accent);
+  color: var(--lr-accent-ink);
+}
+
+.workflow-step.is-done > b {
+  color: var(--lr-ink-3);
 }
 
 /* ---------- righe e liste ---------- */
 
 .setting-row,
 .software-update-row,
-.activity-item,
 .job-item,
 .completed-session,
 .completed-import,
@@ -779,7 +810,6 @@ section > header p:last-child {
 }
 
 .setting-row:first-of-type,
-.activity-item:first-child,
 .job-item:first-child,
 .completed-session:first-child {
   border-top: 0;
@@ -787,7 +817,6 @@ section > header p:last-child {
 
 .setting-row b,
 .software-update-copy b,
-.activity-item b,
 .job-item b,
 .completed-session h3,
 .detail-group b {
@@ -849,6 +878,45 @@ section > header p:last-child {
 .jobs-list,
 .completed-imports-footer {
   margin-top: var(--lr-space-3);
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: auto 8px minmax(0, 1fr);
+  gap: var(--lr-space-3);
+  align-items: baseline;
+  padding: var(--lr-space-2) 0;
+  border-top: 1px solid var(--lr-line-quiet);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.activity-item:first-child {
+  border-top: 0;
+}
+
+.activity-item time {
+  color: var(--lr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lr-line);
+}
+
+.activity-item.is-success i {
+  background: var(--lr-accent);
+}
+
+.activity-item.is-error i {
+  background: var(--lr-danger);
+}
+
+.activity-item.is-warning i {
+  background: var(--lr-warn);
 }
 
 .completed-imports-footer {
