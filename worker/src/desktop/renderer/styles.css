@@ -1319,42 +1319,167 @@ dialog[open] {
   gap: var(--lr-space-3);
 }
 
+/* La scheda di un immobile ha due colonne vere: i dati catastali a sinistra,
+ * chi lo possiede a destra. Non sono etichette: sono blocchi di dati, e vanno
+ * letti, non decifrati. */
 .review-property,
 .completed-property-card {
-  padding: var(--lr-space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  overflow: hidden;
   border: 1px solid var(--lr-line-quiet);
-  border-radius: var(--lr-radius-control);
+  border-radius: var(--lr-radius-container);
 }
 
 .review-property-data,
-.completed-property-data,
+.completed-property-data {
+  order: 1;
+  min-width: 0;
+  padding: var(--lr-space-3);
+}
+
 .review-owners,
 .completed-owners {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--lr-space-1) var(--lr-space-4);
-  margin-top: var(--lr-space-2);
-  color: var(--lr-ink-2);
-  font-size: var(--lr-text-meta);
+  order: 2;
+  min-width: 0;
+  padding: var(--lr-space-3);
+  border-left: 1px solid var(--lr-line-quiet);
 }
 
+.review-property-data h3,
+.completed-property-data h3 {
+  margin-top: var(--lr-space-1);
+  font-size: var(--lr-text-record);
+  line-height: var(--lr-leading-snug);
+}
+
+.review-property-data dl,
+.completed-property-data dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--lr-space-2) var(--lr-space-4);
+  margin: var(--lr-space-3) 0 0;
+}
+
+.review-property-data dt,
+.completed-property-data dt {
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-label);
+}
+
+.review-property-data dd,
+.completed-property-data dd {
+  margin: 2px 0 0;
+  color: var(--lr-ink);
+  font-size: var(--lr-text-body);
+  font-weight: var(--lr-weight-medium);
+}
+
+/* Un proprietario è una riga leggibile: nome e quota sulla stessa linea,
+ * codice fiscale e recapiti sotto, ciascuno a capo. */
 .review-owner,
 .completed-owner {
-  padding: 3px 9px;
-  border: 1px solid var(--lr-line-quiet);
-  border-radius: var(--lr-radius-pill);
+  padding: var(--lr-space-2) 0;
+  border-top: 1px solid var(--lr-line-quiet);
 }
 
-.cadastral-key,
+.review-owner:first-of-type,
+.completed-owner:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.review-owner > div,
+.completed-owner > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--lr-space-2);
+}
+
+.review-owner strong,
+.completed-owner strong {
+  font-size: var(--lr-text-body);
+  font-weight: var(--lr-weight-medium);
+}
+
+.review-owner small,
+.completed-owner small,
+.review-owner span,
+.completed-owner span,
+.review-owner b,
+.completed-owner b {
+  display: block;
+  margin-top: 2px;
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-regular);
+}
+
+.review-owner > div > b,
+.completed-owner > div > span {
+  flex: none;
+  margin-top: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-pill);
+  color: var(--lr-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* La chiave catastale è un dato, non un'etichetta: nessuna pillola. */
+.cadastral-key {
+  margin-top: var(--lr-space-1);
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-meta);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.completed-property-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lr-space-2);
+}
+
 .property-position,
 .completion-label {
   display: inline-flex;
-  padding: 3px 9px;
+  flex: none;
+  align-self: flex-start;
+  padding: 2px 9px;
   border: 1px solid var(--lr-line-quiet);
   border-radius: var(--lr-radius-pill);
   color: var(--lr-ink-2);
   font-size: var(--lr-text-label);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.completion-label.is-skipped {
+  border-color: var(--lr-warn);
+  color: var(--lr-warn);
+}
+
+.review-property.is-warning,
+.completed-property-card.is-skipped {
+  border-color: var(--lr-warn);
+}
+
+@media (max-width: 760px) {
+  .review-property,
+  .completed-property-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-owners,
+  .completed-owners {
+    border-left: 0;
+    border-top: 1px solid var(--lr-line-quiet);
+  }
 }
 
 .skip-summary,
@@ -1368,6 +1493,49 @@ dialog[open] {
   margin-top: var(--lr-space-3);
   padding-top: var(--lr-space-3);
   border-top: 1px solid var(--lr-line-quiet);
+}
+
+
+/* Titolo e messaggio della sincronizzazione sono due righe, non una frase sola:
+ * senza questo si legge «252 richieste già acquisite2 richieste restano». */
+.request-archive-body > div:first-child > b,
+.request-archive-body > div:first-child > small,
+.request-archive-card > header p:last-child {
+  display: block;
+}
+
+.request-archive-body > div:first-child > b {
+  font-size: var(--lr-text-body);
+  font-weight: var(--lr-weight-medium);
+}
+
+.request-archive-body > div:first-child > small {
+  margin-top: 2px;
+}
+
+.request-archive-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lr-space-3);
+  margin-top: var(--lr-space-3);
+  padding-top: var(--lr-space-3);
+  border-top: 1px solid var(--lr-line-quiet);
+}
+
+.request-archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2);
+}
+
+/* Riprendibile non è un errore: è la cosa migliore che possa succedere
+ * dopo un'interruzione. Ha un tono suo. */
+.status-pill.is-resumable {
+  border-color: var(--lr-info);
+  background: var(--lr-info-soft);
+  color: var(--lr-info);
 }
 
 /* ---------- conferma d'avanzamento ---------- */
