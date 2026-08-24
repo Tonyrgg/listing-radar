@@ -1,10 +1,17 @@
 import { AppShellFrame } from "@/components/app-shell-frame";
 import { isAuthRequired } from "@/lib/auth";
+import { readFlash } from "@/lib/flash";
 
-export function AppShell({
+export async function AppShell({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AppShellFrame showLogout={isAuthRequired()}>{children}</AppShellFrame>;
+  const flash = await readFlash();
+
+  return (
+    <AppShellFrame showLogout={isAuthRequired()} flash={flash}>
+      {children}
+    </AppShellFrame>
+  );
 }

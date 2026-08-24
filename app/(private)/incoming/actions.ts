@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { requireUser } from "@/lib/auth";
+import { setFlash } from "@/lib/flash";
 import { updateIncomingListingStatus } from "@/lib/incoming/repository";
 
 export type RefreshEmailState = {
@@ -25,7 +26,7 @@ export async function refreshIncomingEmails(
   if (!result.enabled) {
     return {
       ok: false,
-      message: "La lettura email non e configurata.",
+      message: "La lettura delle email non è configurata.",
     };
   }
 
@@ -53,6 +54,10 @@ export async function dismissIncomingListing(formData: FormData) {
   }
 
   await updateIncomingListingStatus(incomingId, "dismissed");
+  await setFlash({
+    tone: "success",
+    message: "Messo da parte. Lo ritrovi nel filtro «Messi da parte».",
+  });
   revalidatePath("/incoming");
   revalidatePath("/dashboard");
 }
@@ -67,6 +72,7 @@ export async function restoreIncomingListing(formData: FormData) {
   }
 
   await updateIncomingListingStatus(incomingId, "pending");
+  await setFlash({ tone: "success", message: "Rimesso in attesa di essere completato." });
   revalidatePath("/incoming");
   revalidatePath("/dashboard");
 }

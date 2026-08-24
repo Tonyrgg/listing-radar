@@ -72,7 +72,7 @@ const scoringRows: Array<{
   { key: "auction", label: "Asta", help: "Penalita per aste o procedure." },
   {
     key: "highPriorityThreshold",
-    label: "Soglia alta appetibilita",
+    label: "Soglia alta appetibilità",
     help: "Da questo valore un annuncio diventa prioritario.",
   },
 ];
@@ -213,27 +213,27 @@ export function ScoringRulesEditor({
   }
 
   return (
-    <section className="rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]">
-      <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4">
+    <section className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]">
+      <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--lr-line-quiet)] px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <h2 className="shrink-0 text-sm font-semibold text-[var(--ink-strong)]">
-            Regole di appetibilita
+          <h2 className="shrink-0 text-sm font-semibold text-[var(--lr-ink)]">
+            Regole di appetibilità
           </h2>
-          <span className="truncate text-[11px] font-medium text-[var(--ink-subtle)]">
+          <span className="truncate text-[11px] font-medium text-[var(--lr-ink-3)]">
             {isEditing ? "Modifica attiva" : "Lettura"}
             {isDirty ? " - modifiche non salvate" : ""}
           </span>
           <button
             type="button"
             onClick={() => setIsEditing(true)}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-[var(--line-strong)] text-[var(--surface-accent)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-[var(--lr-line)] text-[var(--lr-accent)] transition-colors hover:bg-[var(--lr-raised)] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isEditing}
-            aria-label="Modifica regole di appetibilita"
+            aria-label="Modifica regole di appetibilità"
           >
             <Pencil aria-hidden="true" className="size-3.5" />
           </button>
         </div>
-        <span className="shrink-0 text-[11px] text-[var(--ink-subtle)]">
+        <span className="shrink-0 text-[11px] text-[var(--lr-ink-3)]">
           Salvate in database
         </span>
       </div>
@@ -244,13 +244,13 @@ export function ScoringRulesEditor({
             {scoringRows.map((row) => (
               <label
                 key={row.key}
-                className="grid gap-2 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 py-2.5"
+                className="grid gap-2 rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 py-2.5"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-xs font-semibold text-[var(--ink-strong)]">
+                  <span className="block truncate text-xs font-semibold text-[var(--lr-ink)]">
                     {row.label}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ink-subtle)]">
+                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--lr-ink-3)]">
                     {row.help}
                   </span>
                 </span>
@@ -258,7 +258,7 @@ export function ScoringRulesEditor({
                   type="number"
                   value={draftConfig[row.key]}
                   onChange={(event) => updateDraft(row.key, event.target.value)}
-                  className="h-8 rounded-md border border-[var(--line-strong)] bg-[var(--surface-canvas)] px-2.5 text-sm font-semibold text-[var(--ink-strong)]"
+                  className="h-8 rounded-md border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2.5 text-sm font-semibold text-[var(--lr-ink)]"
                 />
               </label>
             ))}
@@ -268,15 +268,15 @@ export function ScoringRulesEditor({
             {scoringRows.map((row) => (
               <div
                 key={row.key}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3 py-2.5"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 py-2.5"
               >
-                <dt className="truncate text-xs font-semibold text-[var(--ink-strong)]">
+                <dt className="truncate text-xs font-semibold text-[var(--lr-ink)]">
                   {row.label}
                 </dt>
-                <strong className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-xs tabular-nums text-[var(--ink-strong)]">
+                <strong className="rounded-md border border-[var(--lr-line)] px-2 py-1 text-xs tabular-nums text-[var(--lr-ink)]">
                   {formatScoreValue(savedConfig[row.key])}
                 </strong>
-                <dd className="col-span-2 truncate text-[11px] leading-4 text-[var(--ink-subtle)]">
+                <dd className="col-span-2 truncate text-[11px] leading-4 text-[var(--lr-ink-3)]">
                   {row.help}
                 </dd>
               </div>
@@ -285,7 +285,7 @@ export function ScoringRulesEditor({
         )}
 
         {error ? (
-          <p className="mt-3 text-sm font-medium text-[var(--status-error)]">
+          <p className="mt-3 text-sm font-medium text-[var(--lr-danger)]">
             {error}
           </p>
         ) : null}
@@ -296,7 +296,7 @@ export function ScoringRulesEditor({
               type="button"
               onClick={() => saveChanges()}
               disabled={isPending}
-              className="h-9 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] transition-colors hover:bg-[var(--surface-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 rounded-md bg-[var(--lr-accent)] px-4 text-sm font-semibold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isPending ? "Salvataggio..." : "Salva modifiche"}
             </button>
@@ -304,7 +304,7 @@ export function ScoringRulesEditor({
               type="button"
               onClick={cancelEditing}
               disabled={isPending}
-              className="h-9 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] transition-colors hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 rounded-md border border-[var(--lr-line)] px-4 text-sm font-medium text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Annulla
             </button>
@@ -313,21 +313,21 @@ export function ScoringRulesEditor({
       </div>
 
       {pendingHref ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[oklch(0.08_0.02_154/0.72)] px-4">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--lr-scrim)] px-4">
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="unsaved-scoring-title"
-            className="w-full max-w-md rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-5 shadow-[0_24px_70px_oklch(0.05_0.02_154/0.55)]"
+            className="w-full max-w-md rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5 shadow-[0_24px_70px_oklch(0.05_0.02_154/0.55)]"
           >
             <h3
               id="unsaved-scoring-title"
-              className="text-lg font-semibold text-[var(--ink-strong)]"
+              className="text-lg font-semibold text-[var(--lr-ink)]"
             >
               Modifiche non salvate
             </h3>
-            <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
-              Hai cambiato le regole di appetibilita. Vuoi salvarle prima di uscire?
+            <p className="mt-2 text-sm leading-6 text-[var(--lr-ink-2)]">
+              Hai cambiato le regole di appetibilità. Vuoi salvarle prima di uscire?
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <button
@@ -340,7 +340,7 @@ export function ScoringRulesEditor({
                   });
                 }}
                 disabled={isPending}
-                className="h-10 rounded-md bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-10 rounded-md bg-[var(--lr-accent)] px-4 text-sm font-semibold text-[var(--lr-accent-ink)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Salva
               </button>
@@ -348,7 +348,7 @@ export function ScoringRulesEditor({
                 type="button"
                 onClick={discardAndNavigate}
                 disabled={isPending}
-                className="h-10 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-10 rounded-md border border-[var(--lr-line)] px-4 text-sm font-medium text-[var(--lr-ink)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Esci senza salvare
               </button>
@@ -356,7 +356,7 @@ export function ScoringRulesEditor({
                 type="button"
                 onClick={keepEditing}
                 disabled={isPending}
-                className="h-10 rounded-md border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--ink-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-10 rounded-md border border-[var(--lr-line)] px-4 text-sm font-medium text-[var(--lr-ink)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Continua modifica
               </button>

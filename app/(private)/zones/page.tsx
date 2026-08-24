@@ -4,6 +4,10 @@ import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
 import { listZones } from "@/lib/matching/repository";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Zone immobiliari" };
+
 export default async function ZonesPage() {
   const zones = await listZones();
   return (

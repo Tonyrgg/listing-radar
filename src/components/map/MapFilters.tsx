@@ -23,7 +23,7 @@ function FieldShell({
 }>) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
         {label}
       </span>
       {children}
@@ -44,7 +44,7 @@ function SelectShell({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 w-full rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-2 text-xs font-semibold text-[var(--ink-strong)] outline-none"
+      className="h-9 w-full rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-xs font-semibold text-[var(--lr-ink)] outline-none"
     >
       {children}
     </select>
@@ -61,13 +61,13 @@ function VisibilityToggle({
   onChange: (checked: boolean) => void;
 }>) {
   return (
-    <label className="flex h-9 cursor-pointer items-center justify-between gap-3 rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-2 text-xs font-semibold text-[var(--ink-strong)]">
+    <label className="flex h-9 cursor-pointer items-center justify-between gap-3 rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-xs font-semibold text-[var(--lr-ink)]">
       <span>{label}</span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 accent-[var(--surface-accent)]"
+        className="size-4 accent-[var(--lr-accent)]"
       />
     </label>
   );
@@ -190,7 +190,7 @@ export function MapFilters({
           </SelectShell>
         </FieldShell>
 
-        <FieldShell label="Priorita pin">
+        <FieldShell label="Priorità pin">
           <SelectShell
             value={filters.pinPriority}
             onChange={(pinPriority) =>

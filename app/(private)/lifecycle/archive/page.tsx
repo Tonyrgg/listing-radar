@@ -19,7 +19,7 @@ import {
 } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Archive · Lifecycle" };
+export const metadata: Metadata = { title: "Proprietà osservate" };
 
 export default async function LifecycleArchivePage({
   searchParams,
@@ -49,7 +49,7 @@ export default async function LifecycleArchivePage({
   return (
     <>
       <LifecycleHeader
-        eyebrow="Physical property archive"
+        eyebrow="Proprietà osservate"
         title="Una storia per ogni immobile."
         description="URL, agenzie e rilanci cambiano. Il dossier della proprietà conserva età reale, passaggi, prove e ambiguità."
       />

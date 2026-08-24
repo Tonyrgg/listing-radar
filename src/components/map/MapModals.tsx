@@ -1,5 +1,7 @@
 "use client";
 
+import { MAP_DATA_COLORS } from "@/lib/design/map-palette";
+
 import { Save, X } from "lucide-react";
 import { useState } from "react";
 
@@ -94,14 +96,14 @@ function ModalShell({
   onClose: () => void;
 }>) {
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[oklch(0.06_0.01_160_/_0.76)] p-4 backdrop-blur-sm">
-      <section className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-[10px] border border-[var(--line-strong)] bg-[var(--surface-panel)] shadow-[var(--shadow-panel)]">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[var(--lr-scrim)] p-4 backdrop-blur-sm">
+      <section className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] shadow-[var(--lr-floating)]">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--lr-line-quiet)] px-5 py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--surface-accent)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--lr-accent)]">
               {subtitle}
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-[var(--ink-strong)]">
+            <h2 className="mt-1 text-lg font-semibold text-[var(--lr-ink)]">
               {title}
             </h2>
           </div>
@@ -110,7 +112,7 @@ function ModalShell({
             onClick={onClose}
             aria-label="Chiudi"
             title="Chiudi"
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-[6px] border border-[var(--line-strong)] text-[var(--ink-strong)] hover:bg-[var(--surface-muted)]"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-[6px] border border-[var(--lr-line)] text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
           >
             <X className="size-4" aria-hidden="true" />
           </button>
@@ -142,7 +144,7 @@ function TextField({
 }>) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
         {label}
       </span>
       <input
@@ -152,7 +154,7 @@ function TextField({
         readOnly={readOnly}
         step={step}
         defaultValue={defaultValue ?? ""}
-        className="h-10 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-sm font-semibold text-[var(--ink-strong)] outline-none read-only:text-[var(--ink-subtle)]"
+        className="h-10 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-sm font-semibold text-[var(--lr-ink)] outline-none read-only:text-[var(--lr-ink-3)]"
       />
     </label>
   );
@@ -169,14 +171,14 @@ function TextAreaField({
 }>) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
         {label}
       </span>
       <textarea
         name={name}
         defaultValue={defaultValue ?? ""}
         rows={4}
-        className="resize-y rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 py-2 text-sm leading-6 text-[var(--ink-strong)] outline-none"
+        className="resize-y rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 py-2 text-sm leading-6 text-[var(--lr-ink)] outline-none"
       />
     </label>
   );
@@ -195,13 +197,13 @@ function SelectField({
 }>) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
         {label}
       </span>
       <select
         name={name}
         defaultValue={defaultValue ?? ""}
-        className="h-10 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-canvas)] px-3 text-sm font-semibold text-[var(--ink-strong)] outline-none"
+        className="h-10 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-sm font-semibold text-[var(--lr-ink)] outline-none"
       >
         {children}
       </select>
@@ -219,22 +221,22 @@ function FormActions({
   onClose: () => void;
 }>) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-4">
-      <p className="min-h-5 text-sm font-medium text-[var(--status-error)]">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--lr-line-quiet)] pt-4">
+      <p className="min-h-5 text-sm font-medium text-[var(--lr-danger)]">
         {error ?? ""}
       </p>
       <div className="flex gap-2">
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-10 items-center justify-center rounded-[7px] border border-[var(--line-strong)] px-4 text-sm font-semibold text-[var(--ink-strong)] hover:bg-[var(--surface-muted)]"
+          className="inline-flex h-10 items-center justify-center rounded-[7px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
         >
           Annulla
         </button>
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-[7px] bg-[var(--surface-accent)] px-4 text-sm font-semibold text-[var(--button-ink)] hover:bg-[var(--surface-accent-hover)] disabled:cursor-wait disabled:opacity-70"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-[7px] bg-[var(--lr-accent)] px-4 text-sm font-semibold text-[var(--lr-accent-ink)] hover:bg-[var(--lr-accent-hover)] disabled:cursor-wait disabled:opacity-70"
         >
           <Save className="size-4" aria-hidden="true" />
           {pending ? "Salvo" : "Salva"}
@@ -366,7 +368,7 @@ function PinForm({
               </option>
             ))}
           </SelectField>
-          <SelectField label="Priorita" name="priority" defaultValue={pin?.priority ?? "medium"}>
+          <SelectField label="Priorità" name="priority" defaultValue={pin?.priority ?? "medium"}>
             {PIN_PRIORITY_OPTIONS.map((priority) => (
               <option key={priority} value={priority}>
                 {PIN_PRIORITY_LABELS[priority]}
@@ -446,7 +448,7 @@ function AreaForm({
           <SelectField label="Agente" name="agentId" defaultValue={area?.agentId}>
             <AgentOptions agents={agents} />
           </SelectField>
-          <TextField label="Colore opzionale" name="color" type="color" defaultValue={area?.color ?? "#0ea5e9"} />
+          <TextField label="Colore opzionale" name="color" type="color" defaultValue={area?.color ?? MAP_DATA_COLORS.info} />
           <SelectField label="Status" name="status" defaultValue={area?.status ?? "not_started"}>
             {AREA_STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>

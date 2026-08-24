@@ -1,5 +1,7 @@
 "use client";
 
+import { MAP_DATA_COLORS, MAP_INK } from "@/lib/design/map-palette";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import L, { type LatLngExpression, type PathOptions } from "leaflet";
@@ -140,7 +142,7 @@ function pathOptions({
 }): PathOptions {
   const isDim = status === "not_started" || status === "not_useful";
   return {
-    color: status === "not_useful" ? "#64748b" : color,
+    color: status === "not_useful" ? MAP_DATA_COLORS.muted : color,
     weight: selected ? 5 : status === "completed" ? 4 : 3,
     opacity: selected ? 1 : isDim ? 0.48 : 0.88,
     fill,
@@ -369,7 +371,7 @@ export function MapCanvas({
       zoom={BITONTO_CENTER.zoom}
       scrollWheelZoom
       className={clsx(
-        "h-full min-h-[620px] w-full overflow-hidden rounded-[10px] border border-[var(--line-soft)] bg-[var(--surface-panel)]",
+        "h-full min-h-[620px] w-full overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
         className,
       )}
     >
@@ -477,7 +479,7 @@ export function MapCanvas({
         <Polyline
           positions={snapPositions}
           pathOptions={{
-            color: "#22c55e",
+            color: MAP_DATA_COLORS.positive,
             weight: 6,
             opacity: 0.92,
             dashArray: "10 8",
@@ -491,7 +493,7 @@ export function MapCanvas({
             (point) => [point.latitude, point.longitude] as LatLngExpression,
           )}
           pathOptions={{
-            color: "#f59e0b",
+            color: MAP_DATA_COLORS.attention,
             weight: 4,
             opacity: 0.75,
             dashArray: "4 7",
@@ -505,8 +507,8 @@ export function MapCanvas({
           center={[point.latitude, point.longitude]}
           radius={index === 0 ? 6 : 5}
           pathOptions={{
-            color: "#111827",
-            fillColor: index === 0 ? "#22c55e" : "#f59e0b",
+            color: MAP_INK.onColor,
+            fillColor: index === 0 ? MAP_DATA_COLORS.positive : MAP_DATA_COLORS.attention,
             fillOpacity: 0.95,
             weight: 2,
           }}
@@ -535,8 +537,8 @@ export function MapCanvas({
             center={[cluster.latitude, cluster.longitude]}
             radius={radius}
             pathOptions={{
-              color: "#0f172a",
-              fillColor: isCluster ? "#2563eb" : "#38bdf8",
+              color: MAP_INK.onColor,
+              fillColor: isCluster ? MAP_DATA_COLORS.info : MAP_DATA_COLORS.info,
               fillOpacity: isCluster ? 0.9 : 0.82,
               weight: 2,
             }}
@@ -561,7 +563,7 @@ export function MapCanvas({
                 {isCluster ? (
                   <div className="grid gap-1">
                     {cluster.listings.slice(0, 6).map((listing) => (
-                      <a key={listing.id} href={`/listings/${listing.id}`} target="_blank" rel="noreferrer">
+                      <a key={listing.id} href={`/listings/${listing.id}`}>
                         {listing.title}
                       </a>
                     ))}
@@ -573,7 +575,7 @@ export function MapCanvas({
                   <>
                     <span>{listingSummary(firstListing)}</span>
                     {firstListing.addressRaw ? <span>{firstListing.addressRaw}</span> : null}
-                    <a href={`/listings/${firstListing.id}`} target="_blank" rel="noreferrer">Apri annuncio</a>
+                    <a href={`/listings/${firstListing.id}`}>Apri annuncio</a>
                   </>
                 )}
               </div>
@@ -592,7 +594,7 @@ export function MapCanvas({
             center={[pin.latitude, pin.longitude]}
             radius={isSelected ? radius + 3 : radius}
             pathOptions={{
-              color: "#111827",
+              color: MAP_INK.onColor,
               fillColor: color,
               fillOpacity: pin.priority === "low" ? 0.66 : 0.9,
               weight: isSelected ? 4 : 2,

@@ -25,7 +25,7 @@ import {
 } from "../../_components/ui";
 import styles from "../../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Agency detail · Lifecycle" };
+export const metadata: Metadata = { title: "Scheda agenzia" };
 
 const filters = [
   ["all", "Tutti"],
@@ -92,7 +92,7 @@ export default async function LifecycleAgencyDetailPage({
         Tutte le agenzie
       </Link>
       <LifecycleHeader
-        eyebrow="Agency dossier"
+        eyebrow="Scheda agenzia"
         title={detail.agency.name}
         description={`${detail.agency.activeCount} attivi · ${detail.agency.exitedCount} uscite · ultimo sync ${formatDateTime(detail.agency.latestSyncAt)}`}
         actions={

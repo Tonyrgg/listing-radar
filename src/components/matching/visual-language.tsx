@@ -87,12 +87,12 @@ export function ContractMark({
       title={label}
       className={`group/tooltip relative grid size-12 shrink-0 place-items-center rounded-[9px] border ${
         type === "sale"
-          ? "border-[oklch(0.55_0.08_145)] bg-[oklch(0.23_0.035_145)] text-[var(--surface-accent)]"
-          : "border-[oklch(0.52_0.07_80)] bg-[oklch(0.23_0.028_80)] text-[var(--status-warning)]"
+          ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]"
+          : "border-[var(--lr-warn)] bg-[var(--lr-warn-soft)] text-[var(--lr-warn)]"
       } ${className ?? ""}`}
     >
       <Icon aria-hidden="true" className="size-5" />
-      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-strong)] opacity-0 transition-opacity group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100">
+      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-2 py-1 text-[11px] font-semibold text-[var(--lr-ink)] opacity-0 transition-opacity group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100">
         {label}
       </span>
       <span className="sr-only">{label}</span>
@@ -112,14 +112,14 @@ export function PropertyTypeMark({
   return (
     <span
       title={config.label}
-      className={`group/tooltip relative inline-flex items-center gap-2 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)] ${
+      className={`group/tooltip relative inline-flex items-center gap-2 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)] ${
         compact ? "min-h-8 px-2 text-xs" : "min-h-10 px-3 text-sm"
       }`}
     >
-      <Icon aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />
+      <Icon aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />
       {!compact ? config.label : <span className="sr-only">{config.label}</span>}
       {compact ? (
-        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-strong)] opacity-0 transition-opacity group-hover/tooltip:opacity-100">
+        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-2 py-1 text-[11px] font-semibold text-[var(--lr-ink)] opacity-0 transition-opacity group-hover/tooltip:opacity-100">
           {config.label}
         </span>
       ) : null}
@@ -135,10 +135,10 @@ export function FeatureMark({
   return (
     <span
       title={label}
-      className="group/tooltip relative grid size-9 place-items-center rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)]"
+      className="group/tooltip relative grid size-9 place-items-center rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)]"
     >
       <Icon aria-hidden="true" className="size-4" />
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--line-strong)] bg-[var(--surface-elevated)] px-2 py-1 text-[11px] font-semibold text-[var(--ink-strong)] opacity-0 transition-opacity group-hover/tooltip:opacity-100">
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-2 py-1 text-[11px] font-semibold text-[var(--lr-ink)] opacity-0 transition-opacity group-hover/tooltip:opacity-100">
         {label}
       </span>
       <span className="sr-only">{label}</span>
@@ -159,14 +159,14 @@ export function VisualFact({
 }>) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-[7px] bg-[var(--surface-muted)] text-[var(--ink-subtle)]">
+      <span className="grid size-8 shrink-0 place-items-center rounded-[7px] bg-[var(--lr-raised)] text-[var(--lr-ink-3)]">
         <Icon aria-hidden="true" className="size-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-[.09em] text-[var(--ink-subtle)]">
+        <p className="text-[10px] font-bold uppercase tracking-[.09em] text-[var(--lr-ink-3)]">
           {label}
         </p>
-        <p className={`mt-0.5 truncate ${prominent ? "text-base font-bold text-[var(--ink-strong)]" : "text-sm font-semibold text-[var(--ink-soft)]"}`}>
+        <p className={`mt-0.5 truncate ${prominent ? "text-base font-bold text-[var(--lr-ink)]" : "text-sm font-semibold text-[var(--lr-ink-2)]"}`}>
           {value}
         </p>
       </div>

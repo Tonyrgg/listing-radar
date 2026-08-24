@@ -41,6 +41,10 @@ import type { Client, MatchClassification, PropertyRequest } from "@/lib/matchin
 
 import styles from "../requests.module.css";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Dettaglio richiesta" };
+
 export default async function RequestDetailPage({
   params,
 }: Readonly<{ params: Promise<{ id: string }> }>) {

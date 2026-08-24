@@ -226,7 +226,7 @@ async function sendCronTelegramSummary(
       `Nuovi: ${totals.inserted} - Aggiornati: ${totals.updated} - Errori: ${totals.errors}`,
       `Fonti: ${providerLine}`,
       "",
-      "<b>Top opportunita</b>",
+      "<b>Top opportunità</b>",
       topLine,
     ].join("\n"),
   );

@@ -57,21 +57,21 @@ export function ListingScoreBreakdown({
   const breakdown = getPriorityScoreBreakdown(scoreInput(listing), scoringConfig);
 
   return (
-    <section className="border-y border-[var(--line-soft)] py-5">
+    <section className="border-y border-[var(--lr-line-quiet)] py-5">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-            Indice di appetibilita
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
+            Indice di appetibilità
           </p>
-          <p className="mt-2 text-sm text-[var(--ink-soft)]">
+          <p className="mt-2 text-sm text-[var(--lr-ink-2)]">
             Quanto conviene controllare questo immobile prima degli altri.
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-3xl font-semibold tabular-nums text-[var(--ink-strong)]">
+          <p className="text-3xl font-semibold tabular-nums text-[var(--lr-ink)]">
             {breakdown.total}
           </p>
-          <p className="text-xs font-semibold text-[var(--surface-accent)]">
+          <p className="text-xs font-semibold text-[var(--lr-accent)]">
             {getPriorityScoreLevel(breakdown.total, scoringConfig)}
           </p>
         </div>
@@ -85,34 +85,34 @@ export function ListingScoreBreakdown({
               className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"
             >
               <div>
-                <p className="text-sm font-medium text-[var(--ink-strong)]">
+                <p className="text-sm font-medium text-[var(--lr-ink)]">
                   {factor.label}
                 </p>
-                <p className="mt-0.5 text-xs leading-5 text-[var(--ink-subtle)]">
+                <p className="mt-0.5 text-xs leading-5 text-[var(--lr-ink-3)]">
                   {factor.explanation}
                 </p>
               </div>
-              <strong className="text-sm tabular-nums text-[var(--surface-accent)]">
+              <strong className="text-sm tabular-nums text-[var(--lr-accent)]">
                 +{factor.points}
               </strong>
             </div>
           ))
         ) : (
-          <p className="text-sm text-[var(--ink-soft)]">
-            Nessun criterio di appetibilita e stato ancora rilevato.
+          <p className="text-sm text-[var(--lr-ink-2)]">
+            Nessun criterio di appetibilità è stato ancora rilevato.
           </p>
         )}
       </div>
 
-      <details className="mt-5 border-t border-[var(--line-soft)] pt-4">
-        <summary className="cursor-pointer text-xs font-semibold text-[var(--ink-soft)]">
+      <details className="mt-5 border-t border-[var(--lr-line-quiet)] pt-4">
+        <summary className="cursor-pointer text-xs font-semibold text-[var(--lr-ink-2)]">
           Vedi criteri non maturati ({breakdown.notAwarded.length})
         </summary>
         <div className="mt-3 space-y-2">
           {breakdown.notAwarded.map((factor) => (
             <div
               key={factor.id}
-              className="flex items-start justify-between gap-3 text-xs text-[var(--ink-subtle)]"
+              className="flex items-start justify-between gap-3 text-xs text-[var(--lr-ink-3)]"
             >
               <span>{factor.label}</span>
               <span className="shrink-0">
@@ -123,7 +123,7 @@ export function ListingScoreBreakdown({
         </div>
       </details>
 
-      <div className="mt-4 text-xs leading-5 text-[var(--ink-subtle)]">
+      <div className="mt-4 text-xs leading-5 text-[var(--lr-ink-3)]">
         <div className="min-w-0">
           {breakdown.deductions.length ? (
             <div className="space-y-2">
@@ -133,7 +133,7 @@ export function ListingScoreBreakdown({
                   className="flex items-start justify-between gap-3"
                 >
                   <span>{factor.label}</span>
-                  <strong className="shrink-0 tabular-nums text-[var(--status-error)]">
+                  <strong className="shrink-0 tabular-nums text-[var(--lr-danger)]">
                     {factor.points}
                   </strong>
                 </div>

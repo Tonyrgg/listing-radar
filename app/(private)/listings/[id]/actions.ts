@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth";
+import { setFlash } from "@/lib/flash";
 import {
   calculatePricePerSqm,
   calculatePriorityScore,
@@ -103,6 +104,8 @@ export async function updateListing(id: string, formData: FormData) {
   const { error: updateError } = await supabase.from("listings").update(payload).eq("id", id);
   if (updateError) throw new Error("Salvataggio non riuscito.");
 
+  await setFlash({ tone: "success", message: "Scheda salvata." });
+
   revalidatePath(`/listings/${id}`);
   revalidatePath("/listings");
   revalidatePath("/dashboard");
@@ -111,10 +114,42 @@ export async function updateListing(id: string, formData: FormData) {
 export async function archiveListing(id: string) {
   await requireUser();
   const supabase = getSupabaseServiceClient();
-  await supabase.from("listings").update({ status: "archived" }).eq("id", id);
+  const { data: current } = await supabase
+    .from("listings")
+    .select("title, status")
+    .eq("id", id)
+    .single();
+
+  const { error } = await supabase.from("listings").update({ status: "archived" }).eq("id", id);
+
+  if (error) {
+    await setFlash({
+      tone: "danger",
+      message: "Non sono riuscito ad archiviare l'annuncio. Riprova tra poco.",
+    });
+  } else {
+    await setFlash({
+      tone: "success",
+      message: current?.title
+        ? `Archiviato: ${current.title}. Lo ritrovi filtrando per «Archiviato».`
+        : "Annuncio archiviato. Lo ritrovi filtrando per «Archiviato».",
+    });
+  }
+
   revalidatePath("/listings");
   revalidatePath("/dashboard");
   redirect("/listings");
+}
+
+/** Ripristino usato dall'"Annulla" della conferma. */
+export async function restoreListing(id: string) {
+  await requireUser();
+  const supabase = getSupabaseServiceClient();
+  await supabase.from("listings").update({ status: "review" }).eq("id", id);
+  await setFlash({ tone: "success", message: "Annuncio ripristinato nell'archivio attivo." });
+  revalidatePath("/listings");
+  revalidatePath(`/listings/${id}`);
+  revalidatePath("/dashboard");
 }
 
 export async function updateListingCrmStatus(
@@ -128,7 +163,20 @@ export async function updateListingCrmStatus(
     .update({ crm_status: crmStatus })
     .eq("id", id);
 
-  if (error) throw new Error("Aggiornamento stato CRM non riuscito.");
+  if (error) {
+    await setFlash({
+      tone: "danger",
+      message: "Non sono riuscito ad aggiornare lo stato. Riprova tra poco.",
+    });
+  } else {
+    await setFlash({
+      tone: "success",
+      message:
+        crmStatus === "treated"
+          ? "Segnato come trattato."
+          : "Rimesso fra quelli da lavorare.",
+    });
+  }
 
   revalidatePath(`/listings/${id}`);
   revalidatePath("/listings");

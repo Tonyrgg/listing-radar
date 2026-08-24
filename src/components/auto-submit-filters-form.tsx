@@ -55,7 +55,7 @@ export function AutoSubmitFiltersForm({
       {children}
       {isBusy ? (
         <span
-          className="fixed bottom-4 right-4 z-50 inline-flex h-10 items-center gap-2 rounded-[6px] border border-[var(--line-strong)] bg-[var(--surface-panel)] px-3 text-xs font-semibold text-[var(--ink-strong)] shadow-lg shadow-black/20"
+          className="fixed bottom-4 right-4 z-50 inline-flex h-10 items-center gap-2 rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 text-xs font-semibold text-[var(--lr-ink)] shadow-lg shadow-black/20"
           role="status"
         >
           <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />

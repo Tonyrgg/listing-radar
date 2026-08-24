@@ -44,9 +44,9 @@ export function generateReport(
     `Unknown: ${unknownCount}`,
     `Ribassi: ${priceDropsCount}`,
     `Vecchi caldi: ${hotOldCount}`,
-    `Priorita alta: ${highPriorityCount}`,
+    `Priorità alta: ${highPriorityCount}`,
     "",
-    "Top 5 priorita alta:",
+    "Top 5 priorità alta:",
     ...sortedTopListings.map(
       (listing, index) =>
         `${index + 1}. ${listing.title} | score ${listing.priorityScore} | ${listing.source} | ${listing.zone ?? "zona n/d"}`,

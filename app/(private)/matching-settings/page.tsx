@@ -7,6 +7,10 @@ import {
   listFeatures,
 } from "@/lib/matching/repository";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Regole di matching" };
+
 export default async function MatchingSettingsPage() {
   const [features, config] = await Promise.all([
     listFeatures(),

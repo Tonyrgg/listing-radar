@@ -1,10 +1,13 @@
-import { clsx } from "clsx";
 import { DatabaseZap, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 import { propertyStateLabel } from "@/lib/property-lifecycle/read-models/presentation";
+
+import { LifecycleSectionNav } from "@/components/lifecycle-section-nav";
+import { PageHeader } from "@/components/page-header";
+import { Chip } from "@/components/ui/primitives";
 
 import styles from "../lifecycle.module.css";
 
@@ -20,16 +23,13 @@ export function LifecycleHeader({
   actions?: ReactNode;
 }>) {
   return (
-    <header className={styles.masthead}>
-      <div className={styles.mastheadRow}>
-        <div>
-          <p className={styles.eyebrow}>{eyebrow}</p>
-          <h1 className={styles.title}>{title}</h1>
-          <p className={styles.lead}>{description}</p>
-        </div>
-        {actions ? <div className={styles.headerActions}>{actions}</div> : null}
-      </div>
-    </header>
+    <PageHeader
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      actions={actions}
+      nav={<LifecycleSectionNav />}
+    />
   );
 }
 
@@ -76,40 +76,40 @@ export function LifecycleUnavailable({ message }: Readonly<{ message: string | n
   return (
     <div className={styles.workspace}>
       <LifecycleHeader
-        eyebrow="Property Lifecycle V2"
-        title="Il modello locale non è disponibile"
-        description="La superficie resta isolata dal CRM storico finché le migrazioni V2 non sono presenti nel database configurato."
+        eyebrow="Segnali"
+        title="I segnali non sono ancora disponibili"
+        description="Questa sezione lavora su un archivio separato che non risulta ancora pronto. Il resto del programma funziona normalmente."
       />
       <div className={styles.unavailable}>
         <div>
-          <DatabaseZap aria-hidden="true" className="mx-auto size-6 text-[var(--status-warning)]" />
-          <strong className="mt-4 block">Dati Lifecycle non caricati</strong>
-          <p>{message ?? "Verifica la connessione e applica le migrazioni additive V2."}</p>
+          <DatabaseZap aria-hidden="true" className="mx-auto size-6 text-[var(--lr-warn)]" />
+          <strong className="mt-4 block">Archivio dei segnali non raggiungibile</strong>
+          <p>{message ?? "Riprova tra poco. Se il problema resta, l'archivio va allineato dalle impostazioni prima di poter usare questa sezione."}</p>
         </div>
       </div>
     </div>
   );
 }
 
+const pillTone = {
+  default: "neutral",
+  hot: "warn",
+  high: "warn",
+  good: "action",
+  cool: "info",
+} as const;
+
 export function SignalPill({
   children,
   tone = "default",
 }: Readonly<{
   children: ReactNode;
-  tone?: "default" | "hot" | "high" | "good" | "cool";
+  tone?: keyof typeof pillTone;
 }>) {
   return (
-    <span
-      className={clsx(
-        styles.pill,
-        tone === "hot" && styles.pillHot,
-        tone === "high" && styles.pillHigh,
-        tone === "good" && styles.pillGood,
-        tone === "cool" && styles.pillCool,
-      )}
-    >
+    <Chip tone={pillTone[tone]} dot>
       {children}
-    </span>
+    </Chip>
   );
 }
 

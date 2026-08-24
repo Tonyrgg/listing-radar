@@ -4,14 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
-    <title>Property Data Worker</title>
+    <title>Property Worker</title>
+    <link rel="stylesheet" href="./tokens.css" />
     <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./layout-fixes.css" />
-    <link rel="stylesheet" href="./request-archive.css" />
   </head>
   <body>
     <header class="app-header">
-      <div class="brand"><span class="brand-mark"><img src="./icon.png" alt="" /></span><div><strong>Property Worker</strong><small>Listing Radar</small></div></div>
+      <div class="brand">
+        <span class="brand-mark"><img src="./icon.png" alt="" /></span>
+        <div><strong>Property Worker</strong><small>Listing Radar</small></div>
+      </div>
       <div class="header-actions">
         <span id="versionLabel" class="version">v—</span>
         <button id="updateButton" class="button secondary">Controlla aggiornamenti</button>
@@ -23,76 +25,53 @@
     <div class="app-layout">
       <nav class="side-nav" aria-label="Sezioni">
         <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
-        <button class="nav-item" data-scroll="requestArchive"><span>2</span><div><b>Richieste</b><small>Sincronizza l’archivio CRM</small></div></button>
-        <button class="nav-item" data-scroll="mandateArchive"><span>3</span><div><b>Incarichi</b><small>Importa gli immobili CRM</small></div></button>
-        <button class="nav-item" data-scroll="completedImports"><span>4</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
-        <button class="nav-item" data-scroll="settings"><span>5</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
-        <div class="privacy-note"><span></span><div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div></div>
+        <button class="nav-item" data-scroll="sync"><span>2</span><div><b>Sincronizza</b><small>Richieste e incarichi dal gestionale</small></div></button>
+        <button class="nav-item" data-scroll="history"><span>3</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
+        <button class="nav-item" data-scroll="settings"><span>4</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
+        <div class="privacy-note">
+          <div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div>
+        </div>
       </nav>
 
       <main class="workspace" id="operations">
         <section class="page-intro">
-          <div><p class="eyebrow">Assistente di acquisizione</p><h1>Cosa vuoi fare?</h1><p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p></div>
+          <div>
+            <p class="eyebrow">Assistente di acquisizione</p>
+            <h1>Cosa vuoi fare?</h1>
+            <p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p>
+          </div>
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
         </section>
 
-        <section id="requestArchive" class="request-archive-card">
-          <header>
-            <div><p class="eyebrow">Richieste immobiliari</p><h2>Archivio completo del gestionale</h2><p>Apre in sequenza ogni richiesta della ricerca già visibile in Chrome e conserva campi, cliente e sezioni correlate.</p></div>
-            <span id="requestArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
-          </header>
-          <div class="request-archive-body">
-            <div><b id="requestArchiveTitle">Pronto per la prima sincronizzazione</b><small id="requestArchiveMessage">La scheda dell’archivio deve rimanere aperta e autenticata.</small></div>
-            <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
-          </div>
-          <div id="requestArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
-        </section>
-
-        <section id="mandateArchive" class="request-archive-card">
-          <header>
-            <div><p class="eyebrow">Incarichi e immobili</p><h2>Portafoglio completo del gestionale</h2><p>Apre in sequenza ogni incarico della ricerca visibile in Chrome e conserva immobile, proprietario, storico, immagini e allegati.</p></div>
-            <span id="mandateArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
-          </header>
-          <div class="request-archive-body">
-            <div><b id="mandateArchiveTitle">Pronto per la prima sincronizzazione</b><small id="mandateArchiveMessage">La scheda “Incarichi aperti” deve rimanere aperta e autenticata.</small></div>
-            <div class="request-archive-actions"><button id="mandateArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="mandateArchiveStart" class="button primary">Sincronizza incarichi</button></div>
-          </div>
-          <div id="mandateArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
-        </section>
-
+        <!-- Il passo successivo viene prima di tutto il resto. -->
         <section class="start-card">
-          <div class="start-copy"><span class="step-number">1</span><div><h2>Prepara una nuova lavorazione</h2><p>Prima apri SISTER sui risultati e lascia aperto il gestionale. Il programma controllerà tutto prima di partire.</p></div></div>
+          <div class="start-copy">
+            <span class="step-number">1</span>
+            <div>
+              <h2>Prepara una nuova lavorazione</h2>
+              <p>Prima apri SISTER sui risultati e lascia aperto il gestionale. Il programma controllerà tutto prima di partire.</p>
+            </div>
+          </div>
           <div class="start-options">
-            <fieldset><legend>Come deve lavorare?</legend><div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div><small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small></fieldset>
+            <fieldset>
+              <legend>Come deve lavorare?</legend>
+              <div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div>
+              <small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small>
+            </fieldset>
             <label class="safe-check"><input id="dryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Controlla tutto, ma non salva nel gestionale</small></span></label>
             <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
         </section>
 
-        <section id="streetRun" class="street-run-card">
-          <header>
-            <div><p class="eyebrow">Dry-run autonomo SISTER</p><h2>Scansiona una via completa</h2><p>Inserisci la dizione esatta. Verranno percorse tutte le omonimie esatte e tutti i civici; il CRM non verrà modificato.</p></div>
-            <span id="streetRunBadge" class="status-pill is-idle"><span></span>Mai avviato</span>
-          </header>
-          <div class="street-run-controls">
-            <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
-            <button id="streetRunStart" class="button primary">Avvia dry-run</button>
-            <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
-          </div>
-          <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante e civico.</p></div>
-          <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
-        </section>
-
+        <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
         <section id="actionPanel" class="now-card" aria-live="polite"></section>
 
         <section id="manualCorrectionPanel" class="correction-card is-hidden" aria-live="polite">
-          <header><div><p class="eyebrow">Soluzione sicura</p><h2>Correggi i dati direttamente qui</h2><p>Compila solo ciò che manca. Salverò la correzione nel lavoro e ripartirò dal punto giusto.</p></div><button class="icon-button" data-action="close-corrections" aria-label="Chiudi">×</button></header>
+          <header>
+            <div><p class="eyebrow">Soluzione sicura</p><h2>Correggi i dati direttamente qui</h2><p>Compila solo ciò che manca. Salverò la correzione nel lavoro e ripartirò dal punto giusto.</p></div>
+            <button class="icon-button" data-action="close-corrections" aria-label="Chiudi">×</button>
+          </header>
           <form id="manualCorrectionForm"><div id="manualCorrectionFields"></div><footer><button type="button" class="button secondary" data-action="close-corrections">Chiudi</button><button type="submit" class="button primary">Salva correzioni</button></footer></form>
-        </section>
-
-        <section class="system-card">
-          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
-          <div id="checksGrid" class="checks-grid"></div>
         </section>
 
         <section class="progress-card">
@@ -101,39 +80,86 @@
           <ol id="workflowSteps" class="workflow-steps"></ol>
         </section>
 
-        <section id="completedImports" class="completed-imports-section">
-          <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni card rappresenta un’intera sessione. Aprila soltanto quando vuoi consultare immobili e nominativi.</p></div><span id="completedImportCount" class="count">0</span></header>
-          <div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div>
-          <footer class="completed-imports-footer"><button id="completedImportsLoadMore" class="button secondary is-hidden">Carica altre sessioni</button></footer>
+        <section class="system-card">
+          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
+          <div id="checksGrid" class="checks-grid"></div>
         </section>
 
-        <section id="jobs" class="jobs-card">
-          <header><div><p class="eyebrow">Archivio acquisizioni</p><h2>Ricerche SISTER salvate</h2><p>Conserva i dati già raccolti e importali nel gestionale quando vuoi, senza ripetere lo scraping.</p></div><span id="jobCount" class="count">0</span></header>
-          <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div>
-        </section>
+        <!-- Da qui in giù: disponibile a richiesta, non sempre a schermo. -->
+        <details class="section" id="sync">
+          <summary>Sincronizza richieste e incarichi dal gestionale</summary>
+          <div class="section-body">
+            <section id="requestArchive" class="request-archive-card">
+              <header>
+                <div><p class="eyebrow">Richieste immobiliari</p><h2>Archivio completo del gestionale</h2><p>Apre in sequenza ogni richiesta della ricerca già visibile in Chrome e conserva campi, cliente e sezioni correlate.</p></div>
+                <span id="requestArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
+              </header>
+              <div class="request-archive-body">
+                <div><b id="requestArchiveTitle">Pronto per la prima sincronizzazione</b><small id="requestArchiveMessage">La scheda dell’archivio deve rimanere aperta e autenticata.</small></div>
+                <div class="request-archive-actions"><button id="requestArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="requestArchiveStart" class="button primary">Sincronizza richieste</button></div>
+              </div>
+              <div id="requestArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
+            </section>
 
-        <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail">×</button></header><div id="detailContent"></div></section>
-
-        <section class="activity-card"><header><div><p class="eyebrow">Ultime operazioni</p><h2>Cosa ha fatto il programma</h2></div></header><div id="activityList" class="activity-list"></div></section>
-
-        <section id="settings" class="settings-card">
-          <header><div><p class="eyebrow">Impostazioni</p><h2>Configurazione pronta all’uso</h2><p>La configurazione viene conservata dentro l’app e protetta da Windows. Non serve più selezionare un file .env dopo ogni aggiornamento.</p></div><span id="configurationStatus" class="status-pill is-idle">Da verificare</span></header>
-          <div id="softwareUpdatePanel" class="software-update-row">
-            <div class="software-update-copy"><b id="softwareUpdateTitle">Aggiornamenti del programma</b><small id="softwareUpdateMessage">Controllo non ancora eseguito</small><div id="softwareUpdateProgress" class="software-update-progress is-hidden"><span></span></div></div>
-            <button id="softwareUpdateAction" class="button secondary" data-update-action="check">Controlla adesso</button>
+            <section id="mandateArchive" class="request-archive-card">
+              <header>
+                <div><p class="eyebrow">Incarichi e immobili</p><h2>Portafoglio completo del gestionale</h2><p>Apre in sequenza ogni incarico della ricerca visibile in Chrome e conserva immobile, proprietario, storico, immagini e allegati.</p></div>
+                <span id="mandateArchiveBadge" class="status-pill is-idle"><span></span>Mai eseguita</span>
+              </header>
+              <div class="request-archive-body">
+                <div><b id="mandateArchiveTitle">Pronto per la prima sincronizzazione</b><small id="mandateArchiveMessage">La scheda “Incarichi aperti” deve rimanere aperta e autenticata.</small></div>
+                <div class="request-archive-actions"><button id="mandateArchiveCancel" class="button danger is-hidden">Interrompi</button><button id="mandateArchiveStart" class="button primary">Sincronizza incarichi</button></div>
+              </div>
+              <div id="mandateArchiveProgress" class="request-archive-progress is-hidden"><span></span></div>
+            </section>
           </div>
-          <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
-          <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>
-          <div class="setting-row"><div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo automatico in attesa</small></div></div>
-          <details id="advancedConfiguration"><summary>Configurazione avanzata (solo se richiesta)</summary><form id="configurationForm" class="configuration-form"><label>Indirizzo Supabase<input name="supabaseUrl" type="url" autocomplete="off" /></label><label>Chiave locale protetta<input name="serviceRoleKey" type="password" autocomplete="new-password" /></label><label>File Excel<input name="contactsExcelPath" type="text" /></label><label>Come riconoscere SISTER<input name="sisterTabMatch" type="text" /></label><label>Come riconoscere il gestionale<input name="crmTabMatch" type="text" /></label><button class="button primary" type="submit">Salva configurazione</button></form></details>
-        </section>
+        </details>
+
+        <details class="section" id="history">
+          <summary>Cronologia dei lavori</summary>
+          <div class="section-body">
+            <section id="completedImports" class="completed-imports-section">
+              <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni card rappresenta un’intera sessione. Aprila soltanto quando vuoi consultare immobili e nominativi.</p></div><span id="completedImportCount" class="count">0</span></header>
+              <div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div>
+              <footer class="completed-imports-footer"><button id="completedImportsLoadMore" class="button secondary is-hidden">Carica altre sessioni</button></footer>
+            </section>
+
+            <section id="jobs" class="jobs-card">
+              <header><div><p class="eyebrow">Archivio acquisizioni</p><h2>Ricerche SISTER salvate</h2><p>Conserva i dati già raccolti e importali nel gestionale quando vuoi, senza ripetere lo scraping.</p></div><span id="jobCount" class="count">0</span></header>
+              <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div>
+            </section>
+
+            <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail" aria-label="Chiudi">×</button></header><div id="detailContent"></div></section>
+
+            <section class="activity-card"><header><div><p class="eyebrow">Ultime operazioni</p><h2>Cosa ha fatto il programma</h2></div></header><div id="activityList" class="activity-list"></div></section>
+          </div>
+        </details>
+
+        <details class="section" id="settings">
+          <summary>Impostazioni e aggiornamenti</summary>
+          <div class="section-body">
+            <section class="settings-card">
+              <header><div><p class="eyebrow">Impostazioni</p><h2>Configurazione pronta all’uso</h2><p>La configurazione viene conservata dentro l’app e protetta da Windows. Non serve più selezionare un file .env dopo ogni aggiornamento.</p></div><span id="configurationStatus" class="status-pill is-idle">Da verificare</span></header>
+              <div id="softwareUpdatePanel" class="software-update-row">
+                <div class="software-update-copy"><b id="softwareUpdateTitle">Aggiornamenti del programma</b><small id="softwareUpdateMessage">Controllo non ancora eseguito</small><div id="softwareUpdateProgress" class="software-update-progress is-hidden"><span></span></div></div>
+                <button id="softwareUpdateAction" class="button secondary" data-update-action="check">Controlla adesso</button>
+              </div>
+              <div class="setting-row"><div><b>File Excel dei recapiti</b><small id="excelPath">Nessun file selezionato</small></div><button id="chooseExcelButton" class="button secondary">Cambia file Excel</button></div>
+              <div class="setting-row"><div><b>Screenshot degli errori</b><small id="screenshotPath">Percorso non disponibile</small></div></div>
+              <div class="setting-row"><div><b>Sessione SISTER</b><small id="keepAliveStatus">Controllo automatico in attesa</small></div></div>
+              <details id="advancedConfiguration"><summary>Configurazione avanzata (solo se richiesta)</summary><form id="configurationForm" class="configuration-form"><label>Indirizzo Supabase<input name="supabaseUrl" type="url" autocomplete="off" /></label><label>Chiave locale protetta<input name="serviceRoleKey" type="password" autocomplete="new-password" /></label><label>File Excel<input name="contactsExcelPath" type="text" /></label><label>Come riconoscere SISTER<input name="sisterTabMatch" type="text" /></label><label>Come riconoscere il gestionale<input name="crmTabMatch" type="text" /></label><button class="button primary" type="submit">Salva configurazione</button></form></details>
+            </section>
+          </div>
+        </details>
       </main>
     </div>
 
     <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Puoi importare ora oppure conservare questa ricerca nell'archivio.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button secondary" data-review-decision="save">Salva per importarla dopo</button><button class="button primary" data-review-decision="proceed">Importa adesso</button></div></footer></div></dialog>
 
-    <dialog id="cancelProcessDialog" class="confirm-dialog"><div class="dialog-shell"><p class="eyebrow danger-text">Azione definitiva</p><h2>Vuoi davvero annullare questo lavoro?</h2><p>Il lavoro e i dati raccolti verranno eliminati. Le modifiche già concluse nel gestionale non possono essere annullate.</p><footer><button class="button secondary" data-cancel-dialog="close">No, torna indietro</button><button class="button danger solid" data-cancel-dialog="confirm">Sì, annulla definitivamente</button></footer></div></dialog>
-    <dialog id="completedImportDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Sessione completata</p><h2 id="completedImportDialogTitle">Riepilogo import</h2><p id="completedImportDialogMeta"></p></div><button class="icon-button" data-action="close-completed-session" aria-label="Chiudi">Ã—</button></header><div id="completedImportDialogContent" class="review-content"></div><footer><button class="button primary" data-action="close-completed-session">Chiudi riepilogo</button></footer></div></dialog>
+    <dialog id="cancelProcessDialog" class="confirm-dialog"><div class="dialog-shell"><div><p class="eyebrow danger-text">Azione definitiva</p><h2>Vuoi davvero annullare questo lavoro?</h2><p>Il lavoro e i dati raccolti verranno eliminati. Le modifiche già concluse nel gestionale non possono essere annullate.</p></div><footer><span></span><div><button class="button secondary" data-cancel-dialog="close">No, torna indietro</button><button class="button danger solid" data-cancel-dialog="confirm">Sì, annulla definitivamente</button></div></footer></div></dialog>
+
+    <dialog id="completedImportDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Sessione completata</p><h2 id="completedImportDialogTitle">Riepilogo import</h2><p id="completedImportDialogMeta"></p></div><button class="icon-button" data-action="close-completed-session" aria-label="Chiudi">×</button></header><div id="completedImportDialogContent" class="review-content"></div><footer><span></span><div><button class="button primary" data-action="close-completed-session">Chiudi riepilogo</button></div></footer></div></dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./renderer.js"></script>
     <script src="./request-archive.js"></script>

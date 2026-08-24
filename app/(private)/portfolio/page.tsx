@@ -10,6 +10,10 @@ import { ProgressiveList } from "@/components/progressive-list";
 import { propertyConditionLabel } from "@/lib/matching/property-presentation";
 import { listFeatures, listProperties, listZones } from "@/lib/matching/repository";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Immobili disponibili" };
+
 export default async function PortfolioPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   const query = await searchParams;
   const search = value(query.q).trim().toLocaleLowerCase("it");
@@ -77,11 +81,8 @@ export default async function PortfolioPage({ searchParams }: Readonly<{ searchP
           const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
           const featureCount = (property.property_feature_values ?? []).filter((item) => Boolean(item.value)).length;
           return (
-            <Link
-              className={styles.propertyCard}
+            <Link               className={styles.propertyCard}
               href={`/portfolio/${property.id}`}
-              target="_blank"
-              rel="noreferrer"
               key={property.id}
               aria-label={`Apri l’immobile ${property.title}`}
             >
@@ -138,8 +139,8 @@ export default async function PortfolioPage({ searchParams }: Readonly<{ searchP
       {!filteredProperties.length ? (
         <div className={styles.emptyState}>
           <div>
-            <Building2 aria-hidden="true" className="mx-auto size-6 text-[var(--surface-accent)]" />
-            <h2 className="mt-4 font-semibold text-[var(--ink-strong)]">{hasFilters ? "Nessun immobile corrisponde ai filtri" : "Nessun immobile in portafoglio"}</h2>
+            <Building2 aria-hidden="true" className="mx-auto size-6 text-[var(--lr-accent)]" />
+            <h2 className="mt-4 font-semibold text-[var(--lr-ink)]">{hasFilters ? "Nessun immobile corrisponde ai filtri" : "Nessun immobile in portafoglio"}</h2>
             <p className="mt-2 text-sm">{hasFilters ? "Prova a rimuovere un filtro o a cambiare la ricerca." : "Aggiungi il primo immobile per attivare il confronto con le richieste."}</p>
             <div className="mt-5">{hasFilters ? <Link className={styles.secondaryButton} href="/portfolio">Azzera filtri</Link> : <PropertyEditor zones={zones} features={features} />}</div>
           </div>

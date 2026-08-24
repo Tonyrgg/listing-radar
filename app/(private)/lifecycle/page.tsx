@@ -22,7 +22,7 @@ import {
 } from "./_components/ui";
 import styles from "./lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Property Lifecycle" };
+export const metadata: Metadata = { title: "Segnali" };
 
 function opportunityTone(level: string): "hot" | "high" | "cool" {
   if (level === "HOT") return "hot";
@@ -48,9 +48,9 @@ export default async function LifecycleDashboardPage() {
   return (
     <>
       <LifecycleHeader
-        eyebrow="Property Lifecycle V2 · briefing"
-        title="Segnali, non inventario statico."
-        description="Ogni variazione commerciale viene ricondotta alla proprietà fisica: nuove pubblicazioni, uscite, passaggi di agenzia, ritorni da privato e opportunità spiegabili."
+        eyebrow="Segnali"
+        title="Cosa è cambiato sul mercato"
+        description="Ogni movimento del mercato ricondotto all'immobile vero: nuove pubblicazioni, uscite, passaggi di agenzia e ritorni da privato, ognuno con la sua spiegazione."
         actions={
           <Link href="/lifecycle/opportunities" className={styles.primaryAction}>
             <Crosshair aria-hidden="true" className="size-4" />
@@ -72,7 +72,7 @@ export default async function LifecycleDashboardPage() {
         <LifecycleSection
           title="Linea dei segnali"
           description={`Aggiornata ${formatDateTime(dashboard.generatedAt)}`}
-          action={<Radar aria-hidden="true" className="size-4 text-[var(--surface-accent)]" />}
+          action={<Radar aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />}
         >
           {dashboard.recentEvents.length ? (
             <div className={styles.signalRail}>

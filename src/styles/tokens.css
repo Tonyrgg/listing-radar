@@ -1,0 +1,193 @@
+/*
+ * Listing Radar — sorgente unica dei token di design.
+ *
+ * NON modificare le copie generate:
+ *   worker/src/desktop/renderer/tokens.css
+ *   extension/tokens.css
+ * Si rigenerano con `npm run design:sync`.
+ *
+ * Ogni valore di colore è verificato in sRGB contro WCAG 2.1 AA.
+ * I rapporti annotati sono verso la superficie indicata.
+ * Verifica con `npm run design:check`.
+ */
+
+:root {
+  /* ---- superfici (scuro, identità del prodotto) ---- */
+  --lr-canvas: #0e1411;
+  --lr-surface: #1f2823; /* 1,23 su canvas */
+  --lr-raised: #2e3831; /* 1,25 su surface */
+
+  /* ---- linee ----
+   * --lr-line separa due superfici: deve restare >= 3:1 (WCAG 1.4.11).
+   * --lr-line-quiet divide contenuto dentro la stessa superficie: decorativa.
+   */
+  --lr-line: #6d746e; /* 3,16 su surface · 3,88 su canvas */
+  --lr-line-quiet: #454e47;
+
+  /* ---- testo ---- */
+  --lr-ink: #f1f4ef; /* 13,7 su surface */
+  --lr-ink-2: #b7c2ba; /* 8,25 su surface */
+  --lr-ink-3: #96a29b; /* 5,73 su surface · 4,79 su raised */
+
+  /* ---- azione: un solo verde, riservato al passo successivo ---- */
+  --lr-accent: #74c495; /* 7,27 su surface */
+  --lr-accent-ink: #0d1410; /* 8,96 su accent */
+  --lr-accent-hover: #8ad2a8;
+  --lr-accent-soft: #223a2d;
+
+  /* ---- stato: famiglia separata dall'azione ---- */
+  --lr-warn: #e6b655; /* 8,07 su surface */
+  --lr-warn-soft: #35291a;
+  --lr-danger: #f08872; /* 6,11 su surface */
+  --lr-danger-ink: #0d1410;
+  --lr-danger-soft: #3a231f;
+  --lr-info: #84b9db; /* 7,17 su surface */
+  --lr-info-soft: #1c2c36;
+
+  /* ---- velatura sotto le finestre di dialogo ---- */
+  --lr-scrim: rgb(0 0 0 / 0.62);
+
+  /* ---- palette dei dati sulla mappa ----
+   * Famiglia separata dall'accento: qui il colore distingue categorie,
+   * non indica l'azione successiva. Ogni tinta è accompagnata da una forma
+   * (icona o tratto) perché non resti l'unico segnale. */
+  --lr-data-1: #4f9de0;
+  --lr-data-2: #57b98a;
+  --lr-data-3: #dda63f;
+  --lr-data-4: #e0705e;
+  --lr-data-5: #9a8ad4;
+  --lr-data-muted: #8b968f;
+
+  /* ---- elevazione: due soli livelli dichiarati ---- */
+  --lr-flat: none;
+  --lr-floating: 0 10px 28px rgb(0 0 0 / 0.42), 0 2px 6px rgb(0 0 0 / 0.3);
+
+  /* ---- raggi: due, più la pillola ---- */
+  --lr-radius-control: 6px;
+  --lr-radius-container: 10px;
+  --lr-radius-pill: 999px;
+
+  /* ---- tipografia: sei gradini, tre pesi ---- */
+  --lr-text-page: 1.75rem; /* 28 */
+  --lr-text-section: 1.25rem; /* 20 */
+  --lr-text-record: 1rem; /* 16 */
+  --lr-text-body: 0.875rem; /* 14 */
+  --lr-text-meta: 0.8125rem; /* 13 */
+  --lr-text-label: 0.6875rem; /* 11 */
+
+  --lr-leading-tight: 1.2;
+  --lr-leading-snug: 1.35;
+  --lr-leading-body: 1.55;
+
+  --lr-weight-regular: 400;
+  --lr-weight-medium: 500;
+  --lr-weight-strong: 650;
+
+  --lr-tracking-label: 0.09em;
+  --lr-tracking-title: -0.015em;
+
+  /* ---- spazio ---- */
+  --lr-space-1: 4px;
+  --lr-space-2: 8px;
+  --lr-space-3: 12px;
+  --lr-space-4: 16px;
+  --lr-space-5: 20px;
+  --lr-space-6: 24px;
+  --lr-space-8: 32px;
+
+  /* ---- densità: tre, dichiarate per schermata ---- */
+  --lr-row-queue: 44px;
+  --lr-row-list: 56px;
+  --lr-row-detail: 64px;
+
+  /* ---- controlli ---- */
+  --lr-control-height: 44px;
+  --lr-control-height-compact: 36px;
+
+  color-scheme: dark;
+}
+
+/* Il tema chiaro segue il sistema, e la scelta esplicita vince su entrambi. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --lr-canvas: #e4eae3;
+    --lr-surface: #ffffff; /* 1,22 su canvas */
+    --lr-raised: #dce3db; /* 1,31 su surface */
+
+    --lr-line: #79857b; /* 3,85 su surface · 3,15 su canvas */
+    --lr-line-quiet: #c6cfc6;
+
+    --lr-ink: #111714; /* 18,2 su surface */
+    --lr-ink-2: #3e4a42; /* 9,28 su surface */
+    --lr-ink-3: #59655c; /* 6,10 su surface · 4,67 su raised */
+
+    --lr-accent: #1f6a45; /* 6,55 su surface */
+    --lr-accent-ink: #ffffff; /* 6,55 su accent */
+    --lr-accent-hover: #175737;
+    --lr-accent-soft: #dcede3;
+
+    --lr-warn: #7c5205; /* 6,85 su surface */
+    --lr-warn-soft: #f5ebd7;
+    --lr-danger: #a82f23; /* 6,78 su surface */
+    --lr-danger-ink: #ffffff;
+    --lr-danger-soft: #f7e4e1;
+    --lr-info: #1b587d; /* 7,67 su surface */
+    --lr-info-soft: #dfeaf2;
+
+    --lr-scrim: rgb(17 23 20 / 0.5);
+
+    --lr-data-1: #2f6fa8;
+    --lr-data-2: #2c7f57;
+    --lr-data-3: #97690b;
+    --lr-data-4: #b0483a;
+    --lr-data-5: #6355a5;
+    --lr-data-muted: #5f6b63;
+
+    --lr-floating: 0 10px 28px rgb(17 23 20 / 0.14), 0 2px 6px rgb(17 23 20 / 0.08);
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --lr-canvas: #e4eae3;
+  --lr-surface: #ffffff;
+  --lr-raised: #dce3db;
+
+  --lr-line: #79857b;
+  --lr-line-quiet: #c6cfc6;
+
+  --lr-ink: #111714;
+  --lr-ink-2: #3e4a42;
+  --lr-ink-3: #59655c;
+
+  --lr-accent: #1f6a45;
+  --lr-accent-ink: #ffffff;
+  --lr-accent-hover: #175737;
+  --lr-accent-soft: #dcede3;
+
+  --lr-warn: #7c5205;
+  --lr-warn-soft: #f5ebd7;
+  --lr-danger: #a82f23;
+  --lr-danger-ink: #ffffff;
+  --lr-danger-soft: #f7e4e1;
+  --lr-info: #1b587d;
+  --lr-info-soft: #dfeaf2;
+
+  --lr-scrim: rgb(17 23 20 / 0.5);
+
+  --lr-data-1: #2f6fa8;
+  --lr-data-2: #2c7f57;
+  --lr-data-3: #97690b;
+  --lr-data-4: #b0483a;
+  --lr-data-5: #6355a5;
+  --lr-data-muted: #5f6b63;
+
+  --lr-floating: 0 10px 28px rgb(17 23 20 / 0.14), 0 2px 6px rgb(17 23 20 / 0.08);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

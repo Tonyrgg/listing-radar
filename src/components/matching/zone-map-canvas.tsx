@@ -1,5 +1,7 @@
 "use client";
 
+import { MAP_DATA_COLORS, MAP_INK } from "@/lib/design/map-palette";
+
 import { useEffect, useMemo, useRef } from "react";
 import L, { type LatLngBoundsExpression, type LatLngExpression } from "leaflet";
 import "leaflet-draw";
@@ -130,7 +132,7 @@ function DrawController({ active, onCreated, onConsumed }: Readonly<{
     const drawer = new L.Draw.Polygon(map as L.DrawMap, {
       allowIntersection: false,
       showArea: true,
-      shapeOptions: { color: "#5fbf7a", weight: 3, fillOpacity: .18 },
+      shapeOptions: { color: MAP_DATA_COLORS.positive, weight: 3, fillOpacity: .18 },
     });
     const handleCreated = (event: L.LeafletEvent) => {
       const layer = (event as L.LeafletEvent & { layer?: L.Layer }).layer;
@@ -173,9 +175,9 @@ function EditController({ active, geometry, color, onEdited }: Readonly<{
 
     const featureGroup = new L.FeatureGroup();
     const polygon = L.polygon(positions, {
-      color: color || "#5fbf7a",
+      color: color || MAP_DATA_COLORS.positive,
       weight: 4,
-      fillColor: color || "#5fbf7a",
+      fillColor: color || MAP_DATA_COLORS.positive,
       fillOpacity: .28,
     });
     featureGroup.addLayer(polygon);
@@ -185,9 +187,9 @@ function EditController({ active, geometry, color, onEdited }: Readonly<{
       featureGroup,
       poly: { allowIntersection: false },
       selectedPathOptions: {
-        color: color || "#5fbf7a",
+        color: color || MAP_DATA_COLORS.positive,
         weight: 4,
-        fillColor: color || "#5fbf7a",
+        fillColor: color || MAP_DATA_COLORS.positive,
         fillOpacity: .3,
         dashArray: "8 6",
       },
@@ -244,7 +246,7 @@ function ZoneLabels({ shapes, highlightedZoneId }: Readonly<{
       >
         <span className={styles.zoneLabelContent}>
           {shape.zoneNumber ? (
-            <span className={styles.zoneLabelNumber} style={{ backgroundColor: shape.color || "#5fbf7a", color: readableTextColor(shape.color || "#5fbf7a") }}>
+            <span className={styles.zoneLabelNumber} style={{ backgroundColor: shape.color || MAP_DATA_COLORS.positive, color: readableTextColor(shape.color || MAP_DATA_COLORS.positive) }}>
               {shape.zoneNumber}
             </span>
           ) : null}
@@ -308,8 +310,8 @@ export function ZoneMapCanvas({
         const selected = selectedZoneIds.includes(shape.zoneId);
         const excluded = excludedZoneIds.includes(shape.zoneId);
         const highlighted = shape.zoneId === highlightedZoneId;
-        const color = excluded ? "#d0746f" : shape.color || "#5fbf7a";
-        const strokeColor = showZoneLabels && !excluded ? "#eef3ef" : color;
+        const color = excluded ? MAP_DATA_COLORS.critical : shape.color || MAP_DATA_COLORS.positive;
+        const strokeColor = showZoneLabels && !excluded ? MAP_INK.halo : color;
         return (
           <Polygon
             key={shape.shapeId}
@@ -334,13 +336,13 @@ export function ZoneMapCanvas({
       {showZoneLabels ? <ZoneLabels shapes={rendered} highlightedZoneId={highlightedZoneId} /> : null}
 
       {draftPositions && !vertexEditing ? (
-        <Polygon positions={draftPositions} pathOptions={{ color: "#5fbf7a", weight: 4, fillColor: "#5fbf7a", fillOpacity: .28 }}>
+        <Polygon positions={draftPositions} pathOptions={{ color: MAP_DATA_COLORS.positive, weight: 4, fillColor: MAP_DATA_COLORS.positive, fillOpacity: .28 }}>
           <Tooltip sticky>Nuovo perimetro</Tooltip>
         </Polygon>
       ) : null}
 
       {point ? (
-        <CircleMarker center={[point.latitude, point.longitude]} radius={8} pathOptions={{ color: "#102019", fillColor: "#5fbf7a", fillOpacity: 1, weight: 3 }}>
+        <CircleMarker center={[point.latitude, point.longitude]} radius={8} pathOptions={{ color: MAP_INK.onColor, fillColor: MAP_DATA_COLORS.positive, fillOpacity: 1, weight: 3 }}>
           <Tooltip permanent direction="top" offset={[0, -8]}>Immobile</Tooltip>
         </CircleMarker>
       ) : null}

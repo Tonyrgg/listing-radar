@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import {
+  opportunityLevelLabel,
+  opportunityReasonLabel,
+} from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
 import {
@@ -17,7 +20,7 @@ import {
 } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Opportunities · Lifecycle" };
+export const metadata: Metadata = { title: "Opportunità" };
 
 export default async function LifecycleOpportunitiesPage({
   searchParams,
@@ -36,10 +39,10 @@ export default async function LifecycleOpportunitiesPage({
   return (
     <>
       <LifecycleHeader
-        eyebrow="Acquisition radar"
-        title="Opportunità con una ragione leggibile."
-        description="Il punteggio ordina il lavoro; non sostituisce il giudizio. Passaggi a privato e uscite senza prova di vendita restano in testa."
-        actions={<Flame aria-hidden="true" className="size-6 text-[var(--radar-hot)]" />}
+        eyebrow="Opportunità"
+        title="Da chi conviene passare per primo"
+        description="Il punteggio mette in fila il lavoro, non decide al posto tuo. Restano in testa i passaggi a privato e le uscite senza prova di vendita."
+        actions={<Flame aria-hidden="true" className="size-6 text-[var(--lr-warn)]" />}
       />
       <div className={styles.filters} aria-label="Filtra priorità">
         {levels.map((level) => (
@@ -48,7 +51,7 @@ export default async function LifecycleOpportunitiesPage({
             href={level === "ALL" ? "/lifecycle/opportunities" : `/lifecycle/opportunities?level=${level}`}
             className={`${styles.filter} ${filter === level ? styles.filterActive : ""}`}
           >
-            {level === "ALL" ? "Tutte" : level}
+            {opportunityLevelLabel(level)}
           </Link>
         ))}
       </div>
@@ -64,11 +67,11 @@ export default async function LifecycleOpportunitiesPage({
                   <div className={styles.rowTop}>
                     <div className="flex flex-wrap items-center gap-2">
                       <SignalPill tone={item.level === "HOT" ? "hot" : item.level === "HIGH" ? "high" : "cool"}>
-                        {item.level}
+                        {opportunityLevelLabel(item.level)}
                       </SignalPill>
                       <span className={styles.rowMeta}>Rilevata {formatDate(item.detectedAt)}</span>
                     </div>
-                    <span className={styles.rowMeta}>score {item.score ?? 0}</span>
+                    <span className={styles.rowMeta}>Indice {item.score ?? 0} su 100</span>
                   </div>
                   <Link
                     href={`/lifecycle/archive/${item.propertyId}`}

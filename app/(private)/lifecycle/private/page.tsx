@@ -2,7 +2,10 @@ import { EyeOff, RadioTower } from "lucide-react";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 
-import { humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import {
+  identityOutcomeLabel,
+  publicationStateLabel,
+} from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
 import {
@@ -18,7 +21,7 @@ import {
 } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Private Radar · Lifecycle" };
+export const metadata: Metadata = { title: "Privati" };
 
 export default async function LifecyclePrivateRadarPage() {
   await connection();
@@ -32,10 +35,10 @@ export default async function LifecyclePrivateRadarPage() {
   return (
     <>
       <LifecycleHeader
-        eyebrow="Private property radar"
-        title="Ritorni sul mercato, senza schedare persone."
-        description="Il bridge locale collega annunci privati alle proprietà fisiche con geografia rigida, dati personali rimossi e identità prudente."
-        actions={<RadioTower aria-hidden="true" className="size-5 text-[var(--surface-accent)]" />}
+        eyebrow="Privati"
+        title="Chi è tornato a vendere da solo"
+        description="Colleghiamo gli annunci privati all'immobile vero usando solo la posizione e i dati dell'immobile. Nomi, telefoni ed email del venditore non entrano mai qui."
+        actions={<RadioTower aria-hidden="true" className="size-5 text-[var(--lr-accent)]" />}
       />
 
       <section className={styles.briefingStrip} aria-label="Sintesi annunci privati">
@@ -61,9 +64,9 @@ export default async function LifecyclePrivateRadarPage() {
               <article key={publication.id} className={styles.propertyRow}>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <SignalPill tone={publication.state === "ACTIVE" ? "good" : "default"}>{humanize(publication.state)}</SignalPill>
+                    <SignalPill tone={publication.state === "ACTIVE" ? "good" : "default"}>{publicationStateLabel(publication.state)}</SignalPill>
                     <SignalPill tone={publication.identityOutcome === "REVIEW_REQUIRED" ? "high" : "cool"}>
-                      {humanize(publication.identityOutcome)} · {Math.round(publication.identityScore * 100)}%
+                      {identityOutcomeLabel(publication.identityOutcome)} · {Math.round(publication.identityScore * 100)}% di certezza
                     </SignalPill>
                   </div>
                   <p className={`${styles.rowTitle} mt-3`}>{publication.title}</p>

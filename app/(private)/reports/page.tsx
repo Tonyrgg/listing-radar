@@ -1,238 +1,155 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { Badge } from "@/components/badge";
 import { PageHeader } from "@/components/page-header";
+import {
+  Card,
+  CardHeader,
+  Chip,
+  EmptyState,
+  Meta,
+  buttonClass,
+} from "@/components/ui/primitives";
 import { getReports } from "@/lib/data/repository";
 import { formatDate, formatNumber } from "@/lib/formatting";
+import { getSourceLabel } from "@/lib/labels";
+import type { Report } from "@/types";
 
-export const metadata: Metadata = {
-  title: "Riepiloghi giornalieri",
+export const metadata: Metadata = { title: "Riepiloghi" };
+
+type TopListing = {
+  position: string;
+  title: string;
+  score: string;
+  source: string;
+  zone: string;
 };
 
-type ParsedReportContent = {
-  title: string | null;
-  stats: Array<{ label: string; value: string }>;
-  topListings: Array<{
-    position: string;
-    title: string;
-    score: string;
-    source: string;
-    zone: string;
-  }>;
-  providers: Array<{ name: string; details: string[] }>;
-  notes: string[];
-};
+/**
+ * I numeri arrivano dalle colonne del riepilogo, non da un'analisi del testo.
+ * Del blocco testuale resta da leggere soltanto la classifica.
+ */
+function parseTopListings(content: string | null): TopListing[] {
+  if (!content) return [];
 
-const reportStatLabels = new Set([
-  "Totale annunci",
-  "Nuovi annunci",
-  "Privati",
-  "Agenzie",
-  "Unknown",
-  "Ribassi",
-  "Vecchi caldi",
-  "Priorita alta",
-]);
+  const listings: TopListing[] = [];
+  let inSection = false;
 
-function parseReportContent(content: string | null): ParsedReportContent {
-  const parsed: ParsedReportContent = {
-    title: null,
-    stats: [],
-    topListings: [],
-    providers: [],
-    notes: [],
-  };
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
 
-  if (!content) return parsed;
+    if (!line) continue;
 
-  let section: "top" | "providers" | null = null;
-  const lines = content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  for (const line of lines) {
-    if (line.startsWith("Report ")) {
-      parsed.title = line;
+    if (/^Top \d+/i.test(line) || /priorit[aà] alta:$/i.test(line)) {
+      inSection = true;
       continue;
     }
 
-    if (line === "Top 5 priorita alta:") {
-      section = "top";
-      continue;
+    if (!inSection) continue;
+
+    const match = line.match(
+      /^(\d+)\.\s+(.+?)\s+\|\s+score\s+(-?\d+)\s+\|\s+([^|]+)\s+\|\s+(.+)$/i,
+    );
+
+    if (match) {
+      listings.push({
+        position: match[1],
+        title: match[2],
+        score: match[3],
+        source: match[4].trim(),
+        zone: match[5].trim(),
+      });
     }
-
-    if (line === "Provider eseguiti:") {
-      section = "providers";
-      continue;
-    }
-
-    const statMatch = line.match(/^([^:]+):\s*(.+)$/);
-    if (statMatch && reportStatLabels.has(statMatch[1])) {
-      parsed.stats.push({ label: statMatch[1], value: statMatch[2] });
-      continue;
-    }
-
-    if (section === "top") {
-      const listingMatch = line.match(
-        /^(\d+)\.\s+(.+?)\s+\|\s+score\s+(-?\d+)\s+\|\s+([^|]+)\s+\|\s+(.+)$/i,
-      );
-
-      if (listingMatch) {
-        parsed.topListings.push({
-          position: listingMatch[1],
-          title: listingMatch[2],
-          score: listingMatch[3],
-          source: listingMatch[4].trim(),
-          zone: listingMatch[5].trim(),
-        });
-        continue;
-      }
-    }
-
-    if (section === "providers") {
-      const providerMatch = line.match(/^([^:]+):\s*(.+)$/);
-
-      if (providerMatch) {
-        parsed.providers.push({
-          name: providerMatch[1],
-          details: providerMatch[2].split(", ").filter(Boolean),
-        });
-        continue;
-      }
-    }
-
-    parsed.notes.push(line);
   }
 
-  return parsed;
+  return listings;
 }
 
-function ReportContent({ content }: Readonly<{ content: string | null }>) {
-  const parsed = parseReportContent(content);
+function statsFor(report: Report) {
+  return [
+    { label: "Annunci trovati", value: report.totalFound },
+    { label: "Nuovi", value: report.newCount },
+    { label: "Da privato", value: report.privateCount },
+    { label: "Da agenzia", value: report.agencyCount },
+    { label: "Venditore da verificare", value: report.unknownCount },
+    { label: "Ribassi di prezzo", value: report.priceDropsCount },
+    { label: "Online da molto tempo", value: report.hotOldCount },
+  ];
+}
 
-  if (!content) return null;
+function ReportCard({ report }: Readonly<{ report: Report }>) {
+  const stats = statsFor(report);
+  const top = parseTopListings(report.content);
 
   return (
-    <div className="border-t border-[var(--line-soft)] p-5">
-      {parsed.title ? (
-        <p className="mb-4 text-xs font-medium uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-          {parsed.title}
-        </p>
-      ) : null}
+    <Card>
+      <CardHeader
+        title={formatDate(report.reportDate)}
+        meta={`${formatNumber(report.totalFound)} annunci controllati · ${formatNumber(report.newCount)} nuovi`}
+        action={
+          report.newCount ? <Chip tone="info">{report.newCount} nuovi</Chip> : null
+        }
+      />
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.3fr]">
-        {parsed.stats.length ? (
-          <section className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
-            <h3 className="text-sm font-semibold text-[var(--ink-strong)]">
-              Sintesi del controllo
-            </h3>
-            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2">
-              {parsed.stats.map((stat) => (
-                <div
-                  key={stat.label}
-                  className="rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 py-2.5"
-                >
-                  <dt className="text-[11px] text-[var(--ink-subtle)]">
-                    {stat.label}
-                  </dt>
-                  <dd className="mt-1 text-lg font-semibold leading-none text-[var(--ink-strong)]">
-                    {stat.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ) : null}
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div>
+          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+            Com&apos;è andato il controllo
+          </p>
+          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-2">
+            {stats.map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] px-3 py-2"
+              >
+                <dt className="text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
+                  {stat.label}
+                </dt>
+                <dd className="mt-0.5 text-[length:var(--lr-text-section)] font-[650] leading-none tabular-nums text-[var(--lr-ink)]">
+                  {formatNumber(stat.value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
-        <section className="rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-[var(--ink-strong)]">
-              Annunci più interessanti
-            </h3>
-            <span className="text-xs text-[var(--ink-subtle)]">
-              {formatNumber(parsed.topListings.length)} in evidenza
-            </span>
-          </div>
-
-          {parsed.topListings.length ? (
-            <ol className="mt-4 divide-y divide-[var(--line-soft)]">
-              {parsed.topListings.map((listing) => (
+        <div>
+          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+            Quelli che meritavano una telefonata
+          </p>
+          {top.length ? (
+            <ol className="mt-3 divide-y divide-[var(--lr-line-quiet)]">
+              {top.map((listing) => (
                 <li
-                  key={`${listing.position}-${listing.title}`}
-                  className="grid gap-3 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2rem_minmax(0,1fr)_auto]"
+                  key={`${report.id}-${listing.position}`}
+                  className="flex items-start gap-3 py-2.5 first:pt-0"
                 >
-                  <span className="flex size-8 items-center justify-center rounded-md bg-[var(--surface-accent-soft)] text-sm font-bold text-[var(--surface-accent)]">
+                  <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-[var(--lr-line)] text-[length:var(--lr-text-label)] tabular-nums text-[var(--lr-ink-3)]">
                     {listing.position}
                   </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold leading-5 text-[var(--ink-strong)]">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)]">
                       {listing.title}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--ink-subtle)]">
-                      {listing.source} · {listing.zone}
-                    </p>
-                  </div>
-                  <div className="w-fit rounded-md border border-[var(--line-soft)] bg-[var(--surface-panel)] px-3 py-2 text-right">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-subtle)]">
-                      Score
-                    </p>
-                    <p className="text-base font-semibold leading-none text-[var(--ink-strong)]">
-                      {listing.score}
-                    </p>
-                  </div>
+                    </span>
+                    <Meta className="truncate">
+                      {getSourceLabel(listing.source)}
+                      {listing.zone && listing.zone !== "zona n/d" ? ` · ${listing.zone}` : ""}
+                    </Meta>
+                  </span>
+                  <span className="shrink-0 text-[length:var(--lr-text-body)] font-[650] tabular-nums text-[var(--lr-ink)]">
+                    {listing.score}
+                  </span>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="mt-4 rounded-[6px] border border-dashed border-[var(--line-strong)] px-4 py-6 text-sm text-[var(--ink-soft)]">
-              Nessun annuncio prioritario in questo riepilogo.
+            <p className="mt-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+              Nessun annuncio ha superato la soglia di appetibilità in questa giornata.
             </p>
           )}
-        </section>
+        </div>
       </div>
-
-      {parsed.providers.length ? (
-        <section className="mt-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
-          <h3 className="text-sm font-semibold text-[var(--ink-strong)]">
-            Fonti controllate
-          </h3>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {parsed.providers.map((provider) => (
-              <div
-                key={provider.name}
-                className="rounded-[6px] border border-[var(--line-soft)] bg-[var(--surface-panel)] p-3"
-              >
-                <p className="text-sm font-semibold capitalize text-[var(--ink-strong)]">
-                  {provider.name}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {provider.details.map((detail) => (
-                    <span
-                      key={detail}
-                      className="rounded-md border border-[var(--line-soft)] bg-[var(--surface-muted)] px-2 py-1 text-[11px] leading-4 text-[var(--ink-soft)]"
-                    >
-                      {detail}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {parsed.notes.length ? (
-        <section className="mt-4 rounded-[7px] border border-[var(--line-soft)] bg-[var(--surface-muted)] p-4">
-          <h3 className="text-sm font-semibold text-[var(--ink-strong)]">Note</h3>
-          <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--ink-soft)]">
-            {parsed.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-    </div>
+    </Card>
   );
 }
 
@@ -240,74 +157,32 @@ export default async function ReportsPage() {
   const reports = await getReports();
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-5">
       <PageHeader
-        eyebrow="Andamento nel tempo"
+        eyebrow="Oggi"
         title="Riepiloghi giornalieri"
-        description="Una fotografia semplice di quello che il radar ha trovato ogni giorno."
+        description="Cosa hanno trovato i controlli automatici, giorno per giorno."
       />
 
-      <section className="space-y-4">
-        {reports.length ? (
-          reports.map((report, index) => (
-            <article
-              key={report.id}
-              className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--surface-panel)]"
-            >
-              <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs text-[var(--ink-subtle)]">Giornata</p>
-                  <h2 className="mt-1 text-xl font-semibold text-[var(--ink-strong)]">
-                    {formatDate(report.reportDate)}
-                  </h2>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Badge tone="slate">
-                    {formatNumber(report.totalFound)} trovati
-                  </Badge>
-                  <Badge tone="green">
-                    {formatNumber(report.newCount)} nuovi
-                  </Badge>
-                  <Badge tone="green">
-                    {formatNumber(report.privateCount)} privati
-                  </Badge>
-                  <Badge tone="blue">
-                    {formatNumber(report.agencyCount)} agenzie
-                  </Badge>
-                  <Badge tone="amber">
-                    {formatNumber(report.unknownCount)} da verificare
-                  </Badge>
-                  <Badge tone="red">
-                    {formatNumber(report.priceDropsCount)} ribassi
-                  </Badge>
-                </div>
-              </div>
-
-              {report.content ? (
-                <details className="border-t border-[var(--line-soft)]" open={index === 0}>
-                  <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-5 text-sm font-semibold text-[var(--ink-strong)] marker:hidden">
-                    <span>Leggi il riepilogo completo</span>
-                    <span className="text-xs font-medium text-[var(--ink-subtle)]">
-                      Analisi, classifica e fonti
-                    </span>
-                  </summary>
-                  <ReportContent content={report.content} />
-                </details>
-              ) : null}
-            </article>
-          ))
-        ) : (
-          <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-6 py-16 text-center">
-            <p className="text-base font-semibold text-[var(--ink-strong)]">
-              Nessun riepilogo disponibile
-            </p>
-            <p className="mt-2 text-sm text-[var(--ink-soft)]">
-              Il primo riepilogo comparira dopo un controllo completo.
-            </p>
-          </div>
-        )}
-      </section>
+      {reports.length ? (
+        <div className="space-y-4">
+          {reports.map((report) => (
+            <ReportCard key={report.id} report={report} />
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <EmptyState
+            title="Nessun riepilogo registrato"
+            description="I riepiloghi compaiono qui dopo il primo controllo automatico completato."
+            action={
+              <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
+                Vedi lo stato delle automazioni
+              </Link>
+            }
+          />
+        </Card>
+      )}
     </div>
   );
 }

@@ -38,7 +38,7 @@ export function QuickRequestButton({
       onClick={() => window.dispatchEvent(new Event(OPEN_QUICK_REQUEST_EVENT))}
       title="Nuova richiesta rapida"
       className={clsx(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--surface-accent)] px-4 text-sm font-bold text-[var(--button-ink)] transition-colors hover:bg-[oklch(0.8_0.11_145)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-4 text-sm font-bold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
         className,
       )}
     >
@@ -178,11 +178,11 @@ function ChoiceButton({
       aria-pressed={selected}
       onClick={onClick}
       className={clsx(
-        "rounded-[8px] border font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]",
+        "rounded-[8px] border font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
         compact ? "min-h-10 px-3 text-sm" : "min-h-12 px-4 text-sm",
         selected
-          ? "border-[var(--surface-accent)] bg-[oklch(0.23_0.035_145)] text-[var(--ink-strong)]"
-          : "border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink-strong)]",
+          ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-ink)]"
+          : "border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)] hover:border-[var(--lr-line)] hover:text-[var(--lr-ink)]",
       )}
     >
       {children}
@@ -200,13 +200,13 @@ function Question({
   children: React.ReactNode;
 }>) {
   return (
-    <section className="border-b border-[var(--line-soft)] py-6 first:pt-0 last:border-b-0 last:pb-0">
+    <section className="border-b border-[var(--lr-line-quiet)] py-6 first:pt-0 last:border-b-0 last:pb-0">
       <div className="max-w-2xl">
-        <h3 className="text-base font-semibold text-[var(--ink-strong)]">
+        <h3 className="text-base font-semibold text-[var(--lr-ink)]">
           {title}
         </h3>
         {help ? (
-          <p className="mt-1 text-sm leading-5 text-[var(--ink-soft)]">{help}</p>
+          <p className="mt-1 text-sm leading-5 text-[var(--lr-ink-2)]">{help}</p>
         ) : null}
       </div>
       <div className="mt-4">{children}</div>
@@ -235,8 +235,8 @@ function FeatureChoice({
   onChange: (value: PreferenceLevel) => void;
 }>) {
   return (
-    <div className="grid gap-3 border-b border-[var(--line-soft)] py-4 last:border-b-0 md:grid-cols-[minmax(150px,.65fr)_minmax(0,1.35fr)] md:items-center">
-      <p className="font-semibold text-[var(--ink-strong)]">{feature.label}</p>
+    <div className="grid gap-3 border-b border-[var(--lr-line-quiet)] py-4 last:border-b-0 md:grid-cols-[minmax(150px,.65fr)_minmax(0,1.35fr)] md:items-center">
+      <p className="font-semibold text-[var(--lr-ink)]">{feature.label}</p>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {preferenceOptions.map((option) => {
           const Icon = option.icon;
@@ -248,10 +248,10 @@ function FeatureChoice({
               aria-pressed={selected}
               onClick={() => onChange(option.value)}
               className={clsx(
-                "inline-flex min-h-11 items-center justify-center gap-2 rounded-[7px] border px-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]",
+                "inline-flex min-h-11 items-center justify-center gap-2 rounded-[7px] border px-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
                 selected
-                  ? "border-[var(--surface-accent)] bg-[oklch(0.23_0.035_145)] text-[var(--ink-strong)]"
-                  : "border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--ink-soft)] hover:border-[var(--line-strong)]",
+                  ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-ink)]"
+                  : "border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)] hover:border-[var(--lr-line)]",
               )}
             >
               <Icon aria-hidden="true" className="size-3.5" />
@@ -461,7 +461,7 @@ export function QuickRequestDrawer() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-[oklch(0.08_0.008_155_/_0.82)] p-3 sm:p-6"
+      className="fixed inset-0 z-[100] grid place-items-center bg-[var(--lr-scrim)] p-3 sm:p-6"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
@@ -471,20 +471,20 @@ export function QuickRequestDrawer() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-request-title"
-        className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[10px] border border-[var(--line-strong)] bg-[var(--surface-panel)]"
+        className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
       >
-        <header className="flex shrink-0 items-start justify-between gap-5 border-b border-[var(--line-soft)] px-5 py-4 sm:px-7 sm:py-5">
+        <header className="flex shrink-0 items-start justify-between gap-5 border-b border-[var(--lr-line-quiet)] px-5 py-4 sm:px-7 sm:py-5">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--surface-accent)]">
+            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--lr-accent)]">
               Nuova richiesta
             </p>
             <h2
               id="quick-request-title"
-              className="mt-1 text-xl font-semibold text-[var(--ink-strong)]"
+              className="mt-1 text-xl font-semibold text-[var(--lr-ink)]"
             >
               Cosa sta cercando il cliente?
             </h2>
-            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+            <p className="mt-1 text-sm text-[var(--lr-ink-2)]">
               Scegli le risposte. Potrai modificare tutto anche dopo.
             </p>
           </div>
@@ -492,15 +492,15 @@ export function QuickRequestDrawer() {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Chiudi"
-            className="grid size-11 shrink-0 place-items-center rounded-[8px] border border-[var(--line-soft)] text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--surface-accent)]"
+            className="grid size-11 shrink-0 place-items-center rounded-[8px] border border-[var(--lr-line)] text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-line)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
           >
             <X aria-hidden="true" className="size-4" />
           </button>
         </header>
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-[270px_minmax(0,1fr)]">
-          <aside className="hidden border-r border-[var(--line-soft)] bg-[var(--surface-muted)] p-5 lg:block">
-            <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--ink-subtle)]">
+          <aside className="hidden border-r border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] p-5 lg:block">
+            <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--lr-ink-3)]">
               I passaggi
             </p>
             <ol className="mt-4 space-y-2">
@@ -515,10 +515,10 @@ export function QuickRequestDrawer() {
                       onClick={() => setStep(item.number)}
                       className={clsx(
                         "flex min-h-16 w-full items-center gap-3 rounded-[8px] px-3 text-left transition-colors",
-                        active && "bg-[var(--surface-panel)]",
+                        active && "bg-[var(--lr-surface)]",
                         !active &&
                           item.number <= step &&
-                          "hover:bg-[var(--surface-elevated)]",
+                          "hover:bg-[var(--lr-raised)]",
                         item.number > step && "opacity-45",
                       )}
                     >
@@ -526,17 +526,17 @@ export function QuickRequestDrawer() {
                         className={clsx(
                           "grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold",
                           active || completed
-                            ? "bg-[var(--surface-accent)] text-[var(--button-ink)]"
-                            : "border border-[var(--line-strong)] text-[var(--ink-subtle)]",
+                            ? "bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]"
+                            : "border border-[var(--lr-line)] text-[var(--lr-ink-3)]",
                         )}
                       >
                         {completed ? <Check className="size-4" /> : item.number}
                       </span>
                       <span>
-                        <strong className="block text-sm text-[var(--ink-strong)]">
+                        <strong className="block text-sm text-[var(--lr-ink)]">
                           {item.title}
                         </strong>
-                        <span className="mt-0.5 block text-xs text-[var(--ink-subtle)]">
+                        <span className="mt-0.5 block text-xs text-[var(--lr-ink-3)]">
                           {item.description}
                         </span>
                       </span>
@@ -548,12 +548,12 @@ export function QuickRequestDrawer() {
           </aside>
 
           <div className="flex min-h-0 flex-col">
-            <div className="shrink-0 border-b border-[var(--line-soft)] px-5 py-3 lg:hidden">
+            <div className="shrink-0 border-b border-[var(--lr-line-quiet)] px-5 py-3 lg:hidden">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[var(--ink-strong)]">
+                <p className="text-sm font-semibold text-[var(--lr-ink)]">
                   {currentStep.title}
                 </p>
-                <span className="text-xs font-semibold text-[var(--ink-subtle)]">
+                <span className="text-xs font-semibold text-[var(--lr-ink-3)]">
                   {step} di {steps.length}
                 </span>
               </div>
@@ -564,8 +564,8 @@ export function QuickRequestDrawer() {
                     className={clsx(
                       "h-1 flex-1 rounded-full",
                       item.number <= step
-                        ? "bg-[var(--surface-accent)]"
-                        : "bg-[var(--surface-elevated)]",
+                        ? "bg-[var(--lr-accent)]"
+                        : "bg-[var(--lr-raised)]",
                     )}
                   />
                 ))}
@@ -577,17 +577,17 @@ export function QuickRequestDrawer() {
                 {error ? (
                   <p
                     role="alert"
-                    className="mb-5 rounded-[8px] border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200"
+                    className="mb-5 rounded-[8px] border border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] p-3 text-sm text-[var(--lr-danger)]"
                   >
                     {error}
                   </p>
                 ) : null}
 
                 <div className="mb-7">
-                  <p className="text-xs font-bold uppercase tracking-[.12em] text-[var(--surface-accent)]">
+                  <p className="text-xs font-bold uppercase tracking-[.12em] text-[var(--lr-accent)]">
                     Passaggio {step}
                   </p>
-                  <h3 className="mt-1 text-xl font-semibold text-[var(--ink-strong)]">
+                  <h3 className="mt-1 text-xl font-semibold text-[var(--lr-ink)]">
                     {currentStep.title}
                   </h3>
                 </div>
@@ -599,34 +599,34 @@ export function QuickRequestDrawer() {
                       help="Nome e recapito aiutano a riconoscere subito la richiesta. Puoi completarli anche dopo."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)] sm:col-span-2">
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)] sm:col-span-2">
                           Nome e cognome
                           <input
                             type="text"
                             value={draft.clientName}
                             onChange={(event) => set("clientName", event.target.value)}
                             placeholder="Per esempio: Franco Abbondanza"
-                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                           Telefono
                           <input
                             type="tel"
                             value={draft.clientPhone}
                             onChange={(event) => set("clientPhone", event.target.value)}
                             placeholder="Cellulare o fisso"
-                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                           Email
                           <input
                             type="email"
                             value={draft.clientEmail}
                             onChange={(event) => set("clientEmail", event.target.value)}
                             placeholder="Facoltativa"
-                            className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
                       </div>
@@ -735,7 +735,7 @@ export function QuickRequestDrawer() {
                           ))}
                         </div>
                       ) : (
-                        <p className="rounded-[8px] bg-[var(--surface-muted)] p-4 text-sm text-[var(--ink-soft)]">
+                        <p className="rounded-[8px] bg-[var(--lr-raised)] p-4 text-sm text-[var(--lr-ink-2)]">
                           Non hai ancora configurato le zone. Puoi continuare:
                           le aggiungerai alla richiesta in seguito.
                         </p>
@@ -779,7 +779,7 @@ export function QuickRequestDrawer() {
                       </div>
                       {customBudget ? (
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                             Cifra ideale
                             <input
                               autoFocus
@@ -789,10 +789,10 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("ideal", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none focus:border-[var(--surface-accent)]"
+                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
                             />
                           </label>
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                             Massimo da non superare
                             <input
                               type="number"
@@ -801,7 +801,7 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("maximum", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)] outline-none focus:border-[var(--surface-accent)]"
+                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
                             />
                           </label>
                         </div>
@@ -849,7 +849,7 @@ export function QuickRequestDrawer() {
                       </div>
                       {customSqm ? (
                         <div className="mt-4 grid grid-cols-2 gap-3">
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                             Da mq
                             <input
                               type="number"
@@ -858,10 +858,10 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("sqmMin", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)]"
+                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)]"
                             />
                           </label>
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
                             A mq
                             <input
                               type="number"
@@ -870,7 +870,7 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("sqmMax", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] px-3 text-sm text-[var(--ink-strong)]"
+                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)]"
                             />
                           </label>
                         </div>
@@ -921,7 +921,7 @@ export function QuickRequestDrawer() {
 
                 {step === 3 ? (
                   <div>
-                    <p className="mb-4 text-sm leading-6 text-[var(--ink-soft)]">
+                    <p className="mb-4 text-sm leading-6 text-[var(--lr-ink-2)]">
                       Per ogni caratteristica scegli quanto conta. Se non ne
                       avete parlato, lascia “Non importa”.
                     </p>
@@ -949,7 +949,7 @@ export function QuickRequestDrawer() {
                     <button
                       type="button"
                       onClick={() => setShowAllFeatures((value) => !value)}
-                      className="mt-5 min-h-11 rounded-[7px] border border-[var(--line-strong)] px-4 text-sm font-bold text-[var(--ink-strong)]"
+                      className="mt-5 min-h-11 rounded-[7px] border border-[var(--lr-line)] px-4 text-sm font-bold text-[var(--lr-ink)]"
                     >
                       {showAllFeatures
                         ? "Mostra solo le caratteristiche principali"
@@ -1082,7 +1082,7 @@ export function QuickRequestDrawer() {
                         value={draft.notes}
                         onChange={(event) => set("notes", event.target.value)}
                         placeholder="Per esempio: deve essere vicino ai genitori, niente strade rumorose…"
-                        className="w-full rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-muted)] p-3 text-sm leading-6 text-[var(--ink-strong)] outline-none placeholder:text-[var(--ink-subtle)] focus:border-[var(--surface-accent)]"
+                        className="w-full rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] p-3 text-sm leading-6 text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                       />
                     </Question>
                   </div>
@@ -1092,12 +1092,12 @@ export function QuickRequestDrawer() {
           </div>
         </div>
 
-        <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-[var(--line-soft)] bg-[var(--surface-muted)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+        <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <button
             type="button"
             disabled={step === 1}
             onClick={() => setStep((value) => value - 1)}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-[var(--line-soft)] px-4 text-sm font-semibold text-[var(--ink-soft)] disabled:opacity-30"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)] disabled:opacity-30"
           >
             <ChevronLeft aria-hidden="true" className="size-4" />
             Indietro
@@ -1109,7 +1109,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => setStep(3)}
-                className="min-h-11 rounded-[8px] border border-[var(--line-strong)] px-4 text-sm font-semibold text-[var(--ink-soft)]"
+                className="min-h-11 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)]"
               >
                 Aggiungi dettagli
               </button>
@@ -1117,7 +1117,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending || draft.property_types.length === 0}
                 onClick={() => save("active", true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)] disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
               >
                 <Check aria-hidden="true" className="size-4" />
                 {isPending ? "Salvataggio…" : "Salva richiesta"}
@@ -1128,7 +1128,7 @@ export function QuickRequestDrawer() {
               type="button"
               disabled={draft.property_types.length === 0}
               onClick={() => setStep((value) => value + 1)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)] disabled:opacity-40"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-40"
             >
               Continua
               <ArrowRight aria-hidden="true" className="size-4" />
@@ -1139,7 +1139,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => save("draft", false)}
-                className="min-h-11 rounded-[8px] border border-[var(--line-strong)] px-4 text-sm font-semibold text-[var(--ink-soft)]"
+                className="min-h-11 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)]"
               >
                 Salva e completa dopo
               </button>
@@ -1147,7 +1147,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => save("active", true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--surface-accent)] px-5 text-sm font-bold text-[var(--button-ink)] disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
               >
                 <Check aria-hidden="true" className="size-4" />
                 {isPending ? "Salvataggio…" : "Salva e cerca immobili"}
@@ -1171,7 +1171,7 @@ function SimpleNumberChoice({
 }>) {
   return (
     <div>
-      <p className="mb-2 text-sm font-semibold text-[var(--ink-soft)]">{label}</p>
+      <p className="mb-2 text-sm font-semibold text-[var(--lr-ink-2)]">{label}</p>
       <div className="grid grid-cols-4 gap-2">
         {[
           ["", "Qualsiasi"],

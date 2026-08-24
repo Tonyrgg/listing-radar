@@ -11,6 +11,10 @@ import { propertyConditionLabel, propertyCrmCondition } from "@/lib/matching/pro
 import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
 import type { MatchClassification, PortfolioProperty } from "@/lib/matching/types";
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Scheda immobile" };
+
 export default async function PropertyDetailPage({ params }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
   const [detail, zones, features] = await Promise.all([getProperty(id), listZones(), listFeatures()]);
