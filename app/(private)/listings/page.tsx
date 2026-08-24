@@ -12,7 +12,7 @@ import {
   LISTING_STATUS_OPTIONS,
   SELLER_TYPE_OPTIONS,
 } from "@/lib/constants";
-import { getListings } from "@/lib/data/repository";
+import { getDuplicateSiblings, getListings } from "@/lib/data/repository";
 import { formatDate } from "@/lib/formatting";
 import {
   getListingStatusLabel,
@@ -217,6 +217,8 @@ export default async function ListingsPage({
     getListings(filters),
     getPersistedScoringConfig(),
   ]);
+  /* Una query sola per tutta la lista: chi ha la stessa casa altrove. */
+  const duplicates = await getDuplicateSiblings(listings);
   const groupByCheckedDate = shouldGroupByCheckedDate(filters.sortBy);
   const listingGroups = groupByCheckedDate
     ? groupListingsByCheckedDate(listings)
@@ -429,6 +431,7 @@ export default async function ListingsPage({
                     listing={listing}
                     scoringConfig={scoringConfig}
                     density={viewMode}
+                    duplicate={duplicates.get(listing.id)}
                   />
                 ))}
               </div>

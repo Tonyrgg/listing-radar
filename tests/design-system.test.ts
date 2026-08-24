@@ -45,6 +45,19 @@ describe("sistema di design", () => {
     ).not.toThrow();
   });
 
+  it("tiene i sette atomi in un file solo", () => {
+    /* Gli atomi sono il contratto fra le pagine vecchie e quelle riscritte:
+     * una pagina che ne inventa uno suo riporta il prodotto al mosaico. */
+    const atoms = read("src/components/ui/atoms.tsx");
+
+    for (const name of ["Dato", "Periodo", "Fonte", "Movimento", "Stato", "Impronta", "Giudizio"]) {
+      expect(
+        atoms.includes(`export function ${name}(`),
+        `L'atomo ${name} non è più esportato da atoms.tsx.`,
+      ).toBe(true);
+    }
+  });
+
   it("non lascia colori scritti a mano nei componenti", () => {
     const offenders: string[] = [];
 

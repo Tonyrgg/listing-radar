@@ -1071,7 +1071,7 @@ function renderRequestArchive() {
     message =
       error || `${run?.failed_requests ?? 0} richieste restano da riprovare`;
     badge = "Riprendibile";
-    tone = "is-error";
+    tone = "is-resumable";
   } else if (error) {
     title = "La sincronizzazione richiede attenzione";
     message = error;
@@ -1147,7 +1147,7 @@ function renderMandateArchive() {
     message =
       error || `${run?.failed_mandates ?? 0} incarichi restano da riprovare`;
     badge = "Riprendibile";
-    tone = "is-error";
+    tone = "is-resumable";
   } else if (error) {
     title = "La sincronizzazione richiede attenzione";
     message = error;
@@ -1225,7 +1225,7 @@ function renderStreetRun() {
     tone = "is-complete";
   } else if (canResume) {
     label = "Riprendibile";
-    tone = "is-error";
+    tone = "is-resumable";
   }
   badge.className = `status-pill ${tone}`;
   badge.innerHTML = `<span></span>${label}`;
