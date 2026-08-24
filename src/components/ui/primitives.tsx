@@ -77,7 +77,7 @@ export function Card({
   floating = false,
   as: Tag = "section",
 }: Readonly<{
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   floating?: boolean;
   as?: "section" | "article" | "div" | "aside";

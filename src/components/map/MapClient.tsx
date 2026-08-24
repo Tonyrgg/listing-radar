@@ -685,7 +685,7 @@ export function MapClient() {
   return (
     <div
       className={clsx(
-        "grid h-[calc(100vh-40px)] min-h-[720px] gap-3",
+        "grid h-[calc(100vh-190px)] min-h-[620px] gap-3",
         sidePanelOpen ? "xl:grid-cols-[minmax(0,1fr)_380px]" : "xl:grid-cols-1",
       )}
     >
@@ -715,12 +715,9 @@ export function MapClient() {
 
         <div className="absolute left-3 right-3 top-3 z-[850] flex flex-col gap-2 2xl:flex-row 2xl:items-start 2xl:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-2 shadow-[var(--lr-floating)]">
-            <div className="min-w-40 px-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--lr-accent)]">
-                Ricerca sul territorio
-              </p>
-              <h1 className="text-sm font-semibold text-[var(--lr-ink)]">Aree operative</h1>
-            </div>
+            <p className="px-2 text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+              Strumenti
+            </p>
             <button
               type="button"
               onClick={() => activateDrawMode("select")}
