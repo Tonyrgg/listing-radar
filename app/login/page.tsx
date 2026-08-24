@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { login } from "@/app/login/actions";
+import { buttonClass } from "@/components/ui/primitives";
 import { getCurrentUser, isAuthRequired } from "@/lib/auth";
 
 import type { Metadata } from "next";
@@ -19,36 +20,41 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4">
-      <section className="w-full max-w-sm">
+    <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
+      <section className="w-full max-w-sm rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-6">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-md bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]">
+          <span className="flex size-10 items-center justify-center rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]">
             <Radar aria-hidden="true" className="size-5" />
           </span>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--lr-ink-3)]">
+            <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
               Listing Radar
             </p>
-            <h1 className="text-xl font-semibold text-[var(--lr-ink)]">
+            <h1 className="text-[length:var(--lr-text-section)] font-[650] tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
               Accesso privato
             </h1>
           </div>
         </div>
-        <form action={login} className="mt-8 space-y-5 border-t border-[var(--lr-line-quiet)] pt-6">
+        <form action={login} className="mt-6 space-y-4 border-t border-[var(--lr-line-quiet)] pt-5">
           <label className="block space-y-2 text-sm">
             <span className="font-medium text-[var(--lr-ink)]">Email</span>
-            <input name="email" type="email" autoComplete="email" required className="h-11 w-full rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 text-[var(--lr-ink)]" />
+            <input name="email" type="email" autoComplete="email" required className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[var(--lr-ink)]" />
           </label>
           <label className="block space-y-2 text-sm">
             <span className="font-medium text-[var(--lr-ink)]">Password</span>
-            <input name="password" type="password" autoComplete="current-password" required className="h-11 w-full rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 text-[var(--lr-ink)]" />
+            <input name="password" type="password" autoComplete="current-password" required className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[var(--lr-ink)]" />
           </label>
           {error ? (
-            <p className="text-sm text-[var(--lr-danger)]">
-              {error === "account" ? "Questo account non è autorizzato." : "Email o password non corrette."}
+            <p
+              role="alert"
+              className="rounded-[var(--lr-radius-control)] border border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] px-3 py-2 text-[length:var(--lr-text-body)] text-[var(--lr-danger)]"
+            >
+              {error === "account"
+                ? "Questo account non è autorizzato ad accedere a Listing Radar."
+                : "Email o password non corrette. Controlla e riprova."}
             </p>
           ) : null}
-          <PendingSubmitButton type="submit" pendingLabel="Accesso" className="h-11 w-full rounded-md bg-[var(--lr-accent)] px-4 text-sm font-semibold text-[var(--lr-accent-ink)]">
+          <PendingSubmitButton type="submit" pendingLabel="Accesso" className={buttonClass("primary", { block: true })}>
             Entra
           </PendingSubmitButton>
         </form>
