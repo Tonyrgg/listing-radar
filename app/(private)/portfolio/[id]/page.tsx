@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { formatShouty } from "@/lib/formatting";
+import { cleanPropertyTitle, cleanRequestTitle } from "@/lib/matching/request-presentation";
 import { ProgressiveList } from "@/components/progressive-list";
 import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
 import styles from "@/components/matching/section-design.module.css";
@@ -19,7 +21,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
   const { id } = await params;
   const [detail, zones, features] = await Promise.all([getProperty(id), listZones(), listFeatures()]);
   if (!detail) notFound();
-  const property = detail.property;
+  const property = detail.property as PortfolioProperty;
   const featureValues = Object.fromEntries(detail.features.map((item) => [item.feature_definition_id, item.value]));
   const activeFeatures = detail.features.filter((item) => Boolean(item.value));
   const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
@@ -45,8 +47,16 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <div className={styles.entityTitleRow}>
           <div>
             <p className={styles.recordReference}>{property.contract_type === "sale" ? "Immobile in vendita" : "Immobile in locazione"}</p>
-            <h1 className={styles.entityTitle}>{property.title}</h1>
-            <p className={styles.entityLocation}><MapPin aria-hidden="true" className="size-4" /> {property.address || property.zone?.name || property.municipality || "Indirizzo non indicato"}</p>
+            {/* L'indirizzo è il titolo: «Incarico IN - Rapio - Vendita» è il
+              * codice con cui la chiama il gestionale, non la casa. */}
+            <h1 className={styles.entityTitle}>
+              {formatShouty(property.address || cleanPropertyTitle(property.title))}
+            </h1>
+            <p className={styles.entityLocation}>
+              <MapPin aria-hidden="true" className="size-4" />{" "}
+              {property.zone?.name || property.municipality || "zona non indicata"}
+              {property.address ? ` · ${cleanPropertyTitle(property.title)}` : ""}
+            </p>
           </div>
           <div className={styles.actions}>
             <PropertyEditor zones={zones} features={features} property={{ ...(property as PortfolioProperty), feature_values: featureValues }} />
@@ -54,15 +64,30 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
             <DeletePropertyButton id={id} />
           </div>
         </div>
+        {property.image_urls?.length ? (
+          <div className={styles.photoStrip}>
+            {property.image_urls.slice(0, 5).map((url, indice) => (
+              <span
+                key={url}
+                role="img"
+                aria-label={`Foto ${indice + 1} di ${property.address ?? property.title}`}
+                style={{ backgroundImage: `url("${url}")` }}
+              />
+            ))}
+          </div>
+        ) : null}
+
         <div className={styles.propertyPriority}>
           <div className={styles.priceFocus}><span>{property.contract_type === "sale" ? "Prezzo richiesto" : "Canone mensile"}</span><strong>{priceLabel}</strong></div>
           <div className={styles.propertySignals}>
-            <PropertySignal icon={Ruler} label="Superficie" value={property.internal_sqm ? `${property.internal_sqm} mq` : "Da indicare"} />
-            <PropertySignal icon={DoorOpen} label="Locali" value={numberValue(property.rooms)} />
-            <PropertySignal icon={BedDouble} label="Camere" value={numberValue(property.bedrooms)} />
-            <PropertySignal icon={Bath} label="Bagni" value={numberValue(property.bathrooms)} />
-            <PropertySignal icon={Layers3} label="Piano" value={numberValue(property.floor)} />
-            <PropertySignal icon={Sparkles} label="Stato" value={propertyConditionLabel(property.condition)} />
+            {/* Una casella che dice «Non indicato» occupa spazio per dire
+              * niente: quelle senza valore non si disegnano. */}
+            {property.internal_sqm ? <PropertySignal icon={Ruler} label="Superficie" value={`${property.internal_sqm} mq`} /> : null}
+            {property.rooms != null ? <PropertySignal icon={DoorOpen} label="Locali" value={String(property.rooms)} /> : null}
+            {property.bedrooms != null ? <PropertySignal icon={BedDouble} label="Camere" value={String(property.bedrooms)} /> : null}
+            {property.bathrooms != null ? <PropertySignal icon={Bath} label="Bagni" value={String(property.bathrooms)} /> : null}
+            {property.floor != null ? <PropertySignal icon={Layers3} label="Piano" value={property.floor === 0 ? "terra" : String(property.floor)} /> : null}
+            {property.condition ? <PropertySignal icon={Sparkles} label="Stato" value={propertyConditionLabel(property.condition)} /> : null}
           </div>
         </div>
         <div className={styles.entityContext}>
@@ -85,8 +110,8 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
           <div><p className={styles.sectionEyebrow}>Quadro operativo</p><h2 className={styles.panelTitle}>Cosa sapere prima di proporlo</h2></div>
           <dl className={styles.essentialList}>
             <Essential label="Esito finale" value={propertyConditionLabel(property.condition)} />
-            <Essential label="Stato interno · CRM" value={internalCondition || "Non indicato"} />
-            <Essential label="Stato esterno · CRM" value={externalCondition || "Non indicato"} />
+            {internalCondition ? <Essential label="Com'è dentro" value={internalCondition} /> : null}
+            {externalCondition ? <Essential label="Com'è fuori" value={externalCondition} /> : null}
             <Essential label="Tipologia" value={propertyTypeLabel(property.property_type)} />
             <Essential label="Superficie commerciale" value={property.commercial_sqm ? `${property.commercial_sqm} mq` : "Non indicata"} />
             <Essential label="Edificio" value={property.building_floors ? `${property.building_floors} piani` : "Piani non indicati"} />
@@ -112,7 +137,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
         <div className={styles.panelBody}>
           {detail.matches.length ? (
             <ProgressiveList className={styles.matchGrid} initialCount={4} step={4} noun="richieste">
-              {detail.matches.map((match) => <MatchCard key={match.id} match={{ ...match, classification: match.classification as MatchClassification }} counterpartHref={`/requests/${match.request_id}`} counterpartTitle={`${match.request?.clients?.full_name || "Cliente da collegare"}: ${match.request?.title || "Richiesta"}`} detailHref={match.id ? `/matching/${match.id}` : undefined} />)}
+              {detail.matches.map((match) => <MatchCard key={match.id} match={{ ...match, classification: match.classification as MatchClassification }} counterpartHref={`/requests/${match.request_id}`} counterpartTitle={match.request?.clients?.full_name || cleanRequestTitle(match.request?.title) || "Cliente da collegare"} detailHref={match.id ? `/matching/${match.id}` : undefined} />)}
             </ProgressiveList>
           ) : <p className={styles.muted}>Nessuna richiesta confrontata con questo immobile.</p>}
         </div>
@@ -123,7 +148,7 @@ export default async function PropertyDetailPage({ params }: Readonly<{ params: 
 
 function PropertySignal({ icon: Icon, label, value }: Readonly<{ icon: typeof Ruler; label: string; value: string }>) { return <div className={styles.propertySignal}><Icon aria-hidden="true" className="size-4" /><span><small>{label}</small><strong>{value}</strong></span></div>; }
 function Essential({ label, value }: Readonly<{ label: string; value: string }>) { return <div className={styles.essentialItem}><dt>{label}</dt><dd>{value}</dd></div>; }
-function numberValue(value: number | null) { return value === null ? "Non indicato" : String(value); }
+
 function propertyTypeLabel(value: string) { return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile", commercial_space: "Locale commerciale", office: "Ufficio", warehouse: "Deposito / magazzino", garage: "Garage / box", land: "Terreno", other: "Altra tipologia" }[value] ?? value); }
 function mandateLabel(value: string) { return ({ draft: "Bozza", active: "Disponibile", suspended: "Sospeso", expired: "Scaduto", sold: "Venduto", rented: "Affittato", archived: "Archiviato" }[value] ?? value); }
 function availabilityLabel(value: string | null) { return ({ available_now: "Disponibile subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Disponibilità futura" }[value ?? ""] ?? "Non indicata"); }

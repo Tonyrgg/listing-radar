@@ -24,6 +24,7 @@ import { ProgressiveList } from "@/components/progressive-list";
 import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
 import { RequestZonePicker } from "@/components/matching/request-zone-picker";
 import {
+  cleanPropertyTitle,
   cleanRequestTitle,
   clientContact,
   crmField,
@@ -292,7 +293,9 @@ export default async function RequestDetailPage({
                     classification: match.classification as MatchClassification,
                   }}
                   counterpartHref={`/portfolio/${match.property_id}`}
-                  counterpartTitle={match.property?.title ?? "Immobile"}
+                  counterpartTitle={formatShouty(
+                    match.property?.address ?? cleanPropertyTitle(match.property?.title),
+                  )}
                   detailHref={match.id ? `/matching/${match.id}` : undefined}
                 />
               ))}

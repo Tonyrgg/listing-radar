@@ -66,12 +66,11 @@ export function MatchCard({
             </Link>
           </div>
         </div>
+        {/* Il punteggio serve a mettere in fila, non a decidere: sta in
+          * piccolo, e la parola che conta è già scritta sopra. */}
         <div className="shrink-0 text-right">
-          <strong className="text-2xl text-[var(--lr-ink)]">
-            {Math.round(match.score)}%
-          </strong>
-          <p className="text-[10px] uppercase tracking-[.08em] text-[var(--lr-ink-3)]">
-            affinità
+          <p className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+            {Math.round(match.score)} su 100
           </p>
         </div>
       </div>
