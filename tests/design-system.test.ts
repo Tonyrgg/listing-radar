@@ -118,6 +118,28 @@ describe("sistema di design", () => {
     expect(offenders, `window.confirm ancora presente in:\n${offenders.join("\n")}`).toEqual([]);
   });
 
+  it("non ripete due volte la navigazione di sezione", () => {
+    /* Per sei pagine la barra delle sezioni compariva due volte: una dentro
+     * l'intestazione, una scritta a mano subito sotto. Nessuno se ne accorge
+     * leggendo il codice — si vede solo a schermo. */
+    const offenders = sourceFiles(["app/**/page.tsx"]).filter((file) => {
+      const source = read(file);
+
+      /* Una barra passata come `nav={<…SectionNav />}` è al suo posto: dentro
+       * l'intestazione. Una scritta da sola nel corpo della pagina è la copia. */
+      const sciolte = source
+        .split(/<(?:Matching|Lifecycle)SectionNav\s*\/>/)
+        .slice(0, -1)
+        .filter((prima) => !prima.trimEnd().endsWith("nav={"));
+
+      return sciolte.length > 0;
+    });
+
+    expect(offenders, `La barra delle sezioni è ripetuta in: ${offenders.join(", ")}`).toEqual(
+      [],
+    );
+  });
+
   it("dà un titolo a ogni pagina", () => {
     const offenders = sourceFiles(["app/**/page.tsx"]).filter((file) => {
       const source = read(file);

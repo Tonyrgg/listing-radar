@@ -1,4 +1,3 @@
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { ZoneShowroom } from "@/components/matching/zone-showroom";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
@@ -17,7 +16,6 @@ export default async function ZonesPage() {
         title="Zone immobiliari"
         description="Quartieri e perimetri usati per localizzare immobili, richieste e matching. Separati dalle aree operative degli agenti."
       />
-      <MatchingSectionNav />
       <ZoneShowroom zones={zones} />
     </div>
   );

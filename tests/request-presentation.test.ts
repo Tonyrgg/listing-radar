@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cleanPropertyTitle,
   cleanRequestTitle,
   clientContact,
   requestActivities,
@@ -90,5 +91,20 @@ describe("request presentation", () => {
       email: "cliente@example.it",
       address: "Via Roma 1",
     });
+  });
+});
+
+describe("il nome di un immobile del portafoglio", () => {
+  it("toglie il gergo del gestionale", () => {
+    expect(cleanPropertyTitle("Incarico IN - Fanfulla - Vendita")).toBe("Fanfulla");
+    expect(cleanPropertyTitle("Incarico OUT – Pafetta – Locazione")).toBe("Pafetta");
+  });
+
+  it("lascia stare i nomi che non hanno gergo", () => {
+    expect(cleanPropertyTitle("Villa con giardino")).toBe("Villa con giardino");
+  });
+
+  it("dice quando un nome non c'è", () => {
+    expect(cleanPropertyTitle(null)).toBe("Immobile senza nome");
   });
 });

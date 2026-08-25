@@ -1,5 +1,4 @@
 import { MatchingRulesShowroom } from "@/components/matching/rules-showroom";
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
 import {
@@ -23,7 +22,6 @@ export default async function MatchingSettingsPage() {
         title="Regole di matching"
         description="Soglie, tolleranze e pesi usati per ordinare gli abbinamenti."
       />
-      <MatchingSectionNav />
       <MatchingRulesShowroom features={features} config={config} />
     </div>
   );

@@ -35,6 +35,22 @@ export function cleanRequestTitle(title?: string | null) {
   return cleaned || "Richiesta senza titolo";
 }
 
+/**
+ * Il nome di un immobile del portafoglio, senza il gergo del gestionale.
+ *
+ * Dal CRM arrivano titoli come «Incarico IN - Fanfulla - Vendita»: «Incarico
+ * IN» e «Vendita» li sappiamo già — siamo nella pagina degli incarichi in
+ * vendita. Quello che distingue una casa dall'altra è il resto.
+ */
+export function cleanPropertyTitle(title?: string | null) {
+  const pulito = (title ?? "")
+    .replace(/^incarico\s+(in|out)\s*[-–]\s*/i, "")
+    .replace(/\s*[-–]\s*(vendita|locazione|affitto)\s*$/i, "")
+    .trim();
+
+  return pulito || "Immobile senza nome";
+}
+
 export function requestReference(request: PropertyRequest) {
   const payload = requestPayload(request);
   return payload.externalId || request.external_crm_id || request.id.slice(0, 8).toUpperCase();

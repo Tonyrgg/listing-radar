@@ -3,7 +3,6 @@ import Link from "next/link";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { PropertyEditor } from "@/components/matching/management-panels";
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import styles from "@/components/matching/section-design.module.css";
 import { ProgressiveList } from "@/components/progressive-list";
@@ -49,7 +48,6 @@ export default async function PortfolioPage({ searchParams }: Readonly<{ searchP
         description="Il portafoglio operativo da confrontare con le richieste attive."
         actions={<PropertyEditor zones={zones} features={features} />}
       />
-      <MatchingSectionNav />
 
       <dl className={styles.overviewStrip}>
         <Metric label="Totale portafoglio" value={properties.length} note="immobili registrati" />

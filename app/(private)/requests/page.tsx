@@ -12,7 +12,6 @@ import {
 import Link from "next/link";
 
 import { QuickRequestButton } from "@/components/matching/quick-request";
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import {
   cleanRequestTitle,
   crmField,
@@ -90,8 +89,6 @@ export default async function RequestsPage({
         </div>
         <QuickRequestButton />
       </header>
-
-      <MatchingSectionNav />
 
       <form className={styles.toolbar}>
         <div className={styles.searchRow}>

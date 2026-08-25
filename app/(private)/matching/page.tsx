@@ -1,199 +1,245 @@
-import { AlertTriangle, ArrowRight, Banknote, Building2, CheckCircle2, ChevronDown, Clock3, MapPin, Ruler, SlidersHorizontal, UserRound } from "lucide-react";
+import { ArrowRight, UserRound } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { RecalculateButton } from "@/components/matching/management-panels";
-import { ProgressiveList } from "@/components/progressive-list";
+import { PropertyMatchRow } from "@/components/matching/property-match-row";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
-import { MatchingSectionNav } from "@/components/matching/section-nav";
-import styles from "@/components/matching/section-design.module.css";
+import { ProgressiveList } from "@/components/progressive-list";
+import { Card, CardBody, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { formatCurrency, formatNumber } from "@/lib/formatting";
 import { cleanRequestTitle } from "@/lib/matching/request-presentation";
-import { getMatchingConfig, getMatchingStats, listMatches, listProperties, listRequests } from "@/lib/matching/repository";
-import type { RequestPropertyMatch } from "@/lib/matching/types";
+import { listMatches, listProperties, listRequests } from "@/lib/matching/repository";
+import type { PropertyRequest, RequestPropertyMatch } from "@/lib/matching/types";
 
-import type { Metadata } from "next";
+export const metadata: Metadata = { title: "Chi cerca cosa" };
 
-export const metadata: Metadata = { title: "Abbinamenti" };
+/**
+ * Chi cerca cosa.
+ *
+ * La prima schermata era il motore che si racconta: «18.796 confronti
+ * disponibili», la distribuzione dei punteggi, i pesi di ogni criterio. Roba
+ * vera, ma è la manutenzione dell'algoritmo — sta nelle regole automatiche.
+ *
+ * Qui interessa una cosa sola: chi ha chiesto cosa, e quali case ci vanno
+ * vicino. Un cliente per riquadro, le sue case sotto, con le foto.
+ */
 
-export default async function MatchingPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+const QUANTE_PER_RICHIESTA = 4;
+
+function param(value: string | string[] | undefined) {
+  return typeof value === "string" ? value : "";
+}
+
+/** Cosa cerca un cliente, in una riga che si legge. */
+function cosaCerca(request: PropertyRequest) {
+  const pezzi: string[] = [];
+
+  if (request.property_types?.length) {
+    pezzi.push(request.property_types.join(" o "));
+  }
+
+  const budget =
+    request.contract_type === "sale"
+      ? (request.budget_max ?? request.budget_ideal)
+      : (request.monthly_rent_max ?? request.monthly_rent_ideal);
+  if (budget != null) {
+    pezzi.push(
+      request.contract_type === "sale"
+        ? `fino a ${formatCurrency(budget)}`
+        : `fino a ${formatCurrency(budget)} al mese`,
+    );
+  }
+
+  const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
+  if (superficie != null) pezzi.push(`intorno ai ${formatNumber(superficie)} mq`);
+
+  const locali = request.rooms_ideal ?? request.rooms_min;
+  if (locali != null) pezzi.push(`${formatNumber(locali)} locali`);
+
+  if (request.municipality) pezzi.push(`a ${request.municipality}`);
+
+  return pezzi.join(" · ") || "Nessun criterio indicato";
+}
+
+export default async function ChiCercaCosaPage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   const query = await searchParams;
-  const view = value(query.view) === "property" ? "property" : "request";
-  const classification = allowed(value(query.classification), ["compatible", "almost_compatible", "weak", "not_relevant"]);
-  const contract = allowed(value(query.contract), ["sale", "rent"]);
-  const minimum = Math.max(0, Math.min(100, Number(value(query.minimum)) || 0));
-  const [requests, properties, stats, config] = await Promise.all([listRequests(), listProperties(), getMatchingStats(), getMatchingConfig()]);
-  const activeRequests = requests.filter((request) => ["active", "urgent"].includes(request.status));
-  const activeProperties = properties.filter((property) => property.mandate_status === "active");
-  const requestIds = contract ? activeRequests.filter((request) => request.contract_type === contract).map((request) => request.id) : activeRequests.map((request) => request.id);
-  const matches = await listMatches({ limit: 600, classification, minimum, requestIds });
-  const requestsById = new Map(activeRequests.map((item) => [item.id, item]));
-  const propertiesById = new Map(activeProperties.map((item) => [item.id, item]));
-  const visibleMatches = matches.filter((match) => requestsById.has(match.request_id) && propertiesById.has(match.property_id));
-  const groups = groupMatches(visibleMatches, view);
-  const canCalculate = activeRequests.length > 0 && activeProperties.length > 0;
+  const contratto = param(query.contratto) === "rent" ? "rent" : param(query.contratto) === "sale" ? "sale" : "";
+  const soloBuone = param(query.solo) === "buone";
+
+  const [requests, properties] = await Promise.all([listRequests(), listProperties()]);
+
+  const richiesteAttive = requests.filter((request) =>
+    ["active", "urgent"].includes(request.status),
+  );
+  const immobiliLiberi = properties.filter((property) => property.mandate_status === "active");
+
+  const richiestePerContratto = contratto
+    ? richiesteAttive.filter((request) => request.contract_type === contratto)
+    : richiesteAttive;
+
+  const matches = await listMatches({
+    limit: 600,
+    classification: soloBuone ? "compatible" : "",
+    minimum: 0,
+    requestIds: richiestePerContratto.map((request) => request.id),
+  });
+
+  const richiestaPerId = new Map(richiestePerContratto.map((item) => [item.id, item]));
+  const immobilePerId = new Map(immobiliLiberi.map((item) => [item.id, item]));
+
+  const gruppi = new Map<string, RequestPropertyMatch[]>();
+  for (const match of matches) {
+    if (!richiestaPerId.has(match.request_id) || !immobilePerId.has(match.property_id)) continue;
+    gruppi.set(match.request_id, [...(gruppi.get(match.request_id) ?? []), match]);
+  }
+
+  const ordinati = [...gruppi.entries()].sort(
+    (a, b) => (b[1][0]?.score ?? 0) - (a[1][0]?.score ?? 0),
+  );
+
+  const sePuoCalcolare = richiesteAttive.length > 0 && immobiliLiberi.length > 0;
 
   return (
-    <div className={styles.page}>
+    <div className="space-y-5">
       <MatchingSectionHeader
-        eyebrow="Motore commerciale"
-        title="Matching"
-        description="Confronta richieste e incarichi, verifica le percentuali e porta avanti le proposte migliori."
-        actions={<div className={styles.actions}><QuickRequestButton />{canCalculate ? <RecalculateButton scope="all" /> : null}</div>}
+        eyebrow="Commerciale"
+        title="Chi cerca cosa"
+        description="Ogni cliente con una richiesta aperta, e le case del portafoglio che ci vanno vicino. Chi decide sei tu: la lista mette in fila, non sceglie."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <QuickRequestButton />
+            {sePuoCalcolare ? <RecalculateButton scope="all" /> : null}
+          </div>
+        }
       />
-      <MatchingSectionNav />
 
-      <section className={styles.matchingStatus} aria-label="Stato del motore di matching">
-        <div>
-          <p className={styles.sectionEyebrow}>Stato calcolo</p>
-          <strong>{stats.total ? `${stats.total.toLocaleString("it-IT")} confronti disponibili` : "Nessun confronto calcolato"}</strong>
-          <span><Clock3 aria-hidden="true" className="size-3.5" /> {stats.lastCalculatedAt ? `Aggiornato ${new Date(stats.lastCalculatedAt).toLocaleString("it-IT")}` : "Avvia il primo calcolo"}</span>
-        </div>
-        <div className={styles.matchingStatusFacts}>
-          <span><strong>{activeRequests.length}</strong> richieste attive</span>
-          <span><strong>{activeProperties.length}</strong> immobili disponibili</span>
-          <span><strong>{stats.compatible}</strong> compatibili</span>
-          <span><strong>{stats.almostCompatible}</strong> buone alternative</span>
-        </div>
-      </section>
+      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+        <label className="min-w-48">
+          <span className="sr-only">Vendita o affitto</span>
+          <select
+            name="contratto"
+            defaultValue={contratto}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">Chi compra e chi affitta</option>
+            <option value="sale">Solo chi compra</option>
+            <option value="rent">Solo chi affitta</option>
+          </select>
+        </label>
 
-      <div className={styles.matchingTopGrid}>
-        <section className={styles.panel} aria-labelledby="distribution-title">
-          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Distribuzione</p><h2 className={styles.panelTitle} id="distribution-title">Qualità degli abbinamenti</h2></div><span className={styles.count}>{stats.total.toLocaleString("it-IT")} totali</span></header>
-          <div className={styles.distributionList}>
-            <DistributionRow label="Compatibili" count={stats.compatible} total={stats.total} href="/matching?classification=compatible" tone="strong" />
-            <DistributionRow label="Buone alternative" count={stats.almostCompatible} total={stats.total} href="/matching?classification=almost_compatible" tone="medium" />
-            <DistributionRow label="Da valutare" count={stats.weak} total={stats.total} href="/matching?classification=weak" tone="warning" />
-            <DistributionRow label="Poco pertinenti" count={stats.notRelevant} total={stats.total} href="/matching?classification=not_relevant" tone="muted" />
-          </div>
-        </section>
+        <label className="min-w-56">
+          <span className="sr-only">Quali case mostrare</span>
+          <select
+            name="solo"
+            defaultValue={soloBuone ? "buone" : ""}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">Tutte le case che ci vanno vicino</option>
+            <option value="buone">Solo quelle che vanno bene</option>
+          </select>
+        </label>
 
-        <section className={styles.panel} aria-labelledby="logic-title">
-          <header className={styles.panelHeader}><div><p className={styles.sectionEyebrow}>Logica attiva</p><h2 className={styles.panelTitle} id="logic-title">Come nasce la percentuale</h2></div><Link className={styles.textAction} href="/matching-settings">Modifica regole <ArrowRight aria-hidden="true" className="size-4" /></Link></header>
-          <div className={styles.logicBody}>
-            <div className={styles.thresholdLine}><span>Compatibile da <strong>{config.thresholds.compatible}%</strong></span><span>Alternativa da <strong>{config.thresholds.almostCompatible}%</strong></span><span>Valutabile da <strong>{config.thresholds.weak}%</strong></span></div>
-            <div className={styles.weightList}>
-              {Object.entries(config.weights).sort((a, b) => b[1] - a[1]).map(([key, weight]) => (
-                <div key={key}><span>{weightLabel(key)}</span><div><i style={{ width: `${Math.min(100, weight * 4)}%` }} /></div><strong>{weight}</strong></div>
-              ))}
-            </div>
-            <p className={styles.logicNote}><SlidersHorizontal aria-hidden="true" className="size-4" /> Ogni conflitto obbligatorio sottrae 12 punti. I dati assenti ricevono un valore prudenziale, mai un pieno punteggio.</p>
-          </div>
-        </section>
-      </div>
+        <Meta>
+          {richiestePerContratto.length} clienti in cerca · {immobiliLiberi.length} case in
+          portafoglio
+        </Meta>
+      </AutoSubmitFiltersForm>
 
-      <div className={styles.operations}>
-        <div><p className={styles.sectionEyebrow}>Coda commerciale</p><p className={styles.panelDescription}>{visibleMatches.length} risultati caricati, raggruppati {view === "request" ? "per richiesta" : "per immobile"}.</p></div>
-        <div className={styles.segments}>
-          <Link className={`${styles.segment} ${view === "request" ? styles.segmentActive : ""}`} href={withQuery(query, { view: "request" })}>Per cliente</Link>
-          <Link className={`${styles.segment} ${view === "property" ? styles.segmentActive : ""}`} href={withQuery(query, { view: "property" })}>Per immobile</Link>
-        </div>
-      </div>
+      {ordinati.length ? (
+        <ProgressiveList className="space-y-5" initialCount={6} step={6} noun="clienti">
+          {ordinati.map(([requestId, gruppo]) => {
+            const request = richiestaPerId.get(requestId);
+            if (!request) return null;
 
-      <section className={styles.panel}>
-        <details className={styles.filterDetails} open={Boolean(classification || contract || minimum)}>
-          <summary className={styles.filterSummary}>Filtri risultati <ChevronDown aria-hidden="true" className="size-4" /></summary>
-          <form className={styles.filterForm}>
-            <input type="hidden" name="view" value={view} />
-            <select className={styles.select} name="classification" defaultValue={classification} aria-label="Classificazione"><option value="">Tutte le classificazioni</option><option value="compatible">Compatibili</option><option value="almost_compatible">Buone alternative</option><option value="weak">Da valutare</option><option value="not_relevant">Poco pertinenti</option></select>
-            <select className={styles.select} name="contract" defaultValue={contract} aria-label="Contratto"><option value="">Vendita e locazione</option><option value="sale">Vendita</option><option value="rent">Locazione</option></select>
-            <input className={styles.input} name="minimum" type="number" min="0" max="100" defaultValue={minimum || ""} placeholder="Affinità minima" aria-label="Affinità minima" />
-            <button className={styles.secondaryButton}>Applica filtri</button>
-          </form>
-        </details>
+            const cliente = request.clients?.full_name ?? "Cliente da collegare";
 
-        <ProgressiveList className={styles.matchGroups} initialCount={6} step={6} noun="gruppi">
-          {groups.map(([groupId, group]) => {
-            const request = requestsById.get(group[0]!.request_id);
-            const property = propertiesById.get(group[0]!.property_id);
-            const title = view === "request" ? cleanRequestTitle(request?.title ?? "Richiesta") : property?.title ?? "Immobile";
-            const subtitle = view === "request" ? request?.clients?.full_name || "Cliente da collegare" : property?.zone?.name || property?.municipality || "Zona non indicata";
             return (
-              <section className={styles.matchGroup} key={groupId}>
-                <header className={styles.matchGroupHeader}><div><p className={styles.pairLabel}>{view === "request" ? "Richiesta cliente" : "Immobile"}</p><h2>{title}</h2><p>{subtitle}</p></div><div><strong>{Math.round(group[0]!.score)}%</strong><span>migliore · {group.length} risultati</span></div></header>
-                <div className={styles.matchList}>{group.slice(0, 4).map((match, index) => <MatchRecord key={match.id} match={match} request={requestsById.get(match.request_id)} property={propertiesById.get(match.property_id)} view={view} leading={index === 0} />)}</div>
-              </section>
+              <Card key={requestId}>
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-[var(--lr-line-quiet)] px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 text-[length:var(--lr-text-record)] font-[650] leading-tight text-[var(--lr-ink)]">
+                      <UserRound aria-hidden="true" className="size-4 shrink-0" />
+                      {cliente}
+                    </p>
+                    <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+                      Cerca {cosaCerca(request)}
+                    </p>
+                    {request.title ? (
+                      <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+                        {cleanRequestTitle(request.title)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Chip tone="neutral">
+                      {gruppo.length} {gruppo.length === 1 ? "casa" : "case"}
+                    </Chip>
+                    <Link
+                      href={`/requests/${request.id}`}
+                      className={buttonClass("quiet", { compact: true })}
+                    >
+                      La richiesta
+                      <ArrowRight aria-hidden="true" className="size-4" />
+                    </Link>
+                  </div>
+                </div>
+
+                <div>
+                  {gruppo.slice(0, QUANTE_PER_RICHIESTA).map((match) => {
+                    const property = immobilePerId.get(match.property_id);
+                    if (!property) return null;
+
+                    return (
+                      <PropertyMatchRow
+                        key={match.id ?? `${match.request_id}-${match.property_id}`}
+                        match={match}
+                        property={property}
+                      />
+                    );
+                  })}
+                </div>
+
+                {gruppo.length > QUANTE_PER_RICHIESTA ? (
+                  <Link
+                    href={`/requests/${request.id}`}
+                    className="block border-t border-[var(--lr-line-quiet)] px-4 py-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] transition-colors hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]"
+                  >
+                    Altre {gruppo.length - QUANTE_PER_RICHIESTA} case ci vanno vicino: si vedono
+                    tutte nella richiesta di {cliente}.
+                  </Link>
+                ) : null}
+              </Card>
             );
           })}
-          {!groups.length ? <div className={styles.emptyState}><div><CheckCircle2 aria-hidden="true" className="mx-auto size-6 text-[var(--lr-accent)]" /><h2 className="mt-4 font-semibold text-[var(--lr-ink)]">Nessun abbinamento da mostrare</h2><p className="mt-2 text-sm">{canCalculate ? "Avvia il calcolo oppure modifica i filtri applicati." : "Servono almeno una richiesta attiva e un immobile disponibile."}</p></div></div> : null}
         </ProgressiveList>
-      </section>
+      ) : (
+        <Card>
+          <CardBody>
+            <EmptyState
+              title={
+                sePuoCalcolare
+                  ? "Nessun cliente con case da vedere"
+                  : "Servono un cliente e una casa"
+              }
+              description={
+                sePuoCalcolare
+                  ? "Con questi filtri non resta niente. Prova ad allargare, oppure rifai il calcolo dal pulsante in alto."
+                  : "Gli abbinamenti nascono da almeno una richiesta aperta e una casa libera in portafoglio."
+              }
+              action={
+                <Link href="/matching" className={buttonClass("secondary", { compact: true })}>
+                  Mostra tutti
+                </Link>
+              }
+            />
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }
-
-function MatchRecord({ match, request, property, view, leading }: Readonly<{ match: RequestPropertyMatch; request: Awaited<ReturnType<typeof listRequests>>[number] | undefined; property: Awaited<ReturnType<typeof listProperties>>[number] | undefined; view: "request" | "property"; leading: boolean }>) {
-  const showProperty = view === "request";
-  const counterpartTitle = showProperty ? property?.title || "Immobile" : request?.clients?.full_name || "Cliente da collegare";
-  const counterpartSubtitle = showProperty
-    ? property?.zone?.name || property?.municipality || "Zona non indicata"
-    : cleanRequestTitle(request?.title ?? "Richiesta");
-  return (
-    <article className={`${styles.matchRecord} ${leading ? styles.matchRecordLeading : ""}`}>
-      <div className={styles.matchDecision}>
-        <div className={styles.matchScoreBlock}>
-          <strong>{Math.round(match.score)}%</strong>
-          <span>{classificationLabel(match.classification)}</span>
-        </div>
-        <div className={styles.matchCounterpart}>
-          <p className={styles.pairLabel}>{showProperty ? "Immobile consigliato" : "Cliente compatibile"}</p>
-          <h3>{counterpartTitle}</h3>
-          <p>{counterpartSubtitle}</p>
-        </div>
-        {match.id ? <Link className={styles.matchDetailAction} href={`/matching/${match.id}`}>Analizza match <ArrowRight aria-hidden="true" className="size-4" /></Link> : null}
-      </div>
-      <div className={styles.matchFacts}>
-        {showProperty ? (
-          <>
-            <MatchFact icon={Banknote} label="Prezzo" value={propertyPrice(property)} />
-            <MatchFact icon={Ruler} label="Superficie" value={property?.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} />
-            <MatchFact icon={MapPin} label="Zona" value={property?.zone?.name || property?.municipality || "Non indicata"} />
-          </>
-        ) : (
-          <>
-            <MatchFact icon={UserRound} label="Cliente" value={request?.clients?.full_name || "Da collegare"} />
-            <MatchFact icon={Banknote} label="Budget" value={requestBudgetLabel(request)} />
-            <MatchFact icon={Building2} label="Tipologia" value={request?.property_types?.join(", ") || "Non indicata"} />
-          </>
-        )}
-      </div>
-      <div className={styles.matchFooter}>
-        <div className={styles.criteria}>{match.matched_criteria.slice(0, 3).map((criterion) => <span className={`${styles.criterion} ${styles.criterionGood}`} key={criterion}><CheckCircle2 aria-hidden="true" className="size-3.5" /> {criterion}</span>)}{match.conflicting_criteria.slice(0, 1).map((criterion) => <span className={`${styles.criterion} ${styles.criterionWarning}`} key={criterion}><AlertTriangle aria-hidden="true" className="size-3.5" /> {criterion}</span>)}</div>
-      </div>
-    </article>
-  );
-}
-
-function MatchFact({ icon: Icon, label, value }: Readonly<{ icon: typeof Banknote; label: string; value: string }>) {
-  return <div className={styles.matchFact}><Icon aria-hidden="true" className="size-3.5" /><span><small>{label}</small><strong>{value}</strong></span></div>;
-}
-
-function propertyPrice(property: Awaited<ReturnType<typeof listProperties>>[number] | undefined) {
-  if (!property) return "Non indicato";
-  const amount = property.contract_type === "sale" ? property.price : property.monthly_rent;
-  return amount ? `€ ${Number(amount).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Non indicato";
-}
-
-function requestBudgetLabel(request: Awaited<ReturnType<typeof listRequests>>[number] | undefined) {
-  if (!request) return "Non indicato";
-  const amount = request.contract_type === "sale" ? request.budget_max : request.monthly_rent_max;
-  return amount ? `€ ${Number(amount).toLocaleString("it-IT")}${request.contract_type === "rent" ? "/mese" : ""}` : "Da definire";
-}
-
-function DistributionRow({ label, count, total, href, tone }: Readonly<{ label: string; count: number; total: number; href: string; tone: string }>) {
-  const percentage = total ? Math.round((count / total) * 100) : 0;
-  return <Link className={styles.distributionRow} href={href}><span>{label}</span><div><i className={styles[`distribution_${tone}`]} style={{ width: `${percentage}%` }} /></div><strong>{count.toLocaleString("it-IT")}</strong><small>{percentage}%</small></Link>;
-}
-
-function groupMatches(matches: RequestPropertyMatch[], view: "request" | "property") {
-  const groups = new Map<string, RequestPropertyMatch[]>();
-  for (const match of matches) {
-    const key = view === "request" ? match.request_id : match.property_id;
-    groups.set(key, [...(groups.get(key) ?? []), match]);
-  }
-  return [...groups.entries()].sort((a, b) => (b[1][0]?.score ?? 0) - (a[1][0]?.score ?? 0));
-}
-function value(input: string | string[] | undefined) { return typeof input === "string" ? input : ""; }
-function allowed<T extends string>(input: string, values: readonly T[]) { return values.includes(input as T) ? input as T : ""; }
-function withQuery(query: Record<string, string | string[] | undefined>, updates: Record<string, string>) { const params = new URLSearchParams(); for (const [key, raw] of Object.entries(query)) if (typeof raw === "string" && raw) params.set(key, raw); for (const [key, raw] of Object.entries(updates)) params.set(key, raw); return `/matching?${params.toString()}`; }
-function classificationLabel(input: string) { return ({ compatible: "Compatibile", almost_compatible: "Buona alternativa", weak: "Da valutare", not_relevant: "Poco pertinente" }[input] ?? "Abbinamento"); }
-function weightLabel(input: string) { return ({ propertyType: "Tipologia", zone: "Zona", budget: "Budget", internalSqm: "Superficie", rooms: "Locali", floor: "Piano", condition: "Condizione", availability: "Disponibilità" }[input] ?? input); }

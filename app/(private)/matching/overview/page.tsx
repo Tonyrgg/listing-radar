@@ -4,7 +4,6 @@ import { connection } from "next/server";
 
 import { RecalculateButton } from "@/components/matching/management-panels";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
-import { MatchingSectionNav } from "@/components/matching/section-nav";
 import styles from "@/components/matching/section-design.module.css";
 import { getMatchingStats, listProperties, listRequests } from "@/lib/matching/repository";
 
@@ -47,7 +46,6 @@ export default async function MatchingOverviewPage() {
         title="Panoramica operativa"
         description="Priorità, qualità dei dati e prossimo passo del lavoro commerciale."
       />
-      <MatchingSectionNav />
 
       <section className={styles.focusPanel} aria-labelledby="next-action-title">
         <span className={styles.focusIcon}><DatabaseZap aria-hidden="true" className="size-5" /></span>
