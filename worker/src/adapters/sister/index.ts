@@ -7,6 +7,12 @@ import { logger } from "../../logger.js";
 import type { CadastralOwner, CadastralProperty, SearchContext, SisterAdapter } from "../../types.js";
 import { sisterSelectors, type SisterSelectors } from "./selectors.js";
 
+const NO_MATCH_PATTERN = /nessuna corrispondenza trovata/i;
+
+export type SisterAdapterOptions = {
+  ignoreOwnerNoMatch?: boolean;
+};
+
 async function text(scope: Page | Locator, selector: string): Promise<string> {
   if (!selector) return "";
   const locator = scope.locator(selector).first();
@@ -69,6 +75,13 @@ async function cellText(row: Locator, index: number): Promise<string> {
   return (await row.locator("td").nth(index).textContent())?.trim() ?? "";
 }
 
+async function clickAndWait(page: Page, locator: Locator) {
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null),
+    locator.click(),
+  ]);
+}
+
 export class PlaywrightSisterAdapter implements SisterAdapter {
   private ignoredCategories: Array<{ category: string; rowIndex: number }> = [];
   private ignoredEmptyProperties: Array<{ rowIndex: number; sheet: string; parcel: string; subaltern: string; address: string }> = [];
@@ -78,6 +91,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   constructor(
     private readonly page: Page,
     private readonly selectors: SisterSelectors = sisterSelectors,
+    private readonly options: SisterAdapterOptions = {},
   ) {}
 
   private require(...keys: Array<keyof SisterSelectors>) {
@@ -304,6 +318,11 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         false,
       );
     }
+    if (this.options.ignoreOwnerNoMatch && await this.page.getByText(NO_MATCH_PATTERN).count() > 0) {
+      await this.returnToResultsAfterOwnerNoMatch(rowIndex);
+      logger.info({ rowIndex }, "Riga SISTER ignorata: nessuna corrispondenza trovata");
+      return [];
+    }
     await this.waitForMarker(this.selectors.ownersPageMarker, "l'apertura degli intestatari");
 
     let extractionError: unknown = null;
@@ -346,6 +365,21 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       }
     }
     return owners;
+  }
+
+  private async returnToResultsAfterOwnerNoMatch(rowIndex: number) {
+    if (await this.page.locator(this.selectors.resultsPageMarker).count() > 0) return;
+    const back = this.page.locator(this.selectors.ownersBackButton);
+    if (await back.count() !== 1) {
+      throw new WorkerError(
+        "SISTER ha restituito nessuna corrispondenza senza il comando per tornare ai risultati",
+        "portal_error",
+        { portal: "SISTER", action: "owners-no-match-return", rowIndex, url: this.page.url() },
+        true,
+      );
+    }
+    await clickAndWait(this.page, back);
+    await this.waitForMarker(this.selectors.resultsPageMarker, "il ritorno ai risultati dopo nessuna corrispondenza");
   }
 
   private async resolvePropertyRowIndex(property: CadastralProperty, preferredIndex: number): Promise<number> {

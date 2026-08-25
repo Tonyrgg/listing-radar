@@ -131,4 +131,116 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   }, 20_000);
+
+  it("ignora una riga con nessuna corrispondenza trovata e torna ai risultati", async () => {
+    const server = createServer((request, response) => {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      if (request.url?.startsWith("/owners-no-match")) {
+        response.end(`<!doctype html><body>
+          <form name="SceltaIntestatiForm"><table class="listaIsp4">
+            <tr><td>**NESSUNA CORRISPONDENZA TROVATA**</td></tr>
+          </table></form>
+          <form name="SceltaVisuraImmSoggForm" action="/results"><input name="indietro" type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      if (request.url?.startsWith("/results")) {
+        response.end(`<!doctype html><body>
+          <fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici</fieldset>
+          <form name="SceltaVisuraImmSoggForm" action="/owners-no-match">
+            <table class="listaIsp4">
+              <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
+              <tr><td><input name="visImmSel" type="radio" value="1"></td><td>50</td><td>100</td><td>1</td><td>VIA TEST n. 1</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>400,00</td></tr>
+            </table>
+            <input name="intestati" type="submit" value="Intestati">
+          </form>
+          <form name="SceltaIndirizzoForm" action="/addresses"><input type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      response.end(`<!doctype html><body>
+        <form name="SceltaIndirizzoForm" action="/results">
+          <select name="indirizzoSel"><option value="test##VIA TEST">VIA TEST</option></select>
+          <input name="numCivicoDal"><input name="numCivicoAl"><input name="ricerca" type="submit" value="Ricerca">
+        </form>
+      </body>`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/addresses`);
+      const acquired: string[] = [];
+      const checkpoint = await new SisterStreetRun(page, {
+        onPropertyAcquired: (_variant, property) => { acquired.push(property.parcel); },
+      }).run("VIA TEST");
+
+      expect(checkpoint).toMatchObject({
+        status: "completed",
+        totalAcceptedProperties: 0,
+        totalSkippedPropertyRows: 1,
+      });
+      expect(acquired).toEqual([]);
+      expect(checkpoint.results[0]?.warnings[0]).toContain("nessun proprietario interpretabile");
+      expect(await page.locator('select[name="indirizzoSel"]').count()).toBe(1);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 20_000);
+
+  it("riprova tre volte lo stesso record e poi continua senza bloccare la via", async () => {
+    let ownerRequests = 0;
+    const server = createServer((request, response) => {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      if (request.url?.startsWith("/owners")) {
+        ownerRequests += 1;
+        const valid = ownerRequests === 3;
+        response.end(`<!doctype html><body>
+          <form name="SceltaIntestatiForm"><table class="listaIsp4">
+            <tr><th>${valid ? "Nominativo o denominazione" : "Colonna non disponibile"}</th><th>${valid ? "Codice fiscale" : ""}</th><th>${valid ? "Titolarita" : ""}</th><th>${valid ? "Quota" : ""}</th></tr>
+            <tr><td><input name="intestatoSelezionato"></td><td>${valid ? "ROSSI MARIO nato a BITONTO (BA) il 01/01/1970" : "dato temporaneamente non leggibile"}</td><td>${valid ? "RSSMRA70A01A893X" : ""}</td><td>${valid ? "Proprieta'" : ""}</td><td>${valid ? "1/1" : ""}</td></tr>
+          </table></form>
+          <form name="SceltaVisuraImmSoggForm" action="/results"><input name="indietro" type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      if (request.url?.startsWith("/results")) {
+        response.end(`<!doctype html><body>
+          <fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici</fieldset>
+          <form name="SceltaVisuraImmSoggForm" action="/owners">
+            <table class="listaIsp4">
+              <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
+              <tr><td><input name="visImmSel" type="radio" value="1"></td><td>50</td><td>100</td><td>1</td><td>VIA TEST n. 1</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>400,00</td></tr>
+            </table>
+            <input name="intestati" type="submit" value="Intestati">
+          </form>
+          <form name="SceltaIndirizzoForm" action="/addresses"><input type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      response.end(`<!doctype html><body>
+        <form name="SceltaIndirizzoForm" action="/results">
+          <select name="indirizzoSel"><option value="test##VIA TEST">VIA TEST</option></select>
+          <input name="numCivicoDal"><input name="numCivicoAl"><input name="ricerca" type="submit" value="Ricerca">
+        </form>
+      </body>`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/addresses`);
+      const checkpoint = await new SisterStreetRun(page).run("VIA TEST");
+
+      expect(ownerRequests).toBe(3);
+      expect(checkpoint).toMatchObject({ status: "completed", totalAcceptedProperties: 1, totalOwnersRead: 1 });
+      expect(checkpoint.totalSkippedPropertyRows).toBe(0);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 20_000);
 });

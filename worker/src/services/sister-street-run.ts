@@ -1,6 +1,7 @@
 import type { Locator, Page } from "playwright";
 
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
+import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey } from "../core/normalize.js";
 import type { CadastralOwner, CadastralProperty } from "../types.js";
@@ -123,7 +124,7 @@ export class SisterStreetRun {
   private readonly mode: "dry_run" | "live";
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
-    this.adapter = new PlaywrightSisterAdapter(page);
+    this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, { ignoreOwnerNoMatch: true });
     this.emptyWindow = options.emptyWindow ?? 50;
     this.startCivic = options.startCivic ?? 1;
     this.maximumCivic = options.maximumCivic ?? 5_000;
@@ -643,10 +644,16 @@ export class SisterStreetRun {
         let acquired = false;
         let acquiredOwners: CadastralOwner[] = [];
         let propertyError: unknown = null;
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
+        let skippedReason: string | null = null;
+        for (let attempt = 1; attempt <= this.maxQueryAttempts; attempt += 1) {
           try {
             acquiredOwners = await this.adapter.extractOwners(property);
             ownersRead += acquiredOwners.length;
+            if (!acquiredOwners.length) {
+              skippedReason = "nessun proprietario interpretabile o nessuna corrispondenza trovata";
+              break;
+            }
+            await this.options.onPropertyAcquired?.(variant, property, acquiredOwners);
             acquired = true;
             break;
           } catch (error) {
@@ -657,9 +664,8 @@ export class SisterStreetRun {
         }
         if (!acquired) {
           skippedPropertyRows += 1;
-          warnings.push(`Riga ${property.sourceRef ?? "?"} isolata: ${propertyError instanceof Error ? propertyError.message : String(propertyError)}`);
+          warnings.push(`Riga ${property.sourceRef ?? "?"} ignorata: ${skippedReason ?? (propertyError instanceof Error ? propertyError.message : String(propertyError))}`);
         } else {
-          await this.options.onPropertyAcquired?.(variant, property, acquiredOwners);
           acquiredPropertyKeys.push(propertyKey);
           acquiredPropertyKeySet.add(propertyKey);
         }
@@ -681,8 +687,8 @@ export class SisterStreetRun {
       variantSourceId: variant.sourceId,
       outcome: "found",
       rawRecords,
-      acceptedProperties: properties.length,
-      propertyKeys: properties.map((property) => buildCadastralKey(property)),
+      acceptedProperties: acquiredPropertyKeys.length,
+      propertyKeys: acquiredPropertyKeys,
       ownersRead,
       skippedPropertyRows,
       warnings,
