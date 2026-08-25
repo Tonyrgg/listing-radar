@@ -1847,6 +1847,13 @@ body[data-fase="lavora"][data-via="no"] .street-run-card {
   display: none;
 }
 
+/* Finita: il risultato e come ricominciare. I collegamenti li ha già passati,
+ * e non c'è nessuna run da fermare. */
+body[data-fase="finita"] .system-card,
+body[data-fase="finita"] #runControls {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .start-grid {
     grid-template-columns: 1fr;
