@@ -1,69 +1,83 @@
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
-import {
-  agencyListingStateLabel,
-  propertyStateLabel,
-} from "@/lib/property-lifecycle/read-models/presentation";
+import { PageHeader } from "@/components/page-header";
+import { PropertyRow } from "@/components/property-row";
+import { Fonte, type SourceHealth } from "@/components/ui/atoms";
+import { Card, CardBody, CardHeader, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { readNow } from "@/lib/clock";
+import { formatDateTime, formatNumber, formatShouty } from "@/lib/formatting";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
 import { enqueueAgencyLifecycleRefresh } from "../../actions";
-import {
-  ageDays,
-  formatCurrency,
-  formatDateTime,
-  LifecycleEmpty,
-  LifecycleHeader,
-  LifecycleSection,
-  LifecycleUnavailable,
-  SignalPill,
-} from "../../_components/ui";
+import { LifecycleUnavailable, ageDays } from "../../_components/ui";
 import styles from "../../lifecycle.module.css";
 
-export const metadata: Metadata = { title: "Scheda agenzia" };
+export const metadata: Metadata = { title: "Cosa tiene questa agenzia" };
 
-const filters = [
-  ["all", "Tutti"],
-  ["new", "Nuovi"],
-  ["lt90", "<90 giorni"],
-  ["90-150", "90–150"],
-  ["150-180", "150–180"],
-  ["gt180", ">180"],
-  ["price", "Prezzo ridotto"],
-  ["exited", "Usciti"],
-  ["sold", "Venduti"],
+/**
+ * Cosa tiene un'agenzia.
+ *
+ * Prima un terzo della pagina era il registro del crawler — dieci righe
+ * «HEALTHY · 109 in area · 3 esclusi · 0 errori» — accanto a un inventario
+ * senza nemmeno una foto. Il registro serve, ma è una nota a piè di pagina:
+ * il soggetto sono le case.
+ */
+
+const FILTRI = [
+  { chiave: "tutti", etichetta: "Tutte" },
+  { chiave: "nuovi", etichetta: "Arrivate da poco" },
+  { chiave: "fresche", etichetta: "Da meno di 3 mesi" },
+  { chiave: "ferme", etichetta: "Ferme da oltre 5 mesi" },
+  { chiave: "ribassate", etichetta: "Con il prezzo sceso" },
+  { chiave: "uscite", etichetta: "Non le tiene più" },
+  { chiave: "vendute", etichetta: "Vendute" },
 ] as const;
 
-function filterInventory(
-  items: LifecyclePropertySummary[],
+type Filtro = (typeof FILTRI)[number]["chiave"];
+
+function passaIlFiltro(
+  property: LifecyclePropertySummary,
   slug: string,
-  filter: string,
-  newIds: Set<string>,
-  priceIds: Set<string>,
+  filtro: Filtro,
+  now: number,
+  nuove: Set<string>,
+  ribassate: Set<string>,
 ) {
-  return items.filter((property) => {
-    const agency = property.agencies.find((item) => item.slug === slug);
-    const age = ageDays(property.trueMarketStartUpperBound);
-    if (filter === "new") return newIds.has(property.id);
-    if (filter === "lt90") return age != null && age < 90;
-    if (filter === "90-150") return age != null && age >= 90 && age < 150;
-    if (filter === "150-180") return age != null && age >= 150 && age <= 180;
-    if (filter === "gt180") return age != null && age > 180;
-    if (filter === "price") return priceIds.has(property.id);
-    if (filter === "exited") return agency?.state !== "ACTIVE";
-    if (filter === "sold") {
-      return agency?.state === "CLOSED_SOLD" || property.saleStatus === "SOLD_CONFIRMED";
-    }
-    return true;
-  });
+  const mandato = property.agencies.find((item) => item.slug === slug);
+  const giorni = ageDays(property.trueMarketStartUpperBound, now);
+
+  if (filtro === "nuovi") return nuove.has(property.id);
+  if (filtro === "fresche") return giorni != null && giorni < 90;
+  if (filtro === "ferme") return giorni != null && giorni >= 150;
+  if (filtro === "ribassate") return ribassate.has(property.id);
+  if (filtro === "uscite") return mandato?.state !== "ACTIVE";
+  if (filtro === "vendute") {
+    return mandato?.state === "CLOSED_SOLD" || property.saleStatus === "SOLD_CONFIRMED";
+  }
+
+  return true;
 }
 
-export default async function LifecycleAgencyDetailPage({
+/** Come sta la fonte, in una parola invece che in dieci righe di registro. */
+function salute(stato: string | null): { salute: SourceHealth; parola: string } {
+  const valore = String(stato ?? "").toUpperCase();
+  if (valore === "HEALTHY") return { salute: "healthy", parola: "letta per intero" };
+  if (valore === "DEGRADED") return { salute: "partial", parola: "letta solo in parte" };
+  if (valore === "FAILED") return { salute: "broken", parola: "non ha risposto" };
+  if (valore === "STRUCTURE_CHANGED") {
+    return { salute: "broken", parola: "il sito ha cambiato struttura" };
+  }
+  return { salute: "unknown", parola: "mai controllata" };
+}
+
+export default async function AgenziaPage({
   params,
   searchParams,
 }: Readonly<{
@@ -71,127 +85,163 @@ export default async function LifecycleAgencyDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
   await connection();
+
   const { slug } = await params;
-  const filter = String((await searchParams).filter ?? "all");
-  const view = await loadLifecycleView((repository) => repository.agency(slug));
+  const query = await searchParams;
+  const richiesto = Array.isArray(query.mostra) ? query.mostra[0] : query.mostra;
+  const filtro: Filtro = FILTRI.some((voce) => voce.chiave === richiesto)
+    ? (richiesto as Filtro)
+    : "tutti";
+
+  const [view, now] = await Promise.all([
+    loadLifecycleView((repository) => repository.agency(slug)),
+    readNow(),
+  ]);
+
   if (!view.available) return <LifecycleUnavailable message={view.message} />;
   if (!view.data) notFound();
+
   const detail = view.data;
-  const inventory = filterInventory(
-    detail.inventory,
-    slug,
-    filter,
-    new Set(detail.newPropertyIds),
-    new Set(detail.priceReducedPropertyIds),
+  const nuove = new Set(detail.newPropertyIds);
+  const ribassate = new Set(detail.priceReducedPropertyIds);
+  const inventario = detail.inventory.filter((property) =>
+    passaIlFiltro(property, slug, filtro, now, nuove, ribassate),
   );
+
+  const visibili = inventario.slice(0, 60);
+  const foto = await signPropertyPhotos(visibili);
+  const ultimo = detail.recentRuns[0];
+  const stato = salute(ultimo?.healthState ?? detail.agency.latestHealth);
+  const nome = formatShouty(detail.agency.name);
 
   return (
     <>
-      <Link href="/lifecycle/agencies" className={styles.textAction}>
-        <ArrowLeft aria-hidden="true" className="size-4" />
-        Tutte le agenzie
-      </Link>
-      <LifecycleHeader
-        eyebrow="Scheda agenzia"
-        title={detail.agency.name}
-        description={`${detail.agency.activeCount} attivi · ${detail.agency.exitedCount} uscite · ultimo sync ${formatDateTime(detail.agency.latestSyncAt)}`}
+      <PageHeader
+        eyebrow="Agenzia"
+        title={nome}
+        description={[
+          `Tiene ${formatNumber(detail.agency.activeCount)} case in vendita`,
+          detail.agency.exitedCount
+            ? `${formatNumber(detail.agency.exitedCount)} le sono uscite di mano`
+            : null,
+          detail.agency.soldCount
+            ? `${formatNumber(detail.agency.soldCount)} risultano vendute`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(", ")
+          .concat(".")}
+        backHref="/fonti"
+        backLabel="Torna alle fonti"
         actions={
-          <form action={enqueueAgencyLifecycleRefresh}>
-            <input type="hidden" name="agencySlug" value={slug} />
-            <PendingSubmitButton
-              type="submit"
-              pendingLabel="Accodo il refresh"
-              icon={<RefreshCw aria-hidden="true" className="size-4" />}
-              className={styles.primaryAction}
-            >
-              Refresh {detail.agency.name}
-            </PendingSubmitButton>
-          </form>
+          <div className="flex flex-wrap items-center gap-2">
+            {detail.agency.websiteUrl ? (
+              <a
+                href={detail.agency.websiteUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonClass("quiet", { compact: true })}
+              >
+                Il loro sito
+                <ExternalLink aria-hidden="true" className="size-4" />
+              </a>
+            ) : null}
+            <form action={enqueueAgencyLifecycleRefresh}>
+              <input type="hidden" name="agencySlug" value={slug} />
+              <PendingSubmitButton
+                type="submit"
+                pendingLabel="Metto in coda"
+                icon={<RefreshCw aria-hidden="true" className="size-4" />}
+                className={styles.secondaryAction}
+              >
+                Rileggi il loro sito
+              </PendingSubmitButton>
+            </form>
+          </div>
         }
       />
 
-      <div className={styles.filters} aria-label="Filtra inventario agenzia">
-        {filters.map(([value, label]) => (
+      {/* Come sta la fonte: una riga, non una colonna. */}
+      <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
+        <span className="text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+          <Fonte name={nome} health={stato.salute} /> — {stato.parola}
+          {ultimo
+            ? `, l'ultima volta il ${formatDateTime(ultimo.finishedAt ?? ultimo.startedAt)}`
+            : ""}
+        </span>
+        {ultimo ? (
+          <Meta>
+            {formatNumber(ultimo.inScopeCount)} case in zona
+            {ultimo.excludedCount
+              ? ` · ${formatNumber(ultimo.excludedCount)} fuori dai nostri comuni`
+              : ""}
+            {ultimo.errorCount
+              ? ` · ${formatNumber(ultimo.errorCount)} ${ultimo.errorCount === 1 ? "errore" : "errori"}`
+              : ""}
+          </Meta>
+        ) : null}
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        {FILTRI.map((voce) => (
           <Link
-            key={value}
-            href={value === "all" ? `/lifecycle/agencies/${slug}` : `/lifecycle/agencies/${slug}?filter=${value}`}
-            className={`${styles.filter} ${filter === value ? styles.filterActive : ""}`}
+            key={voce.chiave}
+            href={
+              voce.chiave === "tutti"
+                ? `/lifecycle/agencies/${slug}`
+                : `/lifecycle/agencies/${slug}?mostra=${voce.chiave}`
+            }
+            className={buttonClass(filtro === voce.chiave ? "secondary" : "quiet", {
+              compact: true,
+            })}
+            aria-current={filtro === voce.chiave ? "page" : undefined}
           >
-            {label}
+            {voce.etichetta}
           </Link>
         ))}
       </div>
 
-      <div className={styles.detailGrid}>
-        <LifecycleSection
-          title={`${inventory.length} immobili`}
-          description="Inventario ricondotto alla proprietà fisica"
-        >
-          {inventory.length ? (
-            <div className={styles.rows}>
-              {inventory.map((property) => {
-                const agency = property.agencies.find((item) => item.slug === slug);
-                const age = ageDays(property.trueMarketStartUpperBound);
-                return (
-                  <article key={property.id} className={styles.propertyRow}>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <SignalPill tone={agency?.state === "ACTIVE" ? "good" : "high"}>
-                          {agencyListingStateLabel(agency?.state ?? "UNKNOWN")}
-                        </SignalPill>
-                        {detail.priceReducedPropertyIds.includes(property.id) ? (
-                          <SignalPill tone="high">Prezzo ridotto</SignalPill>
-                        ) : null}
-                      </div>
-                      <Link
-                        href={`/lifecycle/archive/${property.id}`}
-                        className={`${styles.rowTitle} mt-3 block`}
-                      >
-                        {property.title}
-                      </Link>
-                      <div className={`${styles.propertyFacts} mt-2`}>
-                        <strong>{formatCurrency(property.currentPrice)}</strong>
-                        <span>{age == null ? "Età ignota" : `${age} giorni reali`}</span>
-                        <span>{propertyStateLabel(property.propertyState)}</span>
-                      </div>
-                    </div>
-                    <Link href={`/lifecycle/archive/${property.id}`} className={styles.secondaryAction}>
-                      Apri dossier
-                    </Link>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <LifecycleEmpty
-              title="Nessun immobile nel filtro"
-              description="La selezione non contiene proprietà osservate per questa agenzia."
+      <Card>
+        <CardHeader
+          title={`${formatNumber(inventario.length)} ${inventario.length === 1 ? "casa" : "case"}`}
+          meta="Ogni riga è la casa vera, non l'annuncio: gli annunci ripubblicati restano una casa sola."
+        />
+        {visibili.length ? (
+          <div>
+            {visibili.map((property) => (
+              <PropertyRow
+                key={property.id}
+                property={property}
+                foto={foto.get(property.id)}
+                now={now}
+                mostraFonte={false}
+              />
+            ))}
+          </div>
+        ) : (
+          <CardBody>
+            <EmptyState
+              title="Niente con questo filtro"
+              description="Prova a guardare tutte le case che tiene questa agenzia."
+              action={
+                <Link
+                  href={`/lifecycle/agencies/${slug}`}
+                  className={buttonClass("secondary", { compact: true })}
+                >
+                  Mostra tutte
+                </Link>
+              }
             />
-          )}
-        </LifecycleSection>
+          </CardBody>
+        )}
+      </Card>
 
-        <LifecycleSection title="Ultimi run" description="Salute e copertura della fonte">
-          {detail.recentRuns.length ? (
-            <div className={styles.rows}>
-              {detail.recentRuns.map((run) => (
-                <article key={run.id} className={styles.row}>
-                  <div className={styles.rowTop}>
-                    <SignalPill tone={run.healthState === "HEALTHY" ? "good" : "high"}>
-                      {run.healthState ?? run.status}
-                    </SignalPill>
-                    <span className={styles.rowMeta}>{formatDateTime(run.finishedAt ?? run.startedAt)}</span>
-                  </div>
-                  <p className={styles.muted}>
-                    {run.inScopeCount} in area · {run.excludedCount} esclusi · {run.errorCount} errori
-                  </p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <LifecycleEmpty title="Nessun run" description="Il worker non ha ancora elaborato questa fonte." />
-          )}
-        </LifecycleSection>
-      </div>
+      {inventario.length > visibili.length ? (
+        <Meta className="px-1">
+          Ne vedi {formatNumber(visibili.length)} di {formatNumber(inventario.length)}: usa i
+          filtri qui sopra per arrivare alle altre.
+        </Meta>
+      ) : null}
     </>
   );
 }

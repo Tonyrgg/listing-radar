@@ -41,6 +41,7 @@ export function PropertyRow({
   href,
   compact = false,
   giudizioSempre = false,
+  mostraFonte = true,
 }: Readonly<{
   property: LifecyclePropertySummary;
   foto?: string;
@@ -51,6 +52,8 @@ export function PropertyRow({
   compact?: boolean;
   /** Dove il giudizio è il soggetto della pagina, si scrive anche se è basso. */
   giudizioSempre?: boolean;
+  /** Nella pagina di un'agenzia il suo nome su ogni riga è solo rumore. */
+  mostraFonte?: boolean;
 }>) {
   const daPrivato = property.activePrivateCount > 0;
   const agenzia = property.agencies[0]?.name ?? null;
@@ -99,7 +102,7 @@ export function PropertyRow({
             )}
             {daPrivato ? (
               <span className="text-[var(--lr-warn)]">Da privato</span>
-            ) : agenzia ? (
+            ) : agenzia && mostraFonte ? (
               <Fonte name={agenzia} />
             ) : (
               <span>{propertyStateLabel(property.propertyState)}</span>
