@@ -1,177 +1,245 @@
-import { ArrowUpRight, Building2, CalendarDays, MapPin, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { PropertyEditor } from "@/components/matching/management-panels";
+import { PortfolioRow } from "@/components/matching/portfolio-row";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
-import styles from "@/components/matching/section-design.module.css";
 import { ProgressiveList } from "@/components/progressive-list";
+import { Card, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { formatNumber } from "@/lib/formatting";
 import { propertyConditionLabel } from "@/lib/matching/property-presentation";
 import { listFeatures, listProperties, listZones } from "@/lib/matching/repository";
 
-import type { Metadata } from "next";
+export const metadata: Metadata = { title: "Le case che abbiamo noi" };
 
-export const metadata: Metadata = { title: "Immobili disponibili" };
+/**
+ * Il portafoglio.
+ *
+ * Ogni immobile era due tabelle affiancate di cinque righe — tipologia, locali,
+ * camere, bagni, piano · incarico, disponibilità, comune, indirizzo — e la
+ * maggior parte diceva «Non indicato». Dieci righe per scoprire che di quella
+ * casa sappiamo il prezzo e poco altro.
+ *
+ * Il portafoglio ha le foto, e non ne mostrava nemmeno una.
+ */
 
-export default async function PortfolioPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+const STATI_INCARICO: Record<string, string> = {
+  draft: "Bozza",
+  active: "La possiamo proporre",
+  suspended: "Sospeso",
+  expired: "Scaduto",
+  sold: "Venduta",
+  rented: "Affittata",
+  archived: "Archiviata",
+};
+
+const TIPI: Record<string, string> = {
+  apartment: "Appartamento",
+  independent_house: "Casa indipendente",
+  villa: "Villa",
+  townhouse: "Villetta",
+  penthouse: "Attico",
+  ground_floor: "Piano terra",
+  entire_building: "Intero stabile",
+  commercial_space: "Locale commerciale",
+  office: "Ufficio",
+  warehouse: "Deposito o magazzino",
+  garage: "Garage o box",
+  land: "Terreno",
+  other: "Altro",
+};
+
+function param(input: string | string[] | undefined) {
+  return typeof input === "string" ? input : "";
+}
+
+export default async function PortafoglioPage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   const query = await searchParams;
-  const search = value(query.q).trim().toLocaleLowerCase("it");
-  const contract = value(query.contract);
-  const propertyType = value(query.type);
-  const zoneId = value(query.zone);
-  const condition = value(query.condition);
-  const mandate = value(query.mandate);
+  const cerca = param(query.q).trim().toLocaleLowerCase("it");
+  const contratto = param(query.contract);
+  const tipo = param(query.type);
+  const zonaId = param(query.zone);
+  const incarico = param(query.mandate);
+
   const [properties, zones, features] = await Promise.all([
     listProperties(),
     listZones(),
     listFeatures(),
   ]);
 
-  const active = properties.filter((property) => property.mandate_status === "active").length;
-  const filteredProperties = properties.filter((property) => {
-    const haystack = [property.title, property.address, property.municipality, property.zone?.name, property.external_crm_id]
-      .filter(Boolean).join(" ").toLocaleLowerCase("it");
-    return (!search || haystack.includes(search))
-      && (!contract || property.contract_type === contract)
-      && (!propertyType || property.property_type === propertyType)
-      && (!zoneId || property.internal_zone_id === zoneId)
-      && (!condition || property.condition === condition)
-      && (!mandate || property.mandate_status === mandate);
+  const filtrate = properties.filter((property) => {
+    const testo = [
+      property.title,
+      property.address,
+      property.municipality,
+      property.zone?.name,
+      property.external_crm_id,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("it");
+
+    return (
+      (!cerca || testo.includes(cerca)) &&
+      (!contratto || property.contract_type === contratto) &&
+      (!tipo || property.property_type === tipo) &&
+      (!zonaId || property.internal_zone_id === zonaId) &&
+      (!incarico || property.mandate_status === incarico)
+    );
   });
-  const hasFilters = Boolean(search || contract || propertyType || zoneId || condition || mandate);
+
+  const proponibili = properties.filter((item) => item.mandate_status === "active").length;
+  const filtriAttivi = Boolean(cerca || contratto || tipo || zonaId || incarico);
 
   return (
-    <div className={styles.page}>
+    <div className="space-y-5">
       <MatchingSectionHeader
-        eyebrow="Clienti e immobili"
-        title="Immobili disponibili"
-        description="Il portafoglio operativo da confrontare con le richieste attive."
+        eyebrow="Commerciale"
+        title="Le case che abbiamo noi"
+        description={`${formatNumber(properties.length)} immobili in portafoglio, di cui ${formatNumber(proponibili)} li possiamo proporre a un cliente adesso.`}
         actions={<PropertyEditor zones={zones} features={features} />}
       />
 
-      <dl className={styles.overviewStrip}>
-        <Metric label="Totale portafoglio" value={properties.length} note="immobili registrati" />
-        <Metric label="Disponibili" value={active} note="pronti per il matching" />
-        <Metric label="Vendita" value={properties.filter((item) => item.contract_type === "sale").length} note="incarichi di vendita" />
-        <Metric label="Locazione" value={properties.filter((item) => item.contract_type === "rent").length} note="incarichi di locazione" />
-      </dl>
-
-      <AutoSubmitFiltersForm className={styles.portfolioFilters}>
-        <label className={styles.searchField}>
-          <Search aria-hidden="true" />
-          <span className="sr-only">Cerca immobili</span>
-          <input className={styles.input} name="q" defaultValue={value(query.q)} placeholder="Cerca per titolo, via, zona o ID CRM" />
+      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+        <label className="relative min-w-56 flex-1">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lr-ink-3)]"
+          />
+          <span className="sr-only">Cerca in portafoglio</span>
+          <input
+            type="search"
+            name="q"
+            defaultValue={param(query.q)}
+            placeholder="via, zona, nome dell'incarico…"
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] pl-9 pr-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          />
         </label>
-        <select className={styles.select} name="contract" defaultValue={contract} aria-label="Contratto"><option value="">Tutti i contratti</option><option value="sale">Vendita</option><option value="rent">Locazione</option></select>
-        <select className={styles.select} name="type" defaultValue={propertyType} aria-label="Tipologia"><option value="">Tutte le tipologie</option>{[...new Set(properties.map((item) => item.property_type))].sort().map((item) => <option value={item} key={item}>{propertyTypeLabel(item)}</option>)}</select>
-        <select className={styles.select} name="zone" defaultValue={zoneId} aria-label="Zona"><option value="">Tutte le zone</option>{zones.map((zone) => <option value={zone.id} key={zone.id}>{zone.zone_number ? `${zone.zone_number} · ` : ""}{zone.name}</option>)}</select>
-        <select className={styles.select} name="condition" defaultValue={condition} aria-label="Stato immobile"><option value="">Tutti gli stati immobile</option><option value="new">Nuovo</option><option value="renovated">Ristrutturato</option><option value="normal">Normale</option><option value="to_renovate">Da ristrutturare</option><option value="poor">Scarso</option></select>
-        <select className={styles.select} name="mandate" defaultValue={mandate} aria-label="Disponibilità incarico"><option value="">Tutti gli incarichi</option><option value="active">Disponibili</option><option value="draft">Bozze</option><option value="suspended">Sospesi</option><option value="sold">Venduti</option><option value="rented">Affittati</option><option value="archived">Archiviati</option></select>
+
+        <label className="min-w-44">
+          <span className="sr-only">Vendita o affitto</span>
+          <select
+            name="contract"
+            defaultValue={contratto}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">In vendita e in affitto</option>
+            <option value="sale">Solo in vendita</option>
+            <option value="rent">Solo in affitto</option>
+          </select>
+        </label>
+
+        <label className="min-w-44">
+          <span className="sr-only">Tipo di immobile</span>
+          <select
+            name="type"
+            defaultValue={tipo}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">Di qualsiasi tipo</option>
+            {[...new Set(properties.map((item) => item.property_type))].sort().map((item) => (
+              <option value={item} key={item}>
+                {TIPI[item] ?? item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="min-w-44">
+          <span className="sr-only">Zona</span>
+          <select
+            name="zone"
+            defaultValue={zonaId}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">In qualsiasi zona</option>
+            {zones.map((zone) => (
+              <option value={zone.id} key={zone.id}>
+                {zone.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="min-w-44">
+          <span className="sr-only">Stato dell&apos;incarico</span>
+          <select
+            name="mandate"
+            defaultValue={incarico}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="">Con qualsiasi incarico</option>
+            <option value="active">Che possiamo proporre</option>
+            <option value="sold">Già vendute</option>
+            <option value="rented">Già affittate</option>
+            <option value="suspended">Sospese</option>
+            <option value="archived">Archiviate</option>
+          </select>
+        </label>
+
+        {filtriAttivi ? (
+          <Link href="/portfolio" className={buttonClass("quiet", { compact: true })}>
+            <X aria-hidden="true" className="size-4" />
+            Azzera
+          </Link>
+        ) : null}
       </AutoSubmitFiltersForm>
 
-      <div className={styles.listResultLine}>
-        <p><strong>{filteredProperties.length}</strong> {filteredProperties.length === 1 ? "immobile trovato" : "immobili trovati"}</p>
-        {hasFilters ? <Link href="/portfolio"><X aria-hidden="true" className="size-3.5" /> Azzera filtri</Link> : null}
-      </div>
-
-      <ProgressiveList className={styles.recordGrid} initialCount={12} step={12} noun="immobili">
-        {filteredProperties.map((property) => {
-          const price = property.contract_type === "sale" ? property.price : property.monthly_rent;
-          const featureCount = (property.property_feature_values ?? []).filter((item) => Boolean(item.value)).length;
-          return (
-            <Link               className={styles.propertyCard}
-              href={`/portfolio/${property.id}`}
-              key={property.id}
-              aria-label={`Apri l’immobile ${property.title}`}
-            >
-              <header className={styles.propertyHeader}>
-                <div>
-                  <p className={styles.recordReference}>{property.contract_type === "sale" ? "Vendita" : "Locazione"}</p>
-                  <h2 className={styles.recordTitle}>{property.title}</h2>
-                  <p className={styles.recordSubtitle}>
-                    {property.zone?.name || property.address || property.municipality || "Zona da completare"}
-                  </p>
-                </div>
-                <span className={styles.badge}>{mandateLabel(property.mandate_status)}</span>
-              </header>
-
-              <dl className={styles.propertyHighlights}>
-                <PropertyHighlight label={property.contract_type === "sale" ? "Prezzo" : "Canone"} value={price ? `€ ${Number(price).toLocaleString("it-IT")}${property.contract_type === "rent" ? "/mese" : ""}` : "Da definire"} />
-                <PropertyHighlight label="Superficie" value={property.internal_sqm ? `${property.internal_sqm} mq` : "Non indicata"} muted={!property.internal_sqm} />
-                <PropertyHighlight label="Stato" value={propertyConditionLabel(property.condition)} muted={!property.condition} emphasized />
-              </dl>
-
-              <div className={styles.propertyBody}>
-                <section className={styles.recordColumn}>
-                  <h3 className={styles.columnTitle}>Immobile</h3>
-                  <dl className={styles.fieldList}>
-                    <Field label="Tipologia" value={propertyTypeLabel(property.property_type)} />
-                    <Field label="Locali" value={numberValue(property.rooms)} />
-                    <Field label="Camere" value={numberValue(property.bedrooms)} />
-                    <Field label="Bagni" value={numberValue(property.bathrooms)} />
-                    <Field label="Piano" value={numberValue(property.floor)} />
-                  </dl>
-                </section>
-                <section className={styles.recordColumn}>
-                  <h3 className={styles.columnTitle}>Commerciale</h3>
-                  <dl className={styles.fieldList}>
-                    <Field label="Incarico" value={mandateLabel(property.mandate_status)} />
-                    <Field label="Disponibilità" value={availabilityLabel(property.availability_status)} />
-                    <Field label="Comune" value={property.municipality || "Non indicato"} />
-                    <Field label="Indirizzo" value={property.address || "Non indicato"} muted={!property.address} />
-                  </dl>
-                </section>
-              </div>
-
-              <footer className={styles.recordFooter}>
-                <span className="inline-flex items-center gap-1"><MapPin aria-hidden="true" className="size-3.5" /> {property.zone?.name || property.municipality || "Zona non indicata"}</span>
-                <span>{featureCount} dotazioni</span>
-                {property.created_at ? <span className="inline-flex items-center gap-1"><CalendarDays aria-hidden="true" className="size-3.5" /> {new Date(property.created_at).toLocaleDateString("it-IT")}</span> : null}
-                <span className={styles.recordAction}>Apri scheda <ArrowUpRight aria-hidden="true" className="size-4" /></span>
-              </footer>
-            </Link>
-          );
-        })}
-      </ProgressiveList>
-
-      {!filteredProperties.length ? (
-        <div className={styles.emptyState}>
-          <div>
-            <Building2 aria-hidden="true" className="mx-auto size-6 text-[var(--lr-accent)]" />
-            <h2 className="mt-4 font-semibold text-[var(--lr-ink)]">{hasFilters ? "Nessun immobile corrisponde ai filtri" : "Nessun immobile in portafoglio"}</h2>
-            <p className="mt-2 text-sm">{hasFilters ? "Prova a rimuovere un filtro o a cambiare la ricerca." : "Aggiungi il primo immobile per attivare il confronto con le richieste."}</p>
-            <div className="mt-5">{hasFilters ? <Link className={styles.secondaryButton} href="/portfolio">Azzera filtri</Link> : <PropertyEditor zones={zones} features={features} />}</div>
-          </div>
-        </div>
-      ) : null}
+      {filtrate.length ? (
+        <Card>
+          <ProgressiveList initialCount={12} step={12} noun="immobili">
+            {filtrate.map((property) => (
+              <PortfolioRow
+                key={property.id}
+                property={property}
+                href={`/portfolio/${property.id}`}
+                tono={property.mandate_status === "active" ? "action" : "neutral"}
+                coda={
+                  /* «La possiamo proporre» su tutte e settantotto le righe non
+                   * distingue niente: si scrive solo quando c'è qualcosa che
+                   * ferma la proposta. */
+                  <span className="flex flex-col items-end gap-1">
+                    {property.mandate_status === "active" ? null : (
+                      <Chip tone="neutral">
+                        {STATI_INCARICO[property.mandate_status] ?? property.mandate_status}
+                      </Chip>
+                    )}
+                    {property.condition ? (
+                      <Meta>{propertyConditionLabel(property.condition)}</Meta>
+                    ) : null}
+                  </span>
+                }
+              />
+            ))}
+          </ProgressiveList>
+        </Card>
+      ) : (
+        <Card className="p-4">
+          <EmptyState
+            title={
+              filtriAttivi ? "Nessuna casa con questi filtri" : "Non abbiamo ancora nessuna casa"
+            }
+            description={
+              filtriAttivi
+                ? "Prova ad allargare la ricerca: potrebbe esserci un immobile escluso da un filtro attivo."
+                : "Il portafoglio si riempie dal gestionale, oppure aggiungendo il primo immobile da qui."
+            }
+            action={
+              filtriAttivi ? (
+                <Link href="/portfolio" className={buttonClass("primary", { compact: true })}>
+                  Mostra tutte
+                </Link>
+              ) : (
+                <PropertyEditor zones={zones} features={features} />
+              )
+            }
+          />
+        </Card>
+      )}
     </div>
   );
 }
-
-function Metric({ label, value, note }: Readonly<{ label: string; value: number; note: string }>) {
-  return <div className={styles.metric}><dt className={styles.label}>{label}</dt><dd className={styles.metricValue}>{value}</dd><dd className={styles.metricNote}>{note}</dd></div>;
-}
-
-function Field({ label, value, muted = false }: Readonly<{ label: string; value: string; muted?: boolean }>) {
-  return <div className={styles.fieldRow}><dt className={styles.label}>{label}</dt><dd className={`${styles.fieldValue} ${muted ? styles.fieldMuted : ""}`}>{value}</dd></div>;
-}
-
-function PropertyHighlight({ label, value, muted = false, emphasized = false }: Readonly<{ label: string; value: string; muted?: boolean; emphasized?: boolean }>) {
-  return <div className={`${styles.propertyHighlight} ${emphasized ? styles.propertyHighlightState : ""}`}><dt>{label}</dt><dd className={muted ? styles.fieldMuted : ""}>{value}</dd></div>;
-}
-
-function numberValue(value: number | null) { return value === null ? "Non indicato" : String(value); }
-
-function propertyTypeLabel(value: string) {
-  return ({ apartment: "Appartamento", independent_house: "Casa indipendente", villa: "Villa", townhouse: "Villetta", penthouse: "Attico", ground_floor: "Piano terra", entire_building: "Intero stabile", commercial_space: "Locale commerciale", office: "Ufficio", warehouse: "Deposito / magazzino", garage: "Garage / box", land: "Terreno", other: "Altra tipologia" }[value] ?? value);
-}
-
-function mandateLabel(status: string) {
-  return ({ draft: "Bozza", active: "Disponibile", suspended: "Sospeso", expired: "Scaduto", sold: "Venduto", rented: "Affittato", archived: "Archiviato" }[status] ?? status);
-}
-
-function availabilityLabel(value: string | null) {
-  return ({ available_now: "Subito", available_at_deed: "Al rogito", occupied: "Occupato", rented: "Locato", future_availability: "Futura" }[value ?? ""] ?? "Non indicata");
-}
-
-function value(input: string | string[] | undefined) { return typeof input === "string" ? input : ""; }
