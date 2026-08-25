@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { login } from "@/app/login/actions";
-import { buttonClass } from "@/components/ui/primitives";
+import { Campo, Testo, buttonClass } from "@/components/ui/primitives";
 import { getCurrentUser, isAuthRequired } from "@/lib/auth";
 
 import type { Metadata } from "next";
@@ -36,14 +36,12 @@ export default async function LoginPage({
           </div>
         </div>
         <form action={login} className="mt-6 space-y-4 border-t border-[var(--lr-line-quiet)] pt-5">
-          <label className="block space-y-2 text-sm">
-            <span className="font-medium text-[var(--lr-ink)]">Email</span>
-            <input name="email" type="email" autoComplete="email" required className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[var(--lr-ink)]" />
-          </label>
-          <label className="block space-y-2 text-sm">
-            <span className="font-medium text-[var(--lr-ink)]">Password</span>
-            <input name="password" type="password" autoComplete="current-password" required className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[var(--lr-ink)]" />
-          </label>
+          <Campo label="Email">
+            <Testo name="email" type="email" autoComplete="email" required />
+          </Campo>
+          <Campo label="Password">
+            <Testo name="password" type="password" autoComplete="current-password" required />
+          </Campo>
           {error ? (
             <p
               role="alert"

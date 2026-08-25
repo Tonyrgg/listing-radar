@@ -7,6 +7,7 @@ import { connection } from "next/server";
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { Dato } from "@/components/ui/atoms";
 import {
+  Campo,
   Card,
   CardBody,
   CardHeader,
@@ -14,6 +15,7 @@ import {
   EmptyState,
   Label,
   Meta,
+  Testo,
   buttonClass,
 } from "@/components/ui/primitives";
 import { getCurrentUser } from "@/lib/auth";
@@ -92,7 +94,10 @@ function SchedaConfronto({
   const diverso = (chiave: "currentPrice" | "surfaceSqm" | "rooms") =>
     riferimento != null && riferimento[chiave] !== property[chiave];
 
-  const valore = (chiave: "currentPrice" | "surfaceSqm" | "rooms", testo: string) => (
+  const valore = (
+    chiave: "currentPrice" | "surfaceSqm" | "rooms",
+    testo: string,
+  ) => (
     <span
       className={
         diverso(chiave)
@@ -145,7 +150,9 @@ function SchedaConfronto({
       </Link>
 
       <p className="truncate text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)]">
-        <Dato certainty={property.address ? "sure" : "guess"}>{nome(property)}</Dato>
+        <Dato certainty={property.address ? "sure" : "guess"}>
+          {nome(property)}
+        </Dato>
       </p>
 
       <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[length:var(--lr-text-body)]">
@@ -158,11 +165,16 @@ function SchedaConfronto({
           : null}
       </p>
 
-      <Meta>{property.agencies.map((agency) => formatShouty(agency.name)).join(" · ") || "—"}</Meta>
+      <Meta>
+        {property.agencies
+          .map((agency) => formatShouty(agency.name))
+          .join(" · ") || "—"}
+      </Meta>
 
       {contraddizioni?.length ? (
         <Meta className="text-[var(--lr-warn)]">
-          Non torna: {contraddizioni.map(humanize).join(", ").toLocaleLowerCase("it")}
+          Non torna:{" "}
+          {contraddizioni.map(humanize).join(", ").toLocaleLowerCase("it")}
         </Meta>
       ) : null}
     </div>
@@ -171,7 +183,9 @@ function SchedaConfronto({
 
 export default async function DaDecidereePage({
   searchParams,
-}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>) {
   await connection();
 
   const query = await searchParams;
@@ -180,7 +194,8 @@ export default async function DaDecidereePage({
     getCurrentUser(),
   ]);
 
-  if (!view.available || !view.data) return <LifecycleUnavailable message={view.message} />;
+  if (!view.available || !view.data)
+    return <LifecycleUnavailable message={view.message} />;
 
   const casi = view.data;
 
@@ -205,11 +220,14 @@ export default async function DaDecidereePage({
   }
 
   const richiesto = param(query.caso);
-  const indice = Math.min(Math.max(Number(richiesto ?? "1") || 1, 1), casi.length) - 1;
+  const indice =
+    Math.min(Math.max(Number(richiesto ?? "1") || 1, 1), casi.length) - 1;
   const caso = casi[indice];
   const prossimo = indice + 2 <= casi.length ? indice + 2 : null;
 
-  const candidati = [...caso.candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const candidati = [...caso.candidates].sort(
+    (a, b) => (b.score ?? 0) - (a.score ?? 0),
+  );
   const migliore = candidati[0] ?? null;
   const altri = candidati.slice(1);
   const coda = casi.slice(indice + 1, indice + 1 + DA_MOSTRARE_IN_CODA);
@@ -220,7 +238,8 @@ export default async function DaDecidereePage({
     ...coda.flatMap((altro) => (altro.property ? [altro.property] : [])),
   ]);
 
-  const perTipo = (tipo: string) => casi.filter((item) => item.reviewType === tipo).length;
+  const perTipo = (tipo: string) =>
+    casi.filter((item) => item.reviewType === tipo).length;
 
   return (
     <>
@@ -326,23 +345,23 @@ export default async function DaDecidereePage({
                   value={migliore.property.id}
                 />
               ) : null}
-              <label className={styles.manualLabel}>
-                Cosa ti fa dire di sì o di no?
-                <input
+              <Campo label="Cosa ti fa dire di sì o di no?">
+                <Testo
                   name="reason"
                   required
                   minLength={5}
                   placeholder="Es. stesse foto, stesso piano, prezzo diverso perché ribassato"
-                  className={styles.input}
                 />
-              </label>
+              </Campo>
               <div className={styles.decisionGrid}>
                 <PendingSubmitButton
                   type="submit"
                   name="decision"
                   value="SAME"
                   pendingLabel="Registro"
-                  icon={<GitCompareArrows aria-hidden="true" className="size-4" />}
+                  icon={
+                    <GitCompareArrows aria-hidden="true" className="size-4" />
+                  }
                   className={styles.primaryAction}
                 >
                   È la stessa casa
@@ -361,7 +380,9 @@ export default async function DaDecidereePage({
                   name="decision"
                   value="NOT_SURE"
                   pendingLabel="Registro"
-                  icon={<ShieldQuestion aria-hidden="true" className="size-4" />}
+                  icon={
+                    <ShieldQuestion aria-hidden="true" className="size-4" />
+                  }
                   className={styles.secondaryAction}
                 >
                   Non riesco a dirlo
@@ -379,7 +400,10 @@ export default async function DaDecidereePage({
 
       {coda.length ? (
         <Card>
-          <CardHeader title="Dopo questo" meta={`Altri ${casi.length - indice - 1} casi in coda.`} />
+          <CardHeader
+            title="Dopo questo"
+            meta={`Altri ${casi.length - indice - 1} casi in coda.`}
+          />
           <div>
             {coda.map((altro, posizione) => (
               <Link
@@ -391,13 +415,17 @@ export default async function DaDecidereePage({
                   {altro.property && foto.get(altro.property.id) ? (
                     <span
                       className="block size-full bg-cover bg-center"
-                      style={{ backgroundImage: `url("${foto.get(altro.property.id)}")` }}
+                      style={{
+                        backgroundImage: `url("${foto.get(altro.property.id)}")`,
+                      }}
                     />
                   ) : null}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
-                    {altro.property ? nome(altro.property) : "Scheda non più in archivio"}
+                    {altro.property
+                      ? nome(altro.property)
+                      : "Scheda non più in archivio"}
                   </span>
                   <span className="block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                     {domanda(altro)}
@@ -406,7 +434,10 @@ export default async function DaDecidereePage({
                       : ""}
                   </span>
                 </span>
-                <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-[var(--lr-ink-3)]" />
+                <ArrowRight
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-[var(--lr-ink-3)]"
+                />
               </Link>
             ))}
           </div>

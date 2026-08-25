@@ -1,6 +1,13 @@
 import { clsx } from "clsx";
+import { Search } from "lucide-react";
 import Link from "next/link";
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 
 /* ---------------------------------------------------------------------------
  * Un componente per ogni lavoro, e uno solo.
@@ -165,6 +172,118 @@ export function Meta({
     <p className={clsx("text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]", className)}>
       {children}
     </p>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * I controlli dei moduli.
+ *
+ * Erano tre implementazioni della stessa cosa: le classi di
+ * `lifecycle.module.css` (44 px, fondo rialzato, testo 0,78rem), quelle di
+ * `section-design.module.css`, e sedici copie scritte a mano dentro le barre
+ * dei filtri. Tre altezze, tre fondi, tre misure di testo per un campo di
+ * testo.
+ *
+ * Adesso il campo ha un aspetto solo: fondo della pagina dentro una linea, la
+ * stessa altezza dei bottoni. Su una scheda si legge come un incavo, sulla
+ * pagina come una casella — ed è sempre la stessa cosa.
+ * ------------------------------------------------------------------------- */
+
+export function controlClass(className?: string, options: { conIcona?: boolean } = {}) {
+  return clsx(
+    "min-h-[var(--lr-control-height)] w-full rounded-[var(--lr-radius-control)]",
+    "border border-[var(--lr-line)] bg-[var(--lr-canvas)]",
+    /* La lente occupa il posto del margine sinistro: le due spaziature non
+     * possono convivere nello stesso attributo. */
+    options.conIcona ? "pl-9 pr-3" : "px-3",
+    "text-[length:var(--lr-text-body)] text-[var(--lr-ink)]",
+    "outline-none transition-colors placeholder:text-[var(--lr-ink-3)]",
+    "focus-visible:border-[var(--lr-accent)]",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+    className,
+  );
+}
+
+/** La casella di ricerca, con la sua lente. Quattro pagine la ridisegnavano. */
+export function Ricerca({
+  label,
+  placeholder,
+  name = "q",
+  defaultValue,
+  className,
+}: Readonly<{
+  label: string;
+  placeholder?: string;
+  name?: string;
+  defaultValue?: string;
+  className?: string;
+}>) {
+  return (
+    <label className={clsx("relative min-w-56 flex-1", className)}>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lr-ink-3)]"
+      />
+      <span className="sr-only">{label}</span>
+      <input
+        type="search"
+        name={name}
+        defaultValue={defaultValue}
+        placeholder={placeholder}
+        className={controlClass(undefined, { conIcona: true })}
+      />
+    </label>
+  );
+}
+
+/** Un campo con la sua etichetta. Senza etichetta visibile, resta per chi legge con lo schermo. */
+export function Campo({
+  label,
+  hint,
+  children,
+  labelHidden = false,
+  className,
+}: Readonly<{
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+  /** Nelle barre dei filtri l'etichetta la dicono già le opzioni. */
+  labelHidden?: boolean;
+  className?: string;
+}>) {
+  return (
+    <label className={clsx("grid gap-1.5", className)}>
+      <span
+        className={clsx(
+          labelHidden
+            ? "sr-only"
+            : "text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)]",
+        )}
+      >
+        {label}
+      </span>
+      {children}
+      {hint && !labelHidden ? <Meta>{hint}</Meta> : null}
+    </label>
+  );
+}
+
+export function Testo({
+  className,
+  ...props
+}: Readonly<InputHTMLAttributes<HTMLInputElement>>) {
+  return <input {...props} className={controlClass(className)} />;
+}
+
+export function Scelta({
+  className,
+  children,
+  ...props
+}: Readonly<SelectHTMLAttributes<HTMLSelectElement>>) {
+  return (
+    <select {...props} className={controlClass(className)}>
+      {children}
+    </select>
   );
 }
 

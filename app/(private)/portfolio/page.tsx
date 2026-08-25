@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -7,10 +7,23 @@ import { PropertyEditor } from "@/components/matching/management-panels";
 import { PortfolioRow } from "@/components/matching/portfolio-row";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import { ProgressiveList } from "@/components/progressive-list";
-import { Card, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import {
+  Campo,
+  Card,
+  Chip,
+  EmptyState,
+  Meta,
+  Ricerca,
+  Scelta,
+  buttonClass,
+} from "@/components/ui/primitives";
 import { formatNumber } from "@/lib/formatting";
 import { propertyConditionLabel } from "@/lib/matching/property-presentation";
-import { listFeatures, listProperties, listZones } from "@/lib/matching/repository";
+import {
+  listFeatures,
+  listProperties,
+  listZones,
+} from "@/lib/matching/repository";
 
 export const metadata: Metadata = { title: "Le case che abbiamo noi" };
 
@@ -57,7 +70,9 @@ function param(input: string | string[] | undefined) {
 
 export default async function PortafoglioPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>) {
   const query = await searchParams;
   const cerca = param(query.q).trim().toLocaleLowerCase("it");
   const contratto = param(query.contract);
@@ -92,8 +107,12 @@ export default async function PortafoglioPage({
     );
   });
 
-  const proponibili = properties.filter((item) => item.mandate_status === "active").length;
-  const filtriAttivi = Boolean(cerca || contratto || tipo || zonaId || incarico);
+  const proponibili = properties.filter(
+    (item) => item.mandate_status === "active",
+  ).length;
+  const filtriAttivi = Boolean(
+    cerca || contratto || tipo || zonaId || incarico,
+  );
 
   return (
     <div className="space-y-5">
@@ -105,84 +124,60 @@ export default async function PortafoglioPage({
       />
 
       <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-56 flex-1">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lr-ink-3)]"
-          />
-          <span className="sr-only">Cerca in portafoglio</span>
-          <input
-            type="search"
-            name="q"
-            defaultValue={param(query.q)}
-            placeholder="via, zona, nome dell'incarico…"
-            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] pl-9 pr-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
-          />
-        </label>
+        <Ricerca
+          label="Cerca in portafoglio"
+          defaultValue={param(query.q)}
+          placeholder="via, zona, nome dell'incarico…"
+        />
 
-        <label className="min-w-44">
-          <span className="sr-only">Vendita o affitto</span>
-          <select
-            name="contract"
-            defaultValue={contratto}
-            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
-          >
+        <Campo label="Vendita o affitto" labelHidden className="min-w-44">
+          <Scelta name="contract" defaultValue={contratto}>
             <option value="">In vendita e in affitto</option>
             <option value="sale">Solo in vendita</option>
             <option value="rent">Solo in affitto</option>
-          </select>
-        </label>
+          </Scelta>
+        </Campo>
 
-        <label className="min-w-44">
-          <span className="sr-only">Tipo di immobile</span>
-          <select
-            name="type"
-            defaultValue={tipo}
-            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
-          >
+        <Campo label="Tipo di immobile" labelHidden className="min-w-44">
+          <Scelta name="type" defaultValue={tipo}>
             <option value="">Di qualsiasi tipo</option>
-            {[...new Set(properties.map((item) => item.property_type))].sort().map((item) => (
-              <option value={item} key={item}>
-                {TIPI[item] ?? item}
-              </option>
-            ))}
-          </select>
-        </label>
+            {[...new Set(properties.map((item) => item.property_type))]
+              .sort()
+              .map((item) => (
+                <option value={item} key={item}>
+                  {TIPI[item] ?? item}
+                </option>
+              ))}
+          </Scelta>
+        </Campo>
 
-        <label className="min-w-44">
-          <span className="sr-only">Zona</span>
-          <select
-            name="zone"
-            defaultValue={zonaId}
-            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
-          >
+        <Campo label="Zona" labelHidden className="min-w-44">
+          <Scelta name="zone" defaultValue={zonaId}>
             <option value="">In qualsiasi zona</option>
             {zones.map((zone) => (
               <option value={zone.id} key={zone.id}>
                 {zone.name}
               </option>
             ))}
-          </select>
-        </label>
+          </Scelta>
+        </Campo>
 
-        <label className="min-w-44">
-          <span className="sr-only">Stato dell&apos;incarico</span>
-          <select
-            name="mandate"
-            defaultValue={incarico}
-            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
-          >
+        <Campo label="Stato dell'incarico" labelHidden className="min-w-44">
+          <Scelta name="mandate" defaultValue={incarico}>
             <option value="">Con qualsiasi incarico</option>
             <option value="active">Che possiamo proporre</option>
             <option value="sold">Già vendute</option>
             <option value="rented">Già affittate</option>
             <option value="suspended">Sospese</option>
             <option value="archived">Archiviate</option>
-          </select>
-        </label>
+          </Scelta>
+        </Campo>
 
         {filtriAttivi ? (
-          <Link href="/portfolio" className={buttonClass("quiet", { compact: true })}>
+          <Link
+            href="/portfolio"
+            className={buttonClass("quiet", { compact: true })}
+          >
             <X aria-hidden="true" className="size-4" />
             Azzera
           </Link>
@@ -197,7 +192,9 @@ export default async function PortafoglioPage({
                 key={property.id}
                 property={property}
                 href={`/portfolio/${property.id}`}
-                tono={property.mandate_status === "active" ? "action" : "neutral"}
+                tono={
+                  property.mandate_status === "active" ? "action" : "neutral"
+                }
                 coda={
                   /* «La possiamo proporre» su tutte e settantotto le righe non
                    * distingue niente: si scrive solo quando c'è qualcosa che
@@ -205,7 +202,8 @@ export default async function PortafoglioPage({
                   <span className="flex flex-col items-end gap-1">
                     {property.mandate_status === "active" ? null : (
                       <Chip tone="neutral">
-                        {STATI_INCARICO[property.mandate_status] ?? property.mandate_status}
+                        {STATI_INCARICO[property.mandate_status] ??
+                          property.mandate_status}
                       </Chip>
                     )}
                     {property.condition ? (
@@ -221,7 +219,9 @@ export default async function PortafoglioPage({
         <Card className="p-4">
           <EmptyState
             title={
-              filtriAttivi ? "Nessuna casa con questi filtri" : "Non abbiamo ancora nessuna casa"
+              filtriAttivi
+                ? "Nessuna casa con questi filtri"
+                : "Non abbiamo ancora nessuna casa"
             }
             description={
               filtriAttivi
@@ -230,7 +230,10 @@ export default async function PortafoglioPage({
             }
             action={
               filtriAttivi ? (
-                <Link href="/portfolio" className={buttonClass("primary", { compact: true })}>
+                <Link
+                  href="/portfolio"
+                  className={buttonClass("primary", { compact: true })}
+                >
                   Mostra tutte
                 </Link>
               ) : (

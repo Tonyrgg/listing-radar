@@ -688,26 +688,6 @@
   line-height: 1.55;
 }
 
-.input,
-.select {
-  min-height: 44px;
-  width: 100%;
-  border: 1px solid var(--lr-line);
-  border-radius: 7px;
-  padding: 0.65rem 0.75rem;
-  background: var(--lr-raised);
-  color: var(--lr-ink);
-  font-size: 0.78rem;
-}
-
-.manualLabel {
-  display: grid;
-  gap: 0.35rem;
-  color: var(--lr-ink-2);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
 .decisionGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

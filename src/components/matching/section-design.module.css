@@ -205,15 +205,18 @@
 
 .filterForm { display: grid; gap: .55rem; padding: 0 .8rem .8rem; }
 
+/* Gli stessi valori di `controlClass()` nelle primitive: un campo di testo
+ * aveva tre altezze, tre raggi e tre fondi a seconda della pagina che lo
+ * disegnava. Qui restano le classi, cambia l'aspetto. */
 .input,
 .select {
   width: 100%;
-  min-height: 2.65rem;
-  border: 1px solid var(--lr-line-quiet);
-  border-radius: .45rem;
-  background: var(--lr-raised);
+  min-height: var(--lr-control-height);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-canvas);
   color: var(--lr-ink);
-  font-size: .78rem;
+  font-size: var(--lr-text-body);
   outline: none;
   padding: 0 .75rem;
 }

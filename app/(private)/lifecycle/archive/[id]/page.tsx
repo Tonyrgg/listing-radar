@@ -19,7 +19,17 @@ import {
   formaFromPropertyState,
   livelloFromOpportunity,
 } from "@/components/ui/atoms";
-import { Card, CardBody, CardHeader, EmptyState, Label, Meta } from "@/components/ui/primitives";
+import {
+  Campo,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Label,
+  Meta,
+  Scelta,
+  Testo,
+} from "@/components/ui/primitives";
 import { getCurrentUser } from "@/lib/auth";
 import { readNow } from "@/lib/clock";
 import { getSourceLabel } from "@/lib/labels";
@@ -52,7 +62,11 @@ import {
   recordAgencyOutcomeOverride,
   recordPropertySaleOverride,
 } from "../../actions";
-import { ExternalSourceLink, LifecycleUnavailable, ageDays } from "../../_components/ui";
+import {
+  ExternalSourceLink,
+  LifecycleUnavailable,
+  ageDays,
+} from "../../_components/ui";
 import styles from "../../lifecycle.module.css";
 
 export const metadata: Metadata = { title: "Scheda della casa" };
@@ -70,7 +84,8 @@ export const metadata: Metadata = { title: "Scheda della casa" };
  */
 
 function riepilogoEvento(payload: Record<string, unknown>) {
-  const vecchio = typeof payload.oldPrice === "number" ? payload.oldPrice : null;
+  const vecchio =
+    typeof payload.oldPrice === "number" ? payload.oldPrice : null;
   const nuovo = typeof payload.newPrice === "number" ? payload.newPrice : null;
 
   if (vecchio != null && nuovo != null) {
@@ -88,8 +103,11 @@ function riepilogoEvento(payload: Record<string, unknown>) {
   if (esito) return <Meta>{humanize(esito)}</Meta>;
 
   const precedente =
-    typeof payload.priorAgencyState === "string" ? payload.priorAgencyState : null;
-  if (precedente) return <Meta>Prima era: {agencyListingStateLabel(precedente)}</Meta>;
+    typeof payload.priorAgencyState === "string"
+      ? payload.priorAgencyState
+      : null;
+  if (precedente)
+    return <Meta>Prima era: {agencyListingStateLabel(precedente)}</Meta>;
 
   return null;
 }
@@ -139,7 +157,9 @@ function Fatto({
   return (
     <div className="min-w-0">
       <Label>{label}</Label>
-      <p className="mt-0.5 text-[length:var(--lr-text-record)] text-[var(--lr-ink)]">{children}</p>
+      <p className="mt-0.5 text-[length:var(--lr-text-record)] text-[var(--lr-ink)]">
+        {children}
+      </p>
     </div>
   );
 }
@@ -152,7 +172,10 @@ function Fatto({
  * perché è quella che sposta indietro l'età reale di mercato.
  */
 function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
-  const migliori = new Map<string, LifecyclePropertyDetail["evidence"][number]>();
+  const migliori = new Map<
+    string,
+    LifecyclePropertyDetail["evidence"][number]
+  >();
 
   for (const prova of evidence) {
     const chiave = `${prova.claimKey}|${prova.extractionMethod}`;
@@ -165,14 +188,18 @@ function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
   }
 
   return [...migliori.values()].sort((a, b) =>
-    (a.sourceRecordedAt ?? a.observedAt).localeCompare(b.sourceRecordedAt ?? b.observedAt),
+    (a.sourceRecordedAt ?? a.observedAt).localeCompare(
+      b.sourceRecordedAt ?? b.observedAt,
+    ),
   );
 }
 
 function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
   const { property, publications, privatePublications } = detail;
   const niente =
-    !property.agencies.length && !publications.length && !privatePublications.length;
+    !property.agencies.length &&
+    !publications.length &&
+    !privatePublications.length;
 
   if (niente) {
     return (
@@ -186,7 +213,10 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
   return (
     <div className="divide-y divide-[var(--lr-line-quiet)]">
       {property.agencies.map((agency) => (
-        <div key={agency.listingId} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
+        <div
+          key={agency.listingId}
+          className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3"
+        >
           <Link
             href={`/lifecycle/agencies/${agency.slug}`}
             className="text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)] hover:underline"
@@ -205,7 +235,10 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
       ))}
 
       {publications.map((publication) => (
-        <div key={publication.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
+        <div
+          key={publication.id}
+          className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3"
+        >
           <Fonte
             name={formatShouty(publication.agencyName)}
             note={`Annuncio su ${getSourceLabel(publication.sourceKey)}`}
@@ -217,13 +250,21 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
       ))}
 
       {privatePublications.map((publication) => (
-        <div key={publication.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
+        <div
+          key={publication.id}
+          className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3"
+        >
           <Stato forma="privato">
             Annuncio di un privato su {getSourceLabel(publication.source)}
           </Stato>
           <Meta>
-            <Dato certainty={certaintyFromConfidence(publication.identityScore)}>
-              stessa casa {identityOutcomeLabel(publication.identityOutcome).toLocaleLowerCase("it")}
+            <Dato
+              certainty={certaintyFromConfidence(publication.identityScore)}
+            >
+              stessa casa{" "}
+              {identityOutcomeLabel(
+                publication.identityOutcome,
+              ).toLocaleLowerCase("it")}
             </Dato>
           </Meta>
           <ExternalSourceLink href={publication.canonicalUrl} />
@@ -251,7 +292,9 @@ export default async function SchedaCasaPage({
   const detail = view.data;
   const property = detail.property;
   const giorniDiMercato = ageDays(property.trueMarketStartLowerBound, now);
-  const agenziaAttiva = property.agencies.find((agency) => agency.state === "ACTIVE");
+  const agenziaAttiva = property.agencies.find(
+    (agency) => agency.state === "ACTIVE",
+  );
   const giorniInAgenzia = ageDays(agenziaAttiva?.firstSeenAt ?? null, now);
   const indirizzo = property.address ? formatShouty(property.address) : null;
 
@@ -260,7 +303,11 @@ export default async function SchedaCasaPage({
   const posizione = detail.location
     ? [
         ...new Set(
-          [detail.location.streetName, detail.location.locality, detail.location.municipality]
+          [
+            detail.location.streetName,
+            detail.location.locality,
+            detail.location.municipality,
+          ]
             .filter(Boolean)
             .map((parte) => formatShouty(String(parte))),
         ),
@@ -273,7 +320,10 @@ export default async function SchedaCasaPage({
       <PageHeader
         eyebrow="La casa"
         title={indirizzo ?? formatShouty(property.title)}
-        description={[property.locality, property.propertyType && humanize(property.propertyType)]
+        description={[
+          property.locality,
+          property.propertyType && humanize(property.propertyType),
+        ]
           .filter(Boolean)
           .join(" · ")}
         backHref="/listings"
@@ -290,7 +340,10 @@ export default async function SchedaCasaPage({
 
       {/* Il colpo d'occhio: la foto e i pochi fatti che decidono. */}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <Foto urls={detail.imageUrls} alt={indirizzo ?? formatShouty(property.title)} />
+        <Foto
+          urls={detail.imageUrls}
+          alt={indirizzo ?? formatShouty(property.title)}
+        />
 
         <div className="space-y-5">
           <div>
@@ -341,17 +394,19 @@ export default async function SchedaCasaPage({
 
           {property.relaunchCount > 0 ? (
             <Meta>
-              L&apos;annuncio è stato ripubblicato {formatNumber(property.relaunchCount)}{" "}
-              {property.relaunchCount === 1 ? "volta" : "volte"}: sembra nuovo, ma la casa è sul
-              mercato da prima.
+              L&apos;annuncio è stato ripubblicato{" "}
+              {formatNumber(property.relaunchCount)}{" "}
+              {property.relaunchCount === 1 ? "volta" : "volte"}: sembra nuovo,
+              ma la casa è sul mercato da prima.
             </Meta>
           ) : null}
 
           {/* Cosa ne pensiamo, e perché — mai il giudizio senza gli indizi. */}
           {/* Un giudizio che si regge solo sull'assenza di segnali non è un
-            * giudizio: diceva «1 indizio su 4» accanto a «nessun segnale
-            * commerciale attuale». */}
-          {detail.opportunity && !hasNoRealSignal(detail.opportunity.reasons) ? (
+           * giudizio: diceva «1 indizio su 4» accanto a «nessun segnale
+           * commerciale attuale». */}
+          {detail.opportunity &&
+          !hasNoRealSignal(detail.opportunity.reasons) ? (
             <Card>
               <CardBody className="space-y-3">
                 <Giudizio
@@ -456,13 +511,19 @@ export default async function SchedaCasaPage({
                       className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2"
                     >
                       <span className="text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
-                        <Dato certainty={certaintyFromConfidence(evidence.confidence)}>
+                        <Dato
+                          certainty={certaintyFromConfidence(
+                            evidence.confidence,
+                          )}
+                        >
                           {claimKeyLabel(evidence.claimKey)}
                         </Dato>
                       </span>
                       <Meta>
-                        {formatDate(evidence.sourceRecordedAt ?? evidence.observedAt)},{" "}
-                        {extractionMethodLabel(evidence.extractionMethod)}
+                        {formatDate(
+                          evidence.sourceRecordedAt ?? evidence.observedAt,
+                        )}
+                        , {extractionMethodLabel(evidence.extractionMethod)}
                       </Meta>
                     </div>
                   ))}
@@ -487,30 +548,26 @@ export default async function SchedaCasaPage({
         <CardBody>
           {user ? (
             <div className="grid gap-5 lg:grid-cols-3">
-              <form action={recordPropertySaleOverride} className={styles.manualForm}>
+              <form
+                action={recordPropertySaleOverride}
+                className={styles.manualForm}
+              >
                 <input type="hidden" name="propertyId" value={property.id} />
-                <label className={styles.manualLabel}>
-                  Questa casa è stata venduta?
-                  <select
-                    name="saleStatus"
-                    defaultValue={property.saleStatus}
-                    className={styles.select}
-                  >
+                <Campo label="Questa casa è stata venduta?">
+                  <Scelta name="saleStatus" defaultValue={property.saleStatus}>
                     <option value="UNKNOWN">Non lo sappiamo</option>
                     <option value="SOLD_CONFIRMED">Sì, venduta</option>
                     <option value="NOT_SOLD_CONFIRMED">No, non venduta</option>
-                  </select>
-                </label>
-                <label className={styles.manualLabel}>
-                  Come lo sai?
-                  <input
+                  </Scelta>
+                </Campo>
+                <Campo label="Come lo sai?">
+                  <Testo
                     name="reason"
                     required
                     minLength={5}
                     placeholder="Es. me l'ha detto il proprietario al telefono"
-                    className={styles.input}
                   />
-                </label>
+                </Campo>
                 <PendingSubmitButton
                   type="submit"
                   pendingLabel="Registro"
@@ -522,42 +579,46 @@ export default async function SchedaCasaPage({
               </form>
 
               {property.agencies[0] ? (
-                <form action={recordAgencyOutcomeOverride} className={styles.manualForm}>
+                <form
+                  action={recordAgencyOutcomeOverride}
+                  className={styles.manualForm}
+                >
                   <input type="hidden" name="propertyId" value={property.id} />
                   <input
                     type="hidden"
                     name="agencyListingId"
                     value={property.agencies[0].listingId}
                   />
-                  <label className={styles.manualLabel}>
-                    Com&apos;è finita con {property.agencies[0].name}?
-                    <select
-                      name="agencyState"
-                      defaultValue="CLOSED_WITHDRAWN"
-                      className={styles.select}
-                    >
-                      <option value="CLOSED_WITHDRAWN">Il proprietario ha ritirato</option>
-                      <option value="CLOSED_SWITCHED">È passata a un&apos;altra agenzia</option>
+                  <Campo
+                    label={`Com'è finita con ${formatShouty(property.agencies[0].name)}?`}
+                  >
+                    <Scelta name="agencyState" defaultValue="CLOSED_WITHDRAWN">
+                      <option value="CLOSED_WITHDRAWN">
+                        Il proprietario ha ritirato
+                      </option>
+                      <option value="CLOSED_SWITCHED">
+                        È passata a un&apos;altra agenzia
+                      </option>
                       <option value="CLOSED_TO_PRIVATE">La vende da sé</option>
                       <option value="OFF_MARKET_NO_SALE_EVIDENCE">
                         Non è più in vendita, ma non risulta venduta
                       </option>
-                    </select>
-                  </label>
-                  <label className={styles.manualLabel}>
-                    Come lo sai?
-                    <input
+                    </Scelta>
+                  </Campo>
+                  <Campo label="Come lo sai?">
+                    <Testo
                       name="reason"
                       required
                       minLength={5}
                       placeholder="Da dove viene la conferma"
-                      className={styles.input}
                     />
-                  </label>
+                  </Campo>
                   <PendingSubmitButton
                     type="submit"
                     pendingLabel="Registro"
-                    icon={<CheckCircle2 aria-hidden="true" className="size-4" />}
+                    icon={
+                      <CheckCircle2 aria-hidden="true" className="size-4" />
+                    }
                     className={styles.secondaryAction}
                   >
                     Registra
@@ -567,18 +628,19 @@ export default async function SchedaCasaPage({
                 <div />
               )}
 
-              <form action={flagPropertyForLifecycleReview} className={styles.manualForm}>
+              <form
+                action={flagPropertyForLifecycleReview}
+                className={styles.manualForm}
+              >
                 <input type="hidden" name="propertyId" value={property.id} />
-                <label className={styles.manualLabel}>
-                  Qui c&apos;è qualcosa che non torna
-                  <input
+                <Campo label="Qui c'è qualcosa che non torna">
+                  <Testo
                     name="reason"
                     required
                     minLength={5}
                     placeholder="Cosa va controllato"
-                    className={styles.input}
                   />
-                </label>
+                </Campo>
                 <PendingSubmitButton
                   type="submit"
                   pendingLabel="Apro la verifica"

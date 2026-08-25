@@ -118,6 +118,22 @@ describe("sistema di design", () => {
     expect(offenders, `window.confirm ancora presente in:\n${offenders.join("\n")}`).toEqual([]);
   });
 
+  it("non ridisegna a mano i controlli dei moduli", () => {
+    /* Un campo di testo aveva tre altezze, tre raggi e tre fondi: le classi
+     * del modulo dei Segnali, quelle del commerciale e sedici copie scritte a
+     * mano nelle barre dei filtri. Adesso l'aspetto sta in `controlClass()`. */
+    const offenders = sourceFiles(["app/**/*.tsx", "src/**/*.tsx"]).filter((file) => {
+      if (file.endsWith("src/components/ui/primitives.tsx")) return false;
+
+      return /min-h-11 w-full rounded-/.test(read(file));
+    });
+
+    expect(
+      offenders,
+      `Controlli ridisegnati a mano invece di usare Testo/Scelta: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
   it("non ripete due volte la navigazione di sezione", () => {
     /* Per sei pagine la barra delle sezioni compariva due volte: una dentro
      * l'intestazione, una scritta a mano subito sotto. Nessuno se ne accorge
