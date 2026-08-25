@@ -118,18 +118,26 @@ Condividono repository e principi di audit, ma non hanno lo stesso modello dati 
 
 Route Next.js. Le aree private sono sotto `app/(private)/`.
 
-Route principali:
+Route principali (dopo la riscrittura del 25 agosto 2026):
 
-- `/dashboard`: coda e sintesi legacy;
-- `/incoming`: arrivi da fonti parziali;
-- `/listings` e `/listings/[id]`: archivio annunci legacy;
-- `/map`: Mappa Zone;
-- `/lifecycle`: workspace Property Lifecycle V2;
-- `/matching` e `/matching/overview`: commerciale, richieste e abbinamenti;
-- `/requests`: richieste immobiliari;
-- `/portfolio`: portafoglio immobiliare;
-- `/reports`: report;
-- `/settings`: configurazione e download worker.
+- `/dashboard` — «Oggi»: le fasce del lavoro aperto;
+- `/incoming` — annunci da completare arrivati dalle email;
+- `/reports` — «Giorno per giorno»: i movimenti di mercato raccolti per data;
+- `/fonti` — «Di chi ti puoi fidare oggi»: salute e inventario di ogni agenzia.
+  Vive dentro la sezione Segnali; `/lifecycle/agencies` rimanda qui;
+- `/listings` — «Archivio»: le case osservate da Property Lifecycle, non più
+  la tabella `listings`. `/lifecycle/archive` rimanda qui;
+- `/listings/[id]` — scheda di un annuncio legacy, ancora raggiungibile da
+  `/incoming`; sparirà con la tabella;
+- `/lifecycle` — «Segnali»: cosa si è mosso e cosa conviene guardare;
+- `/lifecycle/archive/[id]` — la scheda di una casa: è la pagina a cui punta
+  ogni riga del prodotto;
+- `/lifecycle/review` — «Da decidere»: un caso alla volta, due foto a confronto;
+- `/lifecycle/opportunities`, `/lifecycle/private` — opportunità e privati;
+- `/matching` — «Chi cerca cosa»; `/matching/overview` — qualità dei dati;
+- `/requests`, `/portfolio` — clienti e portafoglio;
+- `/map` — «Territorio»: aree, strade, pin e le case di V2 con posizione risolta;
+- `/settings` — configurazione, download worker ed estensione.
 
 API principali:
 
@@ -394,6 +402,13 @@ npm.cmd run design:sync
 npm.cmd run design:check
 ```
 
+Il contratto della riscrittura è `src/components/ui/atoms.tsx`: sette atomi —
+Dato, Periodo, Fonte, Movimento, Stato, Impronta, Giudizio — nati leggendo lo
+schema. Una pagina riscritta si compone da lì e non inventa atomi propri; se
+serve qualcosa che non c'è, si aggiunge in quel file. Le righe ricorrenti
+(`property-row`, `event-row`, `portfolio-row`, `property-match-row`) sono
+condivise: la riga di una casa è una sola in tutto il prodotto.
+
 Regole pratiche:
 
 - prossimo passo prima delle statistiche;
@@ -401,7 +416,21 @@ Regole pratiche:
 - focus visibile e contrasto WCAG 2.1 AA;
 - desktop e mobile verificati per la web app;
 - nessun placeholder presentato come dato reale;
-- le icone attraversano un confine Server/Client soltanto come chiavi serializzabili.
+- le icone attraversano un confine Server/Client soltanto come chiavi serializzabili;
+- **nessuna costante del database arriva a schermo**: se una stringa è in
+  MAIUSCOLO_CON_UNDERSCORE o in camelCase puntato, va tradotta in
+  `read-models/presentation.ts` prima di essere mostrata;
+- **la foto prima delle parole**: una casa si riconosce guardandola, e ogni
+  elenco di immobili firma le sue immagini con `signPropertyPhotos`;
+- **una parola invece di una percentuale**: «Da chiamare» si legge, «72%» va
+  prima capito. Il numero resta disponibile nel titolo del cursore;
+- **quello che manca non occupa spazio**: una casella che dice «Non indicato»
+  spende spazio per non dire niente;
+- **quello che si ripete su ogni riga non distingue**: un'etichetta uguale su
+  tutte le righe si scrive solo quando l'elenco è misto;
+- i testi che arrivano dai portali passano da `formatShouty` (stampatello e
+  minuscolo tornano leggibili) e da `isUsableText` (un campo che contiene
+  mezza pagina del sito non è un dato).
 
 ## 13. Test e quality gate
 
@@ -416,6 +445,16 @@ npm.cmd run test:e2e
 npm.cmd run design:check
 npm.cmd run build
 ```
+
+Con un server avviato (`AUTH_REQUIRED=false npx next dev -p 3132`):
+
+```powershell
+npm.cmd run check:schermo
+```
+
+Apre le diciassette pagine con dati veri e fallisce se trova costanti del
+database a schermo, parole inglesi rimaste nei comandi, errori JavaScript o
+scorrimento orizzontale.
 
 ### Worker
 
