@@ -19,6 +19,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { formatShouty } from "@/lib/formatting";
 import { ProgressiveList } from "@/components/progressive-list";
 import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
 import { RequestZonePicker } from "@/components/matching/request-zone-picker";
@@ -77,10 +78,14 @@ export default async function RequestDetailPage({
 
         <div className={styles.detailTitleRow}>
           <div>
-            <p className={styles.recordReference}>Richiesta {requestReference(request)}</p>
-            <h1 className={styles.detailTitle}>{cleanRequestTitle(request.title)}</h1>
+            {/* Il nome del cliente è il titolo: «RR - 3 locali - Mingolla» è il
+              * codice con cui lo chiama il gestionale, non con cui lo chiami tu. */}
+            <p className={styles.recordReference}>
+              {request.contract_type === "sale" ? "Vuole comprare" : "Cerca in affitto"}
+            </p>
+            <h1 className={styles.detailTitle}>{clientName}</h1>
             <p className={styles.detailSubtitle}>
-              {clientName} · {request.contract_type === "sale" ? "Acquisto" : "Locazione"}
+              {cleanRequestTitle(request.title)} · rif. {requestReference(request)}
             </p>
           </div>
           <div className={styles.detailActions}>
@@ -119,7 +124,7 @@ export default async function RequestDetailPage({
       <section className={styles.requestFocus} aria-label="Priorità della richiesta">
         <div className={styles.requestFocusMain}>
           <p className={styles.sectionEyebrow}>Obiettivo del cliente</p>
-          <h2 className={styles.focusStatement}>{targetType}</h2>
+          <h2 className={styles.focusStatement}>{formatShouty(targetType)}</h2>
           <p className={styles.focusLocation}><MapPinned aria-hidden="true" className="size-4" /> {zones || "Nessuna zona preferita"}</p>
           <div className={styles.prioritySignals}>
             <Signal icon={Banknote} label="Budget" value={requestBudget(request)} />
@@ -132,7 +137,8 @@ export default async function RequestDetailPage({
         <aside className={styles.clientFocus} aria-label="Contatto cliente">
           <div className={styles.clientIdentity}>
             <span><UserRound aria-hidden="true" className="size-4" /></span>
-            <div><p className={styles.sectionEyebrow}>Cliente</p><h2>{clientName}</h2></div>
+            {/* Il nome è già il titolo della pagina: qui servono i recapiti. */}
+            <div><p className={styles.sectionEyebrow}>Come si raggiunge</p><h2>{clientName}</h2></div>
           </div>
           <div className={styles.contactActions}>
             {contact.phone ? <a href={`tel:${contact.phone}`}><Phone aria-hidden="true" className="size-4" /><span><small>Telefono</small>{contact.phone}</span></a> : <span className={styles.contactUnavailable}><Phone aria-hidden="true" className="size-4" /> Telefono non disponibile</span>}
