@@ -12,6 +12,7 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
+    "check:schermo": "node scripts/check-screen-language.mjs",
     "test:watch": "vitest",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
