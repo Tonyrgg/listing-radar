@@ -66,9 +66,7 @@ function MiniStat({
 }>) {
   return (
     <div className="min-w-0 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2.5 py-2">
-      <p className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
-        {label}
-      </p>
+      <p className="truncate text-[11px] font-medium text-[var(--lr-ink-3)]">{label}</p>
       <p
         className={clsx(
           "mt-1 text-base font-semibold leading-none",
@@ -83,12 +81,14 @@ function MiniStat({
 
 function StatsStrip({ stats }: Readonly<{ stats: MapStats }>) {
   return (
-    <div className="grid grid-cols-5 gap-2">
+    /* Cinque colonne dentro una barra stretta tagliavano le parole a metà:
+     * «STRA…», «SCAD…». Su tre colonne ci stanno per intero. */
+    <div className="grid grid-cols-3 gap-2">
       <MiniStat label="Aree" value={`${stats.completedAreas}/${stats.totalAreas}`} />
       <MiniStat label="Strade" value={`${stats.completedStreets}/${stats.totalStreets}`} />
       <MiniStat label="Pin" value={stats.totalPins} />
       <MiniStat label="Caldi" value={stats.hotPins} emphasis={stats.hotPins > 0} />
-      <MiniStat label="Scaduti" value={stats.overdueFollowUps} emphasis={stats.overdueFollowUps > 0} />
+      <MiniStat label="In ritardo" value={stats.overdueFollowUps} emphasis={stats.overdueFollowUps > 0} />
     </div>
   );
 }

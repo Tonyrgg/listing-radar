@@ -19,6 +19,7 @@ import {
   formatDateTime,
   formatNumber,
   formatPlainText,
+  isUsableText,
 } from "@/lib/formatting";
 import {
   getListingCrmStatusLabel,
@@ -303,10 +304,17 @@ export default async function ListingDetailPage({
                   .filter(Boolean)
                   .join(", ") || "Non disponibile"}
               />
+              {/* Una «zona» lunga un paragrafo è un pezzo di pagina finito nel
+                * campo sbagliato: meglio dire che manca, che spacciarla per
+                * un'informazione. */}
               <DetailItem
                 label="Zona"
-                tone={listing.zone?.trim() ? "default" : "warning"}
-                value={formatPlainText(listing.zone)}
+                tone={isUsableText(listing.zone, { maxLength: 60 }) ? "default" : "warning"}
+                value={
+                  isUsableText(listing.zone, { maxLength: 60 })
+                    ? formatPlainText(listing.zone)
+                    : "Non letta dal portale"
+                }
               />
               <DetailItem
                 label="Online"
@@ -337,7 +345,9 @@ export default async function ListingDetailPage({
             Descrizione
           </h2>
           <p className="mt-4 max-h-[560px] overflow-auto whitespace-pre-wrap pr-2 text-sm leading-7 text-[var(--lr-ink-2)]">
-            {formatPlainText(listing.description)}
+            {isUsableText(listing.description, { minLength: 25 })
+              ? listing.description
+              : "Il portale non ha restituito una descrizione leggibile. Aprendo l'annuncio originale la trovi per intero."}
           </p>
         </article>
       </section>

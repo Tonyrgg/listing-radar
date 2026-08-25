@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
+import { formatCurrency, formatNumber, formatShouty, isUsableText } from "@/lib/formatting";
 
 /**
  * `Intl.NumberFormat` di suo raggruppa solo da cinque cifre in su: senza dirlo
@@ -34,5 +34,21 @@ describe("i testi che gridano o sussurrano", () => {
 
   it("non tocca un testo già scritto normalmente", () => {
     expect(formatShouty("Largo Teatro Umberto")).toBe("Largo Teatro Umberto");
+  });
+});
+
+describe("i testi che il portale non ha davvero dato", () => {
+  it("scarta una zona che è un pezzo di pagina", () => {
+    const blob =
+      "Vai alla mappa StreetView Via Generale Pasquale Mirabella, Bitonto (BA) Vicino a: Fermate dei mezzi pubblici a 140m";
+    expect(isUsableText(blob, { maxLength: 60 })).toBe(false);
+  });
+
+  it("scarta una descrizione che è il selettore della lingua", () => {
+    expect(isUsableText("Italiano", { minLength: 25 })).toBe(false);
+  });
+
+  it("tiene una zona vera", () => {
+    expect(isUsableText("Zona Santi Medici", { maxLength: 60 })).toBe(true);
   });
 });
