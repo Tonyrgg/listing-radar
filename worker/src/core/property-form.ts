@@ -1,4 +1,4 @@
-import { formatPersonName } from "./normalize.js";
+import { extractFirstCivicNumber, formatPersonName, splitStreetAndFirstCivic } from "./normalize.js";
 import type { NormalizedProperty } from "../types.js";
 
 export type PropertyFloorChoice = "Alto" | "Medio" | "Basso" | "Terra" | "Seminterrato" | "Su più livelli";
@@ -55,8 +55,8 @@ function fallbackStreetAndCivic(address: string | null) {
     .replace(/\s+(?:SCALA|INTERNO|PIANO)\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
-  const match = base.match(/^(.*?)\s+(?:N\.?\s*)?(\d+[A-Z]?)$/i);
-  return { street: match?.[1]?.trim() ?? base, civicNumber: match?.[2]?.trim() ?? "" };
+  const parsed = splitStreetAndFirstCivic(base);
+  return { street: parsed.street || base, civicNumber: parsed.civicNumber ?? "" };
 }
 
 export function propertyFormValues(property: NormalizedProperty): PropertyFormValues {
@@ -65,9 +65,15 @@ export function propertyFormValues(property: NormalizedProperty): PropertyFormVa
     ? property.rawPayload.searchContext as Record<string, unknown>
     : {};
   const fallback = fallbackStreetAndCivic(property.address);
-  const rawStreet = typeof searchContext.street === "string" && searchContext.street.trim() ? searchContext.street.trim() : fallback.street;
+  const longRun = property.rawPayload.long_run === true
+    || Boolean(property.rawPayload.long_run && typeof property.rawPayload.long_run === "object");
+  const rawStreet = longRun
+    ? fallback.street || (typeof searchContext.street === "string" ? searchContext.street.trim() : "")
+    : typeof searchContext.street === "string" && searchContext.street.trim() ? searchContext.street.trim() : fallback.street;
   const street = formatPersonName(rawStreet);
-  const civicNumber = typeof searchContext.civicNumber === "string" && searchContext.civicNumber.trim() ? searchContext.civicNumber.trim() : fallback.civicNumber;
+  const civicNumber = longRun
+    ? extractFirstCivicNumber(property.address) ?? fallback.civicNumber
+    : typeof searchContext.civicNumber === "string" && searchContext.civicNumber.trim() ? searchContext.civicNumber.trim() : fallback.civicNumber;
   const type = category.startsWith("A/") ? "Appartamenti" : "Box / posti auto";
   const subtype = type === "Appartamenti"
     ? apartmentSubtype(property.consistency)

@@ -37,6 +37,7 @@ export class RequestArchiveImporter {
     private readonly options: {
       onEvent?: (event: RequestArchiveImportEvent) => void | Promise<void>;
       isCancelled?: () => boolean;
+      isStopAfterNextImportRequested?: () => boolean;
     } = {},
   ) {}
 
@@ -121,6 +122,14 @@ export class RequestArchiveImporter {
           detailPage = await context.newPage();
         }
         await this.repository.updateRequestImportRun(run.id, { processed_requests: processed, failed_requests: failed });
+        if (this.options.isStopAfterNextImportRequested?.()) {
+          const message = "Run fermata dopo il prossimo import: il resto delle richieste resta salvato e riprendibile.";
+          await this.repository.updateRequestImportRun(run.id, {
+            status: "cancelled", processed_requests: processed, failed_requests: failed,
+            current_external_id: null, current_title: null, error_message: message, completed_at: new Date().toISOString(),
+          });
+          return { ...run, status: "cancelled", processed_requests: processed, failed_requests: failed, error_message: message };
+        }
       }
 
       const status = failed ? "completed_with_errors" : "completed";

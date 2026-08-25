@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   savePreferences: (values) => ipcRenderer.invoke("desktop:save-preferences", values),
   saveInternalConfiguration: (values) => ipcRenderer.invoke("desktop:save-internal-configuration", values),
   startJob: (values) => ipcRenderer.invoke("desktop:start-job", values),
+  setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled),
   startStreetRun: (values) => ipcRenderer.invoke("desktop:start-street-run", values),
   cancelStreetRun: () => ipcRenderer.invoke("desktop:cancel-street-run"),
   abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run"),

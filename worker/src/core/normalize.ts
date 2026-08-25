@@ -84,6 +84,27 @@ export type ParsedPropertyAddress = {
   province: string | null;
 };
 
+/** SISTER can expose a civic range; long runs use its first civic number. */
+export function extractFirstCivicNumber(value: string | null | undefined): string | null {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  const explicit = normalized.match(/\bN(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
+  if (explicit?.[1]) return explicit[1].toUpperCase();
+  const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);
+  return fallback?.[2] ? `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() : null;
+}
+
+export function splitStreetAndFirstCivic(value: string | null | undefined): { street: string; civicNumber: string | null } {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized) return { street: "", civicNumber: null };
+  const explicit = normalized.match(/^(.*?)\s+N(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
+  if (explicit) return { street: explicit[1]!.trim(), civicNumber: explicit[2]!.toUpperCase() };
+  const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);
+  return fallback
+    ? { street: fallback[1]!.trim(), civicNumber: `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() }
+    : { street: normalized, civicNumber: null };
+}
+
 export function parsePropertyAddress(value: string | null | undefined): ParsedPropertyAddress {
   const raw = String(value ?? "").replace(/\s+/g, " ").trim();
   const locationMatch = raw.match(/^(.*?)(?:,\s*|\s+)(\d{5})\s+(.+?)\s*\(([A-Z]{2})\)\s*$/i);
@@ -118,11 +139,10 @@ export function addressIdentity(value: string | null | undefined): { street: str
     .replace(/[.,;:()]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const match = normalized.match(/^(.*?\D)\s*(\d+)\s*(?:\/\s*)?([A-Z])?$/);
-  if (!match) return null;
-  const street = match[1]!.trim().replace(/\s+/g, " ");
-  const civic = `${match[2]}${match[3] ?? ""}`;
-  return street && civic ? { street, civic, internal: parsed.internal } : null;
+  const identity = splitStreetAndFirstCivic(normalized);
+  return identity.street && identity.civicNumber
+    ? { street: identity.street.replace(/\s+/g, " "), civic: identity.civicNumber, internal: parsed.internal }
+    : null;
 }
 
 export function sameStreetAndCivic(left: string | null | undefined, right: string | null | undefined): boolean {

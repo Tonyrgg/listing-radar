@@ -61,7 +61,7 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
-  it("non sceglie alla cieca tra due schede con lo stesso CF", async () => {
+  it("sceglie una scheda tra due candidati con lo stesso CF e non crea un duplicato", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const repository = {
       updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
@@ -87,16 +87,16 @@ describe("flusso identità nominativo e immobile", () => {
       createPerson: vi.fn(),
     };
 
-    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm))
-      .rejects.toMatchObject({ status: "needs_review", details: { action: "person-multiple-exact-matches" } });
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
     expect(crm.findPerson).toHaveBeenCalledOnce();
     expect(crm.openExistingPerson).toHaveBeenCalledTimes(2);
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBeNull();
+    expect(["CRM-PERSON-1", "CRM-PERSON-2"]).toContain(row.crm_record_id);
+    expect(row.raw_payload?.person_flow).toMatchObject({ selectionPolicy: "random-exact-tax-code-candidate", identityVerified: true });
   });
 
-  it("risolve due schede con lo stesso CF soltanto quando il cellulare identifica un candidato unico", async () => {
+  it("non usa il cellulare per bloccare la scelta casuale tra schede con lo stesso CF", async () => {
     const { runner } = runnerWithRepository();
     const row = { ...personRow(), mobiles: ["3331234567"] };
     const crm = {
@@ -118,9 +118,9 @@ describe("flusso identità nominativo e immobile", () => {
 
     await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
-    expect(row.crm_record_id).toBe("CRM-PERSON-2");
+    expect(["CRM-PERSON-1", "CRM-PERSON-2"]).toContain(row.crm_record_id);
     expect(row.raw_payload?.person_flow).toMatchObject({
-      selectionPolicy: "unique-phone-among-exact-tax-code",
+      selectionPolicy: "random-exact-tax-code-candidate",
       identityVerified: true,
     });
   });
@@ -197,18 +197,17 @@ describe("flusso identità nominativo e immobile", () => {
       createPerson: vi.fn(),
     };
 
-    await expect((runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm))
-      .rejects.toMatchObject({ status: "needs_review" });
+    await (runner as unknown as { ensurePerson: Function }).ensurePerson(job, row, crm);
 
     expect(crm.openExistingPerson).toHaveBeenCalledTimes(2);
     expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-FIRST");
     expect(crm.openExistingPerson).toHaveBeenCalledWith(expect.any(Object), "CRM-PERSON-SECOND");
     expect(crm.createPerson).not.toHaveBeenCalled();
-    expect(row.crm_record_id).toBeNull();
+    expect(["CRM-PERSON-FIRST", "CRM-PERSON-SECOND"]).toContain(row.crm_record_id);
     expect(row.raw_payload?.person_search).toMatchObject({
       candidateCount: 2,
       verifiedCount: 2,
-      selectionPolicy: "manual-review-multiple-exact-tax-code",
+      selectionPolicy: "random-exact-tax-code-candidate",
     });
   });
 

@@ -25,6 +25,7 @@ L'interfaccia permette di:
 - fermare o riattivare il riprova automatico; dopo tre tentativi falliti sullo stesso immobile, il caso viene saltato e annotato nel riepilogo;
 - consultare avanzamento, lavorazioni recenti e diagnostica;
 - sincronizzare l’intero archivio delle richieste immobiliari, aprendo ogni scheda in una pagina dedicata e riprendendo solo gli elementi non completati;
+- aprire automaticamente gli archivi CRM delle richieste residenziali attive e degli incarichi prima di iniziare la sincronizzazione, senza richiedere una scheda già aperta;
 - mantenere attiva la sessione SISTER con una richiesta silenziosa ogni 60-90 secondi, senza ricaricare la pagina visibile;
 - eseguire dry-run o run reale di una via completa, interrogando in blocco ogni variante testuale esatta e salvando il checkpoint dopo ciascuna variante;
 - conservare la configurazione nel deposito cifrato di Windows, senza riselezionare `.env` dopo gli aggiornamenti.
@@ -102,7 +103,7 @@ Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca res
 2. cerca, verifica o crea tutti i proprietari e sincronizza i recapiti mancanti;
 3. sceglie come principale la quota più alta; a quote pari conserva l'ordine SISTER senza applicare preferenze anagrafiche;
 4. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
-5. crea una sola attività partendo dalla scheda dell'immobile: `Telefonata / Da eseguire` se esiste almeno un telefono, altrimenti `Contatto diretto / Eseguito` con descrizione ruotata;
+5. crea una sola attività partendo dalla scheda dell'immobile: `Telefonata / Da eseguire` se esiste almeno un telefono, altrimenti `Contatto diretto / Eseguito` con descrizione ruotata. La preferenza desktop **Autocompila “Contatto diretto”** mantiene questo comportamento; se disattivata, anche senza recapiti lascia `Telefonata / Da eseguire / Inserire attività` per tutte le run;
 6. collega gli altri proprietari come `Comproprietario`, digitando lentamente nome e cognome e richiedendo anche la corrispondenza del telefono quando disponibile;
 7. compila la quota percentuale con massimo due decimali e verifica che il collegamento sia visibile;
 8. salva il checkpoint dell'immobile e passa al successivo.
@@ -151,7 +152,7 @@ Prima porta manualmente SISTER fino alla pagina **Elenco indirizzi**, come nella
 
 La preparazione automatica del form precedente resta disponibile soltanto per diagnostica da riga di comando tramite `--auto-prepare-search`; non è attivata dal software desktop.
 
-Se SISTER restituisce più opzioni con lo stesso testo, ciascun identificativo viene interrogato una volta lasciando vuoti entrambi i campi civico. Il portale restituisce così l'intero inventario della variante: il worker legge tutte le righe e applica il paracadute a ogni immobile. La scansione incrementale e la regola dei 50 civici vuoti restano disponibili soltanto come fallback diagnostico CLI; timeout, sessione scaduta, HTML inatteso e query fallite non valgono mai come risultato vuoto.
+Se SISTER restituisce più opzioni con lo stesso testo, ciascun identificativo viene interrogato una volta lasciando vuoti entrambi i campi civico. Il portale restituisce così l'intero inventario della variante: il worker legge tutte le righe, ricava il civico dalla stringa interna **Indirizzo** e, in caso di intervallo come `59-65-67`, conserva sempre il primo valore (`59`). La scansione incrementale e la regola dei 50 civici vuoti restano disponibili soltanto come fallback diagnostico CLI; timeout, sessione scaduta, HTML inatteso e query fallite non valgono mai come risultato vuoto.
 
 Il desktop offre due modalità. Il dry-run legge realmente immobili e proprietari ma non salva nel CRM. La run reale persiste progressivamente l'acquisizione in un job Supabase e avvia l'import automatico soltanto quando tutte le varianti sono concluse e i dati obbligatori superano la validazione. Durante una variante il desktop mostra fase, numero di immobile, totale e indirizzo corrente. Un checkpoint locale viene aggiornato dopo ogni variante e quando una pausa interrompe la lettura interna. **Metti in pausa** conclude il passaggio atomico corrente e conserva le unità già acquisite; dopo un nuovo accesso SISTER, oppure dopo aver ripristinato manualmente **Elenco indirizzi**, **Riprendi dal checkpoint** salta gli immobili già conclusi e riparte dal primo mancante. Una variante fallita mette la run in pausa e non viene mai trattata come vuota.
 
@@ -164,15 +165,15 @@ Per ogni titolare il flusso operativo è:
 1. raccolta completa di immobili e proprietari da SISTER;
 2. riepilogo visuale con immobile a sinistra, proprietari e quote a destra;
 3. ricerca del nominativo tramite codice fiscale;
-4. in presenza di più schede, creazione di un nuovo nominativo e controllo del merge Cloud;
-5. conferma del merge soltanto quando il Cloud non segnala problemi;
+4. in presenza di più schede verificate con lo stesso codice fiscale, selezione casuale di una scheda esistente con registrazione della scelta nell'audit;
+5. aggiornamento del nominativo selezionato senza creare un duplicato;
 6. verifica degli immobili collegati al nominativo, prima per dati catastali e poi per via e civico identici;
 7. aggiornamento dei dati catastali discordanti usando SISTER come fonte prioritaria;
-8. preparazione di una sola attività per immobile, aperta dalla scheda immobile, con stato **Da eseguire** e descrizione **Inserire attività**;
+8. preparazione di una sola attività per immobile, aperta dalla scheda immobile, con stato **Da eseguire** e descrizione **Inserire attività** quando l’autocompilazione del contatto diretto è disattivata;
 9. matching dei recapiti Excel tramite codice fiscale e aggiunta dei recapiti mancanti;
 10. controllo finale dei soggetti collegati e delle quote di comproprietà.
 
-Se il gestionale restituisce più schede per lo stesso codice fiscale, il worker non chiede più di sceglierne una. Prepara una nuova scheda e tratta il merge come uno step persistente. Un esito Cloud sicuro può essere confermato; un conflitto porta il job in `needs_review` per la correzione manuale. **Riprendi lavorazione** torna direttamente alla verifica del merge senza ripetere SISTER o creare un altro nominativo.
+Se il gestionale restituisce più schede verificate per lo stesso codice fiscale, il worker sceglie casualmente una delle schede esistenti, conserva candidati e identificativo scelto nel checkpoint e prosegue senza creare un nuovo nominativo. La scelta resta stabile quando il singolo immobile viene ripreso dopo un arresto.
 
 Ogni step viene registrato prima e dopo l'esecuzione. Anche gli elementi già elaborati all'interno di uno step vengono conservati: in caso di arresto, **Riprendi lavorazione** continua dal primo elemento non concluso senza ripetere quelli completati. Pausa e ripresa richieste dalla dashboard modificano solo Supabase: la web app non controlla Chrome.
 

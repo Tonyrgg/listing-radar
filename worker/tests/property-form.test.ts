@@ -35,6 +35,14 @@ describe("dati form immobile CRM", () => {
     expect(propertyFormValues(property({ category: "C/6", consistency: "12 mq" })).subtype).toBe("Posto auto");
   });
 
+  it("usa il primo civico della riga SISTER nelle long run anche con un intervallo", () => {
+    expect(propertyFormValues(property({
+      address: "VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1",
+      category: "C/1",
+      rawPayload: { long_run: true, searchContext: { street: "VIA TOMMASO TRAETTA", civicNumber: null } },
+    }))).toMatchObject({ street: "Via Tommaso Traetta", civicNumber: "59" });
+  });
+
   it("non inserisce l'indirizzo dell'immobile tutto in maiuscolo", () => {
     expect(propertyFormValues(property({
       rawPayload: { searchContext: { street: "VIA DELLE MATINE D'ANNUNZIO", civicNumber: "8" } },

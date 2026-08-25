@@ -113,6 +113,16 @@ describe("attività property-centric", () => {
     expect(isDirectContactNrOrdinal(8)).toBe(false);
   });
 
+  it("lascia generica l'attività senza recapiti quando l'autocompilazione è disattivata", () => {
+    const owner = person("person-1", "crm-person-1", "Primo");
+    expect(propertyActivityDefinition([owner], 1, false)).toEqual({
+      contactMode: "Telefonata",
+      status: "Da eseguire",
+      description: "Inserire attività",
+      directContactOrdinal: null,
+    });
+  });
+
   it("incrementa la sequenza soltanto per contatti diretti realmente completati", () => {
     const people = [person("person-1", "crm-person-1", "Primo"), person("person-2", "crm-person-2", "Secondo")];
     const first = property({

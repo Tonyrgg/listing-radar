@@ -413,7 +413,7 @@ function currentOperation() {
       title: `Acquisizione via completa · variante ${fmtCount(variantIndex)} di ${fmtCount(variantTotal)}`,
       detail: total
         ? `Voce ${fmtCount(current)} di ${fmtCount(total)}${progress?.address ? ` · ${progress.address}` : ""}`
-        : "Preparazione ed estrazione dell’elenco senza civico",
+        : "Preparazione ed estrazione dell’elenco; civico ricavato dalla riga",
       position: total
         ? `${fmtCount(current)}/${fmtCount(total)}`
         : `${fmtCount(variantIndex)}/${fmtCount(variantTotal)}`,
@@ -541,11 +541,11 @@ function errorAdvice(job, error) {
     };
   if (portalAction === "person-multiple-exact-matches")
     return {
-      cause: "Nel gestionale esistono più schede con lo stesso codice fiscale.",
+      cause: "Nel gestionale esistono più schede con lo stesso codice fiscale; la nuova regola ne seleziona una automaticamente.",
       steps: [
-        "Apri la scheda nominativo corretta nel gestionale.",
-        "Controlla che nome e codice fiscale coincidano con SISTER.",
-        "Premi “Ho scelto la scheda corretta, continua”: il programma userà quella aperta e passerà direttamente all’immobile.",
+        "Premi “Riprendi lavorazione”.",
+        "Il worker verificherà le schede e ne sceglierà una casualmente.",
+        "L’import proseguirà senza creare un nuovo nominativo.",
       ],
       action: "selected-person",
       operation: operation || "Scelta del nominativo esistente",
@@ -1562,6 +1562,16 @@ function render() {
       : "Percorso completo";
   renderChecks();
   renderSteps();
+  const stopToggle = $("stopAfterNextImportToggle");
+  stopToggle.checked = Boolean(appState.stopAfterNextImport);
+  $("stopAfterNextImportHelp").textContent = appState.stopAfterNextImport
+    ? "Stop programmato: il prossimo elemento verrà concluso, poi il resto resterà salvato e riprendibile."
+    : "Eseguirà ancora un import, poi salverà il resto e metterà in pausa la run. Vale per lavorazioni, long run, richieste e incarichi.";
+  const directContactToggle = $("autoFillDirectContactToggle");
+  directContactToggle.checked = appState.preferences?.autoFillDirectContact !== false;
+  $("autoFillDirectContactHelp").textContent = directContactToggle.checked
+    ? "Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica."
+    : "Senza recapiti lascia l’attività generica: “Da eseguire” e “Inserire attività”.";
   renderAction();
   renderJobs();
   renderCompletedImports();
@@ -1665,7 +1675,7 @@ document.addEventListener("click", async (event) => {
           !resume &&
           !dryRun &&
           !window.confirm(
-            "La run reale acquisirà tutte le varianti esatte senza civico e, al termine, importerà automaticamente immobili, proprietari e attività nel gestionale. Continuare?",
+            "La run reale interrogherà tutte le varianti esatte senza civico; per ogni riga ricaverà il primo civico da Indirizzo e, al termine, importerà automaticamente immobili, proprietari e attività nel gestionale. Continuare?",
           )
         )
           return COMMAND_CANCELLED;
@@ -1934,6 +1944,24 @@ $("configurationForm").addEventListener("submit", async (event) => {
   } catch {}
 });
 $("streetRunDryRunToggle").addEventListener("change", () => renderStreetRun());
+$("stopAfterNextImportToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.setStopAfterNextImport(toggle.checked);
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    toast(error?.message ?? String(error));
+  }
+});
+$("autoFillDirectContactToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.savePreferences({ autoFillDirectContact: toggle.checked });
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    toast(error?.message ?? String(error));
+  }
+});
 window.propertyWorker.onStreetRunProgress((progress) => {
   if (!appState) return;
   appState.streetRun = { ...(appState.streetRun ?? {}), progress };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addressIdentity, buildCadastralKey, consolidateContacts, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, splitPersonName } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -50,6 +50,10 @@ it("costruisce la chiave catastale tecnica", () => {
 });
 
 describe("confronto indirizzo immobile", () => {
+  it("prende il primo civico da una riga SISTER con civici doppi", () => {
+    expect(extractFirstCivicNumber("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toBe("59");
+    expect(addressIdentity("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toMatchObject({ street: "VIA TOMMASO TRAETTA", civic: "59" });
+  });
   it("riconosce via e civico identici nonostante punteggiatura e maiuscole", () => {
     expect(sameStreetAndCivic("Via Roma, 12/A", "VIA ROMA 12 A")).toBe(true);
   });

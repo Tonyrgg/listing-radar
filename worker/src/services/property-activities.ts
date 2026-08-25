@@ -62,8 +62,17 @@ export function isDirectContactNrOrdinal(ordinal: number): boolean {
 export function propertyActivityDefinition(
   owners: Array<Pick<PersonRow, "mobiles" | "landlines">>,
   directContactOrdinal = 1,
+  autoFillDirectContact = true,
 ): PropertyActivityDefinition {
   if (ownersHaveAnyPhone(owners)) {
+    return {
+      contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
+      status: PROPERTY_ACTIVITY_STATUS,
+      description: PROPERTY_ACTIVITY_DESCRIPTION,
+      directContactOrdinal: null,
+    };
+  }
+  if (!autoFillDirectContact) {
     return {
       contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
       status: PROPERTY_ACTIVITY_STATUS,

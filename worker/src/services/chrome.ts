@@ -17,6 +17,9 @@ export interface RequestArchiveChrome {
 
 export type MandateArchiveChrome = RequestArchiveChrome;
 
+export const CRM_REQUEST_ARCHIVE_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/query?Id=a0Q3Y00000ecMlzUAE";
+export const CRM_MANDATE_ARCHIVE_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/query?Id=a0Q3Y00000echeFUAQ";
+
 async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   if (/^wss?:\/\//i.test(cdpUrl)) return cdpUrl;
   const controller = new AbortController();
@@ -75,6 +78,7 @@ async function connectToCrmArchiveChrome(
   cdpUrl: string,
   recordSelector: string,
   archiveLabel: "richieste" | "incarichi",
+  archiveUrl: string,
 ): Promise<RequestArchiveChrome> {
   let browser: Browser;
   try {
@@ -88,10 +92,33 @@ async function connectToCrmArchiveChrome(
   }
   const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
   let archivePage: Page | undefined;
-  for (const candidate of pages.filter(({ url }) => /\/CRMImmobiliareLightning\/s\/query(?:\?|$)/i.test(url))) {
+  for (const candidate of pages.filter(({ url }) => {
+    try {
+      return new URL(url).toString() === archiveUrl;
+    } catch {
+      return false;
+    }
+  })) {
     if (await candidate.page.locator(recordSelector).count().catch(() => 0)) {
       archivePage = candidate.page;
       break;
+    }
+  }
+  if (!archivePage) {
+    const context = browser.contexts()[0];
+    if (!context) throw new WorkerError("Nessun profilo Chrome disponibile per aprire l'archivio CRM.", "session_expired", { archiveLabel });
+    archivePage = await context.newPage();
+    try {
+      await archivePage.goto(archiveUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await archivePage.locator(recordSelector).first().waitFor({ state: "visible", timeout: 30_000 });
+    } catch (error) {
+      await archivePage.close().catch(() => undefined);
+      throw new WorkerError(
+        `Impossibile aprire automaticamente l'archivio ${archiveLabel} o leggerne l'elenco.`,
+        "needs_review",
+        { archiveLabel, archiveUrl, cause: error instanceof Error ? error.message : String(error), openTabs: pages.map(({ title, url }) => ({ title, url })) },
+        true,
+      );
     }
   }
   if (!archivePage) {
@@ -107,11 +134,11 @@ async function connectToCrmArchiveChrome(
 }
 
 export async function connectToRequestArchiveChrome(cdpUrl: string): Promise<RequestArchiveChrome> {
-  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/richiestaimmobiliare/"]', "richieste");
+  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/richiestaimmobiliare/"]', "richieste", CRM_REQUEST_ARCHIVE_URL);
 }
 
 export async function connectToMandateArchiveChrome(cdpUrl: string): Promise<MandateArchiveChrome> {
-  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/incarico/"]', "incarichi");
+  return connectToCrmArchiveChrome(cdpUrl, 'a[href*="/incarico/"]', "incarichi", CRM_MANDATE_ARCHIVE_URL);
 }
 
 export function isPresumablyAuthenticated(page: Page): boolean {

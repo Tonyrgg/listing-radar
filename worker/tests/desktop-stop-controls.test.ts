@@ -7,17 +7,26 @@ const source = (...parts: string[]) => path.resolve(process.cwd(), "src", ...par
 
 describe("controlli di arresto desktop", () => {
   it("espone arresto globale e abbandono recuperabile del checkpoint", async () => {
-    const [main, preload, html] = await Promise.all([
+    const [main, preload, html, chrome] = await Promise.all([
       readFile(source("desktop", "main.ts"), "utf8"),
       readFile(source("desktop", "preload.cjs"), "utf8"),
       readFile(source("desktop", "renderer", "index.html"), "utf8"),
+      readFile(source("services", "chrome.ts"), "utf8"),
     ]);
 
     expect(html).toContain('id="stopAllButton"');
+    expect(html).toContain('id="stopAfterNextImportToggle"');
+    expect(html).toContain('id="autoFillDirectContactToggle"');
+    expect(html).toContain("Autocompila “Contatto diretto”");
+    expect(html).toContain("Vale per lavorazioni, long run, richieste e incarichi");
     expect(html).toContain('id="streetRunAbandon"');
     expect(preload).toContain('stopAll: () => ipcRenderer.invoke("desktop:stop-all")');
+    expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
     expect(main).toContain('ipcMain.handle("desktop:stop-all"');
+    expect(main).toContain("autoFillDirectContact: preferences.autoFillDirectContact");
+    expect(chrome).toContain("a0Q3Y00000ecMlzUAE");
+    expect(chrome).toContain("a0Q3Y00000echeFUAQ");
     expect(main).toContain('ipcMain.handle("desktop:abandon-street-run"');
     expect(main).toContain("sister-street-run.abandoned.");
     expect(main).toContain("await rename(source, archived)");

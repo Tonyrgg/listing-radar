@@ -1,5 +1,5 @@
 import { WorkerError } from "../core/errors.js";
-import { buildCadastralKey, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
+import { buildCadastralKey, extractFirstCivicNumber, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
 import { logger } from "../logger.js";
 import type { AcquisitionReview, CadastralProperty, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
@@ -81,6 +81,12 @@ function normalizedWords(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\W+/).filter((word) => word.length >= 3);
 }
 
+export function selectRandomCrmCandidate<T>(candidates: T[], randomValue = Math.random()): T | null {
+  if (!candidates.length) return null;
+  const bounded = Number.isFinite(randomValue) ? Math.max(0, Math.min(0.9999999999999999, randomValue)) : 0;
+  return candidates[Math.floor(bounded * candidates.length)] ?? candidates[0] ?? null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -115,6 +121,8 @@ export interface RunnerOptions {
   keepAlive?: boolean;
   isCancellationRequested?: (jobId: string) => boolean;
   isPauseRequested?: (jobId: string) => boolean;
+  isStopAfterNextImportRequested?: (jobId: string) => boolean;
+  autoFillDirectContact?: boolean;
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -126,6 +134,8 @@ export class PropertyWorkerRunner {
   private readonly manageKeepAlive: boolean;
   private readonly isCancellationRequested: (jobId: string) => boolean;
   private readonly isPauseRequested: (jobId: string) => boolean;
+  private readonly isStopAfterNextImportRequested: (jobId: string) => boolean;
+  private readonly autoFillDirectContact: boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -135,6 +145,8 @@ export class PropertyWorkerRunner {
     this.manageKeepAlive = options.keepAlive !== false;
     this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
     this.isPauseRequested = options.isPauseRequested ?? (() => false);
+    this.isStopAfterNextImportRequested = options.isStopAfterNextImportRequested ?? (() => false);
+    this.autoFillDirectContact = options.autoFillDirectContact !== false;
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
@@ -443,15 +455,29 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         for (const row of graph.people) {
           this.throwIfCancellationRequested(job.id);
-          if (["matched", "not_found", "duplicate_candidates"].includes(row.processing_status) && Array.isArray(row.raw_payload?.crm_matches)) continue;
+          if (["matched", "not_found"].includes(row.processing_status) && Array.isArray(row.raw_payload?.crm_matches)) continue;
           const person = asPerson(row);
           if (!person.taxCode) throw new WorkerError("Codice fiscale mancante", "data_incomplete", { personId: row.id });
           const result = await crm.findPerson({ taxCode: person.taxCode, phones: [], fullName: person.fullName, birthDate: person.birthDate });
           if (result.matches.length > 1) {
+            const selected = selectRandomCrmCandidate(result.matches);
             await this.repository.updatePersonProcessing(row.id, {
-              crm_record_id: null,
-              processing_status: "duplicate_candidates",
-              raw_payload: { ...(row.raw_payload ?? {}), crm_matches: result.matches, force_new_person: true },
+              crm_record_id: selected?.id ?? null,
+              processing_status: selected ? "matched" : "not_found",
+              raw_payload: {
+                ...(row.raw_payload ?? {}),
+                crm_matches: selected ? [selected] : [],
+                crm_duplicate_candidates: result.matches,
+                force_new_person: false,
+                person_search: {
+                  searchedAt: new Date().toISOString(),
+                  candidateCount: result.matches.length,
+                  verifiedCount: result.matches.length,
+                  exactTaxCodeRequired: true,
+                  selectionPolicy: "random-exact-tax-code-candidate",
+                  selectedPersonId: selected?.id ?? null,
+                },
+              },
             });
             continue;
           }
@@ -666,6 +692,7 @@ export class PropertyWorkerRunner {
             const activityDefinition = propertyActivityDefinition(
               task.owners,
               directContactOrdinalForTask(tasks, task.property.id),
+              this.autoFillDirectContact,
             );
             const previous = task.property.raw_payload?.worker_activity as Partial<PropertyActivityCheckpoint> | undefined;
             const attempts = Number(previous?.attempts ?? 0) + 1;
@@ -1128,6 +1155,13 @@ export class PropertyWorkerRunner {
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
         this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "completed", `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato`);
+        if (this.isStopAfterNextImportRequested(job.id)) {
+          throw new WorkerError(
+            "Run fermata dopo il prossimo import: il resto della lavorazione resta salvato e riprendibile.",
+            "paused",
+            { pauseRequested: true, stopAfterNextImport: true, propertyId: property.id, propertyIndex: propertyIndex + 1 },
+          );
+        }
       } catch (error) {
         const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
         if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
@@ -1243,54 +1277,21 @@ export class PropertyWorkerRunner {
     }
     let selectedMatch: (typeof candidates)[number] | null = verifiedCandidates[0] ?? null;
     if (verifiedCandidates.length > 1) {
-      const desiredPhones = [...person.mobiles, ...person.landlines];
-      const assignments = desiredPhones.length ? await crm.findPhoneAssignments(desiredPhones) : [];
-      const candidateIdsByPhone = [...new Set(assignments
-        .filter((assignment) => verifiedCandidates.some((candidate) => candidate.id === assignment.personId))
-        .map((assignment) => assignment.personId))];
-      selectedMatch = candidateIdsByPhone.length === 1
-        ? verifiedCandidates.find((candidate) => candidate.id === candidateIdsByPhone[0]) ?? null
-        : null;
-      if (!selectedMatch) {
-        row.raw_payload = {
-          ...(row.raw_payload ?? {}),
-          crm_matches: verifiedCandidates,
-          person_search: {
-            searchedAt: new Date().toISOString(),
-            candidateCount: candidates.length,
-            verifiedCount: verifiedCandidates.length,
-            exactTaxCodeRequired: true,
-            selectionPolicy: "manual-review-multiple-exact-tax-code",
-            phoneCandidateIds: candidateIdsByPhone,
-          },
-        };
-        await this.repository.updatePersonProcessing(row.id, {
-          crm_record_id: null,
-          processing_status: "duplicate_candidates",
-          raw_payload: row.raw_payload,
-        });
-        throw new WorkerError(
-          "Esistono piÃ¹ schede verificate con lo stesso codice fiscale. Il worker non creerÃ  un altro nominativo e non sceglierÃ  alla cieca.",
-          "needs_review",
-          {
-            action: "person-multiple-exact-matches",
-            personId: row.id,
-            alternatives: verifiedCandidates.map((candidate) => ({ id: candidate.id, label: candidate.label })),
-          },
-          true,
-        );
-      }
+      selectedMatch = selectRandomCrmCandidate(verifiedCandidates);
     }
+    const multipleVerifiedCandidates = verifiedCandidates.length > 1;
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
       crm_matches: selectedMatch ? [selectedMatch] : [],
+      ...(multipleVerifiedCandidates ? { crm_duplicate_candidates: verifiedCandidates } : {}),
+      force_new_person: false,
       contact_assignments_detected: phoneAssignments,
       person_search: {
         searchedAt: new Date().toISOString(),
         candidateCount: candidates.length,
         verifiedCount: verifiedCandidates.length,
         exactTaxCodeRequired: true,
-        selectionPolicy: verifiedCandidates.length > 1 ? "unique-phone-among-exact-tax-code" : "single-verified-tax-code-result",
+        selectionPolicy: multipleVerifiedCandidates ? "random-exact-tax-code-candidate" : "single-verified-tax-code-result",
         selectedPersonId: selectedMatch?.id ?? null,
         ignoredLaterCandidates: Math.max(0, candidates.length - verifiedCandidates.length),
       },
@@ -1305,7 +1306,7 @@ export class PropertyWorkerRunner {
           complete: true,
           existing: true,
           identityVerified: true,
-          selectionPolicy: verifiedCandidates.length > 1 ? "unique-phone-among-exact-tax-code" : "single-verified-tax-code-result",
+          selectionPolicy: multipleVerifiedCandidates ? "random-exact-tax-code-candidate" : "single-verified-tax-code-result",
           dryRun: this.config.WORKER_DRY_RUN,
           crmPersonId: row.crm_record_id,
           updatedAt: new Date().toISOString(),
@@ -1384,7 +1385,9 @@ export class PropertyWorkerRunner {
       searchContext: {
         municipality: job.municipality,
         street: job.street,
-        civicNumber: job.civic_number,
+        civicNumber: (property.rawPayload.long_run === true || Boolean(property.rawPayload.long_run && typeof property.rawPayload.long_run === "object"))
+          ? extractFirstCivicNumber(property.address) ?? job.civic_number
+          : job.civic_number,
       },
     };
     const persistedCrmMatch = isRecord(row.raw_payload?.crm_match) ? row.raw_payload.crm_match : null;
@@ -1582,7 +1585,7 @@ export class PropertyWorkerRunner {
     if (!property.crm_record_id) throw new WorkerError("La scheda dell'immobile non è disponibile per creare l'attività", "data_incomplete", { propertyId: property.id });
     const existing = readPropertyActivityCheckpoint(property.raw_payload, this.config.WORKER_DRY_RUN, property.crm_record_id);
     if (existing) return;
-    const definition = propertyActivityDefinition(owners, directContactOrdinal);
+    const definition = propertyActivityDefinition(owners, directContactOrdinal, this.autoFillDirectContact);
     if (job.mode === "assisted") {
       const decision = await this.prompts.confirmSave(propertyActivitySummary(asProperty(property), owners.map((owner) => owner.full_name), definition));
       if (decision === "skip") return;

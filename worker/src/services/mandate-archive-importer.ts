@@ -23,6 +23,7 @@ export class MandateArchiveImporter {
     private readonly options: {
       onEvent?: (event: MandateArchiveImportEvent) => void | Promise<void>;
       isCancelled?: () => boolean;
+      isStopAfterNextImportRequested?: () => boolean;
     } = {},
   ) {}
 
@@ -107,6 +108,14 @@ export class MandateArchiveImporter {
           });
         }
         await this.repository.updateMandateImportRun(run.id, { processed_mandates: processed, failed_mandates: failed });
+        if (this.options.isStopAfterNextImportRequested?.()) {
+          const message = "Run fermata dopo il prossimo import: il resto degli incarichi resta salvato e riprendibile.";
+          await this.repository.updateMandateImportRun(run.id, {
+            status: "cancelled", processed_mandates: processed, failed_mandates: failed,
+            current_external_id: null, current_title: null, error_message: message, completed_at: new Date().toISOString(),
+          });
+          return { ...run, status: "cancelled", processed_mandates: processed, failed_mandates: failed, error_message: message };
+        }
       }
 
       const status = failed ? "completed_with_errors" : "completed";

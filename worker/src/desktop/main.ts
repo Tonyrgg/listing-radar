@@ -38,6 +38,7 @@ type Preferences = {
   mode: WorkerMode;
   dryRun: boolean;
   autoRetryEnabled: boolean;
+  autoFillDirectContact: boolean;
   encryptedEnvironment?: string;
 };
 
@@ -55,7 +56,7 @@ type KeepAliveState = SisterKeepAliveResult & { nextAttemptAt: string | null; st
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true, autoFillDirectContact: true };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -138,6 +139,7 @@ let activeStreetBrowser: { close: () => Promise<void> } | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
+let stopAfterNextImportRequested = false;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
@@ -469,6 +471,7 @@ async function stateSnapshot() {
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
     },
+    stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
   };
 }
@@ -533,6 +536,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
   await publishState();
   const importer = new RequestArchiveImporter(workerConfig(), repository(), {
     isCancelled: () => requestImportCancellationRequested,
+    isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     onEvent: handleRequestImportEvent,
   });
   activeRequestImporter = importer;
@@ -558,6 +562,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     activeRequestImporter = null;
     requestImportActive = false;
     requestImportCancellationRequested = false;
+    stopAfterNextImportRequested = false;
     refreshStoppingAll();
     await publishState();
   });
@@ -586,6 +591,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   await publishState();
   const importer = new MandateArchiveImporter(workerConfig(), repository(), {
     isCancelled: () => mandateImportCancellationRequested,
+    isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     onEvent: handleMandateImportEvent,
   });
   activeMandateImporter = importer;
@@ -611,6 +617,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     activeMandateImporter = null;
     mandateImportActive = false;
     mandateImportCancellationRequested = false;
+    stopAfterNextImportRequested = false;
     refreshStoppingAll();
     await publishState();
   });
@@ -1159,6 +1166,8 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     keepAlive: false,
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPauseRequested: (jobId) => pausingJobId === jobId,
+    isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
+    autoFillDirectContact: preferences.autoFillDirectContact,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;
@@ -1212,6 +1221,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       activePrompts = null;
       activeRunner = null;
       activeRunPromise = null;
+      stopAfterNextImportRequested = false;
       refreshStoppingAll();
       await publishState();
     });
@@ -1441,6 +1451,14 @@ function registerIpc() {
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
+  });
+  ipcMain.handle("desktop:set-stop-after-next-import", async (_event, enabled: boolean) => {
+    stopAfterNextImportRequested = Boolean(enabled);
+    pushActivity(stopAfterNextImportRequested
+      ? "Stop programmato: eseguirò ancora un import, poi salverò il resto e metterò in pausa la run"
+      : "Stop dopo il prossimo import disattivato");
+    await publishState();
+    return stopAfterNextImportRequested;
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
     await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false });
