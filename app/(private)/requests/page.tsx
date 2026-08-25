@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
+import { LoadingAnchor } from "@/components/loading-controls";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import {
@@ -17,6 +18,7 @@ import {
   Card,
   Chip,
   EmptyState,
+  FilterBar,
   Meta,
   Ricerca,
   Scelta,
@@ -148,6 +150,7 @@ export default async function RichiesteClientiPage({
   const cerca = param(query.q).trim().toLocaleLowerCase("it");
   const stato = param(query.stato);
   const contratto = param(query.contratto);
+  const zona = param(query.zona);
 
   const [requests, matches] = await Promise.all([
     listRequests(),
@@ -163,12 +166,28 @@ export default async function RichiesteClientiPage({
     );
   }
 
-  const filtrate = requests.filter(
-    (request) =>
+  const zoneDisponibili = [...new Set(
+    requests.flatMap((request) =>
+      (request.request_zones ?? [])
+        .filter((item) => item.preference_level !== "excluded")
+        .map((item) => item.zone?.name)
+        .filter((nome): nome is string => Boolean(nome)),
+    ),
+  )].sort((a, b) => a.localeCompare(b, "it"));
+
+  const filtrate = requests.filter((request) => {
+    const zoneRichieste = (request.request_zones ?? [])
+      .filter((item) => item.preference_level !== "excluded")
+      .map((item) => item.zone?.name)
+      .filter((nome): nome is string => Boolean(nome));
+
+    return (
       (!cerca || requestSearchText(request).includes(cerca)) &&
       (!stato || request.status === stato) &&
-      (!contratto || request.contract_type === contratto),
-  );
+      (!contratto || request.contract_type === contratto) &&
+      (!zona || zoneRichieste.includes(zona))
+    );
+  });
 
   const pagine = Math.max(1, Math.ceil(filtrate.length / PER_PAGINA));
   const chiesta = Number.parseInt(param(query.pagina) || "1", 10);
@@ -181,8 +200,8 @@ export default async function RichiesteClientiPage({
     pagina * PER_PAGINA,
   );
 
-  const filtriAttivi = Boolean(cerca || stato || contratto);
-  const persistenti = { q: param(query.q), stato, contratto };
+  const filtriAttivi = Boolean(cerca || stato || contratto || zona);
+  const persistenti = { q: param(query.q), stato, contratto, zona };
 
   return (
     <div className="space-y-5">
@@ -202,7 +221,8 @@ export default async function RichiesteClientiPage({
         }
       />
 
-      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+      <AutoSubmitFiltersForm>
+        <FilterBar summary={`${formatNumber(filtrate.length)} clienti nel risultato`}>
         <Ricerca
           label="Cerca fra le richieste"
           defaultValue={param(query.q)}
@@ -227,6 +247,15 @@ export default async function RichiesteClientiPage({
           </Scelta>
         </Campo>
 
+        <Campo label="Zona cercata" labelHidden className="min-w-40">
+          <Scelta name="zona" defaultValue={zona}>
+            <option value="">Tutte le zone</option>
+            {zoneDisponibili.map((nome) => (
+              <option value={nome} key={nome}>{nome}</option>
+            ))}
+          </Scelta>
+        </Campo>
+
         {filtriAttivi ? (
           <Link
             href="/requests"
@@ -236,6 +265,7 @@ export default async function RichiesteClientiPage({
             Azzera
           </Link>
         ) : null}
+        </FilterBar>
       </AutoSubmitFiltersForm>
 
       {visibili.length ? (
@@ -313,14 +343,15 @@ export default async function RichiesteClientiPage({
                   </p>
                 </Link>
                 {payload.url ? (
-                  <a
+                  <LoadingAnchor
                     href={payload.url}
                     target="_blank"
                     rel="noreferrer"
+                    pendingLabel="Apro CRM"
                     className="inline-flex min-h-11 shrink-0 items-center gap-1.5 self-start rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-3 text-[length:var(--lr-text-label)] font-semibold text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-accent)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
                   >
                     Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-3.5" />
-                  </a>
+                  </LoadingAnchor>
                 ) : null}
               </Card>
             );

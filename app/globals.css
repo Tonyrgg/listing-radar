@@ -4,7 +4,7 @@
 @theme inline {
   --color-background: var(--lr-canvas);
   --color-foreground: var(--lr-ink);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-work-sans);
   --font-mono: var(--font-geist-mono);
 
   --radius-control: var(--lr-radius-control);
@@ -32,7 +32,7 @@ body {
   margin: 0;
   background: var(--lr-canvas);
   color: var(--lr-ink);
-  font-family: var(--font-geist-sans), sans-serif;
+  font-family: var(--font-work-sans), var(--font-geist-sans), sans-serif;
   font-size: var(--lr-text-body);
   line-height: var(--lr-leading-body);
   font-variant-numeric: tabular-nums;
@@ -85,7 +85,7 @@ body {
   }
 
   .leaflet-container {
-    font-family: var(--font-geist-sans), sans-serif;
+    font-family: var(--font-work-sans), var(--font-geist-sans), sans-serif;
     background: var(--lr-surface);
   }
 
@@ -179,6 +179,37 @@ body {
 .text-balance {
   text-wrap: balance;
 }
+
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 620;
+  letter-spacing: -0.04em;
+}
+
+@keyframes lr-action-spin {
+  to { transform: rotate(360deg); }
+}
+
+.lr-action-loader {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 120;
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .65rem;
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-surface);
+  padding: .5rem .8rem;
+  color: var(--lr-ink);
+  box-shadow: var(--lr-floating);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-strong);
+}
+
+.lr-action-loader svg { animation: lr-action-spin .75s linear infinite; }
 
 ::-webkit-scrollbar {
   width: 10px;

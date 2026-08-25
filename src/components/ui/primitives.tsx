@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Search } from "lucide-react";
+import { LoaderCircle, Search, X } from "lucide-react";
 import Link from "next/link";
 import type {
   AnchorHTMLAttributes,
@@ -99,6 +99,47 @@ export function Card({
     >
       {children}
     </Tag>
+  );
+}
+
+/** Una cornice per i filtri: prima il risultato, poi i campi. */
+export function FilterBar({
+  children,
+  summary,
+  active = false,
+  resetHref,
+  className,
+}: Readonly<{
+  children: ReactNode;
+  summary: ReactNode;
+  active?: boolean;
+  resetHref?: string;
+  className?: string;
+}>) {
+  return (
+    <section
+      className={clsx(
+        "rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-3 sm:p-4",
+        className,
+      )}
+      aria-label="Filtri dell'elenco"
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]">
+            <Search aria-hidden="true" className="size-3.5" />
+          </span>
+          <p className="text-[length:var(--lr-text-meta)] font-[650] text-[var(--lr-ink)]">{summary}</p>
+        </div>
+        {active && resetHref ? (
+          <Link href={resetHref} className={buttonClass("quiet", { compact: true })}>
+            <X aria-hidden="true" className="size-4" />
+            Azzera filtri
+          </Link>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+    </section>
   );
 }
 
@@ -379,6 +420,9 @@ export function Button({
   block,
   icon,
   className,
+  loading = false,
+  loadingLabel = "Operazione in corso",
+  disabled,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
@@ -386,10 +430,18 @@ export function Button({
   compact?: boolean;
   block?: boolean;
   icon?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
 }) {
   return (
-    <button {...props} className={clsx(buttonClass(variant, { compact, block, icon }), className)}>
-      {children}
+    <button
+      {...props}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={clsx(buttonClass(variant, { compact, block, icon }), className, loading && "cursor-wait")}
+    >
+      {loading ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}
+      {loading ? loadingLabel : children}
     </button>
   );
 }

@@ -1,4 +1,3 @@
-import { X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -12,6 +11,7 @@ import {
   Card,
   Chip,
   EmptyState,
+  FilterBar,
   Meta,
   Ricerca,
   Scelta,
@@ -123,7 +123,12 @@ export default async function PortafoglioPage({
         actions={<PropertyEditor zones={zones} features={features} />}
       />
 
-      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+      <AutoSubmitFiltersForm>
+        <FilterBar
+          summary={`${formatNumber(filtrate.length)} immobili nel risultato`}
+        active={filtriAttivi}
+          resetHref="/portfolio"
+        >
         <Ricerca
           label="Cerca in portafoglio"
           defaultValue={param(query.q)}
@@ -173,15 +178,7 @@ export default async function PortafoglioPage({
           </Scelta>
         </Campo>
 
-        {filtriAttivi ? (
-          <Link
-            href="/portfolio"
-            className={buttonClass("quiet", { compact: true })}
-          >
-            <X aria-hidden="true" className="size-4" />
-            Azzera
-          </Link>
-        ) : null}
+        </FilterBar>
       </AutoSubmitFiltersForm>
 
       {filtrate.length ? (

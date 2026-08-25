@@ -56,7 +56,7 @@ export function SectionNav({
   return (
     <nav
       aria-label={ariaLabel}
-      className="flex gap-1 overflow-x-auto pb-0.5"
+      className="flex gap-1.5 overflow-x-auto pb-1"
     >
       {items.map((item) => {
         const Icon = icons[item.icon];
@@ -70,16 +70,16 @@ export function SectionNav({
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={clsx(
-              "inline-flex min-h-[var(--lr-control-height-compact)] shrink-0 items-center gap-2 rounded-[var(--lr-radius-control)] px-3",
+              "inline-flex min-h-[var(--lr-control-height-compact)] shrink-0 items-center gap-2 rounded-[var(--lr-radius-pill)] px-3.5",
               "text-[length:var(--lr-text-meta)] font-medium transition-colors",
               active
-                ? "bg-[var(--lr-raised)] text-[var(--lr-ink)] shadow-[inset_0_0_0_1px_var(--lr-line)]"
+                ? "bg-[var(--lr-ink)] text-[var(--lr-surface)] shadow-[var(--lr-floating)]"
                 : "text-[var(--lr-ink-2)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
             )}
           >
             <Icon
               aria-hidden="true"
-              className={clsx("size-4", active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]")}
+              className={clsx("size-4", active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]")}
             />
             {item.label}
           </Link>

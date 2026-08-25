@@ -9,6 +9,7 @@ import { PendingSubmitButton } from "@/components/loading-controls";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { QuickRequestButton, QuickRequestDrawer } from "@/components/matching/quick-request";
 import { FlashToast } from "@/components/ui/feedback";
+import { GlobalActionLoader } from "@/components/ui/global-action-loader";
 import { buttonClass } from "@/components/ui/primitives";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { MONITORED_ZONE } from "@/lib/constants";
@@ -21,7 +22,7 @@ function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
         <Radar aria-hidden="true" className="size-5" />
       </span>
       <div className={clsx("min-w-0", collapsed && "lg:sr-only")}>
-        <p className="text-[length:var(--lr-text-body)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
+        <p className="font-display text-[length:var(--lr-text-section)] leading-tight text-[var(--lr-ink)]">
           Listing Radar
         </p>
         <p className="truncate text-[length:var(--lr-text-label)] font-medium uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
@@ -65,6 +66,7 @@ export function AppShellFrame({
         collapsed ? "lg:grid-cols-[76px_minmax(0,1fr)]" : "lg:grid-cols-[252px_minmax(0,1fr)]",
       )}
     >
+      <GlobalActionLoader />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[220] focus:rounded-[var(--lr-radius-control)] focus:border focus:border-[var(--lr-line)] focus:bg-[var(--lr-surface)] focus:px-3 focus:py-2 focus:text-[var(--lr-ink)]"

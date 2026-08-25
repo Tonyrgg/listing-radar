@@ -68,7 +68,7 @@ function itemClass(active: boolean, collapsed: boolean) {
     "lg:w-full lg:justify-start",
     collapsed && "lg:justify-center lg:px-0",
     active
-      ? "bg-[var(--lr-raised)] text-[var(--lr-ink)] shadow-[inset_0_0_0_1px_var(--lr-line)]"
+      ? "bg-[var(--lr-ink)] text-[var(--lr-surface)] shadow-[var(--lr-floating)]"
       : "text-[var(--lr-ink-2)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
   );
 }
@@ -98,12 +98,15 @@ export function SidebarNav({ collapsed = false }: Readonly<{ collapsed?: boolean
                 aria-hidden="true"
                 className={clsx(
                   "size-4 shrink-0",
-                  active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]",
+                  active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]",
                 )}
               />
               <span className={clsx("min-w-0", collapsed && "lg:sr-only")}>
                 <span className="block truncate leading-tight">{item.label}</span>
-                <span className="hidden truncate text-[length:var(--lr-text-label)] font-normal text-[var(--lr-ink-3)] lg:block">
+                <span className={clsx(
+                  "hidden truncate text-[length:var(--lr-text-label)] font-normal lg:block",
+                  active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]",
+                )}>
                   {item.hint}
                 </span>
               </span>
@@ -138,7 +141,7 @@ function SettingsLink({
     >
       <Icon
         aria-hidden="true"
-        className={clsx("size-4 shrink-0", active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]")}
+        className={clsx("size-4 shrink-0", active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]")}
       />
       <span className={clsx(collapsed && "lg:sr-only")}>{settingsItem.label}</span>
     </Link>

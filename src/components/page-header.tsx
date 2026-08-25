@@ -25,7 +25,7 @@ export function PageHeader({
   nav?: ReactNode;
 }>) {
   return (
-    <header className="border-b border-[var(--lr-line-quiet)] pb-5">
+    <header className="border-b border-[var(--lr-line-quiet)] pb-6">
       {backHref && backLabel ? (
         <Link
           href={backHref}
@@ -41,7 +41,7 @@ export function PageHeader({
           <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
             {eyebrow}
           </p>
-          <h1 className="mt-1.5 text-[length:var(--lr-text-page)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-balance text-[var(--lr-ink)]">
+          <h1 className="font-display mt-2 text-[length:var(--lr-text-page)] leading-tight text-balance text-[var(--lr-ink)]">
             {title}
           </h1>
           {description ? (

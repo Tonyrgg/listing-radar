@@ -19,6 +19,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MatchCard } from "@/components/matching/match-card";
+import { LoadingAnchor } from "@/components/loading-controls";
 import { formatShouty } from "@/lib/formatting";
 import { ProgressiveList } from "@/components/progressive-list";
 import { RecalculateButton, RequestControls } from "@/components/matching/management-panels";
@@ -91,9 +92,9 @@ export default async function RequestDetailPage({
           </div>
           <div className={styles.detailActions}>
             {payload.url ? (
-              <a className={styles.externalLink} href={payload.url} target="_blank" rel="noreferrer">
+              <LoadingAnchor className={styles.externalLink} href={payload.url} target="_blank" rel="noreferrer" pendingLabel="Apro CRM">
                 Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-4" />
-              </a>
+              </LoadingAnchor>
             ) : null}
             <RecalculateButton scope="request" id={id} />
           </div>

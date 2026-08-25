@@ -1,21 +1,27 @@
-import { Card, ScheletroIntestazione, ScheletroRiga } from "@/components/ui/primitives";
+import {
+  Card,
+  Scheletro,
+  ScheletroFiltri,
+  ScheletroIntestazione,
+  ScheletroRiga,
+} from "@/components/ui/primitives";
 
-/**
- * L'attesa di una pagina qualsiasi dell'area privata.
- *
- * Mostrava tre riquadri affiancati e un blocco alto 320 px: una forma che non
- * appartiene a nessuna pagina del prodotto. Quasi tutte, adesso, sono
- * un'intestazione e un elenco di righe con la foto.
- */
-export default function PaginaInAttesa() {
+/** Il cambio pagina conserva la struttura del lavoro, non mostra una tela vuota. */
+export default function PrivateLoading() {
   return (
-    <div className="space-y-5" aria-busy="true" aria-label="Sto caricando la pagina">
+    <div className="space-y-5" aria-busy="true" aria-label="Caricamento della pagina">
       <ScheletroIntestazione />
+      <ScheletroFiltri quanti={3} />
       <Card>
-        {[0, 1, 2, 3].map((riga) => (
-          <ScheletroRiga key={riga} />
-        ))}
+        <ScheletroRiga />
+        <ScheletroRiga />
+        <ScheletroRiga />
       </Card>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Scheletro className="h-28 rounded-[var(--lr-radius-container)]" />
+        <Scheletro className="h-28 rounded-[var(--lr-radius-container)]" />
+        <Scheletro className="h-28 rounded-[var(--lr-radius-container)]" />
+      </div>
     </div>
   );
 }

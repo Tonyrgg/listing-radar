@@ -14,7 +14,9 @@ import {
   CardBody,
   Chip,
   EmptyState,
+  FilterBar,
   Meta,
+  Ricerca,
   Scelta,
   buttonClass,
 } from "@/components/ui/primitives";
@@ -87,6 +89,7 @@ export default async function ChiCercaCosaPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
   const query = await searchParams;
+  const cerca = param(query.q).trim().toLocaleLowerCase("it");
   const contratto =
     param(query.contratto) === "rent"
       ? "rent"
@@ -140,6 +143,29 @@ export default async function ChiCercaCosaPage({
     (a, b) => (b[1][0]?.score ?? 0) - (a[1][0]?.score ?? 0),
   );
 
+  const filtrati = ordinati.filter(([requestId, gruppo]) => {
+    if (!cerca) return true;
+    const request = richiestaPerId.get(requestId);
+    const propertiesText = gruppo
+      .map((match) => {
+        const property = immobilePerId.get(match.property_id);
+        return [property?.title, property?.address, property?.zone?.name]
+          .filter(Boolean)
+          .join(" ");
+      })
+      .join(" ");
+    return [
+      request?.clients?.full_name,
+      request?.title,
+      request?.municipality,
+      propertiesText,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("it")
+      .includes(cerca);
+  });
+
   const sePuoCalcolare =
     richiesteAttive.length > 0 && immobiliLiberi.length > 0;
 
@@ -157,7 +183,17 @@ export default async function ChiCercaCosaPage({
         }
       />
 
-      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+      <AutoSubmitFiltersForm>
+        <FilterBar
+          summary={`${formatNumber(filtrati.length)} clienti con abbinamenti`}
+          active={Boolean(cerca || contratto || soloBuone)}
+          resetHref="/matching"
+        >
+        <Ricerca
+          label="Cerca in abbinamenti"
+          defaultValue={param(query.q)}
+          placeholder="cliente, casa, via, zona…"
+        />
         <Campo label="Vendita o affitto" labelHidden className="min-w-48">
           <Scelta name="contratto" defaultValue={contratto}>
             <option value="">Chi compra e chi affitta</option>
@@ -177,16 +213,17 @@ export default async function ChiCercaCosaPage({
           {richiestePerContratto.length} clienti in cerca ·{" "}
           {immobiliLiberi.length} case in portafoglio
         </Meta>
+        </FilterBar>
       </AutoSubmitFiltersForm>
 
-      {ordinati.length ? (
+      {filtrati.length ? (
         <ProgressiveList
           className="space-y-5"
           initialCount={6}
           step={6}
           noun="clienti"
         >
-          {ordinati.map(([requestId, gruppo]) => {
+          {filtrati.map(([requestId, gruppo]) => {
             const request = richiestaPerId.get(requestId);
             if (!request) return null;
 

@@ -2,94 +2,72 @@
  * La sorgente è src/styles/tokens.css. Rigenera con: npm run design:sync
  */
 /*
- * Listing Radar — sorgente unica dei token di design.
- *
- * NON modificare le copie generate:
- *   worker/src/desktop/renderer/tokens.css
- *   extension/tokens.css
- * Si rigenerano con `npm run design:sync`.
- *
- * Ogni valore di colore è verificato in sRGB contro WCAG 2.1 AA.
- * I rapporti annotati sono verso la superficie indicata.
- * Verifica con `npm run design:check`.
+ * Listing Radar — source of truth for visual tokens.
+ * Generated copies: worker/src/desktop/renderer/tokens.css and extension/tokens.css.
+ * Run `npm run design:sync` after changing this file.
  */
 
 :root {
-  /* ---- superfici (scuro, identità del prodotto) ---- */
-  --lr-canvas: #0e1411;
-  --lr-surface: #1f2823; /* 1,23 su canvas */
-  --lr-raised: #2e3831; /* 1,25 su surface */
+  /* A warm paper workspace: quiet enough for dense operational data. */
+  --lr-canvas: #eae0cf;
+  --lr-surface: #fffdf8;
+  --lr-raised: #ebe2d2;
 
-  /* ---- linee ----
-   * --lr-line separa due superfici: deve restare >= 3:1 (WCAG 1.4.11).
-   * --lr-line-quiet divide contenuto dentro la stessa superficie: decorativa.
-   */
-  --lr-line: #6d746e; /* 3,16 su surface · 3,88 su canvas */
-  --lr-line-quiet: #454e47;
+  --lr-line: #807564;
+  --lr-line-quiet: #d9cdb9;
 
-  /* ---- testo ---- */
-  --lr-ink: #f1f4ef; /* 13,7 su surface */
-  --lr-ink-2: #b7c2ba; /* 8,25 su surface */
-  --lr-ink-3: #96a29b; /* 5,73 su surface · 4,79 su raised */
+  --lr-ink: #16363a;
+  --lr-ink-2: #3f5c61;
+  --lr-ink-3: #52666a;
 
-  /* ---- azione: un solo verde, riservato al passo successivo ---- */
-  --lr-accent: #74c495; /* 7,27 su surface */
-  --lr-accent-ink: #0d1410; /* 8,96 su accent */
-  --lr-accent-hover: #8ad2a8;
-  --lr-accent-soft: #223a2d;
+  /* Copper is an instruction, never decoration. */
+  --lr-accent: #a7442b;
+  --lr-accent-ink: #ffffff;
+  --lr-accent-hover: #87331f;
+  --lr-accent-soft: #f3d9ce;
 
-  /* ---- stato: famiglia separata dall'azione ---- */
-  --lr-warn: #e6b655; /* 8,07 su surface */
-  --lr-warn-soft: #35291a;
-  --lr-danger: #f08872; /* 6,11 su surface */
-  --lr-danger-ink: #0d1410;
-  --lr-danger-soft: #3a231f;
-  --lr-info: #84b9db; /* 7,17 su surface */
-  --lr-info-soft: #1c2c36;
+  --lr-warn: #825b12;
+  --lr-warn-soft: #f4e6c6;
+  --lr-danger: #af352d;
+  --lr-danger-ink: #ffffff;
+  --lr-danger-soft: #f5deda;
+  --lr-info: #275d82;
+  --lr-info-soft: #dbe9ef;
 
-  /* ---- velatura sotto le finestre di dialogo ---- */
-  --lr-scrim: rgb(0 0 0 / 0.62);
+  --lr-scrim: rgb(22 54 58 / 0.45);
 
-  /* ---- palette dei dati sulla mappa ----
-   * Famiglia separata dall'accento: qui il colore distingue categorie,
-   * non indica l'azione successiva. Ogni tinta è accompagnata da una forma
-   * (icona o tratto) perché non resti l'unico segnale. */
-  --lr-data-1: #4f9de0;
-  --lr-data-2: #57b98a;
-  --lr-data-3: #dda63f;
-  --lr-data-4: #e0705e;
-  --lr-data-5: #9a8ad4;
-  --lr-data-muted: #8b968f;
+  --lr-data-1: #28719b;
+  --lr-data-2: #34765e;
+  --lr-data-3: #9a690e;
+  --lr-data-4: #b74b36;
+  --lr-data-5: #665aa6;
+  --lr-data-muted: #6c7978;
 
-  /* ---- elevazione: due soli livelli dichiarati ---- */
   --lr-flat: none;
-  --lr-floating: 0 10px 28px rgb(0 0 0 / 0.42), 0 2px 6px rgb(0 0 0 / 0.3);
+  --lr-floating: 0 16px 42px rgb(41 46 37 / 0.16), 0 3px 10px rgb(41 46 37 / 0.08);
 
-  /* ---- raggi: due, più la pillola ---- */
-  --lr-radius-control: 6px;
-  --lr-radius-container: 10px;
+  --lr-radius-control: 10px;
+  --lr-radius-container: 16px;
   --lr-radius-pill: 999px;
 
-  /* ---- tipografia: sei gradini, tre pesi ---- */
-  --lr-text-page: 1.75rem; /* 28 */
-  --lr-text-section: 1.25rem; /* 20 */
-  --lr-text-record: 1rem; /* 16 */
-  --lr-text-body: 0.875rem; /* 14 */
-  --lr-text-meta: 0.8125rem; /* 13 */
-  --lr-text-label: 0.6875rem; /* 11 */
+  --lr-text-page: 2rem;
+  --lr-text-section: 1.375rem;
+  --lr-text-record: 1rem;
+  --lr-text-body: 0.875rem;
+  --lr-text-meta: 0.8125rem;
+  --lr-text-label: 0.6875rem;
 
-  --lr-leading-tight: 1.2;
+  --lr-leading-tight: 1.15;
   --lr-leading-snug: 1.35;
   --lr-leading-body: 1.55;
 
   --lr-weight-regular: 400;
-  --lr-weight-medium: 500;
+  --lr-weight-medium: 520;
   --lr-weight-strong: 650;
 
   --lr-tracking-label: 0.09em;
-  --lr-tracking-title: -0.015em;
+  --lr-tracking-title: -0.028em;
 
-  /* ---- spazio ---- */
   --lr-space-1: 4px;
   --lr-space-2: 8px;
   --lr-space-3: 12px;
@@ -98,99 +76,77 @@
   --lr-space-6: 24px;
   --lr-space-8: 32px;
 
-  /* ---- densità: tre, dichiarate per schermata ---- */
   --lr-row-queue: 44px;
   --lr-row-list: 56px;
   --lr-row-detail: 64px;
-
-  /* ---- controlli ---- */
   --lr-control-height: 44px;
   --lr-control-height-compact: 36px;
-
-  color-scheme: dark;
-}
-
-/* Il tema chiaro segue il sistema, e la scelta esplicita vince su entrambi. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --lr-canvas: #e4eae3;
-    --lr-surface: #ffffff; /* 1,22 su canvas */
-    --lr-raised: #dce3db; /* 1,31 su surface */
-
-    --lr-line: #79857b; /* 3,85 su surface · 3,15 su canvas */
-    --lr-line-quiet: #c6cfc6;
-
-    --lr-ink: #111714; /* 18,2 su surface */
-    --lr-ink-2: #3e4a42; /* 9,28 su surface */
-    --lr-ink-3: #59655c; /* 6,10 su surface · 4,67 su raised */
-
-    --lr-accent: #1f6a45; /* 6,55 su surface */
-    --lr-accent-ink: #ffffff; /* 6,55 su accent */
-    --lr-accent-hover: #175737;
-    --lr-accent-soft: #dcede3;
-
-    --lr-warn: #7c5205; /* 6,85 su surface */
-    --lr-warn-soft: #f5ebd7;
-    --lr-danger: #a82f23; /* 6,78 su surface */
-    --lr-danger-ink: #ffffff;
-    --lr-danger-soft: #f7e4e1;
-    --lr-info: #1b587d; /* 7,67 su surface */
-    --lr-info-soft: #dfeaf2;
-
-    --lr-scrim: rgb(17 23 20 / 0.5);
-
-    --lr-data-1: #2f6fa8;
-    --lr-data-2: #2c7f57;
-    --lr-data-3: #97690b;
-    --lr-data-4: #b0483a;
-    --lr-data-5: #6355a5;
-    --lr-data-muted: #5f6b63;
-
-    --lr-floating: 0 10px 28px rgb(17 23 20 / 0.14), 0 2px 6px rgb(17 23 20 / 0.08);
-
-    color-scheme: light;
-  }
-}
-
-:root[data-theme="light"] {
-  --lr-canvas: #e4eae3;
-  --lr-surface: #ffffff;
-  --lr-raised: #dce3db;
-
-  --lr-line: #79857b;
-  --lr-line-quiet: #c6cfc6;
-
-  --lr-ink: #111714;
-  --lr-ink-2: #3e4a42;
-  --lr-ink-3: #59655c;
-
-  --lr-accent: #1f6a45;
-  --lr-accent-ink: #ffffff;
-  --lr-accent-hover: #175737;
-  --lr-accent-soft: #dcede3;
-
-  --lr-warn: #7c5205;
-  --lr-warn-soft: #f5ebd7;
-  --lr-danger: #a82f23;
-  --lr-danger-ink: #ffffff;
-  --lr-danger-soft: #f7e4e1;
-  --lr-info: #1b587d;
-  --lr-info-soft: #dfeaf2;
-
-  --lr-scrim: rgb(17 23 20 / 0.5);
-
-  --lr-data-1: #2f6fa8;
-  --lr-data-2: #2c7f57;
-  --lr-data-3: #97690b;
-  --lr-data-4: #b0483a;
-  --lr-data-5: #6355a5;
-  --lr-data-muted: #5f6b63;
-
-  --lr-floating: 0 10px 28px rgb(17 23 20 / 0.14), 0 2px 6px rgb(17 23 20 / 0.08);
 
   color-scheme: light;
 }
 
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { color-scheme: light; }
+}
+
+:root[data-theme="light"] {
+  --lr-canvas: #eae0cf;
+  --lr-surface: #fffdf8;
+  --lr-raised: #ebe2d2;
+  --lr-line: #807564;
+  --lr-line-quiet: #d9cdb9;
+  --lr-ink: #16363a;
+  --lr-ink-2: #3f5c61;
+  --lr-ink-3: #52666a;
+  --lr-accent: #a7442b;
+  --lr-accent-ink: #ffffff;
+  --lr-accent-hover: #87331f;
+  --lr-accent-soft: #f3d9ce;
+  --lr-warn: #825b12;
+  --lr-warn-soft: #f4e6c6;
+  --lr-danger: #af352d;
+  --lr-danger-ink: #ffffff;
+  --lr-danger-soft: #f5deda;
+  --lr-info: #275d82;
+  --lr-info-soft: #dbe9ef;
+  --lr-scrim: rgb(22 54 58 / 0.45);
+  --lr-data-1: #28719b;
+  --lr-data-2: #34765e;
+  --lr-data-3: #9a690e;
+  --lr-data-4: #b74b36;
+  --lr-data-5: #665aa6;
+  --lr-data-muted: #6c7978;
+  --lr-floating: 0 16px 42px rgb(41 46 37 / 0.16), 0 3px 10px rgb(41 46 37 / 0.08);
+  color-scheme: light;
+}
+
 :root[data-theme="dark"] {
+  --lr-canvas: #10282e;
+  --lr-surface: #17353c;
+  --lr-raised: #22464e;
+  --lr-line: #91a8ac;
+  --lr-line-quiet: #35555b;
+  --lr-ink: #fff7eb;
+  --lr-ink-2: #d1dfdd;
+  --lr-ink-3: #b4c7c5;
+  --lr-accent: #e69365;
+  --lr-accent-ink: #263035;
+  --lr-accent-hover: #f2ac81;
+  --lr-accent-soft: #4e3930;
+  --lr-warn: #e3bd66;
+  --lr-warn-soft: #4b3e22;
+  --lr-danger: #ef978d;
+  --lr-danger-ink: #2b2020;
+  --lr-danger-soft: #4d302f;
+  --lr-info: #9bc8e0;
+  --lr-info-soft: #243f4a;
+  --lr-scrim: rgb(5 17 20 / 0.66);
+  --lr-data-1: #6fb7df;
+  --lr-data-2: #72c6a2;
+  --lr-data-3: #e5b65d;
+  --lr-data-4: #ed8b79;
+  --lr-data-5: #afa3e0;
+  --lr-data-muted: #a9bbb9;
+  --lr-floating: 0 18px 46px rgb(0 0 0 / 0.34), 0 3px 10px rgb(0 0 0 / 0.22);
   color-scheme: dark;
 }
