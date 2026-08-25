@@ -26,6 +26,11 @@ function requiredText(formData: FormData, key: string): string {
   return value;
 }
 
+function optionalText(formData: FormData, key: string): string | null {
+  const value = String(formData.get(key) ?? "").trim();
+  return value || null;
+}
+
 async function currentReviewerId(): Promise<string> {
   await requireUser();
   const user = await getCurrentUser();
@@ -159,6 +164,9 @@ export async function recordReviewDecision(formData: FormData) {
   const reviewId = requiredText(formData, "reviewId");
   const decision = requiredText(formData, "decision");
   const reason = requiredText(formData, "reason");
+  /* Con più candidate «stessa casa» da solo non dice quale: la decisione
+   * resta scritta insieme alla scheda che stavi guardando. */
+  const candidatePropertyId = optionalText(formData, "candidatePropertyId");
   if (!REVIEW_DECISIONS.has(decision)) {
     throw new Error("Decisione di revisione non supportata.");
   }
@@ -173,7 +181,7 @@ export async function recordReviewDecision(formData: FormData) {
     targetType: "IDENTITY_MATCH",
     targetId: reviewId,
     overrideKey: "review_decision",
-    overrideValue: decision,
+    overrideValue: candidatePropertyId ? { decision, candidatePropertyId } : decision,
     previousValue: review.data.status,
     reason,
     source: "LIFECYCLE_REVIEW_UI",
@@ -183,7 +191,7 @@ export async function recordReviewDecision(formData: FormData) {
     .from("review_queue")
     .update({
       status: decision === "NOT_SURE" ? "IN_REVIEW" : "RESOLVED",
-      resolution: { decision, reason, overrideId: override },
+      resolution: { decision, reason, overrideId: override, candidatePropertyId },
       resolved_by: decision === "NOT_SURE" ? null : createdBy,
       resolved_at: decision === "NOT_SURE" ? null : new Date().toISOString(),
     })

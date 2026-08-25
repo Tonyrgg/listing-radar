@@ -1,141 +1,417 @@
-import { GitCompareArrows, Scale, ShieldQuestion } from "lucide-react";
+import { clsx } from "clsx";
+import { ArrowRight, GitCompareArrows, ShieldQuestion } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
+import { Dato } from "@/components/ui/atoms";
+import {
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  EmptyState,
+  Label,
+  Meta,
+  buttonClass,
+} from "@/components/ui/primitives";
 import { getCurrentUser } from "@/lib/auth";
+import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import {
   humanize,
-  reviewStatusLabel,
   reviewTypeLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import type {
+  LifecyclePropertySummary,
+  LifecycleReviewItem,
+} from "@/lib/property-lifecycle/read-models/types";
 
 import { recordReviewDecision } from "../actions";
-import {
-  formatDate,
-  LifecycleEmpty,
-  LifecycleHeader,
-  LifecycleSection,
-  LifecycleUnavailable,
-  PropertyFacts,
-  PropertyLink,
-  SignalPill,
-} from "../_components/ui";
+import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
 import styles from "../lifecycle.module.css";
 
 export const metadata: Metadata = { title: "Da decidere" };
 
-function detailSummary(details: Record<string, unknown>): string[] {
-  const reasons = Array.isArray(details.reasons)
-    ? details.reasons.filter((value): value is string => typeof value === "string")
-    : [];
-  const score = typeof details.score === "number" ? `Score ${Math.round(details.score * 100)}%` : null;
-  const margin = typeof details.margin === "number" ? `Margine ${Math.round(details.margin * 100)}%` : null;
-  const source = typeof details.source === "string" ? `Fonte ${details.source}` : null;
-  return [score, margin, source, ...reasons.map(humanize)].filter(
-    (value): value is string => Boolean(value),
+/**
+ * Il confronto.
+ *
+ * «Sono la stessa casa?» è una domanda che si risponde guardando: due foto
+ * accanto, e in un istante sai. Prima questa pagina metteva in fila
+ * centonovantacinque casi tutti insieme, ognuno con quattro riquadri di testo,
+ * nessuna immagine, e un titolo scritto in inglese dal database.
+ *
+ * Ora si decide un caso alla volta, con le foto grandi e le differenze
+ * segnate. Gli altri restano sotto, in coda, con la loro miniatura.
+ */
+
+const DA_MOSTRARE_IN_CODA = 8;
+
+function param(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** La domanda che il caso pone, in italiano e senza gergo. */
+function domanda(review: LifecycleReviewItem) {
+  if (review.reviewType === "IDENTITY") return "È la stessa casa?";
+  if (review.reviewType === "GEOGRAPHY") return "Dove si trova davvero?";
+  if (review.reviewType === "LIFECYCLE") return "In che stato è?";
+  return reviewTypeLabel(review.reviewType);
+}
+
+function nome(property: LifecyclePropertySummary) {
+  return formatShouty(property.address ?? property.title);
+}
+
+/**
+ * Una scheda del confronto: la foto grande, i numeri sotto.
+ *
+ * `diverso` segna i valori che non coincidono con la scheda in esame: è quello
+ * che l'occhio cerca, e nel testo si perdeva.
+ */
+function SchedaConfronto({
+  property,
+  foto,
+  etichetta,
+  riferimento,
+  punteggio,
+  contraddizioni,
+  piccola = false,
+}: Readonly<{
+  property: LifecyclePropertySummary;
+  foto?: string;
+  etichetta: string;
+  riferimento?: LifecyclePropertySummary | null;
+  punteggio?: number | null;
+  contraddizioni?: string[];
+  /** Le candidate di seconda fila non meritano lo stesso spazio della prima. */
+  piccola?: boolean;
+}>) {
+  const diverso = (chiave: "currentPrice" | "surfaceSqm" | "rooms") =>
+    riferimento != null && riferimento[chiave] !== property[chiave];
+
+  const valore = (chiave: "currentPrice" | "surfaceSqm" | "rooms", testo: string) => (
+    <span
+      className={
+        diverso(chiave)
+          ? "text-[var(--lr-warn)]"
+          : riferimento
+            ? "text-[var(--lr-accent)]"
+            : "text-[var(--lr-ink-2)]"
+      }
+      title={
+        riferimento
+          ? diverso(chiave)
+            ? "Diverso dalla scheda in esame"
+            : "Uguale alla scheda in esame"
+          : undefined
+      }
+    >
+      {testo}
+    </span>
+  );
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <Label>{etichetta}</Label>
+        {punteggio != null ? (
+          <Meta>si somigliano al {Math.round(punteggio * 100)}%</Meta>
+        ) : null}
+      </div>
+
+      <Link
+        href={`/lifecycle/archive/${property.id}`}
+        className={clsx(
+          "block w-full overflow-hidden rounded-[var(--lr-radius-card)] bg-[var(--lr-raised)]",
+          /* Altezza fissa, non proporzione: due foto affiancate devono stare
+           * nella stessa schermata dei bottoni con cui si decide. */
+          piccola ? "h-32" : "h-56 sm:h-64",
+        )}
+        aria-label={`Apri la scheda di ${nome(property)}`}
+      >
+        {foto ? (
+          <span
+            className="block size-full bg-cover bg-center"
+            style={{ backgroundImage: `url("${foto}")` }}
+          />
+        ) : (
+          <span className="grid size-full place-items-center px-4 text-center text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+            Senza foto: qui il confronto va fatto sui numeri
+          </span>
+        )}
+      </Link>
+
+      <p className="truncate text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)]">
+        <Dato certainty={property.address ? "sure" : "guess"}>{nome(property)}</Dato>
+      </p>
+
+      <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[length:var(--lr-text-body)]">
+        {valore("currentPrice", formatCurrency(property.currentPrice))}
+        {property.surfaceSqm != null
+          ? valore("surfaceSqm", `${formatNumber(property.surfaceSqm)} m²`)
+          : null}
+        {property.rooms != null
+          ? valore("rooms", `${formatNumber(property.rooms)} locali`)
+          : null}
+      </p>
+
+      <Meta>{property.agencies.map((agency) => formatShouty(agency.name)).join(" · ") || "—"}</Meta>
+
+      {contraddizioni?.length ? (
+        <Meta className="text-[var(--lr-warn)]">
+          Non torna: {contraddizioni.map(humanize).join(", ").toLocaleLowerCase("it")}
+        </Meta>
+      ) : null}
+    </div>
   );
 }
 
-export default async function LifecycleReviewPage() {
+export default async function DaDecidereePage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   await connection();
+
+  const query = await searchParams;
   const [view, user] = await Promise.all([
     loadLifecycleView((repository) => repository.reviews()),
     getCurrentUser(),
   ]);
+
   if (!view.available || !view.data) return <LifecycleUnavailable message={view.message} />;
-  const reviews = view.data;
-  const identityCount = reviews.filter((review) => review.reviewType === "IDENTITY").length;
-  const geographyCount = reviews.filter((review) => review.reviewType === "GEOGRAPHY").length;
+
+  const casi = view.data;
+
+  if (!casi.length) {
+    return (
+      <>
+        <LifecycleHeader
+          eyebrow="Da decidere"
+          title="Non c'è niente da decidere"
+          description="Quando due schede si somigliano troppo per essere sicuri, il caso finisce qui."
+        />
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="La coda è vuota"
+              description="Nessuna ambiguità aspetta una tua decisione in questo momento."
+            />
+          </CardBody>
+        </Card>
+      </>
+    );
+  }
+
+  const richiesto = param(query.caso);
+  const indice = Math.min(Math.max(Number(richiesto ?? "1") || 1, 1), casi.length) - 1;
+  const caso = casi[indice];
+  const prossimo = indice + 2 <= casi.length ? indice + 2 : null;
+
+  const candidati = [...caso.candidates].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const migliore = candidati[0] ?? null;
+  const altri = candidati.slice(1);
+  const coda = casi.slice(indice + 1, indice + 1 + DA_MOSTRARE_IN_CODA);
+
+  const foto = await signPropertyPhotos([
+    ...(caso.property ? [caso.property] : []),
+    ...candidati.map((candidato) => candidato.property),
+    ...coda.flatMap((altro) => (altro.property ? [altro.property] : [])),
+  ]);
+
+  const perTipo = (tipo: string) => casi.filter((item) => item.reviewType === tipo).length;
 
   return (
     <>
       <LifecycleHeader
         eyebrow="Da decidere"
-        title="Casi che aspettano una tua decisione"
-        description="Confronta le schede candidate e registra la scelta. Niente viene unito o eliminato in automatico: decidi tu, e la decisione resta tracciata."
-        actions={<SignalPill tone={reviews.length ? "high" : "good"}>{reviews.length} aperte</SignalPill>}
+        title={domanda(caso)}
+        description="Niente viene unito o scartato da solo. Guardi, decidi, e la decisione resta scritta con il tuo nome."
+        actions={
+          <Chip tone="warn">
+            caso {indice + 1} di {casi.length}
+          </Chip>
+        }
       />
 
-      <section className={styles.briefingStrip} aria-label="Sintesi revisioni">
-        <div className={styles.metric}><strong>{reviews.length}</strong><span>casi aperti</span></div>
-        <div className={styles.metric}><strong>{identityCount}</strong><span>stesso immobile</span></div>
-        <div className={styles.metric}><strong>{geographyCount}</strong><span>posizione</span></div>
-        <div className={styles.metric}><strong>{reviews.filter((review) => review.reviewType === "LIFECYCLE").length}</strong><span>stato incerto</span></div>
-        <div className={styles.metric}><strong>{reviews.filter((review) => review.status === "IN_REVIEW").length}</strong><span>in esame</span></div>
-      </section>
-
-      <LifecycleSection
-        title="Casi da decidere"
-        description="Priorità più alta per prima"
-        action={<Scale aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />}
-      >
-        {reviews.length ? (
-          <div className={styles.rows}>
-            {reviews.map((review) => {
-              const summaries = detailSummary(review.details);
-              return (
-                <article key={review.id} className={styles.reviewCase}>
-                  <div className={styles.rowTop}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <SignalPill tone={review.priority >= 100 ? "hot" : "high"}>{reviewTypeLabel(review.reviewType)}</SignalPill>
-                      <SignalPill>{reviewStatusLabel(review.status)}</SignalPill>
-                    </div>
-                    <span className={styles.rowMeta}>Priorità {review.priority} · {formatDate(review.createdAt)}</span>
-                  </div>
-                  <div>
-                    <h2 className={styles.reviewTitle}>{review.title}</h2>
-                    {review.agencyName ? <p className={styles.muted}>Agenzia: {review.agencyName}</p> : null}
-                    {summaries.length ? <p className={`${styles.muted} mt-2`}>{summaries.join(" · ")}</p> : null}
-                  </div>
-
-                  {review.property || review.candidates.length ? (
-                    <div className={styles.comparisonGrid}>
-                      {review.property ? (
-                        <div className={styles.comparisonCard}>
-                          <span className={styles.comparisonLabel}>Dossier in esame</span>
-                          <PropertyLink property={review.property} />
-                          <PropertyFacts property={review.property} />
-                        </div>
-                      ) : null}
-                      {review.candidates.map((candidate, index) => (
-                        <div key={candidate.property.id} className={styles.comparisonCard}>
-                          <span className={styles.comparisonLabel}>Candidato {index + 1}{candidate.score == null ? "" : ` · ${Math.round(candidate.score * 100)}%`}</span>
-                          <PropertyLink property={candidate.property} />
-                          <PropertyFacts property={candidate.property} />
-                          {candidate.contradictions.length ? (
-                            <p className={`${styles.muted} mt-2`}>Contraddizioni: {candidate.contradictions.map(humanize).join(", ")}</p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {user ? (
-                    <form action={recordReviewDecision} className={styles.reviewActions}>
-                      <input type="hidden" name="reviewId" value={review.id} />
-                      <label className={styles.manualLabel}>
-                        Motivo della decisione
-                        <input name="reason" required minLength={5} placeholder="Evidenza osservata o controllo eseguito" className={styles.input} />
-                      </label>
-                      <div className={styles.decisionGrid}>
-                        <PendingSubmitButton type="submit" name="decision" value="SAME" pendingLabel="Registro" icon={<GitCompareArrows aria-hidden="true" className="size-4" />} className={styles.primaryAction}>Stesso immobile</PendingSubmitButton>
-                        <PendingSubmitButton type="submit" name="decision" value="DIFFERENT" pendingLabel="Registro" className={styles.secondaryAction}>Diversi</PendingSubmitButton>
-                        <PendingSubmitButton type="submit" name="decision" value="NOT_SURE" pendingLabel="Registro" icon={<ShieldQuestion aria-hidden="true" className="size-4" />} className={styles.secondaryAction}>Non sicuro</PendingSubmitButton>
-                      </div>
-                    </form>
-                  ) : (
-                    <p className={styles.readOnlyNote}>Sola lettura: serve un utente autenticato per registrare una decisione auditabile.</p>
-                  )}
-                </article>
-              );
-            })}
+      <Card className="flex flex-wrap divide-x divide-[var(--lr-line-quiet)]">
+        {[
+          [casi.length, "casi aperti"],
+          [perTipo("IDENTITY"), "stessa casa?"],
+          [perTipo("GEOGRAPHY"), "dove si trova?"],
+          [perTipo("LIFECYCLE"), "in che stato è?"],
+        ].map(([valore, cosa]) => (
+          <div key={String(cosa)} className="min-w-0 px-4 py-3">
+            <strong className="block text-[length:var(--lr-text-page)] font-[650] leading-none tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
+              {formatNumber(Number(valore))}
+            </strong>
+            <span className="mt-1.5 block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
+              {cosa}
+            </span>
           </div>
-        ) : (
-          <LifecycleEmpty title="Coda pulita" description="Nessuna ambiguità richiede una decisione umana in questo momento." />
-        )}
-      </LifecycleSection>
+        ))}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Guarda, e decidi"
+          meta="In verde quello che coincide, in giallo quello che non torna."
+          action={
+            prossimo ? (
+              <Link
+                href={`/lifecycle/review?caso=${prossimo}`}
+                className={buttonClass("quiet", { compact: true })}
+              >
+                Salta al prossimo
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            ) : null
+          }
+        />
+        <CardBody className="space-y-5">
+          <div className="grid gap-5 sm:grid-cols-2">
+            {caso.property ? (
+              <SchedaConfronto
+                property={caso.property}
+                foto={foto.get(caso.property.id)}
+                etichetta="La scheda in esame"
+              />
+            ) : (
+              <EmptyState
+                title="La scheda in esame non c'è più"
+                description="Il caso resta aperto, ma la proprietà a cui si riferiva non è più nell'archivio."
+              />
+            )}
+
+            {migliore ? (
+              <SchedaConfronto
+                property={migliore.property}
+                foto={foto.get(migliore.property.id)}
+                etichetta="Le somiglia di più"
+                riferimento={caso.property}
+                punteggio={migliore.score}
+                contraddizioni={migliore.contradictions}
+              />
+            ) : null}
+          </div>
+
+          {altri.length ? (
+            <div>
+              <Label>Altre che le somigliano</Label>
+              <div className="mt-2 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                {altri.map((candidato) => (
+                  <SchedaConfronto
+                    key={candidato.property.id}
+                    property={candidato.property}
+                    foto={foto.get(candidato.property.id)}
+                    etichetta="Candidata"
+                    riferimento={caso.property}
+                    punteggio={candidato.score}
+                    contraddizioni={candidato.contradictions}
+                    piccola
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {user ? (
+            <form action={recordReviewDecision} className={styles.manualForm}>
+              <input type="hidden" name="reviewId" value={caso.id} />
+              {migliore ? (
+                <input
+                  type="hidden"
+                  name="candidatePropertyId"
+                  value={migliore.property.id}
+                />
+              ) : null}
+              <label className={styles.manualLabel}>
+                Cosa ti fa dire di sì o di no?
+                <input
+                  name="reason"
+                  required
+                  minLength={5}
+                  placeholder="Es. stesse foto, stesso piano, prezzo diverso perché ribassato"
+                  className={styles.input}
+                />
+              </label>
+              <div className={styles.decisionGrid}>
+                <PendingSubmitButton
+                  type="submit"
+                  name="decision"
+                  value="SAME"
+                  pendingLabel="Registro"
+                  icon={<GitCompareArrows aria-hidden="true" className="size-4" />}
+                  className={styles.primaryAction}
+                >
+                  È la stessa casa
+                </PendingSubmitButton>
+                <PendingSubmitButton
+                  type="submit"
+                  name="decision"
+                  value="DIFFERENT"
+                  pendingLabel="Registro"
+                  className={styles.secondaryAction}
+                >
+                  Sono due case diverse
+                </PendingSubmitButton>
+                <PendingSubmitButton
+                  type="submit"
+                  name="decision"
+                  value="NOT_SURE"
+                  pendingLabel="Registro"
+                  icon={<ShieldQuestion aria-hidden="true" className="size-4" />}
+                  className={styles.secondaryAction}
+                >
+                  Non riesco a dirlo
+                </PendingSubmitButton>
+              </div>
+            </form>
+          ) : (
+            <EmptyState
+              title="Per decidere serve essere riconosciuti"
+              description="Ogni decisione porta un nome e una data: finché non c'è un utente, questa pagina resta in sola lettura."
+            />
+          )}
+        </CardBody>
+      </Card>
+
+      {coda.length ? (
+        <Card>
+          <CardHeader title="Dopo questo" meta={`Altri ${casi.length - indice - 1} casi in coda.`} />
+          <div>
+            {coda.map((altro, posizione) => (
+              <Link
+                key={altro.id}
+                href={`/lifecycle/review?caso=${indice + 2 + posizione}`}
+                className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-3 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]"
+              >
+                <span className="block h-12 w-16 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]">
+                  {altro.property && foto.get(altro.property.id) ? (
+                    <span
+                      className="block size-full bg-cover bg-center"
+                      style={{ backgroundImage: `url("${foto.get(altro.property.id)}")` }}
+                    />
+                  ) : null}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
+                    {altro.property ? nome(altro.property) : "Scheda non più in archivio"}
+                  </span>
+                  <span className="block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+                    {domanda(altro)}
+                    {altro.candidates.length
+                      ? ` · ${altro.candidates.length} ${altro.candidates.length === 1 ? "candidata" : "candidate"}`
+                      : ""}
+                  </span>
+                </span>
+                <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-[var(--lr-ink-3)]" />
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
     </>
   );
 }
