@@ -288,7 +288,7 @@ export default async function SchedaCasaPage({
       />
 
       {/* Il colpo d'occhio: la foto e i pochi fatti che decidono. */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <Foto urls={detail.imageUrls} alt={indirizzo ?? formatShouty(property.title)} />
 
         <div className="space-y-5">
@@ -380,7 +380,7 @@ export default async function SchedaCasaPage({
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
         {/* Cosa le è successo, dal più recente. */}
         <Card>
           <CardHeader

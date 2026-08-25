@@ -195,12 +195,16 @@ export function Movimento({
   amount,
   since,
   className,
+  sinceClassName,
 }: Readonly<{
   direction: "down" | "up" | "flat";
   /** Testo già formattato: «−17.000 €». */
   amount?: string;
   since?: string;
   className?: string;
+  /** Per nascondere il contorno dove lo spazio non c'è: su un telefono
+   * «di quanto è sceso» conta più di «a quanto è arrivato». */
+  sinceClassName?: string;
 }>) {
   if (direction === "flat") {
     return (
@@ -221,7 +225,12 @@ export function Movimento({
       <span aria-hidden="true">{direction === "down" ? "↓" : "↑"}</span>
       <span>{amount}</span>
       {since ? (
-        <span className="font-normal text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+        <span
+          className={clsx(
+            "font-normal text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]",
+            sinceClassName,
+          )}
+        >
           {since}
         </span>
       ) : null}

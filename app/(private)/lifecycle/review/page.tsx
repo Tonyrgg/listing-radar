@@ -270,7 +270,7 @@ export default async function DaDecidereePage({
           }
         />
         <CardBody className="space-y-5">
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
             {caso.property ? (
               <SchedaConfronto
                 property={caso.property}

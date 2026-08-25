@@ -42,6 +42,7 @@ function movimentoDiPrezzo(payload: Record<string, unknown>) {
       direction={delta === 0 ? "flat" : delta < 0 ? "down" : "up"}
       amount={`${delta < 0 ? "−" : "+"}${formatCurrency(Math.abs(delta))}`}
       since={formatCurrency(nuovo)}
+      sinceClassName="hidden sm:inline"
     />
   );
 }
@@ -107,9 +108,11 @@ export function EventRow({
         </span>
       </span>
 
-      <span className="relative z-10 flex shrink-0 items-center gap-4">
-        <span className="text-[length:var(--lr-text-meta)]">{prezzo ?? nota}</span>
-        <span className="whitespace-nowrap text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+      {/* Il blocco di destra può stringersi: con `shrink-0` un ribasso scritto
+        * per esteso spingeva la riga fuori dallo schermo. */}
+      <span className="relative z-10 flex min-w-0 shrink items-center justify-end gap-3">
+        <span className="truncate text-[length:var(--lr-text-meta)]">{prezzo ?? nota}</span>
+        <span className="hidden whitespace-nowrap text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] sm:inline">
           {mostraOra ? formatTime(event.occurredAt) : formatDate(event.occurredAt)}
         </span>
         <ArrowUpRight

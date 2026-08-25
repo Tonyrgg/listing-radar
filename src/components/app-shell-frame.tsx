@@ -142,7 +142,10 @@ export function AppShellFrame({
               ) : null}
             </div>
           </div>
-          <div className="border-t border-[var(--lr-line-quiet)] px-2 py-1.5">
+          {/* Su telefono le sezioni scorrono in orizzontale: senza `min-w-0`
+            * il contenitore prende la larghezza della fila e a scorrere è
+            * l'intera pagina. */}
+          <div className="min-w-0 border-t border-[var(--lr-line-quiet)] px-2 py-1.5">
             <SidebarNav />
           </div>
         </header>
