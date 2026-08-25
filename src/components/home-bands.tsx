@@ -67,7 +67,7 @@ export function StrisciaFiducia({ sources }: Readonly<{ sources: SourcesSummary 
           </Chip>
           <Meta>Quello che leggi oggi è completo.</Meta>
         </div>
-        <Link href="/settings" className={buttonClass("quiet", { compact: true })}>
+        <Link href="/fonti" className={buttonClass("quiet", { compact: true })}>
           Vedi le fonti
         </Link>
       </Card>
@@ -96,7 +96,7 @@ export function StrisciaFiducia({ sources }: Readonly<{ sources: SourcesSummary 
               : " Nessun immobile è stato dichiarato sparito per questo."}
           </p>
           <div className="mt-3">
-            <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
+            <Link href="/fonti" className={buttonClass("secondary", { compact: true })}>
               Vedi tutte le fonti
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>

@@ -15,7 +15,7 @@ const primaryItems = [
     label: "Oggi",
     hint: "Il lavoro aperto",
     icon: Inbox,
-    owns: ["/dashboard", "/incoming", "/reports"],
+    owns: ["/dashboard", "/incoming", "/reports", "/fonti"],
   },
   {
     href: "/listings",
