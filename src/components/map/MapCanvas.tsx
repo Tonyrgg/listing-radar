@@ -1,6 +1,7 @@
 "use client";
 
 import { MAP_DATA_COLORS, MAP_INK } from "@/lib/design/map-palette";
+import { listingClusters } from "@/lib/map/listing-clusters";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
@@ -155,40 +156,6 @@ function pathOptions({
           ? "3 7"
           : undefined,
   };
-}
-
-function listingClusterSize(zoom: number) {
-  if (zoom >= 18) return 0.000001;
-  if (zoom >= 17) return 0.00014;
-  if (zoom >= 16) return 0.00028;
-  if (zoom >= 15) return 0.00056;
-  if (zoom >= 14) return 0.0011;
-  if (zoom >= 13) return 0.0022;
-  return 0.0044;
-}
-
-function listingClusters(listingPins: ListingMapPin[], zoom: number) {
-  const cellSize = listingClusterSize(zoom);
-  const groups = new Map<string, ListingMapPin[]>();
-
-  for (const pin of listingPins) {
-    const key = `${Math.floor(pin.latitude / cellSize)}:${Math.floor(pin.longitude / cellSize)}`;
-    groups.set(key, [...(groups.get(key) ?? []), pin]);
-  }
-
-  return Array.from(groups.entries()).map(([key, listings]) => {
-    const latitude =
-      listings.reduce((sum, listing) => sum + listing.latitude, 0) / listings.length;
-    const longitude =
-      listings.reduce((sum, listing) => sum + listing.longitude, 0) / listings.length;
-
-    return {
-      id: listings.length === 1 ? listings[0].id : `cluster-${zoom}-${key}`,
-      latitude,
-      longitude,
-      listings,
-    };
-  });
 }
 
 function listingSummary(pin: ListingMapPin) {
