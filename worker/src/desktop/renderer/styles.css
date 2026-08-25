@@ -988,6 +988,36 @@ section > header p:last-child {
   transition: width 180ms ease;
 }
 
+.run-controls {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: var(--lr-space-4);
+  margin: var(--lr-space-3) 0 var(--lr-space-5);
+  padding: var(--lr-space-3);
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-surface);
+}
+
+.run-controls .safe-check {
+  flex: 1 1 0;
+}
+
+.run-stop-control {
+  display: flex;
+  flex: 0 1 360px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lr-space-3);
+}
+
+.run-stop-control small {
+  max-width: 34ch;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
 @keyframes command-pulse {
   50% { transform: scale(1.55); opacity: 0.6; }
 }
@@ -1741,6 +1771,16 @@ dialog[open] {
 
   .command-monitor > strong {
     grid-column: 2;
+  }
+
+  .run-controls {
+    flex-direction: column;
+  }
+
+  .run-stop-control {
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-basis: auto;
   }
 }
 

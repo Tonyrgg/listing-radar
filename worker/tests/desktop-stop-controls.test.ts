@@ -15,7 +15,9 @@ describe("controlli di arresto desktop", () => {
     ]);
 
     expect(html).toContain('id="stopAllButton"');
-    expect(html).toContain('id="stopAfterNextImportToggle"');
+    expect(html).toContain('id="runControls"');
+    expect(html).toContain('id="stopAfterNextImportButton"');
+    expect(html).not.toContain('id="stopAfterNextImportToggle"');
     expect(html).toContain('id="autoFillDirectContactToggle"');
     expect(html).toContain("Autocompila “Contatto diretto”");
     expect(html).toContain("Vale per lavorazioni, long run, richieste e incarichi");
@@ -58,5 +60,8 @@ describe("controlli di arresto desktop", () => {
     expect(html).toContain('id="mandateArchiveNew"');
     expect(renderer).toMatch(/requestArchiveNew[\s\S]*startRequestArchiveImport\(\)/);
     expect(renderer).toMatch(/mandateArchiveNew[\s\S]*startMandateArchiveImport\(\)/);
+    expect(renderer).toContain("renderRunControls");
+    expect(renderer).toContain("!appState?.stopAfterNextImport");
+    expect(renderer).not.toContain("stopAfterNextImportToggle");
   });
 });

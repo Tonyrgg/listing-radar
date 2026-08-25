@@ -256,6 +256,7 @@ function commandIdentity(target) {
       streetRunStart: "Avvia acquisizione via completa",
       streetRunCancel: "Metti in pausa acquisizione via",
       streetRunAbandon: "Ferma e abbandona acquisizione via",
+      stopAfterNextImportButton: "Ferma dopo il prossimo import",
       stopAllButton: "Ferma tutte le operazioni",
       requestArchiveStart: "Sincronizza archivio richieste",
       requestArchiveCancel: "Interrompi sincronizzazione richieste",
@@ -506,6 +507,27 @@ function renderCommandMonitor() {
   bar.classList.toggle("is-hidden", operation.percent == null);
   bar.querySelector("span").style.width =
     `${Math.max(0, Math.min(100, operation.percent ?? 0))}%`;
+}
+function renderRunControls() {
+  const canScheduleStop =
+    Boolean(appState?.active) ||
+    Boolean(appState?.streetRun?.active) ||
+    Boolean(appState?.requestArchive?.active) ||
+    Boolean(appState?.mandateArchive?.active);
+  const button = $("stopAfterNextImportButton");
+  if (!button) return;
+  const scheduled = Boolean(appState?.stopAfterNextImport);
+  button.classList.toggle("is-hidden", !canScheduleStop);
+  button.disabled = Boolean(appState?.stoppingAll);
+  button.setAttribute("aria-pressed", String(scheduled));
+  button.textContent = scheduled
+    ? "Annulla stop programmato"
+    : "Ferma dopo il prossimo import";
+  $("stopAfterNextImportStatus").textContent = scheduled
+    ? "Il prossimo import verrà concluso, poi la run verrà messa in pausa con il resto salvato."
+    : canScheduleStop
+      ? "Puoi richiedere la pausa in qualsiasi momento durante la run."
+      : "Disponibile appena parte una run.";
 }
 function completedJobs() {
   return (appState?.completedImports ?? []).map((item) => item.job);
@@ -1562,11 +1584,6 @@ function render() {
       : "Percorso completo";
   renderChecks();
   renderSteps();
-  const stopToggle = $("stopAfterNextImportToggle");
-  stopToggle.checked = Boolean(appState.stopAfterNextImport);
-  $("stopAfterNextImportHelp").textContent = appState.stopAfterNextImport
-    ? "Stop programmato: il prossimo elemento verrà concluso, poi il resto resterà salvato e riprendibile."
-    : "Eseguirà ancora un import, poi salverà il resto e metterà in pausa la run. Vale per lavorazioni, long run, richieste e incarichi.";
   const directContactToggle = $("autoFillDirectContactToggle");
   directContactToggle.checked = appState.preferences?.autoFillDirectContact !== false;
   $("autoFillDirectContactHelp").textContent = directContactToggle.checked
@@ -1582,6 +1599,7 @@ function render() {
   renderSoftwareUpdate();
   renderStopAll();
   renderCommandMonitor();
+  renderRunControls();
 }
 async function runChecks() {
   $("checkButton").disabled = true;
@@ -1626,6 +1644,10 @@ document.addEventListener("click", async (event) => {
           return COMMAND_CANCELLED;
         return window.propertyWorker.stopAll();
       }
+      if (target.id === "stopAfterNextImportButton")
+        return window.propertyWorker.setStopAfterNextImport(
+          !appState?.stopAfterNextImport,
+        );
       if (target.id === "softwareUpdateCancel")
         return window.propertyWorker.cancelUpdateDownload();
       if (target.dataset.updateAction === "check")
@@ -1944,15 +1966,6 @@ $("configurationForm").addEventListener("submit", async (event) => {
   } catch {}
 });
 $("streetRunDryRunToggle").addEventListener("change", () => renderStreetRun());
-$("stopAfterNextImportToggle").addEventListener("change", async (event) => {
-  const toggle = event.currentTarget;
-  try {
-    await window.propertyWorker.setStopAfterNextImport(toggle.checked);
-  } catch (error) {
-    toggle.checked = !toggle.checked;
-    toast(error?.message ?? String(error));
-  }
-});
 $("autoFillDirectContactToggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget;
   try {

@@ -55,6 +55,17 @@
           <strong id="commandMonitorPosition">Pronto</strong>
         </section>
 
+        <section id="runControls" class="run-controls" aria-label="Controlli comuni delle run">
+          <label class="safe-check" id="autoFillDirectContactControl">
+            <input id="autoFillDirectContactToggle" type="checkbox" checked />
+            <span><b>Autocompila “Contatto diretto”</b><small id="autoFillDirectContactHelp">Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica. Vale per lavorazioni, long run, richieste e incarichi.</small></span>
+          </label>
+          <div class="run-stop-control">
+            <button id="stopAfterNextImportButton" class="button secondary is-hidden" type="button" aria-pressed="false">Ferma dopo il prossimo import</button>
+            <small id="stopAfterNextImportStatus">Disponibile appena parte una run.</small>
+          </div>
+        </section>
+
         <!-- Il passo successivo viene prima di tutto il resto. -->
         <section class="start-card">
           <div class="start-copy">
@@ -71,8 +82,6 @@
               <small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small>
             </fieldset>
             <label class="safe-check"><input id="dryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Controlla tutto, ma non salva nel gestionale</small></span></label>
-            <label class="safe-check"><input id="stopAfterNextImportToggle" type="checkbox" /><span><b>Ferma la run dopo il prossimo import</b><small id="stopAfterNextImportHelp">Eseguirà ancora un import, poi salverà il resto e metterà in pausa la run. Vale per lavorazioni, long run, richieste e incarichi.</small></span></label>
-            <label class="safe-check"><input id="autoFillDirectContactToggle" type="checkbox" checked /><span><b>Autocompila “Contatto diretto”</b><small id="autoFillDirectContactHelp">Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica. Disattiva per lasciare l’attività generica: “Da eseguire” e “Inserire attività”. Vale per tutte le run.</small></span></label>
             <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
         </section>
