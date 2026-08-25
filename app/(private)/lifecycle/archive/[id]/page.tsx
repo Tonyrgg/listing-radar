@@ -22,6 +22,7 @@ import {
 import { Card, CardBody, CardHeader, EmptyState, Label, Meta } from "@/components/ui/primitives";
 import { getCurrentUser } from "@/lib/auth";
 import { readNow } from "@/lib/clock";
+import { getSourceLabel } from "@/lib/labels";
 import {
   formatCurrency,
   formatDate,
@@ -204,7 +205,10 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
 
       {publications.map((publication) => (
         <div key={publication.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
-          <Fonte name={publication.agencyName} note={`Annuncio su ${publication.sourceKey}`} />
+          <Fonte
+            name={formatShouty(publication.agencyName)}
+            note={`Annuncio su ${getSourceLabel(publication.sourceKey)}`}
+          />
           <Meta>{publicationStateLabel(publication.state)}</Meta>
           <Meta>dal {formatDate(publication.firstSeenAt)}</Meta>
           <ExternalSourceLink href={publication.canonicalUrl} />
@@ -213,7 +217,9 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
 
       {privatePublications.map((publication) => (
         <div key={publication.id} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-3">
-          <Stato forma="privato">Annuncio di un privato su {publication.source}</Stato>
+          <Stato forma="privato">
+            Annuncio di un privato su {getSourceLabel(publication.source)}
+          </Stato>
           <Meta>
             <Dato certainty={certaintyFromConfidence(publication.identityScore)}>
               stessa casa {identityOutcomeLabel(publication.identityOutcome).toLocaleLowerCase("it")}

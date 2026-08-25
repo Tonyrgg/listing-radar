@@ -1,105 +1,143 @@
-import { ArrowUpRight, Flame } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import {
-  opportunityLevelLabel,
-  opportunityReasonLabel,
-} from "@/lib/property-lifecycle/read-models/presentation";
+import { PropertyRow, type PropertyRowSignals } from "@/components/property-row";
+import { livelloFromOpportunity } from "@/components/ui/atoms";
+import { Card, CardBody, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { readNow } from "@/lib/clock";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
+import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
-import {
-  formatDate,
-  LifecycleEmpty,
-  LifecycleHeader,
-  LifecycleSection,
-  LifecycleUnavailable,
-  PropertyFacts,
-  SignalPill,
-} from "../_components/ui";
-import styles from "../lifecycle.module.css";
+import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
 
 export const metadata: Metadata = { title: "Opportunità" };
 
-export default async function LifecycleOpportunitiesPage({
+/**
+ * Da quali case conviene passare.
+ *
+ * Prima ogni riga portava «Indice 50 su 100», che non dice se 50 è tanto, e
+ * i filtri erano i livelli del database. Adesso il filtro è la domanda vera —
+ * quanta attenzione merita — e la riga è la stessa dell'archivio: foto,
+ * indirizzo, prezzo, e il motivo per cui è lì.
+ */
+
+const FILTRI = [
+  { chiave: "tutte", etichetta: "Tutte" },
+  { chiave: "chiamare", etichetta: "Da chiamare" },
+  { chiave: "occhiata", etichetta: "Vale un'occhiata" },
+  { chiave: "occhio", etichetta: "Da tenere d'occhio" },
+] as const;
+
+type Filtro = (typeof FILTRI)[number]["chiave"];
+
+const LIVELLO_DEL_FILTRO: Record<Exclude<Filtro, "tutte">, "alta" | "media" | "bassa"> = {
+  chiamare: "alta",
+  occhiata: "media",
+  occhio: "bassa",
+};
+
+export default async function OpportunitaPage({
   searchParams,
 }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
   await connection();
-  const filter = String((await searchParams).level ?? "ALL").toUpperCase();
-  const view = await loadLifecycleView((repository) => repository.opportunities());
+
+  const query = await searchParams;
+  const richiesto = Array.isArray(query.quanto) ? query.quanto[0] : query.quanto;
+  const filtro: Filtro = FILTRI.some((voce) => voce.chiave === richiesto)
+    ? (richiesto as Filtro)
+    : "tutte";
+
+  const [view, now] = await Promise.all([
+    loadLifecycleView((repository) => repository.opportunities()),
+    readNow(),
+  ]);
+
   if (!view.available || !view.data) return <LifecycleUnavailable message={view.message} />;
-  const items = view.data.filter(
-    (item) => filter === "ALL" || item.level === filter,
-  );
-  const levels = ["ALL", "HOT", "HIGH", "INTERESTING", "WATCH"];
+
+  const tutte = view.data;
+  const visibili =
+    filtro === "tutte"
+      ? tutte
+      : tutte.filter(
+          (item) => livelloFromOpportunity(item.level) === LIVELLO_DEL_FILTRO[filtro],
+        );
+
+  const foto = await signPropertyPhotos(visibili.slice(0, 40).map((item) => item.property));
 
   return (
     <>
       <LifecycleHeader
         eyebrow="Opportunità"
-        title="Da chi conviene passare per primo"
-        description="Il punteggio mette in fila il lavoro, non decide al posto tuo. Restano in testa i passaggi a privato e le uscite senza prova di vendita."
-        actions={<Flame aria-hidden="true" className="size-6 text-[var(--lr-warn)]" />}
+        title="Da quali case conviene passare"
+        description="Nascono da fatti osservati: un mandato finito senza prova di vendita, un ritorno da privato, un prezzo che scende da mesi. La lista mette in fila il lavoro, non decide al posto tuo."
+        actions={<Chip tone="neutral">{visibili.length} in lista</Chip>}
       />
-      <div className={styles.filters} aria-label="Filtra priorità">
-        {levels.map((level) => (
+
+      <div className="flex flex-wrap gap-2">
+        {FILTRI.map((voce) => (
           <Link
-            key={level}
-            href={level === "ALL" ? "/lifecycle/opportunities" : `/lifecycle/opportunities?level=${level}`}
-            className={`${styles.filter} ${filter === level ? styles.filterActive : ""}`}
+            key={voce.chiave}
+            href={voce.chiave === "tutte" ? "/lifecycle/opportunities" : `?quanto=${voce.chiave}`}
+            className={buttonClass(filtro === voce.chiave ? "secondary" : "quiet", {
+              compact: true,
+            })}
+            aria-current={filtro === voce.chiave ? "page" : undefined}
           >
-            {opportunityLevelLabel(level)}
+            {voce.etichetta}
           </Link>
         ))}
       </div>
-      <LifecycleSection
-        title={`${items.length} opportunità`}
-        description="Ordinate per priorità e score"
-      >
-        {items.length ? (
-          <div className={styles.rows}>
-            {items.map((item) => (
-              <article key={item.id} className={styles.propertyRow}>
-                <div>
-                  <div className={styles.rowTop}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <SignalPill tone={item.level === "HOT" ? "hot" : item.level === "HIGH" ? "high" : "cool"}>
-                        {opportunityLevelLabel(item.level)}
-                      </SignalPill>
-                      <span className={styles.rowMeta}>Rilevata {formatDate(item.detectedAt)}</span>
-                    </div>
-                    <span className={styles.rowMeta}>Indice {item.score ?? 0} su 100</span>
-                  </div>
-                  <Link
-                    href={`/lifecycle/archive/${item.propertyId}`}
-                    className={`${styles.rowTitle} mt-3 block`}
-                  >
-                    {item.property.title}
-                  </Link>
-                  <div className="mt-2"><PropertyFacts property={item.property} /></div>
-                  <ul className={`${styles.reasonList} mt-3`}>
-                    {item.reasons.map((reason) => (
-                      <li key={reason}>{opportunityReasonLabel(reason)}</li>
-                    ))}
-                  </ul>
-                </div>
-                <Link href={`/lifecycle/archive/${item.propertyId}`} className={styles.secondaryAction}>
-                  Apri dossier
-                  <ArrowUpRight aria-hidden="true" className="size-4" />
-                </Link>
-              </article>
-            ))}
+
+      <Card>
+        {visibili.length ? (
+          <div>
+            {visibili.slice(0, 40).map((item) => {
+              const segnali: PropertyRowSignals = {
+                livello: livelloFromOpportunity(item.level),
+                indizi: item.reasons.length,
+                totale: Math.max(item.reasons.length, 4),
+                motivo: item.reasons[0] ? opportunityReasonLabel(item.reasons[0]) : null,
+              };
+
+              return (
+                <PropertyRow
+                  key={item.id}
+                  property={item.property}
+                  foto={foto.get(item.property.id)}
+                  signals={segnali}
+                  now={now}
+                  giudizioSempre
+                />
+              );
+            })}
           </div>
         ) : (
-          <LifecycleEmpty
-            title="Nessuna opportunità in questo livello"
-            description="Prova un altro filtro oppure attendi nuovi segnali dal worker lifecycle."
-          />
+          <CardBody>
+            <EmptyState
+              title="Niente in questa fascia"
+              description="Prova a guardare tutte le case: le occasioni forti sono rare, ed è normale che una fascia resti vuota."
+              action={
+                <Link
+                  href="/lifecycle/opportunities"
+                  className={buttonClass("secondary", { compact: true })}
+                >
+                  Mostra tutte
+                </Link>
+              }
+            />
+          </CardBody>
         )}
-      </LifecycleSection>
+      </Card>
+
+      {visibili.length > 40 ? (
+        <Meta className="px-1">
+          Ne vedi 40 di {visibili.length}: usa i filtri qui sopra per arrivare alle altre.
+        </Meta>
+      ) : null}
     </>
   );
 }

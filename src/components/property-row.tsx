@@ -40,6 +40,7 @@ export function PropertyRow({
   now,
   href,
   compact = false,
+  giudizioSempre = false,
 }: Readonly<{
   property: LifecyclePropertySummary;
   foto?: string;
@@ -48,6 +49,8 @@ export function PropertyRow({
   href?: string;
   /** In una colonna stretta la riga larga si sbriciola: qui va in verticale. */
   compact?: boolean;
+  /** Dove il giudizio è il soggetto della pagina, si scrive anche se è basso. */
+  giudizioSempre?: boolean;
 }>) {
   const daPrivato = property.activePrivateCount > 0;
   const agenzia = property.agencies[0]?.name ?? null;
@@ -59,7 +62,7 @@ export function PropertyRow({
 
   /* Un giudizio che vale per tutte le righe non dice niente: in archivio quasi
    * ogni casa è «bassa». Si scrive solo quando distingue questa riga dalle altre. */
-  const giudizioParla = signals != null && signals.livello !== "bassa";
+  const giudizioParla = signals != null && (giudizioSempre || signals.livello !== "bassa");
 
   return (
     <article className="group relative flex items-stretch gap-3 border-t border-[var(--lr-line-quiet)] p-3 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
