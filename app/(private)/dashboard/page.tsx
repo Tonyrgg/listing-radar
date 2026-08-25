@@ -4,20 +4,21 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
-import { Badge, getSellerTypeTone } from "@/components/badge";
+import { Badge } from "@/components/badge";
 import {
   Banda,
   FasciaVuota,
   RigaMovimento,
   StrisciaFiducia,
 } from "@/components/home-bands";
-import { ListingScoreSummary } from "@/components/listing-score";
+
 import { PageHeader } from "@/components/page-header";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { Chip, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
-import { Dato, Fonte, Periodo } from "@/components/ui/atoms";
+import { Fonte, Giudizio, Periodo, livelloFromOpportunity } from "@/components/ui/atoms";
+import type { LifecycleOpportunityItem } from "@/lib/property-lifecycle/read-models/types";
 import { readNow } from "@/lib/clock";
-import { getDashboardSummary } from "@/lib/data/repository";
+
 import {
   formatCurrency,
   formatDateTime,
@@ -25,14 +26,16 @@ import {
   formatPlainText,
 } from "@/lib/formatting";
 import { getIncomingDashboardData } from "@/lib/incoming/repository";
-import { getSellerTypeLabel, getSourceLabel } from "@/lib/labels";
-import { getListingAttentionReason } from "@/lib/listings/operational";
-import { getPriorityScoreLevel } from "@/lib/listings/scoring";
-import { lifecycleEventLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import { getSourceLabel } from "@/lib/labels";
+
+import {
+  lifecycleEventLabel,
+  opportunityReasonLabel,
+} from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
-import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { getSourcesSummary } from "@/lib/sources-health";
-import type { IncomingListing, Listing } from "@/types";
+import type { IncomingListing } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Oggi" };
@@ -130,27 +133,28 @@ function RigaArrivo({
 }
 
 function RigaOccasione({
-  listing,
-  scoringConfig,
-}: Readonly<{
-  listing: Listing;
-  scoringConfig: Awaited<ReturnType<typeof getPersistedScoringConfig>>;
-}>) {
-  const grezzo = getListingAttentionReason(listing);
-  const motivo = /online da|privato|pubblicato da/i.test(grezzo) ? null : grezzo;
+  item,
+  foto,
+}: Readonly<{ item: LifecycleOpportunityItem; foto?: string }>) {
+  const casa = item.property;
+  const daPrivato = casa.activePrivateCount > 0;
+  const agenzia = casa.agencies[0]?.name;
+  const motivo = item.reasons[0] ? opportunityReasonLabel(item.reasons[0]) : null;
 
   return (
     <div className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-4 py-3 first:border-t-0">
-      <Stripe tone={listing.isPriceDropped ? "warn" : "neutral"} />
+      <Stripe tone={daPrivato ? "warn" : "neutral"} />
+
+      {/* Una casa si riconosce prima dalla foto che dall'indirizzo. */}
       <Link
-        href={`/listings/${listing.id}`}
-        className="block h-14 w-20 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]"
-        aria-label={`Apri la scheda di ${listing.title}`}
+        href={`/lifecycle/archive/${casa.id}`}
+        className="block h-16 w-24 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]"
+        aria-label={`Apri la scheda di ${casa.address ?? casa.title}`}
       >
-        {listing.imageUrls[0] ? (
+        {foto ? (
           <span
             className="block size-full bg-cover bg-center"
-            style={{ backgroundImage: `url("${listing.imageUrls[0]}")` }}
+            style={{ backgroundImage: `url("${foto}")` }}
           />
         ) : (
           <span className="grid size-full place-items-center px-1 text-center text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
@@ -158,77 +162,86 @@ function RigaOccasione({
           </span>
         )}
       </Link>
+
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Badge tone={getSellerTypeTone(listing.sellerType)}>
-            <Dato certainty={listing.sellerType === "unknown" ? "unknown" : "guess"}>
-              {getSellerTypeLabel(listing.sellerType)}
-            </Dato>
+          <Badge tone={daPrivato ? "blue" : "slate"}>
+            {daPrivato ? "Da privato" : "In agenzia"}
           </Badge>
-          <Meta className="truncate">
-            <Fonte name={getSourceLabel(listing.source)} />
-          </Meta>
+          {agenzia ? (
+            <Meta className="truncate">
+              <Fonte name={agenzia} />
+            </Meta>
+          ) : null}
         </div>
+
         <Link
-          href={`/listings/${listing.id}`}
+          href={`/lifecycle/archive/${casa.id}`}
           className="mt-1 block truncate text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)] hover:underline"
         >
-          {listing.title}
+          {casa.address ?? casa.title}
         </Link>
+
         <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(listing.price)}</b>
-          {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
+          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(casa.currentPrice)}</b>
+          {casa.surfaceSqm != null ? <span>{formatNumber(casa.surfaceSqm)} mq</span> : null}
+          {casa.rooms != null ? <span>{formatNumber(casa.rooms)} locali</span> : null}
           <Periodo
-            from={`da almeno ${formatNumber(listing.minimumDaysOnline)} giorni`}
-            uncertain
+            from={anzianita(casa.trueMarketStartLowerBound)}
+            uncertain={(casa.trueMarketStartConfidence ?? 0) < 0.85}
           />
         </div>
-        {/* Il motivo si scrive solo se aggiunge qualcosa: anzianità e tipo di
-          * venditore sono già scritti sopra, ripeterli è rumore. */}
+
         {motivo ? (
-          <p
-            className={
-              listing.isPriceDropped
-                ? "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-warn)]"
-                : "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]"
-            }
-          >
-            {motivo}
-          </p>
+          <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-warn)]">{motivo}</p>
         ) : null}
       </div>
+
       <div className="shrink-0">
-        <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
+        <Giudizio
+          livello={livelloFromOpportunity(item.level)}
+          signals={item.reasons.length}
+          total={Math.max(item.reasons.length, 4)}
+          align="right"
+        />
       </div>
     </div>
   );
 }
 
+function anzianita(from: string | null) {
+  if (!from) return "in vendita da data ignota";
+
+  const inizio = new Date(from).getTime();
+  if (Number.isNaN(inizio)) return "in vendita da data ignota";
+
+  const giorni = Math.max(0, Math.floor((Date.now() - inizio) / (24 * 60 * 60 * 1000)));
+  return `in vendita da almeno ${formatNumber(giorni)} giorni`;
+}
+
 export default async function TodayPage() {
   await connection();
 
-  const [summary, incoming, scoringConfig, sources, movimenti, now] = await Promise.all([
-    getDashboardSummary(),
+  const [incoming, sources, segnali, now] = await Promise.all([
     getIncomingDashboardData(),
-    getPersistedScoringConfig(),
     getSourcesSummary(),
     loadLifecycleView((repository) => repository.dashboard()),
     readNow(),
   ]);
 
-  /* La fascia si chiama «cosa conviene guardare»: mettere righe «Bassa» sotto
-   * quel titolo è disonesto. Si mostra solo ciò che merita davvero, e se oggi
-   * non merita niente lo si dice. */
-  const occasioni = summary.watchlist
-    .filter((listing) => {
-      const livello = getPriorityScoreLevel(listing.priorityScore, scoringConfig);
-      return livello !== "Bassa";
-    })
-    .slice(0, 4);
   const arrivi = incoming.pendingListings.slice(0, 5);
-  const eventi = (movimenti.data?.recentEvents ?? [])
+
+  const eventi = (segnali.data?.recentEvents ?? [])
     .filter((event) => EVENTI_DA_MOSTRARE.has(event.eventType))
     .slice(0, 6);
+
+  /* La fascia si chiama «cosa conviene guardare»: mettere righe deboli sotto
+   * quel titolo è disonesto. Si mostra solo ciò che merita davvero. */
+  const occasioni = (segnali.data?.priorityOpportunities ?? [])
+    .filter((item) => livelloFromOpportunity(item.level) !== "bassa")
+    .slice(0, 4);
+
+  const foto = await signPropertyPhotos(occasioni.map((item) => item.property));
 
   const oggi = new Intl.DateTimeFormat("it-IT", {
     weekday: "long",
@@ -285,9 +298,9 @@ export default async function TodayPage() {
           </div>
         ) : (
           <FasciaVuota
-            titolo={movimenti.available ? "Il mercato è fermo" : "I segnali non sono disponibili"}
+            titolo={segnali.available ? "Il mercato è fermo" : "I segnali non sono disponibili"}
             descrizione={
-              movimenti.available
+              segnali.available
                 ? "Nessun ribasso, uscita o passaggio di agenzia da quando hai guardato l'ultima volta."
                 : "Questa sezione lavora su un archivio separato che non risulta pronto. Il resto della pagina funziona normalmente."
             }
@@ -349,7 +362,7 @@ export default async function TodayPage() {
         azione={
           occasioni.length ? (
             <Link
-              href="/listings?onlyHighPriority=on&sortBy=score_desc"
+              href="/lifecycle/opportunities"
               className={buttonClass("quiet", { compact: true })}
             >
               Tutte
@@ -360,17 +373,17 @@ export default async function TodayPage() {
       >
         {occasioni.length ? (
           <div>
-            {occasioni.map((listing) => (
-              <RigaOccasione key={listing.id} listing={listing} scoringConfig={scoringConfig} />
+            {occasioni.map((item) => (
+              <RigaOccasione key={item.id} item={item} foto={foto.get(item.property.id)} />
             ))}
           </div>
         ) : (
           <FasciaVuota
             titolo="Oggi non c'è niente che meriti una telefonata"
-            descrizione="Nessuna scheda dell'archivio supera la soglia. Non è un errore: è un mercato fermo. La soglia si regola dalle impostazioni."
+            descrizione="Nessuna proprietà osservata mostra segnali forti. Non è un errore: è un mercato fermo."
             azione={
-              <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
-                Regola la soglia
+              <Link href="/lifecycle/opportunities" className={buttonClass("secondary", { compact: true })}>
+                Vedi tutti i segnali
               </Link>
             }
           />

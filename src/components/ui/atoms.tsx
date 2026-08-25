@@ -382,7 +382,7 @@ export function Giudizio({
       </span>
       {signals != null && total != null ? (
         <span className="text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
-          {signals} indizi su {total}
+          {signals} {signals === 1 ? "indizio" : "indizi"} su {total}
         </span>
       ) : null}
       {reason ? (

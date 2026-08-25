@@ -113,26 +113,25 @@ export const SCRAPER_CONFIG = {
 } as const;
 
 /**
- * Le fonti che il controllo automatico interroga ancora.
+ * Le fonti web del vecchio archivio: nessuna.
  *
- * Sei agenzie sono state spente il 25 agosto 2026 — admaiora, futura,
- * iconacasa, puntocasa, studisanti, vistocasa — perché Property Lifecycle le
- * legge già dai loro stessi siti, con timeline, prove ed età reale di mercato.
- * Sui dati di quel giorno producevano 128 annunci, tutti duplicati.
+ * Spente tutte il 25 agosto 2026. Le agenzie le legge Property Lifecycle dai
+ * loro stessi siti, con timeline, prove ed età reale di mercato; il vecchio
+ * archivio resta solo come canale d'ingresso per gli annunci privati che
+ * arrivano dai portali, ed è destinato a sparire anche dallo schema.
  *
- * Restano queste due perché nessun adapter V2 le copre: spegnerle vorrebbe
- * dire perdere copertura, non togliere un doppione.
+ * Sui dati del giorno dello spegnimento producevano 131 annunci: 128 duplicati
+ * da V2 e 3 di due agenzie che V2 non copre, ritenute non necessarie.
  */
-export const ALL_WEB_PROVIDER_NAMES = [
-  "ingegnericolapinto",
-  "immobiliaririunite",
-] as const;
+export const ALL_WEB_PROVIDER_NAMES = [] as const;
 
-/** Spente perché già coperte da Property Lifecycle. Conservate per memoria. */
+/** Spente, conservate per memoria di cosa leggeva il vecchio archivio. */
 export const RETIRED_WEB_PROVIDER_NAMES = [
   "admaiora",
   "futura",
   "iconacasa",
+  "immobiliaririunite",
+  "ingegnericolapinto",
   "puntocasa",
   "studisanti",
   "vistocasa",
