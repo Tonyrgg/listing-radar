@@ -878,10 +878,19 @@ section > header p:last-child {
 .recovery-box {
   display: grid;
   gap: var(--lr-space-2);
-  padding: var(--lr-space-5);
+  padding: var(--lr-space-4);
   border: 1px solid var(--lr-line-quiet);
   border-radius: var(--lr-radius-control);
-  text-align: center;
+  /* Erano istruzioni numerate centrate: ogni riga partiva da un punto
+   * diverso, e l'occhio doveva ricercare l'inizio a ogni passaggio. */
+  text-align: left;
+}
+
+.recovery-box ol {
+  display: grid;
+  gap: var(--lr-space-2);
+  margin: 0;
+  padding-left: var(--lr-space-5);
 }
 
 .completed-empty b,
@@ -1851,6 +1860,12 @@ body[data-fase="lavora"][data-via="no"] .street-run-card {
  * e non c'è nessuna run da fermare. */
 body[data-fase="finita"] .system-card,
 body[data-fase="finita"] #runControls {
+  display: none;
+}
+
+/* Bloccato: prima si risolve. Proporre di iniziare un lavoro nuovo sopra al
+ * problema è il consiglio sbagliato — e da lì si può sempre annullare. */
+body[data-fase="attenzione"] .start-grid {
   display: none;
 }
 
