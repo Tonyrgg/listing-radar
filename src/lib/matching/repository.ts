@@ -149,17 +149,39 @@ export async function getMatchingStats(): Promise<MatchingStats> {
   }
 }
 
+/**
+ * Gli abbinamenti compatibili, tutti.
+ *
+ * Senza `range` PostgREST ne restituisce mille e tace: i compatibili sono
+ * 1.872, e le mille righe che tornavano coprivano 95 richieste su 254. Le
+ * altre 159 leggevano «nessuna casa le somiglia» — una frase falsa, scritta
+ * con la stessa sicurezza di una vera.
+ */
 export async function listCompatibleMatchReferences(): Promise<Array<Pick<RequestPropertyMatch, "request_id" | "classification">>> {
   if (!configured()) return [];
+
+  const PAGINA = 1000;
+  const tutte: Array<Pick<RequestPropertyMatch, "request_id" | "classification">> = [];
+
   try {
-    const { data, error } = await getSupabaseServiceClient()
-      .from("request_property_matches")
-      .select("request_id,classification")
-      .eq("classification", "compatible");
-    if (error) return [];
-    return (data ?? []) as Array<Pick<RequestPropertyMatch, "request_id" | "classification">>;
+    const db = getSupabaseServiceClient();
+
+    for (let inizio = 0; ; inizio += PAGINA) {
+      const { data, error } = await db
+        .from("request_property_matches")
+        .select("request_id,classification")
+        .eq("classification", "compatible")
+        .range(inizio, inizio + PAGINA - 1);
+
+      if (error) return tutte;
+
+      const righe = (data ?? []) as Array<Pick<RequestPropertyMatch, "request_id" | "classification">>;
+      tutte.push(...righe);
+
+      if (righe.length < PAGINA) return tutte;
+    }
   } catch {
-    return [];
+    return tutte;
   }
 }
 export const listClients = () => safeList<Client>("clients", "full_name", true);
