@@ -15,7 +15,7 @@ const primaryItems = [
     label: "Oggi",
     hint: "Il lavoro aperto",
     icon: Inbox,
-    owns: ["/dashboard", "/incoming", "/reports", "/fonti"],
+    owns: ["/dashboard", "/incoming", "/reports"],
   },
   {
     href: "/listings",
@@ -29,7 +29,9 @@ const primaryItems = [
     label: "Segnali",
     hint: "Opportunità e cambi",
     icon: Radar,
-    owns: ["/lifecycle"],
+    /* Le fonti stanno qui: dicono di chi ti puoi fidare, che è la prima
+     * domanda dei segnali. */
+    owns: ["/lifecycle", "/fonti"],
   },
   {
     href: "/matching",

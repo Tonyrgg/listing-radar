@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { LifecycleSectionNav } from "@/components/lifecycle-section-nav";
 import { PageHeader } from "@/components/page-header";
 import { Card, Chip, EmptyState, Label, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
 import { Fonte } from "@/components/ui/atoms";
@@ -101,16 +102,15 @@ export default async function FontiPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Oggi"
-        title="Le fonti"
-        description="Quali agenzie sono state lette all'ultimo giro, e con quali limiti. Serve prima di leggere qualunque altra cosa: una lista più corta può voler dire un mercato fermo, oppure una fonte rotta."
-        backHref="/dashboard"
-        backLabel="Torna a Oggi"
+        eyebrow="Fonti"
+        title="Di chi ti puoi fidare oggi"
+        description="Quali agenzie sono state lette all'ultimo giro, con quali limiti, e cosa tiene ognuna. Serve prima di leggere qualunque altra cosa: una lista più corta può voler dire un mercato fermo, oppure una fonte rotta."
         actions={
           <Chip tone={lette === agenzie.length ? "action" : "warn"} dot>
             {lette} su {agenzie.length} lette per intero
           </Chip>
         }
+        nav={<LifecycleSectionNav />}
       />
 
       {/* La regola non negoziabile del progetto, scritta dove serve. */}
@@ -142,7 +142,13 @@ export default async function FontiPage() {
           {agenzie.map((agency) => {
             const letti = agency.latestSyncCounts?.inScope ?? 0;
             const esclusi = agency.latestSyncCounts?.excluded ?? 0;
-            const nota = spiegazione[String(agency.latestHealth ?? "").toUpperCase()];
+            /* Una fonte «letta per intero» che non riporta nemmeno un immobile
+             * pur avendone in inventario è il caso silenzioso che conta di più:
+             * tecnicamente sana, in pratica cieca. Si dice, non si nasconde. */
+            const cieca = agency.salute === "healthy" && letti === 0 && agency.activeCount > 0;
+            const nota = cieca
+              ? "risponde, ma non ha restituito nessun immobile"
+              : spiegazione[String(agency.latestHealth ?? "").toUpperCase()];
 
             return (
               <div
@@ -151,7 +157,7 @@ export default async function FontiPage() {
               >
                 <div className="min-w-48 flex-1">
                   <p className="text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)]">
-                    <Fonte name={agency.name} health={agency.salute} />
+                    <Fonte name={agency.name} health={cieca ? "partial" : agency.salute} />
                   </p>
                   <Meta className="mt-0.5">
                     {nota ?? "stato non noto"}
@@ -188,9 +194,24 @@ export default async function FontiPage() {
                   </Meta>
                 </div>
 
+                {/* Cosa tiene, non solo se l'abbiamo letta: prima queste tre
+                  * cifre stavano in una seconda pagina con le stesse dieci righe. */}
+                <div className="w-40 shrink-0">
+                  <p className="text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+                    <b className="font-[650] text-[var(--lr-ink)]">
+                      {formatNumber(agency.activeCount)}
+                    </b>{" "}
+                    in vendita
+                  </p>
+                  <Meta className="mt-0.5">
+                    {formatNumber(agency.exitedCount)} uscite ·{" "}
+                    {formatNumber(agency.soldCount)} vendute
+                  </Meta>
+                </div>
+
                 <div className="w-32 shrink-0">
-                  <Chip tone={tono[agency.salute]} dot>
-                    {etichetta[agency.salute]}
+                  <Chip tone={cieca ? "warn" : tono[agency.salute]} dot>
+                    {cieca ? "Vuota" : etichetta[agency.salute]}
                   </Chip>
                   <Meta className="mt-1">
                     {agency.latestSyncAt ? formatDateTime(agency.latestSyncAt) : "mai"}
