@@ -35,7 +35,7 @@ import {
   deleteMapPin,
   deleteMapStreet,
   listAgents,
-  listListingMapData,
+  listPropertyMapData,
   listMapActivityLogs,
   listMapAreas,
   listMapPins,
@@ -198,7 +198,7 @@ async function fetchMapData() {
     listMapStreets(),
     listMapPins(),
     listMapActivityLogs(20),
-    listListingMapData(),
+    listPropertyMapData(),
   ]);
 
   return { agents, areas, streets, pins, activityLogs, listingMapData };
@@ -775,7 +775,7 @@ export function MapClient() {
               type="button"
               onClick={() => setShowListingPins((current) => !current)}
               aria-pressed={showListingPins}
-              title={`${listingPins.length} annunci con coordinate precise su ${listingMapData.totalListings} totali`}
+              title={`${listingPins.length} case con la posizione risolta, su ${listingMapData.totalListings} osservate`}
               className={clsx(
                 "inline-flex h-10 items-center justify-center gap-2 rounded-[7px] border px-3 text-sm font-semibold shadow-[var(--lr-floating)] transition-colors",
                 showListingPins
@@ -784,7 +784,7 @@ export function MapClient() {
               )}
             >
               <Building2 className="size-4" aria-hidden="true" />
-              Annunci
+              Case
               <span className="rounded-full bg-[var(--lr-canvas)] px-1.5 text-[10px] text-[var(--lr-ink-2)]">
                 {listingPins.length}/{listingMapData.totalListings}
               </span>
@@ -931,10 +931,11 @@ export function MapClient() {
           ) : null}
           {showListingPins && listingMapData.totalListings > 0 && !listingPins.length ? (
             <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-2)]">
-              0 annunci con coordinate precise su {listingMapData.totalListings}.{" "}
+              Nessuna delle {listingMapData.totalListings} case osservate ha una posizione
+              risolta.{" "}
               {listingMapData.streetAddressListings
-                ? `${listingMapData.streetAddressListings} hanno indirizzo con numero civico ma non coordinate salvate.`
-                : "I dati salvati sono solo testuali."}
+                ? `${listingMapData.streetAddressListings} hanno un indirizzo scritto, ma non le coordinate.`
+                : "Di queste case conosciamo solo il testo dell'indirizzo."}
             </p>
           ) : null}
           {!hasAnyVisibleElement && !loading ? (

@@ -575,7 +575,7 @@ export function MapCanvas({
                   <>
                     <span>{listingSummary(firstListing)}</span>
                     {firstListing.addressRaw ? <span>{firstListing.addressRaw}</span> : null}
-                    <a href={`/listings/${firstListing.id}`}>Apri annuncio</a>
+                    <a href={firstListing.url}>Apri la scheda</a>
                   </>
                 )}
               </div>

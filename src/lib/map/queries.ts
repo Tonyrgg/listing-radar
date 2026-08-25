@@ -449,6 +449,91 @@ export async function listListingMapData(): Promise<ListingMapData> {
   };
 }
 
+/**
+ * Le case sulla mappa, dal nuovo archivio.
+ *
+ * La mappa disegnava gli annunci di `listings`, la tabella in dismissione:
+ * quarantasei punti su trecentottantasei righe che nessuno aggiorna più.
+ * Property Lifecycle tiene le stesse case ricondotte all'immobile vero, con
+ * la posizione risolta in `locations`: centoquarantadue hanno le coordinate.
+ *
+ * Il formato resta quello di prima, perché la mappa non deve accorgersene.
+ */
+export async function listPropertyMapData(): Promise<ListingMapData> {
+  const supabase = await getMapSupabase();
+
+  const [proprieta, posizioni] = await Promise.all([
+    supabase
+      .from("properties")
+      .select("id,primary_location_id,canonical_attributes,property_state")
+      .neq("identity_status", "MERGED")
+      .limit(2000),
+    supabase
+      .from("locations")
+      .select("id,latitude,longitude,raw_text,street_name,street_number,municipality")
+      .not("latitude", "is", null)
+      .limit(2000),
+  ]);
+
+  assertNoError(proprieta.error, "Impossibile caricare le case sulla mappa");
+  assertNoError(posizioni.error, "Impossibile caricare le posizioni delle case");
+
+  type RigaPosizione = {
+    id: string;
+    latitude: number | null;
+    longitude: number | null;
+    raw_text: string | null;
+    street_name: string | null;
+    street_number: string | null;
+    municipality: string | null;
+  };
+
+  type RigaProprieta = {
+    id: string;
+    primary_location_id: string | null;
+    canonical_attributes: Record<string, unknown> | null;
+    property_state: string | null;
+  };
+
+  const perId = new Map(
+    ((posizioni.data ?? []) as RigaPosizione[]).map((riga) => [riga.id, riga]),
+  );
+
+  const righe = (proprieta.data ?? []) as RigaProprieta[];
+  const pins: ListingMapPin[] = [];
+  let conIndirizzoPreciso = 0;
+
+  for (const riga of righe) {
+    const attributi = riga.canonical_attributes ?? {};
+    const indirizzo = typeof attributi.address === "string" ? attributi.address : null;
+    if (indirizzo) conIndirizzoPreciso += 1;
+
+    const posizione = riga.primary_location_id ? perId.get(riga.primary_location_id) : undefined;
+    if (!posizione?.latitude || !posizione.longitude) continue;
+
+    pins.push({
+      id: riga.id,
+      title:
+        indirizzo ??
+        [posizione.street_name, posizione.street_number].filter(Boolean).join(" ") ??
+        "Casa osservata",
+      source: posizione.municipality ?? "Bitonto",
+      url: `/lifecycle/archive/${riga.id}`,
+      price: typeof attributi.priceAmount === "number" ? attributi.priceAmount : null,
+      sqm: typeof attributi.surfaceSqm === "number" ? attributi.surfaceSqm : null,
+      addressRaw: indirizzo ?? posizione.raw_text,
+      latitude: posizione.latitude,
+      longitude: posizione.longitude,
+    });
+  }
+
+  return {
+    pins,
+    totalListings: righe.length,
+    streetAddressListings: conIndirizzoPreciso,
+  };
+}
+
 export async function createMapPin(input: CreateMapPinInput) {
   const supabase = await getMapSupabase();
   const { data, error } = await supabase
