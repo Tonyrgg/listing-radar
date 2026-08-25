@@ -94,6 +94,28 @@ export function extractFirstCivicNumber(value: string | null | undefined): strin
   return fallback?.[2] ? `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() : null;
 }
 
+/** A SISTER result can list several addresses; a street run keeps its own one. */
+export function selectSisterAddressForStreet(
+  value: string | null | undefined,
+  requestedStreet: string | null | undefined,
+): string {
+  const raw = String(value ?? "").replace(/\s+/g, " ").trim();
+  const requested = String(requestedStreet ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/gi, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+  if (!raw || !requested) return raw;
+  const segment = raw.split(/\s*;\s*|[\r\n]+/).map((item) => item.trim()).find((item) => {
+    const normalized = item.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Z0-9]+/gi, " ").trim().replace(/\s+/g, " ").toUpperCase();
+    return normalized === requested || normalized.startsWith(`${requested} `);
+  });
+  return segment ?? raw;
+}
+
 export function splitStreetAndFirstCivic(value: string | null | undefined): { street: string; civicNumber: string | null } {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return { street: "", civicNumber: null };

@@ -214,6 +214,7 @@ export interface CrmAdapter {
   findPerson(input: PersonSearchInput): Promise<PersonMatchResult>;
   findMissingPersonPhones(personId: string, phones: string[]): Promise<string[]>;
   findPhoneAssignments(phones: string[]): Promise<CrmPhoneAssignment[]>;
+  syncPersonContacts(targetPersonId: string, person: NormalizedPerson): Promise<void>;
   transferPhoneAssignments(targetPersonId: string, person: NormalizedPerson, assignments: CrmPhoneAssignment[]): Promise<CrmContactTransferResult>;
   createPerson(person: NormalizedPerson, duplicateCandidateIds?: string[], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult>;
   updatePerson(id: string, person: NormalizedPerson): Promise<void>;

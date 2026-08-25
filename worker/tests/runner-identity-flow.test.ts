@@ -263,22 +263,49 @@ describe("flusso identità nominativo e immobile", () => {
     const crm = {
       findMissingPersonPhones: vi.fn(),
       findPhoneAssignments: vi.fn(),
-      transferPhoneAssignments: vi.fn().mockResolvedValue({
-        moved: [],
-        alreadyAssigned: ["3331234567"],
-        simulated: false,
-      }),
+      syncPersonContacts: vi.fn().mockResolvedValue(undefined),
     };
 
     await (runner as unknown as { ensureContacts: Function }).ensureContacts(job, row, crm, contacts, true);
 
     expect(crm.findMissingPersonPhones).not.toHaveBeenCalled();
     expect(crm.findPhoneAssignments).not.toHaveBeenCalled();
-    expect(crm.transferPhoneAssignments).toHaveBeenCalledWith("CRM-PERSON-NEW", expect.any(Object), []);
+    expect(crm.syncPersonContacts).toHaveBeenCalledWith("CRM-PERSON-NEW", expect.any(Object));
     expect(row.raw_payload?.contacts_flow).toMatchObject({
       phoneSearchSkippedAfterCreation: true,
       phonesCheckedInGlobalSearch: [],
     });
+  });
+
+  it("mantiene sul nominativo Excel i recapiti già assegnati ad altre schede", async () => {
+    const { runner, repository } = runnerWithRepository();
+    const row = { ...personRow(), crm_record_id: "CRM-PERSON-NEW" };
+    const contacts = {
+      findByTaxCode: vi.fn().mockReturnValue({
+        mobiles: ["3331234567"], landlines: [], emails: [], whatsapp: [], matchedRows: 1, overflowPhones: [], notes: [],
+      }),
+    };
+    const crm = {
+      findMissingPersonPhones: vi.fn().mockResolvedValue(["3331234567"]),
+      findPhoneAssignments: vi.fn().mockResolvedValue([
+        { phone: "3331234567", personId: "CRM-OTHER", label: "Altro nominativo" },
+      ]),
+      syncPersonContacts: vi.fn().mockResolvedValue(undefined),
+      transferPhoneAssignments: vi.fn(),
+    };
+
+    await (runner as unknown as { ensureContacts: Function }).ensureContacts(job, row, crm, contacts, true);
+
+    expect(crm.syncPersonContacts).toHaveBeenCalledWith("CRM-PERSON-NEW", expect.any(Object));
+    expect(crm.transferPhoneAssignments).not.toHaveBeenCalled();
+    expect(row.raw_payload?.contacts_flow).toMatchObject({
+      phoneAssignmentPolicy: "excel-authoritative-retain-duplicates",
+      duplicatePhoneAssignments: [{ phone: "3331234567", personId: "CRM-OTHER" }],
+    });
+    expect(repository.logChange).toHaveBeenCalledWith(
+      job.id, "person", row.tax_code, "phone_assignment_duplicate_retained", "Nominativo CRM CRM-OTHER",
+      "Recapito mantenuto anche sul nominativo Excel", "EXCEL",
+    );
   });
 
   it("aggiorna l'immobile trovato sotto il nominativo e non lo duplica", async () => {

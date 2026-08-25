@@ -957,7 +957,16 @@ function renderCompletedSessions() {
   enhanceActionPanel();
 }
 function completedPropertyCards(detail) {
-  return (detail.properties ?? [])
+  const duplicateContacts = (detail.people ?? []).filter((person) => {
+    const duplicates = person.raw_payload?.contacts_flow?.duplicatePhoneAssignments
+      ?? person.raw_payload?.contact_assignments_detected
+      ?? [];
+    return Array.isArray(duplicates) && duplicates.length;
+  });
+  const duplicateNote = duplicateContacts.length
+    ? `<div class="skip-summary"><b>Nota recapiti</b><p>${duplicateContacts.length} nominativo/i hanno numeri già presenti su altre schede: sono stati mantenuti anche qui come da Excel.</p></div>`
+    : "";
+  return `${duplicateNote}${(detail.properties ?? [])
     .map((property, index) => {
       const related = (detail.ownerships ?? [])
           .filter((owner) => owner.property_id === property.id)
@@ -981,7 +990,7 @@ function completedPropertyCards(detail) {
         reason = String(skip.reason ?? "Caso non completato");
       return `<article class="completed-property-card ${skipped ? "is-skipped" : ""}"><div class="completed-owners"><p class="eyebrow">${skipped ? "Nominativi saltati" : "Nominativi"} · ${related.length}</p>${related.map(({ owner, person }) => `<div class="completed-owner"><div><strong>${esc(person.full_name)}</strong><span>${owner.share_percentage == null ? "Quota non disponibile" : `${new Intl.NumberFormat("it-IT").format(owner.share_percentage)}%`}</span></div><small>${esc(person.tax_code ?? "Codice fiscale non disponibile")}</small><small>${esc([...(person.mobiles ?? []), ...(person.landlines ?? []), ...(person.emails ?? [])].join(" · ") || "Nessun recapito trovato")}</small>${skipped ? `<small class="skipped-person-note">Non completato in questa importazione</small>` : ""}</div>`).join("") || `<p class="empty-message">Nessun nominativo collegato.</p>`}</div><div class="completed-property-data"><div class="completed-property-heading"><p class="eyebrow">Immobile ${index + 1}</p><span class="completion-label ${skipped ? "is-skipped" : ""}">${esc(statusLabel)}</span></div><h3>${esc(property.address ?? "Indirizzo non disponibile")}</h3><p class="cadastral-key">${esc(property.cadastral_key)}</p>${skipped ? `<div class="skip-summary"><b>Perché è stato saltato</b><p>${esc(reason)}</p>${automatic ? `<small>Tre tentativi automatici eseguiti in circa 180 secondi.</small>` : ""}</div>` : ""}<dl><div><dt>Sezione urbana</dt><dd>BA</dd></div><div><dt>Foglio</dt><dd>${esc(property.sheet)}</dd></div><div><dt>Particella</dt><dd>${esc(property.parcel)}</dd></div><div><dt>Subalterno</dt><dd>${esc(property.subaltern)}</dd></div><div><dt>Categoria</dt><dd>${esc(property.category ?? "—")}</dd></div><div><dt>Rendita</dt><dd>${property.cadastral_income == null ? "—" : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(property.cadastral_income)}</dd></div><div><dt>Attività</dt><dd>${skipped ? "Non completata" : activity === "created" ? "Creata" : activity === "existing" ? "Già presente" : "Verificata"}</dd></div></dl></div></article>`;
     })
-    .join("");
+    .join("")}`;
 }
 function enhanceActionPanel() {
   const actions = $("actionPanel")?.querySelector(".now-actions");

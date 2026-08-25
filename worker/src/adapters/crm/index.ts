@@ -527,8 +527,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           }
           throw error;
         }
+        const verified = await this.verifyCurrentPerson(input, expectedId);
+        // A merge can redirect the old URL without showing Accesso negato.
+        // Do not retain that stale record ID: search the CRM normally instead.
+        return verified ?? this.recoverMergedPerson(input, expectedId);
       }
       return this.verifyCurrentPerson(input, expectedId);
+    });
+  }
+
+  async syncPersonContacts(targetPersonId: string, person: NormalizedPerson): Promise<void> {
+    if (this.dryRun) return;
+    await this.friendly("person-contacts-sync", "Non riesco ad aggiornare i recapiti del nominativo.", async () => {
+      await this.openPerson(targetPersonId);
+      await this.editExistingPersonContacts({ mobiles: person.mobiles, landlines: person.landlines, emails: person.emails });
     });
   }
 

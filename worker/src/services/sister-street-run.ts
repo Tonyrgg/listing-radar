@@ -3,7 +3,7 @@ import type { Locator, Page } from "playwright";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { WorkerError } from "../core/errors.js";
-import { buildCadastralKey } from "../core/normalize.js";
+import { buildCadastralKey, selectSisterAddressForStreet } from "../core/normalize.js";
 import type { CadastralOwner, CadastralProperty } from "../types.js";
 import {
   exactStreetVariants,
@@ -603,7 +603,18 @@ export class SisterStreetRun {
       phase: "parsing-properties", variantIndex, variantTotal, variantSourceId: variant.sourceId,
       current: 0, total: rawRecords, address: null,
     });
-    const properties = await this.adapter.extractProperties();
+    const properties = (await this.adapter.extractProperties()).map((property) => {
+      const address = selectSisterAddressForStreet(property.address, variant.text);
+      if (address === property.address) return property;
+      return {
+        ...property,
+        address,
+        rawPayload: {
+          ...property.rawPayload,
+          long_run_address_selection: { originalAddress: property.address, selectedAddress: address, street: variant.text },
+        },
+      };
+    });
     let ownersRead = previousPartial?.ownersRead ?? 0;
     let skippedPropertyRows = previousPartial?.skippedPropertyRows ?? 0;
     const acquiredPropertyKeys: string[] = [...(previousPartial?.propertyKeys ?? [])];

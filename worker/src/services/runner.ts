@@ -1644,13 +1644,13 @@ export class PropertyWorkerRunner {
     const existingFlow = isRecord(row.raw_payload?.contacts_flow) ? row.raw_payload.contacts_flow : null;
     if (
       existingFlow?.complete === true
-      && existingFlow.version === 2
+      && existingFlow.version === 3
       && existingFlow.dryRun === this.config.WORKER_DRY_RUN
       && existingFlow.crmPersonId === row.crm_record_id
     ) return;
-    let transfer: Awaited<ReturnType<PlaywrightCrmAdapter["transferPhoneAssignments"]>> | null = null;
     let phoneSearchSkippedAfterCreation = false;
     let phonesCheckedInGlobalSearch: string[] = [];
+    let duplicatePhoneAssignments: Array<{ phone: string; personId: string; label: string }> = [];
     if (match.matchedRows && row.crm_record_id) {
       const desiredPhones = [...match.mobiles, ...match.landlines];
       const personFlow = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : {};
@@ -1664,38 +1664,28 @@ export class PropertyWorkerRunner {
         ? await crm.findPhoneAssignments(phonesRequiringSearch)
         : [];
       const foreignAssignments = assignments.filter((assignment) => assignment.personId !== row.crm_record_id);
+      duplicatePhoneAssignments = foreignAssignments;
       if (job.mode === "assisted") {
         const decision = await this.prompts.confirmSave([
           personSummary(asPerson(row)),
           "Modifiche previste:",
           "- aggiunta dei recapiti Excel mancanti",
           foreignAssignments.length
-            ? `- spostamento di ${foreignAssignments.length} recapiti assegnati a un altro nominativo`
-            : "- nessun recapito da rimuovere da altri nominativi",
+            ? `- ${foreignAssignments.length} recapiti sono già presenti su altre schede: li mantengo anche qui come da Excel`
+            : "- nessun recapito già presente su altre schede",
         ].join("\n"));
         if (decision === "review") throw new WorkerError("Recapiti segnati da verificare", "needs_review", { personId: row.id });
         if (decision === "manual") await this.prompts.waitForManualEdit();
-        else if (decision !== "skip") transfer = await crm.transferPhoneAssignments(row.crm_record_id, asPerson(row), assignments);
-      } else transfer = await crm.transferPhoneAssignments(row.crm_record_id, asPerson(row), assignments);
-      for (const moved of transfer?.moved ?? []) {
+        else if (decision !== "skip") await crm.syncPersonContacts(row.crm_record_id, asPerson(row));
+      } else await crm.syncPersonContacts(row.crm_record_id, asPerson(row));
+      for (const duplicate of foreignAssignments) {
         await this.repository.logChange(
           job.id,
           "person",
           row.tax_code ?? row.id,
-          "phone_assignment",
-          `Nominativo CRM ${moved.fromPersonId}`,
-          `Nominativo CRM ${moved.toPersonId}`,
-          "EXCEL",
-        );
-      }
-      for (const unresolved of transfer?.unresolved ?? []) {
-        await this.repository.logChange(
-          job.id,
-          "person",
-          row.tax_code ?? row.id,
-          "phone_assignment_needs_review",
-          `${unresolved.personIds.length} schede CRM`,
-          "Recapito non spostato; lavorazione proseguita",
+          "phone_assignment_duplicate_retained",
+          `Nominativo CRM ${duplicate.personId}`,
+          "Recapito mantenuto anche sul nominativo Excel",
           "EXCEL",
         );
       }
@@ -1703,14 +1693,15 @@ export class PropertyWorkerRunner {
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
       contacts_flow: {
-        version: 2,
+        version: 3,
         complete: true,
         dryRun: this.config.WORKER_DRY_RUN,
         crmPersonId: row.crm_record_id,
         matchedRows: match.matchedRows,
         phoneSearchSkippedAfterCreation,
         phonesCheckedInGlobalSearch,
-        transfer,
+        duplicatePhoneAssignments,
+        phoneAssignmentPolicy: "excel-authoritative-retain-duplicates",
         updatedAt: new Date().toISOString(),
       },
     };
