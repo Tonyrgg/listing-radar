@@ -2,6 +2,7 @@ import { DatabaseZap, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 import { propertyStateLabel } from "@/lib/property-lifecycle/read-models/presentation";
 
@@ -129,7 +130,7 @@ export function PropertyFacts({
 export function PropertyLink({ property }: Readonly<{ property: LifecyclePropertySummary }>) {
   return (
     <Link href={`/lifecycle/archive/${property.id}`} className={styles.signalProperty}>
-      {property.title}
+      {formatShouty(property.title)}
     </Link>
   );
 }
@@ -148,45 +149,20 @@ export function ExternalSourceLink({ href }: Readonly<{ href: string }>) {
   );
 }
 
-export function formatCurrency(value: number | null): string {
-  return value == null
-    ? "Prezzo non disponibile"
-    : new Intl.NumberFormat("it-IT", {
-        style: "currency",
-        currency: "EUR",
-        maximumFractionDigits: 0,
-      }).format(value);
-}
+/**
+ * I numeri e le date si scrivono in un posto solo.
+ *
+ * Qui vivevano copie di `formatCurrency` e `formatDate`: la copia non aveva il
+ * raggruppamento delle migliaia, quindi la stessa casa costava «7.000 €» in
+ * archivio e «7000 €» nella sua scheda. Due formattatori sono un bug che
+ * aspetta il suo momento.
+ */
+export { formatCurrency, formatDate, formatDateTime, formatNumber } from "@/lib/formatting";
 
-export function formatNumber(value: number): string {
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1 }).format(value);
-}
-
-export function formatDate(value: string | null): string {
-  return value
-    ? new Intl.DateTimeFormat("it-IT", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(new Date(value))
-    : "Data ignota";
-}
-
-export function formatDateTime(value: string | null): string {
-  return value
-    ? new Intl.DateTimeFormat("it-IT", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(value))
-    : "Mai";
-}
-
-export function ageDays(value: string | null): number | null {
+/** Da quanti giorni dura una cosa iniziata in quella data. */
+export function ageDays(value: string | null, now: number = Date.now()): number | null {
   if (!value) return null;
-  return Math.max(
-    0,
-    Math.floor((Date.now() - new Date(value).getTime()) / (24 * 60 * 60 * 1_000)),
-  );
+  const inizio = new Date(value).getTime();
+  if (Number.isNaN(inizio)) return null;
+  return Math.max(0, Math.floor((now - inizio) / (24 * 60 * 60 * 1_000)));
 }

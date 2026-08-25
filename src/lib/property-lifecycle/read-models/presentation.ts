@@ -19,6 +19,9 @@ const EVENT_LABELS: Record<string, string> = {
   PUBLICATION_RELAUNCHED: "Rilancio commerciale",
   POST_EXIT_CLASSIFIED: "Esito post-uscita",
   PRICE_CHANGED: "Prezzo aggiornato",
+  MANUAL_OVERRIDE_RECORDED: "Correzione registrata da una persona",
+  PROPERTY_SALE_STATUS_OVERRIDDEN: "Stato di vendita corretto a mano",
+  AGENCY_OUTCOME_OVERRIDDEN: "Esito dell'agenzia corretto a mano",
 };
 
 const PROPERTY_STATE_LABELS: Record<string, string> = {
@@ -40,6 +43,18 @@ const AGENCY_STATE_LABELS: Record<string, string> = {
   OFF_MARKET_NO_SALE_EVIDENCE: "Fuori mercato senza prova di vendita",
 };
 
+/**
+ * `sale_status` finiva a schermo com'è scritto nel database: una pillola con
+ * dentro «UNKNOWN». Vendere o non vendere è la domanda del mestiere; merita
+ * parole che si leggono.
+ */
+const SALE_STATUS_LABELS: Record<string, string> = {
+  UNKNOWN: "Non sappiamo se è stata venduta",
+  PROBABLE_SOLD: "Probabilmente venduta",
+  SOLD_CONFIRMED: "Venduta, confermato",
+  NOT_SOLD_CONFIRMED: "Non venduta, confermato",
+};
+
 const REASON_LABELS: Record<string, string> = {
   agency_to_private_confirmed: "Passaggio da agenzia a privato confermato",
   agency_exit_confirmed: "Uscita dall'agenzia confermata",
@@ -53,6 +68,10 @@ const REASON_LABELS: Record<string, string> = {
 
 export function lifecycleEventLabel(value: string): string {
   return EVENT_LABELS[value] ?? humanize(value);
+}
+
+export function saleStatusLabel(value: string): string {
+  return SALE_STATUS_LABELS[value] ?? humanize(value);
 }
 
 export function propertyStateLabel(value: string): string {
@@ -83,7 +102,16 @@ export function confidenceLabel(value: number): string {
 }
 
 export function humanize(value: string): string {
-  const normalized = value.replaceAll("_", " ").toLocaleLowerCase("it");
+  /* Le chiavi vere non sono solo MAIUSCOLE_CON_UNDERSCORE: ce ne sono di
+   * puntate e in camelCase, e appiattirle dava «publication.sourcerecordcreatedat».
+   * Qui si separano anche quelle, così l'ultima spiaggia resta leggibile. */
+  const normalized = value
+    .replaceAll(".", " ")
+    .replaceAll("_", " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLocaleLowerCase("it")
+    .trim();
+
   return normalized.charAt(0).toLocaleUpperCase("it") + normalized.slice(1);
 }
 
@@ -126,22 +154,61 @@ const IDENTITY_OUTCOME_LABELS: Record<string, string> = {
   NO_MATCH: "Nessun collegamento",
 };
 
+/* I valori sono quelli che il database contiene davvero: `EXACT`, `STREET` e
+ * `ZONE` non sono mai esistiti, e la scheda finiva per scrivere «Street only». */
 const PRECISION_LABELS: Record<string, string> = {
-  EXACT: "Posizione esatta",
-  STREET: "Via individuata",
-  ZONE: "Solo la zona",
-  MUNICIPALITY: "Solo il comune",
-  UNKNOWN: "Posizione ignota",
+  EXACT_ADDRESS: "indirizzo esatto",
+  STREET_ONLY: "solo la via, non il civico",
+  APPROXIMATE_AREA: "zona approssimativa",
+  UNKNOWN: "posizione ignota",
 };
 
+/**
+ * Cosa dimostra una prova.
+ *
+ * Le chiavi vere sono puntate e in camelCase — `publication.originalMediaAvailableBy`
+ * — e finivano a schermo appiattite in una parola sola. Qui ognuna dice cosa
+ * afferma, non come si chiama.
+ */
 const CLAIM_KEY_LABELS: Record<string, string> = {
-  price: "Prezzo",
-  surface_sqm: "Superficie",
-  rooms: "Locali",
-  floor: "Piano",
-  address: "Indirizzo",
-  seller_type: "Tipo di venditore",
-  energy_class: "Classe energetica",
+  "publication.location": "Dove si trova",
+  "publication.status": "Cosa dichiara il sito",
+  "publication.datePublished": "Quando l'annuncio è stato pubblicato",
+  "publication.publishUp": "Quando l'annuncio è andato online",
+  "publication.articlePublishedDate": "Data della pagina sul sito",
+  "publication.sourceRecordCreatedAt": "Quando la scheda è nata sul sito",
+  "publication.originalMediaAvailableBy": "Le foto esistevano già da",
+  "publication.portalMediaAvailableBy": "Le foto sul portale esistevano già da",
+  "publication.mediaUploadMonth": "Mese in cui le foto sono state caricate",
+  "publication.photoBatchDate": "Data del gruppo di foto",
+  "publication.firstObservedInCatalogAt": "Prima volta vista nel catalogo",
+  "publication.firstObservedInInventoryAt": "Prima volta vista in inventario",
+  "publication.firstPublicEvidenceAt": "Prima traccia pubblica trovata",
+};
+
+/**
+ * Come lo sappiamo.
+ *
+ * Ogni sito lascia una traccia diversa: la data di una foto, una cartella di
+ * caricamento, un campo del gestionale. Il nome tecnico serve al codice; a
+ * schermo serve la frase che spiega perché ci crediamo.
+ */
+const METHOD_LABELS: Record<string, string> = {
+  STRICT_PLACE_NAME_V1: "dal nome del posto scritto nell'annuncio",
+  CRAWLER_FIRST_SEEN: "da quando l'abbiamo vista noi la prima volta",
+  WORDPRESS_JSON_LD_DATE_PUBLISHED: "dalla data di pubblicazione dichiarata dal sito",
+  AGESTA_ARTICLE_PUBLISHED_DATE: "dalla data della pagina sul sito dell'agenzia",
+  ICONACASA_PUBLISH_UP: "dalla data di messa online dichiarata dal sito",
+  FLAZIO_PROPERTY_CREATED_AT: "da quando la scheda è nata nel gestionale del sito",
+  WORDPRESS_UPLOAD_PATH_YYYY_MM: "dalla cartella in cui il sito ha caricato le foto",
+  MIOGEST_IMAGE_FILENAME_YYYYMMDDHHMMSS: "dalla data scritta nel nome del file della foto",
+  FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED: "dalla data delle foto sul sito dell'agenzia",
+  VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED: "dalla data delle foto sul sito dell'agenzia",
+  GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED: "dalla data delle foto sul sito dell'agenzia",
+  MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED: "dalla data delle foto sul sito dell'agenzia",
+  FLAZIO_SOLD_FLAG: "dal segno di venduto messo dal sito",
+  VISTOCASA_DEDICATED_SOLD_GRAPHIC: "dalla scritta «venduto» sulla foto",
+  PUNTOCASA_DEDICATED_STATUS_TAXONOMY: "dalla categoria di stato usata dal sito",
 };
 
 export function opportunityLevelLabel(value: string): string {
@@ -170,4 +237,8 @@ export function locationPrecisionLabel(value: string): string {
 
 export function claimKeyLabel(value: string): string {
   return CLAIM_KEY_LABELS[value] ?? humanize(value);
+}
+
+export function extractionMethodLabel(value: string): string {
+  return METHOD_LABELS[value] ?? humanize(value).toLocaleLowerCase("it");
 }

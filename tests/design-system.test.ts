@@ -119,9 +119,14 @@ describe("sistema di design", () => {
   });
 
   it("dà un titolo a ogni pagina", () => {
-    const offenders = sourceFiles(["app/**/page.tsx"]).filter(
-      (file) => !/export const metadata|generateMetadata/.test(read(file)),
-    );
+    const offenders = sourceFiles(["app/**/page.tsx"]).filter((file) => {
+      const source = read(file);
+
+      /* Una pagina che rimanda altrove non arriva mai a mostrare un titolo. */
+      if (/permanentRedirect\(|redirect\(/.test(source)) return false;
+
+      return !/export const metadata|generateMetadata/.test(source);
+    });
 
     expect(offenders, `Pagine senza titolo:\n${offenders.join("\n")}`).toEqual([]);
   });

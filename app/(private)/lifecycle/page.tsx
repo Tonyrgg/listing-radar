@@ -1,4 +1,4 @@
-import { ArrowRight, Crosshair, Radar } from "lucide-react";
+import { ArrowRight, Crosshair, Radar, RefreshCw } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -6,9 +6,13 @@ import type { CSSProperties } from "react";
 
 import {
   lifecycleEventLabel,
+  opportunityLevelLabel,
   opportunityReasonLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
+import { PendingSubmitButton } from "@/components/loading-controls";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+
+import { enqueueGlobalLifecycleRefresh } from "./actions";
 
 import {
   formatDateTime,
@@ -52,10 +56,24 @@ export default async function LifecycleDashboardPage() {
         title="Cosa è cambiato sul mercato"
         description="Ogni movimento del mercato ricondotto all'immobile vero: nuove pubblicazioni, uscite, passaggi di agenzia e ritorni da privato, ognuno con la sua spiegazione."
         actions={
-          <Link href="/lifecycle/opportunities" className={styles.primaryAction}>
-            <Crosshair aria-hidden="true" className="size-4" />
-            Apri le opportunità
-          </Link>
+          <>
+            {/* Rileggere tutte le fonti è un'azione di questa sezione, non una
+              * voce di menu: stava in una barra a parte, scritta «Refresh All». */}
+            <form action={enqueueGlobalLifecycleRefresh}>
+              <PendingSubmitButton
+                type="submit"
+                pendingLabel="Metto in coda"
+                icon={<RefreshCw aria-hidden="true" className="size-4" />}
+                className={styles.secondaryAction}
+              >
+                Rileggi tutte le fonti
+              </PendingSubmitButton>
+            </form>
+            <Link href="/lifecycle/opportunities" className={styles.primaryAction}>
+              <Crosshair aria-hidden="true" className="size-4" />
+              Apri le opportunità
+            </Link>
+          </>
         }
       />
 
@@ -122,10 +140,13 @@ export default async function LifecycleDashboardPage() {
                 <article key={opportunity.id} className={styles.row}>
                   <div className={styles.rowTop}>
                     <SignalPill tone={opportunityTone(opportunity.level)}>
-                      {opportunity.level}
+                      {opportunityLevelLabel(opportunity.level)}
                     </SignalPill>
+                    {/* Il punteggio serve all'ordinamento, non a chi legge:
+                      * «score 50» non dice se 50 è tanto. Contano gli indizi. */}
                     <span className={styles.rowMeta}>
-                      score {opportunity.score ?? 0}
+                      {opportunity.reasons.length}{" "}
+                      {opportunity.reasons.length === 1 ? "indizio" : "indizi"}
                     </span>
                   </div>
                   <PropertyLink property={opportunity.property} />

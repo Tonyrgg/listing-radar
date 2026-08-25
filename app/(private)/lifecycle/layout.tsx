@@ -1,31 +1,11 @@
-import { RefreshCw } from "lucide-react";
-
-import { PendingSubmitButton } from "@/components/loading-controls";
-
-import { enqueueGlobalLifecycleRefresh } from "./actions";
-import { LifecycleNav } from "./_components/lifecycle-nav";
-import styles from "./lifecycle.module.css";
-
+/**
+ * Le pagine dei Segnali stanno dentro il guscio dell'applicazione: la barra
+ * laterale dice in che sezione sei, l'intestazione di pagina dice in che
+ * pagina. Qui in mezzo non serve una terza navigazione — ce n'era una, in
+ * inglese, che ripeteva le stesse sei destinazioni con altri nomi.
+ */
 export default function LifecycleLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <div className={styles.workspace}>
-      <div className={styles.navShell}>
-        <LifecycleNav />
-        <form action={enqueueGlobalLifecycleRefresh} className="shrink-0">
-          <PendingSubmitButton
-            type="submit"
-            pendingLabel="Accodo"
-            icon={<RefreshCw aria-hidden="true" className="size-3.5" />}
-            className={styles.secondaryAction}
-          >
-            <span className="hidden sm:inline">Refresh All</span>
-            <span className="sm:hidden">Refresh</span>
-          </PendingSubmitButton>
-        </form>
-      </div>
-      {children}
-    </div>
-  );
+  return <div className="space-y-5">{children}</div>;
 }

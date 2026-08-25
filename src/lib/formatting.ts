@@ -62,6 +62,28 @@ export function formatPlainText(value: string | null | undefined) {
   return value;
 }
 
+/**
+ * I siti delle agenzie scrivono in stampatello: «VIA PIEPOLI», «APPARTAMENTO
+ * DI RECENTE COSTRUZIONE». Ripeterlo a schermo urla, e in mezzo a un'interfaccia
+ * tranquilla si legge peggio. Le sigle corte (mq, MQ, A1) restano come sono.
+ */
+export function formatShouty(value: string) {
+  if (value !== value.toLocaleUpperCase("it")) {
+    return value;
+  }
+
+  return value
+    .toLocaleLowerCase("it")
+    .replace(/(^|[\s'"«(\-–/])([a-zàèéìòù])/g, (_, prefisso: string, lettera: string) =>
+      `${prefisso}${lettera.toLocaleUpperCase("it")}`,
+    );
+}
+
+/** «1 giorno», «24 giorni»: il singolare non si scrive mai «1 giorni». */
+export function formatDays(value: number) {
+  return `${formatNumber(value)} ${value === 1 ? "giorno" : "giorni"}`;
+}
+
 export function toIsoDate(value: Date) {
   return value.toISOString().slice(0, 10);
 }

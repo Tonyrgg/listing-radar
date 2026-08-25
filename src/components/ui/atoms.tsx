@@ -245,6 +245,22 @@ const formaClass: Record<StatoForma, string> = {
   venduto: "rounded-full bg-[var(--lr-info)]",
 };
 
+/** Lo stato di un mandato d'agenzia, tradotto nella forma che gli spetta. */
+export function formaFromAgencyState(state: string): StatoForma {
+  if (state === "ACTIVE") return "agenzia";
+  if (state === "EXIT_PENDING") return "attesa";
+  if (state === "CLOSED_SOLD") return "venduto";
+  return "chiuso";
+}
+
+/** Lo stato di una proprietà: privato e agenzia insieme contano come privato. */
+export function formaFromPropertyState(state: string): StatoForma {
+  if (state === "SOLD") return "venduto";
+  if (state.includes("PRIVATE")) return "privato";
+  if (state.startsWith("ACTIVE")) return "agenzia";
+  return "chiuso";
+}
+
 export function Stato({
   forma,
   children,
@@ -346,10 +362,13 @@ export function livelloFromOpportunity(level: string | null | undefined): Livell
   return "bassa";
 }
 
+/* «Alta», «Media», «Bassa» sono aggettivi senza il loro nome: da soli, in un
+ * angolo di riga, «Media» si legge anche come una media aritmetica. Il giudizio
+ * dice invece quanta attenzione merita quella casa, adesso. */
 const livelloLabel: Record<Livello, string> = {
-  alta: "Alta",
-  media: "Media",
-  bassa: "Bassa",
+  alta: "Da chiamare",
+  media: "Vale un'occhiata",
+  bassa: "Da tenere d'occhio",
 };
 
 export function Giudizio({
