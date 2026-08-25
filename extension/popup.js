@@ -173,6 +173,17 @@ async function importListing() {
       body: JSON.stringify(state.listing),
     });
     const payload = await response.json();
+
+    // Un'agenzia sui portali non è un errore: è lavoro che facciamo già altrove.
+    if (payload.skipped) {
+      elements.resultMessage.textContent = payload.reason;
+      elements.result.classList.remove("hidden");
+      elements.openListing.classList.add("hidden");
+      elements.preview.classList.add("hidden");
+      setStatus("");
+      return;
+    }
+
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || `Errore ${response.status}`);
     }

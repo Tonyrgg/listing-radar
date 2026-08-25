@@ -29,7 +29,7 @@ Quando un README storico contraddice il codice o una migration più recente, non
 - Non esporre, stampare o committare segreti. Tutti i file `.env*`, salvo `.env.example`, sono sensibili.
 - Non collegarsi o scrivere su Supabase production senza autorizzazione esplicita.
 - Le modifiche database passano esclusivamente da `supabase/migrations/`.
-- Non sostituire o rimuovere il Listing Radar legacy finché V2 non è validato e promosso esplicitamente.
+- Property Lifecycle V2 è stato promosso esplicitamente il 25 agosto 2026 ed è l'archivio di riferimento del prodotto. Il Listing Radar legacy è in dismissione: sei fonti agenzia sono spente perché duplicate, i portali accettano solo ciò che non è di agenzia, e le tabelle `listings` e satellite verranno rimosse a fine migrazione. Non costruire funzioni nuove sopra di esse.
 - Un crawler fallito, degradato o con struttura cambiata non prova la scomparsa di un annuncio.
 - Una scomparsa non prova una vendita.
 - I valori confermati manualmente non devono essere sovrascritti silenziosamente.

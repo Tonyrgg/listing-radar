@@ -11,7 +11,12 @@ Prima di intervenire, leggere `docs/PROJECT-ONBOARDING.md`: contiene architettur
 - Never expose or commit secrets. Treat every `.env*` file except `.env.example` as sensitive.
 - Never destructively mutate production Supabase. Use the local Supabase project or an explicitly approved DEV/STAGING project.
 - Database changes must use migrations in `supabase/migrations/`; do not edit production tables manually.
-- Preserve the current Listing Radar until V2 is validated.
+- Property Lifecycle V2 e' stato promosso il 25 agosto 2026: e' l'archivio di riferimento.
+  Il Listing Radar legacy e' in dismissione e sara' rimosso, tabelle comprese. Non
+  costruire funzioni nuove sopra `listings` e le sue tabelle satellite.
+- Dai portali entrano solo gli annunci che non sono di agenzia: le agenzie le legge V2
+  dai loro siti. La regola scarta cio' che e' riconosciuto come agenzia e tiene privato
+  e incerto, perche' un privato quasi mai si dichiara tale.
 - Never infer disappearance from a failed crawler or source.
 - Prefer deterministic evidence over inference.
 - Always run relevant regression tests after changes.

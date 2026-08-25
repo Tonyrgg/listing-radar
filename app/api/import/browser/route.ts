@@ -17,6 +17,7 @@ import {
   isGenericListingSource,
   normalizeListingSource,
 } from "@/lib/listing-sources";
+import { decidePortalIntake } from "@/lib/listings/portal-intake";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import {
   normalizeImportedRows,
@@ -166,6 +167,22 @@ export async function POST(request: NextRequest) {
     }
 
     const listingToSave = normalized.listings[0];
+
+    /* Dai portali servono solo i privati: le agenzie le legge già Property
+     * Lifecycle dai loro siti, con dati migliori. */
+    const intake = decidePortalIntake({
+      source: listingToSave.source,
+      sellerType: listingToSave.sellerType,
+      sellerName: listingToSave.sellerName,
+    });
+
+    if (!intake.accepted) {
+      return NextResponse.json(
+        { ok: false, skipped: true, reason: intake.reason },
+        { status: 200, headers: CORS_HEADERS },
+      );
+    }
+
     const missingFields = getMissingListingFields(listingToSave);
     const completenessScore = getListingCompletenessScore(listingToSave);
 
