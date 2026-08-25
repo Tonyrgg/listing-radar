@@ -107,41 +107,6 @@ export function StrisciaFiducia({ sources }: Readonly<{ sources: SourcesSummary 
   );
 }
 
-/** Una riga di movimento: cosa è successo, a quale casa, quando. */
-export function RigaMovimento({
-  titolo,
-  dettaglio,
-  quando,
-  href,
-  tone = "neutral",
-}: Readonly<{
-  titolo: string;
-  dettaglio: string;
-  quando: string;
-  href: string;
-  tone?: "neutral" | "warn" | "info";
-}>) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-4 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]"
-    >
-      <Stripe tone={tone} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)]">
-          {titolo}
-        </span>
-        <span className="block truncate text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-          {dettaglio}
-        </span>
-      </span>
-      <span className="shrink-0 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-        {quando}
-      </span>
-    </Link>
-  );
-}
-
 export function FasciaVuota({
   titolo,
   descrizione,

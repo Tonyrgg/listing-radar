@@ -13,6 +13,8 @@ import type {
   LifecycleReviewItem,
 } from "@/lib/property-lifecycle/read-models/types";
 
+import { MARKET_EVENT_TYPES } from "./market-events";
+
 interface DatabaseError {
   message: string;
 }
@@ -413,8 +415,11 @@ export class PropertyLifecycleReadRepository {
         this.db
           .from("events")
           .select("id,property_id,event_type,occurred_at,confidence,actor_type,payload")
+          /* Solo i movimenti veri: senza questo filtro le ultime righe erano
+           * tutte del primo censimento e i ribassi non si vedevano mai. */
+          .in("event_type", MARKET_EVENT_TYPES)
           .order("occurred_at", { ascending: false })
-          .limit(16),
+          .limit(24),
         this.db
           .from("opportunities")
           .select(

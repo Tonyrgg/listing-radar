@@ -39,12 +39,15 @@ export function PropertyRow({
   signals,
   now,
   href,
+  compact = false,
 }: Readonly<{
   property: LifecyclePropertySummary;
   foto?: string;
   signals?: PropertyRowSignals;
   now: number;
   href?: string;
+  /** In una colonna stretta la riga larga si sbriciola: qui va in verticale. */
+  compact?: boolean;
 }>) {
   const daPrivato = property.activePrivateCount > 0;
   const agenzia = property.agencies[0]?.name ?? null;
@@ -64,7 +67,12 @@ export function PropertyRow({
       <Stripe tone={tono} />
 
       {/* La foto è il soggetto, non la decorazione. */}
-      <span className="relative z-10 block h-24 w-32 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] sm:h-28 sm:w-40">
+      <span
+        className={clsx(
+          "relative z-10 block shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]",
+          compact ? "h-16 w-24" : "h-24 w-32 sm:h-28 sm:w-40",
+        )}
+      >
         {foto ? (
           <span
             className="block size-full bg-cover bg-center"
@@ -117,11 +125,20 @@ export function PropertyRow({
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
           <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(property.currentPrice)}</b>
           {property.surfaceSqm != null ? <span>{formatNumber(property.surfaceSqm)} mq</span> : null}
-          {property.rooms != null ? <span>{formatNumber(property.rooms)} locali</span> : null}
-          <Periodo
-            from={anzianitaTesto(property.trueMarketStartLowerBound, now)}
-            uncertain={(property.trueMarketStartConfidence ?? 0) < 0.85}
-          />
+          {!compact && property.rooms != null ? (
+            <span>{formatNumber(property.rooms)} locali</span>
+          ) : null}
+          {!compact ? (
+            <Periodo
+              from={anzianitaTesto(property.trueMarketStartLowerBound, now)}
+              uncertain={(property.trueMarketStartConfidence ?? 0) < 0.85}
+            />
+          ) : null}
+          {compact && giudizioParla && signals ? (
+            <span className="font-[650] text-[var(--lr-ink)]">
+              {signals.livello === "alta" ? "Da chiamare" : "Vale un'occhiata"}
+            </span>
+          ) : null}
         </div>
 
         {giudizioParla && signals?.motivo ? (
@@ -136,22 +153,29 @@ export function PropertyRow({
         ) : null}
       </div>
 
-      <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
-        {giudizioParla && signals ? (
-          <Giudizio
-            livello={signals.livello}
-            signals={signals.indizi}
-            total={signals.totale}
-            align="right"
-          />
-        ) : signals ? null : (
-          <Meta>{propertyStateLabel(property.propertyState)}</Meta>
-        )}
+      {compact ? (
         <ArrowUpRight
           aria-hidden="true"
-          className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
+          className="relative z-10 size-4 shrink-0 self-center text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
         />
-      </div>
+      ) : (
+        <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
+          {giudizioParla && signals ? (
+            <Giudizio
+              livello={signals.livello}
+              signals={signals.indizi}
+              total={signals.totale}
+              align="right"
+            />
+          ) : signals ? null : (
+            <Meta>{propertyStateLabel(property.propertyState)}</Meta>
+          )}
+          <ArrowUpRight
+            aria-hidden="true"
+            className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
+          />
+        </div>
+      )}
     </article>
   );
 }
