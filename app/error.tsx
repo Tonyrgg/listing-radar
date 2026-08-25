@@ -3,6 +3,8 @@
 import { AlertTriangle } from "lucide-react";
 import { useEffect } from "react";
 
+import { buttonClass } from "@/components/ui/primitives";
+
 export default function AppError({
   error,
   reset,
@@ -44,13 +46,13 @@ export default function AppError({
               <button
                 type="button"
                 onClick={reset}
-                className="inline-flex min-h-[var(--lr-control-height)] items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border border-transparent bg-[var(--lr-accent)] px-4 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)]"
+                className={buttonClass("primary")}
               >
                 Riprova
               </button>
               <a
                 href="/dashboard"
-                className="inline-flex min-h-[var(--lr-control-height)] items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)]"
+                className={buttonClass("secondary")}
               >
                 Torna al lavoro aperto
               </a>

@@ -1,6 +1,8 @@
 import { Compass } from "lucide-react";
 import Link from "next/link";
 
+import { buttonClass } from "@/components/ui/primitives";
+
 export default function NotFound() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
@@ -25,13 +27,13 @@ export default function NotFound() {
             <div className="mt-5 flex flex-wrap gap-2">
               <Link
                 href="/dashboard"
-                className="inline-flex min-h-[var(--lr-control-height)] items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border border-transparent bg-[var(--lr-accent)] px-4 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)]"
+                className={buttonClass("primary")}
               >
                 Vai al lavoro aperto
               </Link>
               <Link
                 href="/listings"
-                className="inline-flex min-h-[var(--lr-control-height)] items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)]"
+                className={buttonClass("secondary")}
               >
                 Cerca nell&apos;archivio
               </Link>
