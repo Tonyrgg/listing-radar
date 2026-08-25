@@ -66,14 +66,24 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
         </div>
       </form>
 
-      {Object.entries(categories).map(([category, categoryFeatures]) => (
+      {Object.entries(categories).map(([category, categoryFeatures]) => {
+        /* Se tutte le caratteristiche di un gruppo valgono per le stesse cose,
+         * scriverlo su ogni riga non distingue: si dice una volta, in cima. */
+        const ambiti = new Set(categoryFeatures.map((feature) => feature.applies_to));
+        const ambitoComune = ambiti.size === 1 ? [...ambiti][0] : null;
+
+        return (
         <section key={category}>
           <header className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <p className={styles.sectionEyebrow}>Caratteristiche</p>
+              <p className={styles.sectionEyebrow}>
+                {ambitoComune ? ambitoLabel(ambitoComune) : "Caratteristiche"}
+              </p>
               <h2 className={`${styles.panelTitle} capitalize`}>{category}</h2>
             </div>
-            <span className={styles.count}>{categoryFeatures.length} regole</span>
+            <span className={styles.count}>
+              {categoryFeatures.length} {categoryFeatures.length === 1 ? "regola" : "regole"}
+            </span>
           </header>
           <div className={styles.featureRows}>
             {categoryFeatures.map((feature) => (
@@ -100,7 +110,9 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
                     <FeatureMark featureKey={feature.key} label={feature.label} />
                     <div>
                       <p className="text-sm font-semibold text-[var(--lr-ink)]">{feature.label}</p>
-                      <p className={styles.muted}>{feature.applies_to === "both" ? "Richieste e immobili" : feature.applies_to === "request" ? "Solo richieste" : "Solo immobili"}</p>
+                      {ambitoComune ? null : (
+                        <p className={styles.muted}>{ambitoLabel(feature.applies_to)}</p>
+                      )}
                     </div>
                   </div>
                   <label className={styles.activeToggle}><input name="active" type="checkbox" defaultChecked={feature.is_active} /> Attiva</label>
@@ -114,9 +126,18 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
             ))}
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+/** Su cosa agisce una caratteristica, detto per esteso. */
+function ambitoLabel(appliesTo: string) {
+  if (appliesTo === "request") return "Solo sulle richieste";
+  if (appliesTo === "property") return "Solo sugli immobili";
+
+  return "Su richieste e immobili";
 }
 
 function RuleGroup({ icon: Icon, title, fields }: Readonly<{ icon: typeof Gauge; title: string; fields: Array<[string, string, number]> }>) {
