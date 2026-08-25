@@ -704,21 +704,42 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       const result = await scanner.run(street, resumeCheckpoint);
       if (liveRepository && result.importJobId) {
         const graph = await liveRepository.loadGraph(result.importJobId);
-        const activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped"].includes(property.processing_status));
-        const activePropertyIds = new Set(activeProperties.map((property) => property.id));
-        const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-        const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-        const activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
+        let activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
+        let activePropertyIds = new Set(activeProperties.map((property) => property.id));
+        let activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+        let activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+        let activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
         const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
         const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
+        const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
         const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+        const invalidLongRunProperties = new Map<string, string>();
+        for (const property of incompleteProperties) invalidLongRunProperties.set(property.id, "Dati catastali obbligatori mancanti");
+        for (const property of propertiesWithoutOwners) invalidLongRunProperties.set(property.id, "Nessun proprietario interpretabile");
+        for (const ownership of activeOwnerships) {
+          if (incompletePersonIds.has(ownership.person_id)) {
+            invalidLongRunProperties.set(ownership.property_id, "Dati obbligatori del proprietario mancanti");
+          }
+        }
+        for (const [propertyId, reason] of invalidLongRunProperties) {
+          await markCaseSkipped(result.importJobId, propertyId, { source: "automatic", reason, attempts: 0, status: "acquisition_skipped" }, liveRepository);
+        }
+        if (invalidLongRunProperties.size) {
+          const refreshedGraph = await liveRepository.loadGraph(result.importJobId);
+          activeProperties = refreshedGraph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
+          activePropertyIds = new Set(activeProperties.map((property) => property.id));
+          activeOwnerships = refreshedGraph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+          activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+          activePeople = refreshedGraph.people.filter((person) => activePersonIds.has(person.id));
+          pushActivity(`${invalidLongRunProperties.size} immobili esclusi dalla long run per dati incompleti; continuo con gli elementi validi`, "warning");
+        }
 
         await Promise.all([
           ...activeProperties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
           ...activePeople.map((person) => liveRepository.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
         ]);
         const totals = { total_properties: graph.properties.length, total_people: graph.people.length };
-        if (result.status === "completed" && activeProperties.length && !incompleteProperties.length && !incompletePeople.length && !propertiesWithoutOwners.length) {
+        if (result.status === "completed" && activeProperties.length && activePeople.length) {
           await liveRepository.updateJob(result.importJobId, {
             ...totals,
             status: "saved",
@@ -729,6 +750,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
             error_details: null,
           });
           jobToImport = result.importJobId;
+          streetRunError = null;
         } else {
           const message = result.status !== "completed"
             ? "Run via sospesa: l'acquisizione resta salvata e riprendibile."
@@ -843,9 +865,9 @@ function recordValue(value: unknown): Record<string, unknown> {
 async function markCaseSkipped(
   jobId: string,
   propertyId: string,
-  values: { source: "automatic" | "manual"; reason: string; attempts: number },
+  values: { source: "automatic" | "manual"; reason: string; attempts: number; status?: "skipped" | "acquisition_skipped" },
+  repo = repository(),
 ) {
-  const repo = repository();
   const graph = await repo.loadGraph(jobId);
   const property = graph.properties.find((row) => row.id === propertyId);
   if (!property) throw new Error("Immobile da saltare non appartenente alla lavorazione");
@@ -853,6 +875,7 @@ async function markCaseSkipped(
   const relatedOwnerships = graph.ownerships.filter((ownership) => impact.ownershipIds.includes(ownership.id));
   const relatedPersonIds = impact.personIds;
   const skippedAt = new Date().toISOString();
+  const skipStatus = values.status ?? "skipped";
   const skipDetails = {
     source: values.source,
     reason: values.reason,
@@ -866,11 +889,11 @@ async function markCaseSkipped(
     skip_details: skipDetails,
   };
   await repo.updatePropertyProcessing(property.id, {
-    processing_status: "skipped",
+    processing_status: skipStatus,
     raw_payload: property.raw_payload,
   });
   for (const ownership of relatedOwnerships) {
-    await repo.updateOwnership(ownership.id, { processing_status: "skipped" });
+    await repo.updateOwnership(ownership.id, { processing_status: skipStatus });
   }
   for (const personId of relatedPersonIds) {
     const person = graph.people.find((row) => row.id === personId);
@@ -887,7 +910,7 @@ async function markCaseSkipped(
       ],
     };
     await repo.updatePersonProcessing(person.id, {
-      ...(!hasAnotherActiveProperty ? { processing_status: "skipped" } : {}),
+      ...(!hasAnotherActiveProperty ? { processing_status: skipStatus } : {}),
       raw_payload: person.raw_payload,
     });
   }

@@ -27,6 +27,8 @@ describe("controlli di arresto desktop", () => {
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
     expect(main).toContain('ipcMain.handle("desktop:stop-all"');
     expect(main).toContain("autoFillDirectContact: preferences.autoFillDirectContact");
+    expect(main).toContain('status: "acquisition_skipped"');
+    expect(main).toContain("continuo con gli elementi validi");
     expect(chrome).toContain("a0Q3Y00000ecMlzUAE");
     expect(chrome).toContain("a0Q3Y00000echeFUAQ");
     expect(main).toContain('ipcMain.handle("desktop:abandon-street-run"');

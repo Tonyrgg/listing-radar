@@ -1220,7 +1220,7 @@ function renderStreetRun() {
       Boolean(checkpoint) &&
       ["paused", "failed", "running"].includes(status) &&
       !active,
-    error = state.lastError || checkpoint?.lastError;
+    error = state.lastError || (["failed", "paused"].includes(status) ? checkpoint?.lastError : null);
   const badge = $("streetRunBadge"),
     start = $("streetRunStart"),
     cancel = $("streetRunCancel"),
@@ -1291,7 +1291,7 @@ function renderStreetRun() {
       checkpoint.totalAcceptedProperties ??
       0;
   $("streetRunSummary").innerHTML =
-    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>${active ? "Acquisizione bulk senza civico in corso" : "Avanzamento conservato nel checkpoint"}</span></div><dl><div><dt>Righe grezze</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Immobili unici</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Occorrenze A/C</dt><dd>${occurrences}</dd></div><div><dt>Query fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Ultimo arresto:</b> ${esc(error)}` : ""}</p>`;
+    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>${active ? "Acquisizione bulk senza civico in corso" : "Avanzamento conservato nel checkpoint"}</span></div><dl><div><dt>Righe grezze</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Immobili unici</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Occorrenze A/C</dt><dd>${occurrences}</dd></div><div><dt>Query fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
   const progress = $("streetRunProgress");
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
