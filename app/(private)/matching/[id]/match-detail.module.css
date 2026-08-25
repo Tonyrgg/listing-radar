@@ -27,7 +27,9 @@
 .decisionCopy h1 { max-width: 30ch; margin-top: .35rem; color: var(--lr-ink); font-size: clamp(1.5rem,3vw,2.3rem); font-weight: 650; letter-spacing: -.035em; line-height: 1.1; }
 .decisionCopy > p:last-child { max-width: 65ch; margin-top: .55rem; color: var(--lr-ink-2); font-size: .82rem; line-height: 1.55; }
 .scorePanel { display: grid; align-content: center; justify-items: start; border-top: 1px solid var(--lr-line-quiet); padding-top: 1rem; }
-.scorePanel strong { color: var(--lr-ink); font-size: clamp(2rem,4vw,3rem); font-weight: 650; letter-spacing: -.05em; line-height: 1; }
+/* Il verdetto è una parola, non due cifre: la misura è quella di un titolo,
+ * non quella di un contatore. */
+.scorePanel strong { color: var(--lr-ink); font-size: clamp(1.25rem,2.2vw,1.75rem); font-weight: 650; letter-spacing: -.02em; line-height: 1.15; text-wrap: balance; }
 .scorePanel > span { margin-top: .2rem; color: var(--lr-ink-3); font-size: .63rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .scorePanel i { display: block; width: 100%; max-width: 10rem; height: .3rem; margin-top: .65rem; overflow: hidden; border-radius: 999px; background: var(--lr-raised); }
 .scorePanel b { display: block; height: 100%; border-radius: inherit; background: var(--lr-accent); }
@@ -94,4 +96,15 @@
 @media (max-width: 520px) {
   .comparisonRow { grid-template-columns: 1fr 1fr; }
   .comparisonLabel { grid-column: 1 / -1; }
+}
+
+/* La foto dell'immobile: si riconosce una casa guardandola, non leggendo
+ * «Appartamento · € 82.000». */
+.entityPhoto {
+  display: block;
+  height: 160px;
+  border-radius: var(--lr-radius-card);
+  background-color: var(--lr-raised);
+  background-size: cover;
+  background-position: center;
 }

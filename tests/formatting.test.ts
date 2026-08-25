@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCurrency, formatNumber } from "@/lib/formatting";
+import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
 
 /**
  * `Intl.NumberFormat` di suo raggruppa solo da cinque cifre in su: senza dirlo
@@ -20,5 +20,19 @@ describe("come si scrivono i numeri", () => {
   it("dice a parole quando il numero non c'è", () => {
     expect(formatCurrency(null)).toBe("Non disponibile");
     expect(formatNumber(undefined)).toBe("Non disponibile");
+  });
+});
+
+describe("i testi che gridano o sussurrano", () => {
+  it("riporta il maiuscolo iniziale su un indirizzo urlato", () => {
+    expect(formatShouty("VIA PIEPOLI")).toBe("Via Piepoli");
+  });
+
+  it("fa lo stesso con un indirizzo tutto minuscolo", () => {
+    expect(formatShouty("via anita garibaldi, 4")).toBe("Via Anita Garibaldi, 4");
+  });
+
+  it("non tocca un testo già scritto normalmente", () => {
+    expect(formatShouty("Largo Teatro Umberto")).toBe("Largo Teatro Umberto");
   });
 });

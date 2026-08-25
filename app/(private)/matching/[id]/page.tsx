@@ -15,7 +15,9 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { formatShouty } from "@/lib/formatting";
 import {
+  cleanPropertyTitle,
   cleanRequestTitle,
   requestArea,
   requestBudget,
@@ -61,12 +63,14 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
       <header className={styles.decisionHero}>
         <div className={styles.decisionCopy}>
           <p className={styles.eyebrow}>{classificationLabel(match.classification as MatchClassification)}</p>
-          <h1>{clientName} e {property.title}</h1>
+          <h1>{clientName} e {formatShouty(property.address ?? cleanPropertyTitle(property.title))}</h1>
           <p>{decisionCopy(match.score, conflicts.length)}</p>
         </div>
+        {/* La percentuale sta in piccolo: la decisione la porta la parola.
+          * «49%» va prima capito, «da valutare» si legge. */}
         <div className={styles.scorePanel} aria-label={`Compatibilità ${Math.round(match.score)} per cento`}>
-          <strong>{Math.round(match.score)}%</strong>
-          <span>compatibilità</span>
+          <strong>{classificationLabel(match.classification as MatchClassification)}</strong>
+          <span>{Math.round(match.score)} su 100</span>
           <i><b style={{ width: `${match.score}%` }} /></i>
         </div>
       </header>
@@ -85,7 +89,15 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
         </article>
 
         <article className={styles.pairEntity}>
-          <div className={styles.entityHeading}><span><Building2 aria-hidden="true" className="size-4" /></span><div><p>Immobile disponibile</p><h2>{property.title}</h2></div></div>
+          <div className={styles.entityHeading}><span><Building2 aria-hidden="true" className="size-4" /></span><div><p>Immobile disponibile</p><h2>{formatShouty(property.address ?? cleanPropertyTitle(property.title))}</h2></div></div>
+          {property.image_urls?.[0] ? (
+            <span
+              role="img"
+              aria-label={`Foto di ${property.address ?? property.title}`}
+              className={styles.entityPhoto}
+              style={{ backgroundImage: `url("${property.image_urls[0]}")` }}
+            />
+          ) : null}
           <p className={styles.entityTitle}>{propertyTypeLabel(property.property_type)} · {propertyPrice(property)}</p>
           <div className={styles.entitySignals}>
             <EntitySignal icon={Banknote} label="Prezzo" value={propertyPrice(property)} />

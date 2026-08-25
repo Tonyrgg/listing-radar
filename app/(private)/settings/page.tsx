@@ -7,7 +7,8 @@ import { PageHeader } from "@/components/page-header";
 import { WorkerDownloadCard } from "@/components/worker-download-card";
 import { ScoringRulesEditor } from "@/app/(private)/settings/scoring-rules-editor";
 import extensionManifest from "@/extension/manifest.json";
-import { LISTING_SOURCE_OPTIONS, REPORT_SCHEDULE } from "@/lib/constants";
+import { REPORT_SCHEDULE } from "@/lib/constants";
+import { ALL_WEB_PROVIDER_NAMES } from "@/lib/scrapers/config";
 import {
   getLastScrapeRun,
   getRecentScrapeErrors,
@@ -146,8 +147,8 @@ export default async function SettingsPage() {
     process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID,
   );
   const extensionEnabled = Boolean(process.env.EXTENSION_API_TOKEN);
+  const emailEnabled = Boolean(emailConfig.enabled);
   const scoring = await getPersistedScoringConfig();
-  const sourcesReady = runtimeConfig.provider !== "mock";
   const lastRunHealthy = !lastScrapeRun || lastScrapeRun.errorCount === 0;
 
   return (
@@ -177,16 +178,17 @@ export default async function SettingsPage() {
           }
           ready={extensionEnabled}
         />
+        {/* I crawler del vecchio archivio sono spenti: le agenzie le legge
+          * Property Lifecycle dai loro siti, e questa riga diceva ancora «tre
+          * siti locali attivi». */}
         <SystemCheck
-          title="Siti monitorati"
+          title="Chi legge i siti"
           detail={
-            sourcesReady
-              ? runtimeConfig.provider === "all"
-                ? "Tre siti locali attivi."
-                : `${getSourceLabel(runtimeConfig.provider)} attivo.`
-              : "Sono attivi soltanto i dati di prova."
+            ALL_WEB_PROVIDER_NAMES.length
+              ? `${ALL_WEB_PROVIDER_NAMES.length} siti letti dal vecchio archivio.`
+              : "Le agenzie le leggono i Segnali, dai loro siti."
           }
-          ready={sourcesReady}
+          ready
         />
         <SystemCheck
           title="Ultimo controllo"
@@ -344,8 +346,8 @@ export default async function SettingsPage() {
             />
             <ConfigRow label="Riepilogo giornaliero" value={REPORT_SCHEDULE} />
             <ConfigRow
-              label="Fonti disponibili"
-              value={`${LISTING_SOURCE_OPTIONS.length} predisposte`}
+              label="Portali via email"
+              value={emailEnabled ? "Attivi" : "Non configurati"}
             />
           </dl>
         </article>

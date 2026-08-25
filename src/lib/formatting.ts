@@ -73,12 +73,16 @@ export function formatPlainText(value: string | null | undefined) {
 }
 
 /**
- * I siti delle agenzie scrivono in stampatello: «VIA PIEPOLI», «APPARTAMENTO
- * DI RECENTE COSTRUZIONE». Ripeterlo a schermo urla, e in mezzo a un'interfaccia
- * tranquilla si legge peggio. Le sigle corte (mq, MQ, A1) restano come sono.
+ * I siti e i gestionali scrivono agli estremi: «VIA PIEPOLI» in stampatello,
+ * «via anita garibaldi, 4» tutto minuscolo. Nessuno dei due si legge bene in
+ * mezzo a un'interfaccia tranquilla: qui tornano al maiuscolo iniziale.
+ * Un testo già scritto normalmente non viene toccato.
  */
 export function formatShouty(value: string) {
-  if (value !== value.toLocaleUpperCase("it")) {
+  const grida = value === value.toLocaleUpperCase("it");
+  const sussurra = value === value.toLocaleLowerCase("it");
+
+  if (!grida && !sussurra) {
     return value;
   }
 
