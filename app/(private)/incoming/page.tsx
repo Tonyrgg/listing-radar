@@ -66,7 +66,10 @@ function waitedFor(listing: IncomingListing) {
   return { text: `in attesa da ${days} giorni`, days };
 }
 
-function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
+function IncomingRow({
+  listing,
+  mostraStato = true,
+}: Readonly<{ listing: IncomingListing; mostraStato?: boolean }>) {
   const isEnriched = listing.status === "enriched" && listing.listingId;
   const canDismiss = listing.status !== "dismissed" && !isEnriched;
   const canRestore = listing.status === "dismissed";
@@ -78,9 +81,13 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <Chip tone={statusTone(listing.status)} dot>
-            {getIncomingStatusLabel(listing.status)}
-          </Chip>
+          {/* Dentro il filtro «da completare», ripeterlo su ogni riga non
+            * distingue niente: si scrive solo quando la lista è mista. */}
+          {mostraStato ? (
+            <Chip tone={statusTone(listing.status)} dot>
+              {getIncomingStatusLabel(listing.status)}
+            </Chip>
+          ) : null}
           <Meta className="truncate">
             {getSourceLabel(listing.source)} · {waited.text}
           </Meta>
@@ -97,9 +104,7 @@ function IncomingRow({ listing }: Readonly<{ listing: IncomingListing }>) {
           {listing.zone ? <span>{formatPlainText(listing.zone)}</span> : null}
         </div>
 
-        {listing.emailSubject ? (
-          <Meta className="mt-1 line-clamp-1">Segnalazione: {listing.emailSubject}</Meta>
-        ) : null}
+
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -202,7 +207,7 @@ export default async function IncomingPage({
         {listings.length ? (
           <div>
             {listings.map((listing) => (
-              <IncomingRow key={listing.id} listing={listing} />
+              <IncomingRow key={listing.id} listing={listing} mostraStato={status === "all"} />
             ))}
           </div>
         ) : (

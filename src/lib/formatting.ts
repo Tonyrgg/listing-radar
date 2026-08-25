@@ -54,6 +54,16 @@ export function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
+/** Solo l'ora: dentro una giornata la data è già scritta sopra. */
+export function formatTime(value: string | null | undefined) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
 export function formatPlainText(value: string | null | undefined) {
   if (!value) {
     return "Non disponibile";

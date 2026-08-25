@@ -70,6 +70,32 @@ export function lifecycleEventLabel(value: string): string {
   return EVENT_LABELS[value] ?? humanize(value);
 }
 
+/**
+ * Lo stesso evento contato più volte: «4 riduzione di prezzo» non è italiano.
+ * Solo i tipi che capitano davvero in gruppo hanno bisogno del plurale.
+ */
+const EVENT_LABELS_PLURAL: Record<string, string> = {
+  PRICE_DROP: "riduzioni di prezzo",
+  PRICE_INCREASE: "aumenti di prezzo",
+  PRICE_CHANGED: "prezzi aggiornati",
+  PUBLICATION_REMOVED: "uscite confermate",
+  DISAPPEARED_CONFIRMED: "uscite confermate",
+  PUBLICATION_REAPPEARED: "annunci ricomparsi",
+  SOURCE_MARKED_SOLD: "segnali di vendita",
+  PUBLICATION_RELAUNCHED: "rilanci commerciali",
+  AGENCY_SWITCH_DETECTED: "possibili cambi di agenzia",
+  AGENCY_TO_PRIVATE: "passaggi da agenzia a privato",
+  MANUAL_OVERRIDE_RECORDED: "correzioni registrate da una persona",
+  NEW_LISTING: "nuovi annunci",
+};
+
+/** L'etichetta di un evento, al numero giusto. */
+export function lifecycleEventCountLabel(value: string, count: number): string {
+  if (count === 1) return lifecycleEventLabel(value).toLocaleLowerCase("it");
+
+  return EVENT_LABELS_PLURAL[value] ?? `${lifecycleEventLabel(value).toLocaleLowerCase("it")} (${count})`;
+}
+
 export function saleStatusLabel(value: string): string {
   return SALE_STATUS_LABELS[value] ?? humanize(value);
 }

@@ -661,6 +661,55 @@ export class PropertyLifecycleReadRepository {
     return this.hydrateProperties((data ?? []) as PropertyRow[]);
   }
 
+  /**
+   * I movimenti di mercato, indietro nel tempo.
+   *
+   * `dashboard()` ne restituisce gli ultimi ventiquattro, che bastano a dire
+   * cosa è successo oggi. Per il giorno-per-giorno serve la storia.
+   */
+  async marketEvents(limit = 300): Promise<LifecycleEventItem[]> {
+    const { data, error } = await this.db
+      .from("events")
+      .select("id,property_id,event_type,occurred_at,confidence,actor_type,payload")
+      .in("event_type", MARKET_EVENT_TYPES)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+    throwIfError(error);
+
+    const rows = (data ?? []) as Array<{
+      id: string;
+      property_id: string;
+      event_type: string;
+      occurred_at: string;
+      confidence: number | string;
+      actor_type: string;
+      payload: unknown;
+    }>;
+
+    const properties = await this.hydrateProperties(
+      await this.propertiesByIds(unique(rows.map((row) => row.property_id))),
+    );
+    const byId = new Map(properties.map((property) => [property.id, property]));
+
+    return rows.flatMap((row) => {
+      const property = byId.get(row.property_id);
+      if (!property) return [];
+
+      return [
+        {
+          id: row.id,
+          propertyId: row.property_id,
+          eventType: row.event_type,
+          occurredAt: row.occurred_at,
+          confidence: numberValue(row.confidence) ?? 0,
+          actorType: row.actor_type,
+          payload: record(row.payload),
+          property,
+        },
+      ];
+    });
+  }
+
   async reviews(): Promise<LifecycleReviewItem[]> {
     const { data, error } = await this.db
       .from("review_queue")

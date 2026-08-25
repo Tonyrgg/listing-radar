@@ -1,186 +1,164 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 
+import { EventRow } from "@/components/event-row";
 import { PageHeader } from "@/components/page-header";
-import {
-  Card,
-  CardHeader,
-  Chip,
-  EmptyState,
-  Meta,
-  buttonClass,
-} from "@/components/ui/primitives";
-import { getReports } from "@/lib/data/repository";
-import { formatDate, formatNumber } from "@/lib/formatting";
-import { getSourceLabel } from "@/lib/labels";
-import type { Report } from "@/types";
+import { Card, CardBody, CardHeader, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { formatNumber } from "@/lib/formatting";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
+import { lifecycleEventCountLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
 
-export const metadata: Metadata = { title: "Riepiloghi" };
-
-type TopListing = {
-  position: string;
-  title: string;
-  score: string;
-  source: string;
-  zone: string;
-};
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Giorno per giorno" };
 
 /**
- * I numeri arrivano dalle colonne del riepilogo, non da un'analisi del testo.
- * Del blocco testuale resta da leggere soltanto la classifica.
+ * Giorno per giorno.
+ *
+ * Questa pagina leggeva i riepiloghi testuali del vecchio archivio e ne
+ * estraeva i numeri con un'espressione regolare. Da quando i crawler V1 sono
+ * spenti quei riepiloghi non arrivano più: la pagina mostrava lo stesso
+ * giorno ripetuto, «54 annunci · 0 nuovi», con la stessa classifica identica
+ * per ogni data. Numeri veri di un sistema fermo, che sembravano freschi.
+ *
+ * Ora legge i movimenti veri di Property Lifecycle e li raccoglie per data:
+ * i giorni in cui il mercato si è mosso, e cosa ha fatto.
  */
-function parseTopListings(content: string | null): TopListing[] {
-  if (!content) return [];
 
-  const listings: TopListing[] = [];
-  let inSection = false;
+const GIORNI_DA_MOSTRARE = 21;
 
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
+function giorno(iso: string) {
+  return iso.slice(0, 10);
+}
 
-    if (!line) continue;
+function nomeDelGiorno(iso: string, oggi: string) {
+  if (giorno(iso) === oggi) return "Oggi";
 
-    if (/^Top \d+/i.test(line) || /priorit[aà] alta:$/i.test(line)) {
-      inSection = true;
-      continue;
-    }
+  const ieri = new Date(`${oggi}T12:00:00Z`);
+  ieri.setUTCDate(ieri.getUTCDate() - 1);
+  if (giorno(iso) === ieri.toISOString().slice(0, 10)) return "Ieri";
 
-    if (!inSection) continue;
+  return new Intl.DateTimeFormat("it-IT", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(iso));
+}
 
-    const match = line.match(
-      /^(\d+)\.\s+(.+?)\s+\|\s+score\s+(-?\d+)\s+\|\s+([^|]+)\s+\|\s+(.+)$/i,
-    );
-
-    if (match) {
-      listings.push({
-        position: match[1],
-        title: match[2],
-        score: match[3],
-        source: match[4].trim(),
-        zone: match[5].trim(),
-      });
-    }
+/** Cosa è successo quel giorno, contato per tipo. */
+function riassunto(eventi: LifecycleEventItem[]) {
+  const conteggi = new Map<string, number>();
+  for (const evento of eventi) {
+    conteggi.set(evento.eventType, (conteggi.get(evento.eventType) ?? 0) + 1);
   }
 
-  return listings;
+  return [...conteggi.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([tipo, quanti]) => `${formatNumber(quanti)} ${lifecycleEventCountLabel(tipo, quanti)}`);
 }
 
-function statsFor(report: Report) {
-  return [
-    { label: "Annunci trovati", value: report.totalFound },
-    { label: "Nuovi", value: report.newCount },
-    { label: "Da privato", value: report.privateCount },
-    { label: "Da agenzia", value: report.agencyCount },
-    { label: "Venditore da verificare", value: report.unknownCount },
-    { label: "Ribassi di prezzo", value: report.priceDropsCount },
-    { label: "Online da molto tempo", value: report.hotOldCount },
-  ];
-}
+export default async function GiornoPerGiornoPage() {
+  await connection();
 
-function ReportCard({ report }: Readonly<{ report: Report }>) {
-  const stats = statsFor(report);
-  const top = parseTopListings(report.content);
+  const vista = await loadLifecycleView((repository) => repository.marketEvents(300));
 
-  return (
-    <Card>
-      <CardHeader
-        title={formatDate(report.reportDate)}
-        meta={`${formatNumber(report.totalFound)} annunci controllati · ${formatNumber(report.newCount)} nuovi`}
-        action={
-          report.newCount ? <Chip tone="info">{report.newCount} nuovi</Chip> : null
-        }
-      />
-
-      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div>
-          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
-            Com&apos;è andato il controllo
-          </p>
-          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-2">
-            {stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] px-3 py-2"
-              >
-                <dt className="text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
-                  {stat.label}
-                </dt>
-                <dd className="mt-0.5 text-[length:var(--lr-text-section)] font-[650] leading-none tabular-nums text-[var(--lr-ink)]">
-                  {formatNumber(stat.value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <div>
-          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
-            Quelli che meritavano una telefonata
-          </p>
-          {top.length ? (
-            <ol className="mt-3 divide-y divide-[var(--lr-line-quiet)]">
-              {top.map((listing) => (
-                <li
-                  key={`${report.id}-${listing.position}`}
-                  className="flex items-start gap-3 py-2.5 first:pt-0"
-                >
-                  <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-[var(--lr-line)] text-[length:var(--lr-text-label)] tabular-nums text-[var(--lr-ink-3)]">
-                    {listing.position}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)]">
-                      {listing.title}
-                    </span>
-                    <Meta className="truncate">
-                      {getSourceLabel(listing.source)}
-                      {listing.zone && listing.zone !== "zona n/d" ? ` · ${listing.zone}` : ""}
-                    </Meta>
-                  </span>
-                  <span className="shrink-0 text-[length:var(--lr-text-body)] font-[650] tabular-nums text-[var(--lr-ink)]">
-                    {listing.score}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-              Nessun annuncio ha superato la soglia di appetibilità in questa giornata.
-            </p>
-          )}
-        </div>
+  if (!vista.available || !vista.data) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          eyebrow="Oggi"
+          title="Giorno per giorno"
+          description="Cosa ha fatto il mercato, una data alla volta."
+          backHref="/dashboard"
+          backLabel="Torna a Oggi"
+        />
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="I movimenti non sono raggiungibili"
+              description="Questa pagina lavora sull'archivio dei segnali, che al momento non risponde."
+            />
+          </CardBody>
+        </Card>
       </div>
-    </Card>
-  );
-}
+    );
+  }
 
-export default async function ReportsPage() {
-  const reports = await getReports();
+  const eventi = vista.data;
+  const oggi = new Date().toISOString().slice(0, 10);
+
+  const perGiorno = new Map<string, LifecycleEventItem[]>();
+  for (const evento of eventi) {
+    const chiave = giorno(evento.occurredAt);
+    perGiorno.set(chiave, [...(perGiorno.get(chiave) ?? []), evento]);
+  }
+
+  const giorni = [...perGiorno.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, GIORNI_DA_MOSTRARE);
+
+  const foto = await signPropertyPhotos(eventi.map((evento) => evento.property));
 
   return (
     <div className="space-y-5">
       <PageHeader
         eyebrow="Oggi"
-        title="Riepiloghi giornalieri"
-        description="Cosa hanno trovato i controlli automatici, giorno per giorno."
+        title="Giorno per giorno"
+        description="Cosa ha fatto il mercato, una data alla volta: prezzi che scendono, annunci che escono, case che tornano in mano al proprietario."
+        backHref="/dashboard"
+        backLabel="Torna a Oggi"
+        actions={
+          <Chip tone="neutral">
+            {formatNumber(eventi.length)} movimenti in {formatNumber(perGiorno.size)} giorni
+          </Chip>
+        }
       />
 
-      {reports.length ? (
-        <div className="space-y-4">
-          {reports.map((report) => (
-            <ReportCard key={report.id} report={report} />
-          ))}
-        </div>
+      {giorni.length ? (
+        giorni.map(([data, delGiorno]) => (
+          <Card key={data}>
+            <CardHeader
+              title={nomeDelGiorno(delGiorno[0].occurredAt, oggi)}
+              meta={riassunto(delGiorno).join(" · ")}
+              action={
+                <Meta>
+                  {formatNumber(delGiorno.length)}{" "}
+                  {delGiorno.length === 1 ? "movimento" : "movimenti"}
+                </Meta>
+              }
+            />
+            <div>
+              {delGiorno.slice(0, 8).map((evento) => (
+                <EventRow
+                  key={evento.id}
+                  event={evento}
+                  foto={foto.get(evento.propertyId)}
+                  mostraOra
+                />
+              ))}
+            </div>
+            {delGiorno.length > 8 ? (
+              <p className="border-t border-[var(--lr-line-quiet)] px-3 py-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
+                e altri {formatNumber(delGiorno.length - 8)} movimenti in questa giornata
+              </p>
+            ) : null}
+          </Card>
+        ))
       ) : (
         <Card>
-          <EmptyState
-            title="Nessun riepilogo registrato"
-            description="I riepiloghi compaiono qui dopo il primo controllo automatico completato."
-            action={
-              <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
-                Vedi lo stato delle automazioni
-              </Link>
-            }
-          />
+          <CardBody>
+            <EmptyState
+              title="Il mercato non si è ancora mosso"
+              description="Qui compariranno i giorni in cui qualcosa è cambiato: un prezzo, un mandato, un annuncio uscito."
+              action={
+                <Link href="/lifecycle" className={buttonClass("secondary", { compact: true })}>
+                  Vai ai segnali
+                </Link>
+              }
+            />
+          </CardBody>
         </Card>
       )}
     </div>

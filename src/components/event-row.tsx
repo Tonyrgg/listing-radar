@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { Dato, Movimento } from "@/components/ui/atoms";
 import { Stripe, type Tone } from "@/components/ui/primitives";
-import { formatCurrency, formatDate, formatShouty } from "@/lib/formatting";
+import { formatCurrency, formatDate, formatShouty, formatTime } from "@/lib/formatting";
 import {
   agencyListingStateLabel,
   humanize,
@@ -61,10 +61,13 @@ export function EventRow({
   event,
   foto,
   href,
+  mostraOra = false,
 }: Readonly<{
   event: LifecycleEventItem;
   foto?: string;
   href?: string;
+  /** Dentro una giornata la data è già nel titolo: qui serve l'ora. */
+  mostraOra?: boolean;
 }>) {
   const property = event.property;
   const dove = property.address ? formatShouty(property.address) : formatShouty(property.title);
@@ -107,7 +110,7 @@ export function EventRow({
       <span className="relative z-10 flex shrink-0 items-center gap-4">
         <span className="text-[length:var(--lr-text-meta)]">{prezzo ?? nota}</span>
         <span className="whitespace-nowrap text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-          {formatDate(event.occurredAt)}
+          {mostraOra ? formatTime(event.occurredAt) : formatDate(event.occurredAt)}
         </span>
         <ArrowUpRight
           aria-hidden="true"
