@@ -917,6 +917,59 @@ async function markCaseSkipped(
   return { property, peopleCount: relatedPersonIds.length };
 }
 
+async function repairLongRunJobForImport(jobId: string) {
+  const repo = repository();
+  const graph = await repo.loadGraph(jobId);
+  let activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
+  let activePropertyIds = new Set(activeProperties.map((property) => property.id));
+  let activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+  let activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+  let activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
+  const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
+  const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
+  const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
+  const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+  const invalidProperties = new Map<string, string>();
+  for (const property of incompleteProperties) invalidProperties.set(property.id, "Dati catastali obbligatori mancanti");
+  for (const property of propertiesWithoutOwners) invalidProperties.set(property.id, "Nessun proprietario interpretabile");
+  for (const ownership of activeOwnerships) {
+    if (incompletePersonIds.has(ownership.person_id)) invalidProperties.set(ownership.property_id, "Dati obbligatori del proprietario mancanti");
+  }
+  for (const [propertyId, reason] of invalidProperties) {
+    await markCaseSkipped(jobId, propertyId, { source: "automatic", reason, attempts: 0, status: "acquisition_skipped" }, repo);
+  }
+  if (invalidProperties.size) {
+    const refreshedGraph = await repo.loadGraph(jobId);
+    activeProperties = refreshedGraph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
+    activePropertyIds = new Set(activeProperties.map((property) => property.id));
+    activeOwnerships = refreshedGraph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+    activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+    activePeople = refreshedGraph.people.filter((person) => activePersonIds.has(person.id));
+  }
+  await Promise.all([
+    ...activeProperties.map((property) => repo.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
+    ...activePeople.map((person) => repo.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
+  ]);
+  if (!(activeProperties.length && activePeople.length)) return false;
+  await repo.updateJob(jobId, {
+    total_properties: graph.properties.length,
+    total_people: graph.people.length,
+    status: "saved",
+    saved_at: new Date().toISOString(),
+    last_completed_step: "acquisition_reviewed",
+    current_step: "properties_processed",
+    error_message: null,
+    error_details: null,
+  });
+  pushActivity(
+    invalidProperties.size
+      ? `Job long run ripristinato: ${invalidProperties.size} immobili esclusi, avvio gli elementi validi`
+      : "Job long run ripristinato, avvio l'import degli elementi acquisiti",
+    "success",
+  );
+  return true;
+}
+
 async function scheduleAutoRetry(jobId: string) {
   clearAutoRetry();
   if (!preferences.autoRetryEnabled) return;
@@ -1173,6 +1226,14 @@ async function resetCrmAfterSkippedCase() {
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
+  let forceLiveImport = false;
+  if (input.jobId) {
+    const pendingJob = await repository().getJob(input.jobId);
+    if (pendingJob.error_details?.action === "long-run-acquisition-validation") {
+      await repairLongRunJobForImport(input.jobId);
+      forceLiveImport = true;
+    }
+  }
   active = true;
   cancellingJobId = null;
   pausingJobId = null;
@@ -1180,7 +1241,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   currentStep = null;
   propertyProgress = null;
   activeJobId = input.jobId ?? null;
-  preferences = { ...preferences, mode: input.mode, dryRun: input.dryRun };
+  preferences = { ...preferences, mode: input.mode, dryRun: forceLiveImport ? false : input.dryRun };
   await persistPreferences();
   activePrompts = new DesktopPromptController(publishPrompt);
   const runner = new PropertyWorkerRunner(workerConfig(preferences), {

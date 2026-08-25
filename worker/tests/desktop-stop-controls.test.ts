@@ -29,6 +29,8 @@ describe("controlli di arresto desktop", () => {
     expect(main).toContain("autoFillDirectContact: preferences.autoFillDirectContact");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");
+    expect(main).toContain("repairLongRunJobForImport");
+    expect(main).toContain("forceLiveImport ? false : input.dryRun");
     expect(chrome).toContain("a0Q3Y00000ecMlzUAE");
     expect(chrome).toContain("a0Q3Y00000echeFUAQ");
     expect(main).toContain('ipcMain.handle("desktop:abandon-street-run"');
