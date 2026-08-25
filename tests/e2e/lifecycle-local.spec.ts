@@ -3,11 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 const baseUrl = process.env.LIFECYCLE_E2E_BASE_URL;
 const e2eEmail = process.env.LIFECYCLE_E2E_EMAIL;
 const e2ePassword = process.env.LIFECYCLE_E2E_PASSWORD;
+/* Dopo l'unificazione: le agenzie vivono in Fonti, le proprietà in Immobili.
+ * `/lifecycle/agencies` e `/lifecycle/archive` restano come rimandi. */
 const routes = [
   "/lifecycle",
   "/lifecycle/opportunities",
-  "/lifecycle/agencies",
-  "/lifecycle/archive",
+  "/fonti",
+  "/listings",
   "/lifecycle/review",
   "/lifecycle/private",
 ] as const;
@@ -51,8 +53,14 @@ async function expectHealthyRoute(page: Page, route: (typeof routes)[number]) {
   const response = await openAuthenticatedRoute(page, route);
   expect(response?.status(), route).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
-  await expect(page.locator(`a[aria-current="page"][href="${route}"]`)).toBeVisible();
-  await expect(page.getByText("Dati Lifecycle non caricati")).toHaveCount(0);
+  /* La stessa destinazione è marcata in più barre — quella laterale, quella
+   * mobile, quella di sezione: basta che almeno una sia visibile. */
+  await expect(
+    page.locator(`a[aria-current="page"][href="${route}"]:visible`).first(),
+  ).toBeVisible();
+  /* La frase è cambiata con la riscrittura: questa è quella che compare oggi
+   * quando l'archivio dei segnali non risponde. */
+  await expect(page.getByText("Archivio dei segnali non raggiungibile")).toHaveCount(0);
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
   );
@@ -81,19 +89,19 @@ test("opens agency and physical-property dossiers", async ({ page }, testInfo) =
   await page.waitForTimeout(650);
   await page.screenshot({ path: testInfo.outputPath("lifecycle-desktop.png"), fullPage: true });
 
-  await openAuthenticatedRoute(page, "/lifecycle/agencies");
+  await openAuthenticatedRoute(page, "/fonti");
   const agencyHref = await page.locator('a[href^="/lifecycle/agencies/"]').first().getAttribute("href");
   expect(agencyHref).toBeTruthy();
   const agencyResponse = await openAuthenticatedRoute(page, agencyHref ?? "");
   expect(agencyResponse?.status()).toBe(200);
   await expect(page.locator("h1")).toBeVisible();
 
-  await openAuthenticatedRoute(page, "/lifecycle/archive");
+  await openAuthenticatedRoute(page, "/listings");
   const propertyHref = await page.locator('a[href^="/lifecycle/archive/"]').first().getAttribute("href");
   expect(propertyHref).toBeTruthy();
   const propertyResponse = await openAuthenticatedRoute(page, propertyHref ?? "");
   expect(propertyResponse?.status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "Timeline completa" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cosa le è successo" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await openAuthenticatedRoute(page, "/lifecycle");
