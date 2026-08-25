@@ -189,7 +189,7 @@ export default async function RichiesteClientiPage({
       <MatchingSectionHeader
         eyebrow="Commerciale"
         title="Chi ci ha chiesto una casa"
-        description="Ogni cliente con quello che sta cercando, detto come lo direbbe lui. Le richieste arrivano dal gestionale e restano aggiornate."
+        description="Parti da chi è pronto a muoversi, poi apri il dettaglio o il CRM quando serve."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Chip tone="neutral">
@@ -312,6 +312,16 @@ export default async function RichiesteClientiPage({
                     ) : null}
                   </p>
                 </Link>
+                {payload.url ? (
+                  <a
+                    href={payload.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-11 shrink-0 items-center gap-1.5 self-start rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-3 text-[length:var(--lr-text-label)] font-semibold text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-accent)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
+                  >
+                    Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                  </a>
+                ) : null}
               </Card>
             );
           })}

@@ -68,6 +68,10 @@ const propertyTypes = [
   ["other", "Altra tipologia"],
 ] as const;
 
+const quickPropertyTypes = propertyTypes.filter(([value]) =>
+  ["apartment", "independent_house", "villa", "ground_floor", "commercial_space", "other"].includes(value),
+);
+
 const commonFeatures = new Set([
   "elevator",
   "balcony",
@@ -85,23 +89,13 @@ const commonFeatures = new Set([
 const steps = [
   {
     number: 1,
-    title: "Cliente e ricerca",
-    description: "Contatto, contratto, tipologia e zone",
+    title: "Cliente e casa",
+    description: "Chi cerca, cosa e dove",
   },
   {
     number: 2,
-    title: "Casa e budget",
-    description: "Tipologia, prezzo e dimensioni",
-  },
-  {
-    number: 3,
-    title: "Dettagli facoltativi",
-    description: "Dotazioni richieste o da evitare",
-  },
-  {
-    number: 4,
-    title: "Note facoltative",
-    description: "Piano, condizioni e contesto",
+    title: "Budget e dimensioni",
+    description: "I limiti essenziali",
   },
 ] as const;
 
@@ -654,7 +648,7 @@ export function QuickRequestDrawer() {
                       help="Puoi scegliere più di una risposta."
                     >
                       <div className="flex flex-wrap gap-2">
-                        {propertyTypes.map(([value, label]) => (
+                        {quickPropertyTypes.map(([value, label]) => (
                           <ChoiceButton
                             key={value}
                             compact
@@ -667,6 +661,10 @@ export function QuickRequestDrawer() {
                       </div>
                     </Question>
 
+                    <details className="rounded-[8px] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-4">
+                      <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-[var(--lr-ink-2)]">
+                        Aggiungi informazioni facoltative
+                      </summary>
                     <Question
                       title="Per quale motivo cerca l’immobile?"
                       help="È la destinazione usata nelle richieste del gestionale."
@@ -716,6 +714,7 @@ export function QuickRequestDrawer() {
                         </div>
                       </Question>
                     ) : null}
+                    </details>
 
                     <Question
                       title="In quali zone?"
@@ -1108,10 +1107,10 @@ export function QuickRequestDrawer() {
               <button
                 type="button"
                 disabled={isPending}
-                onClick={() => setStep(3)}
+                onClick={() => save("draft", false)}
                 className="min-h-11 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)]"
               >
-                Aggiungi dettagli
+                Salva e completa dopo
               </button>
               <button
                 type="button"
@@ -1120,10 +1119,10 @@ export function QuickRequestDrawer() {
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
               >
                 <Check aria-hidden="true" className="size-4" />
-                {isPending ? "Salvataggio…" : "Salva richiesta"}
+                {isPending ? "Salvataggio…" : "Salva e cerca immobili"}
               </button>
             </div>
-          ) : step < 4 ? (
+          ) : step < 2 ? (
             <button
               type="button"
               disabled={draft.property_types.length === 0}
