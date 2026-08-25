@@ -154,7 +154,7 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-7">
       <PageHeader
-        eyebrow="Controllo del sistema"
+        eyebrow="Impostazioni"
         title="Impostazioni"
         description="Qui puoi verificare se la raccolta automatica e pronta. I dettagli tecnici sono disponibili solo quando servono."
       />

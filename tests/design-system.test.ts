@@ -156,6 +156,34 @@ describe("sistema di design", () => {
     );
   });
 
+  it("scrive nell'occhiello il nome della sezione, non quello della pagina", () => {
+    /* L'occhiello dice dove sei; il titolo dice cosa stai guardando. Se
+     * l'occhiello ripete il nome della pagina, ripete anche la barra delle
+     * sezioni, che quella pagina la sta già segnando come attiva. */
+    const sezioni = new Set([
+      "Oggi",
+      "Immobili",
+      "Segnali",
+      "Commerciale",
+      "Territorio",
+      "Impostazioni",
+      /* Le schede di dettaglio non stanno in nessuna barra: dicono che cosa
+       * stai guardando. */
+      "La casa",
+      "Agenzia",
+    ]);
+
+    const offenders: string[] = [];
+
+    for (const file of sourceFiles(["app/**/page.tsx"])) {
+      for (const match of read(file).matchAll(/eyebrow="([^"]+)"/g)) {
+        if (!sezioni.has(match[1])) offenders.push(`${file}: ${match[1]}`);
+      }
+    }
+
+    expect(offenders, `Occhielli fuori dalle sezioni: ${offenders.join(", ")}`).toEqual([]);
+  });
+
   it("dà un titolo a ogni pagina", () => {
     const offenders = sourceFiles(["app/**/page.tsx"]).filter((file) => {
       const source = read(file);

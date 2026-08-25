@@ -102,7 +102,7 @@ export default async function FontiPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Fonti"
+        eyebrow="Segnali"
         title="Di chi ti puoi fidare oggi"
         description="Quali agenzie sono state lette all'ultimo giro, con quali limiti, e cosa tiene ognuna. Serve prima di leggere qualunque altra cosa: una lista più corta può voler dire un mercato fermo, oppure una fonte rotta."
         actions={

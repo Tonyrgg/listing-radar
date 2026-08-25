@@ -203,7 +203,7 @@ export default async function DaDecidereePage({
     return (
       <>
         <LifecycleHeader
-          eyebrow="Da decidere"
+          eyebrow="Segnali"
           title="Non c'è niente da decidere"
           description="Quando due schede si somigliano troppo per essere sicuri, il caso finisce qui."
         />
@@ -244,7 +244,7 @@ export default async function DaDecidereePage({
   return (
     <>
       <LifecycleHeader
-        eyebrow="Da decidere"
+        eyebrow="Segnali"
         title={domanda(caso)}
         description="Niente viene unito o scartato da solo. Guardi, decidi, e la decisione resta scritta con il tuo nome."
         actions={

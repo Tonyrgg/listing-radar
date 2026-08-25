@@ -70,7 +70,7 @@ export default async function OpportunitaPage({
   return (
     <>
       <LifecycleHeader
-        eyebrow="Opportunità"
+        eyebrow="Segnali"
         title="Da quali case conviene passare"
         description="Nascono da fatti osservati: un mandato finito senza prova di vendita, un ritorno da privato, un prezzo che scende da mesi. La lista mette in fila il lavoro, non decide al posto tuo."
         actions={<Chip tone="neutral">{visibili.length} in lista</Chip>}

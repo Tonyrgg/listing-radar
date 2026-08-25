@@ -41,7 +41,7 @@ export default async function PrivatiPage() {
   return (
     <>
       <LifecycleHeader
-        eyebrow="Privati"
+        eyebrow="Segnali"
         title="Chi vende da solo"
         description="Una casa che lascia l'agenzia e ricompare pubblicata dal proprietario: è il momento in cui serve esserci. Il collegamento con l'immobile si fa su posizione e caratteristiche — nomi, telefoni ed email del venditore non entrano qui."
         actions={

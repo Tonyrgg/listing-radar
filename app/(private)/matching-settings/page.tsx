@@ -18,7 +18,7 @@ export default async function MatchingSettingsPage() {
   return (
     <div className={styles.page}>
       <MatchingSectionHeader
-        eyebrow="Regole automatiche"
+        eyebrow="Commerciale"
         title="Regole di matching"
         description="Soglie, tolleranze e pesi usati per ordinare gli abbinamenti."
       />

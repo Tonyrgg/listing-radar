@@ -12,7 +12,7 @@ export default async function ZonesPage() {
   return (
     <div className={styles.page}>
       <MatchingSectionHeader
-        eyebrow="Clienti e immobili"
+        eyebrow="Commerciale"
         title="Zone immobiliari"
         description="Quartieri e perimetri usati per localizzare immobili, richieste e matching. Separati dalle aree operative degli agenti."
       />
