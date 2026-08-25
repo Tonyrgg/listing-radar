@@ -27,6 +27,7 @@ import {
 import { getIncomingDashboardData } from "@/lib/incoming/repository";
 import { getSellerTypeLabel, getSourceLabel } from "@/lib/labels";
 import { getListingAttentionReason } from "@/lib/listings/operational";
+import { getPriorityScoreLevel } from "@/lib/listings/scoring";
 import { lifecycleEventLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
@@ -135,6 +136,9 @@ function RigaOccasione({
   listing: Listing;
   scoringConfig: Awaited<ReturnType<typeof getPersistedScoringConfig>>;
 }>) {
+  const grezzo = getListingAttentionReason(listing);
+  const motivo = /online da|privato|pubblicato da/i.test(grezzo) ? null : grezzo;
+
   return (
     <div className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-4 py-3 first:border-t-0">
       <Stripe tone={listing.isPriceDropped ? "warn" : "neutral"} />
@@ -179,15 +183,19 @@ function RigaOccasione({
             uncertain
           />
         </div>
-        <p
-          className={
-            listing.isPriceDropped
-              ? "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-warn)]"
-              : "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]"
-          }
-        >
-          {getListingAttentionReason(listing)}
-        </p>
+        {/* Il motivo si scrive solo se aggiunge qualcosa: anzianità e tipo di
+          * venditore sono già scritti sopra, ripeterli è rumore. */}
+        {motivo ? (
+          <p
+            className={
+              listing.isPriceDropped
+                ? "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-warn)]"
+                : "mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]"
+            }
+          >
+            {motivo}
+          </p>
+        ) : null}
       </div>
       <div className="shrink-0">
         <ListingScoreSummary listing={listing} scoringConfig={scoringConfig} />
@@ -208,7 +216,15 @@ export default async function TodayPage() {
     readNow(),
   ]);
 
-  const occasioni = summary.watchlist.slice(0, 4);
+  /* La fascia si chiama «cosa conviene guardare»: mettere righe «Bassa» sotto
+   * quel titolo è disonesto. Si mostra solo ciò che merita davvero, e se oggi
+   * non merita niente lo si dice. */
+  const occasioni = summary.watchlist
+    .filter((listing) => {
+      const livello = getPriorityScoreLevel(listing.priorityScore, scoringConfig);
+      return livello !== "Bassa";
+    })
+    .slice(0, 4);
   const arrivi = incoming.pendingListings.slice(0, 5);
   const eventi = (movimenti.data?.recentEvents ?? [])
     .filter((event) => EVENTI_DA_MOSTRARE.has(event.eventType))
@@ -324,8 +340,10 @@ export default async function TodayPage() {
         numero={3}
         titolo="Cosa conviene guardare adesso"
         conteggio={
-          summary.highPriority ? (
-            <Chip tone="neutral">{summary.highPriority} in evidenza</Chip>
+          occasioni.length ? (
+            <Chip tone="neutral">
+              {occasioni.length === 1 ? "1 da guardare" : `${occasioni.length} da guardare`}
+            </Chip>
           ) : null
         }
         azione={
@@ -348,8 +366,8 @@ export default async function TodayPage() {
           </div>
         ) : (
           <FasciaVuota
-            titolo="Nessuna occasione in evidenza"
-            descrizione="Nessuna scheda supera oggi la soglia di appetibilità. La soglia si regola dalle impostazioni."
+            titolo="Oggi non c'è niente che meriti una telefonata"
+            descrizione="Nessuna scheda dell'archivio supera la soglia. Non è un errore: è un mercato fermo. La soglia si regola dalle impostazioni."
             azione={
               <Link href="/settings" className={buttonClass("secondary", { compact: true })}>
                 Regola la soglia

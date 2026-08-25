@@ -54,12 +54,15 @@ export function ListingScorePopover({
   total,
   level,
   progress,
+  notAwardedCount = 0,
   awarded,
   deductions,
 }: Readonly<{
   total: number;
   level: string;
   progress: number;
+  /** Quanti criteri non sono maturati: serve a scrivere «3 indizi su 4». */
+  notAwardedCount?: number;
   awarded: ScoreFactor[];
   deductions: ScoreFactor[];
 }>) {
@@ -84,30 +87,21 @@ export function ListingScorePopover({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="w-full cursor-pointer rounded-[8px] border border-[var(--lr-line)] bg-[color-mix(in_oklch,var(--lr-raised)_82%,var(--lr-accent-soft))] p-3 text-left transition-colors hover:border-[var(--lr-line)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
+        className="w-full cursor-pointer rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-3 py-2 text-left transition-colors hover:bg-[var(--lr-raised)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
         aria-haspopup="dialog"
+        title="Perché conviene guardarla: apri per vedere i criteri"
       >
-        <span className="block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--lr-ink-3)]">
-          Appetibilità
+        {/* Mai un numero da 0 a 100: «72» richiede di sapere cosa vuol dire 72.
+          * Una parola e gli indizi che la sostengono si leggono in un istante. */}
+        <span className="block text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+          Conviene
         </span>
-        <span className="mt-2 flex items-end justify-center gap-2">
-          <strong className="text-[32px] font-semibold leading-none tabular-nums text-[var(--lr-ink)]">
-            {total}
-          </strong>
-          <span className="pb-1 text-xs font-semibold text-[var(--lr-ink-2)]">
-            pt
-          </span>
-          <span
-            className={`mb-1 rounded-full border px-2 py-1 text-[10px] font-bold leading-none ${pillToneClasses[tone]}`}
-          >
-            {level}
-          </span>
+        <span className="mt-0.5 block text-[length:var(--lr-text-record)] font-[650] leading-none text-[var(--lr-ink)]">
+          {level}
         </span>
-        <span className="relative mt-3 block h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,var(--lr-danger)_0%,var(--lr-danger)_33%,var(--lr-warn)_33%,var(--lr-warn)_66%,var(--lr-accent)_66%,var(--lr-accent)_100%)]">
-          <span
-            className="absolute top-0 block h-full w-1 rounded-full bg-[var(--lr-ink)] shadow-[0_0_0_1px_var(--lr-canvas)]"
-            style={{ left: `calc(${progress}% - 2px)` }}
-          />
+        <span className="mt-1 block text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">
+          {awarded.length} {awarded.length === 1 ? "indizio" : "indizi"} su{" "}
+          {awarded.length + notAwardedCount}
         </span>
       </button>
 

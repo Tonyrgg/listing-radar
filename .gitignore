@@ -57,3 +57,4 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+worker/shot.mjs

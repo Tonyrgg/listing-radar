@@ -45,6 +45,7 @@ export function ListingScoreSummary({
       level={level}
       progress={progress}
       awarded={breakdown.awarded}
+      notAwardedCount={breakdown.notAwarded.length}
       deductions={breakdown.deductions}
     />
   );
