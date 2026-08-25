@@ -5,12 +5,11 @@ import { connection } from "next/server";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { PageHeader } from "@/components/page-header";
-import { PropertyRow, type PropertyRowSignals } from "@/components/property-row";
+import { PropertyRow, signalsFromOpportunity, type PropertyRowSignals } from "@/components/property-row";
 import { Card, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
-import { livelloFromOpportunity, type Livello } from "@/components/ui/atoms";
+import type { Livello } from "@/components/ui/atoms";
 import { readNow } from "@/lib/clock";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
-import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
@@ -86,12 +85,7 @@ export default async function ImmobiliPage({
   for (const opportunita of vista.data.opportunita) {
     if (segnaliPerProprieta.has(opportunita.propertyId)) continue;
 
-    segnaliPerProprieta.set(opportunita.propertyId, {
-      livello: livelloFromOpportunity(opportunita.level),
-      indizi: opportunita.reasons.length,
-      totale: Math.max(opportunita.reasons.length, 4),
-      motivo: opportunita.reasons[0] ? opportunityReasonLabel(opportunita.reasons[0]) : null,
-    });
+    segnaliPerProprieta.set(opportunita.propertyId, signalsFromOpportunity(opportunita));
   }
 
   const tutte = vista.data.proprieta;

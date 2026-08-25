@@ -2,10 +2,21 @@ import { ArrowDown, ArrowUpRight, Building2, RefreshCw, UserRound } from "lucide
 import Link from "next/link";
 import { clsx } from "clsx";
 
-import { Dato, Fonte, Giudizio, Periodo, type Livello } from "@/components/ui/atoms";
+import {
+  Dato,
+  Fonte,
+  Giudizio,
+  Periodo,
+  livelloFromOpportunity,
+  type Livello,
+} from "@/components/ui/atoms";
 import { Meta, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber } from "@/lib/formatting";
-import { propertyStateLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import {
+  hasNoRealSignal,
+  opportunityReasonLabel,
+  propertyStateLabel,
+} from "@/lib/property-lifecycle/read-models/presentation";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
 /**
@@ -22,6 +33,27 @@ export type PropertyRowSignals = {
   totale: number;
   motivo: string | null;
 };
+
+/**
+ * Gli indizi di un'opportunità, come si scrivono su una riga.
+ *
+ * Quattro pagine costruivano lo stesso oggetto a mano, e tutte e quattro
+ * contavano come indizio anche `no_current_opportunity_signal`, che è
+ * l'assenza di un segnale: usciva «1 indizio su 4» accanto a «nessun segnale
+ * commerciale attuale».
+ */
+export function signalsFromOpportunity(
+  item: Readonly<{ level: string; reasons: readonly string[] }>,
+): PropertyRowSignals {
+  const senzaSegnale = hasNoRealSignal(item.reasons);
+
+  return {
+    livello: livelloFromOpportunity(item.level),
+    indizi: senzaSegnale ? 0 : item.reasons.length,
+    totale: Math.max(item.reasons.length, 4),
+    motivo: senzaSegnale || !item.reasons[0] ? null : opportunityReasonLabel(item.reasons[0]),
+  };
+}
 
 function anzianitaTesto(from: string | null, now: number) {
   if (!from) return "";

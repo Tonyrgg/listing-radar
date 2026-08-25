@@ -34,6 +34,7 @@ import {
   agencyListingStateLabel,
   claimKeyLabel,
   extractionMethodLabel,
+  hasNoRealSignal,
   humanize,
   identityOutcomeLabel,
   lifecycleEventLabel,
@@ -347,7 +348,10 @@ export default async function SchedaCasaPage({
           ) : null}
 
           {/* Cosa ne pensiamo, e perché — mai il giudizio senza gli indizi. */}
-          {detail.opportunity ? (
+          {/* Un giudizio che si regge solo sull'assenza di segnali non è un
+            * giudizio: diceva «1 indizio su 4» accanto a «nessun segnale
+            * commerciale attuale». */}
+          {detail.opportunity && !hasNoRealSignal(detail.opportunity.reasons) ? (
             <Card>
               <CardBody className="space-y-3">
                 <Giudizio

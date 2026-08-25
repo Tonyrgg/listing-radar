@@ -7,7 +7,7 @@ import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-butto
 import { EventRow } from "@/components/event-row";
 import { Banda, FasciaVuota, StrisciaFiducia } from "@/components/home-bands";
 import { PageHeader } from "@/components/page-header";
-import { PropertyRow } from "@/components/property-row";
+import { PropertyRow, signalsFromOpportunity } from "@/components/property-row";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { Fonte, livelloFromOpportunity } from "@/components/ui/atoms";
 import { Chip, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
@@ -21,7 +21,6 @@ import {
 import { getIncomingDashboardData } from "@/lib/incoming/repository";
 import { getSourceLabel } from "@/lib/labels";
 import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events";
-import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { getSourcesSummary } from "@/lib/sources-health";
@@ -246,12 +245,7 @@ export default async function TodayPage() {
                 key={item.id}
                 property={item.property}
                 foto={foto.get(item.property.id)}
-                signals={{
-                  livello: livelloFromOpportunity(item.level),
-                  indizi: item.reasons.length,
-                  totale: Math.max(item.reasons.length, 4),
-                  motivo: item.reasons[0] ? opportunityReasonLabel(item.reasons[0]) : null,
-                }}
+                signals={signalsFromOpportunity(item)}
                 now={now}
               />
             ))}

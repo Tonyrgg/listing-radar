@@ -5,8 +5,7 @@ import { connection } from "next/server";
 
 import { EventRow } from "@/components/event-row";
 import { PendingSubmitButton } from "@/components/loading-controls";
-import { PropertyRow, type PropertyRowSignals } from "@/components/property-row";
-import { livelloFromOpportunity } from "@/components/ui/atoms";
+import { PropertyRow, signalsFromOpportunity } from "@/components/property-row";
 import {
   Card,
   CardBody,
@@ -21,7 +20,6 @@ import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events";
 import {
   lifecycleEventLabel,
-  opportunityReasonLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
@@ -236,25 +234,16 @@ export default async function SegnaliPage() {
           />
           {occasioni.length ? (
             <div>
-              {occasioni.map((item) => {
-                const segnali: PropertyRowSignals = {
-                  livello: livelloFromOpportunity(item.level),
-                  indizi: item.reasons.length,
-                  totale: Math.max(item.reasons.length, 4),
-                  motivo: item.reasons[0] ? opportunityReasonLabel(item.reasons[0]) : null,
-                };
-
-                return (
-                  <PropertyRow
-                    key={item.id}
-                    property={item.property}
-                    foto={foto.get(item.propertyId)}
-                    signals={segnali}
-                    now={now}
-                    compact
-                  />
-                );
-              })}
+              {occasioni.map((item) => (
+                <PropertyRow
+                  key={item.id}
+                  property={item.property}
+                  foto={foto.get(item.propertyId)}
+                  signals={signalsFromOpportunity(item)}
+                  now={now}
+                  compact
+                />
+              ))}
             </div>
           ) : (
             <CardBody>

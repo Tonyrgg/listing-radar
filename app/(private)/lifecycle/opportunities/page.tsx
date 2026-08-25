@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { PropertyRow, type PropertyRowSignals } from "@/components/property-row";
+import { PropertyRow, signalsFromOpportunity } from "@/components/property-row";
 import { livelloFromOpportunity } from "@/components/ui/atoms";
 import { Card, CardBody, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
 import { readNow } from "@/lib/clock";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
-import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
@@ -95,25 +94,16 @@ export default async function OpportunitaPage({
       <Card>
         {visibili.length ? (
           <div>
-            {visibili.slice(0, 40).map((item) => {
-              const segnali: PropertyRowSignals = {
-                livello: livelloFromOpportunity(item.level),
-                indizi: item.reasons.length,
-                totale: Math.max(item.reasons.length, 4),
-                motivo: item.reasons[0] ? opportunityReasonLabel(item.reasons[0]) : null,
-              };
-
-              return (
-                <PropertyRow
-                  key={item.id}
-                  property={item.property}
-                  foto={foto.get(item.property.id)}
-                  signals={segnali}
-                  now={now}
-                  giudizioSempre
-                />
-              );
-            })}
+            {visibili.slice(0, 40).map((item) => (
+              <PropertyRow
+                key={item.id}
+                property={item.property}
+                foto={foto.get(item.property.id)}
+                signals={signalsFromOpportunity(item)}
+                now={now}
+                giudizioSempre
+              />
+            ))}
           </div>
         ) : (
           <CardBody>

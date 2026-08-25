@@ -96,6 +96,25 @@ export function lifecycleEventCountLabel(value: string, count: number): string {
   return EVENT_LABELS_PLURAL[value] ?? `${lifecycleEventLabel(value).toLocaleLowerCase("it")} (${count})`;
 }
 
+/**
+ * Le ragioni che dicono che non c'è niente da dire.
+ *
+ * `no_current_opportunity_signal` è l'assenza di un segnale, non un segnale:
+ * contarla come indizio faceva scrivere «1 indizio su 4» accanto a «nessun
+ * segnale commerciale attuale», che è la stessa frase detta due volte in due
+ * modi contrari.
+ */
+const REASONS_WITHOUT_SIGNAL = new Set([
+  "no_current_opportunity_signal",
+  "no_sale_evidence",
+  "no_new_agency_evidence",
+]);
+
+/** Vero quando l'opportunità non porta un solo indizio a favore. */
+export function hasNoRealSignal(reasons: readonly string[]): boolean {
+  return reasons.length === 0 || reasons.every((reason) => REASONS_WITHOUT_SIGNAL.has(reason));
+}
+
 export function saleStatusLabel(value: string): string {
   return SALE_STATUS_LABELS[value] ?? humanize(value);
 }

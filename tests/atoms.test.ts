@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { signalsFromOpportunity } from "@/components/property-row";
+
 import {
   certaintyFromConfidence,
   livelloFromOpportunity,
@@ -44,5 +46,32 @@ describe("atomi · il giudizio", () => {
   it("non lascia mai passare una costante non riconosciuta", () => {
     expect(livelloFromOpportunity(null)).toBe("bassa");
     expect(livelloFromOpportunity("QUALCOSA_DI_NUOVO")).toBe("bassa");
+  });
+});
+
+describe("gli indizi di un'opportunità", () => {
+  it("non conta come indizio l'assenza di un segnale", () => {
+    const segnali = signalsFromOpportunity({
+      level: "WATCH",
+      reasons: ["no_current_opportunity_signal"],
+    });
+
+    expect(segnali.indizi).toBe(0);
+    expect(segnali.motivo).toBeNull();
+  });
+
+  it("conta gli indizi veri e ne scrive il primo", () => {
+    const segnali = signalsFromOpportunity({
+      level: "INTERESTING",
+      reasons: ["agency_exit_under_review", "no_sale_evidence"],
+    });
+
+    expect(segnali.indizi).toBe(2);
+    expect(segnali.motivo).toBe("Uscita in verifica");
+    expect(segnali.livello).toBe("media");
+  });
+
+  it("regge un'opportunità senza ragioni", () => {
+    expect(signalsFromOpportunity({ level: "WATCH", reasons: [] }).indizi).toBe(0);
   });
 });
