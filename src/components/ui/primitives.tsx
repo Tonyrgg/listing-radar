@@ -176,6 +176,57 @@ export function Meta({
 }
 
 /* ---------------------------------------------------------------------------
+ * L'attesa.
+ *
+ * Uno scheletro che non somiglia alla pagina è una bugia breve: la pagina
+ * salta quando i dati arrivano. Questi pezzi ricalcano le forme vere —
+ * l'intestazione, la barra dei filtri, la riga con la foto.
+ * ------------------------------------------------------------------------- */
+
+export function Scheletro({ className }: Readonly<{ className?: string }>) {
+  return <div className={clsx("animate-pulse rounded bg-[var(--lr-raised)]", className)} />;
+}
+
+export function ScheletroIntestazione() {
+  return (
+    <div className="border-b border-[var(--lr-line-quiet)] pb-5">
+      <Scheletro className="h-3 w-20" />
+      <Scheletro className="mt-2 h-7 w-64" />
+      <Scheletro className="mt-2 h-4 w-80 max-w-full" />
+    </div>
+  );
+}
+
+/** La barra dei filtri: controlli alti quanto quelli veri. */
+export function ScheletroFiltri({ quanti = 3 }: Readonly<{ quanti?: number }>) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Scheletro className="h-[var(--lr-control-height)] min-w-56 flex-1 rounded-[var(--lr-radius-control)]" />
+      {Array.from({ length: quanti }).map((_, indice) => (
+        <Scheletro
+          key={indice}
+          className="h-[var(--lr-control-height)] w-40 rounded-[var(--lr-radius-control)]"
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Una riga di casa: la foto e le tre righe di testo, nelle stesse misure. */
+export function ScheletroRiga() {
+  return (
+    <div className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] p-3 first:border-t-0">
+      <Scheletro className="h-24 w-32 shrink-0 rounded-[var(--lr-radius-control)] sm:h-28 sm:w-40" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <Scheletro className="h-3 w-32" />
+        <Scheletro className="h-4 w-64 max-w-full" />
+        <Scheletro className="h-4 w-48 max-w-full" />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
  * I controlli dei moduli.
  *
  * Erano tre implementazioni della stessa cosa: le classi di

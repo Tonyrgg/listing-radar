@@ -1,20 +1,21 @@
-export default function PrivateAreaLoading() {
+import { Card, ScheletroIntestazione, ScheletroRiga } from "@/components/ui/primitives";
+
+/**
+ * L'attesa di una pagina qualsiasi dell'area privata.
+ *
+ * Mostrava tre riquadri affiancati e un blocco alto 320 px: una forma che non
+ * appartiene a nessuna pagina del prodotto. Quasi tutte, adesso, sono
+ * un'intestazione e un elenco di righe con la foto.
+ */
+export default function PaginaInAttesa() {
   return (
-    <div className="space-y-7" aria-busy="true" aria-label="Caricamento pagina">
-      <div className="border-b border-[var(--lr-line-quiet)] pb-6">
-        <div className="h-3 w-28 animate-pulse rounded bg-[var(--lr-raised)]" />
-        <div className="mt-3 h-9 w-full max-w-md animate-pulse rounded bg-[var(--lr-raised)]" />
-        <div className="mt-3 h-4 w-full max-w-xl animate-pulse rounded bg-[var(--lr-raised)]" />
-      </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {[0, 1, 2].map((item) => (
-          <div
-            key={item}
-            className="h-24 animate-pulse rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]"
-          />
+    <div className="space-y-5" aria-busy="true" aria-label="Sto caricando la pagina">
+      <ScheletroIntestazione />
+      <Card>
+        {[0, 1, 2, 3].map((riga) => (
+          <ScheletroRiga key={riga} />
         ))}
-      </div>
-      <div className="h-80 animate-pulse rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]" />
+      </Card>
     </div>
   );
 }
