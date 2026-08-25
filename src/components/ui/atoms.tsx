@@ -110,6 +110,12 @@ export function Periodo({
   note?: string;
   className?: string;
 }>) {
+  /* Quando non sappiamo da quando è in vendita, non lo scriviamo: una riga in
+   * meno è più onesta di «data ignota» accanto a un motivo che dice il contrario. */
+  if (!from) {
+    return null;
+  }
+
   return (
     <span
       className={clsx("inline-flex flex-wrap items-baseline gap-1", className)}

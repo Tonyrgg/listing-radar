@@ -1,506 +1,253 @@
+import { Building2, Search, UserRound, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { clsx } from "clsx";
-import { LayoutGrid, List, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { connection } from "next/server";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
-import { ListingCard } from "@/components/listing-card";
 import { PageHeader } from "@/components/page-header";
-import { Card, Chip, EmptyState, buttonClass } from "@/components/ui/primitives";
-import {
-  LISTING_SOURCE_OPTIONS,
-  LISTING_STATUS_OPTIONS,
-  SELLER_TYPE_OPTIONS,
-} from "@/lib/constants";
-import { getDuplicateSiblings, getListings } from "@/lib/data/repository";
-import { formatDate } from "@/lib/formatting";
-import {
-  getListingStatusLabel,
-  getSellerTypeLabel,
-  getSourceLabel,
-} from "@/lib/labels";
-import { normalizeListingSource } from "@/lib/listing-sources";
-import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
-import type { Listing, ListingFilters, SellerType } from "@/types";
+import { PropertyRow, type PropertyRowSignals } from "@/components/property-row";
+import { Card, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
+import { livelloFromOpportunity, type Livello } from "@/components/ui/atoms";
+import { readNow } from "@/lib/clock";
+import { signPropertyPhotos } from "@/lib/lifecycle-photos";
+import { opportunityReasonLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
-export const metadata: Metadata = {
-  title: "Immobili",
-};
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Immobili" };
 
-type ListingViewMode = "list" | "grid";
+type Chi = "tutti" | "privato" | "agenzia";
+type Stato = "attivi" | "usciti" | "tutti";
 
-const LISTING_SORT_OPTIONS = [
-  "score_desc",
-  "score_asc",
-  "newest",
-  "checked_oldest",
-  "first_seen_desc",
-  "oldest",
-  "price_asc",
-  "price_desc",
-  "price_per_sqm_asc",
-  "price_per_sqm_desc",
-  "private_first",
-  "price_drop_first",
-  "phone_first",
-  "incomplete_first",
-] satisfies ListingFilters["sortBy"][];
-
-/* External listing images come from dynamic portal hosts. */
-
-function readSearchParam(
-  value: string | string[] | undefined,
-  fallback: string,
-) {
-  if (Array.isArray(value)) {
-    return value[0] ?? fallback;
-  }
-
-  return value ?? fallback;
+function param(value: string | string[] | undefined, fallback: string) {
+  return (Array.isArray(value) ? value[0] : value) ?? fallback;
 }
 
-function buildViewHref(
-  params: Record<string, string | string[] | undefined>,
-  view: ListingViewMode,
-) {
-  const nextParams = new URLSearchParams();
+function giorniDaVendita(property: LifecyclePropertySummary, now: number) {
+  const from = property.trueMarketStartLowerBound;
+  if (!from) return 0;
 
-  for (const [key, rawValue] of Object.entries(params)) {
-    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+  const inizio = new Date(from).getTime();
+  if (Number.isNaN(inizio)) return 0;
 
-    for (const value of values) {
-      if (value != null && value !== "" && key !== "view") {
-        nextParams.append(key, value);
-      }
-    }
-  }
-
-  if (view !== "list") {
-    nextParams.set("view", view);
-  }
-
-  const query = nextParams.toString();
-  return query ? `/listings?${query}` : "/listings";
+  return Math.max(0, Math.floor((now - inizio) / (24 * 60 * 60 * 1000)));
 }
 
-function checkedDateKey(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "unknown";
-  }
-
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+function testoCercabile(property: LifecyclePropertySummary) {
+  return [
+    property.address,
+    property.title,
+    property.locality,
+    property.propertyType,
+    ...property.agencies.map((agency) => agency.name),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("it");
 }
 
-function groupListingsByCheckedDate(listings: Listing[]) {
-  const groups: Array<{
-    key: string;
-    label: string;
-    listings: Listing[];
-  }> = [];
-  const groupByKey = new Map<string, (typeof groups)[number]>();
-
-  for (const listing of listings) {
-    const key = checkedDateKey(listing.lastSeenAt);
-    let group = groupByKey.get(key);
-
-    if (!group) {
-      group = {
-        key,
-        label: formatDate(listing.lastSeenAt),
-        listings: [],
-      };
-      groupByKey.set(key, group);
-      groups.push(group);
-    }
-
-    group.listings.push(listing);
-  }
-
-  return groups;
-}
-
-function shouldGroupByCheckedDate(sortBy: ListingFilters["sortBy"]) {
-  return sortBy === "newest" || sortBy === "checked_oldest";
-}
-
-function ListingDateSeparator({
-  label,
-  count,
-}: Readonly<{ label: string; count: number }>) {
-  return (
-    <div className="flex items-center gap-3 py-1">
-      <div className="h-px min-w-6 flex-1 bg-[var(--lr-line-quiet)]" aria-hidden="true" />
-      <p className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--lr-ink-3)]">
-        Controllo: {label}
-      </p>
-      <span className="shrink-0 text-[11px] text-[var(--lr-ink-3)]">
-        {count === 1 ? "1 annuncio" : `${count} annunci`}
-      </span>
-      <div className="h-px min-w-6 flex-1 bg-[var(--lr-line-quiet)]" aria-hidden="true" />
-    </div>
-  );
-}
-
-export default async function ListingsPage({
+export default async function ImmobiliPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
-  const sellerType = readSearchParam(params.sellerType, "all");
-  const status = readSearchParam(params.status, "all");
-  const source = readSearchParam(params.source, "all");
-  /* Un solo controllo al posto dei due interruttori che si annullavano a vicenda.
-   * I vecchi parametri restano validi per non rompere i collegamenti salvati. */
-  const legacyTreated = readSearchParam(params.onlyTreated, "") === "on";
-  const legacyUntreated = readSearchParam(params.onlyUntreated, "") === "on";
-  const workStateParam = readSearchParam(params.lavorazione, "");
-  const workState: "all" | "treated" | "untreated" =
-    workStateParam === "treated" || workStateParam === "untreated"
-      ? workStateParam
-      : legacyTreated === legacyUntreated
-        ? "all"
-        : legacyTreated
-          ? "treated"
-          : "untreated";
-  const minDaysOnlineRaw = readSearchParam(params.minDaysOnline, "");
-  const minScoreRaw = readSearchParam(params.minScore, "");
-  const maxScoreRaw = readSearchParam(params.maxScore, "");
-  const sortBy = readSearchParam(params.sortBy, "newest");
-  const viewMode: ListingViewMode =
-    readSearchParam(params.view, "list") === "grid" ? "grid" : "list";
-  const normalizedSource =
-    source === "all" ? "all" : normalizeListingSource(source);
-  const minDaysOnline =
-    minDaysOnlineRaw.trim() === "" ? null : Number(minDaysOnlineRaw);
+  await connection();
 
-  const filters: ListingFilters = {
-    sellerType: SELLER_TYPE_OPTIONS.includes(sellerType as "all" | SellerType)
-      ? (sellerType as "all" | SellerType)
-      : "all",
-    status: LISTING_STATUS_OPTIONS.includes(
-      status as (typeof LISTING_STATUS_OPTIONS)[number],
-    )
-      ? status
-      : "all",
-    crmStatus: workState,
-    source:
-      normalizedSource === "all" ||
-      LISTING_SOURCE_OPTIONS.includes(
-        normalizedSource as (typeof LISTING_SOURCE_OPTIONS)[number],
-      )
-        ? normalizedSource
-        : "all",
-    minDaysOnline:
-      typeof minDaysOnline === "number" && !Number.isNaN(minDaysOnline)
-        ? minDaysOnline
-        : null,
-    onlyHighPriority: readSearchParam(params.onlyHighPriority, "") === "on",
-    minScore:
-      minScoreRaw !== "" && Number.isFinite(Number(minScoreRaw))
-        ? Number(minScoreRaw)
-        : null,
-    maxScore:
-      maxScoreRaw !== "" && Number.isFinite(Number(maxScoreRaw))
-        ? Number(maxScoreRaw)
-        : null,
-    sortBy: LISTING_SORT_OPTIONS.includes(sortBy as ListingFilters["sortBy"])
-      ? (sortBy as ListingFilters["sortBy"])
-      : "newest",
-  };
+  const query = await searchParams;
+  const cerca = param(query.q, "").trim().toLocaleLowerCase("it");
+  const chi = param(query.chi, "tutti") as Chi;
+  const stato = param(query.stato, "attivi") as Stato;
+  const fermeDa = Number(param(query.ferme, "0")) || 0;
 
-  const [listings, scoringConfig] = await Promise.all([
-    getListings(filters),
-    getPersistedScoringConfig(),
+  const [vista, now] = await Promise.all([
+    loadLifecycleView(async (repository) => ({
+      proprieta: await repository.archive(),
+      opportunita: await repository.opportunities(),
+    })),
+    readNow(),
   ]);
-  /* Una query sola per tutta la lista: chi ha la stessa casa altrove. */
-  const duplicates = await getDuplicateSiblings(listings);
-  const groupByCheckedDate = shouldGroupByCheckedDate(filters.sortBy);
-  const listingGroups = groupByCheckedDate
-    ? groupListingsByCheckedDate(listings)
-    : [{ key: "all", label: "", listings }];
-  /* «Altri filtri» si apre da solo solo se qualcosa dentro è davvero attivo. */
-  const advancedCount = [
-    filters.sellerType !== "all",
-    filters.status !== "all",
-    filters.source !== "all",
-    filters.minDaysOnline !== null,
-    filters.minScore !== null,
-    filters.maxScore !== null,
-    filters.onlyHighPriority,
-  ].filter(Boolean).length;
-  const hasActiveFilters =
-    advancedCount > 0 || workState !== "all" || filters.sortBy !== "newest";
+
+  if (!vista.available || !vista.data) {
+    return (
+      <div className="space-y-5">
+        <PageHeader eyebrow="Immobili" title="Archivio" />
+        <Card>
+          <EmptyState
+            title="L'archivio non è raggiungibile"
+            description="Questa pagina lavora sull'archivio dei segnali, che al momento non risponde."
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  const segnaliPerProprieta = new Map<string, PropertyRowSignals>();
+  for (const opportunita of vista.data.opportunita) {
+    if (segnaliPerProprieta.has(opportunita.propertyId)) continue;
+
+    segnaliPerProprieta.set(opportunita.propertyId, {
+      livello: livelloFromOpportunity(opportunita.level),
+      indizi: opportunita.reasons.length,
+      totale: Math.max(opportunita.reasons.length, 4),
+      motivo: opportunita.reasons[0] ? opportunityReasonLabel(opportunita.reasons[0]) : null,
+    });
+  }
+
+  const tutte = vista.data.proprieta;
+  const filtrate = tutte.filter((property) => {
+    if (cerca && !testoCercabile(property).includes(cerca)) return false;
+
+    if (chi === "privato" && property.activePrivateCount === 0) return false;
+    if (chi === "agenzia" && property.agencies.length === 0) return false;
+
+    const attiva = property.propertyState.startsWith("ACTIVE");
+    if (stato === "attivi" && !attiva) return false;
+    if (stato === "usciti" && attiva) return false;
+
+    if (fermeDa && giorniDaVendita(property, now) < fermeDa) return false;
+
+    return true;
+  });
+
+  /* Prima quelle che hanno qualcosa da dire, poi le più fresche: senza un
+   * ordine così le prime sessanta righe sono sessanta righe qualsiasi. */
+  const peso: Record<Livello, number> = { alta: 2, media: 1, bassa: 0 };
+  const ordinate = [...filtrate].sort((a, b) => {
+    const pesoA = peso[segnaliPerProprieta.get(a.id)?.livello ?? "bassa"];
+    const pesoB = peso[segnaliPerProprieta.get(b.id)?.livello ?? "bassa"];
+    if (pesoA !== pesoB) return pesoB - pesoA;
+
+    return b.lastSeenAt.localeCompare(a.lastSeenAt);
+  });
+
+  const visibili = ordinate.slice(0, 60);
+  const foto = await signPropertyPhotos(visibili);
+  const filtriAttivi = Boolean(cerca) || chi !== "tutti" || stato !== "attivi" || fermeDa > 0;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <PageHeader
         eyebrow="Immobili"
-        title="Archivio annunci"
-        description={`${listings.length} schede complete, ordinate per ${sortLabel(filters.sortBy)}.`}
+        title="Archivio"
+        description="Ogni casa osservata sul mercato, con la sua storia e chi la vende adesso."
         actions={
-          <div className="flex items-center gap-1 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] p-1">
-            <Link
-              href={buildViewHref(params, "list")}
-              aria-label="Vista a lista"
-              title="Vista a lista"
-              aria-current={viewMode === "list" ? "true" : undefined}
-              className={clsx(
-                "inline-flex size-9 items-center justify-center rounded-[3px] transition-colors",
-                viewMode === "list"
-                  ? "bg-[var(--lr-raised)] text-[var(--lr-ink)]"
-                  : "text-[var(--lr-ink-3)] hover:text-[var(--lr-ink)]",
-              )}
-            >
-              <List className="size-4" aria-hidden="true" />
-            </Link>
-            <Link
-              href={buildViewHref(params, "grid")}
-              aria-label="Vista a griglia"
-              title="Vista a griglia"
-              aria-current={viewMode === "grid" ? "true" : undefined}
-              className={clsx(
-                "inline-flex size-9 items-center justify-center rounded-[3px] transition-colors",
-                viewMode === "grid"
-                  ? "bg-[var(--lr-raised)] text-[var(--lr-ink)]"
-                  : "text-[var(--lr-ink-3)] hover:text-[var(--lr-ink)]",
-              )}
-            >
-              <LayoutGrid className="size-4" aria-hidden="true" />
-            </Link>
-          </div>
+          <Chip tone="neutral">
+            {filtrate.length === tutte.length
+              ? `${tutte.length} proprietà`
+              : `${filtrate.length} di ${tutte.length}`}
+          </Chip>
         }
       />
 
-      {/* I filtri non precedono più il lavoro: due in vista, il resto a richiesta. */}
-      <AutoSubmitFiltersForm className="space-y-3">
-        <input type="hidden" name="view" value={viewMode} />
+      {/* Ricerca e filtri: pochi, sempre nello stesso posto. */}
+      <AutoSubmitFiltersForm className="flex flex-wrap items-center gap-2">
+        <label className="relative min-w-56 flex-1">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lr-ink-3)]"
+          />
+          <span className="sr-only">Cerca fra le proprietà</span>
+          <input
+            type="search"
+            name="q"
+            defaultValue={param(query.q, "")}
+            placeholder="via, zona, agenzia…"
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] pl-9 pr-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          />
+        </label>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Ordina per" className="min-w-56 flex-1">
-            <select name="sortBy" defaultValue={filters.sortBy} className={fieldControl}>
-              <optgroup label="Operativo">
-                <option value="newest">Ultimo controllo, recente</option>
-                <option value="checked_oldest">Da ricontrollare</option>
-                <option value="incomplete_first">Dati mancanti prima</option>
-                <option value="private_first">Privati prima</option>
-                <option value="price_drop_first">Ribassi prima</option>
-                <option value="phone_first">Con recapito prima</option>
-              </optgroup>
-              <optgroup label="Valore">
-                <option value="score_desc">Appetibilità, più alta</option>
-                <option value="score_asc">Appetibilità, più bassa</option>
-                <option value="price_asc">Prezzo crescente</option>
-                <option value="price_desc">Prezzo decrescente</option>
-                <option value="price_per_sqm_asc">Prezzo al mq crescente</option>
-                <option value="price_per_sqm_desc">Prezzo al mq decrescente</option>
-              </optgroup>
-              <optgroup label="Tempo">
-                <option value="first_seen_desc">Prima segnalazione recente</option>
-                <option value="oldest">Online da più tempo</option>
-              </optgroup>
-            </select>
-          </Field>
+        <label className="min-w-40">
+          <span className="sr-only">Chi vende</span>
+          <select
+            name="chi"
+            defaultValue={chi}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="tutti">Chiunque venda</option>
+            <option value="privato">Solo privati</option>
+            <option value="agenzia">Solo agenzie</option>
+          </select>
+        </label>
 
-          <Field label="Lavorazione" className="min-w-48 flex-1">
-            <select name="lavorazione" defaultValue={workState} className={fieldControl}>
-              <option value="all">Tutti</option>
-              <option value="untreated">Solo da lavorare</option>
-              <option value="treated">Solo trattati</option>
-            </select>
-          </Field>
+        <label className="min-w-40">
+          <span className="sr-only">Stato</span>
+          <select
+            name="stato"
+            defaultValue={stato}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="attivi">Ancora sul mercato</option>
+            <option value="usciti">Uscite dal mercato</option>
+            <option value="tutti">Tutte</option>
+          </select>
+        </label>
 
-          {hasActiveFilters ? (
-            <Link href="/listings" className={buttonClass("quiet", { compact: true })}>
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Azzera filtri
-            </Link>
-          ) : null}
-        </div>
+        <label className="min-w-40">
+          <span className="sr-only">In vendita da</span>
+          <select
+            name="ferme"
+            defaultValue={String(fermeDa)}
+            className="min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none"
+          >
+            <option value="0">Da quanto vuoi</option>
+            <option value="60">Da oltre 2 mesi</option>
+            <option value="150">Da oltre 5 mesi</option>
+            <option value="365">Da oltre un anno</option>
+          </select>
+        </label>
 
-        <details
-          open={advancedCount > 0}
-          className="rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
-        >
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)] marker:hidden">
-            <SlidersHorizontal className="size-4 text-[var(--lr-ink-3)]" aria-hidden="true" />
-            Altri filtri
-            {advancedCount ? <Chip tone="info">{advancedCount} attivi</Chip> : null}
-          </summary>
-
-          <div className="grid gap-3 border-t border-[var(--lr-line-quiet)] p-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Field label="Pubblicato da">
-              <select name="sellerType" defaultValue={filters.sellerType} className={fieldControl}>
-                {SELLER_TYPE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {getSellerTypeLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Situazione">
-              <select name="status" defaultValue={filters.status} className={fieldControl}>
-                {LISTING_STATUS_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {getListingStatusLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Sito di origine">
-              <select name="source" defaultValue={filters.source} className={fieldControl}>
-                <option value="all">Tutti</option>
-                {LISTING_SOURCE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {getSourceLabel(option)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Online da almeno" hint="giorni">
-              <input
-                type="number"
-                name="minDaysOnline"
-                min="0"
-                placeholder="es. 30"
-                defaultValue={filters.minDaysOnline ?? ""}
-                className={fieldControl}
-              />
-            </Field>
-
-            <Field label="Appetibilità minima" hint="da 0 a 100">
-              <input
-                type="number"
-                name="minScore"
-                min="0"
-                max="100"
-                defaultValue={filters.minScore ?? ""}
-                className={fieldControl}
-              />
-            </Field>
-
-            <Field label="Appetibilità massima" hint="da 0 a 100">
-              <input
-                type="number"
-                name="maxScore"
-                min="0"
-                max="100"
-                defaultValue={filters.maxScore ?? ""}
-                className={fieldControl}
-              />
-            </Field>
-
-            <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-3">
-              <input
-                type="checkbox"
-                name="onlyHighPriority"
-                defaultChecked={filters.onlyHighPriority}
-                className="size-4 accent-[var(--lr-accent)]"
-              />
-              <span className="text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
-                Solo quelli in evidenza
-              </span>
-            </label>
-          </div>
-        </details>
+        {filtriAttivi ? (
+          <Link href="/listings" className={buttonClass("quiet", { compact: true })}>
+            <X aria-hidden="true" className="size-4" />
+            Azzera
+          </Link>
+        ) : null}
       </AutoSubmitFiltersForm>
 
-      {listings.length ? (
-        <div className="space-y-5">
-          {listingGroups.map((group) => (
-            <section key={group.key} className="space-y-3">
-              {groupByCheckedDate ? (
-                <ListingDateSeparator label={group.label} count={group.listings.length} />
-              ) : null}
-              <div
-                className={
-                  viewMode === "grid"
-                    ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-                    : "space-y-3"
-                }
-              >
-                {group.listings.map((listing) => (
-                  <ListingCard
-                    key={listing.id}
-                    listing={listing}
-                    scoringConfig={scoringConfig}
-                    density={viewMode}
-                    duplicate={duplicates.get(listing.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      ) : (
-        <Card>
+      <Card>
+        {visibili.length ? (
+          <div>
+            {visibili.map((property) => (
+              <PropertyRow
+                key={property.id}
+                property={property}
+                foto={foto.get(property.id)}
+                signals={segnaliPerProprieta.get(property.id)}
+                now={now}
+              />
+            ))}
+          </div>
+        ) : (
           <EmptyState
-            title="Nessun annuncio con questi filtri"
-            description="Prova ad allargare la ricerca: potrebbero esserci schede escluse da un filtro attivo."
+            title="Nessuna proprietà con questi filtri"
+            description="Prova ad allargare la ricerca: potrebbero esserci case escluse da un filtro attivo."
             action={
               <Link href="/listings" className={buttonClass("primary", { compact: true })}>
                 Mostra tutto l&apos;archivio
               </Link>
             }
           />
-        </Card>
-      )}
+        )}
+      </Card>
+
+      {filtrate.length > visibili.length ? (
+        <Meta className="px-1">
+          Ne vedi {visibili.length} di {filtrate.length}: restringi la ricerca per arrivare alle
+          altre.
+        </Meta>
+      ) : null}
+
+      <Meta className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+        <span className="inline-flex items-center gap-1.5">
+          <UserRound aria-hidden="true" className="size-3.5 text-[var(--lr-warn)]" /> venduta da un
+          privato
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Building2 aria-hidden="true" className="size-3.5" /> tenuta da un&apos;agenzia
+        </span>
+        <span>Il testo tratteggiato è dedotto, non dichiarato dalla fonte.</span>
+      </Meta>
     </div>
   );
-}
-
-const fieldControl =
-  "min-h-11 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none";
-
-function Field({
-  label,
-  hint,
-  className,
-  children,
-}: Readonly<{
-  label: string;
-  hint?: string;
-  className?: string;
-  children: React.ReactNode;
-}>) {
-  return (
-    <label className={clsx("block", className)}>
-      <span className="mb-1 flex items-baseline gap-2">
-        <span className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
-          {label}
-        </span>
-        {hint ? (
-          <span className="text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">{hint}</span>
-        ) : null}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function sortLabel(sortBy: ListingFilters["sortBy"]) {
-  const labels: Record<string, string> = {
-    newest: "ultimo controllo",
-    checked_oldest: "da ricontrollare",
-    incomplete_first: "dati mancanti",
-    private_first: "privati prima",
-    price_drop_first: "ribassi prima",
-    phone_first: "recapito disponibile",
-    score_desc: "appetibilità più alta",
-    score_asc: "appetibilità più bassa",
-    price_asc: "prezzo crescente",
-    price_desc: "prezzo decrescente",
-    price_per_sqm_asc: "prezzo al mq crescente",
-    price_per_sqm_desc: "prezzo al mq decrescente",
-    first_seen_desc: "prima segnalazione",
-    oldest: "anzianità",
-  };
-
-  return labels[String(sortBy ?? "newest")] ?? "ultimo controllo";
 }

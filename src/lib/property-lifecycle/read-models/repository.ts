@@ -650,7 +650,8 @@ export class PropertyLifecycleReadRepository {
       )
       .neq("identity_status", "MERGED")
       .order("last_seen_at", { ascending: false })
-      .limit(300);
+      /* 575 proprietà osservate: con 300 l'archivio ne nascondeva metà. */
+      .limit(1000);
     throwIfError(error);
     return this.hydrateProperties((data ?? []) as PropertyRow[]);
   }

@@ -7,6 +7,8 @@ export function formatCurrency(value: number | null | undefined) {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
+    /* Senza questo un prezzo a quattro cifre esce «7000 €». */
+    useGrouping: true,
   }).format(value);
 }
 
@@ -15,7 +17,8 @@ export function formatNumber(value: number | null | undefined) {
     return "Non disponibile";
   }
 
-  return new Intl.NumberFormat("it-IT").format(value);
+  /* Anche qui: senza raggruppamento «1000 giorni» esce «1000». */
+  return new Intl.NumberFormat("it-IT", { useGrouping: true }).format(value);
 }
 
 export function formatDateTime(value: string | null | undefined) {
