@@ -1616,10 +1616,17 @@ dialog[open] {
 
 .street-run-controls {
   display: grid;
-  grid-template-columns: minmax(240px, 1.15fr) minmax(300px, 1fr) auto auto;
+  /* Le quattro colonne pretendevano 240 + 300 + i due bottoni: dentro mezza
+   * schermata non ci stavano, e la finestra scorreva in orizzontale. Adesso
+   * la via e la prova stanno sopra, i bottoni sotto. */
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: var(--lr-space-3);
 }
+
+/* Niente varianti a più colonne: la scheda vive in mezza schermata, e le
+ * @media guardano la finestra, non lo spazio che la scheda ha davvero. Una
+ * colonna sola è l'unica larghezza che non si sbriciola. */
 
 .street-run-controls > label:not(.safe-check) {
   display: grid;
@@ -1791,5 +1798,57 @@ dialog[open] {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ===========================================================================
+ * La gerarchia funzionale.
+ *
+ * A riposo lo schermo mostrava sette riquadri: il monitor «in attesa di un
+ * comando», i controlli della run, due modi di partire, il promemoria delle
+ * schede da aprire, il percorso allo 0% e i collegamenti. Cinque di quei
+ * riquadri dicevano la stessa cosa — non sta succedendo niente — e il modo di
+ * partire, che è l'unica cosa su cui si può agire, era il terzo.
+ *
+ * Ora lo schermo cambia con la fase. Fermi: come si parte, e cosa serve per
+ * partire. In lavorazione: cosa sta succedendo, e cosa serve da te. Le due
+ * partenze stanno affiancate perché sono due scelte, non due tappe.
+ * ========================================================================= */
+
+.start-grid {
+  display: grid;
+  gap: 16px;
+  /* `min()` è quello che impedisce alla colonna di restare larga 420px in una
+   * finestra più stretta: senza, la pagina scorre in orizzontale. */
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  align-items: start;
+}
+
+.start-grid > .start-card,
+.start-grid > .street-run-card {
+  margin: 0;
+  /* Senza questo una colonna della griglia non scende sotto la larghezza
+   * minima del suo contenuto, e la pagina scorre in orizzontale. */
+  min-width: 0;
+}
+
+/* Fermi: niente tracciamento di un lavoro che non c'è. */
+body[data-fase="pronto"] #commandMonitor,
+body[data-fase="pronto"] #runControls,
+body[data-fase="pronto"] .progress-card {
+  display: none;
+}
+
+/* In lavorazione: non si parte due volte, e i collegamenti sono già passati.
+ * La run autonoma resta: mostra il proprio avanzamento e il modo di fermarla. */
+body[data-fase="lavora"] .start-card,
+body[data-fase="lavora"] .system-card,
+body[data-fase="lavora"][data-via="no"] .street-run-card {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .start-grid {
+    grid-template-columns: 1fr;
   }
 }

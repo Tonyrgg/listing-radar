@@ -38,8 +38,8 @@
         <section class="page-intro">
           <div>
             <p class="eyebrow">Assistente di acquisizione</p>
-            <h1>Cosa vuoi fare?</h1>
-            <p>Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p>
+            <h1 id="workspaceTitle">Cosa vuoi fare?</h1>
+            <p id="workspaceSubtitle">Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p>
           </div>
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
         </section>
@@ -66,7 +66,8 @@
           </div>
         </section>
 
-        <!-- Il passo successivo viene prima di tutto il resto. -->
+        <!-- Le due partenze, affiancate: sono due scelte, non due tappe. -->
+        <div class="start-grid">
         <section class="start-card">
           <div class="start-copy">
             <span class="step-number">1</span>
@@ -101,6 +102,7 @@
           <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
+        </div>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
         <section id="actionPanel" class="now-card" aria-live="polite"></section>
@@ -113,15 +115,15 @@
           <form id="manualCorrectionForm"><div id="manualCorrectionFields"></div><footer><button type="button" class="button secondary" data-action="close-corrections">Chiudi</button><button type="submit" class="button primary">Salva correzioni</button></footer></form>
         </section>
 
+        <section class="system-card">
+          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
+          <div id="checksGrid" class="checks-grid"></div>
+        </section>
+
         <section class="progress-card">
           <header><div><p class="eyebrow">Durante la lavorazione</p><h2 id="operationTitle">Percorso completo</h2></div><strong id="progressPercent">0%</strong></header>
           <div class="progress-track"><span id="progressBar"></span></div>
           <ol id="workflowSteps" class="workflow-steps"></ol>
-        </section>
-
-        <section class="system-card">
-          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
-          <div id="checksGrid" class="checks-grid"></div>
         </section>
 
         <!-- Da qui in giù: disponibile a richiesta, non sempre a schermo. -->

@@ -1573,6 +1573,33 @@ function render() {
     Boolean(appState.streetRun?.active) ||
     Boolean(appState.configError) ||
     Boolean(appState.lastError && appState.activeJobId && !completed);
+  /* La fase decide cosa merita spazio: fermi si vede come partire, in
+   * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
+  document.body.dataset.fase =
+    appState.active || appState.streetRun?.active
+      ? "lavora"
+      : completed
+        ? "finita"
+        : appState.lastError
+          ? "attenzione"
+          : "pronto";
+  /* La run autonoma resta a schermo solo se è sua la lavorazione in corso, o
+   * se ha un checkpoint da riprendere: altrimenti, durante un lavoro SISTER,
+   * è una scheda grande quanto uno schermo che non riguarda quello che stai
+   * facendo. */
+  document.body.dataset.via =
+    appState.streetRun?.active || appState.streetRun?.checkpoint ? "attiva" : "no";
+  /* Il titolo della pagina dice in che momento sei: chiedere «cosa vuoi fare?»
+   * mentre il programma sta già lavorando è la domanda sbagliata. */
+  const intestazioni = {
+    pronto: ["Cosa vuoi fare?", "Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione."],
+    lavora: ["Sto lavorando", "Non serve che tu faccia niente: se avrò bisogno di te, te lo chiedo qui."],
+    finita: ["Fatto", "L'import è andato a buon fine. Trovi tutto in Cronologia, oppure puoi iniziarne un altro."],
+    attenzione: ["Serve una tua mano", "Mi sono fermato per non fare danni. Qui sotto c'è cosa è successo e come si riparte."],
+  };
+  const [titolo, sottotitolo] = intestazioni[document.body.dataset.fase] ?? intestazioni.pronto;
+  $("workspaceTitle").textContent = titolo;
+  $("workspaceSubtitle").textContent = sottotitolo;
   $("runBadge").className =
     `status-pill ${appState.active ? "is-running" : completed ? "is-complete" : appState.lastError ? "is-error" : "is-idle"}`;
   $("runBadge").innerHTML =
