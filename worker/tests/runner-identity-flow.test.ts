@@ -593,4 +593,65 @@ describe("flusso identità nominativo e immobile", () => {
       expect.objectContaining({ crm_link_id: "owner-link-CRM-COOWNER", processing_status: "linked" }),
     );
   });
+
+  it("ignora il socio con codice fiscale rifiutato e usa l'altro socio per l'immobile", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const rejected = { ...personRow(), id: "rejected", crm_record_id: null, share_percentage: 70 };
+    const usable = { ...personRow(), id: "usable", full_name: "BIANCHI LUCA", tax_code: "BNCLCU80A01A893X", crm_record_id: "CRM-USABLE", share_percentage: 30 };
+    const property = { ...propertyRow(), raw_payload: { property_flow: { version: 3, stage: "owner_contacts_ready", dryRun: false } } };
+    const ownerships = [
+      { id: "ownership-rejected", property_id: property.id, person_id: rejected.id, right_type: "Proprieta", share_percentage: 70, crm_link_id: null, processing_status: "normalized" },
+      { id: "ownership-usable", property_id: property.id, person_id: usable.id, right_type: "Proprieta", share_percentage: 30, crm_link_id: null, processing_status: "normalized" },
+    ];
+    const repository = {
+      loadGraph: vi.fn().mockResolvedValue({ properties: [property], people: [rejected, usable], ownerships }),
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined), updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+      updateOwnership: vi.fn().mockResolvedValue(undefined), updateJob: vi.fn().mockResolvedValue(undefined), logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const internals = runner as unknown as { ensurePerson: ReturnType<typeof vi.fn>; ensureContacts: ReturnType<typeof vi.fn>; ensureProperty: ReturnType<typeof vi.fn>; ensurePropertyActivity: ReturnType<typeof vi.fn>; processPropertiesInOrder: Function };
+    internals.ensurePerson = vi.fn(async (_job, row) => {
+      if (row.id === rejected.id) throw new WorkerError("CF non coerente", "data_incomplete", { action: "person-tax-code-invalid" });
+    });
+    internals.ensureContacts = vi.fn().mockResolvedValue(undefined);
+    internals.ensureProperty = vi.fn(async (_job, row) => { row.crm_record_id = "CRM-PROPERTY"; });
+    internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
+
+    await internals.processPropertiesInOrder(
+      { ...job, total_properties: 1, processed_properties: 0 },
+      { linkOwner: vi.fn(), resetToCrmHome: vi.fn().mockResolvedValue(undefined) },
+      { findByTaxCode: vi.fn() },
+    );
+
+    expect(internals.ensureProperty).toHaveBeenCalledWith(expect.anything(), property, usable, expect.anything());
+    expect(rejected.raw_payload?.tax_code_rejection).toMatchObject({ action: "person-tax-code-invalid" });
+    expect((property.raw_payload as Record<string, unknown>)?.effective_primary_owner_id).toBe(usable.id);
+    expect((property.raw_payload?.property_flow as Record<string, unknown>)?.stage).toBe("completed");
+  });
+
+  it("annota e salta l'immobile se l'unico proprietario ha il codice fiscale rifiutato", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const rejected = { ...personRow(), id: "rejected", crm_record_id: null };
+    const property = { ...propertyRow(), raw_payload: { property_flow: { version: 3, stage: "owner_contacts_ready", dryRun: false } } };
+    const ownerships = [{ id: "ownership-rejected", property_id: property.id, person_id: rejected.id, right_type: "Proprieta", share_percentage: 100, crm_link_id: null, processing_status: "normalized" }];
+    const repository = {
+      loadGraph: vi.fn().mockResolvedValue({ properties: [property], people: [rejected], ownerships }),
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined), updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+      updateOwnership: vi.fn().mockResolvedValue(undefined), updateJob: vi.fn().mockResolvedValue(undefined), logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const internals = runner as unknown as { ensurePerson: ReturnType<typeof vi.fn>; ensureProperty: ReturnType<typeof vi.fn>; processPropertiesInOrder: Function };
+    internals.ensurePerson = vi.fn().mockRejectedValue(new WorkerError("CF non coerente", "data_incomplete", { action: "person-tax-code-invalid" }));
+    internals.ensureProperty = vi.fn();
+    const crm = { resetToCrmHome: vi.fn().mockResolvedValue(undefined) };
+
+    await internals.processPropertiesInOrder({ ...job, total_properties: 1, processed_properties: 0 }, crm, { findByTaxCode: vi.fn() });
+
+    expect(internals.ensureProperty).not.toHaveBeenCalled();
+    expect(repository.updatePropertyProcessing).toHaveBeenCalledWith(
+      property.id,
+      expect.objectContaining({ processing_status: "skipped" }),
+    );
+    expect((property.raw_payload as Record<string, unknown>)?.skip_details).toMatchObject({ source: "tax_code_rejected_no_alternative_owner" });
+  });
 });

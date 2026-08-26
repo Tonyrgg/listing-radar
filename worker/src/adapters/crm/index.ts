@@ -1121,6 +1121,29 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await this.fillPersonText("personTaxCode", "Codice fiscale", person.taxCode ?? "");
   }
 
+  private async throwIfTaxCodeRejectedByCrm() {
+    if (!this.selectors.personTaxCode) return;
+    const field = this.visible(this.selectors.personTaxCode).first();
+    if (!(await field.count())) return;
+    const invalidAttribute = await field.getAttribute("aria-invalid").catch(() => null);
+    const surroundingText = normalizedUiText(
+      await field.evaluate((element) => element.closest(".slds-form-element")?.textContent ?? "").catch(() => ""),
+    );
+    const pageText = normalizedUiText(await this.page.locator("body").innerText().catch(() => ""));
+    if (
+      invalidAttribute === "true"
+      || surroundingText.includes("CODICE FISCALE NON COERENTE")
+      || pageText.includes("CODICE FISCALE NON COERENTE CON I DATI INSERITI")
+    ) {
+      throw new WorkerError(
+        "Il gestionale rifiuta il codice fiscale presente in SISTER per questo nominativo.",
+        "data_incomplete",
+        { portal: "CRM", action: "person-tax-code-invalid" },
+        true,
+      );
+    }
+  }
+
   async createPerson(person: NormalizedPerson, duplicateCandidateIds: string[] = [], onBeforeSave?: () => Promise<void>): Promise<PersonCreationResult> {
     if (this.dryRun) return {
       personId: `dry-person-${person.taxCode ?? Date.now()}`,
@@ -1141,6 +1164,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await this.fillPerson(person);
       await onBeforeSave?.();
       await this.page.locator(this.selectors.personSave).click();
+      await this.page.waitForTimeout(350);
+      await this.throwIfTaxCodeRejectedByCrm();
       await this.checkSession();
       const mergeSelectorsConfigured = ["personMergeDialog", "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeMessage"]
         .every((key) => Boolean(this.selectors[key as keyof CrmSelectors]));

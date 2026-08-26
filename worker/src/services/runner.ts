@@ -2,7 +2,7 @@ import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey, extractFirstCivicNumber, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
 import { logger } from "../logger.js";
-import type { AcquisitionReview, CadastralProperty, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
+import type { AcquisitionReview, CadastralProperty, ErrorStatus, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
@@ -89,6 +89,28 @@ export function selectRandomCrmCandidate<T>(candidates: T[], randomValue = Math.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRejectedTaxCodeError(error: unknown): boolean {
+  return isRecord(error) && isRecord(error.details) && error.details.action === "person-tax-code-invalid";
+}
+
+function asWorkerError(error: unknown): WorkerError {
+  if (error instanceof WorkerError) return error;
+  if (isRecord(error) && typeof error.status === "string" && isRecord(error.details)) {
+    return new WorkerError(
+      typeof error.message === "string" ? error.message : String(error),
+      error.status as ErrorStatus,
+      error.details,
+      error.captureScreenshot === true,
+    );
+  }
+  return new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+}
+
+function hasRejectedTaxCodeCheckpoint(person: PersonRow): boolean {
+  return isRecord(person.raw_payload?.tax_code_rejection)
+    && person.raw_payload.tax_code_rejection.action === "person-tax-code-invalid";
 }
 
 function isAcquisitionExcluded(property: PropertyRow): boolean {
@@ -904,11 +926,10 @@ export class PropertyWorkerRunner {
         return await operation();
       } catch (error) {
         lastError = error;
-        const workerError = error instanceof WorkerError
-          ? error
-          : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+        const workerError = asWorkerError(error);
         if (
           workerError.status === "paused"
+          || isRejectedTaxCodeError(workerError)
           || workerError.details.skipProperty === true
           || attempt === maximumAttempts
         ) {
@@ -1014,7 +1035,10 @@ export class PropertyWorkerRunner {
     const activePersonIds = new Set(plan.flatMap((item) => item.owners.map((owner) => owner.person.id)));
     propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
-      const { property, primary, coowners, owners } = item;
+      const { property, owners } = item;
+      let primary = item.primary;
+      let coowners = item.coowners;
+      let activeOwners = owners;
       // The operator can change this preference during a run. Freeze it only
       // for the property currently in flight, then read it again for the next.
       const autoFillDirectContact = this.autoFillDirectContact();
@@ -1053,6 +1077,20 @@ export class PropertyWorkerRunner {
         };
         if (["completed", "skipped"].includes(property.processing_status) || stageReached("completed")) continue propertyLoop;
         try {
+        const previouslyRejectedOwners = owners.filter((owner) => hasRejectedTaxCodeCheckpoint(owner.person));
+        if (previouslyRejectedOwners.length) {
+          activeOwners = owners.filter((owner) => !previouslyRejectedOwners.includes(owner));
+          if (activeOwners.length) {
+            primary = activeOwners[0]!;
+            coowners = activeOwners.slice(1);
+          } else {
+            throw new WorkerError(
+              "Nessun socio utilizzabile: il codice fiscale dell'unico proprietario e stato rifiutato dal gestionale.",
+              "data_incomplete",
+              { skipProperty: true, action: "property-no-valid-owners", propertyId: property.id },
+            );
+          }
+        }
         if (!stageReached("owner_contacts_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Leggo da Excel i recapiti di tutti i ${owners.length} proprietari, senza ancora toccare il gestionale`);
@@ -1065,11 +1103,48 @@ export class PropertyWorkerRunner {
 
         if (!stageReached("owners_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
+          const ignoredOwners: typeof owners = [];
           for (const [ownerIndex, owner] of owners.entries()) {
             this.throwIfPropertySkipRequested(job.id, property.id);
+            if (hasRejectedTaxCodeCheckpoint(owner.person)) {
+              ignoredOwners.push(owner);
+              continue;
+            }
             this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "owners", `Verifico il proprietario ${ownerIndex + 1} di ${owners.length}: ${owner.person.full_name}`);
-            await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Scheda nominativo ${owner.person.full_name}`, () =>
-              this.ensurePerson(job, owner.person, crm));
+            try {
+              await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Scheda nominativo ${owner.person.full_name}`, () =>
+                this.ensurePerson(job, owner.person, crm));
+            } catch (error) {
+              if (!isRejectedTaxCodeError(error)) throw error;
+              const rejectedAt = new Date().toISOString();
+              owner.person.raw_payload = {
+                ...(owner.person.raw_payload ?? {}),
+                tax_code_rejection: {
+                  action: "person-tax-code-invalid",
+                  rejectedAt,
+                  source: "crm-validation",
+                },
+              };
+              await this.repository.updatePersonProcessing(owner.person.id, {
+                processing_status: "invalid_tax_code",
+                raw_payload: owner.person.raw_payload,
+              });
+              await this.repository.updateOwnership(owner.ownership.id, {
+                processing_status: "ignored_tax_code",
+              });
+              ignoredOwners.push(owner);
+              await this.repository.logChange(
+                job.id,
+                "person",
+                owner.person.tax_code ?? owner.person.id,
+                "tax_code_rejected_by_crm",
+                null,
+                "Nominativo escluso dal solo immobile: codice fiscale SISTER rifiutato dal gestionale",
+                "WORKER",
+              );
+              this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "owner_ignored", `Ignoro ${owner.person.full_name}: il gestionale rifiuta il suo codice fiscale; continuo con gli altri soci`);
+              continue;
+            }
             if (!owner.person.crm_record_id) {
               throw new WorkerError(
                 "Tutti i proprietari devono avere una scheda verificata prima di creare l'immobile.",
@@ -1079,13 +1154,39 @@ export class PropertyWorkerRunner {
               );
             }
           }
+          activeOwners = owners.filter(
+            (owner) => !ignoredOwners.includes(owner) && Boolean(owner.person.crm_record_id),
+          );
+          if (!activeOwners.length) {
+            throw new WorkerError(
+              "Nessun socio utilizzabile: il codice fiscale dell'unico proprietario e stato rifiutato dal gestionale.",
+              "data_incomplete",
+              { skipProperty: true, action: "property-no-valid-owners", propertyId: property.id },
+            );
+          }
+          primary = activeOwners[0]!;
+          coowners = activeOwners.slice(1);
+          if (ignoredOwners.length) {
+            property.raw_payload = {
+              ...(property.raw_payload ?? {}),
+              ignored_tax_code_owners: ignoredOwners.map((owner) => ({
+                personId: owner.person.id,
+                fullName: owner.person.full_name,
+                sharePercentage: owner.ownership.share_percentage,
+              })),
+              effective_primary_owner_id: primary.person.id,
+            };
+            await this.repository.updatePropertyProcessing(property.id, {
+              raw_payload: property.raw_payload,
+            });
+          }
           await advanceStage("owners_ready");
         }
 
         if (!stageReached("contacts_synced")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts_sync", "Confronto i recapiti di tutti i proprietari e aggiungo solo quelli assenti");
-          for (const owner of owners) {
+          for (const owner of activeOwners) {
             await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Assegnazione recapiti di ${owner.person.full_name}`, () =>
               this.ensureContacts(job, owner.person, crm, contacts, true));
           }
@@ -1108,7 +1209,7 @@ export class PropertyWorkerRunner {
               job,
               property,
               primary.person,
-              owners.map((owner) => owner.person),
+              activeOwners.map((owner) => owner.person),
               crm,
               directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
               autoFillDirectContact,
@@ -1187,13 +1288,22 @@ export class PropertyWorkerRunner {
         }
         break propertyRecovery;
       } catch (error) {
-        const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+        const workerError = asWorkerError(error);
         if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
           await crm.resetToCrmHome();
-          await this.markImportPropertySkipped(property, "Saltato manualmente dall'utente");
+          const noValidOwners = workerError.details.action === "property-no-valid-owners";
+          await this.markImportPropertySkipped(
+            property,
+            noValidOwners
+              ? "Saltato: nessun socio associabile dopo il rifiuto del codice fiscale da parte del gestionale"
+              : "Saltato manualmente dall'utente",
+            noValidOwners
+              ? { source: "tax_code_rejected_no_alternative_owner", attempts: 0 }
+              : undefined,
+          );
           completed += 1;
           await this.repository.updateJob(job.id, { processed_properties: completed });
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", "Immobile saltato; continuo con il successivo");
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", noValidOwners ? "Immobile annotato: nessun socio valido dopo il rifiuto del codice fiscale; continuo con il successivo" : "Immobile saltato; continuo con il successivo");
           continue propertyLoop;
         }
         if (workerError.status === "paused") throw workerError;
