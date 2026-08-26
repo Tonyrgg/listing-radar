@@ -685,6 +685,29 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   }, 12_000);
 
+  it("non ripete Nuovo se il salvataggio del comproprietario è chiuso ma l'elenco non si aggiorna", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      await page.locator('[data-worker-crm="ownerSave"]').evaluate((button) => {
+        button.setAttribute("onclick", "document.body.dataset.ownerSaved='true';this.closest('[role=dialog]').hidden=true");
+      });
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      await expect(adapter.linkOwner("I-42", {
+        personId: "P-99",
+        searchLabel: "Mario Rossi",
+        phones: ["3331234567"],
+      }, 100 / 3)).resolves.toMatchObject({
+        linkId: "saved-owner-link-P-99",
+        selection: "saved_unverified",
+      });
+      expect(await page.locator("body").getAttribute("data-owner-saved")).toBeNull();
+    } finally { await browser.close(); }
+  }, 15_000);
+
   it("riconosce una scheda nominativo già aperta dal codice fiscale e dal nome", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

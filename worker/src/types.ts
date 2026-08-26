@@ -196,7 +196,7 @@ export interface OwnerLinkInput {
 
 export interface OwnerLinkResult {
   linkId: string;
-  selection: "existing" | "crm_id" | "phone" | "single" | "first_ambiguous" | "dry_run";
+  selection: "existing" | "crm_id" | "phone" | "single" | "first_ambiguous" | "dry_run" | "saved_unverified";
   candidateCount: number;
   note: string | null;
 }

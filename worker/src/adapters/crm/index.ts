@@ -2244,15 +2244,22 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
-  async findLinkedOwnerIds(propertyId: string): Promise<string[]> {
+  async findLinkedOwnerIds(propertyId: string, refresh = false): Promise<string[]> {
     if (propertyId.startsWith("dry-")) return [];
     return this.friendly("property-owner-check", "Non riesco a controllare i comproprietari collegati all’immobile.", async () => {
       this.require("propertyOwnersCard", "propertyOwnerLinks");
-      await this.openProperty(propertyId);
+      await this.openProperty(propertyId, refresh);
       const card = this.page.locator(this.selectors.propertyOwnersCard).first();
       if (!(await card.count())) return [];
-      const hrefs = await card.locator(this.selectors.propertyOwnerLinks).evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-      return [...new Set(hrefs.map((href) => recordIdFromHref(href, "account")).filter(Boolean))];
+      const links = card.locator(this.selectors.propertyOwnerLinks);
+      const linkedIds = await links.evaluateAll((nodes) => nodes.map((link) => {
+        const href = link.getAttribute("href");
+        return link.getAttribute("data-recordid")
+          ?? link.getAttribute("data-id")
+          ?? href?.match(/\/s\/account\/([^/?#]+)/i)?.[1]
+          ?? "";
+      }));
+      return [...new Set(linkedIds.filter(Boolean))];
     });
   }
 
@@ -2362,14 +2369,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         return { linkId: `existing-link-${personId}`, selection: "existing", candidateCount, note };
       }
       await this.checkSession();
-      const linkedIds = await this.findLinkedOwnerIds(propertyId);
+      let linkedIds = await this.findLinkedOwnerIds(propertyId);
       if (!linkedIds.includes(personId)) {
-        throw new WorkerError(
-          "Il comproprietario è stato salvato ma non compare ancora tra i soggetti collegati. Il worker riproverà senza crearne un altro.",
-          "portal_error",
-          { portal: "CRM", action: "property-owner-post-save", propertyId, personId },
-          true,
-        );
+        // The relationship panel is eventually consistent. Re-open the record
+        // once before deciding, but never click Nuovo again after a save.
+        await this.page.waitForTimeout(800);
+        linkedIds = await this.findLinkedOwnerIds(propertyId, true);
+      }
+      if (!linkedIds.includes(personId)) {
+        return {
+          linkId: `saved-owner-link-${personId}`,
+          selection: "saved_unverified",
+          candidateCount,
+          note: note ?? "Salvataggio del comproprietario inviato; il pannello non lo espone ancora dopo il ricaricamento. Il worker non ripete l'inserimento per evitare duplicati.",
+        };
       }
       return { linkId: `owner-link-${personId}`, selection, candidateCount, note };
     });

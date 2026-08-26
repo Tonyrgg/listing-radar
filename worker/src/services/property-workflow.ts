@@ -37,7 +37,17 @@ export function buildPropertyWorkPlan(graph: Graph): PropertyWorkItem[] {
         const byShare = (right.ownership.share_percentage ?? -1) - (left.ownership.share_percentage ?? -1);
         return byShare;
       });
-    if (!owners[0]) throw new Error(`Nessun proprietario disponibile per l'immobile ${property.id}`);
-      return { property, primary: owners[0], coowners: owners.slice(1), owners };
+    // A person can appear more than once in malformed/imported ownership data.
+    // CRM relationships are singular per person and property, therefore one
+    // plan must never issue multiple Nuovo actions for the same CRM identity.
+    const ownerKeys = new Set<string>();
+    const uniqueOwners = owners.filter((owner) => {
+      const key = owner.person.crm_record_id || owner.person.id;
+      if (ownerKeys.has(key)) return false;
+      ownerKeys.add(key);
+      return true;
+    });
+    if (!uniqueOwners[0]) throw new Error(`Nessun proprietario disponibile per l'immobile ${property.id}`);
+      return { property, primary: uniqueOwners[0], coowners: uniqueOwners.slice(1), owners: uniqueOwners };
     });
 }

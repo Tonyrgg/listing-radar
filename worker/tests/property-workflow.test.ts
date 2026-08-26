@@ -60,4 +60,18 @@ describe("piano di lavorazione per immobile", () => {
     expect(buildPropertyWorkPlan({ properties: [completed, skipped, pending], people: owners, ownerships })
       .map((item) => item.property.id)).toEqual(["next"]);
   });
+
+  it("non pianifica due collegamenti per lo stesso comproprietario CRM", () => {
+    const properties = [property("p1")];
+    const duplicateOwner = { ...person("owner-duplicate"), crm_record_id: "CRM-OWNER-1" };
+    const primary = { ...person("owner-primary"), crm_record_id: "CRM-OWNER-2", share_percentage: 60 };
+    const ownerships = [
+      { id: "o-primary", property_id: "p1", person_id: primary.id, share_percentage: 60, processing_status: "extracted", crm_link_id: null },
+      { id: "o-duplicate-1", property_id: "p1", person_id: duplicateOwner.id, share_percentage: 20, processing_status: "extracted", crm_link_id: null },
+      { id: "o-duplicate-2", property_id: "p1", person_id: duplicateOwner.id, share_percentage: 20, processing_status: "extracted", crm_link_id: null },
+    ];
+    const plan = buildPropertyWorkPlan({ properties, people: [primary, duplicateOwner], ownerships });
+    expect(plan[0]?.owners).toHaveLength(2);
+    expect(plan[0]?.coowners.map((owner) => owner.person.crm_record_id)).toEqual(["CRM-OWNER-1"]);
+  });
 });
