@@ -842,9 +842,17 @@ function renderAction() {
       last = guide(job?.last_completed_step),
       next = guide(nextStepName(job?.last_completed_step)),
       property = job?.error_details?.propertyAddress,
-      operation = advice.operation ?? job?.error_details?.operationLabel;
+      operation = advice.operation ?? job?.error_details?.operationLabel,
+      reanalyzePropertyId = typeof job?.error_details?.propertyId === "string" ? job.error_details.propertyId : null;
     panel.className = "now-card is-error";
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Lavorazione ferma, dati salvati</div><h2>${esc(advice.cause)}</h2>${operation ? `<p><b>Cosa stavo facendo:</b> ${esc(operation)}${property ? ` su ${esc(property)}` : ""}.</p>` : ""}<p>Ultimo punto concluso: <b>${esc(last.label)}</b>. Ripartirò da <b>${esc(next.label)}</b>, senza ricominciare.</p><div class="recovery-box"><b>Cosa fare adesso</b><ol>${advice.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div><div class="now-actions">${advice.action === "data" || advice.action === "unknown" ? `<button class="button primary" data-action="open-corrections">Correggi dati qui sotto</button>` : ""}<button class="button ${advice.action === "data" ? "secondary" : "primary"}" data-action="resume-current">${advice.action === "session" ? "Ho effettuato l’accesso, riprendi" : advice.action === "review" ? "Ho risolto nel gestionale, riprendi" : advice.action === "selected-person" ? "Ho scelto la scheda corretta, continua" : "Riprova questo passaggio"}</button><button class="button secondary" data-action="checks">Controlla collegamenti</button>${cancelButton(appState.activeJobId)}</div><details class="technical-details"><summary>Dettaglio tecnico per assistenza</summary><pre>${esc(appState.lastError)}</pre></details></div><div class="now-side"><h3>Il lavoro è al sicuro</h3><p>Ogni passaggio concluso è stato salvato. La ripresa riapre le schede tramite i loro identificativi e non ricrea ciò che è già completo.</p></div></div>`;
+    if (reanalyzePropertyId) {
+      panel.querySelector(".now-actions")?.insertAdjacentHTML(
+        "beforeend",
+        `<button class="button secondary" data-action="reanalyze-current" data-property-id="${esc(reanalyzePropertyId)}">Rianalizza situazione</button>`,
+      );
+      panel.querySelector(".now-side p").textContent = "Rianalizza situazione riparte da questo immobile, conserva ciò che il Cloud ha già e aggiunge soltanto gli elementi mancanti.";
+    }
     return;
   }
   const current = guide(appState?.currentStep ?? "ready");
@@ -1778,6 +1786,13 @@ document.addEventListener("click", async (event) => {
       }
       if (target.dataset.action === "pause")
         return window.propertyWorker.pauseJob();
+      if (target.dataset.action === "reanalyze-current" && appState.activeJobId && target.dataset.propertyId) {
+        if (!window.confirm("Rianalizzare l'immobile corrente? Controllerò nuovamente nominativi, immobile, attività e comproprietari, senza duplicare ciò che esiste già.")) return COMMAND_CANCELLED;
+        return window.propertyWorker.reanalyzeProperty({
+          jobId: appState.activeJobId,
+          propertyId: target.dataset.propertyId,
+        });
+      }
       if (target.dataset.skipProperty && target.dataset.jobId) {
         const result = await window.propertyWorker.skipProperty({
           jobId: target.dataset.jobId,

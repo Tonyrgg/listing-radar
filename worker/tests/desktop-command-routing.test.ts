@@ -46,6 +46,7 @@ describe("instradamento comandi desktop", () => {
       "pause",
       "toggle-auto-retry",
       "resume-current",
+      "reanalyze-current",
       "open-corrections",
       "close-corrections",
       "config",
@@ -69,5 +70,8 @@ describe("instradamento comandi desktop", () => {
     expect(main).toContain("Comando annullato:");
     expect(main).toContain("Comando fallito:");
     expect(main).toContain("worker-operations.ndjson");
+    expect(preload).toContain('reanalyzeProperty: (values) => ipcRenderer.invoke("desktop:reanalyze-property", values)');
+    expect(main).toContain('ipcMain.handle("desktop:reanalyze-property"');
+    expect(main).toContain("reanalysisSource: \"operator\"");
   });
 });

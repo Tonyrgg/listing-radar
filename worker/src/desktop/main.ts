@@ -1223,6 +1223,48 @@ async function resetCrmAfterSkippedCase() {
   }
 }
 
+async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
+  if (active) throw new Error("Attendi che il passaggio corrente si fermi prima di rianalizzarlo");
+  const repo = repository();
+  const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
+  const property = graph.properties.find((candidate) => candidate.id === propertyId);
+  if (!property) throw new Error("Immobile da rianalizzare non trovato nella lavorazione");
+  if (["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)) {
+    throw new Error("Questo immobile non è più rianalizzabile nella lavorazione corrente");
+  }
+
+  // Reset only this property's workflow checkpoint. CRM IDs, activity proof,
+  // contacts and ownership links stay intact: they are verified again and the
+  // worker writes only the pieces that Tecnocloud still lacks.
+  const payload = { ...(property.raw_payload ?? {}) };
+  delete payload.automatic_retry;
+  payload.property_flow = {
+    version: 3,
+    stage: "ready",
+    dryRun: preferences.dryRun,
+    reanalyzedAt: new Date().toISOString(),
+    reanalysisSource: "operator",
+  };
+  await repo.updatePropertyProcessing(property.id, {
+    processing_status: "normalized",
+    raw_payload: payload,
+  });
+  await repo.updateJob(job.id, { status: "paused", error_message: null, error_details: null });
+  clearAutoRetry();
+  lastError = null;
+  propertyProgress = {
+    propertyId: property.id,
+    index: 0,
+    total: job.total_properties ?? graph.properties.length,
+    address: property.address,
+    stage: "reanalyzing",
+    message: "Rianalizzo l’immobile: verifico ciò che esiste e completo solo ciò che manca",
+  };
+  pushActivity(`Rianalisi richiesta per ${property.address ?? property.cadastral_key}: mantengo i dati CRM esistenti e controllo ogni passaggio`, "warning");
+  await publishState();
+  await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
+}
+
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
@@ -1612,6 +1654,11 @@ function registerIpc() {
     pushActivity("Pausa acquisita: termino soltanto l'operazione atomica già iniziata", "warning");
     await publishState();
     await repository().updateJob(jobId, { status: "paused" });
+    return true;
+  });
+  ipcMain.handle("desktop:reanalyze-property", async (_event, values: { jobId: string; propertyId: string }) => {
+    if (!values.jobId || !values.propertyId) throw new Error("Immobile da rianalizzare non riconosciuto");
+    await reanalyzePropertyFromScratch(values.jobId, values.propertyId);
     return true;
   });
   ipcMain.handle("desktop:cancel-job", async (_event, jobId: string) => {
