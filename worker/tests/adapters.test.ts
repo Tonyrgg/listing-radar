@@ -217,6 +217,26 @@ describe("adattatori con fixture HTML", () => {
         },
       });
       expect(visitedProperties).toEqual(["I-WRONG", "I-MATCH"]);
+
+      // If the full-list modal is still open at a later property step, the
+      // adapter must click the exact property in Nome instead of treating the
+      // modal as an unknown blocking dialog or scanning the other rows again.
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-42");
+      await page.locator('[data-worker-crm="personPropertiesModal"]').evaluate((dialog) => { (dialog as HTMLElement).hidden = false; });
+      await expect(adapter.verifyProperty("I-MATCH", {
+        municipality: "BITONTO",
+        sheet: "50",
+        parcel: "2455",
+        subaltern: "9",
+        address: "Via Roma 12",
+        censusZone: "U",
+        category: "A/2",
+        class: "3",
+        consistency: "6 vani",
+        cadastralIncome: null,
+        rawPayload: {},
+      })).resolves.toMatchObject({ match: { id: "I-MATCH" } });
+      expect(visitedProperties).toEqual(["I-WRONG", "I-MATCH", "I-MATCH"]);
     } finally { await browser.close(); }
   });
 

@@ -396,7 +396,56 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     );
   }
 
+  /**
+   * Tecnocloud's "Visualizza tutto" list is a normal intermediate state while
+   * reading a person's properties, not a reason to stop the import. If it is
+   * still open when a property step starts, use its Nome link only for the
+   * exact CRM property requested by the run. A missing/ambiguous row is closed
+   * and the known record URL is used below instead.
+   */
+  private async openPropertyFromVisiblePersonPropertiesModal(propertyId: string) {
+    if (!this.selectors.personPropertiesModal) return false;
+    const modals = this.visible(this.selectors.personPropertiesModal);
+    const modalCount = await modals.count();
+    if (!modalCount) return false;
+    if (modalCount !== 1) {
+      throw new WorkerError(
+        "Il gestionale mostra più elenchi Immobili/Notizie/Incarichi. Il worker non sceglie una finestra ambigua.",
+        "needs_review",
+        { portal: "CRM", action: "person-properties-modal-ambiguous", propertyId, modalCount },
+        true,
+      );
+    }
+    this.require("personPropertiesModalName", "personPropertiesModalClose");
+    const modal = modals.first();
+    const names = modal.locator(this.selectors.personPropertiesModalName).filter({ visible: true });
+    const matchingIndexes: number[] = [];
+    for (let index = 0; index < await names.count(); index += 1) {
+      const name = names.nth(index);
+      const href = await name.getAttribute("href").catch(() => null);
+      const rowPropertyId = await name.getAttribute("data-recordid").catch(() => null)
+        ?? await name.getAttribute("data-id").catch(() => null)
+        ?? recordIdFromHref(href, "immobile");
+      if (rowPropertyId === propertyId) matchingIndexes.push(index);
+    }
+    if (matchingIndexes.length === 1) {
+      const target = names.nth(matchingIndexes[0]!);
+      await target.click();
+      const reached = await this.page.waitForURL(new RegExp(`/s/immobile/${propertyId}(?:[/?#]|$)`, "i"), { timeout: 12_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (reached) return true;
+    }
+
+    const close = modal.locator(this.selectors.personPropertiesModalClose).filter({ visible: true }).last();
+    if (await close.count()) await close.click({ force: true }).catch(() => undefined);
+    if (await modal.isVisible().catch(() => false)) await this.page.keyboard.press("Escape").catch(() => undefined);
+    await modal.waitFor({ state: "hidden", timeout: 8_000 }).catch(() => undefined);
+    return false;
+  }
+
   private async openProperty(propertyId: string, refresh = false) {
+    await this.openPropertyFromVisiblePersonPropertiesModal(propertyId);
     await this.ensureCrmIdle();
     const alreadyOpen = this.page.url().includes(`/s/immobile/${propertyId}`);
     if (alreadyOpen && refresh) await this.page.reload({ waitUntil: "domcontentloaded" });
