@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
+import { identityHardConflicts } from "@/lib/property-lifecycle/identity/scoring";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
+import { PropertyLifecycleReadRepository } from "@/lib/property-lifecycle/read-models/repository";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 
 const PROPERTY_SALE_STATES = new Set([
@@ -198,4 +200,85 @@ export async function recordReviewDecision(formData: FormData) {
     .eq("id", reviewId);
   if (update.error) throw new Error(update.error.message);
   revalidateLifecycle(review.data.property_id ?? undefined);
+}
+
+/**
+ * Chiude solo i review IDENTITY per i quali ogni candidata ha almeno una
+ * contraddizione esplicita. Non unisce mai due immobili: elimina rumore dalla
+ * coda e conserva la decisione, il revisore e le soglie nell'audit.
+ */
+export async function dismissIncompatibleIdentityReviews() {
+  const createdBy = await currentReviewerId();
+  const db = getSupabaseServiceClient();
+  const reviews = await new PropertyLifecycleReadRepository(db).reviews();
+  const repository = new PropertyLifecycleRepository(db);
+
+  const resolvable = reviews.flatMap((review) => {
+    if (review.reviewType !== "IDENTITY" || !review.property || !review.candidates.length) {
+      return [];
+    }
+    const checks = review.candidates.map((candidate) => ({
+      candidatePropertyId: candidate.property.id,
+      conflicts: identityHardConflicts(
+        {
+          agencyReference: null,
+          address: review.property?.address ?? null,
+          locality: review.property?.locality ?? null,
+          propertyType: review.property?.propertyType ?? null,
+          surfaceSqm: review.property?.surfaceSqm ?? null,
+          rooms: review.property?.rooms ?? null,
+          priceAmount: review.property?.currentPrice ?? null,
+          imageFingerprints: [],
+          floorplanFingerprints: [],
+        },
+        {
+          agencyReference: null,
+          address: candidate.property.address,
+          locality: candidate.property.locality,
+          propertyType: candidate.property.propertyType,
+          surfaceSqm: candidate.property.surfaceSqm,
+          rooms: candidate.property.rooms,
+          priceAmount: candidate.property.currentPrice,
+          imageFingerprints: [],
+          floorplanFingerprints: [],
+        },
+      ),
+    }));
+    return checks.every((check) => check.conflicts.length) ? [{ review, checks }] : [];
+  });
+
+  for (const { review, checks } of resolvable) {
+    const reason = `Chiusura automatica: ${checks
+      .map((check) => check.conflicts.join(", "))
+      .join("; ")}.`;
+    const overrideId = await repository.recordManualOverride({
+      targetType: "IDENTITY_MATCH",
+      targetId: review.id,
+      overrideKey: "cross_check_decision",
+      overrideValue: { decision: "DIFFERENT", checks },
+      previousValue: review.status,
+      reason,
+      source: "LIFECYCLE_IDENTITY_CROSS_CHECK",
+      createdBy,
+    });
+    const { error } = await db
+      .from("review_queue")
+      .update({
+        status: "DISMISSED",
+        resolution: {
+          decision: "DIFFERENT",
+          reason,
+          overrideId,
+          checks,
+          automated: true,
+        },
+        resolved_by: createdBy,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", review.id)
+      .in("status", ["OPEN", "IN_REVIEW"]);
+    if (error) throw new Error(error.message);
+  }
+
+  revalidateLifecycle();
 }

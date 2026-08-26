@@ -64,6 +64,16 @@ const FEATURE_WEIGHTS = {
   price: 0.07,
 } as const;
 
+/**
+ * Una differenza di prezzo o metratura può essere un semplice aggiornamento;
+ * oltre queste soglie non è più una candidata utile senza una correzione
+ * esplicita della fonte. Una via nominata in modo diverso è sempre un blocco.
+ */
+export const IDENTITY_HARD_CONFLICT_THRESHOLDS = {
+  priceRelativeDifference: 0.35,
+  surfaceRelativeDifference: 0.3,
+} as const;
+
 function normalizedTokens(value: string | null): Set<string> {
   return new Set(
     (value ?? "")
@@ -84,6 +94,22 @@ function normalizedAddressTokens(value: string | null): Set<string> {
     tokens.delete(genericPlace);
   }
   return tokens;
+}
+
+function namedStreetTokens(value: string | null): Set<string> {
+  return new Set(
+    [...normalizedAddressTokens(value)].filter((token) => !/\d/.test(token)),
+  );
+}
+
+function hasExplicitStreetConflict(left: string | null, right: string | null): boolean {
+  const leftTokens = namedStreetTokens(left);
+  const rightTokens = namedStreetTokens(right);
+  return (
+    leftTokens.size > 0 &&
+    rightTokens.size > 0 &&
+    ![...leftTokens].some((token) => rightTokens.has(token))
+  );
 }
 
 function sharesCivicToken(left: string | null, right: string | null): boolean {
@@ -169,6 +195,33 @@ function relativeDifference(left: number | null | undefined, right: number | nul
   return Math.abs(left - right) / Math.max(left, right, 1);
 }
 
+/** Motivi deterministici per cui due annunci non possono essere la stessa casa. */
+export function identityHardConflicts(
+  observation: IdentityObservation,
+  candidate: IdentityObservation,
+): string[] {
+  const conflicts: string[] = [];
+  const surfaceDifference = relativeDifference(observation.surfaceSqm, candidate.surfaceSqm);
+  const priceDifference = relativeDifference(observation.priceAmount, candidate.priceAmount);
+
+  if (hasExplicitStreetConflict(observation.address, candidate.address)) {
+    conflicts.push("street_hard_conflict");
+  }
+  if (
+    surfaceDifference != null &&
+    surfaceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.surfaceRelativeDifference
+  ) {
+    conflicts.push("surface_hard_conflict");
+  }
+  if (
+    priceDifference != null &&
+    priceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.priceRelativeDifference
+  ) {
+    conflicts.push("price_hard_conflict");
+  }
+  return conflicts;
+}
+
 function propertyTypeFamily(value: string | null): string | null {
   const normalized = [...normalizedTokens(value)].join(" ");
   if (!normalized) return null;
@@ -201,10 +254,7 @@ export function retrieveIdentityCandidates(
     const candidateAddress = normalizedAddressTokens(candidate.address);
     const localityComparable = comparableText(observation.locality, candidate.locality);
     const localityMatches = exactText(observation.locality, candidate.locality) === 1;
-    const surfaceDifference = relativeDifference(
-      observation.surfaceSqm,
-      candidate.surfaceSqm,
-    );
+    const surfaceDifference = relativeDifference(observation.surfaceSqm, candidate.surfaceSqm);
     const roomsDifference =
       observation.rooms == null || candidate.rooms == null
         ? null
@@ -219,8 +269,9 @@ export function retrieveIdentityCandidates(
       incrementReason(discardedReasons, "locality_conflict");
       continue;
     }
-    if (surfaceDifference != null && surfaceDifference > 0.4) {
-      incrementReason(discardedReasons, "surface_hard_conflict");
+    const hardConflicts = identityHardConflicts(observation, candidate);
+    if (hardConflicts.length) {
+      hardConflicts.forEach((reason) => incrementReason(discardedReasons, reason));
       continue;
     }
     if (typeConflict) {
@@ -379,6 +430,10 @@ export function scoreIdentityCandidate(
   };
   const contradictions: string[] = [];
 
+  identityHardConflicts(observation, candidate).forEach((conflict) => {
+    contradictions.push(conflict);
+  });
+
   if (
     addressTokens.size >= 2 &&
     candidateAddressTokens.size >= 2 &&
@@ -397,7 +452,7 @@ export function scoreIdentityCandidate(
     candidate.surfaceSqm != null &&
     Math.abs(observation.surfaceSqm - candidate.surfaceSqm) /
       Math.max(observation.surfaceSqm, candidate.surfaceSqm, 1) >
-      0.35
+      IDENTITY_HARD_CONFLICT_THRESHOLDS.surfaceRelativeDifference
   ) {
     contradictions.push("surface_conflict");
   }
@@ -407,7 +462,10 @@ export function scoreIdentityCandidate(
   ) {
     contradictions.push("property_type_conflict");
   }
-  if ((relativeDifference(observation.priceAmount, candidate.priceAmount) ?? 0) > 0.5) {
+  if (
+    (relativeDifference(observation.priceAmount, candidate.priceAmount) ?? 0) >
+    IDENTITY_HARD_CONFLICT_THRESHOLDS.priceRelativeDifference
+  ) {
     contradictions.push("price_conflict");
   }
 

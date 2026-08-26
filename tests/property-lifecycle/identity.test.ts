@@ -68,6 +68,41 @@ describe("Property Identity v1", () => {
     });
   });
 
+  it.each([
+    [
+      "prezzo troppo diverso",
+      { priceAmount: 114000 },
+      { priceAmount: 195000 },
+      "price_hard_conflict",
+    ],
+    [
+      "metratura troppo diversa",
+      { surfaceSqm: 80 },
+      { surfaceSqm: 125 },
+      "surface_hard_conflict",
+    ],
+    [
+      "via chiaramente diversa",
+      { address: "Via Traiana 12" },
+      { address: "Via Mazzini 12" },
+      "street_hard_conflict",
+    ],
+  ])(
+    "scarta automaticamente una candidata con %s",
+    (_label, observationOverrides, candidateOverrides, expectedReason) => {
+      const decision = decidePropertyIdentity(
+        { ...observation, ...observationOverrides },
+        [candidate({ ...candidateOverrides })],
+      );
+
+      expect(decision.outcome).toBe("NEW_PROPERTY");
+      expect(decision.candidates).toHaveLength(0);
+      expect(decision.retrieval?.discardedReasons).toMatchObject({
+        [expectedReason]: 1,
+      });
+    },
+  );
+
   it("creates a new property when no candidates exist", () => {
     expect(decidePropertyIdentity(observation, [])).toMatchObject({
       outcome: "NEW_PROPERTY",
