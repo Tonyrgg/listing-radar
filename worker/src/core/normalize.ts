@@ -84,10 +84,20 @@ export type ParsedPropertyAddress = {
   province: string | null;
 };
 
+const NO_CIVIC_TOKEN = "(?:S\\s*\\.?\\s*(?:N\\s*\\.?\\s*)?C\\s*\\.?|SENZA\\s+(?:N(?:UMERO)?\\s*)?CIVICO|NON\\s+(?:NUMERATO|DISPONIBILE)|N\\s*\\.?\\s*D\\s*\\.?)";
+const NO_CIVIC_PATTERN = new RegExp(`(?:\\bN(?:\\.|\\u00B0|\\u00BA)?\\s*)?\\b${NO_CIVIC_TOKEN}(?=\\s|$)`, "i");
+const NO_CIVIC_AT_END_PATTERN = new RegExp(`^(.*?)\\s+${NO_CIVIC_PATTERN.source}`, "i");
+
+/** True when SISTER explicitly marks the address as without a civic number. */
+export function hasNoCivicNumber(value: string | null | undefined): boolean {
+  return NO_CIVIC_PATTERN.test(String(value ?? "").replace(/\s+/g, " ").trim());
+}
+
 /** SISTER can expose a civic range; long runs use its first civic number. */
 export function extractFirstCivicNumber(value: string | null | undefined): string | null {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return null;
+  if (hasNoCivicNumber(normalized)) return ".";
   const explicit = normalized.match(/\bN(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
   if (explicit?.[1]) return explicit[1].toUpperCase();
   const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);
@@ -119,6 +129,8 @@ export function selectSisterAddressForStreet(
 export function splitStreetAndFirstCivic(value: string | null | undefined): { street: string; civicNumber: string | null } {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return { street: "", civicNumber: null };
+  const noCivic = normalized.match(NO_CIVIC_AT_END_PATTERN);
+  if (noCivic?.[1]) return { street: noCivic[1].trim(), civicNumber: "." };
   const explicit = normalized.match(/^(.*?)\s+N(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
   if (explicit) return { street: explicit[1]!.trim(), civicNumber: explicit[2]!.toUpperCase() };
   const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);

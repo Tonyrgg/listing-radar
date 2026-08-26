@@ -54,6 +54,12 @@ describe("confronto indirizzo immobile", () => {
     expect(extractFirstCivicNumber("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toBe("59");
     expect(addressIdentity("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toMatchObject({ street: "VIA TOMMASO TRAETTA", civic: "59" });
   });
+  it("riconosce il senza civico senza inventare un numero", () => {
+    expect(extractFirstCivicNumber("VIA MARSALA n. SC Piano T")).toBe(".");
+    expect(extractFirstCivicNumber("VIA MARSALA S.N.C. Piano T")).toBe(".");
+    expect(extractFirstCivicNumber("VIA MARSALA senza civico Piano T")).toBe(".");
+    expect(addressIdentity("VIA MARSALA n. SC Piano T")).toMatchObject({ street: "VIA MARSALA", civic: "." });
+  });
   it("in una long run conserva la porzione dell'indirizzo della via interrogata", () => {
     const address = selectSisterAddressForStreet(
       "VIA TOMMASO TRAETTA n. 119; VIA DAVIDE DELLE CESE n. 2 Piano T.",

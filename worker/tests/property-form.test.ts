@@ -43,6 +43,13 @@ describe("dati form immobile CRM", () => {
     }))).toMatchObject({ street: "Via Tommaso Traetta", civicNumber: "59" });
   });
 
+  it("usa il punto per il senza civico e non include n. SC nel nome", () => {
+    expect(propertyFormValues(property({
+      address: "VIA MARSALA n. SC Piano T",
+      rawPayload: { long_run: true, searchContext: { street: "VIA MARSALA", civicNumber: "18" } },
+    }))).toMatchObject({ street: "Via Marsala", civicNumber: "." });
+  });
+
   it("non inserisce l'indirizzo dell'immobile tutto in maiuscolo", () => {
     expect(propertyFormValues(property({
       rawPayload: { searchContext: { street: "VIA DELLE MATINE D'ANNUNZIO", civicNumber: "8" } },
