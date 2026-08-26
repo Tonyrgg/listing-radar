@@ -61,6 +61,17 @@ function comparableCadastralValue(value: string | null | undefined) {
   return (value ?? "").trim().replace(/\s+/g, "").replace(/^0+(?=\d)/, "").toUpperCase();
 }
 
+function hasSameCadastralIdentity(
+  identity: { sheet: string; parcel: string; subaltern: string },
+  property: Pick<NormalizedProperty, "sheet" | "parcel" | "subaltern">,
+) {
+  const expected = [property.sheet, property.parcel, property.subaltern].map(comparableCadastralValue);
+  const actual = [identity.sheet, identity.parcel, identity.subaltern].map(comparableCadastralValue);
+  return expected.every(Boolean)
+    && actual.every(Boolean)
+    && expected.every((value, index) => value === actual[index]);
+}
+
 function recordIdFromHref(href: string | null, entity: "account" | "immobile") {
   return href?.match(new RegExp(`/s/${entity}/([^/?#]+)`, "i"))?.[1] ?? "";
 }
@@ -603,9 +614,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return this.friendly("property-identity-check", "Non riesco a verificare l'identità dell'immobile aperto.", async () => {
       await this.openProperty(id);
       const identity = await this.readPropertyIdentity();
-      const cadastralMatch = comparableCadastralValue(identity.sheet) === comparableCadastralValue(property.sheet)
-        && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
-        && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
+      const cadastralMatch = hasSameCadastralIdentity(identity, property);
       if (!cadastralMatch) return { match: null };
       return {
         match: {
@@ -1540,9 +1549,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           await this.page.waitForTimeout(650);
         }
         const identity = await this.readPropertyIdentity();
-        const cadastralMatch = comparableCadastralValue(identity.sheet) === comparableCadastralValue(property.sheet)
-          && comparableCadastralValue(identity.parcel) === comparableCadastralValue(property.parcel)
-          && comparableCadastralValue(identity.subaltern) === comparableCadastralValue(property.subaltern);
+        const cadastralMatch = hasSameCadastralIdentity(identity, property);
         const addressMatch = samePropertyAddress(identity.rawAddress, property.address);
         if (cadastralMatch) {
           const id = hrefPropertyId || recordIdFromHref(this.page.url(), "immobile");
@@ -1933,6 +1940,52 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await save.last().click();
   }
 
+  private async completePropertyPositioningIfOpen(values: ReturnType<typeof propertyFormValues>) {
+    const dialogs = this.visible(this.selectors.blockingDialog).filter({ hasText: "Posizionamento Immobile" });
+    const dialogCount = await dialogs.count();
+    if (!dialogCount) return false;
+    if (dialogCount !== 1) {
+      throw new WorkerError(
+        "Il gestionale mostra piu finestre di posizionamento immobile.",
+        "needs_review",
+        { portal: "CRM", action: "property-positioning-ambiguous", dialogCount },
+        true,
+      );
+    }
+    const dialog = dialogs.first();
+    const dialogText = normalizedUiText(await dialog.innerText());
+    const missing = [values.street, values.civicNumber]
+      .map(normalizedUiText)
+      .filter((value) => !value || !dialogText.includes(value));
+    if (missing.length) {
+      throw new WorkerError(
+        "Il posizionamento proposto dal gestionale non coincide con strada e civico dell'immobile SISTER. Non viene salvato.",
+        "needs_review",
+        {
+          portal: "CRM",
+          action: "property-positioning-address-mismatch",
+          expected: { street: values.street, civicNumber: values.civicNumber },
+          missing,
+        },
+        true,
+      );
+    }
+    const save = dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
+    const saveCount = await save.count();
+    if (saveCount !== 1) {
+      throw new WorkerError(
+        "Il posizionamento dell'immobile non mostra un solo pulsante Salva.",
+        "portal_error",
+        { portal: "CRM", action: "property-positioning-save", saveCount },
+        true,
+      );
+    }
+    await save.click();
+    await dialog.waitFor({ state: "hidden", timeout: 12_000 });
+    await this.checkSession();
+    return true;
+  }
+
   async createProperty(property: NormalizedProperty): Promise<string> {
     if (this.dryRun) return `dry-property-${property.sheet}-${property.parcel}-${property.subaltern}`;
     return this.friendly("property-create", "Non riesco a creare l’immobile.", async () => {
@@ -2054,6 +2107,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await this.friendly("property-update", "Non riesco ad aggiornare l'immobile collegato.", async () => {
       await this.openProperty(id);
       await this.syncExistingPropertyCoreDetails(property);
+      await this.completePropertyPositioningIfOpen(propertyFormValues(property));
       await this.openProperty(id, true);
       await this.syncPropertyCadastralDetails(property);
     });
