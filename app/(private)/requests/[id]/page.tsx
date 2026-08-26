@@ -293,7 +293,7 @@ export default async function RequestDetailPage({
                     ...match,
                     classification: match.classification as MatchClassification,
                   }}
-                  counterpartHref={`/portfolio/${match.property_id}`}
+                  counterpartHref={`/casa/${match.property_id}`}
                   counterpartTitle={formatShouty(
                     match.property?.address ?? cleanPropertyTitle(match.property?.title),
                   )}

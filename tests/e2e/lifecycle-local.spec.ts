@@ -97,7 +97,7 @@ test("opens agency and physical-property dossiers", async ({ page }, testInfo) =
   await expect(page.locator("h1")).toBeVisible();
 
   await openAuthenticatedRoute(page, "/listings");
-  const propertyHref = await page.locator('a[href^="/lifecycle/archive/"]').first().getAttribute("href");
+  const propertyHref = await page.locator('a[href^="/casa/"]').first().getAttribute("href");
   expect(propertyHref).toBeTruthy();
   const propertyResponse = await openAuthenticatedRoute(page, propertyHref ?? "");
   expect(propertyResponse?.status()).toBe(200);

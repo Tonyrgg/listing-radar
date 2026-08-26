@@ -123,7 +123,7 @@ export function PropertyEditor({
           notes: formData.get("notes") || null, external_crm_id: formData.get("external_crm_id") || null,
           mandate_status: formData.get("mandate_status"), feature_values,
         });
-        setOpen(false); router.push(`/portfolio/${result.id}`); router.refresh();
+        setOpen(false); router.push(`/casa/${result.id}`); router.refresh();
       } catch (reason) { setError(reason instanceof Error ? reason.message : "Salvataggio non riuscito."); }
     });
   }

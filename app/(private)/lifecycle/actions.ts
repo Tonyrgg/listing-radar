@@ -51,7 +51,7 @@ function revalidateLifecycle(propertyId?: string) {
   revalidatePath("/lifecycle/archive");
   revalidatePath("/lifecycle/review");
   revalidatePath("/lifecycle/private");
-  if (propertyId) revalidatePath(`/lifecycle/archive/${propertyId}`);
+  if (propertyId) revalidatePath(`/casa/${propertyId}`);
 }
 
 export async function enqueueGlobalLifecycleRefresh() {

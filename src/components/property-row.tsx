@@ -91,7 +91,7 @@ export function PropertyRow({
   const agenzia = property.agencies[0]?.name ?? null;
   const altreAgenzie = Math.max(0, property.agencies.length - 1);
   const rilanci = property.relaunchCount;
-  const destinazione = href ?? `/lifecycle/archive/${property.id}`;
+  const destinazione = href ?? `/casa/${property.id}`;
 
   const tono: Tone = daPrivato ? "warn" : property.saleStatus === "SOLD" ? "neutral" : "info";
 

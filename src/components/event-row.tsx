@@ -78,7 +78,7 @@ export function EventRow({
   return (
     <article className="group relative flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-3 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
       <Link
-        href={href ?? `/lifecycle/archive/${event.propertyId}`}
+        href={href ?? `/casa/${event.propertyId}`}
         className="absolute inset-0 z-0"
         aria-label={`${lifecycleEventLabel(event.eventType)}: ${dove}`}
       />

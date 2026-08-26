@@ -137,7 +137,7 @@ export default async function CercaPage({
               <PortfolioRow
                 key={property.id}
                 property={property}
-                href={`/portfolio/${property.id}`}
+                href={`/casa/${property.id}`}
                 tono={property.mandate_status === "active" ? "action" : "neutral"}
               />
             ))}

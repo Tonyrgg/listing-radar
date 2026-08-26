@@ -68,7 +68,7 @@ export default async function PrivatiPage() {
                   <Stripe tone={attivo ? "warn" : "neutral"} />
 
                   <Link
-                    href={`/lifecycle/archive/${casa.id}`}
+                    href={`/casa/${casa.id}`}
                     className="block h-24 w-32 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] sm:h-28 sm:w-40"
                     aria-label={`Apri la scheda di ${formatShouty(casa.address ?? casa.title)}`}
                   >
@@ -94,7 +94,7 @@ export default async function PrivatiPage() {
                     </div>
 
                     <Link
-                      href={`/lifecycle/archive/${casa.id}`}
+                      href={`/casa/${casa.id}`}
                       className="truncate text-[length:var(--lr-text-record)] font-[650] leading-snug tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)] hover:underline"
                     >
                       {formatShouty(casa.address ?? annuncio.title)}

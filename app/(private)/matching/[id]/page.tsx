@@ -105,7 +105,7 @@ export default async function MatchDetailPage({ params }: PageProps<"/matching/[
             <EntitySignal icon={DoorOpen} label="Locali" value={numberLabel(property.rooms)} />
             <EntitySignal icon={MapPin} label="Zona" value={propertyZone} />
           </div>
-          <Link href={`/portfolio/${property.id}`}>Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
+          <Link href={`/casa/${property.id}`}>Apri immobile <ArrowRight aria-hidden="true" className="size-4" /></Link>
         </article>
       </section>
 

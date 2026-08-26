@@ -518,7 +518,7 @@ export async function listPropertyMapData(): Promise<ListingMapData> {
         [posizione.street_name, posizione.street_number].filter(Boolean).join(" ") ??
         "Casa osservata",
       source: posizione.municipality ?? "Bitonto",
-      url: `/lifecycle/archive/${riga.id}`,
+      url: `/casa/${riga.id}`,
       price: typeof attributi.priceAmount === "number" ? attributi.priceAmount : null,
       sqm: typeof attributi.surfaceSqm === "number" ? attributi.surfaceSqm : null,
       addressRaw: indirizzo ?? posizione.raw_text,

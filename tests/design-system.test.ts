@@ -167,6 +167,8 @@ describe("sistema di design", () => {
       "Commerciale",
       "Territorio",
       "Impostazioni",
+      /* La ricerca sta nella barra, sopra le sezioni. */
+      "Cerca",
       /* Le schede di dettaglio non stanno in nessuna barra: dicono che cosa
        * stai guardando. */
       "La casa",

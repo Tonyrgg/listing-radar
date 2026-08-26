@@ -129,7 +129,7 @@ export function PropertyFacts({
 
 export function PropertyLink({ property }: Readonly<{ property: LifecyclePropertySummary }>) {
   return (
-    <Link href={`/lifecycle/archive/${property.id}`} className={styles.signalProperty}>
+    <Link href={`/casa/${property.id}`} className={styles.signalProperty}>
       {formatShouty(property.title)}
     </Link>
   );

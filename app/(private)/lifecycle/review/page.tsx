@@ -131,7 +131,7 @@ function SchedaConfronto({
       </div>
 
       <Link
-        href={`/lifecycle/archive/${property.id}`}
+        href={`/casa/${property.id}`}
         className={clsx(
           "block w-full overflow-hidden rounded-[var(--lr-radius-card)] bg-[var(--lr-raised)]",
           /* Altezza fissa, non proporzione: due foto affiancate devono stare
