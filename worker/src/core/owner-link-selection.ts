@@ -34,19 +34,31 @@ export function selectOwnerLookupCandidate(
   if (!matchingNameIndexes.length) return null;
 
   const normalizedPhones = new Set(expectedPhones.map(normalizePhone).filter(Boolean));
+  const verifiedIdIndexes = matchingNameIndexes.filter((index) => candidates[index]!.personId === expectedPersonId);
+  const candidatePhones = (index: number) => optionPhones(candidates[index]!.text);
+  // The CRM id is definitive when it is exposed and the lookup does not show
+  // a conflicting phone. Tecnocloud often omits phones from these suggestions.
+  const compatibleVerifiedIdIndexes = verifiedIdIndexes.filter((index) => {
+    const visiblePhones = candidatePhones(index);
+    return !normalizedPhones.size || !visiblePhones.length || visiblePhones.some((phone) => normalizedPhones.has(phone));
+  });
+  if (compatibleVerifiedIdIndexes.length === 1) {
+    return { index: compatibleVerifiedIdIndexes[0]!, selection: "crm_id", note: null };
+  }
+
   if (normalizedPhones.size) {
     const phoneIndexes = matchingNameIndexes.filter((index) =>
-      optionPhones(candidates[index]!.text).some((phone) => normalizedPhones.has(phone)));
-    const verifiedIdIndexes = phoneIndexes.filter((index) => candidates[index]!.personId === expectedPersonId);
-    if (verifiedIdIndexes.length === 1) return { index: verifiedIdIndexes[0]!, selection: "crm_id", note: null };
+      candidatePhones(index).some((phone) => normalizedPhones.has(phone)));
     if (phoneIndexes.length === 1) return { index: phoneIndexes[0]!, selection: "phone", note: null };
-    // Se abbiamo un telefono raccolto, nessuna corrispondenza telefonica e' piu'
-    // sicura di una selezione anticipata basata soltanto sul nome.
+    const optionsWithVisiblePhones = matchingNameIndexes.filter((index) => candidatePhones(index).length > 0);
+    if (matchingNameIndexes.length === 1 && !optionsWithVisiblePhones.length) {
+      return { index: matchingNameIndexes[0]!, selection: "single", note: null };
+    }
+    // A visible phone that does not match is evidence against the suggestion;
+    // do not turn it into a random name-only association.
     return null;
   }
 
-  const exactIndexes = matchingNameIndexes.filter((index) => candidates[index]!.personId === expectedPersonId);
-  if (exactIndexes.length === 1) return { index: exactIndexes[0]!, selection: "crm_id", note: null };
   if (matchingNameIndexes.length === 1) return { index: matchingNameIndexes[0]!, selection: "single", note: null };
   return {
     index: matchingNameIndexes[0]!,

@@ -251,7 +251,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   ownerCreate: 'button:has-text("Nuovo")',
   ownerDialog: '[role="dialog"]:visible:has-text("Soggetto correlato")',
   ownerPersonId: 'c-lookup:has(label:text-is("Cliente")) input[placeholder="Cerca"]',
-  ownerPersonOption: 'c-lookup:has(label:text-is("Cliente")) [role="option"]:has([data-item-id])',
+  ownerPersonOption: 'c-lookup:has(label:text-is("Cliente")) [role="option"]',
   ownerRight: 'lightning-input:has(label:text-is("Diritto")) input',
   ownerRole: 'c-picklist:has(label:text-is("Ruolo"))',
   ownerRoleOption: 'c-picklist:has(label:text-is("Ruolo")) [role="option"]',

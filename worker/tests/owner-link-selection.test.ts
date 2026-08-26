@@ -10,6 +10,19 @@ describe("selezione comproprietario nella modale Tecnocloud", () => {
     ], "P-2", ["3332222222"], "Mario Rossi")).toMatchObject({ index: 1, selection: "crm_id", note: null });
   });
 
+  it("usa la scheda CRM già verificata anche se il lookup non mostra i recapiti", () => {
+    expect(selectOwnerLookupCandidate([
+      { personId: "P-1", text: "Michele Pastoressa" },
+      { personId: "P-2", text: "Michele Pastoressa" },
+    ], "P-2", ["0803749851"], "Michele Pastoressa")).toMatchObject({ index: 1, selection: "crm_id", note: null });
+  });
+
+  it("seleziona l'unico nominativo quando il lookup non espone alcun recapito", () => {
+    expect(selectOwnerLookupCandidate([
+      { personId: "", text: "Michele Pastoressa" },
+    ], "P-2", ["0803749851"], "Michele Pastoressa")).toMatchObject({ index: 0, selection: "single", note: null });
+  });
+
   it("non seleziona un omonimo quando esiste un telefono raccolto ma non coincide", () => {
     expect(selectOwnerLookupCandidate([
       { personId: "P-2", text: "Mario Rossi · 333 111 1111" },

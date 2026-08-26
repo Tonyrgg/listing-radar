@@ -2156,7 +2156,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const person = await this.uniqueVisible("ownerPersonId", "Cliente comproprietario", 10_000);
       await person.fill("");
       await person.pressSequentially(searchLabel, { delay: 180 });
-      const options = this.visible(this.selectors.ownerPersonOption);
+      const options = dialog.locator(this.selectors.ownerPersonOption).filter({ visible: true });
       await options.first().waitFor({ state: "visible", timeout: 10_000 });
       let previousSnapshot = "";
       let stableSnapshots = 0;
@@ -2170,9 +2170,18 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const candidates: Array<{ option: Locator; personId: string; text: string }> = [];
       for (let index = 0; index < candidateCount; index += 1) {
         const option = options.nth(index);
+        const identity = option.locator('[data-item-id], [data-recordid], [data-id], a[href*="/s/account/"]').first();
+        let candidatePersonId = "";
+        if (await identity.count()) {
+          const href = await identity.getAttribute("href");
+          candidatePersonId = await identity.getAttribute("data-item-id")
+            ?? await identity.getAttribute("data-recordid")
+            ?? await identity.getAttribute("data-id")
+            ?? recordIdFromHref(href, "account");
+        }
         candidates.push({
           option,
-          personId: await option.locator("[data-item-id]").first().getAttribute("data-item-id").catch(() => null) ?? "",
+          personId: candidatePersonId,
           text: await option.innerText().catch(() => ""),
         });
       }
