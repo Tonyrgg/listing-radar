@@ -37,6 +37,7 @@ export interface CrmSelectors {
   personMergeConfirm: string;
   personMergeCancel: string;
   personMergeMessage: string;
+  personMergeImporterChoices: string;
   propertySearchPage: string;
   propertyFiltersOpen: string;
   propertySearchSheet: string;
@@ -130,7 +131,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
-  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "propertySearchPage",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "personMergeImporterChoices", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",
@@ -179,6 +180,9 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   personMergeConfirm: 'button:visible:text-is("Salva")',
   personMergeCancel: 'button:visible:text-is("Annulla")',
   personMergeMessage: ':text-is("Tutti i campi sono stati riconciliati. Si può procedere al salvataggio"), :text-is("Non si può procedere al salvataggio"), :text-is("Non è possibile procedere al salvataggio")',
+  // Tecnocloud renders merge values as clickable cells without stable field ids.
+  // The adapter scopes these controls to the left column by geometry.
+  personMergeImporterChoices: 'button, [role="button"], [role="radio"], input[type="radio"], [onclick], [tabindex]:not([tabindex="-1"])',
   personRelatedTab: '[role="tab"]:has-text("Correlati")',
   personPropertiesCard: 'article:visible:has-text("Immobili/Notizie/Incarichi")',
   personPropertyLinks: 'a[href*="/s/immobile/"]',
@@ -267,7 +271,7 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "personResultLabel", "personResultOpen", "personCreate", "personCreateMenuItem", "personFullName", "personFirstName", "personLastName", "personGender", "personGenderOption", "personBirthPlace", "personBirthPlaceOption",
   "personBirthProvince", "personBirthDate", "personTaxCode", "personMobile",
   "personOfficePhone", "personOtherPhone", "personEmail", "personSave", "recordId", "personMergeDialog",
-  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "propertySearchPage",
+  "personMergeReady", "personMergeBlocked", "personMergeConfirm", "personMergeCancel", "personMergeMessage", "personMergeImporterChoices", "propertySearchPage",
   "propertyFiltersOpen", "propertySearchSheet", "propertySearchParcel", "propertySearchSubaltern",
   "propertySearchSubmit", "propertyResultRow", "propertyResultId", "propertyResultOpen", "propertyCreate", "propertyCreateMenuItem",
   "propertyType", "propertySubtype", "propertyFloor", "propertyFloorNumber", "propertyCivic", "propertyInternal", "propertyStaircase",

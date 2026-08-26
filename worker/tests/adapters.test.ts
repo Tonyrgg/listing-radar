@@ -515,6 +515,31 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("riconcilia tutti i valori dell'importer nella colonna sinistra prima di salvare", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+      await page.route("https://example.test/**", (route) => route.fulfill({ body: "<!doctype html><body></body>" }));
+      await page.goto("https://example.test/CRMImmobiliareLightning/s/account/P-99");
+      await page.setContent(`<!doctype html><body>
+        <section role="dialog" style="position:relative;width:1000px;height:620px">
+          <h2>Riconcilia</h2><div><strong>Merge dei campi</strong><p id="merge-message">Seleziona i valori da mantenere</p></div>
+          <button class="importer" style="position:absolute;left:410px;top:180px;width:230px;height:34px" onclick="this.dataset.selected='true';if(document.querySelectorAll('.importer[data-selected=true]').length===3)document.querySelector('#merge-message').textContent='Tutti i campi sono stati riconciliati. Si può procedere al salvataggio'">Anna</button>
+          <button class="importer" style="position:absolute;left:410px;top:230px;width:230px;height:34px" onclick="this.dataset.selected='true';if(document.querySelectorAll('.importer[data-selected=true]').length===3)document.querySelector('#merge-message').textContent='Tutti i campi sono stati riconciliati. Si può procedere al salvataggio'">Dellapigna</button>
+          <button class="importer" style="position:absolute;left:410px;top:280px;width:230px;height:34px" onclick="this.dataset.selected='true';if(document.querySelectorAll('.importer[data-selected=true]').length===3)document.querySelector('#merge-message').textContent='Tutti i campi sono stati riconciliati. Si può procedere al salvataggio'">DLLNNA57A46A893A</button>
+          <button style="position:absolute;left:660px;top:180px;width:230px;height:34px">Anna esistente</button>
+          <button style="position:absolute;left:660px;top:230px;width:230px;height:34px">Della Pigna</button>
+          <button style="position:absolute;left:660px;top:280px;width:230px;height:34px">CF esistente</button>
+          <button style="position:absolute;right:170px;bottom:20px">Annulla</button><button style="position:absolute;right:20px;bottom:20px" onclick="document.body.dataset.mergeSaved='true';this.closest('[role=dialog]').hidden=true">Salva</button>
+        </section>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "completed", personId: "P-99" });
+      expect(await page.locator(".importer[data-selected=true]").count()).toBe(3);
+      expect(await page.locator("body").getAttribute("data-merge-saved")).toBe("true");
+    } finally { await browser.close(); }
+  });
+
   it("chiude con Annulla una riconciliazione non confermabile prima di cambiare caso", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

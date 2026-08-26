@@ -1081,6 +1081,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           ? { status: "completed", personId, message: "Merge completato o risolto manualmente", details: { source: "crm-current-person" } }
           : { status: "pending", personId: null, message: "La finestra di merge non è riconoscibile", details: { pageUrl: this.page.url() } };
       }
+      const importerChoicesSelected = await this.selectImporterMergeChoices(dialog);
+      if (importerChoicesSelected) await this.page.waitForTimeout(300);
       const messageLocator = dialog.locator(this.selectors.personMergeMessage).filter({ visible: true });
       const message = await messageLocator.count()
         ? (await messageLocator.first().textContent())?.trim() ?? ""
@@ -1104,6 +1106,35 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         details: { source: "crm-merge-dialog", dialogText },
       };
     });
+  }
+
+  /**
+   * In the Tecnocloud reconciliation screen the incoming record is always the
+   * left-hand value. The cells have no stable field identifiers, so identify
+   * only actionable controls in the central left column of this known dialog.
+   */
+  private async selectImporterMergeChoices(dialog: Locator) {
+    if (!this.selectors.personMergeImporterChoices) return 0;
+    const dialogBox = await dialog.boundingBox();
+    if (!dialogBox || dialogBox.width < 300 || dialogBox.height < 180) return 0;
+    const choices = dialog.locator(this.selectors.personMergeImporterChoices).filter({ visible: true });
+    const count = await choices.count();
+    let selected = 0;
+    for (let index = 0; index < count; index += 1) {
+      const choice = choices.nth(index);
+      const box = await choice.boundingBox();
+      if (!box || box.width < 70 || box.height < 20) continue;
+      const left = (box.x - dialogBox.x) / dialogBox.width;
+      const top = (box.y - dialogBox.y) / dialogBox.height;
+      const bottom = (box.y + box.height - dialogBox.y) / dialogBox.height;
+      // Screenshot-calibrated merge grid: labels are on the far left, importer
+      // values occupy the next column, existing CRM values the following one.
+      if (left < 0.35 || left > 0.64 || top < 0.18 || bottom > 0.86) continue;
+      await choice.scrollIntoViewIfNeeded();
+      await choice.click({ force: true });
+      selected += 1;
+    }
+    return selected;
   }
 
   async confirmPersonMerge(): Promise<PersonMergeResult> {
