@@ -1543,27 +1543,13 @@ export class PropertyWorkerRunner {
         true,
       );
     }
-    if (!this.config.WORKER_DRY_RUN) {
-      const linkedVerification = await crm.findPropertyForPerson(
-        primary.crm_record_id,
-        property,
-        unsafePersistedPropertyId ? [unsafePersistedPropertyId] : [],
-      );
-      if (!linkedVerification.match || linkedVerification.match.id !== row.crm_record_id) {
-        throw new WorkerError(
-          "La scheda immobile è corretta, ma il collegamento con il nominativo non è ancora visibile. Il worker riproverà senza ricreare l'immobile.",
-          "portal_error",
-          {
-            portal: "CRM",
-            action: "property-final-link-verification",
-            propertyId: row.id,
-            crmPropertyId: row.crm_record_id,
-            crmPersonId: primary.crm_record_id,
-          },
-          true,
-        );
-      }
-    }
+    // The property was either found in the primary person's property list
+    // before this point, or created from that very list. Re-opening every
+    // property of the person after the direct cadastral verification is both
+    // redundant and fragile: Tecnocloud can expose that relation late, while
+    // the activity can already be created safely from the verified record ID.
+    // Keep the list scan exclusively before creation, where it prevents a
+    // duplicate; from here on, stay on this property.
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
     row.raw_payload = {
       ...(row.raw_payload ?? {}),

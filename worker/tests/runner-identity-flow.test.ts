@@ -322,12 +322,12 @@ describe("flusso identità nominativo e immobile", () => {
 
     await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
 
-    expect(crm.findPropertyForPerson).toHaveBeenCalledTimes(2);
+    expect(crm.findPropertyForPerson).toHaveBeenCalledOnce();
     expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-1", expect.any(Object));
     expect(crm.createProperty).not.toHaveBeenCalled();
   });
 
-  it("crea l'immobile assente una sola volta e verifica il collegamento prima di proseguire", async () => {
+  it("crea l'immobile assente, ne verifica l'identità e passa direttamente all'attività", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-1" };
@@ -346,6 +346,7 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.createProperty).toHaveBeenCalledOnce();
     expect(crm.updateProperty).not.toHaveBeenCalled();
     expect(crm.verifyProperty).toHaveBeenCalledWith("CRM-PROPERTY-NEW", expect.any(Object));
+    expect(crm.findPropertyForPerson).toHaveBeenCalledOnce();
     expect(property.crm_record_id).toBe("CRM-PROPERTY-NEW");
   });
 
