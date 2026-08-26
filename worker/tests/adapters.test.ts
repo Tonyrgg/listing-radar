@@ -352,7 +352,7 @@ describe("adattatori con fixture HTML", () => {
         .replace('<input data-worker-crm="activityClient" value="Maria Acquaviva">', '<input data-worker-crm="activityClient" value="">')
         .replace(
           'onclick="document.body.dataset.activityOrigin=location.pathname;document.querySelector(\'[data-worker-crm=activityDialog]\').hidden=false"',
-          'onclick="const attempt=Number(localStorage.getItem(\'activity-attempt\')||0)+1;localStorage.setItem(\'activity-attempt\',String(attempt));document.body.dataset.activityOrigin=location.pathname;document.querySelector(\'[data-worker-crm=activityClient]\').value=attempt>1?\'Maria Acquaviva\':\'\';document.querySelector(\'[data-worker-crm=activityDialog]\').hidden=false"',
+          'onclick="const attempt=Number(localStorage.getItem(\'activity-attempt\')||0)+1;localStorage.setItem(\'activity-attempt\',String(attempt));document.body.dataset.activityOrigin=location.pathname;document.querySelector(\'[data-worker-crm=activityClient]\').value=attempt>2?\'Maria Acquaviva\':\'\';document.querySelector(\'[data-worker-crm=activityDialog]\').hidden=false"',
         );
       await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
       await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
@@ -360,11 +360,13 @@ describe("adattatori con fixture HTML", () => {
       await expect(adapter.createPropertyActivity({
         propertyId: "I-42",
         propertyAddress: "Via Roma 12 [2]",
-        description: "Inserire attività",
+        // A non-default description proves that retry cleanup only discards
+        // the worker-owned form; it must not classify it as a manual draft.
+        description: "Non sa nulla",
         contactMode: "Telefonata",
         status: "Da eseguire",
-      })).resolves.toMatchObject({ outcome: "simulated", attempts: 2 });
-      expect(await page.evaluate(() => localStorage.getItem("activity-attempt"))).toBe("2");
+      })).resolves.toMatchObject({ outcome: "simulated", attempts: 3 });
+      expect(await page.evaluate(() => localStorage.getItem("activity-attempt"))).toBe("3");
     } finally { await browser.close(); }
   });
 

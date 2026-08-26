@@ -24,7 +24,11 @@ import { crmSelectors, type CrmSelectors } from "./selectors.js";
 
 const CRM_PATH = "/CRMImmobiliareLightning/s";
 const ACTIVITY_FORM_TIMEOUT = 20_000;
-const ACTIVITY_PRE_SAVE_ATTEMPTS = 2;
+// CRM renders the activity modal in several asynchronous phases. A failed
+// preparation has not produced any data yet, so it is safe to retry it three
+// times from a freshly loaded property. Once "Salva" has been clicked we keep
+// the separate, conservative path below to avoid creating duplicate activities.
+const ACTIVITY_PRE_SAVE_ATTEMPTS = 3;
 const ACTIVITY_PREFILL_WAIT_CYCLES = process.env.VITEST ? 2 : 32;
 const PERSON_MERGE_ID_WAIT_CYCLES = 40;
 
@@ -164,6 +168,46 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await cancel.click().catch(async () => this.page.keyboard.press("Escape"));
     await description.waitFor({ state: "hidden", timeout: 10_000 });
     return true;
+  }
+
+  /**
+   * Unlike closeKnownStaleActivityForm, this is used only while retrying the
+   * activity that this same adapter has just opened. Its description may be a
+   * legitimate non-default value (for example "Non sa nulla"), therefore it
+   * must not be mistaken for a user-authored modal and prevent recovery.
+   */
+  private async discardWorkerActivityFormForRetry() {
+    if (!(await this.isActivityFormOpen())) return false;
+    const description = await this.uniqueVisible("activityDescription", "Descrizione attività", 5_000);
+    const cancel = await this.uniqueVisible("activityCancel", "Annulla attivitÃ ", 5_000);
+    await cancel.click().catch(async () => this.page.keyboard.press("Escape"));
+    await description.waitFor({ state: "hidden", timeout: 10_000 });
+    return true;
+  }
+
+  /** Wait until the dynamic controls stop being replaced by the CRM renderer. */
+  private async waitForActivityFormToSettle() {
+    const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
+    const client = await this.uniqueVisible("activityClient", "Cliente dell’attività", ACTIVITY_FORM_TIMEOUT);
+    const relatedField = await this.uniqueVisible("activityRelatedProperty", "Correlato a", ACTIVITY_FORM_TIMEOUT);
+    const relatedInput = relatedField.locator("input").filter({ visible: true });
+    const contactMode = await this.uniqueVisible("activityContactMode", "Modalità contatto", ACTIVITY_FORM_TIMEOUT);
+    const status = await this.uniqueVisible("activityStatus", "Stato attivitÃ ", ACTIVITY_FORM_TIMEOUT);
+    if (await relatedInput.count() !== 1) return;
+
+    let previous: string | null = null;
+    for (let check = 0; check < 5; check += 1) {
+      const snapshot = await Promise.all([
+        description.inputValue(),
+        client.inputValue(),
+        relatedInput.inputValue(),
+        contactMode.inputValue(),
+        status.inputValue(),
+      ]).then((values) => values.join("\u0001"));
+      if (snapshot === previous) return;
+      previous = snapshot;
+      await this.page.waitForTimeout(250);
+    }
   }
 
   private async closeActivityFollowUpPrompt(waitForAppearance = false) {
@@ -1941,6 +1985,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           // The c-lwc-modal host is zero-sized in production. Wait for the
           // rendered controls, which appear only after the internal spinner.
           await this.uniqueVisible("activityDialog", "finestra Attività", ACTIVITY_FORM_TIMEOUT);
+          await this.waitForActivityFormToSettle();
           const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
           await description.fill(input.description);
           if (normalizedUiText(await description.inputValue()) !== normalizedUiText(input.description)) {
@@ -2124,7 +2169,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           }
           if (error instanceof WorkerError && error.status !== "portal_error") throw error;
           lastError = error;
-          await this.closeKnownStaleActivityForm().catch(() => undefined);
+          // This form was opened by the current attempt, so close it even when
+          // its description is intentionally different from the default. The
+          // guarded stale-modal cleanup remains in ensureCrmIdle for forms a
+          // human may have opened before the worker started.
+          await this.discardWorkerActivityFormForRetry().catch(() => undefined);
+          await this.closeActivityFollowUpPrompt().catch(() => undefined);
           await this.page.waitForTimeout(600 * attempt);
           if (attempt === ACTIVITY_PRE_SAVE_ATTEMPTS) break;
         }
