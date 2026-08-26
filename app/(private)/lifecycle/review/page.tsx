@@ -32,7 +32,6 @@ import type {
 } from "@/lib/property-lifecycle/read-models/types";
 
 import {
-  dismissIncompatibleIdentityReviews,
   recordReviewDecision,
 } from "../actions";
 import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
@@ -249,20 +248,9 @@ export default async function DaDecidereePage({
       <LifecycleHeader
         eyebrow="Segnali"
         title={domanda(caso)}
-        description="Il sistema scarta da solo solo candidate con vie, prezzi o metrature incompatibili. I casi plausibili restano qui per una decisione tracciata."
+        description="Il sistema elimina automaticamente confronti con vie, prezzi, metrature o locali incompatibili. Qui restano solo casi con prove ancora plausibili."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {user ? (
-              <form action={dismissIncompatibleIdentityReviews}>
-                <PendingSubmitButton
-                  type="submit"
-                  pendingLabel="Controllo incrociato"
-                  className={buttonClass("secondary", { compact: true })}
-                >
-                  Escludi incompatibili
-                </PendingSubmitButton>
-              </form>
-            ) : null}
             <Chip tone="warn">
               caso {indice + 1} di {casi.length}
             </Chip>

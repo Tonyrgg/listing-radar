@@ -103,6 +103,40 @@ describe("Property Identity v1", () => {
     },
   );
 
+  it.each([
+    [
+      "prezzo e metratura entrambi fuori banda",
+      { priceAmount: 150000, surfaceSqm: 100 },
+      { priceAmount: 115000, surfaceSqm: 82 },
+      "price_surface_hard_conflict",
+    ],
+    [
+      "prezzo e un locale in meno",
+      { priceAmount: 150000, rooms: 4 },
+      { priceAmount: 115000, rooms: 3 },
+      "price_rooms_hard_conflict",
+    ],
+    [
+      "troppi locali diversi",
+      { rooms: 5 },
+      { rooms: 3 },
+      "rooms_hard_conflict",
+    ],
+  ])(
+    "scarta anche una candidata con %s",
+    (_label, observationOverrides, candidateOverrides, expectedReason) => {
+      const decision = decidePropertyIdentity(
+        { ...observation, ...observationOverrides },
+        [candidate({ ...candidateOverrides })],
+      );
+
+      expect(decision.outcome).toBe("NEW_PROPERTY");
+      expect(decision.retrieval?.discardedReasons).toMatchObject({
+        [expectedReason]: 1,
+      });
+    },
+  );
+
   it("creates a new property when no candidates exist", () => {
     expect(decidePropertyIdentity(observation, [])).toMatchObject({
       outcome: "NEW_PROPERTY",

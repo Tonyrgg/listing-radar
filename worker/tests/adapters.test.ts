@@ -767,6 +767,12 @@ describe("adattatori con fixture HTML", () => {
           recoveredFromAccessDenied: true,
         },
       });
+
+      await expect(adapter.findPropertyForPerson("P-DELETED", {
+        municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9", address: "Via Borgo San Francesco 62",
+        censusZone: "U", category: "A/2", class: "3", consistency: "6 vani", cadastralIncome: null, rawPayload: {},
+      })).resolves.toEqual({ match: null });
+      expect(await page.locator('[data-worker-crm="recordId"]').textContent()).toBe("P-MERGED");
     } finally { await browser.close(); }
   });
 

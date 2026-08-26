@@ -1,12 +1,14 @@
-import { ArrowRight, UserRound } from "lucide-react";
+import { ArrowRight, Banknote, Layers3, MapPin, Ruler, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { RecalculateButton } from "@/components/matching/management-panels";
 import { PropertyMatchRow } from "@/components/matching/property-match-row";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
+import { PropertyTypeMark } from "@/components/matching/visual-language";
 import { ProgressiveList } from "@/components/progressive-list";
 import {
   Campo,
@@ -28,7 +30,6 @@ import {
   listRequests,
 } from "@/lib/matching/repository";
 import type {
-  PropertyRequest,
   RequestPropertyMatch,
 } from "@/lib/matching/types";
 
@@ -52,35 +53,25 @@ function param(value: string | string[] | undefined) {
 }
 
 /** Cosa cerca un cliente, in una riga che si legge. */
-function cosaCerca(request: PropertyRequest) {
-  const pezzi: string[] = [];
-
-  if (request.property_types?.length) {
-    pezzi.push(request.property_types.join(" o "));
-  }
-
-  const budget =
-    request.contract_type === "sale"
-      ? (request.budget_max ?? request.budget_ideal)
-      : (request.monthly_rent_max ?? request.monthly_rent_ideal);
-  if (budget != null) {
-    pezzi.push(
-      request.contract_type === "sale"
-        ? `fino a ${formatCurrency(budget)}`
-        : `fino a ${formatCurrency(budget)} al mese`,
-    );
-  }
-
-  const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
-  if (superficie != null)
-    pezzi.push(`intorno ai ${formatNumber(superficie)} mq`);
-
-  const locali = request.rooms_ideal ?? request.rooms_min;
-  if (locali != null) pezzi.push(`${formatNumber(locali)} locali`);
-
-  if (request.municipality) pezzi.push(`a ${request.municipality}`);
-
-  return pezzi.join(" · ") || "Nessun criterio indicato";
+function RequestFact({
+  icon: Icon,
+  label,
+  children,
+}: Readonly<{
+  icon: typeof Banknote;
+  label: string;
+  children: ReactNode;
+}>) {
+  return (
+    <span
+      title={label}
+      className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-2.5 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)]"
+    >
+      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-[var(--lr-accent)]" />
+      <span className="sr-only">{label}: </span>
+      {children}
+    </span>
+  );
 }
 
 export default async function ChiCercaCosaPage({
@@ -229,6 +220,18 @@ export default async function ChiCercaCosaPage({
 
             const cliente =
               request.clients?.full_name ?? "Cliente da collegare";
+            const budget = request.contract_type === "sale"
+              ? (request.budget_max ?? request.budget_ideal)
+              : (request.monthly_rent_max ?? request.monthly_rent_ideal);
+            const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
+            const locali = request.rooms_ideal ?? request.rooms_min;
+            const zone = [...new Set(
+              (request.request_zones ?? [])
+                .filter((item) => item.preference_level !== "excluded")
+                .map((item) => item.zone?.name)
+                .filter((name): name is string => Boolean(name)),
+            )];
+            const posizione = zone.join(" · ") || request.municipality;
 
             return (
               <Card key={requestId}>
@@ -241,9 +244,31 @@ export default async function ChiCercaCosaPage({
                       />
                       {cliente}
                     </p>
-                    <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                      Cerca {cosaCerca(request)}
-                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Criteri della richiesta">
+                      {request.property_types?.map((type) => (
+                        <PropertyTypeMark key={type} type={type} />
+                      ))}
+                      {budget != null ? (
+                        <RequestFact icon={Banknote} label="Budget">
+                          {request.contract_type === "sale" ? `fino a ${formatCurrency(budget)}` : `fino a ${formatCurrency(budget)} al mese`}
+                        </RequestFact>
+                      ) : null}
+                      {superficie != null ? (
+                        <RequestFact icon={Ruler} label="Superficie">
+                          {formatNumber(superficie)} mq
+                        </RequestFact>
+                      ) : null}
+                      {locali != null ? (
+                        <RequestFact icon={Layers3} label="Locali">
+                          {formatNumber(locali)} locali
+                        </RequestFact>
+                      ) : null}
+                      {posizione ? (
+                        <RequestFact icon={MapPin} label="Zone richieste">
+                          {posizione}
+                        </RequestFact>
+                      ) : null}
+                    </div>
                     {request.title ? (
                       <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                         {cleanRequestTitle(request.title)}

@@ -70,8 +70,23 @@ const FEATURE_WEIGHTS = {
  * esplicita della fonte. Una via nominata in modo diverso è sempre un blocco.
  */
 export const IDENTITY_HARD_CONFLICT_THRESHOLDS = {
-  priceRelativeDifference: 0.35,
-  surfaceRelativeDifference: 0.3,
+  /* Un ribasso fisiologico non deve spezzare una storia, ma un quarto del
+   * valore o della superficie non descrive piu la stessa unita senza una
+   * prova forte e verificabile. */
+  priceRelativeDifference: 0.28,
+  surfaceRelativeDifference: 0.25,
+  roomsAbsoluteDifference: 2,
+  /* Due scostamenti moderati insieme sono piu affidabili di uno solo:
+   * evitano che un 3-locali da 80 mq a tutt'altro prezzo finisca in coda
+   * soltanto perche ciascun dato, isolato, resta appena sotto soglia. */
+  priceAndSurface: {
+    priceRelativeDifference: 0.2,
+    surfaceRelativeDifference: 0.15,
+  },
+  priceAndRooms: {
+    priceRelativeDifference: 0.2,
+    roomsAbsoluteDifference: 1,
+  },
 } as const;
 
 function normalizedTokens(value: string | null): Set<string> {
@@ -203,6 +218,10 @@ export function identityHardConflicts(
   const conflicts: string[] = [];
   const surfaceDifference = relativeDifference(observation.surfaceSqm, candidate.surfaceSqm);
   const priceDifference = relativeDifference(observation.priceAmount, candidate.priceAmount);
+  const roomsDifference =
+    observation.rooms == null || candidate.rooms == null
+      ? null
+      : Math.abs(observation.rooms - candidate.rooms);
 
   if (hasExplicitStreetConflict(observation.address, candidate.address)) {
     conflicts.push("street_hard_conflict");
@@ -218,6 +237,28 @@ export function identityHardConflicts(
     priceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.priceRelativeDifference
   ) {
     conflicts.push("price_hard_conflict");
+  }
+  if (
+    roomsDifference != null &&
+    roomsDifference >= IDENTITY_HARD_CONFLICT_THRESHOLDS.roomsAbsoluteDifference
+  ) {
+    conflicts.push("rooms_hard_conflict");
+  }
+  if (
+    priceDifference != null &&
+    surfaceDifference != null &&
+    priceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.priceAndSurface.priceRelativeDifference &&
+    surfaceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.priceAndSurface.surfaceRelativeDifference
+  ) {
+    conflicts.push("price_surface_hard_conflict");
+  }
+  if (
+    priceDifference != null &&
+    roomsDifference != null &&
+    priceDifference > IDENTITY_HARD_CONFLICT_THRESHOLDS.priceAndRooms.priceRelativeDifference &&
+    roomsDifference >= IDENTITY_HARD_CONFLICT_THRESHOLDS.priceAndRooms.roomsAbsoluteDifference
+  ) {
+    conflicts.push("price_rooms_hard_conflict");
   }
   return conflicts;
 }

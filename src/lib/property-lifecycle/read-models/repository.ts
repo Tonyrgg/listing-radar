@@ -12,6 +12,10 @@ import type {
   LifecyclePropertySummary,
   LifecycleReviewItem,
 } from "@/lib/property-lifecycle/read-models/types";
+import {
+  identityHardConflicts,
+  type IdentityObservation,
+} from "@/lib/property-lifecycle/identity/scoring";
 
 import { MARKET_EVENT_TYPES } from "./market-events";
 
@@ -160,6 +164,43 @@ function reviewCandidateDescriptors(
         ]
       : [];
   });
+}
+
+/**
+ * La review e una coda di decisioni, non un archivio di falsi positivi.
+ * Riesaminiamo i fatti canonici anche per i casi nati con regole precedenti:
+ * se ogni candidata e ormai incompatibile, quel confronto non richiede piu
+ * tempo umano e non viene proposto nell'interfaccia.
+ */
+function identityObservationFromSummary(
+  property: LifecyclePropertySummary,
+): IdentityObservation {
+  return {
+    agencyReference: null,
+    address: property.address,
+    locality: property.locality,
+    propertyType: property.propertyType,
+    surfaceSqm: property.surfaceSqm,
+    rooms: property.rooms,
+    priceAmount: property.currentPrice,
+    imageFingerprints: [],
+    floorplanFingerprints: [],
+  };
+}
+
+function requiresIdentityDecision(
+  property: LifecyclePropertySummary | null,
+  candidates: LifecycleReviewItem["candidates"],
+): boolean {
+  if (!property || candidates.length === 0) return true;
+  const observation = identityObservationFromSummary(property);
+  return candidates.some(
+    (candidate) =>
+      identityHardConflicts(
+        observation,
+        identityObservationFromSummary(candidate.property),
+      ).length === 0,
+  );
 }
 
 function newest<T>(
@@ -817,7 +858,7 @@ export class PropertyLifecycleReadRepository {
     const agencyById = new Map(
       ((agencyResult.data ?? []) as AgencyRow[]).map((agency) => [agency.id, agency]),
     );
-    return rows.map((row) => ({
+    const hydrated = rows.map((row) => ({
       id: row.id,
       reviewType: row.review_type,
       status: row.status,
@@ -832,6 +873,12 @@ export class PropertyLifecycleReadRepository {
         return property ? [{ ...candidate, property }] : [];
       }),
     }));
+
+    return hydrated.filter(
+      (review) =>
+        review.reviewType !== "IDENTITY" ||
+        requiresIdentityDecision(review.property, review.candidates),
+    );
   }
 
   async privateRadar(): Promise<LifecyclePrivatePublication[]> {

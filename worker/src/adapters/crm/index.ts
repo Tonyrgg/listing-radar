@@ -66,6 +66,13 @@ function recordIdFromHref(href: string | null, entity: "account" | "immobile") {
 }
 
 export class PlaywrightCrmAdapter implements CrmAdapter {
+  /**
+   * Un ID account puÃ² sparire durante una run dopo un merge eseguito nel Cloud.
+   * Conserviamo la ricerca verificata che lo ha prodotto per poterlo risolvere
+   * di nuovo senza chiedere al runner di conoscere i dettagli del portale.
+   */
+  private readonly personSearchInputsByCrmId = new Map<string, PersonSearchInput>();
+
   constructor(
     private readonly page: Page,
     private readonly dryRun: boolean,
@@ -358,7 +365,11 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return matches;
   }
 
-  private async openPerson(personId: string) {
+  private rememberPersonSearchInput(personId: string, input: PersonSearchInput) {
+    if (personId) this.personSearchInputsByCrmId.set(personId, input);
+  }
+
+  private async openPersonRecord(personId: string): Promise<void> {
     await this.ensureCrmIdle();
     await this.throwIfAccessDenied(personId);
     if (this.page.url().includes(`/s/account/${personId}`)) {
@@ -375,6 +386,30 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await this.checkSession();
     await this.throwIfAccessDenied(personId);
     await this.waitForPersonWorkspace(personId);
+  }
+
+  private async openPerson(personId: string): Promise<string> {
+    try {
+      await this.openPersonRecord(personId);
+      return personId;
+    } catch (error) {
+      if (!(error instanceof WorkerError) || error.details.action !== "person-record-merged-away") {
+        throw error;
+      }
+      const input = this.personSearchInputsByCrmId.get(personId);
+      if (!input) throw error;
+      const recovered = await this.recoverMergedPerson(input, personId);
+      if (!recovered) {
+        throw new WorkerError(
+          "La scheda precedente Ã¨ stata unita, ma la ricerca non trova una scheda finale con stesso codice fiscale e nominativo.",
+          "needs_review",
+          { portal: "CRM", action: "person-record-merged-recovery-not-found", personId },
+          true,
+        );
+      }
+      this.rememberPersonSearchInput(recovered.id, input);
+      return recovered.id;
+    }
   }
 
   private async waitForPersonWorkspace(personId?: string) {
@@ -637,6 +672,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       }
       const verified = await this.verifyCurrentPerson(input, candidate.id);
       if (verified) {
+        this.rememberPersonSearchInput(verified.id, input);
         return {
           ...verified,
           data: {
@@ -654,15 +690,9 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   async openExistingPerson(input: PersonSearchInput, expectedId?: string) {
     return this.friendly("person-existing-check", "Non riesco a verificare la scheda nominativo aperta.", async () => {
       if (expectedId) {
-        try {
-          await this.openPerson(expectedId);
-        } catch (error) {
-          if (error instanceof WorkerError && error.details.action === "person-record-merged-away") {
-            return this.recoverMergedPerson(input, expectedId);
-          }
-          throw error;
-        }
-        const verified = await this.verifyCurrentPerson(input, expectedId);
+        this.rememberPersonSearchInput(expectedId, input);
+        const openedId = await this.openPerson(expectedId);
+        const verified = await this.verifyCurrentPerson(input, openedId);
         // A merge can redirect the old URL without showing Accesso negato.
         // Do not retain that stale record ID: search the CRM normally instead.
         return verified ?? this.recoverMergedPerson(input, expectedId);
