@@ -166,6 +166,47 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return true;
   }
 
+  private async closeActivityFollowUpPrompt(waitForAppearance = false) {
+    if (!this.selectors.activityFollowUpDialog || !this.selectors.activityFollowUpCancel || !this.selectors.activityFollowUpClose) return false;
+    const dialogs = this.visible(this.selectors.activityFollowUpDialog);
+    if (waitForAppearance && !(await dialogs.count())) {
+      await dialogs.first().waitFor({ state: "visible", timeout: 3_000 }).catch(() => undefined);
+    }
+    const count = await dialogs.count();
+    if (!count) return false;
+    if (count !== 1) {
+      throw new WorkerError(
+        "Il gestionale mostra più finestre per pianificare la prossima attività. Il worker non sceglie quale chiudere.",
+        "needs_review",
+        { portal: "CRM", action: "activity-follow-up-prompt-ambiguous", count },
+        true,
+      );
+    }
+    const dialog = dialogs.first();
+    const promptText = normalizedUiText(await dialog.innerText().catch(() => ""));
+    if (!promptText.includes("VUOI PIANIFICARE UN ALTRA ATTIVITA")) return false;
+
+    const cancel = dialog.locator(this.selectors.activityFollowUpCancel).filter({ visible: true });
+    const close = dialog.locator(this.selectors.activityFollowUpClose).filter({ visible: true });
+    const cancelCount = await cancel.count();
+    const closeCount = await close.count();
+    if (cancelCount === 1) await cancel.click();
+    else if (closeCount === 1) await close.click();
+    else {
+      throw new WorkerError(
+        "La richiesta di pianificare un'altra attività è aperta ma non espone Annulla né la chiusura.",
+        "needs_review",
+        { portal: "CRM", action: "activity-follow-up-prompt-without-close", cancelCount, closeCount },
+        true,
+      );
+    }
+    await dialog.waitFor({ state: "hidden", timeout: 10_000 }).catch(async () => {
+      await this.page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden", timeout: 5_000 });
+    });
+    return true;
+  }
+
   private async closeDeferredOwnerForm() {
     if (!this.selectors.ownerDialog || !this.selectors.ownerCancel) return false;
     const dialogs = this.visible(this.selectors.ownerDialog);
@@ -188,6 +229,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
   private async ensureCrmIdle() {
     await this.checkSession();
     await this.settleVisiblePersonMergeAfterSave();
+    await this.closeActivityFollowUpPrompt();
     await this.closeKnownStaleActivityForm();
     await this.closeDeferredOwnerForm();
     this.require("blockingDialog");
@@ -2037,6 +2079,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           saveClicked = true;
           await save.click();
           await description.waitFor({ state: "hidden", timeout: 15_000 });
+          await this.closeActivityFollowUpPrompt(true);
           await this.checkSession();
           return { outcome: "created", crmActivityId: null, correlatedProperty, attempts: attempt };
         } catch (error) {

@@ -116,6 +116,9 @@ export interface CrmSelectors {
   activityOption: string;
   activitySave: string;
   activityCancel: string;
+  activityFollowUpDialog: string;
+  activityFollowUpCancel: string;
+  activityFollowUpClose: string;
   propertyOwnersCard: string;
   propertyOwnerLinks: string;
 }
@@ -140,7 +143,7 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty", "activityContactMode",
-  "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
+  "activityStatus", "activityOption", "activitySave", "activityCancel", "activityFollowUpDialog", "activityFollowUpCancel", "activityFollowUpClose", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, ""])) as unknown as CrmSelectors, {
   pageMarker: 'a[href*="/CRMImmobiliareLightning/s/account/Account"], a[href*="/CRMImmobiliareLightning/s/immobile/Immobile__c"]',
   sessionExpiredMarker: 'input[type="password"]',
@@ -208,6 +211,11 @@ export const crmSelectors: CrmSelectors = Object.assign(Object.fromEntries([
   activityOption: '[role="option"]',
   activitySave: 'button:has-text("Salva")',
   activityCancel: 'button:has-text("Annulla")',
+  // Prompt shown by Tecnocloud after saving an activity. It is not an activity
+  // form and must be dismissed before the worker can navigate to the next record.
+  activityFollowUpDialog: '[role="dialog"]:visible:has-text("Vuoi pianificare un\'altra attività/appuntamento?")',
+  activityFollowUpCancel: 'button:visible:text-is("Annulla")',
+  activityFollowUpClose: 'button[title="Chiudi"], button[title="Close"], button[aria-label="Chiudi"], button[aria-label="Close"], button:has(svg[data-key="close"])',
   propertyOwnersCard: 'article:visible:has-text("Soggetti collegati (")',
   propertyOwnerLinks: 'a[href*="/s/account/"]',
   propertySearchPage: 'a[href*="/CRMImmobiliareLightning/s/immobile/Immobile__c"]',
@@ -272,5 +280,5 @@ export const crmFixtureSelectors: CrmSelectors = Object.fromEntries([
   "propertySheetValue", "propertyParcelValue", "propertySubalternValue", "propertyAddressValue", "activityCard",
   "propertyCadastralSectionUrban", "propertyCadastralSheet", "propertyCadastralParcel", "propertyCadastralSubaltern", "propertyCadastralIncome", "propertyCadastralGroup", "propertyCadastralType",
   "activityCreate", "activityDialog", "activityDescription", "activityClient", "activityRelatedProperty", "activityContactMode",
-  "activityStatus", "activityOption", "activitySave", "activityCancel", "propertyOwnersCard", "propertyOwnerLinks",
+  "activityStatus", "activityOption", "activitySave", "activityCancel", "activityFollowUpDialog", "activityFollowUpCancel", "activityFollowUpClose", "propertyOwnersCard", "propertyOwnerLinks",
 ].map((key) => [key, `[data-worker-crm="${key}"]`])) as unknown as CrmSelectors;

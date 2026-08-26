@@ -403,6 +403,20 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("chiude la richiesta di pianificare un'altra attività e prosegue", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(await readFile(fixture("crm.html"), "utf8"));
+      await page.locator('[data-worker-crm="activityFollowUpDialog"]').evaluate((dialog) => { (dialog as HTMLElement).hidden = false; });
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+      const result = await adapter.findPerson({ taxCode: "CQVMRS49L66A893R", phones: [], fullName: "Maria", birthDate: null });
+      expect(result.matches[0]?.id).toBe("P-42");
+      expect(await page.locator('[data-worker-crm="activityFollowUpDialog"]').isVisible()).toBe(false);
+      expect(await page.locator("body").getAttribute("data-activity-follow-up-closed")).toBe("cancel");
+    } finally { await browser.close(); }
+  });
+
   it("non scarta automaticamente una modale attività compilata manualmente", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
