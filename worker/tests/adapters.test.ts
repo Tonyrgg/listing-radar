@@ -1067,4 +1067,27 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator('[data-worker-crm="personMergeDialog"]').isVisible()).toBe(true);
     } finally { await browser.close(); }
   });
+
+  it("non crea attivita quando il correlato e una Notizia o un Incarico", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace("IM - Via Roma 12 [2]", "NT - MENA - Vendita - Verificata");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.createPropertyActivity({
+        propertyId: "I-42",
+        propertyAddress: "Via Roma 12 [2]",
+        fallbackPersonId: "P-42",
+        description: "Inserire attivita",
+        contactMode: "Telefonata",
+        status: "Da eseguire",
+      })).resolves.toMatchObject({ outcome: "existing", correlatedProperty: "NT - MENA - Vendita - Verificata" });
+      expect(await page.locator("body").getAttribute("data-activity-cancelled")).toBe("true");
+      expect(await page.locator("body").getAttribute("data-activity-saved")).toBeNull();
+    } finally { await browser.close(); }
+  });
 });

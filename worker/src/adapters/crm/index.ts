@@ -57,6 +57,10 @@ function isPropertyActivityRelation(value: string) {
   return /^\s*IM\s*-/i.test(value);
 }
 
+function isNewsOrMandateActivityRelation(value: string) {
+  return /^\s*(?:NT|IN)\s*-/i.test(value);
+}
+
 function comparableCadastralValue(value: string | null | undefined) {
   return (value ?? "").trim().replace(/\s+/g, "").replace(/^0+(?=\d)/, "").toUpperCase();
 }
@@ -2155,6 +2159,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           // rendered controls, which appear only after the internal spinner.
           await this.uniqueVisible("activityDialog", "finestra Attività", ACTIVITY_FORM_TIMEOUT);
           await this.waitForActivityFormToSettle();
+          const activityDialog = await this.uniqueVisible("activityDialog", "modale attivita", ACTIVITY_FORM_TIMEOUT);
           const description = await this.uniqueVisible("activityDescription", "Descrizione attività", ACTIVITY_FORM_TIMEOUT);
           await description.fill(input.description);
           if (normalizedUiText(await description.inputValue()) !== normalizedUiText(input.description)) {
@@ -2181,6 +2186,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           for (let wait = 0; !correlatedProperty && wait < ACTIVITY_PREFILL_WAIT_CYCLES; wait += 1) {
             await this.page.waitForTimeout(250);
             correlatedProperty = (await relatedInput.inputValue()).trim();
+          }
+          if (isNewsOrMandateActivityRelation(correlatedProperty)) {
+            const cancel = activityDialog.locator(this.selectors.activityCancel).filter({ visible: true });
+            const cancelCount = await cancel.count();
+            if (cancelCount !== 1) {
+              throw new WorkerError(
+                "La nuova attivita e collegata a una Notizia o a un Incarico, ma la relativa finestra non mostra un solo Annulla.",
+                "portal_error",
+                { portal: "CRM", action: "property-activity-news-mandate-cancel", propertyId: input.propertyId, correlatedProperty, cancelCount },
+                true,
+              );
+            }
+            await cancel.click();
+            await activityDialog.waitFor({ state: "hidden", timeout: 10_000 });
+            return { outcome: "existing", crmActivityId: null, correlatedProperty, attempts: attempt };
           }
           // The runner has already verified the property by cadastral identity and this
           // modal is opened from that property's own activity card. Tecnocloud may
