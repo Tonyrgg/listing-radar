@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { logout } from "@/app/login/actions";
 import { PendingSubmitButton } from "@/components/loading-controls";
+import { CercaGlobale } from "@/components/global-search";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { QuickRequestButton, QuickRequestDrawer } from "@/components/matching/quick-request";
 import { FlashToast } from "@/components/ui/feedback";
@@ -100,7 +101,9 @@ export function AppShellFrame({
         </div>
 
         <div className="mt-6 min-h-0 flex-1">
-          <QuickRequestButton compact={collapsed} className={clsx("mb-4 w-full", collapsed && "px-0")} />
+          <QuickRequestButton compact={collapsed} className={clsx("mb-3 w-full", collapsed && "px-0")} />
+          {/* La ricerca sta sopra le sezioni: si cerca prima di scegliere dove. */}
+          <CercaGlobale collapsed={collapsed} className="mb-4" />
           <SidebarNav collapsed={collapsed} />
         </div>
 
@@ -147,7 +150,8 @@ export function AppShellFrame({
           {/* Su telefono le sezioni scorrono in orizzontale: senza `min-w-0`
             * il contenitore prende la larghezza della fila e a scorrere è
             * l'intera pagina. */}
-          <div className="min-w-0 border-t border-[var(--lr-line-quiet)] px-2 py-1.5">
+          <div className="min-w-0 space-y-2 border-t border-[var(--lr-line-quiet)] px-2 py-2">
+            <CercaGlobale />
             <SidebarNav />
           </div>
         </header>

@@ -662,6 +662,61 @@ export class PropertyLifecycleReadRepository {
   }
 
   /**
+   * Le case che corrispondono a una parola.
+   *
+   * L'indirizzo del mercato non è affidabile — spesso è il titolone
+   * dell'annuncio — quindi si cerca su due lati: quello che il portale ha
+   * scritto come indirizzo, e quello che la risoluzione della posizione ha
+   * capito. Le due liste si uniscono per id.
+   */
+  async searchProperties(term: string, limit = 12): Promise<LifecyclePropertySummary[]> {
+    const parola = term.trim();
+    if (parola.length < 2) return [];
+
+    const modello = `%${parola}%`;
+
+    const [perIndirizzo, posizioni] = await Promise.all([
+      this.db
+        .from("properties")
+        .select("id")
+        .neq("identity_status", "MERGED")
+        .ilike("canonical_attributes->>address", modello)
+        .limit(limit),
+      this.db
+        .from("locations")
+        .select("id")
+        .or(`raw_text.ilike.${modello},street_name.ilike.${modello},locality.ilike.${modello}`)
+        .limit(limit * 3),
+    ]);
+
+    throwIfError(perIndirizzo.error);
+    throwIfError(posizioni.error);
+
+    const idPosizioni = ((posizioni.data ?? []) as Array<{ id: string }>).map((riga) => riga.id);
+    let perPosizione: string[] = [];
+
+    if (idPosizioni.length) {
+      const { data, error } = await this.db
+        .from("properties")
+        .select("id")
+        .neq("identity_status", "MERGED")
+        .in("primary_location_id", idPosizioni)
+        .limit(limit);
+      throwIfError(error);
+      perPosizione = ((data ?? []) as Array<{ id: string }>).map((riga) => riga.id);
+    }
+
+    const ids = unique([
+      ...((perIndirizzo.data ?? []) as Array<{ id: string }>).map((riga) => riga.id),
+      ...perPosizione,
+    ]).slice(0, limit);
+
+    if (!ids.length) return [];
+
+    return this.hydrateProperties(await this.propertiesByIds(ids));
+  }
+
+  /**
    * I movimenti di mercato, indietro nel tempo.
    *
    * `dashboard()` ne restituisce gli ultimi ventiquattro, che bastano a dire

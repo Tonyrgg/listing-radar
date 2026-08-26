@@ -89,6 +89,42 @@
   :root:not([data-theme="dark"]) { color-scheme: light; }
 }
 
+@media (prefers-color-scheme: dark) {
+  /* Il selettore del tema offre «Come il sistema»: senza questo blocco quella
+   * voce significava sempre chiaro, anche su un computer impostato scuro. La
+   * guardia `:not([data-theme="light"])` lascia vincere la scelta esplicita. */
+  :root:not([data-theme="light"]) {
+    --lr-canvas: #10282e;
+    --lr-surface: #17353c;
+    --lr-raised: #22464e;
+    --lr-line: #91a8ac;
+    --lr-line-quiet: #35555b;
+    --lr-ink: #fff7eb;
+    --lr-ink-2: #d1dfdd;
+    --lr-ink-3: #b4c7c5;
+    --lr-accent: #e69365;
+    --lr-accent-ink: #263035;
+    --lr-accent-hover: #f2ac81;
+    --lr-accent-soft: #4e3930;
+    --lr-warn: #e3bd66;
+    --lr-warn-soft: #4b3e22;
+    --lr-danger: #ef978d;
+    --lr-danger-ink: #2b2020;
+    --lr-danger-soft: #4d302f;
+    --lr-info: #9bc8e0;
+    --lr-info-soft: #243f4a;
+    --lr-scrim: rgb(5 17 20 / 0.66);
+    --lr-data-1: #6fb7df;
+    --lr-data-2: #72c6a2;
+    --lr-data-3: #e5b65d;
+    --lr-data-4: #ed8b79;
+    --lr-data-5: #afa3e0;
+    --lr-data-muted: #a9bbb9;
+    --lr-floating: 0 18px 46px rgb(0 0 0 / 0.34), 0 3px 10px rgb(0 0 0 / 0.22);
+    color-scheme: dark;
+  }
+}
+
 :root[data-theme="light"] {
   --lr-canvas: #eae0cf;
   --lr-surface: #fffdf8;
