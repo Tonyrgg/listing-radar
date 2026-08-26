@@ -122,7 +122,7 @@ export interface RunnerOptions {
   isCancellationRequested?: (jobId: string) => boolean;
   isPauseRequested?: (jobId: string) => boolean;
   isStopAfterNextImportRequested?: (jobId: string) => boolean;
-  autoFillDirectContact?: boolean;
+  autoFillDirectContact?: boolean | (() => boolean);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -135,7 +135,7 @@ export class PropertyWorkerRunner {
   private readonly isCancellationRequested: (jobId: string) => boolean;
   private readonly isPauseRequested: (jobId: string) => boolean;
   private readonly isStopAfterNextImportRequested: (jobId: string) => boolean;
-  private readonly autoFillDirectContact: boolean;
+  private readonly autoFillDirectContact: () => boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -146,7 +146,9 @@ export class PropertyWorkerRunner {
     this.isCancellationRequested = options.isCancellationRequested ?? (() => false);
     this.isPauseRequested = options.isPauseRequested ?? (() => false);
     this.isStopAfterNextImportRequested = options.isStopAfterNextImportRequested ?? (() => false);
-    this.autoFillDirectContact = options.autoFillDirectContact !== false;
+    this.autoFillDirectContact = typeof options.autoFillDirectContact === "function"
+      ? options.autoFillDirectContact
+      : () => options.autoFillDirectContact !== false;
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
@@ -692,7 +694,7 @@ export class PropertyWorkerRunner {
             const activityDefinition = propertyActivityDefinition(
               task.owners,
               directContactOrdinalForTask(tasks, task.property.id),
-              this.autoFillDirectContact,
+              this.autoFillDirectContact(),
             );
             const previous = task.property.raw_payload?.worker_activity as Partial<PropertyActivityCheckpoint> | undefined;
             const attempts = Number(previous?.attempts ?? 0) + 1;
@@ -1002,6 +1004,9 @@ export class PropertyWorkerRunner {
     propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
       const { property, primary, coowners, owners } = item;
+      // The operator can change this preference during a run. Freeze it only
+      // for the property currently in flight, then read it again for the next.
+      const autoFillDirectContact = this.autoFillDirectContact();
       const stageOrder = [
         "ready",
         "owner_contacts_ready",
@@ -1089,6 +1094,7 @@ export class PropertyWorkerRunner {
               owners.map((owner) => owner.person),
               crm,
               directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
+              autoFillDirectContact,
             ), 1);
           await advanceStage("activity_ready");
         }
@@ -1581,11 +1587,12 @@ export class PropertyWorkerRunner {
     owners: PersonRow[],
     crm: PlaywrightCrmAdapter,
     directContactOrdinal: number,
+    autoFillDirectContact = this.autoFillDirectContact(),
   ) {
     if (!property.crm_record_id) throw new WorkerError("La scheda dell'immobile non è disponibile per creare l'attività", "data_incomplete", { propertyId: property.id });
     const existing = readPropertyActivityCheckpoint(property.raw_payload, this.config.WORKER_DRY_RUN, property.crm_record_id);
     if (existing) return;
-    const definition = propertyActivityDefinition(owners, directContactOrdinal, this.autoFillDirectContact);
+    const definition = propertyActivityDefinition(owners, directContactOrdinal, autoFillDirectContact);
     if (job.mode === "assisted") {
       const decision = await this.prompts.confirmSave(propertyActivitySummary(asProperty(property), owners.map((owner) => owner.full_name), definition));
       if (decision === "skip") return;

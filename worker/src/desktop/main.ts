@@ -1251,7 +1251,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
-    autoFillDirectContact: preferences.autoFillDirectContact,
+    autoFillDirectContact: () => preferences.autoFillDirectContact,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;

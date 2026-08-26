@@ -433,6 +433,42 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.createPropertyActivity).toHaveBeenCalledOnce();
   });
 
+  it("applica il cambio Autocompila al successivo immobile della run", async () => {
+    let autoFillDirectContact = false;
+    const runner = new PropertyWorkerRunner(config, {
+      keepAlive: false,
+      autoFillDirectContact: () => autoFillDirectContact,
+    });
+    const repository = { updatePropertyProcessing: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const owner = { ...personRow(), crm_record_id: "CRM-PERSON-1", mobiles: [], landlines: [] };
+    const first = { ...propertyRow(), id: "property-1", crm_record_id: "CRM-PROPERTY-1" };
+    const second = { ...propertyRow(), id: "property-2", crm_record_id: "CRM-PROPERTY-2", raw_payload: {} };
+    const third = { ...propertyRow(), id: "property-3", crm_record_id: "CRM-PROPERTY-3", raw_payload: {} };
+    const crm = {
+      createPropertyActivity: vi.fn(async (input) => ({
+        outcome: "created", crmActivityId: null, correlatedProperty: input.propertyId, attempts: 1,
+      })),
+    };
+    const ensureActivity = (runner as unknown as { ensurePropertyActivity: Function }).ensurePropertyActivity;
+
+    await ensureActivity.call(runner, job, first, owner, [owner], crm, 1);
+    autoFillDirectContact = true;
+    await ensureActivity.call(runner, job, second, owner, [owner], crm, 1);
+    autoFillDirectContact = false;
+    await ensureActivity.call(runner, job, third, owner, [owner], crm, 1);
+
+    expect(crm.createPropertyActivity).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      contactMode: "Telefonata", status: "Da eseguire", description: "Inserire attività",
+    }));
+    expect(crm.createPropertyActivity).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      contactMode: "Contatto diretto", status: "Eseguito", description: "Non sa nulla",
+    }));
+    expect(crm.createPropertyActivity).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      contactMode: "Telefonata", status: "Da eseguire", description: "Inserire attività",
+    }));
+  });
+
   it("verifica tutti i proprietari e collega i comproprietari dopo immobile e attività", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const primary = { ...personRow(), id: "primary", crm_record_id: "CRM-PRIMARY", share_percentage: 70 };
@@ -493,6 +529,7 @@ describe("flusso identità nominativo e immobile", () => {
       [primary, coowner],
       crm,
       1,
+      true,
     );
     expect(crm.linkOwner).toHaveBeenCalledWith(
       "CRM-PROPERTY",

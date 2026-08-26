@@ -26,7 +26,7 @@ describe("controlli di arresto desktop", () => {
     expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
     expect(main).toContain('ipcMain.handle("desktop:stop-all"');
-    expect(main).toContain("autoFillDirectContact: preferences.autoFillDirectContact");
+    expect(main).toContain("autoFillDirectContact: () => preferences.autoFillDirectContact");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");
     expect(main).toContain("repairLongRunJobForImport");
