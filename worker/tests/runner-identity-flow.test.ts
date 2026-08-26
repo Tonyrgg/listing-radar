@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { WorkerError } from "../src/core/errors.js";
 import { PropertyWorkerRunner } from "../src/services/runner.js";
 import type { PersonRow, PropertyRow } from "../src/services/repository.js";
 import type { WorkerConfig } from "../src/config.js";
@@ -61,6 +62,56 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
+  it("ritenta tre volte anche un errore che prima richiedeva revisione", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const operation = vi.fn().mockRejectedValue(
+      new WorkerError("Lookup non disponibile", "needs_review"),
+    );
+
+    await expect(
+      (runner as unknown as { withAutomaticRecovery: Function }).withAutomaticRecovery(
+        { ...job, mode: "assisted" },
+        propertyRow(),
+        1,
+        1,
+        "Ricerca immobile",
+        operation,
+      ),
+    ).rejects.toMatchObject({
+      details: { automaticAttempts: 3, automaticRecoveryExhausted: true },
+    });
+    expect(operation).toHaveBeenCalledTimes(3);
+  }, 8_000);
+
+  it("rianalizza automaticamente senza perdere gli ID CRM gia verificati", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const repository = { updatePropertyProcessing: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const property = { ...propertyRow(), crm_record_id: "CRM-PROPERTY-1" };
+    const crm = { resetToCrmHome: vi.fn().mockResolvedValue(undefined) };
+
+    await (runner as unknown as { reanalyzePropertyAutomatically: Function }).reanalyzePropertyAutomatically(
+      { ...job, total_properties: 1 },
+      property,
+      1,
+      1,
+      2,
+      new WorkerError("Salvataggio non confermato", "portal_error", { automaticAttempts: 3 }),
+      crm,
+    );
+
+    expect(property.crm_record_id).toBe("CRM-PROPERTY-1");
+    expect(property.raw_payload).toMatchObject({
+      property_flow: { stage: "ready", reanalysisSource: "automatic", reanalysisAttempt: 2 },
+      automatic_retry: { normalAttempts: 3, reanalysisAttempts: 2 },
+    });
+    expect(repository.updatePropertyProcessing).toHaveBeenCalledWith(
+      property.id,
+      expect.objectContaining({ processing_status: "normalized" }),
+    );
+    expect(crm.resetToCrmHome).toHaveBeenCalledOnce();
+  });
+
   it("sceglie una scheda tra due candidati con lo stesso CF e non crea un duplicato", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const repository = {

@@ -120,7 +120,7 @@ describe("aggiornamenti desktop", () => {
       const pending = updater.download();
       await vi.waitFor(() => expect(updater.snapshot().status).toBe("downloading"));
       expect(updater.cancelDownload()).toBe(true);
-      releaseChunk?.();
+      (releaseChunk as (() => void) | null)?.();
       await expect(pending).resolves.toMatchObject({
         status: "available",
         message: expect.stringContaining("interrotto"),

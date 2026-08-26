@@ -401,7 +401,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const recovered = await this.recoverMergedPerson(input, personId);
       if (!recovered) {
         throw new WorkerError(
-          "La scheda precedente Ã¨ stata unita, ma la ricerca non trova una scheda finale con stesso codice fiscale e nominativo.",
+          "La scheda precedente e stata unita, ma la ricerca non trova una scheda finale con stesso codice fiscale e nominativo.",
           "needs_review",
           { portal: "CRM", action: "person-record-merged-recovery-not-found", personId },
           true,
@@ -693,6 +693,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         this.rememberPersonSearchInput(expectedId, input);
         const openedId = await this.openPerson(expectedId);
         const verified = await this.verifyCurrentPerson(input, openedId);
+        if (verified && openedId !== expectedId) {
+          return {
+            ...verified,
+            data: {
+              ...verified.data,
+              source: "crm-merged-person-recovery",
+              inaccessiblePersonId: expectedId,
+              recoveredFromAccessDenied: true,
+            },
+          };
+        }
         // A merge can redirect the old URL without showing Accesso negato.
         // Do not retain that stale record ID: search the CRM normally instead.
         return verified ?? this.recoverMergedPerson(input, expectedId);

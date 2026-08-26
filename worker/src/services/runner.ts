@@ -95,6 +95,9 @@ function isAcquisitionExcluded(property: PropertyRow): boolean {
   return ["acquisition_skipped", "acquisition_failed"].includes(property.processing_status);
 }
 
+const AUTOMATIC_OPERATION_ATTEMPTS = 3;
+const AUTOMATIC_PROPERTY_REANALYSES = 3;
+
 function sameContextValue(left: string | null, right: string | null): boolean {
   const normalize = (value: string | null) => String(value ?? "")
     .normalize("NFD")
@@ -892,7 +895,7 @@ export class PropertyWorkerRunner {
     operation: () => Promise<T>,
     maximumAttemptsOverride?: number,
   ): Promise<T> {
-    const maximumAttempts = maximumAttemptsOverride ?? (job.mode === "automatic" ? 2 : 1);
+    const maximumAttempts = maximumAttemptsOverride ?? AUTOMATIC_OPERATION_ATTEMPTS;
     let lastError: unknown;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       this.throwIfCancellationRequested(job.id);
@@ -904,7 +907,11 @@ export class PropertyWorkerRunner {
         const workerError = error instanceof WorkerError
           ? error
           : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
-        if (!["portal_error", "failed"].includes(workerError.status) || attempt === maximumAttempts) {
+        if (
+          workerError.status === "paused"
+          || workerError.details.skipProperty === true
+          || attempt === maximumAttempts
+        ) {
           throw new WorkerError(
             workerError.message,
             workerError.status,
@@ -942,7 +949,11 @@ export class PropertyWorkerRunner {
     });
   }
 
-  private async markImportPropertySkipped(property: PropertyRow, reason: string) {
+  private async markImportPropertySkipped(
+    property: PropertyRow,
+    reason: string,
+    details: Record<string, unknown> = { source: "manual", attempts: 0 },
+  ) {
     const graph = await this.repository.loadGraph(property.job_id);
     const skippedAt = new Date().toISOString();
     const relatedOwnerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
@@ -950,7 +961,7 @@ export class PropertyWorkerRunner {
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
       property_flow: { version: 3, stage: "skipped", dryRun: this.config.WORKER_DRY_RUN, updatedAt: skippedAt },
-      skip_details: { source: "manual", reason, attempts: 0, personIds: relatedPersonIds, skippedAt },
+      skip_details: { ...details, reason, personIds: relatedPersonIds, skippedAt },
     };
     await this.repository.updatePropertyProcessing(property.id, {
       processing_status: "skipped",
@@ -1017,9 +1028,15 @@ export class PropertyWorkerRunner {
         "owners_linked",
         "completed",
       ];
-      const savedPropertyFlow = property.raw_payload?.property_flow as { stage?: string; version?: number } | undefined;
-      let propertyStage = String(savedPropertyFlow?.stage ?? "ready");
-      if (Number(savedPropertyFlow?.version ?? 0) < 3 && !["completed", "skipped"].includes(propertyStage)) {
+      propertyRecovery: for (
+        let reanalysisAttempt = 0;
+        reanalysisAttempt <= AUTOMATIC_PROPERTY_REANALYSES;
+        reanalysisAttempt += 1
+      ) {
+        this.throwIfCancellationRequested(job.id);
+        const savedPropertyFlow = property.raw_payload?.property_flow as { stage?: string; version?: number } | undefined;
+        let propertyStage = String(savedPropertyFlow?.stage ?? "ready");
+        if (Number(savedPropertyFlow?.version ?? 0) < 3 && !["completed", "skipped"].includes(propertyStage)) {
         const singleOwnerStageMap: Record<string, string> = {
           primary_contacts_ready: "owner_contacts_ready",
           primary_ready: "owners_ready",
@@ -1027,15 +1044,15 @@ export class PropertyWorkerRunner {
           property_ready: "property_ready",
           activity_ready: "activity_ready",
         };
-        propertyStage = coowners.length ? "ready" : singleOwnerStageMap[propertyStage] ?? "ready";
-      }
-      const stageReached = (target: string) => stageOrder.indexOf(propertyStage) >= stageOrder.indexOf(target);
-      const advanceStage = async (stage: string) => {
-        await this.markPropertyStage(property, stage);
-        propertyStage = stage;
-      };
-      if (["completed", "skipped"].includes(property.processing_status) || stageReached("completed")) continue;
-      try {
+          propertyStage = coowners.length ? "ready" : singleOwnerStageMap[propertyStage] ?? "ready";
+        }
+        const stageReached = (target: string) => stageOrder.indexOf(propertyStage) >= stageOrder.indexOf(target);
+        const advanceStage = async (stage: string) => {
+          await this.markPropertyStage(property, stage);
+          propertyStage = stage;
+        };
+        if (["completed", "skipped"].includes(property.processing_status) || stageReached("completed")) continue propertyLoop;
+        try {
         if (!stageReached("owner_contacts_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "contacts", `Leggo da Excel i recapiti di tutti i ${owners.length} proprietari, senza ancora toccare il gestionale`);
@@ -1095,7 +1112,7 @@ export class PropertyWorkerRunner {
               crm,
               directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
               autoFillDirectContact,
-            ), 1);
+            ));
           await advanceStage("activity_ready");
         }
         this.throwIfPropertySkipRequested(job.id, property.id);
@@ -1168,6 +1185,7 @@ export class PropertyWorkerRunner {
             { pauseRequested: true, stopAfterNextImport: true, propertyId: property.id, propertyIndex: propertyIndex + 1 },
           );
         }
+        break propertyRecovery;
       } catch (error) {
         const workerError = error instanceof WorkerError ? error : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
         if (workerError.details.skipProperty === true || this.isPropertySkipRequested(job.id, property.id)) {
@@ -1178,16 +1196,64 @@ export class PropertyWorkerRunner {
           this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", "Immobile saltato; continuo con il successivo");
           continue propertyLoop;
         }
-        const checkpoint = isRecord(property.raw_payload?.property_flow) ? property.raw_payload.property_flow : {};
-        throw new WorkerError(workerError.message, workerError.status, {
-          ...workerError.details,
-          propertyId: property.id,
-          cadastralKey: property.cadastral_key,
-          propertyAddress: property.address,
-          propertyIndex: propertyIndex + 1,
-          totalProperties: graph.properties.length,
-          propertyStage: checkpoint.stage ?? "primary",
-        }, workerError.captureScreenshot);
+        if (workerError.status === "paused") throw workerError;
+        const automaticRetry = isRecord(property.raw_payload?.automatic_retry)
+          ? property.raw_payload.automatic_retry
+          : {};
+        const normalPropertyAttempts = workerError.details.automaticRecoveryExhausted === true
+          ? AUTOMATIC_OPERATION_ATTEMPTS
+          : Number(automaticRetry.normalPropertyAttempts ?? 0) + 1;
+        if (normalPropertyAttempts < AUTOMATIC_OPERATION_ATTEMPTS) {
+          property.raw_payload = {
+            ...(property.raw_payload ?? {}),
+            automatic_retry: {
+              ...automaticRetry,
+              normalPropertyAttempts,
+              reanalysisAttempts: reanalysisAttempt,
+              lastError: workerError.message,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+          await this.repository.updatePropertyProcessing(property.id, {
+            raw_payload: property.raw_payload,
+          });
+          this.emitPropertyProgress(
+            job,
+            property,
+            propertyIndex + 1,
+            graph.properties.length,
+            "recovery",
+            `Recupero automatico immobile ${normalPropertyAttempts + 1} di ${AUTOMATIC_OPERATION_ATTEMPTS}`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 900 * normalPropertyAttempts));
+          reanalysisAttempt -= 1;
+          continue propertyRecovery;
+        }
+        if (reanalysisAttempt < AUTOMATIC_PROPERTY_REANALYSES) {
+          await this.reanalyzePropertyAutomatically(
+            job,
+            property,
+            propertyIndex + 1,
+            graph.properties.length,
+            reanalysisAttempt + 1,
+            workerError,
+            crm,
+          );
+          continue propertyRecovery;
+        }
+        const automaticSkipReason = `Saltato dopo ${AUTOMATIC_OPERATION_ATTEMPTS} tentativi e ${AUTOMATIC_PROPERTY_REANALYSES} rianalisi automatiche: ${workerError.message}`;
+        await crm.resetToCrmHome().catch(() => undefined);
+        await this.markImportPropertySkipped(property, automaticSkipReason, {
+          source: "automatic_reanalysis_exhausted",
+          normalAttempts: Number(workerError.details.automaticAttempts ?? AUTOMATIC_OPERATION_ATTEMPTS),
+          reanalysisAttempts: AUTOMATIC_PROPERTY_REANALYSES,
+          lastError: workerError.message,
+        });
+        completed += 1;
+        await this.repository.updateJob(job.id, { processed_properties: completed });
+        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "skipped", "Immobile non completabile dopo i recuperi automatici; continuo con il successivo");
+        continue propertyLoop;
+      }
       }
     }
     await this.repository.updateJob(job.id, { processed_properties: completed, processed_people: activePersonIds.size });
@@ -1705,6 +1771,54 @@ export class PropertyWorkerRunner {
     if (this.isPropertySkipRequested(jobId, propertyId)) {
       throw new WorkerError("Immobile saltato su richiesta dell'utente", "paused", { skipProperty: true, propertyId });
     }
+  }
+
+  private async reanalyzePropertyAutomatically(
+    job: JobRow,
+    property: PropertyRow,
+    index: number,
+    total: number,
+    reanalysisAttempt: number,
+    failure: WorkerError,
+    crm: PlaywrightCrmAdapter,
+  ) {
+    const reanalyzedAt = new Date().toISOString();
+    property.raw_payload = {
+      ...(property.raw_payload ?? {}),
+      property_flow: {
+        version: 3,
+        stage: "ready",
+        dryRun: this.config.WORKER_DRY_RUN,
+        reanalyzedAt,
+        reanalysisSource: "automatic",
+        reanalysisAttempt,
+      },
+      automatic_retry: {
+        normalAttempts: Number(failure.details.automaticAttempts ?? AUTOMATIC_OPERATION_ATTEMPTS),
+        normalPropertyAttempts: 0,
+        reanalysisAttempts: reanalysisAttempt,
+        lastError: failure.message,
+        updatedAt: reanalyzedAt,
+      },
+    };
+    await this.repository.updatePropertyProcessing(property.id, {
+      processing_status: "normalized",
+      raw_payload: property.raw_payload,
+    });
+    this.emitPropertyProgress(
+      job,
+      property,
+      index,
+      total,
+      "reanalyzing",
+      `Rianalisi automatica ${reanalysisAttempt} di ${AUTOMATIC_PROPERTY_REANALYSES}: verifico cosa esiste e completo solo cio che manca`,
+    );
+    await crm.resetToCrmHome().catch((error) => {
+      logger.warn(
+        { jobId: job.id, propertyId: property.id, reanalysisAttempt, error: error instanceof Error ? error.message : String(error) },
+        "Reset CRM non riuscito prima della rianalisi automatica",
+      );
+    });
   }
 
   private interruptionFor(jobId: string, propertyId: string): "pause" | "skip" | null {
