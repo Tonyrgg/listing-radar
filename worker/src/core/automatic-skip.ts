@@ -21,6 +21,20 @@ export function nextAutomaticRetryAttempt(rawPayload: Record<string, unknown> | 
   return Math.min(automaticRetryAttempts(rawPayload) + 1, maximumAttempts);
 }
 
+/**
+ * A property-bound failure is recoverable by restarting that property's flow,
+ * irrespective of whether Tecnocloud classified it as a technical, data or
+ * review error. User-requested stops, expired sessions and an unverified save
+ * remain protected: retrying those can respectively ignore an operator choice,
+ * hide a login requirement or duplicate a write.
+ */
+export function canAutomaticallyRecoverPropertyFailure(status: string, details: Record<string, unknown> | null | undefined) {
+  const value = recordValue(details);
+  if (value.cancelled === true || value.pauseRequested === true || value.stopAfterNextImport === true) return false;
+  if (status === "session_expired") return false;
+  return value.action !== "property-activity-save-uncertain";
+}
+
 export function buildAutomaticSkipImpact(
   graph: { properties: PropertyRow[]; people: PersonRow[]; ownerships: OwnershipRow[] },
   propertyId: string,

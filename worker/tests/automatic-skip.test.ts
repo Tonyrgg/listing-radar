@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   automaticRetryAttempts,
   buildAutomaticSkipImpact,
+  canAutomaticallyRecoverPropertyFailure,
   nextAutomaticRetryAttempt,
 } from "../src/core/automatic-skip.js";
 import type { PersonRow, PropertyRow } from "../src/services/repository.js";
@@ -20,6 +21,18 @@ describe("skip automatico dopo i tentativi", () => {
     expect(automaticRetryAttempts({ automatic_retry: { attempts: 2 } })).toBe(2);
     expect(nextAutomaticRetryAttempt({ automatic_retry: { attempts: 2 } })).toBe(3);
     expect(nextAutomaticRetryAttempt({ automatic_retry: { attempts: 3 } })).toBe(3);
+  });
+
+  it("recupera e poi salta anche errori di dati o revisione legati a un immobile", () => {
+    expect(canAutomaticallyRecoverPropertyFailure("needs_review", { propertyId: "property-1" })).toBe(true);
+    expect(canAutomaticallyRecoverPropertyFailure("data_incomplete", { propertyId: "property-1" })).toBe(true);
+    expect(canAutomaticallyRecoverPropertyFailure("portal_error", { propertyId: "property-1" })).toBe(true);
+  });
+
+  it("non aggira mai pause, login richiesto o un salvataggio dall'esito incerto", () => {
+    expect(canAutomaticallyRecoverPropertyFailure("paused", { propertyId: "property-1", pauseRequested: true })).toBe(false);
+    expect(canAutomaticallyRecoverPropertyFailure("session_expired", { propertyId: "property-1" })).toBe(false);
+    expect(canAutomaticallyRecoverPropertyFailure("needs_review", { propertyId: "property-1", action: "property-activity-save-uncertain" })).toBe(false);
   });
 
   it("salta il nominativo esclusivo ma conserva quello collegato a un altro immobile", () => {

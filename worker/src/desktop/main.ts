@@ -13,7 +13,7 @@ import { ExcelContactsAdapter, REQUIRED_CONTACT_COLUMNS } from "../adapters/exce
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
-import { automaticRetryAttempts, buildAutomaticSkipImpact } from "../core/automatic-skip.js";
+import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { normalizeTaxCode } from "../core/normalize.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
@@ -1120,12 +1120,12 @@ function handleRunnerEvent(event: RunnerEvent) {
     if (retry && retry.jobId === event.jobId && retry.propertyId === failedPropertyId && retry.attempt >= 3) {
       clearAutoRetry();
       void skipAfterAutomaticRetries(event.jobId, retry.propertyId, event.message, retry.attempt);
-    } else if (preferences.autoRetryEnabled && failedPropertyId && ["portal_error", "failed"].includes(event.status)) {
+    } else if (preferences.autoRetryEnabled && failedPropertyId && canAutomaticallyRecoverPropertyFailure(event.status, event.details)) {
       void scheduleAutoRetry(event.jobId);
     } else {
       pushActivity(
         preferences.autoRetryEnabled
-          ? "Questo errore richiede un controllo umano e non verrà trasformato in retry o skip automatico"
+          ? "Questo arresto richiede un intervento manuale: pausa, sessione o salvataggio non verificato non vengono forzati"
           : "Riprova automatico disattivato: il lavoro resta fermo finché non decidi tu",
         "warning",
       );
