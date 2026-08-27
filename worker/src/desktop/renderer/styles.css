@@ -1648,6 +1648,24 @@ dialog[open] {
   gap: var(--lr-space-3);
 }
 
+.network-run-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--lr-space-3);
+  align-items: end;
+  margin-top: var(--lr-space-3);
+}
+
+.network-run-controls > label:not(.safe-check) {
+  display: grid;
+  gap: var(--lr-space-1);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.network-run-controls input[type="number"] { min-height: 44px; width: 100%; }
+.network-run-card { border-color: color-mix(in srgb, #526d35 46%, var(--lr-line)); }
+
 /* Niente varianti a più colonne: la scheda vive in mezza schermata, e le
  * @media guardano la finestra, non lo spazio che la scheda ha davvero. Una
  * colonna sola è l'unica larghezza che non si sbriciola. */
@@ -1762,6 +1780,7 @@ dialog[open] {
   }
 
   .street-run-controls,
+  .network-run-controls,
   .street-run-current {
     grid-template-columns: 1fr;
   }

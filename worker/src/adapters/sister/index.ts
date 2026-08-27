@@ -171,6 +171,50 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     return null;
   }
 
+  /**
+   * Searches the authenticated "Persona fisica" form by fiscal code. This is
+   * intentionally kept inside the SISTER adapter: services receive normalised
+   * properties and never need to know field names or navigation details.
+   */
+  async searchPhysicalPersonByTaxCode(taxCode: string): Promise<CadastralProperty[]> {
+    const normalizedTaxCode = taxCode.replace(/\s+/g, "").toUpperCase();
+    if (!/^[A-Z0-9]{16}$/.test(normalizedTaxCode)) {
+      throw new WorkerError("Codice fiscale non valido per la ricerca SISTER persona fisica.", "data_incomplete", { portal: "SISTER", action: "person-tax-code", taxCodeLength: normalizedTaxCode.length }, true);
+    }
+    await this.ensurePhysicalPersonForm();
+    const form = this.page.locator('form[name="RicercaPFForm"]');
+    await form.locator('select[name="tipoCatasto"]').selectOption("F");
+    await form.locator('select[name="comuneCat"]').selectOption({ label: "BITONTO" });
+    await form.locator('input[name="selDatiAna"][value="CF_PF"]').check();
+    const field = form.locator('input[name="cod_fisc_pf"]');
+    await field.fill(normalizedTaxCode);
+    if ((await field.inputValue()).replace(/\s+/g, "").toUpperCase() !== normalizedTaxCode) {
+      throw new WorkerError("SISTER non ha acquisito il codice fiscale nella ricerca persona fisica.", "portal_error", { portal: "SISTER", action: "person-tax-code-input" }, true);
+    }
+    await clickAndWait(this.page, form.locator('input[name="ricerca"]'));
+    await this.checkSession();
+    const resultReady = await this.page.locator(this.selectors.resultsPageMarker).count() > 0;
+    const noMatch = await this.page.getByText(NO_MATCH_PATTERN).count() > 0;
+    if (!resultReady && !noMatch) {
+      throw new WorkerError("Risposta SISTER non riconosciuta dopo la ricerca per codice fiscale.", "portal_error", { portal: "SISTER", action: "person-tax-code-result", url: this.page.url() }, true);
+    }
+    return noMatch ? [] : this.extractProperties();
+  }
+
+  private async ensurePhysicalPersonForm() {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await this.checkSession();
+      if (await this.page.locator('form[name="RicercaPFForm"]').count() === 1) return;
+      await this.page.goBack({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
+    }
+    throw new WorkerError(
+      "SISTER non è sulla pagina Persona fisica. Apri la ricerca Persona fisica e riprendi.",
+      "needs_review",
+      { portal: "SISTER", action: "person-search-form", url: this.page.url() },
+      true,
+    );
+  }
+
   async extractSearchContext(): Promise<SearchContext> {
     if (this.selectors.searchContext) {
       const context = parseSearchContext(await text(this.page, this.selectors.searchContext));

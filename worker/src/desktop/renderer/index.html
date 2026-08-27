@@ -102,6 +102,24 @@
           <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
+
+        <section id="networkRun" class="street-run-card network-run-card">
+          <header>
+            <div><p class="eyebrow">Esplorazione SISTER</p><h2>Segui una rete di proprietari</h2><p>Parte da codici fiscali già verificati nel CRM, attraversa i comproprietari e conserva soltanto immobili che superano il controllo catastale. Non importa nulla: prima costruisce la coda.</p></div>
+            <span id="networkRunBadge" class="status-pill is-idle"><span></span>Mai avviata</span>
+          </header>
+          <div class="network-run-controls">
+            <label>Immobili da ottenere<input id="networkTargetProperties" type="number" min="1" max="200" value="12" /></label>
+            <label>Profondità della rete<input id="networkMaxDepth" type="number" min="0" max="8" value="3" /></label>
+            <label>Quota minima %<input id="networkMinShare" type="number" min="0" max="100" value="0" /></label>
+            <label class="safe-check"><input id="networkIncludeExisting" type="checkbox" /><span><b>Includi immobili già nel CRM</b><small>Se disattivo, gli esistenti non consumano uno slot.</small></span></label>
+            <label class="safe-check"><input id="networkResidentialOnly" type="checkbox" checked /><span><b>Solo abitazioni</b><small>Esclude box, cantine e categorie C/.</small></span></label>
+            <button id="networkRunStart" class="button primary">Esplora e prepara coda</button>
+            <button id="networkRunCancel" class="button danger is-hidden">Metti in pausa</button>
+          </div>
+          <div id="networkRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">La coda verrà salvata senza importare. Potrai controllarla e poi avviare l’import quando decidi tu.</p></div>
+          <div id="networkRunProgress" class="street-run-progress is-hidden"><span></span></div>
+        </section>
         </div>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->

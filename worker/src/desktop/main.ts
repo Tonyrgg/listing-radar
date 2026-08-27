@@ -25,6 +25,12 @@ import {
   type SisterStreetRunCheckpoint,
   type SisterStreetRunProgress,
 } from "../services/sister-street-run.js";
+import {
+  SisterNetworkRun,
+  type SisterNetworkRunCheckpoint,
+  type SisterNetworkRunProgress,
+} from "../services/sister-network-run.js";
+import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../core/network-exploration.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -139,6 +145,11 @@ let activeStreetBrowser: { close: () => Promise<void> } | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
+let networkRunActive = false;
+let networkRunCancellationRequested = false;
+let networkRunCheckpoint: SisterNetworkRunCheckpoint | null = null;
+let networkRunError: string | null = null;
+let networkRunProgress: SisterNetworkRunProgress | null = null;
 let stopAfterNextImportRequested = false;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -175,6 +186,10 @@ function preferencesPath() {
 
 function streetRunCheckpointPath() {
   return path.join(app.getPath("userData"), "sister-street-run.json");
+}
+
+function networkRunCheckpointPath() {
+  return path.join(app.getPath("userData"), "sister-network-run.json");
 }
 
 function diagnosticErrorsPath() {
@@ -250,6 +265,23 @@ async function persistStreetRunCheckpoint(checkpoint: SisterStreetRunCheckpoint)
   streetRunCheckpoint = checkpoint;
 }
 
+async function loadNetworkRunCheckpoint() {
+  try {
+    networkRunCheckpoint = JSON.parse(await readFile(networkRunCheckpointPath(), "utf8")) as SisterNetworkRunCheckpoint;
+  } catch {
+    networkRunCheckpoint = null;
+  }
+}
+
+async function persistNetworkRunCheckpoint(checkpoint: SisterNetworkRunCheckpoint) {
+  const target = networkRunCheckpointPath();
+  const temporary = `${target}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(temporary, JSON.stringify(checkpoint, null, 2), "utf8");
+  await rename(temporary, target);
+  networkRunCheckpoint = checkpoint;
+}
+
 async function archiveStreetRunCheckpoint(reason: string) {
   const checkpoint = streetRunCheckpoint;
   if (!checkpoint) return null;
@@ -280,7 +312,7 @@ async function archiveStreetRunCheckpoint(reason: string) {
 }
 
 function refreshStoppingAll() {
-  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive) stoppingAll = false;
+  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive) stoppingAll = false;
 }
 
 async function loadPreferences() {
@@ -471,6 +503,14 @@ async function stateSnapshot() {
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
     },
+    networkRun: {
+      active: networkRunActive,
+      cancelling: networkRunCancellationRequested,
+      checkpoint: networkRunCheckpoint,
+      progress: networkRunProgress,
+      lastError: networkRunError,
+      checkpointPath: networkRunCheckpointPath(),
+    },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
   };
@@ -495,7 +535,7 @@ function initializeDesktopUpdater() {
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
       serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
       updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-      isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive,
+      isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive,
       quitApp: () => app.quit(),
       onState: (state) => {
         if (state.status !== previousStatus) {
@@ -527,7 +567,7 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
 }
 
 async function runRequestArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
   requestImportActive = true;
   requestImportCancellationRequested = false;
   requestImportError = null;
@@ -582,7 +622,7 @@ async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
 }
 
 async function runMandateArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
   mandateImportActive = true;
   mandateImportCancellationRequested = false;
   mandateImportError = null;
@@ -624,7 +664,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
 }
 
 async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean }) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive) {
+  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
     throw new Error("Attendi la fine della lavorazione già in esecuzione");
   }
   const street = input.street.replace(/\s+/g, " ").trim();
@@ -828,6 +868,91 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         await publishState();
       }
     }
+  });
+}
+
+async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings>; resume: boolean }) {
+  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
+    throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  }
+  const resumeCheckpoint = input.resume ? networkRunCheckpoint ?? undefined : undefined;
+  if (input.resume && !resumeCheckpoint) throw new Error("Non esiste un'esplorazione rete da riprendere");
+  networkRunActive = true;
+  networkRunCancellationRequested = false;
+  networkRunError = null;
+  networkRunProgress = null;
+  pushActivity(input.resume ? "Ripresa esplorazione rete proprietaria" : "Esplorazione rete proprietaria avviata", "info");
+  await publishState();
+
+  const config = workerConfig({ dryRun: false });
+  void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+    try {
+      const liveRepository = repository(config);
+      const settings = normalizeNetworkSettings(resumeCheckpoint?.settings ?? input.settings);
+      const jobId = resumeCheckpoint?.jobId ?? (await liveRepository.createJob("automatic")).id;
+      if (!resumeCheckpoint) {
+        await liveRepository.setJobContext(jobId, {
+          municipality: "BITONTO", street: null, civicNumber: null, sourceUrl: tabs.sisterPage.url(),
+        });
+      }
+      const seeds = resumeCheckpoint ? [] : await liveRepository.listVerifiedNetworkSeedTaxCodes(settings.seedCount);
+      const scanner = new SisterNetworkRun(
+        new PlaywrightSisterAdapter(tabs.sisterPage),
+        new PlaywrightCrmAdapter(tabs.crmPage, false),
+        liveRepository,
+      );
+      const result = await scanner.run(jobId, {
+        settings,
+        seeds,
+        resume: resumeCheckpoint,
+        isCancelled: () => networkRunCancellationRequested,
+        onProgress: (progress) => {
+          networkRunProgress = progress;
+          void publishState();
+        },
+        onCheckpoint: async (checkpoint) => {
+          await persistNetworkRunCheckpoint(checkpoint);
+          await publishState();
+        },
+      });
+      const graph = await liveRepository.loadGraph(jobId);
+      if (result.status === "completed" && graph.properties.length) {
+        await Promise.all([
+          ...graph.properties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
+          ...graph.people.map((person) => liveRepository.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
+        ]);
+        await liveRepository.updateJob(jobId, {
+          total_properties: graph.properties.length,
+          total_people: graph.people.length,
+          status: "saved",
+          saved_at: new Date().toISOString(),
+          last_completed_step: "acquisition_reviewed",
+          current_step: "properties_processed",
+          error_message: null,
+          error_details: null,
+        });
+        pushActivity(`Esplorazione conclusa: ${graph.properties.length} immobili verificati in coda. L'import non è partito.`, "success");
+      } else if (result.status === "completed") {
+        await liveRepository.updateJob(jobId, {
+          status: "saved", saved_at: new Date().toISOString(), last_completed_step: "acquisition_reviewed", current_step: "properties_processed",
+          error_message: "Esplorazione conclusa senza immobili importabili.", error_details: { action: "network-exploration-empty", skipped: result.skipped },
+        });
+        pushActivity("Esplorazione conclusa: nessun immobile ha superato le barriere impostate.", "warning");
+      } else {
+        await liveRepository.updateJob(jobId, { status: "paused", saved_at: new Date().toISOString(), error_message: "Esplorazione rete messa in pausa: la coda è salvata.", error_details: { action: "network-exploration-paused" } });
+      }
+    } finally {
+      await tabs.browser.close().catch(() => undefined);
+    }
+  }).catch((error) => {
+    networkRunError = error instanceof Error ? error.message : String(error);
+    pushActivity(networkRunError, "error");
+  }).finally(async () => {
+    networkRunActive = false;
+    networkRunCancellationRequested = false;
+    networkRunProgress = null;
+    refreshStoppingAll();
+    await publishState();
   });
 }
 
@@ -1266,7 +1391,7 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
 }
 
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive) throw new Error("È già presente una lavorazione in esecuzione");
+  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
   let forceLiveImport = false;
   if (input.jobId) {
@@ -1372,7 +1497,7 @@ async function abandonStreetRun() {
 async function stopEverything() {
   clearAutoRetry();
   const actions: string[] = [];
-  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive;
+  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive;
   stoppingAll = hadActiveOperation;
 
   if (active && activeJobId) {
@@ -1397,6 +1522,9 @@ async function stopEverything() {
     streetRunCancellationRequested = true;
     streetRunAbandonRequested = true;
     actions.push("run via arrestata");
+  } else if (networkRunActive) {
+    networkRunCancellationRequested = true;
+    actions.push("esplorazione rete arrestata");
   } else if (streetRunCheckpoint && ["paused", "failed", "running"].includes(streetRunCheckpoint.status)) {
     await archiveStreetRunCheckpoint("Checkpoint via abbandonato da Ferma tutto");
     actions.push("checkpoint via archiviato");
@@ -1588,6 +1716,17 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
     await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false });
+    return true;
+  });
+  ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
+    await runSisterNetwork({ settings: values.settings ?? {}, resume: values.resume === true });
+    return true;
+  });
+  ipcMain.handle("desktop:cancel-network-run", async () => {
+    if (!networkRunActive) return false;
+    networkRunCancellationRequested = true;
+    pushActivity("Pausa esplorazione rete richiesta: salvo la coda dopo l'immobile corrente", "warning");
+    await publishState();
     return true;
   });
   ipcMain.handle("desktop:cancel-street-run", async () => {
@@ -1814,6 +1953,7 @@ app.whenReady().then(async () => {
   app.setAppUserModelId("it.listingradar.propertyworker");
   await loadPreferences();
   await loadStreetRunCheckpoint();
+  await loadNetworkRunCheckpoint();
   await loadDiagnosticErrors();
   registerIpc();
   await createWindow();

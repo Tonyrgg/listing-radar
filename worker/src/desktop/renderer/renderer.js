@@ -256,6 +256,8 @@ function commandIdentity(target) {
       streetRunStart: "Avvia acquisizione via completa",
       streetRunCancel: "Metti in pausa acquisizione via",
       streetRunAbandon: "Ferma e abbandona acquisizione via",
+      networkRunStart: "Esplora rete proprietaria",
+      networkRunCancel: "Metti in pausa esplorazione rete",
       stopAfterNextImportButton: "Ferma dopo il prossimo import",
       stopAllButton: "Ferma tutte le operazioni",
       requestArchiveStart: "Sincronizza archivio richieste",
@@ -1350,6 +1352,39 @@ function renderStreetRunInternalProgress(progress) {
   $("streetRunProgress").classList.remove("is-hidden");
   $("streetRunProgress").querySelector("span").style.width = `${percent}%`;
 }
+function renderNetworkRun() {
+  const state = appState?.networkRun ?? {}, checkpoint = state.checkpoint,
+    active = Boolean(state.active), canResume = Boolean(checkpoint) && ["paused", "failed", "running"].includes(checkpoint.status) && !active;
+  const start = $("networkRunStart"), cancel = $("networkRunCancel"), badge = $("networkRunBadge");
+  const ids = ["networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly"];
+  if (checkpoint?.settings) {
+    $("networkTargetProperties").value = checkpoint.settings.targetProperties;
+    $("networkMaxDepth").value = checkpoint.settings.maxDepth;
+    $("networkMinShare").value = checkpoint.settings.minSharePercentage;
+    $("networkIncludeExisting").checked = checkpoint.settings.existingPropertyPolicy === "include_existing";
+    $("networkResidentialOnly").checked = checkpoint.settings.residentialOnly !== false;
+  }
+  ids.forEach((id) => { $(id).disabled = active || canResume; });
+  badge.className = `status-pill ${active ? "is-running" : checkpoint?.status === "completed" ? "is-complete" : canResume ? "is-resumable" : "is-idle"}`;
+  badge.innerHTML = `<span></span>${active ? (state.cancelling ? "Pausa in corso" : "Esplorazione") : checkpoint?.status === "completed" ? "Coda pronta" : canResume ? "Riprendibile" : "Mai avviata"}`;
+  start.textContent = canResume ? "Riprendi esplorazione" : checkpoint?.status === "completed" ? "Avvia nuova esplorazione" : "Esplora e prepara coda";
+  start.dataset.resumeNetwork = canResume ? "true" : "false";
+  start.disabled = Boolean(appState?.active) || Boolean(appState?.streetRun?.active) || Boolean(appState?.requestArchive?.active) || Boolean(appState?.mandateArchive?.active);
+  start.classList.toggle("is-hidden", active);
+  cancel.classList.toggle("is-hidden", !active);
+  cancel.disabled = Boolean(state.cancelling);
+  if (!checkpoint) {
+    $("networkRunSummary").innerHTML = `<p class="empty-message">La coda verrà salvata senza importare. Potrai controllarla e poi avviare l’import quando decidi tu.</p>`;
+    $("networkRunProgress").classList.add("is-hidden");
+    return;
+  }
+  const skipped = checkpoint.skipped ?? {}, skipTotal = Object.values(skipped).reduce((sum, value) => sum + Number(value || 0), 0);
+  $("networkRunSummary").innerHTML = `<div class="street-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div><dl><div><dt>In coda</dt><dd>${checkpoint.acceptedProperties ?? 0}/${checkpoint.settings.targetProperties}</dd></div><div><dt>Già CRM</dt><dd>${checkpoint.existingProperties ?? 0}</dd></div><div><dt>CF in attesa</dt><dd>${checkpoint.pending?.length ?? 0}</dd></div><div><dt>Scartati</dt><dd>${skipTotal}</dd></div></dl></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
+  const progress = state.progress;
+  const percent = checkpoint.settings.targetProperties ? Math.round(Math.min(100, ((progress?.acceptedProperties ?? checkpoint.acceptedProperties ?? 0) / checkpoint.settings.targetProperties) * 100)) : 0;
+  $("networkRunProgress").classList.remove("is-hidden");
+  $("networkRunProgress").querySelector("span").style.width = `${percent}%`;
+}
 function renderActivity() {
   renderRequestArchive();
   renderMandateArchive();
@@ -1464,6 +1499,7 @@ function renderStopAll() {
     Boolean(appState?.requestArchive?.active) ||
     Boolean(appState?.mandateArchive?.active) ||
     Boolean(appState?.streetRun?.active) ||
+    Boolean(appState?.networkRun?.active) ||
     Boolean(hasStreetCheckpoint) ||
     appState?.softwareUpdate?.status === "downloading";
   const button = $("stopAllButton");
@@ -1593,7 +1629,7 @@ function render() {
   /* La fase decide cosa merita spazio: fermi si vede come partire, in
    * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
   document.body.dataset.fase =
-    appState.active || appState.streetRun?.active
+    appState.active || appState.streetRun?.active || appState.networkRun?.active
       ? "lavora"
       : completed
         ? "finita"
@@ -1605,7 +1641,7 @@ function render() {
    * è una scheda grande quanto uno schermo che non riguarda quello che stai
    * facendo. */
   document.body.dataset.via =
-    appState.streetRun?.active || appState.streetRun?.checkpoint ? "attiva" : "no";
+    appState.streetRun?.active || appState.streetRun?.checkpoint || appState.networkRun?.active || appState.networkRun?.checkpoint ? "attiva" : "no";
   /* Il titolo della pagina dice in che momento sei: chiedere «cosa vuoi fare?»
    * mentre il programma sta già lavorando è la domanda sbagliata. */
   const intestazioni = {
@@ -1639,6 +1675,7 @@ function render() {
   renderActivity();
   renderDiagnosticErrors();
   renderStreetRun();
+  renderNetworkRun();
   renderReview();
   renderSoftwareUpdate();
   renderStopAll();
@@ -1749,6 +1786,21 @@ document.addEventListener("click", async (event) => {
       }
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
+      if (target.id === "networkRunStart") {
+        const resume = target.dataset.resumeNetwork === "true";
+        return window.propertyWorker.startNetworkRun({
+          resume,
+          settings: {
+            targetProperties: Number($("networkTargetProperties").value),
+            maxDepth: Number($("networkMaxDepth").value),
+            minSharePercentage: Number($("networkMinShare").value),
+            existingPropertyPolicy: $("networkIncludeExisting").checked ? "include_existing" : "new_only",
+            residentialOnly: $("networkResidentialOnly").checked,
+          },
+        });
+      }
+      if (target.id === "networkRunCancel")
+        return window.propertyWorker.cancelNetworkRun();
       if (target.id === "streetRunAbandon") {
         if (
           !window.confirm(

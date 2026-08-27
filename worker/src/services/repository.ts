@@ -512,6 +512,30 @@ export class WorkerRepository {
     return data as JobRow[];
   }
 
+  /**
+   * The worker may only use people whose CRM record has already been verified
+   * by a previous operational job. Fetch a wider deterministic set and shuffle
+   * locally: PostgREST does not expose a portable random-order primitive.
+   */
+  async listVerifiedNetworkSeedTaxCodes(limit: number): Promise<string[]> {
+    const { data, error } = await this.client
+      .from("property_worker_people")
+      .select("tax_code,crm_record_id,updated_at")
+      .not("crm_record_id", "is", null)
+      .not("tax_code", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(Math.max(40, limit * 12));
+    if (error) throw new Error(`Lettura dei codici fiscali CRM verificati fallita: ${error.message}`);
+    const unique = [...new Set((data ?? [])
+      .map((row) => String(row.tax_code ?? "").replace(/\s+/g, "").toUpperCase())
+      .filter((taxCode) => /^[A-Z0-9]{16}$/.test(taxCode)))];
+    for (let index = unique.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [unique[index], unique[swap]] = [unique[swap]!, unique[index]!];
+    }
+    return unique.slice(0, limit);
+  }
+
   async saveAcquisition(jobId: string) {
     await this.updateJob(jobId, {
       status: "saved",

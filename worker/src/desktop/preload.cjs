@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled),
   startStreetRun: (values) => ipcRenderer.invoke("desktop:start-street-run", values),
   cancelStreetRun: () => ipcRenderer.invoke("desktop:cancel-street-run"),
+  startNetworkRun: (values) => ipcRenderer.invoke("desktop:start-network-run", values),
+  cancelNetworkRun: () => ipcRenderer.invoke("desktop:cancel-network-run"),
   abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run"),
   stopAll: () => ipcRenderer.invoke("desktop:stop-all"),
   startRequestArchiveImport: (runId) => ipcRenderer.invoke("desktop:start-request-archive-import", runId),
