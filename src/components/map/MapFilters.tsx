@@ -23,7 +23,7 @@ function FieldShell({
 }>) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
+      <span className="text-[length:var(--lr-text-label)] font-semibold uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
         {label}
       </span>
       {children}
@@ -44,7 +44,7 @@ function SelectShell({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 w-full rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-xs font-semibold text-[var(--lr-ink)] outline-none"
+      className="h-9 w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink)] outline-none"
     >
       {children}
     </select>
@@ -61,7 +61,7 @@ function VisibilityToggle({
   onChange: (checked: boolean) => void;
 }>) {
   return (
-    <label className="flex h-9 cursor-pointer items-center justify-between gap-3 rounded-[6px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-xs font-semibold text-[var(--lr-ink)]">
+    <label className="flex h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink)]">
       <span>{label}</span>
       <input
         type="checkbox"

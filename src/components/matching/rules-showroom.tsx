@@ -109,7 +109,7 @@ export function MatchingRulesShowroom({ features, config }: Readonly<{ features:
                   <div className="flex items-center gap-3">
                     <FeatureMark featureKey={feature.key} label={feature.label} />
                     <div>
-                      <p className="text-sm font-semibold text-[var(--lr-ink)]">{feature.label}</p>
+                      <p className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">{feature.label}</p>
                       {ambitoComune ? null : (
                         <p className={styles.muted}>{ambitoLabel(feature.applies_to)}</p>
                       )}

@@ -104,7 +104,7 @@ export function RequestZonePicker({ requestId, zones, initialZoneIds, initialExc
           )}
         />
       ) : (
-        <div className="grid min-h-48 place-items-center rounded-[8px] border border-dashed border-[var(--lr-line)] text-center text-sm text-[var(--lr-ink-2)]">
+        <div className="grid min-h-48 place-items-center rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line)] text-center text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
           <div><MapPinned aria-hidden="true" className="mx-auto size-5 text-[var(--lr-accent)]" /><p className="mt-2">Disegna i perimetri nella scheda Zone immobiliari per abilitarne la selezione sulla mappa.</p></div>
         </div>
       )}

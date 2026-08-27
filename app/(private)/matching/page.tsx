@@ -1,4 +1,5 @@
-import { ArrowRight, Banknote, Layers3, MapPin, Ruler, UserRound } from "lucide-react";
+import { clsx } from "clsx";
+import { ArrowRight, Banknote, Building2, Layers3, MapPin, Ruler, ScanSearch, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -65,12 +66,61 @@ function RequestFact({
   return (
     <span
       title={label}
-      className="inline-flex min-h-8 items-center gap-1.5 rounded-[7px] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-2.5 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)]"
+      className="inline-flex min-h-8 items-center gap-1.5 rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-2.5 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)]"
     >
-      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-[var(--lr-accent)]" />
+      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-[var(--lr-ink-3)]" />
       <span className="sr-only">{label}: </span>
       {children}
     </span>
+  );
+}
+
+/**
+ * Una porta del quadro commerciale: occhiello, numero e destinazione.
+ *
+ * L'icona resta silenziosa — l'accento appartiene all'azione della pagina, non
+ * a tre riquadri che raccontano soltanto come stanno le cose.
+ */
+function Porta({
+  href,
+  icon: Icon,
+  label,
+  value,
+  hint,
+  last = false,
+}: Readonly<{
+  href: string;
+  icon: typeof UserRound;
+  label: string;
+  value: number;
+  hint: string;
+  last?: boolean;
+}>) {
+  return (
+    <Link
+      href={href}
+      className={clsx(
+        "group flex items-start gap-3 p-4 transition-colors hover:bg-[var(--lr-raised)]",
+        !last && "border-b border-[var(--lr-line-quiet)] lg:border-b-0 lg:border-r",
+      )}
+    >
+      <Icon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-[var(--lr-ink-3)]" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+          {label}
+        </span>
+        <strong className="mt-2 block font-mono text-[length:var(--lr-text-page)] font-[650] leading-none text-[var(--lr-ink)]">
+          {formatNumber(value)}
+        </strong>
+        <span className="mt-2 block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
+          {hint}
+        </span>
+      </span>
+      <ArrowRight
+        aria-hidden="true"
+        className="size-4 shrink-0 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
+      />
+    </Link>
   );
 }
 
@@ -173,6 +223,36 @@ export default async function ChiCercaCosaPage({
           </div>
         }
       />
+
+      {/* Tre porte, e dietro ognuna un numero verificabile. Non sono
+        * statistiche decorative: ogni riquadro porta a una pagina che esiste. */}
+      <section
+        className="grid overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] lg:grid-cols-3"
+        aria-label="Quadro commerciale"
+      >
+        <Porta
+          href="/requests"
+          icon={UserRound}
+          label="Richieste attive"
+          value={richiesteAttive.length}
+          hint="Clienti con una ricerca aperta"
+        />
+        <Porta
+          href="/matching/overview"
+          icon={ScanSearch}
+          label="Abbinamenti utili"
+          value={matches.length}
+          hint="Confronti già calcolati"
+        />
+        <Porta
+          href="/portfolio"
+          icon={Building2}
+          label="Immobili disponibili"
+          value={immobiliLiberi.length}
+          hint="Portafoglio da proporre"
+          last
+        />
+      </section>
 
       <AutoSubmitFiltersForm>
         <FilterBar

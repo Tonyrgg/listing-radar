@@ -38,7 +38,7 @@ export function QuickRequestButton({
       onClick={() => window.dispatchEvent(new Event(OPEN_QUICK_REQUEST_EVENT))}
       title="Nuova richiesta rapida"
       className={clsx(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-4 text-sm font-bold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] px-4 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
         className,
       )}
     >
@@ -172,8 +172,8 @@ function ChoiceButton({
       aria-pressed={selected}
       onClick={onClick}
       className={clsx(
-        "rounded-[8px] border font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
-        compact ? "min-h-10 px-3 text-sm" : "min-h-12 px-4 text-sm",
+        "rounded-[var(--lr-radius-control)] border font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
+        compact ? "min-h-10 px-3 text-[length:var(--lr-text-body)]" : "min-h-12 px-4 text-[length:var(--lr-text-body)]",
         selected
           ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-ink)]"
           : "border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)] hover:border-[var(--lr-line)] hover:text-[var(--lr-ink)]",
@@ -196,11 +196,11 @@ function Question({
   return (
     <section className="border-b border-[var(--lr-line-quiet)] py-6 first:pt-0 last:border-b-0 last:pb-0">
       <div className="max-w-2xl">
-        <h3 className="text-base font-semibold text-[var(--lr-ink)]">
+        <h3 className="text-[length:var(--lr-text-record)] font-semibold text-[var(--lr-ink)]">
           {title}
         </h3>
         {help ? (
-          <p className="mt-1 text-sm leading-5 text-[var(--lr-ink-2)]">{help}</p>
+          <p className="mt-1 text-[length:var(--lr-text-body)] leading-5 text-[var(--lr-ink-2)]">{help}</p>
         ) : null}
       </div>
       <div className="mt-4">{children}</div>
@@ -242,7 +242,7 @@ function FeatureChoice({
               aria-pressed={selected}
               onClick={() => onChange(option.value)}
               className={clsx(
-                "inline-flex min-h-11 items-center justify-center gap-2 rounded-[7px] border px-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
+                "inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border px-2 text-[length:var(--lr-text-meta)] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]",
                 selected
                   ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-ink)]"
                   : "border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] text-[var(--lr-ink-2)] hover:border-[var(--lr-line)]",
@@ -465,20 +465,20 @@ export function QuickRequestDrawer() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-request-title"
-        className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
+        className="flex max-h-[94vh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
       >
         <header className="flex shrink-0 items-start justify-between gap-5 border-b border-[var(--lr-line-quiet)] px-5 py-4 sm:px-7 sm:py-5">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[var(--lr-accent)]">
+            <p className="text-[length:var(--lr-text-label)] font-bold uppercase tracking-[.14em] text-[var(--lr-accent)]">
               Nuova richiesta
             </p>
             <h2
               id="quick-request-title"
-              className="mt-1 text-xl font-semibold text-[var(--lr-ink)]"
+              className="mt-1 text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]"
             >
               Cosa sta cercando il cliente?
             </h2>
-            <p className="mt-1 text-sm text-[var(--lr-ink-2)]">
+            <p className="mt-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
               Scegli le risposte. Potrai modificare tutto anche dopo.
             </p>
           </div>
@@ -486,7 +486,7 @@ export function QuickRequestDrawer() {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Chiudi"
-            className="grid size-11 shrink-0 place-items-center rounded-[8px] border border-[var(--lr-line)] text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-line)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
+            className="grid size-11 shrink-0 place-items-center rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-line)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
           >
             <X aria-hidden="true" className="size-4" />
           </button>
@@ -494,7 +494,7 @@ export function QuickRequestDrawer() {
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-[270px_minmax(0,1fr)]">
           <aside className="hidden border-r border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] p-5 lg:block">
-            <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--lr-ink-3)]">
+            <p className="text-[length:var(--lr-text-label)] font-bold uppercase tracking-[.12em] text-[var(--lr-ink-3)]">
               I passaggi
             </p>
             <ol className="mt-4 space-y-2">
@@ -508,7 +508,7 @@ export function QuickRequestDrawer() {
                       disabled={item.number > step}
                       onClick={() => setStep(item.number)}
                       className={clsx(
-                        "flex min-h-16 w-full items-center gap-3 rounded-[8px] px-3 text-left transition-colors",
+                        "flex min-h-16 w-full items-center gap-3 rounded-[var(--lr-radius-control)] px-3 text-left transition-colors",
                         active && "bg-[var(--lr-surface)]",
                         !active &&
                           item.number <= step &&
@@ -518,7 +518,7 @@ export function QuickRequestDrawer() {
                     >
                       <span
                         className={clsx(
-                          "grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold",
+                          "grid size-8 shrink-0 place-items-center rounded-full text-[length:var(--lr-text-meta)] font-bold",
                           active || completed
                             ? "bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]"
                             : "border border-[var(--lr-line)] text-[var(--lr-ink-3)]",
@@ -527,10 +527,10 @@ export function QuickRequestDrawer() {
                         {completed ? <Check className="size-4" /> : item.number}
                       </span>
                       <span>
-                        <strong className="block text-sm text-[var(--lr-ink)]">
+                        <strong className="block text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
                           {item.title}
                         </strong>
-                        <span className="mt-0.5 block text-xs text-[var(--lr-ink-3)]">
+                        <span className="mt-0.5 block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                           {item.description}
                         </span>
                       </span>
@@ -544,10 +544,10 @@ export function QuickRequestDrawer() {
           <div className="flex min-h-0 flex-col">
             <div className="shrink-0 border-b border-[var(--lr-line-quiet)] px-5 py-3 lg:hidden">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[var(--lr-ink)]">
+                <p className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                   {currentStep.title}
                 </p>
-                <span className="text-xs font-semibold text-[var(--lr-ink-3)]">
+                <span className="text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-3)]">
                   {step} di {steps.length}
                 </span>
               </div>
@@ -571,17 +571,17 @@ export function QuickRequestDrawer() {
                 {error ? (
                   <p
                     role="alert"
-                    className="mb-5 rounded-[8px] border border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] p-3 text-sm text-[var(--lr-danger)]"
+                    className="mb-5 rounded-[var(--lr-radius-control)] border border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] p-3 text-[length:var(--lr-text-body)] text-[var(--lr-danger)]"
                   >
                     {error}
                   </p>
                 ) : null}
 
                 <div className="mb-7">
-                  <p className="text-xs font-bold uppercase tracking-[.12em] text-[var(--lr-accent)]">
+                  <p className="text-[length:var(--lr-text-meta)] font-bold uppercase tracking-[.12em] text-[var(--lr-accent)]">
                     Passaggio {step}
                   </p>
-                  <h3 className="mt-1 text-xl font-semibold text-[var(--lr-ink)]">
+                  <h3 className="mt-1 text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]">
                     {currentStep.title}
                   </h3>
                 </div>
@@ -593,34 +593,34 @@ export function QuickRequestDrawer() {
                       help="Nome e recapito aiutano a riconoscere subito la richiesta. Puoi completarli anche dopo."
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)] sm:col-span-2">
+                        <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)] sm:col-span-2">
                           Nome e cognome
                           <input
                             type="text"
                             value={draft.clientName}
                             onChange={(event) => set("clientName", event.target.value)}
                             placeholder="Per esempio: Franco Abbondanza"
-                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
+                            className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                        <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                           Telefono
                           <input
                             type="tel"
                             value={draft.clientPhone}
                             onChange={(event) => set("clientPhone", event.target.value)}
                             placeholder="Cellulare o fisso"
-                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
+                            className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
-                        <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                        <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                           Email
                           <input
                             type="email"
                             value={draft.clientEmail}
                             onChange={(event) => set("clientEmail", event.target.value)}
                             placeholder="Facoltativa"
-                            className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
+                            className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                           />
                         </label>
                       </div>
@@ -661,8 +661,8 @@ export function QuickRequestDrawer() {
                       </div>
                     </Question>
 
-                    <details className="rounded-[8px] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-4">
-                      <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-[var(--lr-ink-2)]">
+                    <details className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-4">
+                      <summary className="min-h-12 cursor-pointer py-3 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink-2)]">
                         Aggiungi informazioni facoltative
                       </summary>
                     <Question
@@ -734,7 +734,7 @@ export function QuickRequestDrawer() {
                           ))}
                         </div>
                       ) : (
-                        <p className="rounded-[8px] bg-[var(--lr-raised)] p-4 text-sm text-[var(--lr-ink-2)]">
+                        <p className="rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] p-4 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
                           Non hai ancora configurato le zone. Puoi continuare:
                           le aggiungerai alla richiesta in seguito.
                         </p>
@@ -778,7 +778,7 @@ export function QuickRequestDrawer() {
                       </div>
                       {customBudget ? (
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                          <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                             Cifra ideale
                             <input
                               autoFocus
@@ -788,10 +788,10 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("ideal", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
+                              className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
                             />
                           </label>
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                          <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                             Massimo da non superare
                             <input
                               type="number"
@@ -800,7 +800,7 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("maximum", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
+                              className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)] outline-none focus:border-[var(--lr-accent)]"
                             />
                           </label>
                         </div>
@@ -848,7 +848,7 @@ export function QuickRequestDrawer() {
                       </div>
                       {customSqm ? (
                         <div className="mt-4 grid grid-cols-2 gap-3">
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                          <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                             Da mq
                             <input
                               type="number"
@@ -857,10 +857,10 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("sqmMin", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)]"
+                              className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)]"
                             />
                           </label>
-                          <label className="grid gap-1.5 text-xs font-semibold text-[var(--lr-ink-2)]">
+                          <label className="grid gap-1.5 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
                             A mq
                             <input
                               type="number"
@@ -869,7 +869,7 @@ export function QuickRequestDrawer() {
                               onChange={(event) =>
                                 set("sqmMax", event.target.value)
                               }
-                              className="h-11 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-sm text-[var(--lr-ink)]"
+                              className="h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink)]"
                             />
                           </label>
                         </div>
@@ -920,7 +920,7 @@ export function QuickRequestDrawer() {
 
                 {step === 3 ? (
                   <div>
-                    <p className="mb-4 text-sm leading-6 text-[var(--lr-ink-2)]">
+                    <p className="mb-4 text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink-2)]">
                       Per ogni caratteristica scegli quanto conta. Se non ne
                       avete parlato, lascia “Non importa”.
                     </p>
@@ -948,7 +948,7 @@ export function QuickRequestDrawer() {
                     <button
                       type="button"
                       onClick={() => setShowAllFeatures((value) => !value)}
-                      className="mt-5 min-h-11 rounded-[7px] border border-[var(--lr-line)] px-4 text-sm font-bold text-[var(--lr-ink)]"
+                      className="mt-5 min-h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-ink)]"
                     >
                       {showAllFeatures
                         ? "Mostra solo le caratteristiche principali"
@@ -1081,7 +1081,7 @@ export function QuickRequestDrawer() {
                         value={draft.notes}
                         onChange={(event) => set("notes", event.target.value)}
                         placeholder="Per esempio: deve essere vicino ai genitori, niente strade rumorose…"
-                        className="w-full rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-raised)] p-3 text-sm leading-6 text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
+                        className="w-full rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] p-3 text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink)] outline-none placeholder:text-[var(--lr-ink-3)] focus:border-[var(--lr-accent)]"
                       />
                     </Question>
                   </div>
@@ -1096,7 +1096,7 @@ export function QuickRequestDrawer() {
             type="button"
             disabled={step === 1}
             onClick={() => setStep((value) => value - 1)}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)] disabled:opacity-30"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink-2)] disabled:opacity-30"
           >
             <ChevronLeft aria-hidden="true" className="size-4" />
             Indietro
@@ -1108,7 +1108,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => save("draft", false)}
-                className="min-h-11 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)]"
+                className="min-h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink-2)]"
               >
                 Salva e completa dopo
               </button>
@@ -1116,7 +1116,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending || draft.property_types.length === 0}
                 onClick={() => save("active", true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] px-5 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
               >
                 <Check aria-hidden="true" className="size-4" />
                 {isPending ? "Salvataggio…" : "Salva e cerca immobili"}
@@ -1127,7 +1127,7 @@ export function QuickRequestDrawer() {
               type="button"
               disabled={draft.property_types.length === 0}
               onClick={() => setStep((value) => value + 1)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-40"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] px-5 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-accent-ink)] disabled:opacity-40"
             >
               Continua
               <ArrowRight aria-hidden="true" className="size-4" />
@@ -1138,7 +1138,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => save("draft", false)}
-                className="min-h-11 rounded-[8px] border border-[var(--lr-line)] px-4 text-sm font-semibold text-[var(--lr-ink-2)]"
+                className="min-h-11 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-4 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink-2)]"
               >
                 Salva e completa dopo
               </button>
@@ -1146,7 +1146,7 @@ export function QuickRequestDrawer() {
                 type="button"
                 disabled={isPending}
                 onClick={() => save("active", true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-[var(--lr-accent)] px-5 text-sm font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] px-5 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-accent-ink)] disabled:opacity-50"
               >
                 <Check aria-hidden="true" className="size-4" />
                 {isPending ? "Salvataggio…" : "Salva e cerca immobili"}
@@ -1170,7 +1170,7 @@ function SimpleNumberChoice({
 }>) {
   return (
     <div>
-      <p className="mb-2 text-sm font-semibold text-[var(--lr-ink-2)]">{label}</p>
+      <p className="mb-2 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink-2)]">{label}</p>
       <div className="grid grid-cols-4 gap-2">
         {[
           ["", "Qualsiasi"],

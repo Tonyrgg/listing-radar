@@ -15,8 +15,10 @@ import type { PortfolioProperty, RequestPropertyMatch } from "@/lib/matching/typ
  * lì. La percentuale resta, ma nel titolo del cursore: serve a chi la cerca.
  */
 
-const VERDETTO: Record<string, { parola: string; tono: Tone }> = {
-  compatible: { parola: "Va bene", tono: "action" },
+/* Il verdetto è un giudizio, non un comando: la parola porta la scala e il
+ * punto la conferma. L'accento resta all'azione, che qui è aprire la scheda. */
+const VERDETTO: Record<string, { parola: string; tono: Tone; forte?: boolean }> = {
+  compatible: { parola: "Va bene", tono: "ok", forte: true },
   almost_compatible: { parola: "Ci va vicino", tono: "info" },
   weak: { parola: "Da valutare", tono: "neutral" },
   not_relevant: { parola: "Poco pertinente", tono: "neutral" },
@@ -24,6 +26,7 @@ const VERDETTO: Record<string, { parola: string; tono: Tone }> = {
 
 const COLORE: Record<Tone, string> = {
   action: "text-[var(--lr-accent)]",
+  ok: "text-[var(--lr-ok)]",
   info: "text-[var(--lr-info)]",
   warn: "text-[var(--lr-warn)]",
   danger: "text-[var(--lr-danger)]",
@@ -85,7 +88,7 @@ export function PropertyMatchRow({
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
           {match.matched_criteria.slice(0, 4).map((criterio) => (
             <span key={criterio} className="inline-flex items-center gap-1">
-              <Check aria-hidden="true" className="size-3.5 text-[var(--lr-accent)]" />
+              <Check aria-hidden="true" className="size-3.5 text-[var(--lr-ink-3)]" />
               {criterio}
             </span>
           ))}
@@ -100,7 +103,7 @@ export function PropertyMatchRow({
 
       <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
         <span
-          className={`text-[length:var(--lr-text-record)] font-[650] ${COLORE[verdetto.tono]}`}
+          className={`text-[length:var(--lr-text-record)] font-[650] ${verdetto.forte ? "text-[var(--lr-ink)]" : COLORE[verdetto.tono]}`}
           title={`Affinità calcolata: ${Math.round(match.score)} su 100`}
         >
           {verdetto.parola}

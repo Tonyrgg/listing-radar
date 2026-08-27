@@ -14,7 +14,7 @@ export default function MapPage() {
         * era l'unica pagina in cui non si capiva dove ci si trovava. */}
       <PageHeader
         eyebrow="Territorio"
-        title="Aree operative"
+        title="Territorio"
         description="Aree, strade e segnaposti del lavoro sul campo. Disegna un perimetro, segna un contatto utile e tieni traccia di cosa è già stato battuto."
       />
       <MapClient />

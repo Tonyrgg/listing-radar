@@ -13,11 +13,11 @@ export function MapLegend({ agents }: Readonly<{ agents: Agent[] }>) {
   return (
     <section className="grid gap-4">
       <div>
-        <p className="text-xs font-semibold text-[var(--lr-ink)]">Agenti</p>
+        <p className="text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink)]">Agenti</p>
         <div className="mt-2 grid gap-2">
           {agents.length ? (
             agents.map((agent) => (
-              <div key={agent.id} className="flex items-center gap-2 text-xs text-[var(--lr-ink-2)]">
+              <div key={agent.id} className="flex items-center gap-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
                 <span
                   className="size-3 rounded-full"
                   style={{ backgroundColor: agent.color }}
@@ -27,7 +27,7 @@ export function MapLegend({ agents }: Readonly<{ agents: Agent[] }>) {
               </div>
             ))
           ) : (
-            <p className="text-xs leading-5 text-[var(--lr-ink-3)]">
+            <p className="text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-3)]">
               Applica la migration per caricare Tony e Agente 2.
             </p>
           )}
@@ -35,10 +35,10 @@ export function MapLegend({ agents }: Readonly<{ agents: Agent[] }>) {
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-[var(--lr-ink)]">Strade</p>
+        <p className="text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink)]">Strade</p>
         <div className="mt-2 grid gap-2">
           {STREET_STATUS_OPTIONS.map((status) => (
-            <div key={status} className="flex items-center gap-2 text-xs text-[var(--lr-ink-2)]">
+            <div key={status} className="flex items-center gap-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
               <span
                 className="h-0.5 w-8 rounded-full bg-[var(--lr-accent)]"
                 style={{
@@ -63,10 +63,10 @@ export function MapLegend({ agents }: Readonly<{ agents: Agent[] }>) {
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-[var(--lr-ink)]">Pin</p>
+        <p className="text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink)]">Pin</p>
         <div className="mt-2 grid grid-cols-2 gap-2">
           {PIN_PRIORITY_OPTIONS.map((priority) => (
-            <div key={priority} className="flex items-center gap-2 text-xs text-[var(--lr-ink-2)]">
+            <div key={priority} className="flex items-center gap-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
               <span
                 className="size-3 rounded-full ring-2 ring-[var(--lr-canvas)]"
                 style={{ backgroundColor: PIN_PRIORITY_COLORS[priority] }}
