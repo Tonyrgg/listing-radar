@@ -1072,7 +1072,7 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
-  it("sceglie la proposta Google prima della località e del salvataggio", async () => {
+  it("mantiene l'indirizzo inserito invece della proposta Google prima del salvataggio", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
@@ -1087,7 +1087,8 @@ describe("adattatori con fixture HTML", () => {
         address: "Via Borgo San Francesco 62", censusZone: null, category: "C/2",
         class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
       })).resolves.toBe("P-99");
-      expect(await page.locator("body").getAttribute("data-google-address-selected")).toBe("Via Borgo S. Francesco");
+      expect(await page.locator("body").getAttribute("data-google-address-selected")).toBeNull();
+      expect(await page.locator('#street_current-fixture').isChecked()).toBe(true);
       expect(await page.locator("body").getAttribute("data-property-locality")).toBe("BITONTO");
     } finally { await browser.close(); }
   });

@@ -2009,7 +2009,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return { ...values, postalCode };
   }
 
-  private async acceptGoogleAddressSuggestion(dialog: Locator, insertedValue: string) {
+  private async confirmInsertedAddressValue(dialog: Locator, insertedValue: string) {
     const inserted = dialog.getByText(insertedValue, { exact: true }).filter({ visible: true }).first();
     if (!(await inserted.count())) return false;
     let row = inserted.locator("xpath=..");
@@ -2019,14 +2019,11 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       const children = row.locator(":scope > *").filter({ visible: true });
       if (await children.count() === 2) {
         const left = normalizedUiText(await children.nth(0).innerText().catch(() => ""));
-        const right = children.nth(1);
-        const rightText = normalizedUiText(await right.innerText().catch(() => ""));
-        if (left.includes(normalizedUiText(insertedValue)) && rightText && !rightText.includes("INDIRIZZO GOOGLE")) {
-          const action = right.locator('button, a, [role="button"], [role="option"], input[type="radio"], label').filter({ visible: true }).first();
+        if (left.includes(normalizedUiText(insertedValue))) {
+          const current = children.nth(0);
+          const action = current.locator('button, a, [role="button"], [role="option"], input[type="radio"], label').filter({ visible: true }).first();
           if (await action.count()) await action.click();
-          else await right.click();
-          const menuOptions = dialog.locator('[role="option"]').filter({ visible: true });
-          if (await menuOptions.count()) await menuOptions.first().click();
+          else await current.click().catch(() => undefined);
           await this.page.waitForTimeout(250);
           return true;
         }
@@ -2036,29 +2033,18 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     return false;
   }
 
-  private async selectGoogleAddressRadios(dialog: Locator) {
-    this.require("propertyGoogleCurrentRadio", "propertyGoogleSuggestedRadio");
+  private async selectInsertedAddressRadios(dialog: Locator) {
+    this.require("propertyGoogleCurrentRadio");
     const groups = ["street", "streetN", "CAP"] as const;
     const selected: Record<string, string> = {};
     for (const name of groups) {
       const current = dialog.locator(this.selectors.propertyGoogleCurrentRadio).filter({ visible: true }).and(dialog.locator(`[name="${name}"]`)).first();
-      const suggested = dialog.locator(this.selectors.propertyGoogleSuggestedRadio).filter({ visible: true }).and(dialog.locator(`[name="${name}"]`)).first();
-      if (!(await current.count()) || !(await suggested.count())) return null;
-      const suggestedValue = (await suggested.inputValue()).trim();
-      if (!(await suggested.isDisabled()) && suggestedValue) {
-        await suggested.check({ force: true });
-        await suggested.waitFor({ state: "visible" });
-        if (!(await suggested.isChecked())) {
-          throw new WorkerError(`Il valore Google per “${name}” non risulta selezionato.`, "portal_error", { portal: "CRM", action: "property-google-radio", field: name, suggestedValue }, true);
-        }
-        selected[name] = suggestedValue;
-      } else {
-        if (!(await current.isChecked())) await current.check({ force: true });
-        if (!(await current.isChecked())) {
-          throw new WorkerError(`Il valore inserito per “${name}” non risulta confermato.`, "portal_error", { portal: "CRM", action: "property-google-radio", field: name }, true);
-        }
-        selected[name] = (await current.inputValue()).trim();
+      if (!(await current.count())) return null;
+      if (!(await current.isChecked())) await current.check({ force: true });
+      if (!(await current.isChecked())) {
+        throw new WorkerError(`Il valore inserito per “${name}” non risulta confermato.`, "portal_error", { portal: "CRM", action: "property-inserted-address-radio", field: name }, true);
       }
+      selected[name] = (await current.inputValue()).trim();
     }
     return selected;
   }
@@ -2069,17 +2055,17 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     await save.first().waitFor({ state: "visible", timeout: 20_000 });
     const visibleDialog = this.visible(this.selectors.blockingDialog).last();
     const dialog = await visibleDialog.count() ? visibleDialog : this.page.locator("body");
-    const radioSelection = await this.selectGoogleAddressRadios(dialog);
+    const radioSelection = await this.selectInsertedAddressRadios(dialog);
     const accepted: Array<{ value: string; accepted: boolean }> = [];
     if (!radioSelection) {
       for (const value of [values.street, values.civicNumber, values.postalCode]) {
-        accepted.push({ value, accepted: await this.acceptGoogleAddressSuggestion(dialog, value) });
+        accepted.push({ value, accepted: await this.confirmInsertedAddressValue(dialog, value) });
       }
     }
     const unresolved = accepted.filter((result) => !result.accepted).map((result) => result.value);
     if (unresolved.length) {
       throw new WorkerError(
-        "Il confronto Google non è completo. Il worker non salverà finché indirizzo, civico e CAP non saranno confermati.",
+        "Il confronto indirizzo non è completo. Il worker non salverà finché indirizzo, civico e CAP inseriti non saranno confermati.",
         "needs_review",
         { portal: "CRM", action: "property-google-address", unresolved, street: values.street, civicNumber: values.civicNumber, postalCode: values.postalCode },
         true,
@@ -2130,6 +2116,23 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       );
     }
     const dialog = dialogs.first();
+    // On both creation and update, the SISTER-derived value is authoritative:
+    // never replace it with the Google-side proposal in this dialog.
+    const radioSelection = await this.selectInsertedAddressRadios(dialog);
+    if (!radioSelection) {
+      const confirmed = await Promise.all([
+        this.confirmInsertedAddressValue(dialog, values.street),
+        this.confirmInsertedAddressValue(dialog, values.civicNumber),
+      ]);
+      if (confirmed.some((value) => !value)) {
+        throw new WorkerError(
+          "Il posizionamento non consente di confermare l'indirizzo inserito a sinistra.",
+          "portal_error",
+          { portal: "CRM", action: "property-positioning-inserted-address", confirmed },
+          true,
+        );
+      }
+    }
     const dialogText = normalizedUiText(await dialog.innerText());
     const missing = [values.street, values.civicNumber]
       .map(normalizedUiText)
