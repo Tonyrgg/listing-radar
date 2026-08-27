@@ -62,8 +62,8 @@ function ConfigRow({
 }>) {
   return (
     <div>
-      <dt className="text-xs text-[var(--lr-ink-3)]">{label}</dt>
-      <dd className="mt-1 text-sm font-medium leading-6 text-[var(--lr-ink)]">
+      <dt className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">{label}</dt>
+      <dd className="mt-1 text-[length:var(--lr-text-body)] font-medium leading-6 text-[var(--lr-ink)]">
         {value}
       </dd>
     </div>
@@ -98,14 +98,14 @@ function SystemCheck({
     <article className="border-b border-[var(--lr-line-quiet)] py-5 last:border-b-0 md:border-b-0 md:border-r md:px-5 md:first:pl-0 md:last:border-r-0 md:last:pr-0">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-[var(--lr-ink)]">
+          <h2 className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
             {title}
           </h2>
           <Badge tone={ready ? "green" : "amber"}>
             {ready ? "Pronto" : "Da controllare"}
           </Badge>
         </div>
-        <p className="mt-2 text-xs leading-5 text-[var(--lr-ink-2)]">{detail}</p>
+        <p className="mt-2 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-2)]">{detail}</p>
       </div>
     </article>
   );
@@ -118,7 +118,7 @@ function ScrapeRunRow({ run }: Readonly<{ run: ScrapeRun }>) {
         <Badge tone={getRunTone(run.status)}>
           {getRunStatusLabel(run.status)}
         </Badge>
-        <p className="text-sm text-[var(--lr-ink-2)]">
+        <p className="text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
           {formatDateTime(run.startedAt)}
         </p>
       </div>
@@ -128,7 +128,7 @@ function ScrapeRunRow({ run }: Readonly<{ run: ScrapeRun }>) {
         <ConfigRow label="Aggiornati" value={formatNumber(run.totalUpdated)} />
         <ConfigRow label="Problemi" value={formatNumber(run.errorCount)} />
       </dl>
-      <p className="text-sm text-[var(--lr-ink-2)]">
+      <p className="text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
         Fine: {formatDateTime(run.finishedAt)}
       </p>
     </article>
@@ -214,14 +214,14 @@ export default async function SettingsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2.5">
-                  <span className="inline-flex size-9 items-center justify-center rounded-md bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]">
+                  <span className="inline-flex size-9 items-center justify-center rounded-md bg-[var(--lr-raised)] text-[var(--lr-ink-2)]">
                     <Puzzle aria-hidden="true" className="size-4.5" />
                   </span>
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--lr-ink-3)]">
+                    <p className="text-[length:var(--lr-text-label)] font-bold uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
                       Pacchetto Chrome
                     </p>
-                    <h2 className="mt-1 text-xl font-semibold text-[var(--lr-ink)]">
+                    <h2 className="mt-1 text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]">
                       Estensione
                     </h2>
                   </div>
@@ -229,7 +229,7 @@ export default async function SettingsPage() {
                     {extensionEnabled ? "Token pronto" : "Token mancante"}
                   </Badge>
                 </div>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-[var(--lr-ink-2)]">
+                <p className="mt-4 max-w-2xl text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink-2)]">
                   Scarica il pacchetto dell&apos;estensione privata per completare
                   gli annunci direttamente dalla scheda aperta in Chrome.
                 </p>
@@ -238,7 +238,7 @@ export default async function SettingsPage() {
               <a
                 href="/api/extension/download"
                 download
-                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[var(--lr-accent)] px-4 text-sm font-semibold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)]"
+                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[var(--lr-accent)] px-4 text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-accent-ink)] transition-colors hover:bg-[var(--lr-accent-hover)]"
               >
                 <Download aria-hidden="true" className="size-4" />
                 Scarica ZIP
@@ -255,11 +255,11 @@ export default async function SettingsPage() {
               <ConfigRow label="Import" value="/api/import/browser" />
             </dl>
 
-            <div className="mt-5 grid gap-4 text-sm leading-6 text-[var(--lr-ink-2)] md:grid-cols-2">
+            <div className="mt-5 grid gap-4 text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink-2)] md:grid-cols-2">
               <div className="flex gap-3">
                 <KeyRound
                   aria-hidden="true"
-                  className="mt-1 size-4 shrink-0 text-[var(--lr-accent)]"
+                  className="mt-1 size-4 shrink-0 text-[var(--lr-ink-3)]"
                 />
                 <p>
                   Il token non è incluso nello ZIP: va inserito nella popup e
@@ -269,7 +269,7 @@ export default async function SettingsPage() {
               <div className="flex gap-3">
                 <RefreshCw
                   aria-hidden="true"
-                  className="mt-1 size-4 shrink-0 text-[var(--lr-accent)]"
+                  className="mt-1 size-4 shrink-0 text-[var(--lr-ink-3)]"
                 />
                 <p>
                   Dopo ogni aggiornamento del pacchetto, premi Ricarica su
@@ -281,10 +281,10 @@ export default async function SettingsPage() {
 
           <aside className="border-t border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] p-5 lg:border-l lg:border-t-0 lg:p-6">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-[var(--lr-ink)]">
+              <h3 className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                 Guida all&apos;uso
               </h3>
-              <span className="text-xs font-medium text-[var(--lr-ink-3)]">
+              <span className="text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-3)]">
                 Installazione manuale
               </span>
             </div>
@@ -297,17 +297,17 @@ export default async function SettingsPage() {
                     key={step.title}
                     className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-[var(--lr-line-quiet)] pb-4 last:border-b-0 last:pb-0"
                   >
-                    <span className="relative inline-flex size-8 items-center justify-center rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] text-[var(--lr-accent)]">
+                    <span className="relative inline-flex size-8 items-center justify-center rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] text-[var(--lr-ink-2)]">
                       <Icon aria-hidden="true" className="size-3.5" />
-                      <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-[var(--lr-accent)] text-[9px] font-bold text-[var(--lr-accent-ink)]">
+                      <span className="absolute -right-1.5 -top-1.5 grid size-[1.125rem] place-items-center rounded-full bg-[var(--lr-ink)] font-mono text-[length:var(--lr-text-label)] font-bold leading-none text-[var(--lr-surface)]">
                         {index + 1}
                       </span>
                     </span>
                     <span>
-                      <span className="block text-sm font-semibold text-[var(--lr-ink)]">
+                      <span className="block text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                         {step.title}
                       </span>
-                      <span className="mt-1 block text-xs leading-5 text-[var(--lr-ink-2)]">
+                      <span className="mt-1 block text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-2)]">
                         {step.detail}
                       </span>
                     </span>
@@ -321,7 +321,7 @@ export default async function SettingsPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <article className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5">
-          <h2 className="text-lg font-semibold text-[var(--lr-ink)]">
+          <h2 className="text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]">
             Ricerca monitorata
           </h2>
           <dl className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -336,7 +336,7 @@ export default async function SettingsPage() {
         </article>
 
         <article className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5">
-          <h2 className="text-lg font-semibold text-[var(--lr-ink)]">
+          <h2 className="text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]">
             Servizi facoltativi
           </h2>
           <dl className="mt-5 grid gap-5 sm:grid-cols-3">
@@ -355,10 +355,10 @@ export default async function SettingsPage() {
 
       <details className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
-          <span className="text-sm font-semibold text-[var(--lr-ink)]">
+          <span className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
             Impostazioni avanzate
           </span>
-          <span className="text-xs text-[var(--lr-ink-3)]">
+          <span className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
             Per manutenzione
           </span>
         </summary>
@@ -390,10 +390,10 @@ export default async function SettingsPage() {
 
       <details className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
-          <span className="text-sm font-semibold text-[var(--lr-ink)]">
+          <span className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
             Ultimi controlli automatici
           </span>
-          <span className="text-xs text-[var(--lr-ink-3)]">
+          <span className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
             {recentScrapeRuns.length} registrati
           </span>
         </summary>
@@ -403,7 +403,7 @@ export default async function SettingsPage() {
               <ScrapeRunRow key={run.id} run={run} />
             ))
           ) : (
-            <p className="px-5 py-5 text-sm text-[var(--lr-ink-2)]">
+            <p className="px-5 py-5 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
               Non ci sono ancora controlli registrati.
             </p>
           )}
@@ -412,7 +412,7 @@ export default async function SettingsPage() {
 
       <details className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)]">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 marker:hidden">
-          <span className="text-sm font-semibold text-[var(--lr-ink)]">
+          <span className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
             Problemi tecnici recenti
           </span>
           <Badge tone={recentScrapeErrors.length ? "red" : "green"}>
@@ -432,14 +432,14 @@ export default async function SettingsPage() {
                   <Badge tone="red">
                     {getSourceLabel(error.source ?? "Sistema")}
                   </Badge>
-                  <p className="text-xs text-[var(--lr-ink-3)]">
+                  <p className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                     {formatDateTime(error.createdAt)}
                   </p>
                 </div>
-                <p className="text-sm leading-6 text-[var(--lr-ink)]">
+                <p className="text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink)]">
                   {error.message}
                 </p>
-                <p className="break-words text-xs leading-5 text-[var(--lr-ink-2)]">
+                <p className="break-words text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-2)]">
                   {typeof error.details?.url === "string"
                     ? error.details.url
                     : ""}
@@ -447,7 +447,7 @@ export default async function SettingsPage() {
               </article>
             ))
           ) : (
-            <p className="px-5 py-5 text-sm text-[var(--lr-ink-2)]">
+            <p className="px-5 py-5 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
               Tutti i controlli recenti sono regolari.
             </p>
           )}

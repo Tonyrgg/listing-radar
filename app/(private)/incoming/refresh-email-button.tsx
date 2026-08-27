@@ -26,7 +26,7 @@ export function RefreshEmailButton() {
         <button
           type="submit"
           disabled={pending}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 text-sm font-medium text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)] disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[var(--lr-line)] bg-[var(--lr-surface)] px-3 text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)] transition-colors hover:bg-[var(--lr-raised)] disabled:cursor-wait disabled:opacity-60 sm:w-auto"
         >
           <RefreshCw
             aria-hidden="true"
@@ -38,8 +38,8 @@ export function RefreshEmailButton() {
       {state.message ? (
         <p
           className={clsx(
-            "max-w-sm text-xs",
-            state.ok ? "text-[var(--lr-accent)]" : "text-[var(--lr-danger)]",
+            "max-w-sm text-[length:var(--lr-text-meta)]",
+            state.ok ? "text-[var(--lr-ok)]" : "text-[var(--lr-danger)]",
           )}
           role="status"
         >

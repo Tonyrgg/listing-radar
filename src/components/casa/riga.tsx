@@ -203,14 +203,14 @@ export function RigaDiCasa({
                   aria-hidden="true"
                   className={clsx(
                     "size-3.5",
-                    riga.chi === "privato" ? "text-[var(--lr-warn)]" : "text-[var(--lr-accent)]",
+                    riga.chi === "privato" ? "text-[var(--lr-warn)]" : "text-[var(--lr-ink)]",
                   )}
                 />
               ) : (
                 <Building2 aria-hidden="true" className="size-3.5" />
               )}
               {riga.chi === "noi" ? (
-                <span className="text-[var(--lr-accent)]">La teniamo noi</span>
+                <span className="font-medium text-[var(--lr-ink)]">La teniamo noi</span>
               ) : riga.chi === "privato" ? (
                 <span className="text-[var(--lr-warn)]">Da privato</span>
               ) : riga.agenzia ? (

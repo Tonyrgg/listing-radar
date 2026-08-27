@@ -226,7 +226,7 @@ export default async function CasePage({
 
       <Meta className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
         <span className="inline-flex items-center gap-1.5">
-          <UserRound aria-hidden="true" className="size-3.5 text-[var(--lr-accent)]" /> la teniamo
+          <UserRound aria-hidden="true" className="size-3.5 text-[var(--lr-ink)]" /> la teniamo
           noi
         </span>
         <span className="inline-flex items-center gap-1.5">

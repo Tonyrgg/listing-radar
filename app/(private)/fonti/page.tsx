@@ -178,7 +178,7 @@ export default async function FontiPage() {
                           ? "h-full rounded-full bg-[var(--lr-danger)] opacity-40"
                           : agency.salute === "partial"
                             ? "h-full rounded-full bg-[var(--lr-warn)]"
-                            : "h-full rounded-full bg-[var(--lr-accent)]"
+                            : "h-full rounded-full bg-[var(--lr-ok)]"
                       }
                       style={{
                         width: `${agency.salute === "broken" ? 100 : Math.max(4, Math.round((letti / massimo) * 100))}%`,

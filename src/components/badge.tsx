@@ -11,7 +11,8 @@ export type BadgeTone = "slate" | "green" | "amber" | "blue" | "red";
 
 const toneMap: Record<BadgeTone, Tone> = {
   slate: "neutral",
-  green: "action",
+  /* «Verde» ha sempre voluto dire «va tutto bene»: e uno stato, non un'azione. */
+  green: "ok",
   amber: "warn",
   blue: "info",
   red: "danger",
