@@ -66,9 +66,9 @@ function itemClass(active: boolean, collapsed: boolean) {
     "group inline-flex min-h-[var(--lr-control-height)] shrink-0 items-center gap-2.5 rounded-[var(--lr-radius-control)] px-3",
     "text-[length:var(--lr-text-body)] font-medium transition-colors",
     "lg:w-full lg:justify-start",
-    collapsed && "lg:justify-center lg:px-0",
+    collapsed && "lg:min-h-[58px] lg:flex-col lg:justify-center lg:gap-1 lg:px-1 lg:py-1.5",
     active
-      ? "bg-[var(--lr-ink)] text-[var(--lr-surface)] shadow-[var(--lr-floating)]"
+      ? "bg-[var(--lr-raised)] text-[var(--lr-ink)] shadow-[inset_0_0_0_1px_var(--lr-line)]"
       : "text-[var(--lr-ink-2)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
   );
 }
@@ -97,15 +97,16 @@ export function SidebarNav({ collapsed = false }: Readonly<{ collapsed?: boolean
               <Icon
                 aria-hidden="true"
                 className={clsx(
-                  "size-4 shrink-0",
-                  active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]",
+                  "size-5 shrink-0",
+                  active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]",
                 )}
               />
-              <span className={clsx("min-w-0", collapsed && "lg:sr-only")}>
+              <span className={clsx("min-w-0", collapsed && "lg:text-center lg:text-[length:var(--lr-text-label)]")}>
                 <span className="block truncate leading-tight">{item.label}</span>
                 <span className={clsx(
                   "hidden truncate text-[length:var(--lr-text-label)] font-normal lg:block",
-                  active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]",
+                  collapsed && "lg:hidden",
+                  active ? "text-[var(--lr-ink-2)]" : "text-[var(--lr-ink-3)]",
                 )}>
                   {item.hint}
                 </span>
@@ -141,9 +142,9 @@ function SettingsLink({
     >
       <Icon
         aria-hidden="true"
-        className={clsx("size-4 shrink-0", active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]")}
+        className={clsx("size-5 shrink-0", active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]")}
       />
-      <span className={clsx(collapsed && "lg:sr-only")}>{settingsItem.label}</span>
+      <span className={clsx(collapsed && "lg:text-center lg:text-[length:var(--lr-text-label)]")}>{settingsItem.label}</span>
     </Link>
   );
 }

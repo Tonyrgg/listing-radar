@@ -1,14 +1,15 @@
 import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
-import { Dato, Movimento } from "@/components/ui/atoms";
-import { Stripe, type Tone } from "@/components/ui/primitives";
-import { formatCurrency, formatDate, formatShouty, formatTime } from "@/lib/formatting";
 import {
-  agencyListingStateLabel,
-  humanize,
-  lifecycleEventLabel,
-} from "@/lib/property-lifecycle/read-models/presentation";
+  MovimentoDiPrezzo,
+  contornoDelMovimento,
+  haMovimentoDiPrezzo,
+} from "@/components/market-move";
+import { Dato } from "@/components/ui/atoms";
+import { Stripe, type Tone } from "@/components/ui/primitives";
+import { formatDate, formatShouty, formatTime } from "@/lib/formatting";
+import { lifecycleEventLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
 
 /**
@@ -29,35 +30,6 @@ const TONO_EVENTO: Record<string, Tone> = {
   DISAPPEARED_CONFIRMED: "info",
 };
 
-/** Il prezzo che si muove: la freccia dice tutto prima delle parole. */
-function movimentoDiPrezzo(payload: Record<string, unknown>) {
-  const vecchio = typeof payload.oldPrice === "number" ? payload.oldPrice : null;
-  const nuovo = typeof payload.newPrice === "number" ? payload.newPrice : null;
-  if (vecchio == null || nuovo == null) return null;
-
-  const delta = nuovo - vecchio;
-
-  return (
-    <Movimento
-      direction={delta === 0 ? "flat" : delta < 0 ? "down" : "up"}
-      amount={`${delta < 0 ? "−" : "+"}${formatCurrency(Math.abs(delta))}`}
-      since={formatCurrency(nuovo)}
-      sinceClassName="hidden sm:inline"
-    />
-  );
-}
-
-function contorno(payload: Record<string, unknown>) {
-  const esito = typeof payload.outcome === "string" ? payload.outcome : null;
-  if (esito) return humanize(esito);
-
-  const precedente =
-    typeof payload.priorAgencyState === "string" ? payload.priorAgencyState : null;
-  if (precedente) return `prima: ${agencyListingStateLabel(precedente).toLocaleLowerCase("it")}`;
-
-  return null;
-}
-
 export function EventRow({
   event,
   foto,
@@ -72,8 +44,8 @@ export function EventRow({
 }>) {
   const property = event.property;
   const dove = property.address ? formatShouty(property.address) : formatShouty(property.title);
-  const prezzo = movimentoDiPrezzo(event.payload);
-  const nota = prezzo ? null : contorno(event.payload);
+  const siMuove = haMovimentoDiPrezzo(event.payload);
+  const nota = siMuove ? null : contornoDelMovimento(event.payload);
 
   return (
     <article className="group relative flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-3 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
@@ -111,7 +83,13 @@ export function EventRow({
       {/* Il blocco di destra può stringersi: con `shrink-0` un ribasso scritto
         * per esteso spingeva la riga fuori dallo schermo. */}
       <span className="relative z-10 flex min-w-0 shrink items-center justify-end gap-3">
-        <span className="truncate text-[length:var(--lr-text-meta)]">{prezzo ?? nota}</span>
+        <span className="truncate text-[length:var(--lr-text-meta)]">
+          {siMuove ? (
+            <MovimentoDiPrezzo payload={event.payload} sinceClassName="hidden sm:inline" />
+          ) : (
+            nota
+          )}
+        </span>
         <span className="hidden whitespace-nowrap text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] sm:inline">
           {mostraOra ? formatTime(event.occurredAt) : formatDate(event.occurredAt)}
         </span>

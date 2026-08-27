@@ -79,7 +79,7 @@ export function SectionNav({
           >
             <Icon
               aria-hidden="true"
-              className={clsx("size-4", active ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]")}
+              className={clsx("size-4", active ? "text-[var(--lr-surface)]" : "text-[var(--lr-ink-3)]")}
             />
             {item.label}
           </Link>
