@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="it" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="./tokens.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body data-worker-view="operations">
     <header class="app-header">
       <div class="brand">
         <span class="brand-mark"><img src="./icon.png" alt="" /></span>
@@ -27,7 +27,7 @@
       <nav class="side-nav" aria-label="Sezioni">
         <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
         <button class="nav-item" data-scroll="sync"><span>2</span><div><b>Sincronizza</b><small>Richieste e incarichi dal gestionale</small></div></button>
-        <button class="nav-item" data-scroll="history"><span>3</span><div><b>Cronologia</b><small>Import conclusi e lavori salvati</small></div></button>
+        <button class="nav-item" data-scroll="history"><span>3</span><div><b>Cronologia</b><small id="historyNavHint">Import conclusi e lavori salvati</small></div></button>
         <button class="nav-item" data-scroll="settings"><span>4</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
         <div class="privacy-note">
           <div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div>
