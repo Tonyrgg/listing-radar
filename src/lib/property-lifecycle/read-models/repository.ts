@@ -12,11 +12,7 @@ import type {
   LifecyclePropertySummary,
   LifecycleReviewItem,
 } from "@/lib/property-lifecycle/read-models/types";
-import {
-  identityHardConflicts,
-  type IdentityObservation,
-} from "@/lib/property-lifecycle/identity/scoring";
-
+import { evaluateIdentityReviewCandidates } from "./identity-review";
 import { MARKET_EVENT_TYPES } from "./market-events";
 
 interface DatabaseError {
@@ -148,7 +144,7 @@ function reviewCandidateDescriptors(
   details: Record<string, unknown>,
 ): ReviewCandidateDescriptor[] {
   if (!Array.isArray(details.candidates)) return [];
-  return details.candidates.slice(0, 3).flatMap((candidate) => {
+  return details.candidates.slice(0, 10).flatMap((candidate) => {
     if (typeof candidate === "string" && candidate) {
       return [{ propertyId: candidate, score: null, contradictions: [] }];
     }
@@ -164,43 +160,6 @@ function reviewCandidateDescriptors(
         ]
       : [];
   });
-}
-
-/**
- * La review e una coda di decisioni, non un archivio di falsi positivi.
- * Riesaminiamo i fatti canonici anche per i casi nati con regole precedenti:
- * se ogni candidata e ormai incompatibile, quel confronto non richiede piu
- * tempo umano e non viene proposto nell'interfaccia.
- */
-function identityObservationFromSummary(
-  property: LifecyclePropertySummary,
-): IdentityObservation {
-  return {
-    agencyReference: null,
-    address: property.address,
-    locality: property.locality,
-    propertyType: property.propertyType,
-    surfaceSqm: property.surfaceSqm,
-    rooms: property.rooms,
-    priceAmount: property.currentPrice,
-    imageFingerprints: [],
-    floorplanFingerprints: [],
-  };
-}
-
-function requiresIdentityDecision(
-  property: LifecyclePropertySummary | null,
-  candidates: LifecycleReviewItem["candidates"],
-): boolean {
-  if (!property || candidates.length === 0) return true;
-  const observation = identityObservationFromSummary(property);
-  return candidates.some(
-    (candidate) =>
-      identityHardConflicts(
-        observation,
-        identityObservationFromSummary(candidate.property),
-      ).length === 0,
-  );
 }
 
 function newest<T>(
@@ -858,26 +817,41 @@ export class PropertyLifecycleReadRepository {
     const agencyById = new Map(
       ((agencyResult.data ?? []) as AgencyRow[]).map((agency) => [agency.id, agency]),
     );
-    const hydrated = rows.map((row) => ({
-      id: row.id,
-      reviewType: row.review_type,
-      status: row.status,
-      priority: row.priority,
-      title: row.title,
-      details: detailsByReviewId.get(row.id) ?? {},
-      createdAt: row.created_at,
-      property: row.property_id ? propertyById.get(row.property_id) ?? null : null,
-      agencyName: row.agency_id ? agencyById.get(row.agency_id)?.name ?? null : null,
-      candidates: (candidatesByReviewId.get(row.id) ?? []).flatMap((candidate) => {
+    const hydrated = rows.map((row): LifecycleReviewItem & { candidateCount: number } => {
+      const property = row.property_id ? propertyById.get(row.property_id) ?? null : null;
+      const candidateDescriptors = candidatesByReviewId.get(row.id) ?? [];
+      const candidates = candidateDescriptors.flatMap((candidate) => {
         const property = propertyById.get(candidate.propertyId);
         return property ? [{ ...candidate, property }] : [];
-      }),
-    }));
+      });
+      const evaluation =
+        row.review_type === "IDENTITY" && property
+          ? evaluateIdentityReviewCandidates(property, candidates)
+          : {
+              candidates,
+              automaticExclusions: { count: 0, reasons: {} },
+            };
+      return {
+        id: row.id,
+        reviewType: row.review_type,
+        status: row.status,
+        priority: row.priority,
+        title: row.title,
+        details: detailsByReviewId.get(row.id) ?? {},
+        createdAt: row.created_at,
+        property,
+        agencyName: row.agency_id ? agencyById.get(row.agency_id)?.name ?? null : null,
+        ...evaluation,
+        candidateCount: candidateDescriptors.length,
+      };
+    });
 
     return hydrated.filter(
       (review) =>
         review.reviewType !== "IDENTITY" ||
-        requiresIdentityDecision(review.property, review.candidates),
+        !review.property ||
+        review.candidateCount === 0 ||
+        review.candidates.length > 0,
     );
   }
 

@@ -274,6 +274,34 @@ function propertyTypeFamily(value: string | null): string | null {
   return normalized;
 }
 
+/**
+ * Barriera unica usata sia durante l'acquisizione sia quando una vecchia
+ * revisione viene riletta. Una candidata incompatibile non puo riapparire
+ * soltanto perche il caso e nato con regole meno severe.
+ */
+export function identityCandidateIncompatibilities(
+  observation: IdentityObservation,
+  candidate: IdentityObservation,
+): string[] {
+  const conflicts = identityHardConflicts(observation, candidate);
+  if (
+    comparableText(observation.locality, candidate.locality) &&
+    exactText(observation.locality, candidate.locality) !== 1
+  ) {
+    conflicts.push("locality_conflict");
+  }
+  const observationFamily = propertyTypeFamily(observation.propertyType);
+  const candidateFamily = propertyTypeFamily(candidate.propertyType);
+  if (
+    observationFamily &&
+    candidateFamily &&
+    observationFamily !== candidateFamily
+  ) {
+    conflicts.push("property_type_hard_conflict");
+  }
+  return conflicts;
+}
+
 function incrementReason(target: Record<string, number>, reason: string): void {
   target[reason] = (target[reason] ?? 0) + 1;
 }
@@ -289,34 +317,18 @@ export function retrieveIdentityCandidates(
   const included: IdentityCandidate[] = [];
   const discardedReasons: Record<string, number> = {};
   const observationAddress = normalizedAddressTokens(observation.address);
-  const observationType = propertyTypeFamily(observation.propertyType);
 
   for (const candidate of candidates) {
     const candidateAddress = normalizedAddressTokens(candidate.address);
-    const localityComparable = comparableText(observation.locality, candidate.locality);
     const localityMatches = exactText(observation.locality, candidate.locality) === 1;
     const surfaceDifference = relativeDifference(observation.surfaceSqm, candidate.surfaceSqm);
     const roomsDifference =
       observation.rooms == null || candidate.rooms == null
         ? null
         : Math.abs(observation.rooms - candidate.rooms);
-    const observationFamily = observationType;
-    const candidateFamily = propertyTypeFamily(candidate.propertyType);
-    const typeConflict = Boolean(
-      observationFamily && candidateFamily && observationFamily !== candidateFamily,
-    );
-
-    if (localityComparable && !localityMatches) {
-      incrementReason(discardedReasons, "locality_conflict");
-      continue;
-    }
-    const hardConflicts = identityHardConflicts(observation, candidate);
+    const hardConflicts = identityCandidateIncompatibilities(observation, candidate);
     if (hardConflicts.length) {
       hardConflicts.forEach((reason) => incrementReason(discardedReasons, reason));
-      continue;
-    }
-    if (typeConflict) {
-      incrementReason(discardedReasons, "property_type_hard_conflict");
       continue;
     }
 

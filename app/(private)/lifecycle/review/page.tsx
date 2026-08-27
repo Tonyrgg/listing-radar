@@ -1,5 +1,10 @@
 import { clsx } from "clsx";
-import { ArrowRight, GitCompareArrows, ShieldQuestion } from "lucide-react";
+import {
+  ArrowRight,
+  GitCompareArrows,
+  ShieldCheck,
+  ShieldQuestion,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -242,6 +247,10 @@ export default async function DaDecidereePage({
 
   const perTipo = (tipo: string) =>
     casi.filter((item) => item.reviewType === tipo).length;
+  const esclusioniAutomatiche = casi.reduce(
+    (totale, item) => totale + item.automaticExclusions.count,
+    0,
+  );
 
   return (
     <>
@@ -251,6 +260,15 @@ export default async function DaDecidereePage({
         description="Il sistema elimina automaticamente confronti con vie, prezzi, metrature o locali incompatibili. Qui restano solo casi con prove ancora plausibili."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {esclusioniAutomatiche > 0 ? (
+              <Chip tone="info">
+                <ShieldCheck aria-hidden="true" className="size-3.5" />
+                {esclusioniAutomatiche}{" "}
+                {esclusioniAutomatiche === 1
+                  ? "confronto escluso"
+                  : "confronti esclusi"}
+              </Chip>
+            ) : null}
             <Chip tone="warn">
               caso {indice + 1} di {casi.length}
             </Chip>

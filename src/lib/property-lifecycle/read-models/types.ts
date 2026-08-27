@@ -120,6 +120,10 @@ export interface LifecycleReviewItem {
   createdAt: string;
   property: LifecyclePropertySummary | null;
   agencyName: string | null;
+  automaticExclusions: {
+    count: number;
+    reasons: Record<string, number>;
+  };
   candidates: Array<{
     property: LifecyclePropertySummary;
     score: number | null;
