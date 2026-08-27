@@ -4,8 +4,8 @@
 @theme inline {
   --color-background: var(--lr-canvas);
   --color-foreground: var(--lr-ink);
-  --font-sans: var(--font-work-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-instrument-sans);
+  --font-mono: var(--font-ibm-plex-mono);
 
   --radius-control: var(--lr-radius-control);
   --radius-container: var(--lr-radius-container);
@@ -32,7 +32,7 @@ body {
   margin: 0;
   background: var(--lr-canvas);
   color: var(--lr-ink);
-  font-family: var(--font-work-sans), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-instrument-sans), "Segoe UI", sans-serif;
   font-size: var(--lr-text-body);
   line-height: var(--lr-leading-body);
   font-variant-numeric: tabular-nums;
@@ -85,7 +85,7 @@ body {
   }
 
   .leaflet-container {
-    font-family: var(--font-work-sans), var(--font-geist-sans), sans-serif;
+    font-family: var(--font-instrument-sans), "Segoe UI", sans-serif;
     background: var(--lr-surface);
   }
 

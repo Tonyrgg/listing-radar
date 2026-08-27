@@ -4,56 +4,57 @@ description: CRM operativo privato per completare e valutare annunci immobiliari
 source: src/styles/tokens.css
 verify: npm run design:check
 colors:
-  canvas: "#0e1411"
-  surface: "#1f2823"
-  raised: "#2e3831"
-  line: "#6d746e"
-  line-quiet: "#454e47"
-  ink: "#f1f4ef"
-  ink-2: "#b7c2ba"
-  ink-3: "#96a29b"
-  accent: "#74c495"
-  accent-ink: "#0d1410"
-  warn: "#e6b655"
-  danger: "#f08872"
-  info: "#84b9db"
+  canvas: "#eae0cf"
+  surface: "#fffdf8"
+  raised: "#ebe2d2"
+  line: "#807564"
+  line-quiet: "#d9cdb9"
+  ink: "#16363a"
+  ink-2: "#3f5c61"
+  ink-3: "#52666a"
+  accent: "#a7442b"
+  accent-ink: "#ffffff"
+  ok: "#34765e"
+  warn: "#825b12"
+  danger: "#af352d"
+  info: "#275d82"
 typography:
   page:
-    fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "1.75rem"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
+    fontSize: "2rem"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "-0.015em"
   section:
-    fontFamily: "Geist, Arial, sans-serif"
-    fontSize: "1.25rem"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
+    fontSize: "1.375rem"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "-0.015em"
   record:
-    fontFamily: "Geist, Arial, sans-serif"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
     fontSize: "1rem"
     fontWeight: 650
     lineHeight: 1.35
   body:
-    fontFamily: "Geist, Arial, sans-serif"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.55
   meta:
-    fontFamily: "Geist, Arial, sans-serif"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
     fontSize: "0.8125rem"
     fontWeight: 400
     lineHeight: 1.55
   label:
-    fontFamily: "Geist, Arial, sans-serif"
+    fontFamily: "Instrument Sans, Segoe UI, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 650
     lineHeight: 1.2
     letterSpacing: "0.09em"
 rounded:
-  control: "6px"
-  container: "10px"
+  control: "10px"
+  container: "16px"
   pill: "9999px"
 spacing:
   1: "4px"
@@ -94,7 +95,7 @@ components:
 
 ## Overview
 
-**Creative North Star: "La Sala Operativa"**
+**Creative North Star: "Il Registro Operativo"**
 
 Listing Radar deve sembrare uno spazio di lavoro privato, calmo e sempre sotto
 controllo. La densità serve a ridurre i passaggi: la coda corrente domina, i
@@ -107,10 +108,77 @@ motivazione leggibile.
 
 **Key Characteristics:**
 - Una sola cosa grida per schermata; tutto il resto sussurra in modo leggibile.
-- Grafite verdastra in scuro, carta in chiaro: due temi, gli stessi token.
-- Un solo accento salvia, riservato al passo successivo.
+- Petrolio profondo nel worker, carta calda nel tool: due ambienti, gli stessi token.
+- Un solo accento rame, riservato al passo successivo.
 - Azioni esplicite, foto reali e motivazioni comprensibili.
 - Target interattivi di almeno 44 pixel e focus sempre visibile.
+
+## Impronta selezionata
+
+Il riferimento approvato non e un catalogo di funzioni: e una grammatica
+visiva. Testi, pulsanti e tabelle presenti nel mockup non autorizzano nuove
+azioni. Ogni superficie mantiene soltanto dati, link e comandi gia esistenti.
+
+### Due ambienti coordinati
+
+- **Tool web:** carta calda `canvas`, superfici avorio, inchiostro petrolio.
+  Deve sembrare editoriale, leggibile e fotografico, non una dashboard SaaS.
+- **Worker:** petrolio profondo, pannelli appena piu chiari e testo crema. Deve
+  sembrare una postazione concentrata e procedurale, non una seconda copia del CRM.
+- **Rame:** indica il gesto successivo. Non decora titoli, icone o statistiche.
+- **Bordi:** un pixel visibile definisce gruppi e controlli. Le ombre sono
+  riservate a mappa, dialog, drawer e gusci realmente flottanti.
+
+### Guscio del tool
+
+La rail desktop chiusa e larga 84 px. Ogni destinazione ha icona da 20 px e
+label breve da 11 px; la voce attiva usa una superficie rialzata con bordo,
+mai un blocco scuro estraneo alla pagina. La rail puo essere riaperta per
+mostrare descrizioni e ricerca completa. Su mobile le stesse destinazioni
+restano scorribili e nessuna azione scompare.
+
+### Dashboard — riferimento 2a
+
+La prima lettura e fotografica: movimenti reali in una griglia a tre colonne,
+immagine 16:9, stato sovrapposto, indirizzo, fonte e dati essenziali. Prezzo e
+valori numerici usano IBM Plex Mono. Fiducia delle fonti, arrivi e opportunita
+continuano a esistere sotto la parete: il redesign cambia la gerarchia, non la
+copertura funzionale.
+
+### Worker principale — riferimento 4a
+
+Il worker usa una testata compatta da 52 px e una rail a tappe da 236 px. La
+pagina mostra una sola sezione primaria per volta. Nella lavorazione dominano
+la scelta della run, lo stato corrente, il contatore dei tentativi e l'azione
+richiesta. Tutti i controlli universali, le long run e la rete di proprietari
+restano disponibili; i pannelli inattivi non competono visivamente.
+
+### Sincronizzazione — riferimento 5a
+
+Richieste e incarichi sono due pannelli gemelli, affiancati quando c'e spazio.
+Ognuno conserva stato, avanzamento, annullamento e nuova sincronizzazione. Il
+mockup non introduce code o decisioni che il prodotto non possiede.
+
+### Cronologia worker — riferimento 5b
+
+Cronologia e una pagina autonoma della rail. Import conclusi e acquisizioni
+salvate occupano tutta la larghezza; operazioni e diagnostica sono pannelli
+secondari. Contatori, tempi e identificativi sono monospaziati. Dettagli e
+azioni esistenti restano raggiungibili senza comprimere i record.
+
+### Commerciale — riferimento 5d
+
+La pagina apre con tre porte basate su dati reali: richieste attive,
+abbinamenti disponibili e immobili in portafoglio. Ogni porta e navigabile e
+mostra un numero verificabile. Sotto restano ricerca, filtri, clienti e case;
+nessun bottone dimostrativo viene copiato dal riferimento.
+
+### Territorio — riferimento 5e
+
+La mappa e la superficie dominante e il pannello di copertura e la sua seconda
+colonna. Disegno, pin, strade, case, filtri, legenda, selezione, modifica e
+cancellazione restano tutti presenti. Toolbar e indicatori galleggiano sulla
+mappa; la scheda laterale racconta il lavoro gia svolto e quello da fare.
 
 ## The single source
 
@@ -125,7 +193,7 @@ Un valore di colore scritto dentro un componente è un errore, non una scorciato
 
 ## Colors
 
-La palette usa superfici grafite verdastre, testo caldo e un accento salvia
+La palette usa superfici petrolio, carta calda, testo profondo e un accento rame
 riservato alle azioni. Ogni coppia è verificata in sRGB contro WCAG 2.1 AA da
 `scripts/check-design-contrast.mjs`.
 
@@ -141,8 +209,13 @@ lo circonda: è la linea a separare, non il riempimento (WCAG 1.4.11).
 ### Action vs. state
 Due famiglie separate.
 - **Azione**: il solo `--lr-accent`. Significa «questo è il passo successivo».
-- **Stato**: `--lr-warn`, `--lr-danger`, `--lr-info` e il neutro. Significano
-  «ecco come stanno le cose».
+- **Stato**: `--lr-ok`, `--lr-warn`, `--lr-danger`, `--lr-info` e il neutro.
+  Significano «ecco come stanno le cose».
+
+`--lr-ok` è il verde della conferma: un collegamento pronto, una fonte letta
+per intero, un import concluso, un immobile che rientra nel budget. Esiste
+perché senza di lui «va tutto bene» finiva scritto in rame, e l'accento non
+significava più niente.
 
 ### Data
 `--lr-data-*` e `src/lib/design/map-palette.ts` servono a distinguere categorie
@@ -163,19 +236,26 @@ banda laterale, il testo dice lo stato a parole.
 
 ## Typography
 
-**Display e Body:** Geist (con fallback Arial e sans-serif).
+**Display e Body:** Instrument Sans (con fallback Segoe UI e sans-serif).
+
+**Dati:** IBM Plex Mono, limitato a prezzi, contatori, tempi, versioni e
+identificativi. Non si usa per paragrafi, titoli o navigazione.
 
 **Character:** Una singola famiglia sans mantiene il CRM tecnico ma non freddo.
 Peso, dimensione e contrasto creano la gerarchia; il viewport non modifica la
 dimensione dei caratteri.
 
 ### Scale — sei gradini, nessuna eccezione
-- **Page** 28 px · titolo di pagina, uno solo per schermata.
-- **Section** 20 px · titoli di pannello e prima azione.
+- **Page** 32 px · titolo di pagina, uno solo per schermata.
+- **Section** 22 px · titoli di pannello e prima azione.
 - **Record** 16 px · titolo di un annuncio, di una richiesta, di un immobile.
 - **Body** 14 px · testo corrente. È il default del prodotto.
 - **Meta** 13 px · date, fonti, contesto.
 - **Label** 11 px · occhielli in maiuscoletto, con tracking positivo.
+
+I gradini vivono in `--lr-text-*`. Le classi di comodo di Tailwind — `text-xs`,
+`text-sm`, `text-base` — non appartengono a questa scala: al loro posto si
+scrive `text-[length:var(--lr-text-meta)]` e simili.
 
 ### Weights — tre, non diciotto
 400 regolare · 500 medio · 650 forte. Sono i tre che l'occhio distingue.
@@ -210,17 +290,23 @@ Un componente per ogni lavoro, e uno solo. Vivono in
 compatta. Un solo `primary` per regione di schermo.
 
 ### Chips
-Pillole compatte con cinque toni. Comunicano stato o categoria e portano sempre
-una forma oltre al colore. Non sostituiscono mai un pulsante.
+Pillole compatte con sei toni — neutro, azione, conferma, attenzione, critico,
+informativo. Comunicano stato o categoria e portano sempre una forma oltre al
+colore. Non sostituiscono mai un pulsante.
 
 ### Cards
 Un raggio, un bordo, nessuna ombra. `CardHeader` porta titolo, metadato e al
 massimo un'azione.
 
+I raggi sono due: `--lr-radius-control` (10 px) per controlli, chip e riquadri
+interni, `--lr-radius-container` (16 px) per contenitori e pannelli flottanti.
+Un raggio scritto in pixel dentro un componente è un errore, come un colore.
+
 ### Stripe
-La banda laterale da 3 px indica l'urgenza di una riga senza consumare
-l'accento. È il segnale che permette di lasciare la struttura identica fra uno
-stato e l'altro.
+Un pallino di 8 px indica l'urgenza di una riga senza consumare l'accento.
+È il segnale che permette di lasciare la struttura identica fra uno stato e
+l'altro: cambia il tono del punto, non la forma della riga. Una banda laterale
+creerebbe una colonna che nella parete di schede non esiste.
 
 ### Feedback
 - **Riuscito**: conferma breve, con «Annulla» dove l'operazione è reversibile.

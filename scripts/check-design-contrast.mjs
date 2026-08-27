@@ -64,6 +64,7 @@ const RULES = [
   ["--lr-warn", "--lr-surface", 4.5, "attenzione"],
   ["--lr-danger", "--lr-surface", 4.5, "critico"],
   ["--lr-info", "--lr-surface", 4.5, "informativo"],
+  ["--lr-ok", "--lr-surface", 4.5, "conferma"],
 ];
 
 const themes = [

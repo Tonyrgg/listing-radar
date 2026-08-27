@@ -8,6 +8,8 @@
  */
 
 :root {
+  --lr-font-sans: "Instrument Sans", "Segoe UI", sans-serif;
+  --lr-font-mono: "IBM Plex Mono", "Cascadia Mono", monospace;
   /* A warm paper workspace: quiet enough for dense operational data. */
   --lr-canvas: #eae0cf;
   --lr-surface: #fffdf8;
@@ -33,6 +35,8 @@
   --lr-danger-soft: #f5deda;
   --lr-info: #275d82;
   --lr-info-soft: #dbe9ef;
+  --lr-ok: #34765e;
+  --lr-ok-soft: #d7eae1;
 
   --lr-scrim: rgb(22 54 58 / 0.45);
 
@@ -113,6 +117,8 @@
     --lr-danger-soft: #4d302f;
     --lr-info: #9bc8e0;
     --lr-info-soft: #243f4a;
+    --lr-ok: #72c6a2;
+    --lr-ok-soft: #21453a;
     --lr-scrim: rgb(5 17 20 / 0.66);
     --lr-data-1: #6fb7df;
     --lr-data-2: #72c6a2;
@@ -145,6 +151,8 @@
   --lr-danger-soft: #f5deda;
   --lr-info: #275d82;
   --lr-info-soft: #dbe9ef;
+  --lr-ok: #34765e;
+  --lr-ok-soft: #d7eae1;
   --lr-scrim: rgb(22 54 58 / 0.45);
   --lr-data-1: #28719b;
   --lr-data-2: #34765e;
@@ -176,6 +184,8 @@
   --lr-danger-soft: #4d302f;
   --lr-info: #9bc8e0;
   --lr-info-soft: #243f4a;
+  --lr-ok: #72c6a2;
+  --lr-ok-soft: #21453a;
   --lr-scrim: rgb(5 17 20 / 0.66);
   --lr-data-1: #6fb7df;
   --lr-data-2: #72c6a2;
