@@ -378,6 +378,32 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.createProperty).not.toHaveBeenCalled();
   });
 
+  it("aggiorna l'immobile trovato globalmente sotto un altro proprietario e non lo duplica", async () => {
+    const { runner } = runnerWithRepository();
+    const property = propertyRow();
+    const primary = { ...personRow(), crm_record_id: "CRM-PERSON-NOT-LINKED" };
+    const globalMatch = { id: "CRM-PROPERTY-OTHER-OWNER", data: { identityVerified: true, matchedBy: "cadastral-global" } };
+    const crm = {
+      findPropertyForPerson: vi.fn().mockResolvedValue({ match: null }),
+      findPropertyByCadastralIdentity: vi.fn().mockResolvedValue({ match: globalMatch }),
+      verifyProperty: vi.fn().mockResolvedValue({ match: globalMatch }),
+      updateProperty: vi.fn().mockResolvedValue(undefined),
+      createProperty: vi.fn(),
+    };
+
+    await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
+
+    expect(crm.findPropertyByCadastralIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      sheet: "50", parcel: "100", subaltern: "4",
+    }));
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-OTHER-OWNER", expect.any(Object));
+    expect(crm.createProperty).not.toHaveBeenCalled();
+    expect(property.raw_payload?.property_search).toMatchObject({
+      strategy: "global-cadastral",
+      linkedToVerifiedPerson: false,
+    });
+  });
+
   it("crea l'immobile assente, ne verifica l'identità e passa direttamente all'attività", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
@@ -387,6 +413,7 @@ describe("flusso identità nominativo e immobile", () => {
       findPropertyForPerson: vi.fn()
         .mockResolvedValueOnce({ match: null })
         .mockResolvedValueOnce({ match }),
+      findPropertyByCadastralIdentity: vi.fn().mockResolvedValue({ match: null }),
       updateProperty: vi.fn(),
       createProperty: vi.fn().mockResolvedValue("CRM-PROPERTY-NEW"),
       verifyProperty: vi.fn().mockResolvedValue({ match }),
@@ -419,6 +446,7 @@ describe("flusso identità nominativo e immobile", () => {
       findPropertyForPerson: vi.fn()
         .mockResolvedValueOnce({ match: null })
         .mockResolvedValueOnce({ match: verifiedNew }),
+      findPropertyByCadastralIdentity: vi.fn().mockResolvedValue({ match: null }),
       updateProperty: vi.fn(),
       createProperty: vi.fn().mockResolvedValue("CRM-PROPERTY-NEW"),
       verifyProperty: vi.fn().mockResolvedValue({ match: verifiedNew }),
@@ -464,12 +492,14 @@ describe("flusso identità nominativo e immobile", () => {
     const crm = {
       findPerson: vi.fn(),
       findPropertyForPerson: vi.fn().mockResolvedValue({ match }),
+      findPropertyByCadastralIdentity: vi.fn().mockResolvedValue({ match: null }),
       updateProperty: vi.fn().mockResolvedValue(undefined),
       createProperty: vi.fn(),
       verifyProperty: vi.fn().mockResolvedValue({ match }),
       createPropertyActivity: vi.fn().mockResolvedValue({
         outcome: "created", crmActivityId: "ACTIVITY-1", correlatedProperty: "VIA ROMA 10", attempts: 1,
       }),
+      findLinkedOwnerIds: vi.fn().mockResolvedValue(["CRM-PERSON-1"]),
     };
     const contacts = { findByTaxCode: vi.fn() };
 
@@ -559,6 +589,7 @@ describe("flusso identità nominativo e immobile", () => {
     internals.ensureProperty = vi.fn().mockImplementation(async () => { property.crm_record_id = "CRM-PROPERTY"; });
     internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
     const crm = {
+      findLinkedOwnerIds: vi.fn().mockResolvedValue(["CRM-PRIMARY"]),
       linkOwner: vi.fn().mockResolvedValue({
         linkId: "owner-link-CRM-COOWNER",
         selection: "phone",
@@ -619,7 +650,7 @@ describe("flusso identità nominativo e immobile", () => {
 
     await internals.processPropertiesInOrder(
       { ...job, total_properties: 1, processed_properties: 0 },
-      { linkOwner: vi.fn(), resetToCrmHome: vi.fn().mockResolvedValue(undefined) },
+      { findLinkedOwnerIds: vi.fn().mockResolvedValue(["CRM-USABLE"]), linkOwner: vi.fn(), resetToCrmHome: vi.fn().mockResolvedValue(undefined) },
       { findByTaxCode: vi.fn() },
     );
 

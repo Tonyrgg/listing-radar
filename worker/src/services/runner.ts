@@ -1219,19 +1219,15 @@ export class PropertyWorkerRunner {
         this.throwIfPropertySkipRequested(job.id, property.id);
 
         if (!stageReached("owners_linked")) {
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Confermo ${primary.person.full_name} come proprietario principale e collego ${coowners.length} comproprietari`);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "ownership", `Verifico tutti i proprietari già collegati e associo solo quelli mancanti`);
           if (!property.crm_record_id || !primary.person.crm_record_id) {
             throw new WorkerError("Immobile o proprietario principale non disponibili per collegare i comproprietari", "data_incomplete", { propertyId: property.id });
           }
-          if (!primary.ownership.crm_link_id) {
-            primary.ownership.crm_link_id = `existing-link-${primary.person.crm_record_id}`;
-            await this.repository.updateOwnership(primary.ownership.id, {
-              crm_link_id: primary.ownership.crm_link_id,
-              processing_status: "verified_existing",
-            });
-          }
           const notes: string[] = [];
-          for (const owner of coowners) {
+          const linkedOwnerIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
+          const existingLinksBeforeSync = [...linkedOwnerIds];
+          const allOwners = [primary, ...coowners];
+          for (const owner of allOwners) {
             this.throwIfPropertySkipRequested(job.id, property.id);
             if (!owner.person.crm_record_id || owner.ownership.share_percentage == null) {
               throw new WorkerError(
@@ -1241,6 +1237,14 @@ export class PropertyWorkerRunner {
               );
             }
             if (owner.ownership.crm_link_id && ["linked", "verified_existing"].includes(owner.ownership.processing_status)) continue;
+            if (linkedOwnerIds.has(owner.person.crm_record_id)) {
+              owner.ownership.crm_link_id = `existing-link-${owner.person.crm_record_id}`;
+              await this.repository.updateOwnership(owner.ownership.id, {
+                crm_link_id: owner.ownership.crm_link_id,
+                processing_status: "verified_existing",
+              });
+              continue;
+            }
             const name = splitPersonName(owner.person.full_name, owner.person.tax_code);
             const searchLabel = [name.firstName, name.lastName].filter(Boolean).join(" ") || owner.person.full_name;
             const link = await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, `Collegamento comproprietario ${owner.person.full_name}`, () =>
@@ -1251,6 +1255,7 @@ export class PropertyWorkerRunner {
                 interruptionRequested: () => this.interruptionFor(job.id, property.id),
               }, owner.ownership.share_percentage!));
             owner.ownership.crm_link_id = link.linkId;
+            linkedOwnerIds.add(owner.person.crm_record_id);
             await this.repository.updateOwnership(owner.ownership.id, {
               crm_link_id: link.linkId,
               processing_status: link.selection === "existing" ? "verified_existing" : "linked",
@@ -1264,10 +1269,11 @@ export class PropertyWorkerRunner {
             ...(property.raw_payload ?? {}),
             correlated_owners: {
               state: "linked",
-              count: coowners.length,
-              linked: coowners.filter((owner) => Boolean(owner.ownership.crm_link_id)).length,
+              count: allOwners.length,
+              linked: allOwners.filter((owner) => Boolean(owner.ownership.crm_link_id)).length,
               primaryPersonId: primary.person.id,
               primarySharePercentage: primary.ownership.share_percentage,
+              existingLinksBeforeSync,
               notes,
               updatedAt: new Date().toISOString(),
             },
@@ -1599,34 +1605,43 @@ export class PropertyWorkerRunner {
         raw_payload: row.raw_payload,
       });
     }
+    let propertyMatchedGlobally = false;
     const linkedResult = await crm.findPropertyForPerson(
       primary.crm_record_id,
       property,
       unsafePersistedPropertyId ? [unsafePersistedPropertyId] : [],
     );
-    if (linkedResult.match) {
-      const verifiedLinkedProperty = await crm.verifyProperty(linkedResult.match.id, property);
-      if (!verifiedLinkedProperty.match || verifiedLinkedProperty.match.id !== linkedResult.match.id) {
+    // A property can legitimately be visible only under another co-owner.
+    // Never create a record until the immutable cadastral triple has also
+    // been searched in the whole CRM.
+    const globalResult = linkedResult.match ? null : await crm.findPropertyByCadastralIdentity(property);
+    const existingResult = linkedResult.match ? linkedResult : globalResult;
+    if (existingResult?.match) {
+      const verifiedLinkedProperty = await crm.verifyProperty(existingResult.match.id, property);
+      if (!verifiedLinkedProperty.match || verifiedLinkedProperty.match.id !== existingResult.match.id) {
         throw new WorkerError(
-          "L’immobile collegato al nominativo non supera la verifica catastale finale. Il worker non lo aggiornerà.",
+          "L’immobile trovato non supera la verifica catastale finale. Il worker non lo aggiornerà.",
           "needs_review",
           {
             action: "property-linked-identity-mismatch",
             propertyId: row.id,
-            crmPropertyId: linkedResult.match.id,
+            crmPropertyId: existingResult.match.id,
             crmPersonId: primary.crm_record_id,
             cadastralKey: row.cadastral_key,
           },
           true,
         );
       }
-      row.crm_record_id = linkedResult.match.id;
+      const foundThroughPrimary = Boolean(linkedResult.match);
+      propertyMatchedGlobally = !foundThroughPrimary;
+      row.crm_record_id = existingResult.match.id;
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         crm_match: verifiedLinkedProperty.match,
         checked_from_people: [primary.id],
         property_search: {
-          linkedToVerifiedPerson: true,
+          strategy: foundThroughPrimary ? "primary-person-cadastral" : "global-cadastral",
+          linkedToVerifiedPerson: foundThroughPrimary,
           searchedAt: new Date().toISOString(),
           personCrmId: primary.crm_record_id,
         },
@@ -1719,20 +1734,19 @@ export class PropertyWorkerRunner {
         true,
       );
     }
-    // The property was either found in the primary person's property list
-    // before this point, or created from that very list. Re-opening every
-    // property of the person after the direct cadastral verification is both
-    // redundant and fragile: Tecnocloud can expose that relation late, while
-    // the activity can already be created safely from the verified record ID.
-    // Keep the list scan exclusively before creation, where it prevents a
-    // duplicate; from here on, stay on this property.
+    // The property is now verified by immutable cadastral data, whether it
+    // was found under the selected person, globally under another owner, or
+    // created in this run. Do not reopen the person’s whole list: CRM can
+    // expose relationships late and that detour was the source of unrelated
+    // property hops. From here on, stay on this exact record ID.
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
     row.raw_payload = {
       ...(row.raw_payload ?? {}),
       property_sync: {
         complete: true,
         identityVerified: true,
-        linkedToVerifiedPerson: true,
+        linkedToVerifiedPerson: !propertyMatchedGlobally,
+        existingPropertyFoundGlobally: propertyMatchedGlobally,
         dryRun: this.config.WORKER_DRY_RUN,
         crmPropertyId: row.crm_record_id,
         primaryPersonId: primary.id,

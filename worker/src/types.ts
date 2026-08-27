@@ -224,6 +224,11 @@ export interface CrmAdapter {
   resetToCrmHome(): Promise<{ homeUrl: string; mergeDismissed: boolean; mergeDismissMethod: "none" | "cancel" | "home" }>;
   findLinkedPropertyByAddress(personId: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   findPropertyForPerson(personId: string, property: NormalizedProperty, excludedPropertyIds?: string[]): Promise<PropertyMatchResult>;
+  /**
+   * Last duplicate barrier: searches the whole CRM by the immutable cadastral
+   * triple, including properties linked to another owner.
+   */
+  findPropertyByCadastralIdentity(property: NormalizedProperty): Promise<PropertyMatchResult>;
   verifyProperty(id: string, property: NormalizedProperty): Promise<PropertyMatchResult>;
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;

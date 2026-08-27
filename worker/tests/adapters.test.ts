@@ -240,6 +240,52 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("trova nell'intero CRM l'immobile già collegato a un altro nominativo tramite terna catastale", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://crm.test/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.includes("/immobile/Immobile__c/Default")) {
+          await route.fulfill({ contentType: "text/html", body: `
+            <main>
+              <button data-worker-crm="propertyFiltersOpen">Filters</button>
+              <input data-worker-crm="propertySearchSheet" />
+              <input data-worker-crm="propertySearchParcel" />
+              <input data-worker-crm="propertySearchSubaltern" />
+              <button data-worker-crm="propertySearchSubmit">Applica</button>
+              <table><tbody><tr data-worker-crm="propertyResultRow">
+                <td><input data-worker-crm="propertyResultId" data-id="I-GLOBAL" /></td>
+              </tr></tbody></table>
+            </main>`, });
+          return;
+        }
+        if (url.pathname.includes("/s/immobile/I-GLOBAL")) {
+          await route.fulfill({ contentType: "text/html", body: `
+            <main>
+              <div data-worker-crm="propertySheetValue">50</div>
+              <div data-worker-crm="propertyParcelValue">2455</div>
+              <div data-worker-crm="propertySubalternValue">9</div>
+              <div data-worker-crm="propertyAddressValue">Via Roma 12, 70032 BITONTO (BA)</div>
+            </main>`, });
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: "<main>nominativo di partenza</main>" });
+      });
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-OTHER");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      const result = await adapter.findPropertyByCadastralIdentity({
+        municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9", address: "Via Roma 12",
+        censusZone: "U", category: "A/2", class: "3", consistency: "6 vani", cadastralIncome: null, rawPayload: {},
+      });
+
+      expect(result.match).toMatchObject({
+        id: "I-GLOBAL",
+        data: { source: "crm-global-cadastral-search", matchedBy: "cadastral-global", identityVerified: true },
+      });
+    } finally { await browser.close(); }
+  });
+
   it("mantiene univoci i selettori CRM calibrati sulla struttura reale", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

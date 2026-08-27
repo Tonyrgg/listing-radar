@@ -1579,6 +1579,105 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  async findPropertyByCadastralIdentity(property: NormalizedProperty): Promise<PropertyMatchResult> {
+    if (this.dryRun) return { match: null };
+    return this.friendly("property-global-cadastral-search", "Non riesco a cercare l’immobile per dati catastali nell’intero gestionale.", async () => {
+      this.require(
+        "propertyFiltersOpen",
+        "propertySearchSheet",
+        "propertySearchParcel",
+        "propertySearchSubaltern",
+        "propertySearchSubmit",
+        "propertyResultId",
+      );
+      const returnUrl = this.page.url();
+      const searchUrl = new URL(
+        `${CRM_PATH}/immobile/Immobile__c/Default?queryId=a0Q3Y00000ecOpjUAE`,
+        returnUrl,
+      ).toString();
+      await this.page.goto(searchUrl, { waitUntil: "domcontentloaded" });
+      await this.checkSession();
+
+      const sheet = this.visible(this.selectors.propertySearchSheet).first();
+      // The filter drawer can be restored open by CRM. Give its controls a
+      // short chance to hydrate before clicking Filters, otherwise we would
+      // accidentally close an already-open drawer.
+      const sheetAlreadyVisible = await sheet.waitFor({ state: "visible", timeout: 2_500 })
+        .then(() => true)
+        .catch(() => false);
+      if (!sheetAlreadyVisible) {
+        const filters = this.visible(this.selectors.propertyFiltersOpen).first();
+        // Lightning paints the toolbar after DOMContentLoaded. Wait for the
+        // actual command rather than treating that short render gap as a
+        // missing filter panel.
+        await filters.waitFor({ state: "visible", timeout: 12_000 }).catch(() => undefined);
+        if (!(await filters.count())) {
+          throw new WorkerError(
+            "La ricerca globale immobili non mostra i filtri catastali.",
+            "portal_error",
+            { portal: "CRM", action: "property-global-cadastral-filters" },
+            true,
+          );
+        }
+        await filters.click({ force: true });
+        await sheet.waitFor({ state: "visible", timeout: 12_000 });
+      }
+      const parcel = this.visible(this.selectors.propertySearchParcel).first();
+      const subaltern = this.visible(this.selectors.propertySearchSubaltern).first();
+      // Each Lightning filter recalculates the drawer. Filling them in
+      // parallel can make one of the values disappear before Applica.
+      await sheet.fill(property.sheet);
+      await parcel.fill(property.parcel);
+      await subaltern.fill(property.subaltern);
+      const submit = this.visible(this.selectors.propertySearchSubmit).last();
+      if (await submit.count() !== 1) {
+        throw new WorkerError(
+          "La ricerca globale immobili non mostra un solo pulsante Applica.",
+          "portal_error",
+          { portal: "CRM", action: "property-global-cadastral-submit", count: await submit.count() },
+          true,
+        );
+      }
+      await submit.click({ force: true });
+      await this.page.waitForTimeout(900);
+      await this.checkSession();
+
+      const ids = [...new Set(await this.visible(this.selectors.propertyResultId).evaluateAll((inputs) => inputs
+        .map((input) => input.getAttribute("data-id") ?? "")
+        .filter(Boolean)))];
+      const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
+      for (const id of ids) {
+        const verified = await this.verifyProperty(id, property);
+        if (!verified.match) continue;
+        matches.push({
+          id,
+          data: {
+            ...verified.match.data,
+            source: "crm-global-cadastral-search",
+            matchedBy: "cadastral-global",
+            identityVerified: true,
+          },
+        });
+      }
+      if (matches.length > 1) {
+        throw new WorkerError(
+          "La ricerca catastale globale ha trovato più immobili con la stessa terna. Il worker non sceglie una scheda casualmente.",
+          "needs_review",
+          { portal: "CRM", action: "property-global-cadastral-ambiguous", property, alternatives: matches },
+          true,
+        );
+      }
+      if (matches.length) return { match: matches[0]! };
+
+      // Creation is performed from the nominativo workspace. Put the browser
+      // back there when the global guard found nothing, otherwise the worker
+      // could press a valid but unrelated "Nuovo" from the result page.
+      await this.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
+      await this.checkSession();
+      return { match: null };
+    });
+  }
+
   private async fillProperty(property: NormalizedProperty) {
     const fields: Array<[keyof CrmSelectors, string]> = [
       ["propertyAddress", property.address ?? ""], ["propertySheet", property.sheet],
