@@ -1227,7 +1227,10 @@ export class PropertyWorkerRunner {
           const linkedOwnerIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
           const existingLinksBeforeSync = [...linkedOwnerIds];
           const allOwners = [primary, ...coowners];
-          for (const owner of allOwners) {
+          const ownersToLink = coowners.filter((owner) =>
+            owner.person.id !== primary.person.id
+            && owner.person.crm_record_id !== primary.person.crm_record_id);
+          for (const owner of ownersToLink) {
             this.throwIfPropertySkipRequested(job.id, property.id);
             if (!owner.person.crm_record_id || owner.ownership.share_percentage == null) {
               throw new WorkerError(

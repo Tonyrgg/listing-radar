@@ -16,6 +16,7 @@ const baseState = {
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
   configError: null, jobs: [], completedImports: [], version: "0.5.0",
   streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
+  retryMonitor: null,
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
 };
 const graph = {
@@ -98,6 +99,13 @@ await page.addInitScript(({ initialState, details }) => {
     } } };
     listeners.forEach((callback) => callback(state));
   };
+  window.__showRetryState = () => {
+    state = { ...state, active: true, retryMonitor: {
+      runType: "import", operation: "Attività immobile", attempt: 2, maximumAttempts: 3,
+      status: "waiting", nextRetryAt: new Date(Date.now() + 45_000).toISOString(), updatedAt: new Date().toISOString(),
+    } };
+    listeners.forEach((callback) => callback(state));
+  };
   window.__showStreetRunProgress = () => {
     streetRunProgressListeners.forEach((callback) => callback({
       phase: "reading-owners", variantIndex: 0, variantTotal: 2, variantSourceId: "542250",
@@ -178,6 +186,10 @@ await page.getByRole("button", { name: "Salta immobile" }).click();
 const workerCalls = await page.evaluate(() => window.__workerCalls());
 const propertyMonitorVisible = await page.getByText("Importazione di 7 immobili", { exact: true }).count();
 await page.screenshot({ path: path.join(output, "property-progress.png"), fullPage: false });
+await page.evaluate(() => window.__showRetryState());
+await page.screenshot({ path: path.join(output, "retry-monitor.png"), fullPage: false });
+const retryMonitorVisible = await page.locator("#retryMonitor:not(.is-hidden)").count();
+const retryAttemptVisible = await page.getByText("Prossimo tentativo 2 di 3", { exact: true }).count();
 await page.evaluate(() => window.__showUpdateState());
 await page.screenshot({ path: path.join(output, "update-available.png"), fullPage: true });
 await page.evaluate(() => window.__showCompletedState());
@@ -191,7 +203,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -202,6 +214,7 @@ const failures = [
   ...(requestMonitorVisible !== 1 ? ["Totale import richieste non visibile"] : []),
   ...(mandateMonitorVisible !== 1 ? ["Totale import incarichi non visibile"] : []),
   ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
+  ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
   ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
   ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),

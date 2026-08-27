@@ -206,6 +206,7 @@ function bringWorkerToFront() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.moveTop();
   mainWindow.focus();
   mainWindow.flashFrame(true);
   attentionTimer = setTimeout(() => {
@@ -606,10 +607,12 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
   if (event.type === "index") {
     requestImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} richieste individuate`, externalId: null, failed: 0, phase: "index" };
     pushActivity(`Archivio richieste: pagina ${event.page}, ${event.discovered} voci individuate`);
-  } else if (event.type === "progress" || event.type === "retry") {
+  } else if (event.type === "retry") {
+    requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: requestImportProgress?.failed ?? 0, phase: "detail" };
+    updateRetryMonitor("requests", event.telemetry);
+  } else if (event.type === "progress") {
     requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    if (event.type === "retry") updateRetryMonitor("requests", event.telemetry);
-    else pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
+    pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     requestImportProgress = { runId: event.run.id, index: event.run.processed_requests + event.run.failed_requests, total: event.run.total_requests, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_requests, phase: "detail" };
   }
@@ -666,10 +669,12 @@ async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
   if (event.type === "index") {
     mandateImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} incarichi individuati`, externalId: null, failed: 0, phase: "index" };
     pushActivity(`Archivio incarichi: pagina ${event.page}, ${event.discovered} voci individuate`);
-  } else if (event.type === "progress" || event.type === "retry") {
+  } else if (event.type === "retry") {
+    mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: mandateImportProgress?.failed ?? 0, phase: "detail" };
+    updateRetryMonitor("mandates", event.telemetry);
+  } else if (event.type === "progress") {
     mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    if (event.type === "retry") updateRetryMonitor("mandates", event.telemetry);
-    else pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
+    pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     mandateImportProgress = { runId: event.run.id, index: event.run.processed_mandates + event.run.failed_mandates, total: event.run.total_mandates, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_mandates, phase: "detail" };
   }
@@ -1590,6 +1595,7 @@ async function abandonStreetRun() {
 
 async function stopEverything() {
   clearAutoRetry();
+  clearRetryMonitor();
   const actions: string[] = [];
   const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive;
   stoppingAll = hadActiveOperation;
@@ -2058,6 +2064,7 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
+  if (attentionTimer) clearTimeout(attentionTimer);
 });
 
 app.on("window-all-closed", () => {

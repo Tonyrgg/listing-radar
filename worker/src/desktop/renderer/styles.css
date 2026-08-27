@@ -1012,6 +1012,45 @@ section > header p:last-child {
   transition: width 180ms ease;
 }
 
+.retry-monitor {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(280px, auto) auto;
+  align-items: center;
+  gap: var(--lr-space-5);
+  padding: var(--lr-space-3) var(--lr-space-4);
+  border: 1px solid var(--lr-line);
+  border-left: 4px solid var(--lr-accent);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-surface);
+}
+
+.retry-monitor h2 { margin-top: 2px; font-size: var(--lr-text-section); }
+.retry-monitor-copy > p:last-child { margin-top: 3px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+.retry-monitor.is-waiting { border-left-color: var(--lr-warn); background: var(--lr-warn-soft); }
+.retry-monitor.is-exhausted { border-left-color: var(--lr-danger); background: var(--lr-danger-soft); }
+
+.retry-attempts {
+  display: flex;
+  align-items: center;
+  gap: var(--lr-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.retry-attempts li { display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px; color: var(--lr-ink-3); }
+.retry-attempts li + li::before { content: ""; width: 24px; height: 1px; margin-right: 2px; background: var(--lr-line); }
+.retry-attempts li span { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--lr-line); border-radius: 50%; font-weight: 700; }
+.retry-attempts li small { font-size: var(--lr-text-meta); }
+.retry-attempts .is-current span { border-color: var(--lr-accent); color: var(--lr-accent); box-shadow: 0 0 0 4px var(--lr-accent-soft); }
+.retry-attempts .is-complete span,
+.retry-attempts .is-success span { border-color: var(--lr-accent); background: var(--lr-accent); color: var(--lr-accent-ink); }
+.retry-attempts .is-error span { border-color: var(--lr-danger); background: var(--lr-danger); color: white; }
+
+.retry-monitor-clock { min-width: 78px; text-align: right; }
+.retry-monitor-clock span { display: block; font-variant-numeric: tabular-nums; font-size: var(--lr-text-section); font-weight: 800; line-height: 1; }
+.retry-monitor-clock small { display: block; margin-top: 5px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+
 .run-controls {
   display: flex;
   align-items: stretch;
@@ -1821,6 +1860,15 @@ dialog[open] {
 
   .command-monitor > strong {
     grid-column: 2;
+  }
+
+  .retry-monitor {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .retry-attempts {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .run-controls {

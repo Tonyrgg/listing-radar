@@ -514,6 +514,7 @@ function renderRunControls() {
   const canScheduleStop =
     Boolean(appState?.active) ||
     Boolean(appState?.streetRun?.active) ||
+    Boolean(appState?.networkRun?.active) ||
     Boolean(appState?.requestArchive?.active) ||
     Boolean(appState?.mandateArchive?.active);
   const button = $("stopAfterNextImportButton");
@@ -530,6 +531,57 @@ function renderRunControls() {
     : canScheduleStop
       ? "Puoi richiedere la pausa in qualsiasi momento durante la run."
       : "Disponibile appena parte una run.";
+}
+
+function renderRetryMonitor() {
+  const panel = $("retryMonitor"), telemetry = appState?.retryMonitor;
+  if (!panel) return;
+  panel.classList.toggle("is-hidden", !telemetry);
+  if (!telemetry) return;
+
+  const runLabels = {
+    import: "Import immobili",
+    street: "Long run via",
+    network: "Esplorazione rete",
+    requests: "Sincronizzazione richieste",
+    mandates: "Sincronizzazione incarichi",
+  };
+  const maximum = Math.max(1, Number(telemetry.maximumAttempts) || 3);
+  const attempt = Math.max(1, Math.min(maximum, Number(telemetry.attempt) || 1));
+  const remainingSeconds = telemetry.nextRetryAt
+    ? Math.max(0, Math.ceil((new Date(telemetry.nextRetryAt).getTime() - Date.now()) / 1000))
+    : 0;
+  const elapsedSeconds = telemetry.status === "running" && telemetry.updatedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(telemetry.updatedAt).getTime()) / 1000))
+    : 0;
+  const clockSeconds = telemetry.status === "waiting" ? remainingSeconds : elapsedSeconds;
+  const minutes = String(Math.floor(clockSeconds / 60)).padStart(2, "0");
+  const seconds = String(clockSeconds % 60).padStart(2, "0");
+  const labels = {
+    running: [`Tentativo ${attempt} di ${maximum}`, "Il passaggio è in corso. Il timer misura da quanto sto lavorando."],
+    waiting: [`Prossimo tentativo ${attempt} di ${maximum}`, `Riprovo automaticamente tra ${remainingSeconds} secondi.`],
+    succeeded: ["Passaggio riuscito", `Completato al tentativo ${attempt} di ${maximum}.`],
+    exhausted: ["Tentativi esauriti", `Il passaggio richiede attenzione dopo ${maximum} tentativi.`],
+  };
+  const [title, detail] = labels[telemetry.status] ?? labels.running;
+  panel.className = `retry-monitor is-${telemetry.status}`;
+  $("retryMonitorTitle").textContent = title;
+  $("retryMonitorDetail").textContent = `${telemetry.operation}. ${detail}`;
+  $("retryMonitorRunType").textContent = runLabels[telemetry.runType] ?? "Run";
+  $("retryMonitorTimer").textContent = `${minutes}:${seconds}`;
+  $("retryMonitorAttempts").innerHTML = Array.from({ length: maximum }, (_, index) => {
+    const number = index + 1;
+    const state = telemetry.status === "succeeded" && number === attempt
+      ? "is-success"
+      : telemetry.status === "exhausted" && number <= attempt
+        ? "is-error"
+        : number < attempt
+          ? "is-complete"
+          : number === attempt
+            ? "is-current"
+            : "";
+    return `<li class="${state}"><span>${number}</span><small>${number === attempt ? "Ora" : number < attempt ? "Fatto" : "Pronto"}</small></li>`;
+  }).join("");
 }
 function completedJobs() {
   return (appState?.completedImports ?? []).map((item) => item.job);
@@ -1070,7 +1122,10 @@ function updateAutoRetryCountdown() {
     ? `Tentativo automatico ${attempt} di 3 tra ${seconds} secondi. Se anche il terzo fallisce, salto questo immobile e i suoi nominativi e continuo.`
     : "Riprova automatica in avvio…";
 }
-setInterval(updateAutoRetryCountdown, 1000);
+setInterval(() => {
+  updateAutoRetryCountdown();
+  renderRetryMonitor();
+}, 1000);
 renderCompletedImports = renderCompletedSessions;
 function renderRequestArchive() {
   const state = appState?.requestArchive ?? {},
@@ -1680,6 +1735,7 @@ function render() {
   renderSoftwareUpdate();
   renderStopAll();
   renderCommandMonitor();
+  renderRetryMonitor();
   renderRunControls();
 }
 async function runChecks() {

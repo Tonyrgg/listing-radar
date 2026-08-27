@@ -55,6 +55,19 @@
           <strong id="commandMonitorPosition">Pronto</strong>
         </section>
 
+        <section id="retryMonitor" class="retry-monitor is-hidden" aria-live="polite" aria-atomic="true">
+          <div class="retry-monitor-copy">
+            <p class="eyebrow">Protezione automatica</p>
+            <h2 id="retryMonitorTitle">Tentativo 1 di 3</h2>
+            <p id="retryMonitorDetail">Il passaggio è in corso.</p>
+          </div>
+          <ol id="retryMonitorAttempts" class="retry-attempts" aria-label="Tentativi disponibili"></ol>
+          <div class="retry-monitor-clock">
+            <span id="retryMonitorTimer">00:00</span>
+            <small id="retryMonitorRunType">Run</small>
+          </div>
+        </section>
+
         <section id="runControls" class="run-controls" aria-label="Controlli comuni delle run">
           <label class="safe-check" id="autoFillDirectContactControl">
             <input id="autoFillDirectContactToggle" type="checkbox" checked />

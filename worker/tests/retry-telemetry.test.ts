@@ -11,7 +11,13 @@ describe("telemetria tentativi", () => {
       calls += 1;
       if (calls < 2) throw new Error("temporaneo");
       return "ok";
-    }, { operation: "prova", delayMs: 1_000, onTelemetry: (event) => events.push(event) });
+    }, {
+      operation: "prova",
+      delayMs: 1_000,
+      onTelemetry: (event) => {
+        events.push(event);
+      },
+    });
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(promise).resolves.toBe("ok");
     expect(events.map(({ status, attempt }) => [status, attempt])).toEqual([

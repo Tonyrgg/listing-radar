@@ -589,7 +589,7 @@ describe("flusso identità nominativo e immobile", () => {
     internals.ensureProperty = vi.fn().mockImplementation(async () => { property.crm_record_id = "CRM-PROPERTY"; });
     internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
     const crm = {
-      findLinkedOwnerIds: vi.fn().mockResolvedValue(["CRM-PRIMARY"]),
+      findLinkedOwnerIds: vi.fn().mockResolvedValue([]),
       linkOwner: vi.fn().mockResolvedValue({
         linkId: "owner-link-CRM-COOWNER",
         selection: "phone",
@@ -619,6 +619,7 @@ describe("flusso identità nominativo e immobile", () => {
       expect.objectContaining({ personId: "CRM-COOWNER", phones: ["3331234567"] }),
       30,
     );
+    expect(crm.linkOwner).toHaveBeenCalledTimes(1);
     expect(repository.updateOwnership).toHaveBeenCalledWith(
       "ownership-coowner",
       expect.objectContaining({ crm_link_id: "owner-link-CRM-COOWNER", processing_status: "linked" }),
