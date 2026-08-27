@@ -1411,15 +1411,28 @@ function renderNetworkRun() {
   const state = appState?.networkRun ?? {}, checkpoint = state.checkpoint,
     active = Boolean(state.active), canResume = Boolean(checkpoint) && ["paused", "failed", "running"].includes(checkpoint.status) && !active;
   const start = $("networkRunStart"), cancel = $("networkRunCancel"), badge = $("networkRunBadge");
-  const ids = ["networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly"];
+  const ids = [
+    "networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
+    "networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge",
+    "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic",
+  ];
   if (checkpoint?.settings) {
     $("networkTargetProperties").value = checkpoint.settings.targetProperties;
     $("networkMaxDepth").value = checkpoint.settings.maxDepth;
     $("networkMinShare").value = checkpoint.settings.minSharePercentage;
     $("networkIncludeExisting").checked = checkpoint.settings.existingPropertyPolicy === "include_existing";
     $("networkResidentialOnly").checked = checkpoint.settings.residentialOnly !== false;
+    $("networkFloorMode").value = checkpoint.settings.floorMode ?? "any";
+    $("networkFloorValue").value = checkpoint.settings.floorValue ?? "";
+    $("networkMinOwnerAge").value = checkpoint.settings.minOwnerAge ?? "";
+    $("networkMaxOwnerAge").value = checkpoint.settings.maxOwnerAge ?? "";
+    $("networkMinOwnerCount").value = checkpoint.settings.minOwnerCount ?? "";
+    $("networkMaxOwnerCount").value = checkpoint.settings.maxOwnerCount ?? "";
+    $("networkMinCivic").value = checkpoint.settings.minCivicNumber ?? "";
+    $("networkMaxCivic").value = checkpoint.settings.maxCivicNumber ?? "";
   }
   ids.forEach((id) => { $(id).disabled = active || canResume; });
+  $("networkFloorValue").disabled = active || canResume || $("networkFloorMode").value === "any";
   badge.className = `status-pill ${active ? "is-running" : checkpoint?.status === "completed" ? "is-complete" : canResume ? "is-resumable" : "is-idle"}`;
   badge.innerHTML = `<span></span>${active ? (state.cancelling ? "Pausa in corso" : "Esplorazione") : checkpoint?.status === "completed" ? "Coda pronta" : canResume ? "Riprendibile" : "Mai avviata"}`;
   start.textContent = canResume ? "Riprendi esplorazione" : checkpoint?.status === "completed" ? "Avvia nuova esplorazione" : "Esplora e prepara coda";
@@ -1434,7 +1447,16 @@ function renderNetworkRun() {
     return;
   }
   const skipped = checkpoint.skipped ?? {}, skipTotal = Object.values(skipped).reduce((sum, value) => sum + Number(value || 0), 0);
-  $("networkRunSummary").innerHTML = `<div class="street-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div><dl><div><dt>In coda</dt><dd>${checkpoint.acceptedProperties ?? 0}/${checkpoint.settings.targetProperties}</dd></div><div><dt>Già CRM</dt><dd>${checkpoint.existingProperties ?? 0}</dd></div><div><dt>CF in attesa</dt><dd>${checkpoint.pending?.length ?? 0}</dd></div><div><dt>Scartati</dt><dd>${skipTotal}</dd></div></dl></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
+  const settings = checkpoint.settings;
+  const range = (min, max, suffix = "") => min == null && max == null ? null : min != null && max != null ? `${min}-${max}${suffix}` : min != null ? `da ${min}${suffix}` : `fino a ${max}${suffix}`;
+  const floorLabels = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
+  const activeFilters = [
+    settings.floorMode && settings.floorMode !== "any" && settings.floorValue != null ? `${floorLabels[settings.floorMode]} ${settings.floorValue}` : null,
+    range(settings.minOwnerAge, settings.maxOwnerAge, " anni"),
+    range(settings.minOwnerCount, settings.maxOwnerCount, " proprietari"),
+    range(settings.minCivicNumber, settings.maxCivicNumber, " civico"),
+  ].filter(Boolean);
+  $("networkRunSummary").innerHTML = `<div class="street-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div><dl><div><dt>In coda</dt><dd>${checkpoint.acceptedProperties ?? 0}/${checkpoint.settings.targetProperties}</dd></div><div><dt>Già CRM</dt><dd>${checkpoint.existingProperties ?? 0}</dd></div><div><dt>CF in attesa</dt><dd>${checkpoint.pending?.length ?? 0}</dd></div><div><dt>Scartati</dt><dd>${skipTotal}</dd></div></dl></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
   const progress = state.progress;
   const percent = checkpoint.settings.targetProperties ? Math.round(Math.min(100, ((progress?.acceptedProperties ?? checkpoint.acceptedProperties ?? 0) / checkpoint.settings.targetProperties) * 100)) : 0;
   $("networkRunProgress").classList.remove("is-hidden");
@@ -1852,6 +1874,14 @@ document.addEventListener("click", async (event) => {
             minSharePercentage: Number($("networkMinShare").value),
             existingPropertyPolicy: $("networkIncludeExisting").checked ? "include_existing" : "new_only",
             residentialOnly: $("networkResidentialOnly").checked,
+            floorMode: $("networkFloorMode").value,
+            floorValue: nullableNumber($("networkFloorValue").value),
+            minOwnerAge: nullableNumber($("networkMinOwnerAge").value),
+            maxOwnerAge: nullableNumber($("networkMaxOwnerAge").value),
+            minOwnerCount: nullableNumber($("networkMinOwnerCount").value),
+            maxOwnerCount: nullableNumber($("networkMaxOwnerCount").value),
+            minCivicNumber: nullableNumber($("networkMinCivic").value),
+            maxCivicNumber: nullableNumber($("networkMaxCivic").value),
           },
         });
       }
@@ -2125,6 +2155,10 @@ $("configurationForm").addEventListener("submit", async (event) => {
   } catch {}
 });
 $("streetRunDryRunToggle").addEventListener("change", () => renderStreetRun());
+$("networkFloorMode").addEventListener("change", () => {
+  $("networkFloorValue").disabled = $("networkFloorMode").value === "any";
+  if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
+});
 $("autoFillDirectContactToggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget;
   try {

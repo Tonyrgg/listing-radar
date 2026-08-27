@@ -12,7 +12,7 @@ import { runWithRetryTelemetry, type RetryTelemetry } from "../core/retry-teleme
 import { WorkerError } from "../core/errors.js";
 
 export type NetworkQueueNode = { taxCode: string; depth: number; discoveredFrom: string | null };
-export type NetworkSkipReason = "no_sister_properties" | "non_strategic_category" | "share_below_minimum" | "already_in_crm" | "without_owners" | "duplicate_in_run" | "sister_error";
+export type NetworkSkipReason = "no_sister_properties" | "non_strategic_category" | "share_below_minimum" | "already_in_crm" | "without_owners" | "duplicate_in_run" | "sister_error" | "floor_out_of_range" | "owner_age_out_of_range" | "owner_count_out_of_range" | "civic_out_of_range";
 
 export type SisterNetworkRunCheckpoint = {
   version: 1;
@@ -51,6 +51,7 @@ type Options = {
 
 const skipReasons: NetworkSkipReason[] = [
   "no_sister_properties", "non_strategic_category", "share_below_minimum", "already_in_crm", "without_owners", "duplicate_in_run", "sister_error",
+  "floor_out_of_range", "owner_age_out_of_range", "owner_count_out_of_range", "civic_out_of_range",
 ];
 
 function makeEmptySkips(): Record<NetworkSkipReason, number> {
@@ -85,7 +86,14 @@ export class SisterNetworkRun {
     let checkpoint = options.resume ?? createCheckpoint(jobId, settings, options.seeds);
     if (checkpoint.jobId !== jobId) throw new Error("Il checkpoint rete appartiene a un'altra lavorazione.");
     if (!checkpoint.pending.length && !checkpoint.acceptedProperties) throw new Error("Non esistono codici fiscali CRM verificati da cui avviare l'esplorazione.");
-    checkpoint = { ...checkpoint, status: "running", settings, lastError: null, updatedAt: new Date().toISOString() };
+    checkpoint = {
+      ...checkpoint,
+      status: "running",
+      settings,
+      skipped: { ...makeEmptySkips(), ...checkpoint.skipped },
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    };
     await this.publish(checkpoint, options);
 
     while (checkpoint.pending.length && checkpoint.acceptedProperties < settings.targetProperties && checkpoint.visitedTaxCodes.length < settings.maxPeople) {

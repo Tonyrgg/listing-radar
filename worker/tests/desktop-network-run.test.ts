@@ -14,6 +14,10 @@ describe("controlli desktop esplorazione rete", () => {
       readFile(path.join(root, "src/desktop/main.ts"), "utf8"),
     ]);
     expect(html).toContain('id="networkRunStart"');
+    for (const id of ["networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge", "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic"]) {
+      expect(html).toContain(`id="${id}"`);
+      expect(renderer).toContain(id);
+    }
     expect(html).toContain("Non importa nulla");
     expect(renderer).toContain("startNetworkRun");
     expect(preload).toContain("startNetworkRun");

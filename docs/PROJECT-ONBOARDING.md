@@ -374,6 +374,17 @@ La scansione civico per civico e la regola dei 50 civici vuoti restano come stra
 - Una variante fallita non viene interpretata come vuota e mette in pausa la run sulla stessa variante.
 - Una run reale incompleta resta salvata e correggibile; non avvia l'import.
 
+### Esplorazione della rete proprietaria
+
+La modalità «Segui una rete di proprietari» parte da codici fiscali verificati nel CRM, interroga SISTER e attraversa i comproprietari fino al limite impostato. Costruisce una coda senza avviare l'import. Prima del controllo CRM applica filtri facoltativi su:
+
+- piano esatto, da un piano in su oppure da un piano in giù (`0` terra, `-1` primo seminterrato);
+- età minima e massima di almeno un proprietario con data di nascita disponibile;
+- quantità minima e massima di proprietari dell'immobile;
+- intervallo numerico dei civici, usando il primo civico quando SISTER espone una sequenza.
+
+Gli immobili esclusi da questi filtri non consumano il limite della coda. Un dato necessario ma assente, come piano o data di nascita, non viene inventato: quando il relativo filtro è attivo l'immobile viene escluso e conteggiato nel primo motivo di scarto deterministico applicabile.
+
 ## 11. Sessione SISTER
 
 Il processo Electron esegue un keepalive silenzioso a intervallo casuale configurato, senza ricaricare la pagina visibile. Il controllo deve verificare marker autenticati e cookie applicativi.

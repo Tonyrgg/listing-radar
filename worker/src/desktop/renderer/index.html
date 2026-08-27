@@ -125,6 +125,38 @@
             <label>Immobili da ottenere<input id="networkTargetProperties" type="number" min="1" max="200" value="12" /></label>
             <label>Profondità della rete<input id="networkMaxDepth" type="number" min="0" max="8" value="3" /></label>
             <label>Quota minima %<input id="networkMinShare" type="number" min="0" max="100" value="0" /></label>
+            <fieldset class="network-filter-set">
+              <legend>Quali immobili devono entrare in coda</legend>
+              <p>I filtri sono facoltativi e vengono applicati prima del controllo CRM, quindi gli esclusi non consumano uno slot.</p>
+              <div class="network-filter-grid">
+                <div class="network-filter-row">
+                  <label for="networkFloorMode">Piano</label>
+                  <select id="networkFloorMode">
+                    <option value="any">Qualsiasi piano</option>
+                    <option value="exact">Solo questo piano</option>
+                    <option value="minimum">Da questo piano in su</option>
+                    <option value="maximum">Da questo piano in giù</option>
+                  </select>
+                  <label class="compact-field" for="networkFloorValue">Valore<input id="networkFloorValue" type="number" min="-10" max="100" placeholder="0 = terra" disabled /></label>
+                </div>
+                <div class="network-filter-row">
+                  <span>Età di almeno un proprietario</span>
+                  <label class="compact-field" for="networkMinOwnerAge">Da<input id="networkMinOwnerAge" type="number" min="0" max="120" placeholder="min" /></label>
+                  <label class="compact-field" for="networkMaxOwnerAge">A<input id="networkMaxOwnerAge" type="number" min="0" max="120" placeholder="max" /></label>
+                </div>
+                <div class="network-filter-row">
+                  <span>Numero di proprietari</span>
+                  <label class="compact-field" for="networkMinOwnerCount">Da<input id="networkMinOwnerCount" type="number" min="1" max="100" placeholder="min" /></label>
+                  <label class="compact-field" for="networkMaxOwnerCount">A<input id="networkMaxOwnerCount" type="number" min="1" max="100" placeholder="max" /></label>
+                </div>
+                <div class="network-filter-row">
+                  <span>Intervallo civici</span>
+                  <label class="compact-field" for="networkMinCivic">Da<input id="networkMinCivic" type="number" min="0" max="999999" placeholder="min" /></label>
+                  <label class="compact-field" for="networkMaxCivic">A<input id="networkMaxCivic" type="number" min="0" max="999999" placeholder="max" /></label>
+                </div>
+              </div>
+              <small>Piani: terra = 0, primo = 1, seminterrato = -1. Un campo vuoto non limita la ricerca.</small>
+            </fieldset>
             <label class="safe-check"><input id="networkIncludeExisting" type="checkbox" /><span><b>Includi immobili già nel CRM</b><small>Se disattivo, gli esistenti non consumano uno slot.</small></span></label>
             <label class="safe-check"><input id="networkResidentialOnly" type="checkbox" checked /><span><b>Solo abitazioni</b><small>Esclude box, cantine e categorie C/.</small></span></label>
             <button id="networkRunStart" class="button primary">Esplora e prepara coda</button>

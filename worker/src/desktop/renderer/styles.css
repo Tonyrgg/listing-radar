@@ -1705,6 +1705,66 @@ dialog[open] {
 .network-run-controls input[type="number"] { min-height: 44px; width: 100%; }
 .network-run-card { border-color: color-mix(in srgb, #526d35 46%, var(--lr-line)); }
 
+.network-filter-set {
+  grid-column: 1 / -1;
+  margin: var(--lr-space-2) 0 0;
+  padding: var(--lr-space-4) 0;
+  border: 0;
+  border-block: 1px solid var(--lr-line-quiet);
+}
+
+.network-filter-set legend {
+  padding: 0;
+  color: var(--lr-ink);
+  font-size: var(--lr-text-record);
+  font-weight: var(--lr-weight-strong);
+}
+
+.network-filter-set > p,
+.network-filter-set > small {
+  display: block;
+  margin-top: var(--lr-space-1);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.network-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px var(--lr-space-5);
+  margin-block: var(--lr-space-3);
+  background: var(--lr-line-quiet);
+}
+
+.network-filter-row {
+  display: grid;
+  grid-template-columns: minmax(145px, 1fr) minmax(90px, 0.85fr) minmax(90px, 0.85fr);
+  align-items: end;
+  gap: var(--lr-space-2);
+  min-width: 0;
+  padding-block: var(--lr-space-3);
+  background: var(--lr-surface);
+}
+
+.network-filter-row > label:first-child,
+.network-filter-row > span {
+  align-self: center;
+  color: var(--lr-ink);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-medium);
+}
+
+.network-filter-row select,
+.network-filter-row input {
+  width: 100%;
+  min-height: var(--lr-control-height);
+}
+
+.network-filter-row select { grid-column: 2; }
+.network-filter-row select + .compact-field { grid-column: 3; }
+.compact-field { display: grid; gap: var(--lr-space-1); color: var(--lr-ink-2); font-size: var(--lr-text-label); }
+.network-filter-row input:disabled { cursor: not-allowed; opacity: 0.48; }
+
 /* Niente varianti a più colonne: la scheda vive in mezza schermata, e le
  * @media guardano la finestra, non lo spazio che la scheda ha davvero. Una
  * colonna sola è l'unica larghezza che non si sbriciola. */
@@ -1822,6 +1882,10 @@ dialog[open] {
   .network-run-controls,
   .street-run-current {
     grid-template-columns: 1fr;
+  }
+
+  .network-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .street-run-current dl {
