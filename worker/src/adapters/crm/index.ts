@@ -1306,6 +1306,80 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await choice.click({ force: true });
       selected += 1;
     }
+
+    // Phone fields are different from the other merge fields: selecting the
+    // importer on every row can discard a second CRM number. Evaluate the
+    // small left/right matrix and choose the combination that keeps every
+    // importer number, then the greatest number of distinct phones. When
+    // equally good, prefer the CRM-side value that adds a number not present
+    // in Excel (the importer value remains in another field).
+    const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"];
+    const phoneRows: Array<{
+      label: string;
+      left: { value: string; choice: Locator } | null;
+      right: { value: string; choice: Locator } | null;
+    }> = [];
+    const candidates: Array<{ choice: Locator; box: { x: number; y: number; width: number; height: number }; text: string }> = [];
+    for (let index = 0; index < count; index += 1) {
+      const choice = choices.nth(index);
+      const box = await choice.boundingBox();
+      if (!box) continue;
+      candidates.push({ choice, box, text: (await choice.innerText().catch(() => "")).trim() });
+    }
+    const phoneValue = (text: string) => normalizePhone(text.match(/(?:\+?\d[\d\s()./-]{6,}\d)/)?.[0] ?? text);
+    for (const label of phoneLabels) {
+      const labelBoxes = await dialog.locator("*").evaluateAll((elements, expectedLabel) => elements
+        .filter((element) => element.children.length === 0 && (element.textContent ?? "").trim() === expectedLabel)
+        .map((element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        }), label);
+      const labelBox = labelBoxes[0] ?? null;
+      if (!labelBox) continue;
+      const rowCandidates = candidates.filter(({ box }) => Math.abs((box.y + box.height / 2) - (labelBox.y + labelBox.height / 2)) <= Math.max(22, labelBox.height * 1.6));
+      const bySide = (side: "left" | "right") => {
+        const eligible = rowCandidates.filter(({ box }) => {
+          const relativeLeft = (box.x - dialogBox.x) / dialogBox.width;
+          return side === "left" ? relativeLeft >= 0.35 && relativeLeft < 0.64 : relativeLeft >= 0.64 && relativeLeft < 0.96;
+        });
+        eligible.sort((a, b) => b.box.width * b.box.height - a.box.width * a.box.height);
+        const item = eligible[0];
+        return item ? { value: phoneValue(item.text), choice: item.choice } : null;
+      };
+      const left = bySide("left");
+      const right = bySide("right");
+      if (left || right) phoneRows.push({ label, left, right });
+    }
+    if (phoneRows.length) {
+      const importerPhones = new Set(phoneRows.map((row) => row.left?.value).filter((value): value is string => Boolean(value)));
+      let best: { indexes: number[]; coverage: number; distinct: number; cloudAdds: number } | null = null;
+      const combinations = 1 << phoneRows.length;
+      for (let mask = 0; mask < combinations; mask += 1) {
+        const values = phoneRows.map((row, index) => ((mask >> index) & 1) ? row.right?.value : row.left?.value).filter((value): value is string => Boolean(value));
+        const unique = new Set(values);
+        const coverage = [...importerPhones].filter((value) => unique.has(value)).length;
+        const cloudAdds = phoneRows.reduce((total, row, index) => {
+          const value = ((mask >> index) & 1) ? row.right?.value : row.left?.value;
+          return total + (value && !importerPhones.has(value) ? 1 : 0);
+        }, 0);
+        const candidate = { indexes: phoneRows.map((_, index) => ((mask >> index) & 1)), coverage, distinct: unique.size, cloudAdds };
+        if (!best
+          || candidate.coverage > best.coverage
+          || (candidate.coverage === best.coverage && candidate.distinct > best.distinct)
+          || (candidate.coverage === best.coverage && candidate.distinct === best.distinct && candidate.cloudAdds > best.cloudAdds)) {
+          best = candidate;
+        }
+      }
+      if (best) {
+        for (let index = 0; index < phoneRows.length; index += 1) {
+          if (!best.indexes[index]) continue;
+          const right = phoneRows[index]!.right;
+          if (!right?.value) continue;
+          await right.choice.scrollIntoViewIfNeeded();
+          await right.choice.click({ force: true });
+        }
+      }
+    }
     return selected;
   }
 

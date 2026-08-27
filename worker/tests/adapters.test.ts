@@ -608,6 +608,35 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("sui recapiti mantiene il numero Excel e recupera il telefono CRM nel campo secondario", async () => {
+      const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+      await page.route("https://example.test/**", (route) => route.fulfill({ body: "<!doctype html><body></body>" }));
+      await page.goto("https://example.test/CRMImmobiliareLightning/s/account/P-99");
+      await page.setContent(`<!doctype html><body>
+        <section role="dialog" style="position:absolute;left:0;top:0;width:1000px;height:620px">
+          <h2>Riconcilia</h2><strong>Merge dei campi</strong>
+          <span style="position:absolute;left:40px;top:180px">Cellulare</span>
+          <button class="merge-cell" data-field="mobile" data-side="left" onclick="this.dataset.selected='true'" style="position:absolute;left:400px;top:170px;width:220px;height:34px">3455595769</button>
+          <button class="merge-cell" data-field="mobile" data-side="right" onclick="this.dataset.selected='true'" style="position:absolute;left:680px;top:170px;width:220px;height:34px">3387282027</button>
+          <span style="position:absolute;left:40px;top:230px">Altro telefono</span>
+          <button class="merge-cell" data-field="other" data-side="left" onclick="this.dataset.selected='true'" style="position:absolute;left:400px;top:220px;width:220px;height:34px">-vuoto-</button>
+          <button class="merge-cell" data-field="other" data-side="right" onclick="this.dataset.selected='true'" style="position:absolute;left:680px;top:220px;width:220px;height:34px">3455595769</button>
+          <p>Tutti i campi sono stati riconciliati. Si può procedere al salvataggio</p>
+          <button style="position:absolute;right:20px;bottom:20px" onclick="document.body.dataset.mergeSaved='true';this.closest('[role=dialog]').hidden=true">Salva</button>
+        </section>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, false, crmSelectors);
+
+      await expect(adapter.confirmPersonMerge()).resolves.toMatchObject({ status: "completed", personId: "P-99" });
+      expect(await page.locator('[data-field="mobile"][data-side="left"]').getAttribute("data-selected")).toBe("true");
+      expect(await page.locator('[data-field="mobile"][data-side="right"]').getAttribute("data-selected")).toBe("true");
+      expect(await page.locator('[data-field="other"][data-side="right"]').getAttribute("data-selected")).toBe("true");
+      expect(await page.locator('[data-field="other"][data-side="left"]').getAttribute("data-selected")).toBe("true");
+    } finally { await browser.close(); }
+  }, 15_000);
+
   it("chiude con Annulla una riconciliazione non confermabile prima di cambiare caso", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
