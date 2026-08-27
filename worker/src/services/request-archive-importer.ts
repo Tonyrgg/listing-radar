@@ -4,28 +4,24 @@ import { collectCrmRequestArchive, extractCrmRequestDetail, normalizeCrmRequest 
 import type { WorkerConfig } from "../config.js";
 import { connectToRequestArchiveChrome } from "./chrome.js";
 import { WorkerRepository, type CrmRequestImportRunRow } from "./repository.js";
+import { runWithRetryTelemetry, type RetryTelemetry } from "../core/retry-telemetry.js";
 
 export type RequestArchiveImportEvent =
   | { type: "index"; page: number; discovered: number }
   | { type: "progress"; runId: string; index: number; total: number; title: string; externalId: string; failed: number }
+  | { type: "retry"; runId: string; index: number; total: number; title: string; externalId: string; telemetry: RetryTelemetry }
   | { type: "complete"; run: CrmRequestImportRunRow };
 
 export function requestItemsStillToProcess<T extends { status: string }>(items: T[]) {
   return items.filter((item) => item.status !== "completed");
 }
 
-async function openAndExtractRequestDetail(page: Page, sourceUrl: string) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await page.goto(sourceUrl, { waitUntil: "commit", timeout: 45_000 });
-      return await extractCrmRequestDetail(page);
-    } catch (error) {
-      lastError = error;
-      if (attempt === 0) await page.goto("about:blank", { waitUntil: "commit", timeout: 10_000 }).catch(() => undefined);
-    }
-  }
-  throw lastError;
+async function openAndExtractRequestDetail(page: Page, sourceUrl: string, onTelemetry?: (telemetry: RetryTelemetry) => void | Promise<void>) {
+  return runWithRetryTelemetry(async (attempt) => {
+    if (attempt > 1) await page.goto("about:blank", { waitUntil: "commit", timeout: 10_000 }).catch(() => undefined);
+    await page.goto(sourceUrl, { waitUntil: "commit", timeout: 45_000 });
+    return extractCrmRequestDetail(page);
+  }, { operation: "Apertura richiesta CRM", maximumAttempts: 3, delayMs: 3_000, onTelemetry });
 }
 
 export class RequestArchiveImporter {
@@ -107,7 +103,10 @@ export class RequestArchiveImporter {
           title: item.title ?? item.external_crm_id, externalId: item.external_crm_id, failed,
         });
         try {
-          const detail = await openAndExtractRequestDetail(detailPage, item.source_url);
+          const detail = await openAndExtractRequestDetail(detailPage, item.source_url, (telemetry) => this.options.onEvent?.({
+            type: "retry", runId: run!.id, index: processed + failed + 1, total: items.length,
+            title: item.title ?? item.external_crm_id, externalId: item.external_crm_id, telemetry,
+          }));
           const requestId = await this.repository.saveArchivedCrmRequest(item.id, detail, normalizeCrmRequest(detail));
           processed += 1;
           await this.repository.markRequestImportItem(item.id, {

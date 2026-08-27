@@ -31,6 +31,7 @@ import {
   type SisterNetworkRunProgress,
 } from "../services/sister-network-run.js";
 import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../core/network-exploration.js";
+import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -59,6 +60,10 @@ type DiagnosticErrorItem = {
   details: Record<string, unknown>;
 };
 type KeepAliveState = SisterKeepAliveResult & { nextAttemptAt: string | null; statusLabel: "waiting" | "active" | "expired" | "error" | "disabled" };
+type RetryMonitorState = RetryTelemetry & {
+  runType: "import" | "street" | "network" | "requests" | "mandates";
+  updatedAt: string;
+};
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
@@ -127,6 +132,8 @@ let autoRetryAt: string | null = null;
 let autoRetryJobId: string | null = null;
 let autoRetryAttemptNumber: number | null = null;
 let automaticRetryInFlight: { jobId: string; propertyId: string; attempt: number } | null = null;
+let retryMonitor: RetryMonitorState | null = null;
+let attentionTimer: ReturnType<typeof setTimeout> | null = null;
 let completedImportsLimit = 6;
 let requestImportActive = false;
 let requestImportCancellationRequested = false;
@@ -178,6 +185,47 @@ function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
       await appendFile(operationLogPath(), `${JSON.stringify(entry)}\n`, "utf8");
     })
     .catch(() => undefined);
+}
+
+function updateRetryMonitor(runType: RetryMonitorState["runType"], telemetry: RetryTelemetry) {
+  retryMonitor = { ...telemetry, runType, updatedAt: new Date().toISOString() };
+  void publishState();
+}
+
+function beginRetryMonitor(runType: RetryMonitorState["runType"], operation: string) {
+  updateRetryMonitor(runType, { operation, attempt: 1, maximumAttempts: 3, status: "running", nextRetryAt: null });
+}
+
+function clearRetryMonitor() {
+  retryMonitor = null;
+}
+
+function bringWorkerToFront() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (attentionTimer) clearTimeout(attentionTimer);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.focus();
+  mainWindow.flashFrame(true);
+  attentionTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.flashFrame(false);
+  }, 1_200);
+  attentionTimer.unref?.();
+}
+
+function reportRunInterruption(runType: RetryMonitorState["runType"], operation: string) {
+  const current = retryMonitor?.runType === runType ? retryMonitor : null;
+  updateRetryMonitor(runType, {
+    operation,
+    attempt: current?.attempt ?? 3,
+    maximumAttempts: current?.maximumAttempts ?? 3,
+    status: "exhausted",
+    nextRetryAt: null,
+  });
+  bringWorkerToFront();
 }
 
 function preferencesPath() {
@@ -464,6 +512,7 @@ async function stateSnapshot() {
       ? { jobId: autoRetryJobId, dueAt: autoRetryAt, attempt: autoRetryAttemptNumber, maximumAttempts: 3 }
       : null,
     autoRetryEnabled: preferences.autoRetryEnabled,
+    retryMonitor,
     prompt,
     lastError,
     sisterKeepAlive,
@@ -557,9 +606,10 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
   if (event.type === "index") {
     requestImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} richieste individuate`, externalId: null, failed: 0, phase: "index" };
     pushActivity(`Archivio richieste: pagina ${event.page}, ${event.discovered} voci individuate`);
-  } else if (event.type === "progress") {
+  } else if (event.type === "progress" || event.type === "retry") {
     requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
+    if (event.type === "retry") updateRetryMonitor("requests", event.telemetry);
+    else pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     requestImportProgress = { runId: event.run.id, index: event.run.processed_requests + event.run.failed_requests, total: event.run.total_requests, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_requests, phase: "detail" };
   }
@@ -572,6 +622,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
   requestImportCancellationRequested = false;
   requestImportError = null;
   requestImportProgress = null;
+  beginRetryMonitor("requests", "Sincronizzazione richieste CRM");
   pushActivity(resumeRunId ? "Ripresa sincronizzazione archivio richieste" : "Sincronizzazione archivio richieste avviata");
   await publishState();
   const importer = new RequestArchiveImporter(workerConfig(), repository(), {
@@ -581,15 +632,18 @@ async function runRequestArchiveImport(resumeRunId?: string) {
   });
   activeRequestImporter = importer;
   void importer.run(resumeRunId).then((run) => {
+    clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione richieste interrotta: l’avanzamento è stato salvato", "warning");
     else if (run.failed_requests) pushActivity(`Sincronizzazione conclusa con ${run.failed_requests} richieste da riprovare`, "warning");
     else pushActivity(`${run.processed_requests} richieste immobiliari sincronizzate`, "success");
   }).catch((error) => {
     if (requestImportCancellationRequested) {
+      clearRetryMonitor();
       pushActivity("Sincronizzazione richieste interrotta dall'operatore", "warning");
       return;
     }
     requestImportError = error instanceof Error ? error.message : String(error);
+    reportRunInterruption("requests", "Sincronizzazione richieste interrotta");
     pushActivity(requestImportError, "error");
     void recordDiagnosticErrorSafely({
       source: "request-archive",
@@ -612,9 +666,10 @@ async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
   if (event.type === "index") {
     mandateImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} incarichi individuati`, externalId: null, failed: 0, phase: "index" };
     pushActivity(`Archivio incarichi: pagina ${event.page}, ${event.discovered} voci individuate`);
-  } else if (event.type === "progress") {
+  } else if (event.type === "progress" || event.type === "retry") {
     mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
+    if (event.type === "retry") updateRetryMonitor("mandates", event.telemetry);
+    else pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     mandateImportProgress = { runId: event.run.id, index: event.run.processed_mandates + event.run.failed_mandates, total: event.run.total_mandates, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_mandates, phase: "detail" };
   }
@@ -627,6 +682,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   mandateImportCancellationRequested = false;
   mandateImportError = null;
   mandateImportProgress = null;
+  beginRetryMonitor("mandates", "Sincronizzazione incarichi CRM");
   pushActivity(resumeRunId ? "Ripresa sincronizzazione archivio incarichi" : "Sincronizzazione archivio incarichi avviata");
   await publishState();
   const importer = new MandateArchiveImporter(workerConfig(), repository(), {
@@ -636,15 +692,18 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   });
   activeMandateImporter = importer;
   void importer.run(resumeRunId).then((run) => {
+    clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione incarichi interrotta: l'avanzamento è stato salvato", "warning");
     else if (run.failed_mandates) pushActivity(`Sincronizzazione conclusa con ${run.failed_mandates} incarichi da riprovare`, "warning");
     else pushActivity(`${run.processed_mandates} immobili con incarico sincronizzati`, "success");
   }).catch((error) => {
     if (mandateImportCancellationRequested) {
+      clearRetryMonitor();
       pushActivity("Sincronizzazione incarichi interrotta dall'operatore", "warning");
       return;
     }
     mandateImportError = error instanceof Error ? error.message : String(error);
+    reportRunInterruption("mandates", "Sincronizzazione incarichi interrotta");
     pushActivity(mandateImportError, "error");
     void recordDiagnosticErrorSafely({
       source: "mandate-archive",
@@ -680,6 +739,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   streetRunAbandonRequested = false;
   streetRunError = null;
   streetRunProgress = null;
+  beginRetryMonitor("street", "Acquisizione via SISTER");
   pushActivity(
     input.resume
       ? `Ripresa ${longRunMode === "dry_run" ? "dry-run" : "run reale"} via ${street}`
@@ -736,12 +796,14 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           for (const owner of owners) await liveRepository.insertOwner(importJobId!, savedProperty.id, owner);
         } : undefined,
         onProgress: (progress) => publishStreetRunProgress(progress),
+        onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
           await publishState();
         },
       });
       const result = await scanner.run(street, resumeCheckpoint);
+      if (["completed", "paused"].includes(result.status)) clearRetryMonitor();
       if (liveRepository && result.importJobId) {
         const graph = await liveRepository.loadGraph(result.importJobId);
         let activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
@@ -824,10 +886,12 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     }
   }).catch((error) => {
     if (streetRunAbandonRequested) {
+      clearRetryMonitor();
       pushActivity("Run via arrestata dall'operatore", "warning");
       return;
     }
     streetRunError = error instanceof Error ? error.message : String(error);
+    reportRunInterruption("street", "Acquisizione via interrotta");
     pushActivity(streetRunError, "error");
     void recordDiagnosticErrorSafely({
       source: "street-run",
@@ -881,6 +945,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
   networkRunCancellationRequested = false;
   networkRunError = null;
   networkRunProgress = null;
+  beginRetryMonitor("network", "Esplorazione rete proprietaria");
   pushActivity(input.resume ? "Ripresa esplorazione rete proprietaria" : "Esplorazione rete proprietaria avviata", "info");
   await publishState();
 
@@ -910,12 +975,14 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           networkRunProgress = progress;
           void publishState();
         },
+        onRetryTelemetry: (telemetry) => updateRetryMonitor("network", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistNetworkRunCheckpoint(checkpoint);
           await publishState();
         },
       });
       const graph = await liveRepository.loadGraph(jobId);
+      if (["completed", "paused"].includes(result.status)) clearRetryMonitor();
       if (result.status === "completed" && graph.properties.length) {
         await Promise.all([
           ...graph.properties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
@@ -946,6 +1013,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     }
   }).catch((error) => {
     networkRunError = error instanceof Error ? error.message : String(error);
+    reportRunInterruption("network", "Esplorazione rete interrotta");
     pushActivity(networkRunError, "error");
   }).finally(async () => {
     networkRunActive = false;
@@ -963,6 +1031,7 @@ async function publishState() {
 
 function publishPrompt(value: DesktopPrompt | null) {
   prompt = value;
+  if (value) bringWorkerToFront();
   void publishState();
 }
 
@@ -1112,6 +1181,13 @@ async function scheduleAutoRetry(jobId: string) {
   autoRetryJobId = jobId;
   autoRetryAttemptNumber = Math.min(completedAttempts + 1, 3);
   autoRetryAt = new Date(Date.now() + 60_000).toISOString();
+  updateRetryMonitor("import", {
+    operation: "Recupero automatico dell'immobile",
+    attempt: autoRetryAttemptNumber,
+    maximumAttempts: 3,
+    status: "waiting",
+    nextRetryAt: autoRetryAt,
+  });
   autoRetryTimer = setTimeout(async () => {
     if (active || cancellingJobId || activeJobId !== jobId) {
       await scheduleAutoRetry(jobId);
@@ -1124,6 +1200,10 @@ async function scheduleAutoRetry(jobId: string) {
         ? currentJob.error_details.propertyId
         : propertyId;
       const attempt = autoRetryAttemptNumber ?? 1;
+      updateRetryMonitor("import", {
+        operation: "Recupero automatico dell'immobile", attempt, maximumAttempts: 3,
+        status: "running", nextRetryAt: null,
+      });
       if (currentPropertyId) {
         const graph = await repo.loadGraph(jobId);
         const property = graph.properties.find((row) => row.id === currentPropertyId);
@@ -1205,6 +1285,7 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity(`Terminato: ${friendlyStepLabel(event.step)}`, "success");
   } else if (event.type === "job-completed") {
     clearAutoRetry();
+    clearRetryMonitor();
     automaticRetryInFlight = null;
     currentStep = "completed";
     propertyProgress = null;
@@ -1213,6 +1294,7 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
     clearAutoRetry();
+    clearRetryMonitor();
     automaticRetryInFlight = null;
     currentStep = "properties_processed";
     propertyProgress = null;
@@ -1224,13 +1306,16 @@ function handleRunnerEvent(event: RunnerEvent) {
     propertyProgress = { propertyId: event.propertyId, index: event.index, total: event.total, address: event.address, stage: event.stage, message: event.message };
     pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
   } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
+    clearRetryMonitor();
     pushActivity("Arresto del processo completato", "warning");
   } else if (event.details.pauseRequested === true && pausingJobId === event.jobId) {
+    clearRetryMonitor();
     prompt = null;
     propertyProgress = null;
     pushActivity("Lavorazione messa in pausa: il checkpoint è stato salvato", "warning");
   } else {
     lastError = event.message;
+    bringWorkerToFront();
     pushActivity(event.message, "error");
     void recordDiagnosticErrorSafely({
       source: "worker",
@@ -1244,10 +1329,12 @@ function handleRunnerEvent(event: RunnerEvent) {
     const failedPropertyId = typeof event.details.propertyId === "string" ? event.details.propertyId : null;
     if (retry && retry.jobId === event.jobId && retry.propertyId === failedPropertyId && retry.attempt >= 3) {
       clearAutoRetry();
+      reportRunInterruption("import", "Tentativi automatici esauriti");
       void skipAfterAutomaticRetries(event.jobId, retry.propertyId, event.message, retry.attempt);
     } else if (preferences.autoRetryEnabled && failedPropertyId && canAutomaticallyRecoverPropertyFailure(event.status, event.details)) {
       void scheduleAutoRetry(event.jobId);
     } else {
+      reportRunInterruption("import", "Import interrotto: serve attenzione");
       pushActivity(
         preferences.autoRetryEnabled
           ? "Questo arresto richiede un intervento manuale: pausa, sessione o salvataggio non verificato non vengono forzati"
@@ -1393,6 +1480,13 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("È già presente una lavorazione in esecuzione");
   clearAutoRetry();
+  updateRetryMonitor("import", {
+    operation: "Importazione immobile nel CRM",
+    attempt: automaticRetryInFlight?.attempt ?? 1,
+    maximumAttempts: 3,
+    status: "running",
+    nextRetryAt: null,
+  });
   let forceLiveImport = false;
   if (input.jobId) {
     const pendingJob = await repository().getJob(input.jobId);

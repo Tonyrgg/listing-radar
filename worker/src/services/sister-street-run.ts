@@ -5,6 +5,7 @@ import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey, selectSisterAddressForStreet } from "../core/normalize.js";
 import type { CadastralOwner, CadastralProperty } from "../types.js";
+import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import {
   exactStreetVariants,
   normalizeSisterStreet,
@@ -85,6 +86,7 @@ type StreetRunOptions = {
   onProgress?: (progress: SisterStreetRunProgress) => void | Promise<void>;
   isCancelled?: () => boolean;
   onCheckpoint?: (checkpoint: SisterStreetRunCheckpoint) => void | Promise<void>;
+  onRetryTelemetry?: (telemetry: RetryTelemetry) => void | Promise<void>;
 };
 
 const SEARCH_FORM = 'form[name="ricercaIndForm"]';
@@ -506,13 +508,17 @@ export class SisterStreetRun {
     let lastRecoveryError: unknown = null;
     for (let attempt = 1; attempt <= this.maxQueryAttempts; attempt += 1) {
       const startedAt = Date.now();
+      await this.options.onRetryTelemetry?.({
+        operation: "Interrogazione SISTER della via", attempt, maximumAttempts: this.maxQueryAttempts,
+        status: "running", nextRetryAt: null,
+      });
       try {
         await this.ensureAddressList(requestedStreet);
         const liveOptions = exactStreetVariants(requestedStreet, await readOptions(this.page.locator(ADDRESS_SELECT)));
         const liveVariant = liveOptions.find((candidate) => candidate.key === variant.key)
           ?? liveOptions.find((candidate) => candidate.sourceId === variant.sourceId);
         if (!liveVariant) throw new Error(`Variante SISTER ${variant.sourceId} non più disponibile`);
-        return await this.queryOnce(
+        const result = await this.queryOnce(
           liveVariant,
           civicNumber,
           startedAt,
@@ -520,9 +526,20 @@ export class SisterStreetRun {
           variantTotal,
           previousPartial,
         );
+        await this.options.onRetryTelemetry?.({
+          operation: "Interrogazione SISTER della via", attempt, maximumAttempts: this.maxQueryAttempts,
+          status: "succeeded", nextRetryAt: null,
+        });
+        return result;
       } catch (error) {
         lastError = error;
-        if (error instanceof WorkerError && error.status === "session_expired") throw error;
+        if (error instanceof WorkerError && error.status === "session_expired") {
+          await this.options.onRetryTelemetry?.({
+            operation: "Interrogazione SISTER della via", attempt, maximumAttempts: this.maxQueryAttempts,
+            status: "exhausted", nextRetryAt: null,
+          });
+          throw error;
+        }
         try {
           await this.recoverToAddressList(requestedStreet);
           lastRecoveryError = null;
@@ -533,8 +550,20 @@ export class SisterStreetRun {
             throw recoveryError;
           }
         }
+        if (attempt < this.maxQueryAttempts) {
+          const nextRetryAt = new Date(Date.now() + 3_000).toISOString();
+          await this.options.onRetryTelemetry?.({
+            operation: "Interrogazione SISTER della via", attempt: attempt + 1, maximumAttempts: this.maxQueryAttempts,
+            status: "waiting", nextRetryAt,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+        }
       }
     }
+    await this.options.onRetryTelemetry?.({
+      operation: "Interrogazione SISTER della via", attempt: this.maxQueryAttempts, maximumAttempts: this.maxQueryAttempts,
+      status: "exhausted", nextRetryAt: null,
+    });
     const finalError = lastRecoveryError ?? lastError;
     const message = finalError instanceof Error ? finalError.message : String(finalError);
     return {
@@ -657,6 +686,10 @@ export class SisterStreetRun {
         let propertyError: unknown = null;
         let skippedReason: string | null = null;
         for (let attempt = 1; attempt <= this.maxQueryAttempts; attempt += 1) {
+          await this.options.onRetryTelemetry?.({
+            operation: "Lettura proprietari SISTER", attempt, maximumAttempts: this.maxQueryAttempts,
+            status: "running", nextRetryAt: null,
+          });
           try {
             acquiredOwners = await this.adapter.extractOwners(property);
             ownersRead += acquiredOwners.length;
@@ -666,12 +699,36 @@ export class SisterStreetRun {
             }
             await this.options.onPropertyAcquired?.(variant, property, acquiredOwners);
             acquired = true;
+            await this.options.onRetryTelemetry?.({
+              operation: "Lettura proprietari SISTER", attempt, maximumAttempts: this.maxQueryAttempts,
+              status: "succeeded", nextRetryAt: null,
+            });
             break;
           } catch (error) {
             propertyError = error;
-            if (error instanceof WorkerError && error.status === "session_expired") throw error;
+            if (error instanceof WorkerError && error.status === "session_expired") {
+              await this.options.onRetryTelemetry?.({
+                operation: "Lettura proprietari SISTER", attempt, maximumAttempts: this.maxQueryAttempts,
+                status: "exhausted", nextRetryAt: null,
+              });
+              throw error;
+            }
             await this.adapter.ensureResultsPage().catch(() => undefined);
+            if (attempt < this.maxQueryAttempts) {
+              const nextRetryAt = new Date(Date.now() + 3_000).toISOString();
+              await this.options.onRetryTelemetry?.({
+                operation: "Lettura proprietari SISTER", attempt: attempt + 1, maximumAttempts: this.maxQueryAttempts,
+                status: "waiting", nextRetryAt,
+              });
+              await new Promise((resolve) => setTimeout(resolve, 3_000));
+            }
           }
+        }
+        if (!acquired && propertyError) {
+          await this.options.onRetryTelemetry?.({
+            operation: "Lettura proprietari SISTER", attempt: this.maxQueryAttempts, maximumAttempts: this.maxQueryAttempts,
+            status: "exhausted", nextRetryAt: null,
+          });
         }
         if (!acquired) {
           skippedPropertyRows += 1;

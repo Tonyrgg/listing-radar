@@ -8,6 +8,8 @@ import {
 } from "../core/network-exploration.js";
 import type { CadastralOwner, CadastralProperty } from "../types.js";
 import { WorkerRepository } from "./repository.js";
+import { runWithRetryTelemetry, type RetryTelemetry } from "../core/retry-telemetry.js";
+import { WorkerError } from "../core/errors.js";
 
 export type NetworkQueueNode = { taxCode: string; depth: number; discoveredFrom: string | null };
 export type NetworkSkipReason = "no_sister_properties" | "non_strategic_category" | "share_below_minimum" | "already_in_crm" | "without_owners" | "duplicate_in_run" | "sister_error";
@@ -44,6 +46,7 @@ type Options = {
   isCancelled?: () => boolean;
   onCheckpoint?: (checkpoint: SisterNetworkRunCheckpoint) => void | Promise<void>;
   onProgress?: (progress: SisterNetworkRunProgress) => void | Promise<void>;
+  onRetryTelemetry?: (telemetry: RetryTelemetry) => void | Promise<void>;
 };
 
 const skipReasons: NetworkSkipReason[] = [
@@ -97,7 +100,14 @@ export class SisterNetworkRun {
 
       let properties: CadastralProperty[];
       try {
-        properties = await this.sister.searchPhysicalPersonByTaxCode(node.taxCode);
+        properties = await runWithRetryTelemetry(
+          () => this.sister.searchPhysicalPersonByTaxCode(node.taxCode),
+          {
+            operation: "Ricerca persona fisica SISTER", maximumAttempts: 3, delayMs: 3_000,
+            shouldRetry: (error) => !(error instanceof WorkerError && error.status === "session_expired"),
+            onTelemetry: options.onRetryTelemetry,
+          },
+        );
       } catch (error) {
         checkpoint.skipped.sister_error += 1;
         checkpoint.lastError = error instanceof Error ? error.message : String(error);
@@ -122,7 +132,14 @@ export class SisterNetworkRun {
         await options.onProgress?.({ phase: "reading_owners", peopleVisited: checkpoint.visitedTaxCodes.length, peopleLimit: settings.maxPeople, acceptedProperties: checkpoint.acceptedProperties, targetProperties: settings.targetProperties, depth: node.depth });
         let owners: CadastralOwner[];
         try {
-          owners = await this.sister.extractOwners(property);
+          owners = await runWithRetryTelemetry(
+            () => this.sister.extractOwners(property),
+            {
+              operation: "Lettura comproprietari SISTER", maximumAttempts: 3, delayMs: 3_000,
+              shouldRetry: (error) => !(error instanceof WorkerError && error.status === "session_expired"),
+              onTelemetry: options.onRetryTelemetry,
+            },
+          );
         } catch (error) {
           checkpoint.skipped.sister_error += 1;
           checkpoint.lastError = error instanceof Error ? error.message : String(error);
@@ -134,7 +151,10 @@ export class SisterNetworkRun {
           continue;
         }
         await options.onProgress?.({ phase: "checking_crm", peopleVisited: checkpoint.visitedTaxCodes.length, peopleLimit: settings.maxPeople, acceptedProperties: checkpoint.acceptedProperties, targetProperties: settings.targetProperties, depth: node.depth });
-        const existing = await this.crm.findPropertyByCadastralIdentity(property);
+        const existing = await runWithRetryTelemetry(
+          () => this.crm.findPropertyByCadastralIdentity(property),
+          { operation: "Controllo immobile nel CRM", maximumAttempts: 3, delayMs: 3_000, onTelemetry: options.onRetryTelemetry },
+        );
         const decision = decideNetworkProperty(property, owners, settings, Boolean(existing.match));
         if (!decision.eligible) {
           checkpoint.skipped[decision.reason] += 1;

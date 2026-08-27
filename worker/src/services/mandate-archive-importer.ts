@@ -4,10 +4,12 @@ import { collectCrmMandateArchive, extractCrmMandateDetail, normalizeCrmMandate,
 import type { WorkerConfig } from "../config.js";
 import { connectToMandateArchiveChrome } from "./chrome.js";
 import { WorkerRepository, type CrmMandateImportRunRow } from "./repository.js";
+import { runWithRetryTelemetry, type RetryTelemetry } from "../core/retry-telemetry.js";
 
 export type MandateArchiveImportEvent =
   | { type: "index"; page: number; discovered: number }
   | { type: "progress"; runId: string; index: number; total: number; title: string; externalId: string; failed: number }
+  | { type: "retry"; runId: string; index: number; total: number; title: string; externalId: string; telemetry: RetryTelemetry }
   | { type: "complete"; run: CrmMandateImportRunRow };
 
 export function mandateItemsStillToProcess<T extends { status: string }>(items: T[]) {
@@ -91,11 +93,19 @@ export class MandateArchiveImporter {
           title: item.title ?? item.external_crm_id, externalId: item.external_crm_id, failed,
         });
         try {
-          await detailPage.goto(item.source_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
           const archiveItem: CrmMandateArchiveItem = item.list_payload && "externalId" in item.list_payload
             ? item.list_payload as CrmMandateArchiveItem
             : { externalId: item.external_crm_id, title: item.title ?? item.external_crm_id, url: item.source_url, listFields: {} };
-          const detail = await extractCrmMandateDetail(detailPage, archiveItem);
+          const detail = await runWithRetryTelemetry(async () => {
+            await detailPage!.goto(item.source_url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+            return extractCrmMandateDetail(detailPage!, archiveItem);
+          }, {
+            operation: "Apertura incarico CRM", maximumAttempts: 3, delayMs: 3_000,
+            onTelemetry: (telemetry) => this.options.onEvent?.({
+              type: "retry", runId: run!.id, index: processed + failed + 1, total: allItems.length,
+              title: item.title ?? item.external_crm_id, externalId: item.external_crm_id, telemetry,
+            }),
+          });
           const propertyId = await this.repository.saveArchivedCrmMandate(item.id, detail, normalizeCrmMandate(detail));
           processed += 1;
           await this.repository.markMandateImportItem(item.id, {
