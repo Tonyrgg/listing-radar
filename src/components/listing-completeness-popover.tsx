@@ -23,16 +23,16 @@ function MissingFieldRow({
   return (
     <div className="border-t border-[var(--lr-line-quiet)] py-3 first:border-t-0 first:pt-0">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold text-[var(--lr-ink)]">
+        <p className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
           {field.label}
         </p>
         <span
-          className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold leading-none ${severityToneClasses[field.severity]}`}
+          className={`shrink-0 rounded-full border px-2 py-1 text-[length:var(--lr-text-label)] font-bold leading-none ${severityToneClasses[field.severity]}`}
         >
           {severityLabels[field.severity]}
         </span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-3)]">
+      <p className="mt-1 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-3)]">
         {field.reason}
       </p>
     </div>
@@ -67,7 +67,7 @@ export function ListingCompletenessPopover({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex min-h-6 max-w-full cursor-pointer items-center rounded-md text-xs font-semibold text-[var(--lr-warn)] underline-offset-4 transition-colors hover:text-[var(--lr-warn)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
+        className="inline-flex min-h-6 max-w-full cursor-pointer items-center rounded-md text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-warn)] underline-offset-4 transition-colors hover:text-[var(--lr-warn)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
         aria-haspopup="dialog"
       >
         <span className="truncate">{triggerLabel}</span>
@@ -84,21 +84,21 @@ export function ListingCompletenessPopover({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
-                className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
+                className="max-h-[min(720px,90vh)] w-full max-w-md overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <div className="border-b border-[var(--lr-line-quiet)] p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--lr-ink-3)]">
+                      <p className="text-[length:var(--lr-text-meta)] font-semibold uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
                         Completezza
                       </p>
                       <h2
                         id={titleId}
-                        className="mt-2 text-xl font-semibold text-[var(--lr-ink)]"
+                        className="mt-2 text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]"
                       >
                         {score}%
-                        <span className="ml-2 align-middle rounded-full border border-[var(--lr-warn)] bg-[var(--lr-warn-soft)] px-2 py-1 text-[10px] font-bold text-[var(--lr-warn)]">
+                        <span className="ml-2 align-middle rounded-full border border-[var(--lr-warn)] bg-[var(--lr-warn-soft)] px-2 py-1 text-[length:var(--lr-text-label)] font-bold text-[var(--lr-warn)]">
                           {triggerLabel}
                         </span>
                       </h2>
@@ -106,7 +106,7 @@ export function ListingCompletenessPopover({
                     <button
                       type="button"
                       onClick={() => setIsOpen(false)}
-                      className="rounded-md border border-[var(--lr-line)] px-3 py-2 text-xs font-semibold text-[var(--lr-ink-2)] transition-colors hover:bg-[var(--lr-raised)]"
+                      className="rounded-md border border-[var(--lr-line)] px-3 py-2 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)] transition-colors hover:bg-[var(--lr-raised)]"
                     >
                       Chiudi
                     </button>
@@ -125,7 +125,7 @@ export function ListingCompletenessPopover({
                       <MissingFieldRow key={field.key} field={field} />
                     ))
                   ) : (
-                    <p className="text-sm leading-6 text-[var(--lr-ink-2)]">
+                    <p className="text-[length:var(--lr-text-body)] leading-6 text-[var(--lr-ink-2)]">
                       Nessun campo da rivedere.
                     </p>
                   )}

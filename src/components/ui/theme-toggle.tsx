@@ -84,7 +84,7 @@ export function ThemeToggle({ compact = false }: Readonly<{ compact?: boolean }>
             aria-label={option.label}
             aria-pressed={active}
             className={clsx(
-              "inline-flex min-h-8 items-center justify-center rounded-[3px] transition-colors",
+              "inline-flex min-h-8 items-center justify-center rounded-[calc(var(--lr-radius-control)-4px)] transition-colors",
               active
                 ? "bg-[var(--lr-raised)] text-[var(--lr-ink)]"
                 : "text-[var(--lr-ink-3)] hover:text-[var(--lr-ink)]",

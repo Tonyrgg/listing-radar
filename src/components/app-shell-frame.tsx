@@ -43,11 +43,11 @@ export function AppShellFrame({
   showLogout: boolean;
   flash: Flash | null;
 }>) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setCollapsed(window.localStorage.getItem("listing-radar-sidebar") === "collapsed");
+      setCollapsed(window.localStorage.getItem("listing-radar-sidebar") !== "expanded");
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -64,7 +64,7 @@ export function AppShellFrame({
     <div
       className={clsx(
         "min-h-screen lg:grid",
-        collapsed ? "lg:grid-cols-[76px_minmax(0,1fr)]" : "lg:grid-cols-[252px_minmax(0,1fr)]",
+        collapsed ? "lg:grid-cols-[84px_minmax(0,1fr)]" : "lg:grid-cols-[252px_minmax(0,1fr)]",
       )}
     >
       <GlobalActionLoader />
@@ -100,37 +100,43 @@ export function AppShellFrame({
           </button>
         </div>
 
+        {/* La rail porta solo le destinazioni e il gesto che apre una richiesta.
+          * Ricerca, tema e uscita vivono nella testata: a 84 px non ci stanno,
+          * e lì stanno anche nel riferimento. */}
         <div className="mt-6 min-h-0 flex-1">
-          <QuickRequestButton compact={collapsed} className={clsx("mb-3 w-full", collapsed && "px-0")} />
-          {/* La ricerca sta sopra le sezioni: si cerca prima di scegliere dove. */}
-          <CercaGlobale collapsed={collapsed} className="mb-4" />
+          <QuickRequestButton compact={collapsed} className={clsx("mb-4 w-full", collapsed && "px-0")} />
           <SidebarNav collapsed={collapsed} />
-        </div>
-
-        <div className="mt-4 space-y-2 border-t border-[var(--lr-line-quiet)] pt-3">
-          <ThemeToggle compact={collapsed} />
-          {showLogout ? (
-            <form action={logout}>
-              <PendingSubmitButton
-                type="submit"
-                pendingLabel={collapsed ? "" : "Esco"}
-                icon={<LogOut aria-hidden="true" className="size-4" />}
-                aria-label="Esci"
-                title="Esci"
-                className={clsx(buttonClass("quiet", { compact: true, block: true }), collapsed && "px-0")}
-              >
-                <span className={clsx(collapsed && "lg:sr-only")}>Esci</span>
-              </PendingSubmitButton>
-            </form>
-          ) : null}
         </div>
       </aside>
 
       <div className="min-w-0">
+        {/* La testata del tool: si cerca prima di scegliere dove guardare. */}
+        <header className="sticky top-0 z-40 hidden h-16 items-center gap-3 border-b border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] px-5 lg:flex lg:px-8">
+          <CercaGlobale className="min-w-0 max-w-[26rem] flex-1" />
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <ThemeToggle />
+            {showLogout ? (
+              <form action={logout}>
+                <PendingSubmitButton
+                  type="submit"
+                  pendingLabel=""
+                  icon={<LogOut aria-hidden="true" className="size-4" />}
+                  aria-label="Esci"
+                  title="Esci"
+                  className={buttonClass("quiet", { compact: true })}
+                >
+                  Esci
+                </PendingSubmitButton>
+              </form>
+            ) : null}
+          </div>
+        </header>
+
         <header className="sticky top-0 z-40 border-b border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] lg:hidden">
           <div className="flex min-h-14 w-full items-center justify-between gap-3 px-4">
             <Brand />
             <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle />
               <QuickRequestButton compact />
               {showLogout ? (
                 <form action={logout}>
@@ -156,7 +162,7 @@ export function AppShellFrame({
           </div>
         </header>
 
-        <main id="main-content" className="min-w-0 w-full px-4 py-5 sm:px-6 lg:px-8">
+        <main id="main-content" className="min-w-0 w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           <div className="w-full">{children}</div>
         </main>
       </div>

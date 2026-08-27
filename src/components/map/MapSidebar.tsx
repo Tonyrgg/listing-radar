@@ -65,11 +65,14 @@ function MiniStat({
   emphasis?: boolean;
 }>) {
   return (
-    <div className="min-w-0 rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2.5 py-2">
-      <p className="truncate text-[11px] font-medium text-[var(--lr-ink-3)]">{label}</p>
+    <div className="min-w-0 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] px-2.5 py-2">
+      <p className="truncate text-[length:var(--lr-text-label)] font-medium uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+        {label}
+      </p>
+      {/* Un numero che si confronta a colonna si scrive monospaziato. */}
       <p
         className={clsx(
-          "mt-1 text-base font-semibold leading-none",
+          "mt-1.5 font-mono text-[length:var(--lr-text-section)] font-[650] leading-none",
           emphasis ? "text-[var(--lr-warn)]" : "text-[var(--lr-ink)]",
         )}
       >
@@ -107,7 +110,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       className={clsx(
-        "inline-flex h-9 items-center justify-center gap-2 rounded-[6px] border px-3 text-xs font-semibold transition-colors",
+        "inline-flex h-9 items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border px-3 text-[length:var(--lr-text-meta)] font-semibold transition-colors",
         tone === "danger"
           ? "border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] text-[var(--lr-danger)] hover:bg-[var(--lr-danger-soft)]"
           : tone === "hot"
@@ -122,8 +125,8 @@ function ActionButton({
 
 function EmptyList({ text }: Readonly<{ text: string }>) {
   return (
-    <div className="rounded-[7px] border border-dashed border-[var(--lr-line-quiet)] bg-[var(--lr-canvas)] p-4">
-      <p className="text-sm font-medium leading-5 text-[var(--lr-ink-2)]">{text}</p>
+    <div className="rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line-quiet)] bg-[var(--lr-canvas)] p-4">
+      <p className="text-[length:var(--lr-text-body)] font-medium leading-5 text-[var(--lr-ink-2)]">{text}</p>
     </div>
   );
 }
@@ -142,9 +145,9 @@ function RowButton({
       type="button"
       onClick={onClick}
       className={clsx(
-        "w-full rounded-[7px] border px-3 py-2.5 text-left transition-colors",
+        "w-full rounded-[var(--lr-radius-control)] border px-3 py-2.5 text-left transition-colors",
         active
-          ? "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)]"
+          ? "border-[var(--lr-line)] bg-[var(--lr-raised)]"
           : "border-[var(--lr-line-quiet)] bg-[var(--lr-canvas)] hover:border-[var(--lr-line)] hover:bg-[var(--lr-raised)]",
       )}
     >
@@ -178,9 +181,9 @@ function SelectedPanel({
 }>) {
   if (!selected) {
     return (
-      <div className="rounded-[8px] border border-dashed border-[var(--lr-line-quiet)] bg-[var(--lr-canvas)] p-4">
-        <p className="text-sm font-semibold text-[var(--lr-ink)]">Nessuna selezione</p>
-        <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-2)]">
+      <div className="rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line-quiet)] bg-[var(--lr-canvas)] p-4">
+        <p className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">Nessuna selezione</p>
+        <p className="mt-1 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-2)]">
           Clicca un elemento sulla mappa o nella lista per modificarlo e completarlo.
         </p>
       </div>
@@ -203,16 +206,16 @@ function SelectedPanel({
   const suggestion = pin ? pinSuggestion(pin) : null;
 
   return (
-    <div className="rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-4">
+    <div className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--lr-accent)]">
+          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
             Selezionato
           </p>
-          <h3 className="mt-1 truncate text-base font-semibold text-[var(--lr-ink)]">
+          <h3 className="mt-1 truncate text-[length:var(--lr-text-record)] font-semibold text-[var(--lr-ink)]">
             {title}
           </h3>
-          <p className="mt-1 text-xs text-[var(--lr-ink-2)]">
+          <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
             {agentName(agents, agentId)} - {status}
           </p>
         </div>
@@ -221,21 +224,21 @@ function SelectedPanel({
           onClick={() => onEdit(selected)}
           aria-label="Modifica elemento selezionato"
           title="Modifica"
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-[6px] border border-[var(--lr-line)] text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] text-[var(--lr-ink)] hover:bg-[var(--lr-raised)]"
         >
           <Pencil className="size-4" aria-hidden="true" />
         </button>
       </div>
 
       {pin ? (
-        <div className="mt-3 grid gap-2 text-xs text-[var(--lr-ink-2)]">
+        <div className="mt-3 grid gap-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
           <p>
             {PIN_CATEGORY_LABELS[pin.category]} - {PIN_PRIORITY_LABELS[pin.priority]}
           </p>
           {pin.followUpAt ? <p>Follow-up: {formatDateTime(pin.followUpAt)}</p> : null}
           {pin.notes ? <p className="line-clamp-3 leading-5">{pin.notes}</p> : null}
           {suggestion ? (
-            <p className="rounded-[6px] bg-[var(--lr-raised)] p-2 font-medium text-[var(--lr-ink)]">
+            <p className="rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] p-2 font-medium text-[var(--lr-ink)]">
               {suggestion}
             </p>
           ) : null}
@@ -312,13 +315,13 @@ function PinRow({
           aria-hidden="true"
         />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--lr-ink)]">
+          <p className="truncate text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
             {pin.title}
           </p>
-          <p className="mt-1 truncate text-xs text-[var(--lr-ink-2)]">
+          <p className="mt-1 truncate text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
             {PIN_CATEGORY_LABELS[pin.category]} - {PIN_STATUS_LABELS[pin.status]}
           </p>
-          <p className="mt-1 truncate text-xs text-[var(--lr-ink-3)]">
+          <p className="mt-1 truncate text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
             {agentName(agents, pin.agentId)}
             {pin.followUpAt ? ` - ${formatDateTime(pin.followUpAt)}` : ""}
           </p>
@@ -376,18 +379,18 @@ export function MapSidebar({
   ];
 
   return (
-    <aside className="grid h-full min-h-[620px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-3">
+    <aside className="grid h-full min-h-[620px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--lr-accent)]">
+          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
             Aree operative
           </p>
-          <h2 className="mt-1 text-base font-semibold text-[var(--lr-ink)]">
+          <h2 className="mt-1 text-[length:var(--lr-text-record)] font-semibold text-[var(--lr-ink)]">
             Ricerca e contatto sul territorio
           </h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--lr-ink-3)]">Assegnate agli agenti, non usate per localizzare gli immobili.</p>
+          <p className="mt-1 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-3)]">Assegnate agli agenti, non usate per localizzare gli immobili.</p>
         </div>
-        <div className="rounded-full border border-[var(--lr-line)] px-2.5 py-1 text-xs font-semibold text-[var(--lr-ink-2)]">
+        <div className="rounded-full border border-[var(--lr-line)] px-2.5 py-1 text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
           {pins.length + areas.length + streets.length} elementi
         </div>
       </div>
@@ -409,20 +412,20 @@ export function MapSidebar({
       </div>
 
       <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
-        <div className="grid grid-cols-4 gap-1 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-1">
           {tabs.map((item) => (
             <button
               key={item.key}
               type="button"
               onClick={() => setTab(item.key)}
               className={clsx(
-                "h-9 rounded-[6px] text-xs font-semibold transition-colors",
+                "h-9 rounded-[var(--lr-radius-control)] text-[length:var(--lr-text-meta)] font-semibold transition-colors",
                 tab === item.key
-                  ? "bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]"
+                  ? "bg-[var(--lr-ink)] text-[var(--lr-surface)]"
                   : "text-[var(--lr-ink-3)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
               )}
             >
-              {item.label} <span className="text-[10px] opacity-75">{item.count}</span>
+              {item.label} <span className="text-[length:var(--lr-text-label)] opacity-75">{item.count}</span>
             </button>
           ))}
         </div>
@@ -458,12 +461,12 @@ export function MapSidebar({
                       onClick={() => onSelect({ type: "area", id: area.id })}
                     >
                       <div className="flex min-w-0 items-start gap-3">
-                        <Shapes className="mt-0.5 size-4 shrink-0 text-[var(--lr-accent)]" aria-hidden="true" />
+                        <Shapes className="mt-0.5 size-4 shrink-0 text-[var(--lr-ink-3)]" aria-hidden="true" />
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[var(--lr-ink)]">
+                          <p className="truncate text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                             {area.name}
                           </p>
-                          <p className="mt-1 truncate text-xs text-[var(--lr-ink-2)]">
+                          <p className="mt-1 truncate text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
                             <span
                               className="mr-1.5 inline-block size-2 rounded-full"
                               style={{ backgroundColor: area.color ?? agent?.color ?? "var(--lr-accent)" }}
@@ -471,7 +474,7 @@ export function MapSidebar({
                             />
                             {agentName(agents, area.agentId)} - {MAP_STATUS_LABELS[area.status]}
                           </p>
-                          <p className="mt-1 text-xs text-[var(--lr-ink-3)]">
+                          <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                             {streetsByArea.get(area.id) ?? 0} strade collegate
                           </p>
                         </div>
@@ -495,16 +498,16 @@ export function MapSidebar({
                     onClick={() => onSelect({ type: "street", id: street.id })}
                   >
                     <div className="flex min-w-0 items-start gap-3">
-                      <Route className="mt-0.5 size-4 shrink-0 text-[var(--lr-accent)]" aria-hidden="true" />
+                      <Route className="mt-0.5 size-4 shrink-0 text-[var(--lr-ink-3)]" aria-hidden="true" />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--lr-ink)]">
+                        <p className="truncate text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                           {street.name}
                         </p>
-                        <p className="mt-1 truncate text-xs text-[var(--lr-ink-2)]">
+                        <p className="mt-1 truncate text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
                           {agentName(agents, street.agentId)} - {MAP_STATUS_LABELS[street.status]}
                         </p>
                         {street.lastCompletedAt ? (
-                          <p className="mt-1 text-xs text-[var(--lr-ink-3)]">
+                          <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                             Completata {formatDateTime(street.lastCompletedAt)}
                           </p>
                         ) : null}
@@ -524,20 +527,20 @@ export function MapSidebar({
                 activityLogs.map((log) => (
                   <div
                     key={log.id}
-                    className="rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-3"
+                    className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-canvas)] p-3"
                   >
                     <div className="flex items-start gap-3">
-                      <Clock className="mt-0.5 size-4 shrink-0 text-[var(--lr-accent)]" aria-hidden="true" />
+                      <Clock className="mt-0.5 size-4 shrink-0 text-[var(--lr-ink-3)]" aria-hidden="true" />
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[var(--lr-ink)]">
+                        <p className="text-[length:var(--lr-text-body)] font-semibold text-[var(--lr-ink)]">
                           {log.actionType.replaceAll("_", " ")}
                         </p>
                         {log.notes ? (
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--lr-ink-2)]">
+                          <p className="mt-1 line-clamp-2 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-2)]">
                             {log.notes}
                           </p>
                         ) : null}
-                        <p className="mt-1 text-xs text-[var(--lr-ink-3)]">
+                        <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                           {formatDateTime(log.createdAt)}
                         </p>
                       </div>

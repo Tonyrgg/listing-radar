@@ -17,7 +17,7 @@ body {
   margin: 0;
   background: var(--lr-canvas);
   color: var(--lr-ink);
-  font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--lr-font-sans);
   font-size: var(--lr-text-body);
   line-height: var(--lr-leading-body);
 }
@@ -52,7 +52,7 @@ p {
 /* ---------- tipografia: sei gradini, nessuna eccezione ---------- */
 
 h1 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--lr-font-sans);
   font-size: var(--lr-text-page);
   font-weight: var(--lr-weight-strong);
   line-height: var(--lr-leading-tight);
@@ -60,7 +60,7 @@ h1 {
 }
 
 h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--lr-font-sans);
   font-size: var(--lr-text-section);
   font-weight: var(--lr-weight-strong);
   line-height: var(--lr-leading-tight);
@@ -2031,3 +2031,396 @@ body[data-fase="attenzione"] .start-grid {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===========================================================================
+ * Operational Ledger — identita selezionata dal redesign 4a / 5a / 5b.
+ * Il worker e una stanza petrolio distinta dal CRM chiaro: una navigazione a
+ * tappe, una sola superficie operativa visibile e rame soltanto sull'azione
+ * successiva. Le regole funzionali e tutti gli id restano invariati.
+ * ========================================================================= */
+
+html[data-theme="dark"] body {
+  background: var(--lr-canvas);
+}
+
+.app-header {
+  min-height: 52px;
+  padding: 8px 18px;
+  background: color-mix(in srgb, var(--lr-canvas) 84%, var(--lr-surface));
+  box-shadow: none;
+}
+
+.brand strong,
+.brand small,
+.version,
+.count,
+.retry-monitor-clock span,
+.street-run-current dd,
+.progress-card strong {
+  font-family: var(--lr-font-mono);
+}
+
+.brand strong {
+  font-size: var(--lr-text-meta);
+  letter-spacing: 0.01em;
+}
+
+.brand small { color: var(--lr-ink-3); }
+
+.header-actions .button {
+  min-height: 36px;
+  padding-inline: 12px;
+  font-size: var(--lr-text-meta);
+}
+
+.app-layout {
+  min-height: calc(100vh - 52px);
+}
+
+/* La rail a tappe da 236 px e il disegno del riferimento, ma vale solo dove
+ * c'e spazio: sotto i 960 px la pagina torna a una colonna sola. */
+@media (min-width: 961px) {
+  .app-layout {
+    grid-template-columns: 236px minmax(0, 1fr);
+  }
+
+  .side-nav {
+    top: 52px;
+    height: calc(100vh - 52px);
+    gap: 8px;
+    padding: 20px 14px;
+    background: color-mix(in srgb, var(--lr-canvas) 88%, var(--lr-surface));
+  }
+}
+
+.nav-item {
+  min-height: 62px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+}
+
+.nav-item > span {
+  width: 30px;
+  height: 30px;
+  border-color: var(--lr-line-quiet);
+  font-family: var(--lr-font-mono);
+}
+
+.nav-item small { margin-top: 2px; color: var(--lr-ink-3); }
+
+.nav-item.is-active {
+  border-color: var(--lr-accent);
+  background: var(--lr-raised);
+  box-shadow: none;
+}
+
+.workspace {
+  max-width: 1500px;
+  gap: 18px;
+  padding: 24px clamp(22px, 3vw, 44px) 48px;
+}
+
+.page-intro {
+  padding: 0 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--lr-line-quiet);
+  border-radius: 0;
+  background: transparent;
+}
+
+.page-intro h1 {
+  max-width: 22ch;
+  font-size: 30px;
+}
+
+.page-intro p:last-child { max-width: 70ch; }
+
+.start-card,
+.street-run-card {
+  padding: 22px;
+  box-shadow: none;
+}
+
+.start-grid { gap: 16px; }
+
+.start-card:hover,
+.street-run-card:hover { border-color: var(--lr-line); }
+
+.start-card:focus-within,
+.street-run-card:focus-within { border-color: var(--lr-accent); }
+
+.command-monitor,
+.retry-monitor,
+.run-controls {
+  border-radius: var(--lr-radius-container);
+}
+
+.retry-monitor-clock span { font-weight: 600; }
+
+details.section {
+  min-height: calc(100vh - 116px);
+  border: 0;
+  background: transparent;
+}
+
+details.section > summary { display: none; }
+
+details.section > .section-body {
+  gap: 16px;
+  padding: 0;
+}
+
+#sync > .section-body {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+#sync .request-archive-card,
+#history .completed-imports-section,
+#history .jobs-card,
+#history .detail-card,
+#history .activity-card,
+#settings .settings-card,
+#settings .system-card {
+  padding: 20px;
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-surface);
+}
+
+#sync .request-archive-card {
+  min-height: 280px;
+  display: grid;
+  align-content: space-between;
+}
+
+#history > .section-body {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+#history .completed-imports-section,
+#history .jobs-card,
+#history .detail-card,
+#history .activity-card { min-width: 0; }
+
+#history #completedImports,
+#history #jobs,
+#history #detailPanel { grid-column: 1 / -1; }
+
+body[data-worker-view="operations"] .workspace > details.section,
+body[data-worker-view="sync"] .workspace > :not(#sync),
+body[data-worker-view="history"] .workspace > :not(#history),
+body[data-worker-view="settings"] .workspace > :not(#settings) {
+  display: none !important;
+}
+
+body[data-worker-view="sync"] #sync,
+body[data-worker-view="history"] #history,
+body[data-worker-view="settings"] #settings {
+  display: block;
+}
+
+body[data-worker-view="sync"] #sync::before,
+body[data-worker-view="history"] #history::before,
+body[data-worker-view="settings"] #settings::before {
+  display: block;
+  margin-bottom: 20px;
+  color: var(--lr-ink);
+  font-size: 30px;
+  font-weight: var(--lr-weight-strong);
+  line-height: var(--lr-leading-tight);
+  letter-spacing: var(--lr-tracking-title);
+}
+
+body[data-worker-view="sync"] #sync::before { content: "Sincronizza il gestionale"; }
+body[data-worker-view="history"] #history::before { content: "Cronologia dei lavori"; }
+body[data-worker-view="settings"] #settings::before { content: "Impostazioni e collegamenti"; }
+
+@media (max-width: 1100px) {
+  #sync > .section-body,
+  #history > .section-body { grid-template-columns: 1fr; }
+}
+
+/* ---------- 4a · la lavorazione: una scelta, poi il contorno ---------- */
+
+/* Il riferimento non solleva niente che appartenga alla pagina: il monitor e
+ * il contatore dei tentativi sono superfici piane dentro una linea. */
+.command-monitor { box-shadow: none; }
+
+.command-monitor,
+.retry-monitor { padding: 16px 18px; }
+
+.command-monitor > strong,
+.retry-monitor-clock span { font-family: var(--lr-font-mono); }
+
+/* La partenza e il gesto principale della pagina: la scheda con il fuoco
+ * dentro porta il bordo rame, le altre restano in attesa. */
+.start-grid > .start-card,
+.start-grid > .street-run-card { display: grid; align-content: start; }
+
+.street-run-card { border-color: var(--lr-line); }
+
+.start-copy p,
+.street-run-card > header p:last-child,
+.network-run-card > header p:last-child { color: var(--lr-ink-2); }
+
+.step-number {
+  width: 26px;
+  height: 26px;
+  font-family: var(--lr-font-mono);
+  font-weight: var(--lr-weight-strong);
+}
+
+/* «Come deve lavorare»: due tessere affiancate, non un interruttore compatto.
+ * La scelta corrente si riconosce dal bordo rame, come nel riferimento. */
+.segmented {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented button {
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-control);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-body);
+  text-align: left;
+}
+
+.segmented button:hover:not(.is-selected) { border-color: var(--lr-line); }
+
+.segmented button.is-selected {
+  border-color: var(--lr-accent);
+  background: var(--lr-raised);
+  color: var(--lr-ink);
+  font-weight: var(--lr-weight-strong);
+  box-shadow: none;
+}
+
+/* La modalita di prova e un interruttore, non una casella: il riferimento la
+ * mostra come stato acceso o spento, e la casella resta quella vera. */
+.safe-check {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 12px 14px;
+  border-color: var(--lr-line-quiet);
+  gap: 12px;
+}
+
+.safe-check:hover { border-color: var(--lr-line); }
+
+.safe-check:focus-within { border-color: var(--lr-accent); }
+
+.safe-check small { color: var(--lr-ink-3); }
+
+.safe-check input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  margin-top: 1px;
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-pill);
+  background: var(--lr-canvas);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.safe-check input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--lr-ink-3);
+  transform: translateY(-50%);
+  transition: left 120ms ease, background-color 120ms ease;
+}
+
+.safe-check input[type="checkbox"]:checked {
+  border-color: var(--lr-accent);
+  background: var(--lr-accent);
+}
+
+.safe-check input[type="checkbox"]:checked::after {
+  left: 19px;
+  background: var(--lr-accent-ink);
+}
+
+.safe-check input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--lr-accent);
+  outline-offset: 2px;
+}
+
+/* L'azione che fa partire il lavoro: 52 px, come nel riferimento. */
+.button.large {
+  min-height: 52px;
+  padding-inline: 22px;
+  font-size: var(--lr-text-record);
+}
+
+.button:hover:not(:disabled) { transform: none; }
+
+/* ---------- 4a · il contorno: due pannelli secondari, mai due titoli ---------- */
+
+/* «Collegamenti necessari» e «Percorso completo» sono il contorno del gesto:
+ * stanno affiancati e non competono con la partenza. */
+.workspace > .system-card,
+.workspace > .progress-card {
+  min-width: 0;
+  padding: 18px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace > .system-card > header h2,
+.workspace > .progress-card > header h2 { font-size: var(--lr-text-record); }
+
+@media (min-width: 1180px) {
+  .workspace > .system-card { grid-column: 1; }
+
+  .workspace > .progress-card { grid-column: 2; }
+
+  body[data-worker-view="operations"] .workspace {
+    display: grid;
+    align-content: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-worker-view="operations"] .workspace > :not(.system-card):not(.progress-card) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- 5b · cronologia: numeri, tempi e identificativi monospaziati ---------- */
+
+.nav-item.is-active small { color: var(--lr-accent); }
+
+/* Il riferimento monospazia tutto cio che si confronta a colonna: conteggi,
+ * orari, chiavi catastali e identificativi di lavoro. Mai i paragrafi. */
+.activity-item time,
+.diagnostic-error-item header span,
+.cadastral-key,
+.completed-owner small,
+.completion-label {
+  font-family: var(--lr-font-mono);
+}
+
+.diagnostic-error-item header span { color: var(--lr-ink-3); }
+
+#history .completed-imports-section > header h2,
+#history .jobs-card > header h2,
+#history .activity-card > header h2 { font-size: var(--lr-text-record); }
+
+/* Operazioni e diagnostica sono il contorno della cronologia: restano
+ * leggibili senza comprimere i record che stanno sopra. */
+#history .activity-card { background: transparent; }

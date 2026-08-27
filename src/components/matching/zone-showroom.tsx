@@ -330,8 +330,8 @@ export function ZoneShowroom({ zones }: Readonly<{ zones: InternalZone[] }>) {
         <p className={styles.coverageCopy}><strong>{zones.filter((zone) => zone.geometry).length}/{zones.length}</strong> zone immobiliari hanno un perimetro. Il recupero CRM non sovrascrive selezioni già presenti.</p>
         <button type="button" className={styles.secondaryButton} onClick={runBackfill} disabled={pending}><ScanSearch aria-hidden="true" className="size-4" /> Recupera zone dal CRM</button>
       </div>
-      {message ? <p className="text-sm text-[var(--lr-accent)]">{message}</p> : null}
-      {error ? <p className="text-sm text-[var(--lr-danger)]">{error}</p> : null}
+      {message ? <p className="text-[length:var(--lr-text-body)] text-[var(--lr-accent)]">{message}</p> : null}
+      {error ? <p className="text-[length:var(--lr-text-body)] text-[var(--lr-danger)]">{error}</p> : null}
 
       <div className={styles.workspace}>
         <section className={styles.zoneList} aria-label="Zone immobiliari configurate">

@@ -29,7 +29,7 @@ export function ProgressiveList({
           <button
             type="button"
             onClick={() => setVisibleCount((current) => Math.min(items.length, current + step))}
-            className="inline-flex min-h-11 items-center gap-2 rounded-[8px] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-5 text-sm font-bold text-[var(--lr-ink)] hover:border-[var(--lr-accent)] hover:text-[var(--lr-accent)]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-5 text-[length:var(--lr-text-body)] font-bold text-[var(--lr-ink)] hover:border-[var(--lr-accent)] hover:text-[var(--lr-accent)]"
           >
             Mostra altri {Math.min(step, remaining)} {noun}
             <ChevronDown aria-hidden="true" className="size-4" />

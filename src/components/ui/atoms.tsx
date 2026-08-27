@@ -148,7 +148,7 @@ export function Periodo({
 export type SourceHealth = "healthy" | "partial" | "broken" | "unknown";
 
 const healthDot: Record<SourceHealth, string> = {
-  healthy: "bg-[var(--lr-accent)]",
+  healthy: "bg-[var(--lr-ok)]",
   partial: "bg-[var(--lr-warn)]",
   broken: "bg-[var(--lr-danger)]",
   unknown: "bg-[var(--lr-line)]",
@@ -248,7 +248,7 @@ export type StatoForma = "agenzia" | "privato" | "attesa" | "chiuso" | "venduto"
 
 const formaClass: Record<StatoForma, string> = {
   agenzia: "bg-[var(--lr-ink-3)]",
-  privato: "rounded-full bg-[var(--lr-accent)]",
+  privato: "rounded-full bg-[var(--lr-info)]",
   attesa: "rotate-45 bg-[var(--lr-warn)]",
   chiuso: "bg-[var(--lr-line)]",
   venduto: "rounded-full bg-[var(--lr-info)]",
@@ -325,7 +325,7 @@ export function Impronta({
     <span
       className={clsx(
         "inline-flex items-center gap-1.5 text-[length:var(--lr-text-meta)]",
-        matched ? "text-[var(--lr-accent)]" : "text-[var(--lr-ink-3)]",
+        matched ? "text-[var(--lr-ok)]" : "text-[var(--lr-ink-3)]",
         className,
       )}
       title={
@@ -341,7 +341,7 @@ export function Impronta({
             className={clsx(
               "h-3 w-4 rounded-[2px] bg-[var(--lr-raised)]",
               matched
-                ? "shadow-[inset_0_0_0_1.5px_var(--lr-accent)]"
+                ? "shadow-[inset_0_0_0_1.5px_var(--lr-ok)]"
                 : "shadow-[inset_0_0_0_1px_var(--lr-line)]",
             )}
           />

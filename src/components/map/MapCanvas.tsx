@@ -15,6 +15,7 @@ import {
   Popup,
   TileLayer,
   Tooltip,
+  ZoomControl,
   useMap,
   useMapEvents,
 } from "react-leaflet";
@@ -337,11 +338,15 @@ export function MapCanvas({
       center={[BITONTO_CENTER.latitude, BITONTO_CENTER.longitude]}
       zoom={BITONTO_CENTER.zoom}
       scrollWheelZoom
+      /* L'angolo in alto a sinistra appartiene alla barra degli strumenti che
+       * galleggia sulla mappa: lo zoom scende dove non copre nulla. */
+      zoomControl={false}
       className={clsx(
-        "h-full min-h-[620px] w-full overflow-hidden rounded-[10px] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
+        "h-full min-h-[620px] w-full overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
         className,
       )}
     >
+      <ZoomControl position="bottomright" />
       <ResizeController />
       <ZoomController onZoomChange={handleZoomChange} />
       <ClickController
@@ -378,7 +383,7 @@ export function MapCanvas({
           >
             <Tooltip sticky>{area.name}</Tooltip>
             <Popup>
-              <div className="grid min-w-52 gap-2 text-sm">
+              <div className="grid min-w-52 gap-2 text-[length:var(--lr-text-body)]">
                 <strong>{area.name}</strong>
                 <span>{MAP_STATUS_LABELS[area.status]}</span>
                 <div className="flex flex-wrap gap-1">
@@ -419,7 +424,7 @@ export function MapCanvas({
           >
             <Tooltip sticky>{street.name}</Tooltip>
             <Popup>
-              <div className="grid min-w-52 gap-2 text-sm">
+              <div className="grid min-w-52 gap-2 text-[length:var(--lr-text-body)]">
                 <strong>{street.name}</strong>
                 <span>{MAP_STATUS_LABELS[street.status]}</span>
                 <div className="flex flex-wrap gap-1">
@@ -523,7 +528,7 @@ export function MapCanvas({
               <Tooltip sticky>{firstListing.title}</Tooltip>
             )}
             <Popup>
-              <div className="grid min-w-56 gap-2 text-sm">
+              <div className="grid min-w-56 gap-2 text-[length:var(--lr-text-body)]">
                 <strong>
                   {isCluster ? `${cluster.listings.length} annunci` : firstListing.title}
                 </strong>
@@ -572,7 +577,7 @@ export function MapCanvas({
           >
             <Tooltip sticky>{pin.title}</Tooltip>
             <Popup>
-              <div className="grid min-w-56 gap-2 text-sm">
+              <div className="grid min-w-56 gap-2 text-[length:var(--lr-text-body)]">
                 <strong>{pin.title}</strong>
                 <span>
                   {PIN_CATEGORY_LABELS[pin.category]} - {PIN_PRIORITY_LABELS[pin.priority]} - {PIN_STATUS_LABELS[pin.status]}

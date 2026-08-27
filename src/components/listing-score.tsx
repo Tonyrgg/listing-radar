@@ -61,10 +61,10 @@ export function ListingScoreBreakdown({
     <section className="border-y border-[var(--lr-line-quiet)] py-5">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--lr-ink-3)]">
+          <p className="text-[length:var(--lr-text-meta)] font-semibold uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
             Indice di appetibilità
           </p>
-          <p className="mt-2 text-sm text-[var(--lr-ink-2)]">
+          <p className="mt-2 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
             Quanto conviene controllare questo immobile prima degli altri.
           </p>
         </div>
@@ -72,7 +72,7 @@ export function ListingScoreBreakdown({
           <p className="text-3xl font-semibold tabular-nums text-[var(--lr-ink)]">
             {breakdown.total}
           </p>
-          <p className="text-xs font-semibold text-[var(--lr-accent)]">
+          <p className="text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-accent)]">
             {getPriorityScoreLevel(breakdown.total, scoringConfig)}
           </p>
         </div>
@@ -86,34 +86,34 @@ export function ListingScoreBreakdown({
               className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"
             >
               <div>
-                <p className="text-sm font-medium text-[var(--lr-ink)]">
+                <p className="text-[length:var(--lr-text-body)] font-medium text-[var(--lr-ink)]">
                   {factor.label}
                 </p>
-                <p className="mt-0.5 text-xs leading-5 text-[var(--lr-ink-3)]">
+                <p className="mt-0.5 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-3)]">
                   {factor.explanation}
                 </p>
               </div>
-              <strong className="text-sm tabular-nums text-[var(--lr-accent)]">
+              <strong className="text-[length:var(--lr-text-body)] tabular-nums text-[var(--lr-accent)]">
                 +{factor.points}
               </strong>
             </div>
           ))
         ) : (
-          <p className="text-sm text-[var(--lr-ink-2)]">
+          <p className="text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
             Nessun criterio di appetibilità è stato ancora rilevato.
           </p>
         )}
       </div>
 
       <details className="mt-5 border-t border-[var(--lr-line-quiet)] pt-4">
-        <summary className="cursor-pointer text-xs font-semibold text-[var(--lr-ink-2)]">
+        <summary className="cursor-pointer text-[length:var(--lr-text-meta)] font-semibold text-[var(--lr-ink-2)]">
           Vedi criteri non maturati ({breakdown.notAwarded.length})
         </summary>
         <div className="mt-3 space-y-2">
           {breakdown.notAwarded.map((factor) => (
             <div
               key={factor.id}
-              className="flex items-start justify-between gap-3 text-xs text-[var(--lr-ink-3)]"
+              className="flex items-start justify-between gap-3 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]"
             >
               <span>{factor.label}</span>
               <span className="shrink-0">
@@ -124,7 +124,7 @@ export function ListingScoreBreakdown({
         </div>
       </details>
 
-      <div className="mt-4 text-xs leading-5 text-[var(--lr-ink-3)]">
+      <div className="mt-4 text-[length:var(--lr-text-meta)] leading-5 text-[var(--lr-ink-3)]">
         <div className="min-w-0">
           {breakdown.deductions.length ? (
             <div className="space-y-2">

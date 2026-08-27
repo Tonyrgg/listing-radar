@@ -41,10 +41,10 @@ export function ListingPhotoGallery({
 
   if (!activeUrl) {
     return (
-      <section className="flex h-56 items-center justify-center rounded-[7px] border border-dashed border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]">
+      <section className="flex h-56 items-center justify-center rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]">
         <div className="text-center text-[var(--lr-ink-3)]">
           <ImageOff aria-hidden="true" className="mx-auto size-7" />
-          <p className="mt-3 text-sm font-medium">Nessuna foto acquisita</p>
+          <p className="mt-3 text-[length:var(--lr-text-body)] font-medium">Nessuna foto acquisita</p>
         </div>
       </section>
     );
@@ -59,7 +59,7 @@ export function ListingPhotoGallery({
         href={activeUrl}
         target="_blank"
         rel="noreferrer"
-        className="group relative block h-56 overflow-hidden rounded-[7px] border border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]"
+        className="group relative block h-56 overflow-hidden rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]"
       >
         <img
           src={activeUrl}
@@ -68,7 +68,7 @@ export function ListingPhotoGallery({
           referrerPolicy="no-referrer"
           onError={() => markFailed(activeUrl)}
         />
-        <span className="absolute bottom-3 right-3 rounded-md bg-[var(--lr-canvas)] px-3 py-2 text-xs font-medium text-[var(--lr-ink)] opacity-90 transition-opacity group-hover:opacity-100">
+        <span className="absolute bottom-3 right-3 rounded-md bg-[var(--lr-canvas)] px-3 py-2 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink)] opacity-90 transition-opacity group-hover:opacity-100">
           Apri foto
           <span className="sr-only">Apri la foto originale</span>
         </span>

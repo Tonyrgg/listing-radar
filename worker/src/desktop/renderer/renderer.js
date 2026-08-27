@@ -201,9 +201,29 @@ function revealSection(node) {
   }
   return node;
 }
+/* La pagina mostra una sezione per volta: prima di scorrere verso qualcosa
+ * bisogna portare in vista la sezione che lo contiene, altrimenti si scorre
+ * verso un nodo nascosto. Cio che non sta in una sezione di servizio
+ * appartiene alla lavorazione. */
 function goTo(id) {
   const node = revealSection(document.getElementById(id));
-  node?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!node) return;
+  const view = node.closest("details.section")?.id ?? "operations";
+  document.body.dataset.workerView = view;
+  markActiveNav(view);
+  node.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+/* La tappa «Cronologia» dice quanto ha gia in memoria, come le altre tappe
+ * dicono il proprio stato: e lo stesso numero mostrato dentro la sezione. */
+function updateHistoryNavHint() {
+  const hint = $("historyNavHint");
+  if (!hint) return;
+  const jobs = Number($("jobCount")?.textContent ?? 0);
+  const imports = Number($("completedImportCount")?.textContent ?? 0);
+  const total = jobs + imports;
+  hint.textContent = total
+    ? `${total} ${total === 1 ? "lavoro salvato" : "lavori salvati"}`
+    : "Import conclusi e lavori salvati";
 }
 function markActiveNav(id) {
   document.querySelectorAll(".nav-item[data-scroll]").forEach((item) => {
@@ -928,6 +948,7 @@ function renderAction() {
 function renderJobs() {
   const jobs = appState?.jobs ?? [];
   $("jobCount").textContent = jobs.length;
+  updateHistoryNavHint();
   $("jobsList").innerHTML = jobs.length
     ? jobs
         .map((job) => {
@@ -946,6 +967,7 @@ function renderJobs() {
 function renderCompletedImports() {
   const imports = appState?.completedImports ?? [];
   $("completedImportCount").textContent = imports.length;
+  updateHistoryNavHint();
   $("completedImportsList").innerHTML = imports.length
     ? imports
         .map((item) => {
@@ -998,6 +1020,7 @@ function completedSessionStats(item) {
 function renderCompletedSessions() {
   const imports = appState?.completedImports ?? [];
   $("completedImportCount").textContent = imports.length;
+  updateHistoryNavHint();
   $("completedImportsList").innerHTML = imports.length
     ? imports
         .map((item) => {

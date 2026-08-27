@@ -4,7 +4,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 
 import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
-import { EventRow } from "@/components/event-row";
+import { DashboardEventCard } from "@/components/dashboard-event-card";
 import { Banda, FasciaVuota, StrisciaFiducia } from "@/components/home-bands";
 import { PageHeader } from "@/components/page-header";
 import { PropertyRow, signalsFromOpportunity } from "@/components/property-row";
@@ -155,11 +155,14 @@ export default async function TodayPage() {
         }
       >
         {eventi.length ? (
-          <div>
-            {/* La stessa riga dei Segnali: la foto della casa, il movimento
-              * con la sua freccia, e nient'altro. */}
+          <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
             {eventi.map((event) => (
-              <EventRow key={event.id} event={event} foto={foto.get(event.propertyId)} />
+              <DashboardEventCard
+                key={event.id}
+                event={event}
+                foto={foto.get(event.propertyId)}
+                now={now}
+              />
             ))}
           </div>
         ) : (

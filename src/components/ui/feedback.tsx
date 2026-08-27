@@ -15,8 +15,8 @@ import { Button, buttonClass } from "@/components/ui/primitives";
 
 const toneStyle = {
   success: {
-    stripe: "bg-[var(--lr-accent)]",
-    icon: <Check aria-hidden="true" className="size-4 text-[var(--lr-accent)]" />,
+    stripe: "bg-[var(--lr-ok)]",
+    icon: <Check aria-hidden="true" className="size-4 text-[var(--lr-ok)]" />,
   },
   danger: {
     stripe: "bg-[var(--lr-danger)]",

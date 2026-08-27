@@ -14,11 +14,17 @@ import type {
  * Chi ha bisogno di una card, di un chip o di un bottone parte da qui.
  * ------------------------------------------------------------------------- */
 
-export type Tone = "neutral" | "action" | "warn" | "danger" | "info";
+/**
+ * `action` è il rame, e vuol dire «questo è il passo successivo».
+ * Gli altri dicono come stanno le cose: `ok` è la conferma che prima veniva
+ * scritta in rame — ed è per questo che l'accento finiva su ogni pillola.
+ */
+export type Tone = "neutral" | "action" | "ok" | "warn" | "danger" | "info";
 
 const chipTone: Record<Tone, string> = {
   neutral: "border-[var(--lr-line)] text-[var(--lr-ink-2)]",
   action: "border-[var(--lr-accent)] bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]",
+  ok: "border-[var(--lr-ok)] bg-[var(--lr-ok-soft)] text-[var(--lr-ok)]",
   warn: "border-[var(--lr-warn)] bg-[var(--lr-warn-soft)] text-[var(--lr-warn)]",
   danger: "border-[var(--lr-danger)] bg-[var(--lr-danger-soft)] text-[var(--lr-danger)]",
   info: "border-[var(--lr-info)] bg-[var(--lr-info-soft)] text-[var(--lr-info)]",
@@ -27,6 +33,7 @@ const chipTone: Record<Tone, string> = {
 const stripeTone: Record<Tone, string> = {
   neutral: "bg-[var(--lr-line-quiet)]",
   action: "bg-[var(--lr-accent)]",
+  ok: "bg-[var(--lr-ok)]",
   warn: "bg-[var(--lr-warn)]",
   danger: "bg-[var(--lr-danger)]",
   info: "bg-[var(--lr-info)]",
@@ -64,12 +71,12 @@ export function Chip({
   );
 }
 
-/** La banda laterale dice l'urgenza senza consumare l'accento. */
+/** Un punto compatto segnala lo stato senza creare una falsa colonna visiva. */
 export function Stripe({ tone = "neutral" }: Readonly<{ tone?: Tone }>) {
   return (
     <span
       aria-hidden="true"
-      className={clsx("w-[3px] shrink-0 self-stretch rounded-full", stripeTone[tone])}
+      className={clsx("size-2 shrink-0 self-center rounded-full", stripeTone[tone])}
     />
   );
 }
@@ -126,7 +133,7 @@ export function FilterBar({
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--lr-accent-soft)] text-[var(--lr-accent)]">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--lr-raised)] text-[var(--lr-ink-3)]">
             <Search aria-hidden="true" className="size-3.5" />
           </span>
           <p className="text-[length:var(--lr-text-meta)] font-[650] text-[var(--lr-ink)]">{summary}</p>
