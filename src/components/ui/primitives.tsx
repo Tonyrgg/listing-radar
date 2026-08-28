@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { LoaderCircle, Search, X } from "lucide-react";
+import { ArrowRight, LoaderCircle, Search, X } from "lucide-react";
 import Link from "next/link";
 import type {
   AnchorHTMLAttributes,
@@ -106,6 +106,30 @@ export function Card({
     >
       {children}
     </Tag>
+  );
+}
+
+/** Il collegamento copre davvero tutta la riga, compresa la coda a destra. */
+export function RowLink({
+  href,
+  label,
+}: Readonly<{ href: string; label: string }>) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="absolute inset-0 z-20 rounded-[var(--lr-radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--lr-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--lr-surface)]"
+    />
+  );
+}
+
+/** Il segnale visivo dell'azione di riga: leggibile e con un bersaglio da 44 px. */
+export function RowAction({ label = "Apri" }: Readonly<{ label?: string }>) {
+  return (
+    <span className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-surface)] text-[length:var(--lr-text-label)] font-semibold text-[var(--lr-ink-2)] transition-colors group-hover:border-[var(--lr-ink-3)] group-hover:bg-[var(--lr-raised)] group-hover:text-[var(--lr-ink)] sm:w-auto sm:px-3">
+      <span className="sr-only sm:not-sr-only">{label}</span>
+      <ArrowRight aria-hidden="true" className="size-4" />
+    </span>
   );
 }
 

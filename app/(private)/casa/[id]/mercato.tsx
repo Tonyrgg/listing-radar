@@ -313,20 +313,18 @@ export function SchedaMercato({
             * commerciale attuale». */}
           {detail.opportunity &&
           !hasNoRealSignal(detail.opportunity.reasons) ? (
-            <Card>
-              <CardBody className="space-y-3">
-                <Giudizio
-                  livello={livelloFromOpportunity(detail.opportunity.level)}
-                  signals={detail.opportunity.reasons.length}
-                  total={Math.max(detail.opportunity.reasons.length, 4)}
-                />
-                <ul className="space-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-                  {detail.opportunity.reasons.map((reason) => (
-                    <li key={reason}>{opportunityReasonLabel(reason)}</li>
-                  ))}
-                </ul>
-              </CardBody>
-            </Card>
+            <div className="space-y-3">
+              <Giudizio
+                livello={livelloFromOpportunity(detail.opportunity.level)}
+                signals={detail.opportunity.reasons.length}
+                total={Math.max(detail.opportunity.reasons.length, 4)}
+              />
+              <ul className="space-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+                {detail.opportunity.reasons.map((reason) => (
+                  <li key={reason}>{opportunityReasonLabel(reason)}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           {detail.location ? (

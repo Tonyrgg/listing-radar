@@ -1,9 +1,7 @@
-import { ArrowUpRight } from "lucide-react";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DatoAssente } from "@/components/ui/atoms";
-import { Stripe, type Tone } from "@/components/ui/primitives";
+import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty } from "@/lib/matching/types";
@@ -48,7 +46,7 @@ export function PortfolioRow({
   return (
     <article className="group relative flex items-stretch gap-3 border-t border-[var(--lr-line-quiet)] p-3 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
       {href ? (
-        <Link href={href} className="absolute inset-0 z-0" aria-label={`Apri ${nome}`} />
+        <RowLink href={href} label={`Apri ${nome}`} />
       ) : null}
       <Stripe tone={tono} />
 
@@ -87,10 +85,7 @@ export function PortfolioRow({
 
       <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
         {coda}
-        <ArrowUpRight
-          aria-hidden="true"
-          className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-        />
+        {href ? <RowAction /> : null}
       </div>
     </article>
   );

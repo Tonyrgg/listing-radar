@@ -1,6 +1,5 @@
 import { clsx } from "clsx";
-import { ArrowUpRight, BedDouble, Building2, Ruler, Store, UserRound } from "lucide-react";
-import Link from "next/link";
+import { BedDouble, Building2, Ruler, Store, UserRound } from "lucide-react";
 
 import {
   MovimentoDiPrezzo,
@@ -8,7 +7,7 @@ import {
   haMovimentoDiPrezzo,
 } from "@/components/market-move";
 import { Dato } from "@/components/ui/atoms";
-import { Chip, type Tone } from "@/components/ui/primitives";
+import { Chip, RowAction, RowLink, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatDate, formatDays, formatNumber, formatShouty } from "@/lib/formatting";
 import { lifecycleEventLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
@@ -76,10 +75,9 @@ export function DashboardEventCard({
 
   return (
     <article className="group relative flex min-w-0 flex-col overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] transition-colors focus-within:border-[var(--lr-accent)] hover:border-[var(--lr-ink-3)]">
-      <Link
+      <RowLink
         href={`/casa/${event.propertyId}`}
-        className="absolute inset-0 z-10 outline-none"
-        aria-label={`${lifecycleEventLabel(event.eventType)}: ${dove}`}
+        label={`${lifecycleEventLabel(event.eventType)}: ${dove}`}
       />
 
       {/* La foto è la prima lettura: lo stato le si posa sopra, non sotto. */}
@@ -189,12 +187,9 @@ export function DashboardEventCard({
               nota
             )}
           </span>
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[var(--lr-ink-3)]">
+          <span className="inline-flex shrink-0 items-center gap-2 text-[var(--lr-ink-3)]">
             {formatDate(event.occurredAt)}
-            <ArrowUpRight
-              aria-hidden="true"
-              className="size-4 transition-colors group-hover:text-[var(--lr-ink)]"
-            />
+            <RowAction />
           </span>
         </div>
       </div>

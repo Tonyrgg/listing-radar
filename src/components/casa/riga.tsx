@@ -1,5 +1,4 @@
-import { ArrowUpRight, Building2, RefreshCw, UserRound } from "lucide-react";
-import Link from "next/link";
+import { Building2, RefreshCw, UserRound } from "lucide-react";
 import { clsx } from "clsx";
 
 import {
@@ -11,7 +10,7 @@ import {
   livelloFromOpportunity,
   type Livello,
 } from "@/components/ui/atoms";
-import { Meta, Stripe, type Tone } from "@/components/ui/primitives";
+import { Meta, RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatDays, formatNumber, formatShouty } from "@/lib/formatting";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty } from "@/lib/matching/types";
@@ -171,7 +170,7 @@ export function RigaDiCasa({
 
   return (
     <article className="group relative flex items-stretch gap-3 border-t border-[var(--lr-line-quiet)] p-3 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
-      <Link href={`/casa/${riga.id}`} className="absolute inset-0 z-0" aria-label={riga.indirizzo} />
+      <RowLink href={`/casa/${riga.id}`} label={`Apri ${riga.indirizzo}`} />
       <Stripe tone={TONO[riga.chi]} />
 
       {/* La foto è il soggetto, non la decorazione. */}
@@ -278,10 +277,7 @@ export function RigaDiCasa({
       </div>
 
       {compact ? (
-        <ArrowUpRight
-          aria-hidden="true"
-          className="relative z-10 size-4 shrink-0 self-center text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-        />
+        <span className="relative z-10 self-center"><RowAction /></span>
       ) : (
         <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
           {giudizioParla && riga.segnali ? (
@@ -294,10 +290,7 @@ export function RigaDiCasa({
           ) : riga.segnali ? null : (
             <Meta>{riga.stato}</Meta>
           )}
-          <ArrowUpRight
-            aria-hidden="true"
-            className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-          />
+          <RowAction />
         </div>
       )}
     </article>

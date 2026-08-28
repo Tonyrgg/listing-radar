@@ -1,13 +1,10 @@
-import { ArrowUpRight } from "lucide-react";
-import Link from "next/link";
-
 import {
   MovimentoDiPrezzo,
   contornoDelMovimento,
   haMovimentoDiPrezzo,
 } from "@/components/market-move";
 import { Dato } from "@/components/ui/atoms";
-import { Stripe, type Tone } from "@/components/ui/primitives";
+import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatDate, formatShouty, formatTime } from "@/lib/formatting";
 import { lifecycleEventLabel } from "@/lib/property-lifecycle/read-models/presentation";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
@@ -49,10 +46,9 @@ export function EventRow({
 
   return (
     <article className="group relative flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-3 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
-      <Link
+      <RowLink
         href={href ?? `/casa/${event.propertyId}`}
-        className="absolute inset-0 z-0"
-        aria-label={`${lifecycleEventLabel(event.eventType)}: ${dove}`}
+        label={`${lifecycleEventLabel(event.eventType)}: ${dove}`}
       />
       <Stripe tone={TONO_EVENTO[event.eventType] ?? "neutral"} />
 
@@ -93,10 +89,7 @@ export function EventRow({
         <span className="hidden whitespace-nowrap text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] sm:inline">
           {mostraOra ? formatTime(event.occurredAt) : formatDate(event.occurredAt)}
         </span>
-        <ArrowUpRight
-          aria-hidden="true"
-          className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-        />
+        <RowAction />
       </span>
     </article>
   );

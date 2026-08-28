@@ -1,5 +1,4 @@
-import { ArrowDown, ArrowUpRight, Building2, RefreshCw, UserRound } from "lucide-react";
-import Link from "next/link";
+import { ArrowDown, Building2, RefreshCw, UserRound } from "lucide-react";
 import { clsx } from "clsx";
 
 import {
@@ -10,7 +9,7 @@ import {
   livelloFromOpportunity,
   type Livello,
 } from "@/components/ui/atoms";
-import { Meta, Stripe, type Tone } from "@/components/ui/primitives";
+import { Meta, RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber } from "@/lib/formatting";
 import {
   hasNoRealSignal,
@@ -101,7 +100,7 @@ export function PropertyRow({
 
   return (
     <article className="group relative flex items-stretch gap-3 border-t border-[var(--lr-line-quiet)] p-3 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
-      <Link href={destinazione} className="absolute inset-0 z-0" aria-label={property.address ?? property.title} />
+      <RowLink href={destinazione} label={`Apri ${property.address ?? property.title}`} />
       <Stripe tone={tono} />
 
       {/* La foto è il soggetto, non la decorazione. */}
@@ -192,10 +191,7 @@ export function PropertyRow({
       </div>
 
       {compact ? (
-        <ArrowUpRight
-          aria-hidden="true"
-          className="relative z-10 size-4 shrink-0 self-center text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-        />
+        <span className="relative z-10 self-center"><RowAction /></span>
       ) : (
         <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
           {giudizioParla && signals ? (
@@ -208,10 +204,7 @@ export function PropertyRow({
           ) : signals ? null : (
             <Meta>{propertyStateLabel(property.propertyState)}</Meta>
           )}
-          <ArrowUpRight
-            aria-hidden="true"
-            className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-          />
+          <RowAction />
         </div>
       )}
     </article>

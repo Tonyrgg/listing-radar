@@ -3,105 +3,32 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
-import { RefreshEmailButton } from "@/app/(private)/incoming/refresh-email-button";
 import { DashboardEventCard } from "@/components/dashboard-event-card";
 import { Banda, FasciaVuota, StrisciaFiducia } from "@/components/home-bands";
 import { PageHeader } from "@/components/page-header";
 import { PropertyRow, signalsFromOpportunity } from "@/components/property-row";
 import { QuickRequestButton } from "@/components/matching/quick-request";
-import { Fonte, livelloFromOpportunity } from "@/components/ui/atoms";
-import { Chip, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
+import { livelloFromOpportunity } from "@/components/ui/atoms";
+import { Chip, buttonClass } from "@/components/ui/primitives";
 import { readNow } from "@/lib/clock";
-import {
-  formatCurrency,
-  formatDateTime,
-  formatNumber,
-  formatPlainText,
-} from "@/lib/formatting";
-import { getIncomingDashboardData } from "@/lib/incoming/repository";
-import { getSourceLabel } from "@/lib/labels";
 import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { getSourcesSummary } from "@/lib/sources-health";
-import type { IncomingListing } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Oggi" };
 
 
 
-function portalImportUrl(listing: IncomingListing) {
-  const value = listing.canonicalUrl ?? listing.url;
-
-  try {
-    const url = new URL(value);
-    const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
-    fragment.set("listing-radar", listing.id);
-    url.hash = fragment.toString();
-    return url.toString();
-  } catch {
-    return value;
-  }
-}
-
-function attesa(listing: IncomingListing, now: number) {
-  const value = listing.emailReceivedAt ?? listing.createdAt;
-  const time = value ? new Date(value).getTime() : Number.NaN;
-  if (Number.isNaN(time)) return { testo: "arrivato di recente", giorni: 0 };
-
-  const giorni = Math.floor((now - time) / (24 * 60 * 60 * 1000));
-  if (giorni <= 0) return { testo: "arrivato oggi", giorni };
-  if (giorni === 1) return { testo: "in attesa da ieri", giorni };
-  return { testo: `in attesa da ${giorni} giorni`, giorni };
-}
-
-function RigaArrivo({
-  listing,
-  now,
-}: Readonly<{ listing: IncomingListing; now: number }>) {
-  const stato = attesa(listing, now);
-
-  return (
-    <div className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-4 py-3 first:border-t-0">
-      <Stripe tone={stato.giorni >= 2 ? "warn" : "neutral"} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[length:var(--lr-text-record)] font-[650] leading-snug text-[var(--lr-ink)]">
-          {listing.title}
-        </p>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-          <b className="font-[650] text-[var(--lr-ink)]">{formatCurrency(listing.price)}</b>
-          {listing.sqm != null ? <span>{formatNumber(listing.sqm)} mq</span> : null}
-          {listing.zone ? <span>{formatPlainText(listing.zone)}</span> : null}
-        </div>
-        <Meta className="mt-1">
-          <Fonte name={getSourceLabel(listing.source)} /> · {stato.testo}
-        </Meta>
-      </div>
-      <a
-        href={portalImportUrl(listing)}
-        target="_blank"
-        rel="noreferrer"
-        className={buttonClass("secondary", { compact: true })}
-      >
-        Completa
-      </a>
-    </div>
-  );
-}
-
-
 export default async function TodayPage() {
   await connection();
 
-  const [incoming, sources, segnali, now] = await Promise.all([
-    getIncomingDashboardData(),
+  const [sources, segnali, now] = await Promise.all([
     getSourcesSummary(),
     loadLifecycleView((repository) => repository.dashboard()),
     readNow(),
   ]);
-
-  const arrivi = incoming.pendingListings.slice(0, 5);
 
   const eventi = (segnali.data?.recentEvents ?? [])
     .filter((event) => isMarketMove(event.eventType))
@@ -129,12 +56,7 @@ export default async function TodayPage() {
       <PageHeader
         eyebrow={oggi.charAt(0).toUpperCase() + oggi.slice(1)}
         title="Oggi"
-        actions={
-          <>
-            <RefreshEmailButton />
-            <QuickRequestButton />
-          </>
-        }
+        actions={<QuickRequestButton />}
       />
 
       {/* Fascia 0 — quanto puoi fidarti di quello che stai per leggere. */}
@@ -177,49 +99,9 @@ export default async function TodayPage() {
         )}
       </Banda>
 
-      {/* Fascia 2 — cosa chiede il tuo lavoro. */}
+      {/* Fascia 2 — il giudizio. */}
       <Banda
         numero={2}
-        titolo="Cosa è arrivato di nuovo"
-        conteggio={
-          incoming.pendingCount ? (
-            <Chip tone="warn">{incoming.pendingCount} da completare</Chip>
-          ) : null
-        }
-        azione={
-          arrivi.length ? (
-            <Link href="/incoming" className={buttonClass("quiet", { compact: true })}>
-              Vedi tutti
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-          ) : null
-        }
-      >
-        {arrivi.length ? (
-          <div>
-            {arrivi.map((listing) => (
-              <RigaArrivo key={listing.id} listing={listing} now={now} />
-            ))}
-          </div>
-        ) : (
-          <FasciaVuota
-            titolo="Hai completato tutta la coda"
-            descrizione={
-              incoming.lastEmailCheck
-                ? `Nessuna segnalazione da completare. L'ultimo controllo delle email è delle ${new Intl.DateTimeFormat(
-                    "it-IT",
-                    { hour: "2-digit", minute: "2-digit" },
-                  ).format(new Date(incoming.lastEmailCheck.processedAt))}.`
-                : "Nessuna segnalazione da completare. Il controllo automatico parte da solo."
-            }
-            azione={<RefreshEmailButton />}
-          />
-        )}
-      </Banda>
-
-      {/* Fascia 3 — il giudizio. */}
-      <Banda
-        numero={3}
         titolo="Cosa conviene guardare adesso"
         conteggio={
           occasioni.length ? (
@@ -266,13 +148,6 @@ export default async function TodayPage() {
         )}
       </Banda>
 
-      <Meta className="px-1">
-        Ultimo controllo delle email{" "}
-        {incoming.lastEmailCheck
-          ? formatDateTime(incoming.lastEmailCheck.processedAt)
-          : "non ancora eseguito"}
-        .
-      </Meta>
     </div>
   );
 }

@@ -22,7 +22,6 @@ import {
   Meta,
   Ricerca,
   Scelta,
-  Stripe,
   buttonClass,
 } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber } from "@/lib/formatting";
@@ -282,8 +281,6 @@ export default async function RichiesteClientiPage({
 
             return (
               <Card key={request.id} className="flex gap-3 p-4">
-                <Stripe tone={calda ? "warn" : "neutral"} />
-
                 <Link
                   href={`/requests/${request.id}`}
                   className="group min-w-0 flex-1"

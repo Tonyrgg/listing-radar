@@ -16,13 +16,13 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { MONITORED_ZONE } from "@/lib/constants";
 import type { Flash } from "@/lib/flash-shared";
 
-function Brand({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
+function Brand() {
   return (
-    <div className={clsx("flex items-center gap-2.5", collapsed && "lg:justify-center")}>
+    <div className="flex items-center gap-2.5">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]">
         <Radar aria-hidden="true" className="size-5" />
       </span>
-      <div className={clsx("min-w-0", collapsed && "lg:sr-only")}>
+      <div className="min-w-0">
         <p className="font-display text-[length:var(--lr-text-section)] leading-tight text-[var(--lr-ink)]">
           Listing Radar
         </p>
@@ -80,16 +80,18 @@ export function AppShellFrame({
           "sticky top-0 hidden h-screen border-r border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] px-3 py-4 lg:flex lg:flex-col",
         )}
       >
-        <div className="flex items-center justify-between gap-2">
-          <Brand collapsed={collapsed} />
+        <div className={clsx("flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
+          {collapsed ? null : <Brand />}
           <button
             type="button"
             onClick={toggleCollapsed}
             aria-label={collapsed ? "Apri la barra laterale" : "Chiudi la barra laterale"}
             title={collapsed ? "Apri la barra laterale" : "Chiudi la barra laterale"}
             className={clsx(
-              "inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] text-[var(--lr-ink-3)] transition-colors hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
-              collapsed && "lg:mx-auto",
+              "inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] transition-colors",
+              collapsed
+                ? "bg-[var(--lr-accent)] text-[var(--lr-accent-ink)] hover:brightness-95"
+                : "text-[var(--lr-ink-3)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
             )}
           >
             {collapsed ? (
@@ -136,7 +138,7 @@ export function AppShellFrame({
           <div className="flex min-h-14 w-full items-center justify-between gap-3 px-4">
             <Brand />
             <div className="flex shrink-0 items-center gap-2">
-              <ThemeToggle />
+              <ThemeToggle compact />
               <QuickRequestButton compact />
               {showLogout ? (
                 <form action={logout}>

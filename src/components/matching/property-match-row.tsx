@@ -1,7 +1,6 @@
-import { AlertTriangle, ArrowUpRight, Check } from "lucide-react";
-import Link from "next/link";
+import { AlertTriangle, Check } from "lucide-react";
 
-import { Stripe, type Tone } from "@/components/ui/primitives";
+import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty, RequestPropertyMatch } from "@/lib/matching/types";
@@ -55,10 +54,9 @@ export function PropertyMatchRow({
   return (
     <article className="group relative flex items-stretch gap-3 border-t border-[var(--lr-line-quiet)] p-3 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]">
       {match.id ? (
-        <Link
+        <RowLink
           href={`/matching/${match.id}`}
-          className="absolute inset-0 z-0"
-          aria-label={`Guarda perché ${property.title} può andare bene`}
+          label={`Analizza ${property.title}`}
         />
       ) : null}
       <Stripe tone={verdetto.tono} />
@@ -108,10 +106,7 @@ export function PropertyMatchRow({
         >
           {verdetto.parola}
         </span>
-        <ArrowUpRight
-          aria-hidden="true"
-          className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-        />
+        {match.id ? <RowAction label="Analizza" /> : null}
       </div>
     </article>
   );

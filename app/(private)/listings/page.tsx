@@ -1,4 +1,4 @@
-import { Building2, UserRound, X } from "lucide-react";
+import { ArrowRight, Building2, UserRound, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -148,11 +148,17 @@ export default async function CasePage({
         title="Le case"
         description="Tutte insieme: quelle che teniamo noi e quelle che tengono gli altri. Con la loro storia e chi le vende adesso."
         actions={
-          <Chip tone="neutral">
-            {filtrate.length === tutte.length
-              ? `${formatNumber(tutte.length)} case`
-              : `${formatNumber(filtrate.length)} di ${formatNumber(tutte.length)}`}
-          </Chip>
+          <>
+            <Chip tone="neutral">
+              {filtrate.length === tutte.length
+                ? `${formatNumber(tutte.length)} case`
+                : `${formatNumber(filtrate.length)} di ${formatNumber(tutte.length)}`}
+            </Chip>
+            <Link href="/incoming" className={buttonClass("primary")}>
+              Annunci da completare
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </>
         }
       />
 

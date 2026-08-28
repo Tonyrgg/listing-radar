@@ -32,7 +32,7 @@ export type CasaInSintesi = {
   notaGiorni?: string;
 };
 
-/** Le foto: la prima grande, le altre in fila sotto. */
+/** Le foto: una scena principale e un piccolo contesto, senza occupare tutta la pagina. */
 export function FotoDellaCasa({
   urls,
   alt,
@@ -42,7 +42,7 @@ export function FotoDellaCasa({
     return (
       <div
         className={clsx(
-          "grid aspect-[16/6] w-full place-items-center rounded-[var(--lr-radius-card)] bg-[var(--lr-raised)] px-6 text-center",
+          "grid aspect-[16/9] w-full place-items-center rounded-[var(--lr-radius-card)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-6 text-center",
           "text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]",
           className,
         )}
@@ -53,28 +53,34 @@ export function FotoDellaCasa({
   }
 
   const [prima, ...altre] = urls;
+  const anteprime = altre.slice(0, 2);
 
   return (
-    <div className={clsx("space-y-2", className)}>
+    <div
+      className={clsx(
+        "grid aspect-[16/10] min-h-0 grid-cols-1 gap-2 overflow-hidden rounded-[var(--lr-radius-card)] bg-[var(--lr-raised)]",
+        anteprime.length && "sm:grid-cols-[minmax(0,3fr)_minmax(8rem,1fr)] sm:grid-rows-2",
+        className,
+      )}
+    >
       <div
         role="img"
         aria-label={alt}
-        className="aspect-[4/3] w-full rounded-[var(--lr-radius-card)] bg-[var(--lr-raised)] bg-cover bg-center"
+        className={clsx(
+          "min-h-0 w-full bg-[var(--lr-raised)] bg-cover bg-center",
+          anteprime.length ? "sm:row-span-2" : "h-full",
+        )}
         style={{ backgroundImage: `url("${prima}")` }}
       />
-      {altre.length ? (
-        <div className="flex gap-2">
-          {altre.slice(0, 4).map((url, indice) => (
-            <div
-              key={url}
-              role="img"
-              aria-label={`${alt}, foto ${indice + 2}`}
-              className="h-16 flex-1 rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] bg-cover bg-center"
-              style={{ backgroundImage: `url("${url}")` }}
-            />
-          ))}
-        </div>
-      ) : null}
+      {anteprime.map((url, indice) => (
+        <div
+          key={url}
+          role="img"
+          aria-label={`${alt}, foto ${indice + 2}`}
+          className="hidden min-h-0 bg-[var(--lr-raised)] bg-cover bg-center sm:block"
+          style={{ backgroundImage: `url("${url}")` }}
+        />
+      ))}
     </div>
   );
 }
@@ -97,18 +103,21 @@ export function ColpoDocchio({
   children?: ReactNode;
 }>) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+    <section className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)]">
       <FotoDellaCasa urls={casa.foto} alt={casa.indirizzo} />
 
-      <div className="space-y-5">
-        <div>
-          <Label>{casa.prezzoEtichetta}</Label>
-          <p className="text-[length:var(--lr-text-page)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
-            {formatCurrency(casa.prezzo)}
-          </p>
+      <div className="space-y-5 rounded-[var(--lr-radius-card)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--lr-line-quiet)] pb-5">
+          <div>
+            <Label>{casa.prezzoEtichetta}</Label>
+            <p className="text-[length:var(--lr-text-page)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
+              {formatCurrency(casa.prezzo)}
+            </p>
+          </div>
+          <Stato forma={casa.statoForma}>{casa.statoTesto}</Stato>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-5">
           <Fatto label="Superficie">
             {casa.mq != null ? (
               `${formatNumber(casa.mq)} m²`
@@ -147,10 +156,8 @@ export function ColpoDocchio({
           </Fatto>
         </div>
 
-        <Stato forma={casa.statoForma}>{casa.statoTesto}</Stato>
-
-        {children}
+        {children ? <div className="space-y-4 border-t border-[var(--lr-line-quiet)] pt-5">{children}</div> : null}
       </div>
-    </div>
+    </section>
   );
 }
