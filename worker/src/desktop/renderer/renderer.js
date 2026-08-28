@@ -1431,9 +1431,11 @@ function renderStreetRun() {
     cancel = $("streetRunCancel"),
     abandon = $("streetRunAbandon"),
     input = $("streetRunInput"),
-    dryToggle = $("streetRunDryRunToggle");
+    dryToggle = $("dryRunToggle");
   if (checkpoint && !input.value)
     input.value = checkpoint.requestedStreet ?? "";
+  /* Ripresa di un checkpoint: la modalita non si cambia a meta strada, quindi
+   * la regola globale viene riportata a quella con cui la run era partita. */
   if (canResume && checkpoint?.mode)
     dryToggle.checked = checkpoint.mode === "dry_run";
   dryToggle.disabled = active || canResume;
@@ -2004,7 +2006,7 @@ document.addEventListener("click", async (event) => {
       if (target.id === "streetRunStart") {
         const street = $("streetRunInput").value.trim(),
           resume = target.dataset.resumeStreet === "true",
-          dryRun = $("streetRunDryRunToggle").checked;
+          dryRun = $("dryRunToggle").checked;
         if (!street) throw new Error("Inserisci la via esatta");
         if (
           !resume &&
@@ -2316,7 +2318,19 @@ $("configurationForm").addEventListener("submit", async (event) => {
     });
   } catch {}
 });
-$("streetRunDryRunToggle").addEventListener("change", () => renderStreetRun());
+/* La modalita di prova e una regola della run, non della tipologia: si salva
+ * nelle preferenze e vale per quella che lanci. */
+$("dryRunToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  renderStreetRun();
+  try {
+    await window.propertyWorker.savePreferences({ dryRun: toggle.checked });
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    renderStreetRun();
+    toast(error?.message ?? String(error));
+  }
+});
 $("networkFloorMode").addEventListener("change", () => {
   $("networkFloorValue").disabled = $("networkFloorMode").value === "any";
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();

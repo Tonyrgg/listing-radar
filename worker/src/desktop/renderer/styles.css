@@ -2320,7 +2320,8 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
 
 .safe-check small { color: var(--lr-ink-3); }
 
-.safe-check input[type="checkbox"] {
+.safe-check input[type="checkbox"],
+#dryRunControl input[type="checkbox"] {
   appearance: none;
   position: relative;
   width: 40px;
@@ -2333,7 +2334,8 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-.safe-check input[type="checkbox"]::after {
+.safe-check input[type="checkbox"]::after,
+#dryRunControl input[type="checkbox"]::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -2346,17 +2348,20 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
   transition: left 120ms ease, background-color 120ms ease;
 }
 
-.safe-check input[type="checkbox"]:checked {
+.safe-check input[type="checkbox"]:checked,
+#dryRunControl input[type="checkbox"]:checked {
   border-color: var(--lr-accent);
   background: var(--lr-accent);
 }
 
-.safe-check input[type="checkbox"]:checked::after {
+.safe-check input[type="checkbox"]:checked::after,
+#dryRunControl input[type="checkbox"]:checked::after {
   left: 19px;
   background: var(--lr-accent-ink);
 }
 
-.safe-check input[type="checkbox"]:focus-visible {
+.safe-check input[type="checkbox"]:focus-visible,
+#dryRunControl input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--lr-accent);
   outline-offset: 2px;
 }
@@ -2812,4 +2817,28 @@ body[data-fase="lavora"] #settings { display: none !important; }
 @media (max-width: 900px) {
   .activity-mode-control { flex-direction: column; align-items: stretch; }
   .activity-mode-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* La modalità di prova è una regola della run: stesso vestito dell'attività. */
+#dryRunControl { cursor: pointer; }
+
+#dryRunControl input[type="checkbox"] { flex: none; }
+
+#dryRunControl:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Le regole della run stanno su una riga sola; il comando di arresto le segue
+ * senza spezzarla in due blocchi centrati. */
+.run-controls {
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.run-controls > .activity-mode-control { flex: 1 1 320px; }
+
+.run-stop-control {
+  flex: 1 1 100%;
+  justify-content: flex-start;
 }

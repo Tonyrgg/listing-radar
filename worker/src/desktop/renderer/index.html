@@ -72,7 +72,14 @@
           </div>
         </section>
 
-        <section id="runControls" class="run-controls" aria-label="Controlli comuni delle run">
+        <section id="runControls" class="run-controls" aria-label="Regole della run">
+          <label class="activity-mode-control" id="dryRunControl">
+            <div class="activity-mode-copy">
+              <b>Modalità di prova</b>
+              <small id="dryRunHelp">Controlla tutto, ma non salva nel gestionale. Vale per la run, qualunque tipologia scegli.</small>
+            </div>
+            <input id="dryRunToggle" type="checkbox" checked />
+          </label>
           <div class="activity-mode-control" id="autoFillDirectContactControl">
             <div class="activity-mode-copy">
               <b>Attività nel gestionale</b>
@@ -114,7 +121,6 @@
               <div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div>
               <small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small>
             </fieldset>
-            <label class="safe-check"><input id="dryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Controlla tutto, ma non salva nel gestionale</small></span></label>
             <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
         </section>
@@ -126,7 +132,6 @@
           </header>
           <div class="street-run-controls">
             <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
-            <label class="safe-check"><input id="streetRunDryRunToggle" type="checkbox" checked /><span><b>Modalità di prova</b><small>Se disattivata, dopo l'acquisizione importa automaticamente nel gestionale.</small></span></label>
             <button id="streetRunStart" class="button primary">Avvia dry-run</button>
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
             <button id="streetRunAbandon" class="button danger is-hidden">Abbandona checkpoint</button>
