@@ -2773,3 +2773,43 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .run-carousel .street-run-card { min-height: 0; padding: 22px 18px; }
   .run-launcher-header { padding: 18px; }
 }
+
+/* ---------- Attività nel gestionale: tre modalità, una regola globale ---------- */
+
+/* La scelta vale per tutte le run — lavorazioni, long run, richieste e
+ * incarichi — e per questo sta fra i controlli comuni, non dentro una scheda. */
+.activity-mode-control {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lr-space-4);
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-control);
+}
+
+.activity-mode-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-mode-copy b { font-size: var(--lr-text-body); font-weight: var(--lr-weight-medium); }
+.activity-mode-copy small { color: var(--lr-ink-3); }
+
+.activity-mode-choices { flex: none; width: auto; grid-template-columns: repeat(3, auto); }
+
+.activity-mode-choices button {
+  min-height: 38px;
+  padding: 0 14px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .activity-mode-control { flex-direction: column; align-items: stretch; }
+  .activity-mode-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

@@ -516,10 +516,10 @@ describe("flusso identità nominativo e immobile", () => {
   });
 
   it("applica il cambio Autocompila al successivo immobile della run", async () => {
-    let autoFillDirectContact = false;
+    let activityMode: "direct_contact" | "plain" | "none" = "plain";
     const runner = new PropertyWorkerRunner(config, {
       keepAlive: false,
-      autoFillDirectContact: () => autoFillDirectContact,
+      propertyActivityMode: () => activityMode,
     });
     const repository = { updatePropertyProcessing: vi.fn().mockResolvedValue(undefined) };
     Object.defineProperty(runner, "repository", { value: repository });
@@ -535,9 +535,9 @@ describe("flusso identità nominativo e immobile", () => {
     const ensureActivity = (runner as unknown as { ensurePropertyActivity: Function }).ensurePropertyActivity;
 
     await ensureActivity.call(runner, job, first, owner, [owner], crm, 1);
-    autoFillDirectContact = true;
+    activityMode = "direct_contact";
     await ensureActivity.call(runner, job, second, owner, [owner], crm, 1);
-    autoFillDirectContact = false;
+    activityMode = "plain";
     await ensureActivity.call(runner, job, third, owner, [owner], crm, 1);
 
     expect(crm.createPropertyActivity).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -612,7 +612,7 @@ describe("flusso identità nominativo e immobile", () => {
       [primary, coowner],
       crm,
       1,
-      true,
+      "direct_contact",
     );
     expect(crm.linkOwner).toHaveBeenCalledWith(
       "CRM-PROPERTY",

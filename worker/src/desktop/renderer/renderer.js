@@ -277,6 +277,7 @@ function commandIdentity(target) {
     ? `update-${target.dataset.updateAction}`
     : (target.dataset.action ??
       (target.dataset.runSlideTarget ? `run-slide-${target.dataset.runSlideTarget}` : null) ??
+      (target.dataset.activityMode ? `activity-mode-${target.dataset.activityMode}` : null) ??
       (target.dataset.carouselDirection ? `carousel-${target.dataset.carouselDirection}` : null) ??
       (target.dataset.scroll
         ? `navigate-${target.dataset.scroll}`
@@ -300,6 +301,9 @@ function commandIdentity(target) {
                           ? `cancel-dialog-${target.dataset.cancelDialog}`
                           : target.id || "button"));
   const explicit = {
+      "activity-mode-direct_contact": "Attività: autocompila contatto diretto",
+      "activity-mode-plain": "Attività: generica",
+      "activity-mode-none": "Attività: nessuna",
       checkButton: "Controlla collegamenti",
       chromeButton: "Apri Chrome di lavoro",
       chooseExcelButton: "Scegli file Excel",
@@ -821,6 +825,31 @@ function errorAdvice(job, error) {
   };
 }
 
+/* Le tre modalita dell'attivita nel gestionale. La regola vale per tutte le
+ * run: lavorazioni, long run, richieste e incarichi. */
+const ACTIVITY_MODE_HELP = {
+  direct_contact: "Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica.",
+  plain: "Senza recapiti lascia l’attività generica: “Da eseguire” e “Inserire attività”.",
+  none: "Nessuna attività viene creata nel gestionale, per nessun immobile.",
+};
+function activityMode() {
+  const stored = appState?.preferences?.propertyActivityMode;
+  return ACTIVITY_MODE_HELP[stored] ? stored : "direct_contact";
+}
+/* L'eco immediata del clic: lo stato vero torna con la prossima pubblicazione. */
+function renderActivityModeOptimistic(mode) {
+  if (appState?.preferences) appState.preferences.propertyActivityMode = mode;
+  renderActivityMode();
+}
+function renderActivityMode() {
+  const mode = activityMode();
+  document.querySelectorAll("[data-activity-mode]").forEach((button) => {
+    const selected = button.dataset.activityMode === mode;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-checked", String(selected));
+  });
+  $("autoFillDirectContactHelp").textContent = ACTIVITY_MODE_HELP[mode];
+}
 function renderChecks() {
   const wanted = [
     ["chrome", "Chrome"],
@@ -1857,11 +1886,7 @@ function render() {
       : "Controllo automatico in attesa";
   renderChecks();
   renderSteps();
-  const directContactToggle = $("autoFillDirectContactToggle");
-  directContactToggle.checked = appState.preferences?.autoFillDirectContact !== false;
-  $("autoFillDirectContactHelp").textContent = directContactToggle.checked
-    ? "Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica."
-    : "Senza recapiti lascia l’attività generica: “Da eseguire” e “Inserire attività”.";
+  renderActivityMode();
   renderAction();
   renderJobs();
   renderCompletedImports();
@@ -1944,6 +1969,10 @@ document.addEventListener("click", async (event) => {
         markActiveNav(target.dataset.scroll);
         goTo(target.dataset.scroll);
         return true;
+      }
+      if (target.dataset.activityMode) {
+        renderActivityModeOptimistic(target.dataset.activityMode);
+        return window.propertyWorker.savePreferences({ propertyActivityMode: target.dataset.activityMode });
       }
       if (target.dataset.mode) {
         selectedMode = target.dataset.mode;
@@ -2292,15 +2321,7 @@ $("networkFloorMode").addEventListener("change", () => {
   $("networkFloorValue").disabled = $("networkFloorMode").value === "any";
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
 });
-$("autoFillDirectContactToggle").addEventListener("change", async (event) => {
-  const toggle = event.currentTarget;
-  try {
-    await window.propertyWorker.savePreferences({ autoFillDirectContact: toggle.checked });
-  } catch (error) {
-    toggle.checked = !toggle.checked;
-    toast(error?.message ?? String(error));
-  }
-});
+
 window.propertyWorker.onStreetRunProgress((progress) => {
   if (!appState) return;
   appState.streetRun = { ...(appState.streetRun ?? {}), progress };

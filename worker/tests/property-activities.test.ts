@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -108,14 +109,31 @@ describe("attività property-centric", () => {
       description: "Non sa nulla",
       directContactOrdinal: 1,
     });
-    expect(propertyActivityDefinition(owners, 7).description).toBe("nr");
-    expect(propertyActivityDefinition(owners, 16).description).toBe("nr");
+    expect(propertyActivityDefinition(owners, 7)?.description).toBe("nr");
+    expect(propertyActivityDefinition(owners, 16)?.description).toBe("nr");
     expect(isDirectContactNrOrdinal(8)).toBe(false);
+  });
+
+  it("traduce la vecchia preferenza a interruttore nelle tre modalità", async () => {
+    /* Chi aveva spento l'interruttore voleva l'attività generica, non
+     * «nessuna attività»: la migrazione non deve promuoverlo alla terza. */
+    const main = await readFile(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
+    expect(main).toContain('autoFillDirectContact === false ? "plain" : "direct_contact"');
+    expect(main).toContain('propertyActivityMode: "direct_contact"');
+  });
+
+  it("non definisce nessuna attività nella modalità «nessuna attività»", () => {
+    const conRecapito = { ...person("person-1", "crm-person-1", "Primo"), mobiles: ["3331234567"], landlines: [] };
+    const senzaRecapito = person("person-2", "crm-person-2", "Secondo");
+    /* Vale per tutti gli immobili, non solo per quelli senza recapiti: e la
+     * differenza fra questa modalita e le altre due. */
+    expect(propertyActivityDefinition([conRecapito], 1, "none")).toBeNull();
+    expect(propertyActivityDefinition([senzaRecapito], 1, "none")).toBeNull();
   });
 
   it("lascia generica l'attività senza recapiti quando l'autocompilazione è disattivata", () => {
     const owner = person("person-1", "crm-person-1", "Primo");
-    expect(propertyActivityDefinition([owner], 1, false)).toEqual({
+    expect(propertyActivityDefinition([owner], 1, "plain")).toEqual({
       contactMode: "Telefonata",
       status: "Da eseguire",
       description: "Inserire attività",

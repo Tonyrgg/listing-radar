@@ -32,6 +32,7 @@ import {
 } from "../services/sister-network-run.js";
 import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../core/network-exploration.js";
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
+import type { PropertyActivityMode } from "../services/property-activities.js";
 import { WorkerRepository } from "../services/repository.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -45,7 +46,8 @@ type Preferences = {
   mode: WorkerMode;
   dryRun: boolean;
   autoRetryEnabled: boolean;
-  autoFillDirectContact: boolean;
+  /* Cosa scrivere nel diario del gestionale: vedi PropertyActivityMode. */
+  propertyActivityMode: PropertyActivityMode;
   encryptedEnvironment?: string;
 };
 
@@ -67,7 +69,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true, autoFillDirectContact: true };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact" };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -440,9 +442,21 @@ function refreshStoppingAll() {
   if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive) stoppingAll = false;
 }
 
+/**
+ * Fino alla 0.14 la scelta era un interruttore: `autoFillDirectContact`.
+ * Adesso le modalità sono tre, e il vecchio valore va tradotto — chi aveva
+ * spento l'interruttore voleva l'attività generica, non «nessuna attività».
+ */
+function migratePreferences(stored: Partial<Preferences> & { autoFillDirectContact?: boolean }): Preferences {
+  const { autoFillDirectContact, ...rest } = stored;
+  const mode = rest.propertyActivityMode
+    ?? (autoFillDirectContact === false ? "plain" : "direct_contact");
+  return { ...defaultPreferences, ...rest, propertyActivityMode: mode };
+}
+
 async function loadPreferences() {
   try {
-    preferences = { ...defaultPreferences, ...JSON.parse(await readFile(preferencesPath(), "utf8")) as Preferences };
+    preferences = migratePreferences(JSON.parse(await readFile(preferencesPath(), "utf8")));
   } catch {
     preferences = defaultPreferences;
   }
@@ -1678,7 +1692,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
-    autoFillDirectContact: () => preferences.autoFillDirectContact,
+    propertyActivityMode: () => preferences.propertyActivityMode,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;

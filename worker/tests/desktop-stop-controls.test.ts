@@ -18,15 +18,19 @@ describe("controlli di arresto desktop", () => {
     expect(html).toContain('id="runControls"');
     expect(html).toContain('id="stopAfterNextImportButton"');
     expect(html).not.toContain('id="stopAfterNextImportToggle"');
-    expect(html).toContain('id="autoFillDirectContactToggle"');
-    expect(html).toContain("Autocompila “Contatto diretto”");
-    expect(html).toContain("Vale per lavorazioni, long run, richieste e incarichi");
+    /* L'autocompila non e piu un interruttore: sono tre modalita, e la terza
+     * non scrive nessuna attivita nel gestionale. Restano una regola globale,
+     * valida per lavorazioni, long run, richieste e incarichi. */
+    expect(html).not.toContain('id="autoFillDirectContactToggle"');
+    expect(html).toContain('data-activity-mode="direct_contact"');
+    expect(html).toContain('data-activity-mode="plain"');
+    expect(html).toContain('data-activity-mode="none"');
     expect(html).toContain('id="streetRunAbandon"');
     expect(preload).toContain('stopAll: () => ipcRenderer.invoke("desktop:stop-all")');
     expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
     expect(main).toContain('ipcMain.handle("desktop:stop-all"');
-    expect(main).toContain("autoFillDirectContact: () => preferences.autoFillDirectContact");
+    expect(main).toContain("propertyActivityMode: () => preferences.propertyActivityMode");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");
     expect(main).toContain("repairLongRunJobForImport");

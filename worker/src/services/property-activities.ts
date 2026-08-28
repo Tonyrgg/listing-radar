@@ -12,7 +12,24 @@ export const DIRECT_CONTACT_DESCRIPTIONS = [
   "Non è stato possibile ottenere informazioni",
   "Da ricontattare di persona",
 ] as const;
+/** Cosa resta scritto sul checkpoint quando l'attività non viene creata. */
+export const NO_ACTIVITY_DESCRIPTION = "Nessuna attività richiesta";
 export const DIRECT_CONTACT_NR_INTERVALS = [7, 9, 11, 8, 10] as const;
+
+/**
+ * Cosa scrivere nel diario del gestionale quando una lavorazione si chiude.
+ *
+ * Le prime due modalità si distinguono soltanto dove i proprietari non hanno
+ * recapiti: `direct_contact` registra il tentativo come «Contatto diretto»
+ * già eseguito, `plain` lascia l'attività ordinaria da fare. In entrambi i
+ * casi l'attività nel gestionale nasce.
+ *
+ * `none` è un'altra cosa: non nasce niente, per nessun immobile. Serve quando
+ * si vogliono i proprietari e i recapiti senza toccare il diario — e va detto
+ * a chiare lettere, perché è l'unica in cui il gestionale non conserva traccia
+ * del giro fatto.
+ */
+export type PropertyActivityMode = "direct_contact" | "plain" | "none";
 
 export interface PropertyActivityDefinition {
   contactMode: typeof PROPERTY_ACTIVITY_CONTACT_MODE | typeof DIRECT_CONTACT_MODE;
@@ -59,27 +76,26 @@ export function isDirectContactNrOrdinal(ordinal: number): boolean {
   return false;
 }
 
+/** L'attività ordinaria: quella che resta da fare a una persona. */
+const ORDINARY_ACTIVITY: PropertyActivityDefinition = {
+  contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
+  status: PROPERTY_ACTIVITY_STATUS,
+  description: PROPERTY_ACTIVITY_DESCRIPTION,
+  directContactOrdinal: null,
+};
+
+/**
+ * `null` significa «nessuna attività»: non è un caso d'errore, è la modalità
+ * `none` che chiede di non scrivere nel diario del gestionale.
+ */
 export function propertyActivityDefinition(
   owners: Array<Pick<PersonRow, "mobiles" | "landlines">>,
   directContactOrdinal = 1,
-  autoFillDirectContact = true,
-): PropertyActivityDefinition {
-  if (ownersHaveAnyPhone(owners)) {
-    return {
-      contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
-      status: PROPERTY_ACTIVITY_STATUS,
-      description: PROPERTY_ACTIVITY_DESCRIPTION,
-      directContactOrdinal: null,
-    };
-  }
-  if (!autoFillDirectContact) {
-    return {
-      contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
-      status: PROPERTY_ACTIVITY_STATUS,
-      description: PROPERTY_ACTIVITY_DESCRIPTION,
-      directContactOrdinal: null,
-    };
-  }
+  mode: PropertyActivityMode = "direct_contact",
+): PropertyActivityDefinition | null {
+  if (mode === "none") return null;
+  if (ownersHaveAnyPhone(owners)) return { ...ORDINARY_ACTIVITY };
+  if (mode === "plain") return { ...ORDINARY_ACTIVITY };
   const ordinal = Math.max(1, Math.trunc(directContactOrdinal));
   return {
     contactMode: DIRECT_CONTACT_MODE,

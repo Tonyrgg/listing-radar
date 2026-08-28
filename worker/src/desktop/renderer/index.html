@@ -73,10 +73,17 @@
         </section>
 
         <section id="runControls" class="run-controls" aria-label="Controlli comuni delle run">
-          <label class="safe-check" id="autoFillDirectContactControl">
-            <input id="autoFillDirectContactToggle" type="checkbox" checked />
-            <span><b>Autocompila “Contatto diretto”</b><small id="autoFillDirectContactHelp">Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica. Vale per lavorazioni, long run, richieste e incarichi.</small></span>
-          </label>
+          <div class="activity-mode-control" id="autoFillDirectContactControl">
+            <div class="activity-mode-copy">
+              <b>Attività nel gestionale</b>
+              <small id="autoFillDirectContactHelp">Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica.</small>
+            </div>
+            <div class="segmented activity-mode-choices" role="radiogroup" aria-label="Attività nel gestionale">
+              <button type="button" data-activity-mode="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button>
+              <button type="button" data-activity-mode="plain" role="radio" aria-checked="false">Generica</button>
+              <button type="button" data-activity-mode="none" role="radio" aria-checked="false">Nessuna</button>
+            </div>
+          </div>
           <div class="run-stop-control">
             <button id="stopAfterNextImportButton" class="button secondary is-hidden" type="button" aria-pressed="false">Ferma dopo il prossimo import</button>
             <small id="stopAfterNextImportStatus">Disponibile appena parte una run.</small>
