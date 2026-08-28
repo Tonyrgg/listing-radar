@@ -885,6 +885,37 @@ function renderChecks() {
  * compare unicamente quando c'e qualcosa da sistemare. La griglia per sistema
  * resta, ma dietro «Dettagli»: serve a chi deve capire quale pezzo manca.
  */
+/**
+ * L'ultima lavorazione conclusa, accanto alla partenza.
+ *
+ * Non aggiunge dati: legge la prima voce degli import conclusi, la stessa che
+ * la Cronologia mostra per esteso, e riusa il comando che ne apre il
+ * riepilogo. Serve a sapere da dove si riparte senza cambiare pagina.
+ */
+function renderLastRun() {
+  const panel = $("lastRunPanel");
+  if (!panel) return;
+  const ultimo = (appState?.completedImports ?? [])[0];
+  if (!ultimo) {
+    panel.innerHTML = `<p class="run-last-empty">Nessuna lavorazione conclusa: la prima comparirà qui.</p>`;
+    return;
+  }
+  const job = ultimo.job;
+  const luogo = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ")
+    || `Lavorazione ${job.id.slice(0, 8)}`;
+  panel.innerHTML = `
+    <div class="run-last-head">
+      <span class="run-last-label">Ultima lavorazione</span>
+      <span class="run-last-outcome">completata</span>
+    </div>
+    <b class="run-last-place">${esc(luogo)}</b>
+    <span class="run-last-when">${esc(fmtDate(job.completed_at ?? job.updated_at))}</span>
+    <dl class="run-last-figures">
+      <div><dt>Immobili</dt><dd>${fmtCount(ultimo.properties.length)}</dd></div>
+      <div><dt>Nominativi</dt><dd>${fmtCount(ultimo.people.length)}</dd></div>
+    </dl>
+    <button class="text-button run-last-open" data-detail-job="${esc(job.id)}">Apri il riepilogo</button>`;
+}
 function renderConnectionState(rotti, controllato) {
   const pill = $("connectionPill");
   const alert = $("connectionAlert");
@@ -1097,7 +1128,7 @@ function renderJobs() {
                 .join(" · ") || `Ricerca ${job.id.slice(0, 8)}`,
             imported = job.status === "completed",
             inProgress = Boolean(job.import_started_at) && !imported;
-          return `<article class="job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span></span><div><b>${esc(place)}</b><small>${job.total_properties ?? 0} immobili · ${job.total_people ?? 0} proprietari · salvata ${fmtDate(job.saved_at ?? job.created_at)}<br>${imported ? "Importazione completata" : inProgress ? `Importazione iniziata · ultimo punto: ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per essere importata senza rileggere SISTER"}</small></div><div class="job-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Continua importazione" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></div></article>`;
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span class="ledger-mark"></span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))}</small></span><span class="ledger-figure">${fmtCount(job.total_properties ?? 0)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${imported ? "Importazione completata" : inProgress ? `Iniziata · ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per l'import"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Continua" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
@@ -1171,7 +1202,7 @@ function renderCompletedSessions() {
             skipText = stats.skippedProperties
               ? ` · ${stats.skippedProperties} immobili e ${stats.skippedPeople} nominativi saltati`
               : "";
-          return `<article class="completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="completed-check">${stats.skippedProperties ? "!" : "✓"}</span><div><p class="eyebrow">Sessione conclusa</p><h3>${esc(place)}</h3><p>${fmtDate(job.completed_at ?? job.updated_at)} · ${stats.completedProperties} immobili completati${skipText}</p></div><button class="button secondary" data-completed-session="${job.id}">Apri sessione</button></article>`;
+          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(item.people.length)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} immobili e ${fmtCount(stats.skippedPeople)} nominativi saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-completed-session="${job.id}">Apri sessione</button></span></article>`;
         })
         .join("")
     : `<div class="completed-empty"><span>✓</span><div><b>Nessun import concluso</b><p>Le sessioni completate compariranno qui.</p></div></div>`;
@@ -1922,6 +1953,7 @@ function render() {
   renderAction();
   renderJobs();
   renderCompletedImports();
+  renderLastRun();
   renderActivity();
   renderDiagnosticErrors();
   renderStreetRun();

@@ -143,6 +143,7 @@ await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer"
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.locator('[data-mode="automatic"]').click();
+await page.locator("#chromeButton").click();
 await page.locator("#startButton").click();
 await page.locator('[data-run-slide-target="street"]').click();
 await page.locator("#streetRunInput").fill("via borgo san francesco");
@@ -222,7 +223,7 @@ const failures = [
   ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
   ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
-  ...(["savePreferences", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
   ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),

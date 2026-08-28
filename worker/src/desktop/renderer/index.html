@@ -137,6 +137,7 @@
             </fieldset>
             <button id="startButton" class="button primary large">Inizia lavorazione</button>
           </div>
+          <aside id="lastRunPanel" class="run-last" aria-label="Ultima lavorazione"></aside>
         </section>
 
         <section id="streetRun" class="street-run-card run-slide" data-run-slide="street">
@@ -259,13 +260,13 @@
           <div class="section-body">
             <section id="completedImports" class="completed-imports-section">
               <header><div><p class="eyebrow">Memoria del lavoro</p><h2>Import effettuati con successo</h2><p>Ogni card rappresenta un’intera sessione. Aprila soltanto quando vuoi consultare immobili e nominativi.</p></div><span id="completedImportCount" class="count">0</span></header>
-              <div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Lavorazione</span><span>Immobili</span><span>Nominativi</span><span>Esito</span><span></span></div><div id="completedImportsList"><p class="empty-message">Gli import conclusi compariranno qui.</p></div></div>
               <footer class="completed-imports-footer"><button id="completedImportsLoadMore" class="button secondary is-hidden">Carica altre sessioni</button></footer>
             </section>
 
             <section id="jobs" class="jobs-card">
               <header><div><p class="eyebrow">Archivio acquisizioni</p><h2>Ricerche SISTER salvate</h2><p>Conserva i dati già raccolti e importali nel gestionale quando vuoi, senza ripetere lo scraping.</p></div><span id="jobCount" class="count">0</span></header>
-              <div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Ricerca</span><span>Immobili</span><span>Proprietari</span><span>Stato</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div></div>
             </section>
 
             <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail" aria-label="Chiudi">×</button></header><div id="detailContent"></div></section>
