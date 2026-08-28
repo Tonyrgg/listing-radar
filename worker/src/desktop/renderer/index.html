@@ -14,27 +14,20 @@
         <span class="brand-mark"><img src="./icon.png" alt="" /></span>
         <div><strong>Property Worker</strong><small>Listing Radar</small></div>
       </div>
+      <nav class="top-nav" aria-label="Sezioni del worker">
+        <button class="nav-item is-active" data-scroll="operations">Lavorazioni</button>
+        <button class="nav-item" data-scroll="sync">Sincronizza</button>
+        <button class="nav-item" data-scroll="history">Cronologia <span id="historyNavHint"></span></button>
+        <button class="nav-item" data-scroll="settings">Impostazioni</button>
+      </nav>
       <div class="header-actions">
         <span id="versionLabel" class="version">v—</span>
-        <button id="stopAllButton" class="button danger is-hidden">Ferma tutto</button>
+        <button id="stopAllButton" class="button danger is-hidden">Arresta processo</button>
         <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
-        <button id="checkButton" class="button secondary">Controlla collegamenti</button>
-        <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
       </div>
     </header>
 
-    <div class="app-layout">
-      <nav class="side-nav" aria-label="Sezioni">
-        <button class="nav-item is-active" data-scroll="operations"><span>1</span><div><b>Lavora</b><small>Avvia e segui il processo</small></div></button>
-        <button class="nav-item" data-scroll="sync"><span>2</span><div><b>Sincronizza</b><small>Richieste e incarichi dal gestionale</small></div></button>
-        <button class="nav-item" data-scroll="history"><span>3</span><div><b>Cronologia</b><small id="historyNavHint">Import conclusi e lavori salvati</small></div></button>
-        <button class="nav-item" data-scroll="settings"><span>4</span><div><b>Impostazioni</b><small>Excel e collegamenti</small></div></button>
-        <div class="privacy-note">
-          <div><b>Dati protetti</b><small>Le chiavi restano nel processo locale dell’app.</small></div>
-        </div>
-      </nav>
-
-      <main class="workspace" id="operations">
+    <main class="workspace" id="operations">
         <section class="page-intro">
           <div>
             <p class="eyebrow">Assistente di acquisizione</p>
@@ -42,6 +35,16 @@
             <p id="workspaceSubtitle">Ti guiderò un passaggio alla volta. Se qualcosa non va, troverai qui la soluzione.</p>
           </div>
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
+        </section>
+
+        <section class="connection-strip" aria-label="Stato collegamenti">
+          <div class="connection-strip-heading"><span class="live-dot"></span><b>Sistemi operativi</b><small id="lastCheckLabel">Controllo automatico in corso</small></div>
+          <div id="checksGrid" class="checks-grid"></div>
+        </section>
+
+        <section id="operationConsole" class="operation-console" aria-label="Operazione in corso">
+          <header class="operation-console-header"><div><p class="eyebrow">Centro operativo</p><h2>Operazione in corso</h2></div><span class="operation-console-live"><i></i>Live</span></header>
+          <div id="operationConsoleBody" class="operation-console-body"></div>
         </section>
 
         <section id="commandMonitor" class="command-monitor is-idle" aria-live="polite" aria-atomic="true">
@@ -79,14 +82,22 @@
           </div>
         </section>
 
-        <!-- Le due partenze, affiancate: sono due scelte, non due tappe. -->
-        <div class="start-grid">
-        <section class="start-card">
+        <section class="run-launcher" aria-labelledby="runLauncherTitle">
+          <header class="run-launcher-header">
+            <div><p class="eyebrow">Modalità di acquisizione</p><h2 id="runLauncherTitle">Scegli come iniziare</h2></div>
+            <div class="run-carousel-nav" role="tablist" aria-label="Tipi di lavorazione">
+              <button class="run-mode-tab is-selected" data-run-slide-target="civic" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6M3 20h18"/></svg><span><b>Civico</b><small>Una ricerca aperta</small></span></button>
+              <button class="run-mode-tab" data-run-slide-target="street" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l3-10h6l3 10M9 11h6"/></svg><span><b>Via completa</b><small>Long run autonoma</small></span></button>
+              <button class="run-mode-tab" data-run-slide-target="network" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="m8 11 8-4M8 13l8 4"/></svg><span><b>Rete proprietari</b><small>Esplorazione a catena</small></span></button>
+            </div>
+          </header>
+        <div class="run-carousel" data-active-slide="civic">
+        <section class="start-card run-slide is-selected" data-run-slide="civic">
           <div class="start-copy">
             <span class="step-number">1</span>
             <div>
               <h2>Prepara una nuova lavorazione</h2>
-              <p>Prima apri SISTER sui risultati e lascia aperto il gestionale. Il programma controllerà tutto prima di partire.</p>
+              <p>Porta SISTER sui risultati del civico. Il worker verifica automaticamente tutti i collegamenti prima di partire.</p>
             </div>
           </div>
           <div class="start-options">
@@ -100,7 +111,7 @@
           </div>
         </section>
 
-        <section id="streetRun" class="street-run-card">
+        <section id="streetRun" class="street-run-card run-slide" data-run-slide="street">
           <header>
             <div><p class="eyebrow">Run autonoma SISTER</p><h2>Acquisisci una via completa</h2><p>Partendo dall'Elenco indirizzi, interroga senza civico ogni variante con dizione identica. SISTER restituisce in un solo blocco tutti gli immobili della variante; il worker ricava il primo civico dalla stringa interna <b>Indirizzo</b> di ogni riga.</p></div>
             <span id="streetRunBadge" class="status-pill is-idle"><span></span>Mai avviato</span>
@@ -116,7 +127,7 @@
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
 
-        <section id="networkRun" class="street-run-card network-run-card">
+        <section id="networkRun" class="street-run-card network-run-card run-slide" data-run-slide="network">
           <header>
             <div><p class="eyebrow">Esplorazione SISTER</p><h2>Segui una rete di proprietari</h2><p>Parte da codici fiscali già verificati nel CRM, attraversa i comproprietari e conserva soltanto immobili che superano il controllo catastale. Non importa nulla: prima costruisce la coda.</p></div>
             <span id="networkRunBadge" class="status-pill is-idle"><span></span>Mai avviata</span>
@@ -166,6 +177,8 @@
           <div id="networkRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
         </div>
+        <footer class="run-carousel-footer"><button class="carousel-arrow" data-carousel-direction="previous" aria-label="Modalità precedente">←</button><span id="runCarouselPosition">1 di 3</span><button class="carousel-arrow" data-carousel-direction="next" aria-label="Modalità successiva">→</button></footer>
+        </section>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
         <section id="actionPanel" class="now-card" aria-live="polite"></section>
@@ -176,11 +189,6 @@
             <button class="icon-button" data-action="close-corrections" aria-label="Chiudi">×</button>
           </header>
           <form id="manualCorrectionForm"><div id="manualCorrectionFields"></div><footer><button type="button" class="button secondary" data-action="close-corrections">Chiudi</button><button type="submit" class="button primary">Salva correzioni</button></footer></form>
-        </section>
-
-        <section class="system-card">
-          <header><div><p class="eyebrow">Prima di partire</p><h2>Collegamenti necessari</h2></div><small id="lastCheckLabel">Non ancora controllati</small></header>
-          <div id="checksGrid" class="checks-grid"></div>
         </section>
 
         <section class="progress-card">
@@ -261,8 +269,7 @@
             </section>
           </div>
         </details>
-      </main>
-    </div>
+    </main>
 
     <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Puoi importare ora oppure conservare questa ricerca nell'archivio.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button secondary" data-review-decision="save">Salva per importarla dopo</button><button class="button primary" data-review-decision="proceed">Importa adesso</button></div></footer></div></dialog>
 

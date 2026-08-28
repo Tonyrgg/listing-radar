@@ -16,7 +16,7 @@ import { loadConfig, type WorkerConfig } from "../config.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { normalizeTaxCode } from "../core/normalize.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
-import { connectToChrome, isPresumablyAuthenticated } from "../services/chrome.js";
+import { connectToChrome } from "../services/chrome.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
@@ -138,27 +138,36 @@ let completedImportsLimit = 6;
 let requestImportActive = false;
 let requestImportCancellationRequested = false;
 let activeRequestImporter: RequestArchiveImporter | null = null;
+let requestImportPromise: Promise<void> | null = null;
 let requestImportError: string | null = null;
 let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let mandateImportActive = false;
 let mandateImportCancellationRequested = false;
 let activeMandateImporter: MandateArchiveImporter | null = null;
+let mandateImportPromise: Promise<void> | null = null;
 let mandateImportError: string | null = null;
 let mandateImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 let streetRunActive = false;
 let streetRunCancellationRequested = false;
 let streetRunAbandonRequested = false;
 let activeStreetBrowser: { close: () => Promise<void> } | null = null;
+let streetRunPromise: Promise<void> | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
 let networkRunActive = false;
 let networkRunCancellationRequested = false;
+let activeNetworkBrowser: { close: () => Promise<void> } | null = null;
+let networkRunPromise: Promise<void> | null = null;
 let networkRunCheckpoint: SisterNetworkRunCheckpoint | null = null;
 let networkRunError: string | null = null;
 let networkRunProgress: SisterNetworkRunProgress | null = null;
 let stopAfterNextImportRequested = false;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
+let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let healthCheckPromise: Promise<ConnectionCheck[]> | null = null;
+let connectionChecks: ConnectionCheck[] = [];
+let connectionChecksAt: string | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
 let stoppingAll = false;
@@ -174,6 +183,73 @@ let sisterKeepAlive: KeepAliveState = {
 const activity: ActivityItem[] = [];
 let activityLogWrite: Promise<void> = Promise.resolve();
 let diagnosticErrors: DiagnosticErrorItem[] = [];
+
+type SnapshotRemoteData = {
+  jobs: Awaited<ReturnType<WorkerRepository["listJobs"]>>;
+  completedImports: Array<{
+    job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
+    properties: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["properties"];
+    people: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["people"];
+    ownerships: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"];
+  }>;
+  completedImportsHasMore: boolean;
+  publicConfig: Record<string, unknown>;
+  configError: string | null;
+  latestRequestImport: Awaited<ReturnType<WorkerRepository["latestRequestImportRun"]>>;
+  requestImportSchemaError: string | null;
+  latestMandateImport: Awaited<ReturnType<WorkerRepository["latestMandateImportRun"]>>;
+  mandateImportSchemaError: string | null;
+};
+
+const emptySnapshotRemoteData = (): SnapshotRemoteData => ({
+  jobs: [], completedImports: [], completedImportsHasMore: false, publicConfig: {}, configError: null,
+  latestRequestImport: null, requestImportSchemaError: null, latestMandateImport: null, mandateImportSchemaError: null,
+});
+let snapshotRemoteData = emptySnapshotRemoteData();
+let snapshotRemoteLoadedAt = 0;
+let snapshotRemotePromise: Promise<SnapshotRemoteData> | null = null;
+let publishStatePromise: Promise<void> | null = null;
+let publishStateQueued = false;
+let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | null = null;
+
+type ConnectionCheck = { id: string; label: string; ok: boolean; detail: string };
+
+async function withOperationTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}: tempo massimo superato`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function resetStaleOperationState() {
+  if (operationReservation) return;
+  if (active && !activeRunPromise) active = false;
+  if (requestImportActive && !requestImportPromise) requestImportActive = false;
+  if (mandateImportActive && !mandateImportPromise) mandateImportActive = false;
+  if (streetRunActive && !streetRunPromise) streetRunActive = false;
+  if (networkRunActive && !networkRunPromise) networkRunActive = false;
+  refreshStoppingAll();
+}
+
+function reserveOperation(kind: NonNullable<typeof operationReservation>) {
+  resetStaleOperationState();
+  if (operationReservation || active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
+    throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  }
+  operationReservation = kind;
+}
+
+function releaseOperationReservation(kind: NonNullable<typeof operationReservation>) {
+  if (operationReservation === kind) operationReservation = null;
+}
 
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
   const entry = { at: new Date().toISOString(), tone, message } satisfies ActivityItem;
@@ -441,65 +517,78 @@ async function purgeJob(jobId: string) {
   return cleanup;
 }
 
-async function stateSnapshot() {
-  let jobs: Awaited<ReturnType<WorkerRepository["listJobs"]>> = [];
-  let completedImports: Array<{
-    job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
-    properties: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["properties"];
-    people: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["people"];
-    ownerships: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"];
-  }> = [];
-  let completedImportsHasMore = false;
-  let configError: string | null = null;
-  let publicConfig: Record<string, unknown> = {};
-  let latestRequestImport: Awaited<ReturnType<WorkerRepository["latestRequestImportRun"]>> = null;
-  let requestImportSchemaError: string | null = null;
-  let latestMandateImport: Awaited<ReturnType<WorkerRepository["latestMandateImportRun"]>> = null;
-  let mandateImportSchemaError: string | null = null;
-  try {
-    const config = workerConfig();
-    publicConfig = {
-      configurationReady: true,
-      configurationSource: preferences.encryptedEnvironment ? "Protetta da Windows" : "Inclusa nell'app",
-      contactsExcelPath: config.CONTACTS_EXCEL_PATH,
-      chromeCdpUrl: config.CHROME_CDP_URL,
-      screenshotDirectory: config.ERROR_SCREENSHOT_DIR,
-      operationLogPath: operationLogPath(),
-      sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
-      sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
-    };
-    const repo = repository(config);
-    const [savedJobs, completedJobsPage] = await Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]);
-    const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
-    completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
-    jobs = savedJobs;
-    completedImports = await Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) })));
+async function refreshSnapshotRemoteData() {
+  if (snapshotRemotePromise) return snapshotRemotePromise;
+  snapshotRemotePromise = (async (): Promise<SnapshotRemoteData> => {
+    const next = emptySnapshotRemoteData();
     try {
-      await repo.requestArchiveHealthCheck();
-      latestRequestImport = await repo.latestRequestImportRun();
-    } catch (error) {
-      requestImportSchemaError = error instanceof Error ? error.message : String(error);
-    }
-    try {
-      await repo.mandateArchiveHealthCheck();
-      latestMandateImport = await repo.latestMandateImportRun();
-    } catch (error) {
-      mandateImportSchemaError = error instanceof Error ? error.message : String(error);
-    }
-    if (activeJobId) {
-      const activeJob = completedJobs.find((job) => job.id === activeJobId)
-        ?? savedJobs.find((job) => job.id === activeJobId)
-        ?? await repo.getJob(activeJobId).catch(() => null);
-      if (activeJob?.status === "completed") {
-        currentStep = "completed";
-        propertyProgress = null;
-        prompt = null;
-        lastError = null;
+      const config = workerConfig();
+      next.publicConfig = {
+        configurationReady: true,
+        configurationSource: preferences.encryptedEnvironment ? "Protetta da Windows" : "Inclusa nell'app",
+        contactsExcelPath: config.CONTACTS_EXCEL_PATH,
+        chromeCdpUrl: config.CHROME_CDP_URL,
+        screenshotDirectory: config.ERROR_SCREENSHOT_DIR,
+        operationLogPath: operationLogPath(),
+        sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
+        sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
+      };
+      const repo = repository(config);
+      const [savedJobs, completedJobsPage] = await withOperationTimeout(
+        Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]),
+        12_000,
+        "Aggiornamento riepilogo cloud",
+      );
+      const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
+      next.completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
+      next.jobs = savedJobs;
+      next.completedImports = await withOperationTimeout(
+        Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) }))),
+        15_000,
+        "Aggiornamento cronologia import",
+      );
+      try {
+        await withOperationTimeout(repo.requestArchiveHealthCheck(), 8_000, "Verifica archivio richieste");
+        next.latestRequestImport = await withOperationTimeout(repo.latestRequestImportRun(), 8_000, "Ultima sincronizzazione richieste");
+      } catch (error) {
+        next.requestImportSchemaError = error instanceof Error ? error.message : String(error);
       }
+      try {
+        await withOperationTimeout(repo.mandateArchiveHealthCheck(), 8_000, "Verifica archivio incarichi");
+        next.latestMandateImport = await withOperationTimeout(repo.latestMandateImportRun(), 8_000, "Ultima sincronizzazione incarichi");
+      } catch (error) {
+        next.mandateImportSchemaError = error instanceof Error ? error.message : String(error);
+      }
+      if (activeJobId) {
+        const activeJob = completedJobs.find((job) => job.id === activeJobId)
+          ?? savedJobs.find((job) => job.id === activeJobId)
+          ?? await withOperationTimeout(repo.getJob(activeJobId), 8_000, "Verifica lavorazione attiva").catch(() => null);
+        if (activeJob?.status === "completed") {
+          currentStep = "completed";
+          propertyProgress = null;
+          prompt = null;
+          lastError = null;
+        }
+      }
+    } catch (error) {
+      next.configError = error instanceof Error ? error.message : String(error);
     }
-  } catch (error) {
-    configError = error instanceof Error ? error.message : String(error);
-  }
+    snapshotRemoteData = next;
+    snapshotRemoteLoadedAt = Date.now();
+    return next;
+  })().finally(() => {
+    snapshotRemotePromise = null;
+  });
+  return snapshotRemotePromise;
+}
+
+async function stateSnapshot() {
+  if (!snapshotRemoteLoadedAt) await refreshSnapshotRemoteData();
+  else if (Date.now() - snapshotRemoteLoadedAt > 10_000) void refreshSnapshotRemoteData().then(() => publishState());
+  const {
+    jobs, completedImports, completedImportsHasMore, publicConfig, configError,
+    latestRequestImport, requestImportSchemaError, latestMandateImport, mandateImportSchemaError,
+  } = snapshotRemoteData;
   return {
     active,
     stoppingAll,
@@ -517,6 +606,7 @@ async function stateSnapshot() {
     prompt,
     lastError,
     sisterKeepAlive,
+    connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: Boolean(healthCheckPromise) },
     softwareUpdate: desktopUpdater?.snapshot() ?? {
       status: "unavailable", currentVersion: app.getVersion(), availableVersion: null, percent: null,
       transferred: null, total: null, message: "Controllo aggiornamenti non inizializzato", checkedAt: null,
@@ -569,8 +659,11 @@ async function stateSnapshot() {
 function scheduleUpdateCheck(delayMs = 12_000) {
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   updateCheckTimer = setTimeout(async () => {
-    await desktopUpdater?.check();
-    scheduleUpdateCheck(6 * 60 * 60 * 1_000);
+    try {
+      await desktopUpdater?.check();
+    } finally {
+      scheduleUpdateCheck(6 * 60 * 60 * 1_000);
+    }
   }, delayMs);
   updateCheckTimer.unref?.();
 }
@@ -620,7 +713,13 @@ async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
 }
 
 async function runRequestArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  reserveOperation("requests");
+  try {
+    await healthChecks({ silent: true });
+  } catch (error) {
+    releaseOperationReservation("requests");
+    throw error;
+  }
   requestImportActive = true;
   requestImportCancellationRequested = false;
   requestImportError = null;
@@ -634,7 +733,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     onEvent: handleRequestImportEvent,
   });
   activeRequestImporter = importer;
-  void importer.run(resumeRunId).then((run) => {
+  const runPromise = importer.run(resumeRunId).then((run) => {
     clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione richieste interrotta: l’avanzamento è stato salvato", "warning");
     else if (run.failed_requests) pushActivity(`Sincronizzazione conclusa con ${run.failed_requests} richieste da riprovare`, "warning");
@@ -656,6 +755,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
       details: { operation: "request-archive-import", resume: Boolean(resumeRunId) },
     }, { publish: true });
   }).finally(async () => {
+    requestImportPromise = null;
     activeRequestImporter = null;
     requestImportActive = false;
     requestImportCancellationRequested = false;
@@ -663,6 +763,9 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     refreshStoppingAll();
     await publishState();
   });
+  requestImportPromise = runPromise;
+  releaseOperationReservation("requests");
+  void runPromise;
 }
 
 async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
@@ -682,7 +785,13 @@ async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
 }
 
 async function runMandateArchiveImport(resumeRunId?: string) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("Attendi la fine della lavorazione già in esecuzione");
+  reserveOperation("mandates");
+  try {
+    await healthChecks({ silent: true });
+  } catch (error) {
+    releaseOperationReservation("mandates");
+    throw error;
+  }
   mandateImportActive = true;
   mandateImportCancellationRequested = false;
   mandateImportError = null;
@@ -696,7 +805,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     onEvent: handleMandateImportEvent,
   });
   activeMandateImporter = importer;
-  void importer.run(resumeRunId).then((run) => {
+  const runPromise = importer.run(resumeRunId).then((run) => {
     clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione incarichi interrotta: l'avanzamento è stato salvato", "warning");
     else if (run.failed_mandates) pushActivity(`Sincronizzazione conclusa con ${run.failed_mandates} incarichi da riprovare`, "warning");
@@ -718,6 +827,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
       details: { operation: "mandate-archive-import", resume: Boolean(resumeRunId) },
     }, { publish: true });
   }).finally(async () => {
+    mandateImportPromise = null;
     activeMandateImporter = null;
     mandateImportActive = false;
     mandateImportCancellationRequested = false;
@@ -725,16 +835,26 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     refreshStoppingAll();
     await publishState();
   });
+  mandateImportPromise = runPromise;
+  releaseOperationReservation("mandates");
+  void runPromise;
 }
 
 async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean }) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
-    throw new Error("Attendi la fine della lavorazione già in esecuzione");
-  }
   const street = input.street.replace(/\s+/g, " ").trim();
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
+  reserveOperation("street");
+  try {
+    await healthChecks({ silent: true });
+    if (!input.resume && streetRunCheckpoint) {
+      await archiveStreetRunCheckpoint("Checkpoint precedente archiviato prima di una nuova run via");
+    }
+  } catch (error) {
+    releaseOperationReservation("street");
+    throw error;
+  }
   const longRunMode = input.resume && resumeCheckpoint
     ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
     : (input.dryRun ? "dry_run" : "live");
@@ -756,7 +876,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   const config = workerConfig({ dryRun: longRunMode === "dry_run" });
   let jobToImport: string | null = null;
   let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
-  void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+  const runPromise = connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
     activeStreetBrowser = tabs.browser;
     try {
       if (streetRunAbandonRequested) return;
@@ -937,15 +1057,26 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         await publishState();
       }
     }
+    streetRunPromise = null;
   });
+  streetRunPromise = runPromise;
+  releaseOperationReservation("street");
+  void runPromise;
 }
 
 async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings>; resume: boolean }) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
-    throw new Error("Attendi la fine della lavorazione già in esecuzione");
-  }
+  reserveOperation("network");
   const resumeCheckpoint = input.resume ? networkRunCheckpoint ?? undefined : undefined;
-  if (input.resume && !resumeCheckpoint) throw new Error("Non esiste un'esplorazione rete da riprendere");
+  if (input.resume && !resumeCheckpoint) {
+    releaseOperationReservation("network");
+    throw new Error("Non esiste un'esplorazione rete da riprendere");
+  }
+  try {
+    await healthChecks({ silent: true });
+  } catch (error) {
+    releaseOperationReservation("network");
+    throw error;
+  }
   networkRunActive = true;
   networkRunCancellationRequested = false;
   networkRunError = null;
@@ -955,7 +1086,8 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
   await publishState();
 
   const config = workerConfig({ dryRun: false });
-  void connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+  const runPromise = connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
+    activeNetworkBrowser = tabs.browser;
     try {
       const liveRepository = repository(config);
       const settings = normalizeNetworkSettings(resumeCheckpoint?.settings ?? input.settings);
@@ -1014,6 +1146,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         await liveRepository.updateJob(jobId, { status: "paused", saved_at: new Date().toISOString(), error_message: "Esplorazione rete messa in pausa: la coda è salvata.", error_details: { action: "network-exploration-paused" } });
       }
     } finally {
+      activeNetworkBrowser = null;
       await tabs.browser.close().catch(() => undefined);
     }
   }).catch((error) => {
@@ -1021,17 +1154,34 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     reportRunInterruption("network", "Esplorazione rete interrotta");
     pushActivity(networkRunError, "error");
   }).finally(async () => {
+    networkRunPromise = null;
     networkRunActive = false;
     networkRunCancellationRequested = false;
     networkRunProgress = null;
     refreshStoppingAll();
     await publishState();
   });
+  networkRunPromise = runPromise;
+  releaseOperationReservation("network");
+  void runPromise;
 }
 
 async function publishState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("desktop:state", await stateSnapshot());
+  if (publishStatePromise) {
+    publishStateQueued = true;
+    return publishStatePromise;
+  }
+  publishStatePromise = (async () => {
+    mainWindow?.webContents.send("desktop:state", await stateSnapshot());
+  })().finally(() => {
+    publishStatePromise = null;
+    if (publishStateQueued) {
+      publishStateQueued = false;
+      void publishState();
+    }
+  });
+  return publishStatePromise;
 }
 
 function publishPrompt(value: DesktopPrompt | null) {
@@ -1483,7 +1633,13 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
 }
 
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
-  if (active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) throw new Error("È già presente una lavorazione in esecuzione");
+  reserveOperation("worker");
+  try {
+    await healthChecks({ silent: true });
+  } catch (error) {
+    releaseOperationReservation("worker");
+    throw error;
+  }
   clearAutoRetry();
   updateRetryMonitor("import", {
     operation: "Importazione immobile nel CRM",
@@ -1493,12 +1649,17 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     nextRetryAt: null,
   });
   let forceLiveImport = false;
-  if (input.jobId) {
-    const pendingJob = await repository().getJob(input.jobId);
-    if (pendingJob.error_details?.action === "long-run-acquisition-validation") {
-      await repairLongRunJobForImport(input.jobId);
-      forceLiveImport = true;
+  try {
+    if (input.jobId) {
+      const pendingJob = await repository().getJob(input.jobId);
+      if (pendingJob.error_details?.action === "long-run-acquisition-validation") {
+        await repairLongRunJobForImport(input.jobId);
+        forceLiveImport = true;
+      }
     }
+  } catch (error) {
+    releaseOperationReservation("worker");
+    throw error;
   }
   active = true;
   cancellingJobId = null;
@@ -1576,6 +1737,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       await publishState();
     });
   activeRunPromise = runPromise;
+  releaseOperationReservation("worker");
   void runPromise;
 }
 
@@ -1622,10 +1784,12 @@ async function stopEverything() {
     streetRunCancellationRequested = true;
     streetRunAbandonRequested = true;
     actions.push("run via arrestata");
-  } else if (networkRunActive) {
+  }
+  if (networkRunActive) {
     networkRunCancellationRequested = true;
     actions.push("esplorazione rete arrestata");
-  } else if (streetRunCheckpoint && ["paused", "failed", "running"].includes(streetRunCheckpoint.status)) {
+  }
+  if (!streetRunActive && streetRunCheckpoint && ["paused", "failed", "running"].includes(streetRunCheckpoint.status)) {
     await archiveStreetRunCheckpoint("Checkpoint via abbandonato da Ferma tutto");
     actions.push("checkpoint via archiviato");
   }
@@ -1636,56 +1800,82 @@ async function stopEverything() {
     activeRequestImporter?.interrupt().catch(() => undefined),
     activeMandateImporter?.interrupt().catch(() => undefined),
     streetRunAbandonRequested ? activeStreetBrowser?.close().catch(() => undefined) : undefined,
+    networkRunCancellationRequested ? activeNetworkBrowser?.close().catch(() => undefined) : undefined,
   ]);
+  const pendingOperations = [activeRunPromise, requestImportPromise, mandateImportPromise, streetRunPromise, networkRunPromise]
+    .filter((promise): promise is Promise<void> => Boolean(promise));
+  if (pendingOperations.length) {
+    try {
+      await withOperationTimeout(Promise.allSettled(pendingOperations).then(() => undefined), 15_000, "Arresto processi");
+    } catch (error) {
+      pushActivity(error instanceof Error ? error.message : String(error), "warning");
+    }
+  }
+  resetStaleOperationState();
   refreshStoppingAll();
   if (actions.length) pushActivity(`Ferma tutto eseguito: ${actions.join(", ")}`, "warning");
   await publishState();
   return { stopped: actions.length > 0, pending: stoppingAll, actions };
 }
 
-async function healthChecks() {
-  const config = workerConfig();
-  const checks: Array<{ id: string; label: string; ok: boolean; detail: string }> = [];
-  try {
-    await access(config.CONTACTS_EXCEL_PATH);
-    const excel = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);
-    await excel.load();
-    checks.push({ id: "excel", label: "File recapiti", ok: true, detail: `${REQUIRED_CONTACT_COLUMNS.length} colonne riconosciute` });
-  } catch (error) {
-    checks.push({ id: "excel", label: "File recapiti", ok: false, detail: error instanceof Error ? error.message : String(error) });
-  }
-  try {
-    await repository(config).healthCheck();
-    checks.push({ id: "supabase", label: "Supabase", ok: true, detail: "Connesso" });
-  } catch (error) {
-    checks.push({ id: "supabase", label: "Supabase", ok: false, detail: error instanceof Error ? error.message : String(error) });
-  }
-  try {
-    const tabs = await connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH);
-    checks.push({ id: "chrome", label: "Chrome dedicato", ok: true, detail: `${tabs.pages.length} schede aperte` });
-    checks.push({ id: "sister", label: "SISTER", ok: isPresumablyAuthenticated(tabs.sisterPage), detail: await tabs.sisterPage.title() });
-    checks.push({ id: "crm", label: "Gestionale", ok: isPresumablyAuthenticated(tabs.crmPage), detail: await tabs.crmPage.title() });
-    const [sisterPage, crmPage] = await Promise.all([
-      new PlaywrightSisterAdapter(tabs.sisterPage).detectOperationalPage().catch(() => null),
-      new PlaywrightCrmAdapter(tabs.crmPage, true).detectPage().catch(() => false),
-    ]);
-    checks.push({
-      id: "results",
-      label: "SISTER pronto",
-      ok: sisterPage !== null,
-      detail: sisterPage === "results"
-        ? "Risultati pronti per l'acquisizione singola"
-        : sisterPage === "address-list"
-          ? "Elenco indirizzi pronto per acquisire una via completa"
-          : "Apri i risultati oppure l'Elenco indirizzi",
-    });
-    if (!crmPage) checks.find((item) => item.id === "crm")!.detail = "Pagina gestionale non riconosciuta";
-  } catch (error) {
-    checks.push({ id: "chrome", label: "Chrome e schede", ok: false, detail: error instanceof Error ? error.message : String(error) });
-  }
-  pushActivity(checks.every((item) => item.ok) ? "Controlli completati" : "Alcuni controlli richiedono attenzione", checks.every((item) => item.ok) ? "success" : "warning");
-  await publishState();
-  return checks;
+async function healthChecks(options: { silent?: boolean } = {}) {
+  if (healthCheckPromise) return healthCheckPromise;
+  healthCheckPromise = (async () => {
+    const config = workerConfig();
+    const checks: ConnectionCheck[] = [];
+    try {
+      await withOperationTimeout((async () => {
+        await access(config.CONTACTS_EXCEL_PATH);
+        const excel = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);
+        await excel.load();
+      })(), 12_000, "Controllo file recapiti");
+      checks.push({ id: "excel", label: "Recapiti", ok: true, detail: `${REQUIRED_CONTACT_COLUMNS.length} colonne riconosciute` });
+    } catch (error) {
+      checks.push({ id: "excel", label: "Recapiti", ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      await withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase");
+      checks.push({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" });
+    } catch (error) {
+      checks.push({ id: "supabase", label: "Cloud", ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
+    try {
+      const response = await withOperationTimeout(fetch(`${config.CHROME_CDP_URL.replace(/\/$/, "")}/json/list`), 8_000, "Controllo Chrome");
+      if (!response.ok) throw new Error(`Chrome ha risposto HTTP ${response.status}`);
+      const pages = await response.json() as Array<{ title?: string; url?: string; type?: string }>;
+      const visiblePages = pages.filter((page) => page.type === "page" || !page.type);
+      const findPage = (match: string) => visiblePages.find((page) => `${page.title ?? ""} ${page.url ?? ""}`.toLocaleLowerCase("it").includes(match.toLocaleLowerCase("it")));
+      const sisterPage = findPage(config.SISTER_TAB_MATCH);
+      const crmPage = findPage(config.CRM_TAB_MATCH);
+      const authenticated = (url: string | undefined) => Boolean(url) && !/(login|signin|accesso|autenticazione|logout-success|sessione[_-]?scaduta)/i.test(url!);
+      checks.push({ id: "chrome", label: "Chrome", ok: true, detail: `${visiblePages.length} schede aperte` });
+      checks.push({ id: "sister", label: "SISTER", ok: authenticated(sisterPage?.url), detail: sisterPage?.title || "Scheda non trovata" });
+      checks.push({ id: "crm", label: "Gestionale", ok: authenticated(crmPage?.url), detail: crmPage?.title || "Scheda non trovata" });
+    } catch (error) {
+      checks.push({ id: "chrome", label: "Chrome", ok: false, detail: error instanceof Error ? error.message : String(error) });
+      checks.push({ id: "sister", label: "SISTER", ok: false, detail: "Non raggiungibile" });
+      checks.push({ id: "crm", label: "Gestionale", ok: false, detail: "Non raggiungibile" });
+    }
+    connectionChecks = checks;
+    connectionChecksAt = new Date().toISOString();
+    if (!options.silent) {
+      pushActivity(checks.every((item) => item.ok) ? "Controlli completati" : "Alcuni controlli richiedono attenzione", checks.every((item) => item.ok) ? "success" : "warning");
+    }
+    return checks;
+  })().finally(async () => {
+    healthCheckPromise = null;
+    await publishState();
+  });
+  return healthCheckPromise;
+}
+
+function scheduleHealthChecks(delayMs = 2_000) {
+  if (healthCheckTimer) clearTimeout(healthCheckTimer);
+  healthCheckTimer = setTimeout(async () => {
+    await healthChecks({ silent: true }).catch(() => undefined);
+    scheduleHealthChecks(30_000);
+  }, delayMs);
+  healthCheckTimer.unref?.();
 }
 
 function findChromeExecutable() {
@@ -1913,7 +2103,8 @@ function registerIpc() {
       }
       const pendingRun = activeRunPromise;
       if (!pendingRun) return { deleted: false, pending: true };
-      await pendingRun;
+      await activeRunner?.interrupt().catch(() => undefined);
+      await withOperationTimeout(pendingRun, 15_000, "Annullamento lavorazione");
       if (activeJobId === jobId) throw new Error(lastError ?? "Annullamento non completato");
       return { deleted: true };
     }
@@ -2058,11 +2249,13 @@ app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
   scheduleDesktopKeepAlive(3_000);
+  scheduleHealthChecks();
   initializeDesktopUpdater();
 });
 
 app.on("before-quit", () => {
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
+  if (healthCheckTimer) clearTimeout(healthCheckTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (attentionTimer) clearTimeout(attentionTimer);
 });

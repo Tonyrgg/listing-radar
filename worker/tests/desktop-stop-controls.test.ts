@@ -68,4 +68,23 @@ describe("controlli di arresto desktop", () => {
     expect(renderer).toContain("!appState?.stopAfterNextImport");
     expect(renderer).not.toContain("stopAfterNextImportToggle");
   });
+
+  it("usa una plancia senza sidebar, con stati automatici e un carosello unico", async () => {
+    const [html, renderer, main] = await Promise.all([
+      readFile(source("desktop", "renderer", "index.html"), "utf8"),
+      readFile(source("desktop", "renderer", "renderer.js"), "utf8"),
+      readFile(source("desktop", "main.ts"), "utf8"),
+    ]);
+
+    expect(html).not.toContain('class="side-nav"');
+    expect(html).not.toContain('id="checkButton"');
+    expect(html).not.toContain('id="chromeButton"');
+    expect(html).toContain('id="operationConsole"');
+    expect(html.match(/data-run-slide="/g)).toHaveLength(3);
+    expect(renderer).toContain("setRunSlide");
+    expect(main).toContain("scheduleHealthChecks");
+    expect(main).toContain("resetStaleOperationState");
+    expect(main).toContain("streetRunPromise = runPromise");
+    expect(main).toContain("networkRunPromise = runPromise");
+  });
 });

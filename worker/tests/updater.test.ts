@@ -130,4 +130,27 @@ describe("aggiornamenti desktop", () => {
       await rm(updateDirectory, { recursive: true, force: true });
     }
   });
+
+  it("riporta sempre il controllo aggiornamenti a uno stato terminale quando la rete non risponde", async () => {
+    const never = new Promise<never>(() => undefined);
+    const download = vi.fn(() => never);
+    const storageClient = {
+      storage: { from: vi.fn(() => ({ download })) },
+    } as unknown as Pick<SupabaseClient, "storage">;
+    const updater = new DesktopUpdater({
+      currentVersion: "1.0.0", packaged: true, supabaseUrl: "https://example.supabase.co",
+      serviceRoleKey: "service-role-key-not-real", updateDirectory: "C:\\Temp\\Updates",
+      isWorkerActive: () => false, quitApp: vi.fn(), onState: vi.fn(), storageClient,
+      operationTimeoutMs: 10,
+    });
+
+    const first = updater.check();
+    const second = updater.check();
+    await expect(Promise.all([first, second])).resolves.toEqual(expect.arrayContaining([expect.objectContaining({
+      status: "error",
+      message: expect.stringContaining("tempo massimo superato"),
+    })]));
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(updater.snapshot().status).not.toBe("checking");
+  });
 });

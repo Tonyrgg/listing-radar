@@ -22,8 +22,6 @@ describe("instradamento comandi desktop", () => {
   it("instrada i pulsanti operativi statici senza percorsi silenziosi", async () => {
     const renderer = await readFile(path.join(rendererDirectory, "renderer.js"), "utf8");
     const routedIds = [
-      "checkButton",
-      "chromeButton",
       "chooseExcelButton",
       "openOperationLogButton",
       "startButton",
@@ -42,6 +40,8 @@ describe("instradamento comandi desktop", () => {
     ];
 
     for (const id of routedIds) expect(renderer, `manca il comando per #${id}`).toMatch(new RegExp(`target\\.id\\s*===\\s*[\"']${id}[\"']`));
+    expect(renderer).toContain("target.dataset.runSlideTarget");
+    expect(renderer).toContain("target.dataset.carouselDirection");
     for (const action of [
       "pause",
       "toggle-auto-retry",

@@ -44,6 +44,24 @@ interface DesktopUpdaterOptions {
   quitApp: () => void;
   onState: (state: DesktopUpdateState) => void;
   storageClient?: Pick<SupabaseClient, "storage">;
+  operationTimeoutMs?: number;
+}
+
+const DEFAULT_OPERATION_TIMEOUT_MS = 20_000;
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}: tempo massimo superato`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function hasExpectedIntegrity(buffer: Buffer, size: number, sha256: string) {
@@ -76,6 +94,8 @@ export class DesktopUpdater {
   private manifest: UpdateManifest | null = null;
   private installerPath: string | null = null;
   private cancellationRequested = false;
+  private checkPromise: Promise<DesktopUpdateState> | null = null;
+  private downloadPromise: Promise<DesktopUpdateState> | null = null;
 
   constructor(private readonly options: DesktopUpdaterOptions) {
     this.state = {
@@ -99,23 +119,43 @@ export class DesktopUpdater {
 
   async check() {
     if (!this.storage) return this.snapshot();
-    this.setState({ status: "checking", message: "Controllo se è disponibile una nuova versione", percent: null });
-    try {
-      const { data, error } = await this.storage.storage.from("property-worker-updates").download("latest.json", {}, { cache: "no-store" });
-      if (error) throw error;
-      this.manifest = updateManifestSchema.parse(JSON.parse(await data.text()));
-      if (compareVersions(this.manifest.version, this.options.currentVersion) <= 0) {
-        this.setState({ status: "up_to_date", availableVersion: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString(), percent: null });
-      } else {
-        this.setState({ status: "available", availableVersion: this.manifest.version, message: `Versione ${this.manifest.version} disponibile`, checkedAt: new Date().toISOString(), percent: null });
+    if (this.checkPromise) return this.checkPromise;
+    const timeoutMs = this.options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
+    this.checkPromise = (async () => {
+      this.setState({ status: "checking", message: "Controllo se è disponibile una nuova versione", percent: null });
+      try {
+        const response = await withTimeout(
+          this.storage!.storage.from("property-worker-updates").download("latest.json", {}, { cache: "no-store" }),
+          timeoutMs,
+          "Controllo aggiornamenti",
+        );
+        const { data, error } = response;
+        if (error) throw error;
+        this.manifest = updateManifestSchema.parse(JSON.parse(await data.text()));
+        if (compareVersions(this.manifest.version, this.options.currentVersion) <= 0) {
+          this.setState({ status: "up_to_date", availableVersion: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString(), percent: null });
+        } else {
+          this.setState({ status: "available", availableVersion: this.manifest.version, message: `Versione ${this.manifest.version} disponibile`, checkedAt: new Date().toISOString(), percent: null });
+        }
+      } catch (error) {
+        this.fail(error, "Non riesco a controllare gli aggiornamenti");
       }
-    } catch (error) {
-      this.fail(error, "Non riesco a controllare gli aggiornamenti");
-    }
-    return this.snapshot();
+      return this.snapshot();
+    })().finally(() => {
+      this.checkPromise = null;
+    });
+    return this.checkPromise;
   }
 
   async download() {
+    if (this.downloadPromise) return this.downloadPromise;
+    this.downloadPromise = this.performDownload().finally(() => {
+      this.downloadPromise = null;
+    });
+    return this.downloadPromise;
+  }
+
+  private async performDownload() {
     if (!this.storage) throw new Error("Gli aggiornamenti sono disponibili soltanto nell'app installata");
     if (this.options.isWorkerActive()) throw new Error("Termina o metti in pausa la lavorazione prima di scaricare l'aggiornamento");
     if (this.state.status !== "available" || !this.manifest) throw new Error("Non c'è un aggiornamento pronto da scaricare");
@@ -142,7 +182,11 @@ export class DesktopUpdater {
         const chunkFilePath = path.join(versionDirectory, path.basename(chunk.path));
         let buffer = await readVerifiedFile(chunkFilePath, chunk.size, chunk.sha256);
         if (!buffer) {
-          const { data, error } = await this.storage.storage.from("property-worker-updates").download(chunk.path);
+          const { data, error } = await withTimeout(
+            this.storage.storage.from("property-worker-updates").download(chunk.path),
+            this.options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS,
+            `Download ${path.basename(chunk.path)}`,
+          );
           if (error) throw error;
           if (this.cancellationRequested) throw new Error("DOWNLOAD_CANCELLED");
           buffer = Buffer.from(await data.arrayBuffer());

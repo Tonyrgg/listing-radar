@@ -156,9 +156,20 @@ let appState = null,
   pendingPropertyRemovalId = null,
   propertyRemovalInFlight = false,
   uiCommandSequence = 0,
-  latestUiCommand = null;
+  latestUiCommand = null,
+  selectedRunSlide = "civic";
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
+
+const operationConsoleBody = $("operationConsoleBody");
+for (const id of ["commandMonitor", "retryMonitor", "actionPanel", "manualCorrectionPanel", "progressPercent", "workflowSteps"]) {
+  const element = $(id);
+  if (!element || !operationConsoleBody) continue;
+  if (id === "progressPercent" || id === "workflowSteps") continue;
+  operationConsoleBody.append(element);
+}
+const progressCard = document.querySelector(".progress-card");
+if (progressCard && operationConsoleBody) operationConsoleBody.append(progressCard);
 const esc = (value) =>
   String(value ?? "").replace(
     /[&<>'"]/g,
@@ -230,6 +241,25 @@ function markActiveNav(id) {
     item.classList.toggle("is-active", item.dataset.scroll === id);
   });
 }
+const RUN_SLIDES = ["civic", "street", "network"];
+function setRunSlide(slide) {
+  if (!RUN_SLIDES.includes(slide)) return;
+  selectedRunSlide = slide;
+  const index = RUN_SLIDES.indexOf(slide);
+  document.querySelector(".run-carousel")?.setAttribute("data-active-slide", slide);
+  document.querySelectorAll("[data-run-slide]").forEach((panel) => panel.classList.toggle("is-selected", panel.dataset.runSlide === slide));
+  document.querySelectorAll("[data-run-slide-target]").forEach((button) => {
+    const selected = button.dataset.runSlideTarget === slide;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  if ($("runCarouselPosition")) $("runCarouselPosition").textContent = `${index + 1} di ${RUN_SLIDES.length}`;
+}
+function moveRunSlide(direction) {
+  const current = RUN_SLIDES.indexOf(selectedRunSlide);
+  const delta = direction === "previous" ? -1 : 1;
+  setRunSlide(RUN_SLIDES[(current + delta + RUN_SLIDES.length) % RUN_SLIDES.length]);
+}
 function toast(message) {
   const el = $("toast");
   el.textContent = message;
@@ -246,6 +276,8 @@ function commandIdentity(target) {
   const action = target.dataset.updateAction
     ? `update-${target.dataset.updateAction}`
     : (target.dataset.action ??
+      (target.dataset.runSlideTarget ? `run-slide-${target.dataset.runSlideTarget}` : null) ??
+      (target.dataset.carouselDirection ? `carousel-${target.dataset.carouselDirection}` : null) ??
       (target.dataset.scroll
         ? `navigate-${target.dataset.scroll}`
         : target.dataset.mode
@@ -781,8 +813,8 @@ function errorAdvice(job, error) {
     cause:
       "Si è verificato un problema inatteso, ma l’avanzamento precedente è al sicuro.",
     steps: [
-      "Premi “Controlla collegamenti”.",
-      "Se tutti i controlli sono verdi, riprova il passaggio.",
+      "Attendi il controllo automatico dei collegamenti nella barra in alto.",
+      "Quando i sistemi sono verdi, riprova il passaggio.",
       "Se manca un dato, usa “Correggi dati qui sotto”.",
     ],
     action: "unknown",
@@ -849,6 +881,39 @@ function nextStepName(last) {
     : STEPS[Math.min(index + 1, STEPS.length - 1)];
 }
 function renderSteps() {
+  const nonPropertyRun = appState?.streetRun?.active || appState?.networkRun?.active || appState?.requestArchive?.active || appState?.mandateArchive?.active;
+  if (nonPropertyRun) {
+    const operation = currentOperation();
+    const percent = Math.max(0, Math.min(100, Number(operation?.percent ?? 0)));
+    const definitions = appState?.streetRun?.active
+      ? [
+          ["Preparo la via", "Verifico pagina e varianti esatte"],
+          ["Leggo gli immobili", "Raccolgo righe e dati catastali"],
+          ["Leggo i proprietari", "Estraggo nominativi, quote e codici fiscali"],
+          ["Salvo e importo", "Conservo la coda e avvio il cloud se previsto"],
+        ]
+      : appState?.networkRun?.active
+        ? [
+            ["Scelgo i nominativi", "Parto dai codici fiscali verificati"],
+            ["Esploro le proprietà", "Attraverso soci e comproprietari"],
+            ["Applico le barriere", "Scarto esistenti e immobili non strategici"],
+            ["Consolido la coda", "Salvo soltanto candidati verificati"],
+          ]
+        : [
+            ["Apro la ricerca", "Raggiungo automaticamente la pagina corretta"],
+            ["Indicizzo le righe", "Raccolgo tutti gli elementi disponibili"],
+            ["Sincronizzo i dettagli", "Aggiorno un record alla volta"],
+            ["Chiudo il ciclo", "Salvo esito e record da riprovare"],
+          ];
+    const currentIndex = Math.min(definitions.length - 1, Math.floor(percent / 25));
+    $("operationTitle").textContent = operation?.title ?? "Operazione in corso";
+    $("progressPercent").textContent = `${Math.round(percent)}%`;
+    $("progressBar").style.width = `${percent}%`;
+    $("workflowSteps").innerHTML = definitions.map(([label, detail], index) =>
+      `<li class="workflow-step ${index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}"><span class="index">${index < currentIndex ? "✓" : index + 1}</span><b>${esc(label)}<small>${esc(detail)}</small></b></li>`,
+    ).join("");
+    return;
+  }
   const job = appState?.jobs?.find((j) => j.id === appState.activeJobId);
   const current = appState?.currentStep ?? job?.current_step ?? "ready",
     phase = currentPhase(current),
@@ -929,6 +994,20 @@ function renderAction() {
     }
     return;
   }
+  const backgroundRun = appState?.streetRun?.active
+    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. Il checkpoint viene aggiornato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
+    : appState?.networkRun?.active
+      ? { label: "Rete proprietari", title: "Esplorazione della rete in corso", detail: "Attraverso proprietà e comproprietari, verificando ogni candidato prima di inserirlo nella coda.", action: "pause-network-run", actionLabel: "Metti in pausa" }
+      : appState?.requestArchive?.active
+        ? { label: "Sincronizzazione", title: "Sto sincronizzando le richieste", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-request-sync", actionLabel: "Interrompi" }
+        : appState?.mandateArchive?.active
+          ? { label: "Sincronizzazione", title: "Sto sincronizzando gli incarichi", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-mandate-sync", actionLabel: "Interrompi" }
+          : null;
+  if (backgroundRun) {
+    panel.className = "now-card";
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${esc(backgroundRun.label)}</div><h2>${esc(backgroundRun.title)}</h2><p>${esc(backgroundRun.detail)}</p><div class="now-actions"><button class="button secondary" data-action="${backgroundRun.action}">${backgroundRun.actionLabel}</button></div></div><div class="now-side"><h3>Nessuna finestra da gestire</h3><p>Tutto l'avanzamento e tutti i controlli sono raccolti in questa plancia. Se serve una decisione, comparirà qui.</p></div></div>`;
+    return;
+  }
   const current = guide(appState?.currentStep ?? "ready");
   if (appState?.active) {
     const progress = appState.propertyProgress,
@@ -941,8 +1020,8 @@ function renderAction() {
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${pausePending ? "Pausa acquisita" : "Sto lavorando adesso"}</div>${propertyContext}<div class="now-actions"><button class="button secondary" data-action="pause" ${pausePending ? "disabled" : ""}>${pausePending ? "Arresto al punto sicuro…" : "Metti in pausa"}</button>${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>${progress ? (isAcquisition ? "Paracadute acquisizione" : "Ordine per questo immobile") : "Cosa succede dopo"}</h3>${pausePending ? "<p>La richiesta è stata ricevuta. Concludo soltanto l’azione atomica già iniziata, senza lasciare un salvataggio a metà.</p>" : progress ? (isAcquisition ? "<p>Ogni riga è isolata. Puoi saltare quella corrente senza perdere le precedenti né fermare le successive.</p>" : "<ol><li>Recapiti di tutti i proprietari</li><li>Anagrafiche verificate</li><li>Immobile collegato</li><li>Attività dall’immobile</li><li>Comproprietari e quote</li></ol>") : `<p>${esc(current.next)}</p>`}<p><b>Non devi fare nulla</b> finché non compare una richiesta.</p></div></div>`;
     return;
   }
-  panel.className = "now-card";
-  panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Pronto per iniziare</div><h2>Apri le due schede nel Chrome di lavoro</h2><p>Accedi manualmente a SISTER e al gestionale. Su SISTER scegli Comune, via e civico, poi avvia la ricerca e lascia visibili i risultati.</p><div class="now-actions"><button class="button primary" data-action="checks">Controlla se è tutto pronto</button></div></div><div class="now-side"><h3>In tre mosse</h3><ol><li>Apri Chrome di lavoro.</li><li>Porta SISTER sui risultati.</li><li>Premi “Inizia lavorazione”.</li></ol></div></div>`;
+  panel.className = "now-card is-hidden";
+  panel.innerHTML = "";
 }
 
 function renderJobs() {
@@ -1605,7 +1684,7 @@ function renderStopAll() {
   const button = $("stopAllButton");
   button.classList.toggle("is-hidden", !canStop);
   button.disabled = Boolean(appState?.stoppingAll);
-  button.textContent = appState?.stoppingAll ? "Arresto in corso…" : "Ferma tutto";
+  button.textContent = appState?.stoppingAll ? "Arresto in corso…" : "Arresta processo";
 }
 function renderReview() {
   const dialog = $("acquisitionReviewDialog"),
@@ -1728,8 +1807,16 @@ function render() {
     Boolean(appState.lastError && appState.activeJobId && !completed);
   /* La fase decide cosa merita spazio: fermi si vede come partire, in
    * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
+  const anyOperationActive = Boolean(
+    appState.active || appState.streetRun?.active || appState.networkRun?.active ||
+    appState.requestArchive?.active || appState.mandateArchive?.active || appState.stoppingAll,
+  );
+  if (anyOperationActive && document.body.dataset.workerView !== "operations") {
+    document.body.dataset.workerView = "operations";
+    markActiveNav("operations");
+  }
   document.body.dataset.fase =
-    appState.active || appState.streetRun?.active || appState.networkRun?.active
+    anyOperationActive
       ? "lavora"
       : completed
         ? "finita"
@@ -1762,6 +1849,12 @@ function render() {
     : completed
       ? "Import completato"
       : "Percorso completo";
+  if (Array.isArray(appState.connections?.checks)) checks = appState.connections.checks;
+  $("lastCheckLabel").textContent = appState.connections?.checking
+    ? "Aggiornamento…"
+    : appState.connections?.checkedAt
+      ? `Aggiornato alle ${fmtTime(appState.connections.checkedAt)}`
+      : "Controllo automatico in attesa";
   renderChecks();
   renderSteps();
   const directContactToggle = $("autoFillDirectContactToggle");
@@ -1784,7 +1877,8 @@ function render() {
   renderRunControls();
 }
 async function runChecks() {
-  $("checkButton").disabled = true;
+  const button = $("checkButton");
+  if (button) button.disabled = true;
   $("lastCheckLabel").textContent = "Sto controllando…";
   try {
     checks = await window.propertyWorker.runChecks();
@@ -1798,7 +1892,7 @@ async function runChecks() {
     );
     return checks;
   } finally {
-    $("checkButton").disabled = false;
+    if (button) button.disabled = false;
   }
 }
 function openCancel(jobId) {
@@ -1838,6 +1932,14 @@ document.addEventListener("click", async (event) => {
         return window.propertyWorker.downloadUpdate();
       if (target.dataset.updateAction === "install")
         return window.propertyWorker.installUpdate();
+      if (target.dataset.runSlideTarget) {
+        setRunSlide(target.dataset.runSlideTarget);
+        return true;
+      }
+      if (target.dataset.carouselDirection) {
+        moveRunSlide(target.dataset.carouselDirection);
+        return true;
+      }
       if (target.dataset.scroll) {
         markActiveNav(target.dataset.scroll);
         goTo(target.dataset.scroll);
@@ -1945,6 +2047,14 @@ document.addEventListener("click", async (event) => {
         );
         return result;
       }
+      if (target.dataset.action === "pause-street-run")
+        return window.propertyWorker.cancelStreetRun();
+      if (target.dataset.action === "pause-network-run")
+        return window.propertyWorker.cancelNetworkRun();
+      if (target.dataset.action === "cancel-request-sync")
+        return window.propertyWorker.cancelRequestArchiveImport();
+      if (target.dataset.action === "cancel-mandate-sync")
+        return window.propertyWorker.cancelMandateArchiveImport();
       if (target.dataset.action === "pause")
         return window.propertyWorker.pauseJob();
       if (target.dataset.action === "reanalyze-current" && appState.activeJobId && target.dataset.propertyId) {
@@ -2196,6 +2306,7 @@ window.propertyWorker.onStreetRunProgress((progress) => {
   appState.streetRun = { ...(appState.streetRun ?? {}), progress };
   renderStreetRunInternalProgress(progress);
   renderCommandMonitor();
+  renderSteps();
 });
 window.propertyWorker.onState(async (state) => {
   appState = state;
@@ -2212,6 +2323,7 @@ window.propertyWorker.onState(async (state) => {
     }
   }
 });
+setRunSlide(selectedRunSlide);
 window.propertyWorker
   .getState()
   .then(async (state) => {
