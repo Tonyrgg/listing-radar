@@ -78,7 +78,11 @@ describe("controlli di arresto desktop", () => {
 
     expect(html).not.toContain('class="side-nav"');
     expect(html).not.toContain('id="checkButton"');
-    expect(html).not.toContain('id="chromeButton"');
+    /* «Apri Chrome di lavoro» resta nella testata: il controllo dei
+     * collegamenti e diventato automatico, ma aprire la finestra di lavoro e
+     * ancora un gesto che tocca alla persona, e senza il pulsante il ponte
+     * `openChrome` restava codice irraggiungibile. */
+    expect(html).toContain('id="chromeButton"');
     expect(html).toContain('id="operationConsole"');
     expect(html.match(/data-run-slide="/g)).toHaveLength(3);
     expect(renderer).toContain("setRunSlide");
