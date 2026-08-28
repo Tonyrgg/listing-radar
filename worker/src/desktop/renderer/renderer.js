@@ -858,6 +858,7 @@ function renderChecks() {
     ["excel", "File Excel"],
     ["supabase", "Archivio dati"],
   ];
+  const rotti = [];
   $("checksGrid").innerHTML = wanted
     .map(([id, label]) => {
       const keep = appState?.sisterKeepAlive;
@@ -871,9 +872,38 @@ function renderChecks() {
             }
           : null;
       const result = keepResult ?? checks.find((x) => x.id === id);
+      if (result && !result.ok) rotti.push(label);
       return `<div class="check-item ${result ? (result.ok ? "is-ok" : "is-error") : ""}"><span></span><div><b>${label}</b><small title="${esc(result?.detail ?? "Da controllare")}">${esc(result?.detail ?? "Da controllare")}</small></div></div>`;
     })
     .join("");
+  renderConnectionState(rotti, checks.length > 0);
+}
+
+/**
+ * Lo stato dei collegamenti si legge in due posti soltanto: una pastiglia
+ * nella barra del titolo, sempre presente, e una barra nella pagina che
+ * compare unicamente quando c'e qualcosa da sistemare. La griglia per sistema
+ * resta, ma dietro «Dettagli»: serve a chi deve capire quale pezzo manca.
+ */
+function renderConnectionState(rotti, controllato) {
+  const pill = $("connectionPill");
+  const alert = $("connectionAlert");
+  if (!pill || !alert) return;
+
+  pill.classList.toggle("is-ok", controllato && rotti.length === 0);
+  pill.classList.toggle("is-error", rotti.length > 0);
+  $("connectionPillLabel").textContent = !controllato
+    ? "Controllo in corso"
+    : rotti.length === 0
+      ? "Tutti i collegamenti pronti"
+      : rotti.length === 1
+        ? "1 collegamento da sistemare"
+        : `${rotti.length} collegamenti da sistemare`;
+
+  alert.classList.toggle("is-hidden", rotti.length === 0);
+  if (rotti.length) {
+    $("connectionAlertTitle").textContent = `${rotti.join(" e ")} ${rotti.length === 1 ? "non risponde" : "non rispondono"}.`;
+  }
 }
 function currentPhase(step) {
   if (step === "ready") return 0;
@@ -1971,6 +2001,13 @@ document.addEventListener("click", async (event) => {
         markActiveNav(target.dataset.scroll);
         goTo(target.dataset.scroll);
         return true;
+      }
+      if (target.dataset.action === "toggle-checks") {
+        const grid = $("checksGrid");
+        const aperto = grid.classList.toggle("is-hidden");
+        target.setAttribute("aria-expanded", String(!aperto));
+        target.textContent = aperto ? "Dettagli" : "Nascondi dettagli";
+        return;
       }
       if (target.dataset.activityMode) {
         renderActivityModeOptimistic(target.dataset.activityMode);

@@ -21,6 +21,10 @@
         <button class="nav-item" data-scroll="settings">Impostazioni</button>
       </nav>
       <div class="header-actions">
+        <span id="connectionPill" class="connection-pill" title="Stato dei collegamenti">
+          <span class="connection-pill-dot"></span>
+          <span id="connectionPillLabel">Controllo in corso</span>
+        </span>
         <span id="versionLabel" class="version">v—</span>
         <button id="stopAllButton" class="button danger is-hidden">Arresta processo</button>
         <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
@@ -38,9 +42,19 @@
           <div id="runBadge" class="status-pill is-idle"><span></span>Pronto</div>
         </section>
 
-        <section class="connection-strip" aria-label="Stato collegamenti">
-          <div class="connection-strip-heading"><span class="live-dot"></span><b>Sistemi operativi</b><small id="lastCheckLabel">Controllo automatico in corso</small></div>
-          <div id="checksGrid" class="checks-grid"></div>
+        <section id="connectionAlert" class="connection-alert is-hidden" aria-live="polite">
+          <div class="connection-alert-row">
+            <span class="connection-alert-mark" aria-hidden="true">!</span>
+            <div class="connection-alert-copy">
+              <b id="connectionAlertTitle">Collegamenti da sistemare</b>
+              <small id="lastCheckLabel">Controllo automatico in corso</small>
+            </div>
+            <div class="connection-alert-actions">
+              <button id="checkButton" class="button secondary" type="button">Riprova</button>
+              <button class="button quiet" type="button" data-action="toggle-checks" aria-expanded="false" aria-controls="checksGrid">Dettagli</button>
+            </div>
+          </div>
+          <div id="checksGrid" class="checks-grid is-hidden"></div>
         </section>
 
         <section id="operationConsole" class="operation-console" aria-label="Operazione in corso">

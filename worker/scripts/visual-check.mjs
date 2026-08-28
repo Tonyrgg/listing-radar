@@ -182,7 +182,9 @@ await page.evaluate(() => window.__showRequestProgress());
 const requestMonitorVisible = await page.getByText("Importazione di 1.000 richieste", { exact: true }).count();
 await page.evaluate(() => window.__showMandateProgress());
 const mandateMonitorVisible = await page.getByText("Importazione di 250 incarichi", { exact: true }).count();
-await page.locator(".connection-strip").screenshot({ path: path.join(output, "connections.png") });
+/* Lo stato dei collegamenti vive nella pastiglia della testata; la barra
+ * d'errore compare solo quando c'e qualcosa da sistemare. */
+await page.locator("#connectionPill").screenshot({ path: path.join(output, "connections.png") });
 await page.evaluate(() => window.__showPropertyState());
 await page.locator('#actionPanel [data-action="pause"]').click();
 await page.getByRole("button", { name: "Salta immobile" }).click();

@@ -2505,62 +2505,6 @@ body[data-worker-view="operations"] .workspace {
 .page-intro h1 { max-width: 900px; font-size: clamp(2rem, 4vw, 3.4rem); }
 .page-intro p:last-child { max-width: 760px; font-size: 1rem; }
 
-.connection-strip {
-  display: grid;
-  grid-template-columns: minmax(170px, auto) minmax(0, 1fr);
-  align-items: center;
-  gap: 18px;
-  min-height: 64px;
-  padding: 10px 14px;
-  border: 1px solid var(--lr-line-quiet);
-  border-radius: var(--lr-radius-container);
-  background: color-mix(in srgb, var(--lr-surface) 72%, transparent);
-}
-
-.connection-strip-heading {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  column-gap: 9px;
-}
-
-.connection-strip-heading small {
-  grid-column: 2;
-  color: var(--lr-ink-3);
-  font: 500 0.72rem/1.2 var(--lr-font-sans);
-}
-
-.live-dot,
-.operation-console-live i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--lr-ok);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lr-ok) 16%, transparent);
-}
-
-.connection-strip .checks-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.connection-strip .check-item {
-  min-width: 0;
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 0;
-  border-left: 1px solid var(--lr-line-quiet);
-  background: transparent;
-}
-
-.connection-strip .check-item > span { width: 7px; height: 7px; }
-.connection-strip .check-item b { font-size: 0.78rem; }
-.connection-strip .check-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
 
 .run-controls {
   display: grid;
@@ -2752,7 +2696,6 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .app-header { grid-template-columns: auto 1fr; }
   .top-nav { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: center; }
   .header-actions { justify-self: end; }
-  .connection-strip { grid-template-columns: 1fr; }
   .connection-strip .checks-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .run-launcher-header { grid-template-columns: 1fr; }
   .run-carousel .start-card { grid-template-columns: 1fr; }
@@ -2841,4 +2784,90 @@ body[data-fase="lavora"] #settings { display: none !important; }
 .run-stop-control {
   flex: 1 1 100%;
   justify-content: flex-start;
+}
+
+/* ---------- 6a · i collegamenti: una pastiglia, e una barra solo se serve ---------- */
+
+/* Lo stato sta nella barra del titolo, dove si guarda una volta e si dimentica.
+ * La fascia a tutta larghezza occupava spazio anche quando non c'era niente da
+ * dire — e quando qualcosa non andava, lo diceva con la stessa voce. */
+.connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-pill);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+  white-space: nowrap;
+}
+
+.connection-pill-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--lr-line);
+}
+
+.connection-pill.is-ok .connection-pill-dot { background: var(--lr-ok); }
+.connection-pill.is-error .connection-pill-dot { background: var(--lr-danger); }
+
+.connection-pill.is-error {
+  border-color: var(--lr-danger);
+  color: var(--lr-ink);
+}
+
+.connection-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--lr-danger);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-danger-soft);
+}
+
+.connection-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection-alert-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--lr-danger);
+  color: var(--lr-danger-ink);
+  font-weight: var(--lr-weight-strong);
+}
+
+.connection-alert-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.connection-alert-copy b { font-size: var(--lr-text-body); }
+.connection-alert-copy small { color: var(--lr-ink-2); }
+
+.connection-alert-actions {
+  display: flex;
+  margin-left: auto;
+  flex: none;
+  gap: 8px;
+}
+
+.connection-alert .checks-grid { margin-top: 0; }
+
+@media (max-width: 900px) {
+  .connection-alert-row { flex-wrap: wrap; }
+  .connection-alert-actions { margin-left: 0; width: 100%; }
 }

@@ -81,7 +81,14 @@ describe("controlli di arresto desktop", () => {
     ]);
 
     expect(html).not.toContain('class="side-nav"');
-    expect(html).not.toContain('id="checkButton"');
+    /* Il controllo dei collegamenti resta automatico: la fascia a tutta
+     * larghezza e sparita e lo stato vive nella pastiglia della testata. Il
+     * ri-controllo manuale torna soltanto dentro la barra d'errore, dov'e
+     * la domanda a cui risponde. */
+    expect(html).not.toContain('class="connection-strip"');
+    expect(html).toContain('id="connectionPill"');
+    expect(html).toContain('id="connectionAlert"');
+    expect(html).toContain('id="checkButton"');
     /* «Apri Chrome di lavoro» resta nella testata: il controllo dei
      * collegamenti e diventato automatico, ma aprire la finestra di lavoro e
      * ancora un gesto che tocca alla persona, e senza il pulsante il ponte
