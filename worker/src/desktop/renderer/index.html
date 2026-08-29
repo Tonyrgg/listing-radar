@@ -89,8 +89,8 @@
         <section id="runControls" class="run-controls" aria-label="Regole della run">
           <label class="activity-mode-control" id="dryRunControl">
             <div class="activity-mode-copy">
-              <b>Modalità di prova</b>
-              <small id="dryRunHelp">Controlla tutto, ma non salva nel gestionale. Vale per la run, qualunque tipologia scegli.</small>
+              <b>Acquisisci e conserva</b>
+              <small id="dryRunHelp">La run si ferma prima dell'import e mette da parte i dati: li controlli e avvii l'import quando vuoi. Spento, importa subito nel gestionale.</small>
             </div>
             <input id="dryRunToggle" type="checkbox" checked />
           </label>
@@ -156,8 +156,15 @@
         <section id="networkRun" class="street-run-card network-run-card run-slide" data-run-slide="network">
           <div class="network-run-controls">
             <label>Immobili da ottenere<input id="networkTargetProperties" type="number" min="1" max="200" value="12" /></label>
-            <label>Profondità della rete<input id="networkMaxDepth" type="number" min="0" max="8" value="3" /></label>
             <label>Quota minima %<input id="networkMinShare" type="number" min="0" max="100" value="0" /></label>
+            <details class="network-advanced">
+              <summary>Impostazioni avanzate <small>quanto allargare la rete, e fin dove</small></summary>
+              <div class="network-advanced-grid">
+                <label>Profondità della rete<input id="networkMaxDepth" type="number" min="0" max="8" value="3" /><small>Quanti salti di persona dai codici fiscali di partenza. Oltre il secondo la parentela commerciale si perde.</small></label>
+                <label>Persone da visitare<input id="networkMaxPeople" type="number" min="1" max="500" value="80" /><small>Il tetto di tempo: la run si ferma qui anche se non ha raggiunto gli immobili.</small></label>
+                <label>Da quanti clienti partire<input id="networkSeedCount" type="number" min="1" max="30" value="4" /><small>Quanti codici fiscali del CRM aprono la catena.</small></label>
+              </div>
+            </details>
             <fieldset class="network-filter-set">
               <legend>Filtri sulla coda <small>facoltativi, applicati prima del controllo CRM: gli esclusi non consumano uno slot.</small><button id="networkFilterReset" class="button quiet network-filter-reset" type="button">Azzera</button></legend>
               <div class="network-filter-grid">
@@ -213,6 +220,11 @@
           <div id="networkRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
         </div>
+        </section>
+
+        <section id="jobs" class="jobs-card run-keepsakes">
+          <header><div><p class="eyebrow">Acquisizioni conservate</p><h2>Pronte da importare</h2><p>Al massimo tre: apri i dati per controllarli, poi avvia l'import quando vuoi. Finché sono qui, nel gestionale non è finito niente.</p></div><span id="jobCount" class="count">0</span></header>
+          <div class="ledger"><div class="ledger-head"><span></span><span>Ricerca</span><span>Immobili</span><span>Proprietari</span><span>Stato</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div></div>
         </section>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
@@ -271,10 +283,6 @@
               <footer class="completed-imports-footer"><button id="completedImportsLoadMore" class="button secondary is-hidden">Carica altre sessioni</button></footer>
             </section>
 
-            <section id="jobs" class="jobs-card">
-              <header><div><p class="eyebrow">Archivio acquisizioni</p><h2>Ricerche SISTER salvate</h2><p>Conserva i dati già raccolti e importali nel gestionale quando vuoi, senza ripetere lo scraping.</p></div><span id="jobCount" class="count">0</span></header>
-              <div class="ledger"><div class="ledger-head"><span></span><span>Ricerca</span><span>Immobili</span><span>Proprietari</span><span>Stato</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div></div>
-            </section>
 
             <section id="detailPanel" class="detail-card is-hidden"><header><div><p class="eyebrow">Dettaglio lavoro</p><h2>Immobili e proprietari</h2></div><button class="icon-button" data-action="close-detail" aria-label="Chiudi">×</button></header><div id="detailContent"></div></section>
 

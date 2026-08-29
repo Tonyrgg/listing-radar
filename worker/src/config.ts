@@ -26,6 +26,9 @@ const configSchema = z.object({
   CONTACTS_EXCEL_PATH: z.string().min(1),
   WORKER_MODE: z.enum(["assisted", "automatic"]).default("assisted"),
   WORKER_DRY_RUN: booleanFromEnv,
+  /* La run si ferma al riepilogo e conserva l'acquisizione invece di
+   * chiedere cosa farne: l'import parte dopo, dall'archivio. */
+  WORKER_KEEP_ACQUISITION: booleanFromEnv,
   ERROR_SCREENSHOT_DIR: z.string().min(1),
   ERROR_SCREENSHOT_RETENTION_DAYS: z.coerce.number().int().min(1).default(14),
   SISTER_TAB_MATCH: z.string().min(1),

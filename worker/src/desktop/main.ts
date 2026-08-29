@@ -59,7 +59,13 @@ type Preferences = {
   environmentFilePath?: string;
   contactsExcelPath?: string;
   mode: WorkerMode;
+  /* Il simulatore: il worker percorre tutto senza scrivere nel gestionale.
+   * Resta perche' il runner lo usa in una quarantina di punti; a comandarlo
+   * adesso e' `keepAcquisition`, che e' l'unica scelta esposta all'operatore. */
   dryRun: boolean;
+  /* La run si ferma al riepilogo e conserva l'acquisizione: l'import lo fa
+   * partire una persona, dall'archivio, quando ha controllato i dati. */
+  keepAcquisition: boolean;
   autoRetryEnabled: boolean;
   /* Cosa scrivere nel diario del gestionale: vedi PropertyActivityMode. */
   propertyActivityMode: PropertyActivityMode;
@@ -84,7 +90,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact" };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact" };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -578,6 +584,7 @@ function workerConfig(overrides: Partial<Preferences> = {}): WorkerConfig {
     ...(merged.contactsExcelPath ? { CONTACTS_EXCEL_PATH: merged.contactsExcelPath } : {}),
     WORKER_MODE: merged.mode,
     WORKER_DRY_RUN: String(merged.dryRun),
+    WORKER_KEEP_ACQUISITION: String(merged.keepAcquisition),
   });
 }
 
@@ -700,6 +707,27 @@ async function refreshSnapshotRemoteData() {
     snapshotRemotePromise = null;
   });
   return snapshotRemotePromise;
+}
+
+/* Tre acquisizioni conservate bastano: oltre, nessuno le ricorda piu' e i
+ * dati invecchiano in archivio. Il freno sta all'avvio, non allo scarico:
+ * buttare via una raccolta gia' fatta per far posto sarebbe peggio. */
+const MAX_ACQUISIZIONI_CONSERVATE = 3;
+
+function acquisizioniConservate() {
+  return snapshotRemoteData.jobs.filter(
+    (job) => job.status === "saved" && !job.import_started_at,
+  );
+}
+
+async function assertSpazioPerConservare() {
+  if (!preferences.keepAcquisition) return;
+  await refreshSnapshotRemoteData();
+  const conservate = acquisizioniConservate();
+  if (conservate.length < MAX_ACQUISIZIONI_CONSERVATE) return;
+  throw new Error(
+    `Ci sono gia' ${conservate.length} acquisizioni conservate, il massimo e' ${MAX_ACQUISIZIONI_CONSERVATE}. Importane una dall'archivio, oppure eliminala, e poi ricomincia.`,
+  );
 }
 
 async function stateSnapshot() {
@@ -2108,7 +2136,15 @@ function registerIpc() {
     return selection.filePaths[0];
   });
   ipcMain.handle("desktop:save-preferences", async (_event, values: Partial<Preferences>) => {
-    preferences = { ...preferences, ...values, dryRun: values.dryRun ?? preferences.dryRun };
+    const keep = values.keepAcquisition ?? preferences.keepAcquisition;
+    preferences = {
+      ...preferences,
+      ...values,
+      keepAcquisition: keep,
+      /* Se la run si ferma prima dell'import, nel gestionale non finisce
+       * niente comunque: i due flag non possono divergere. */
+      dryRun: values.keepAcquisition != null ? keep : (values.dryRun ?? preferences.dryRun),
+    };
     await persistPreferences();
     await publishState();
     return preferences;
@@ -2145,6 +2181,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
+    await assertSpazioPerConservare();
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
   });
@@ -2157,10 +2194,12 @@ function registerIpc() {
     return stopAfterNextImportRequested;
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
+    await assertSpazioPerConservare();
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false });
     return true;
   });
   ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
+    if (!values.resume) await assertSpazioPerConservare();
     await runSisterNetwork({ settings: values.settings ?? {} });
     return true;
   });

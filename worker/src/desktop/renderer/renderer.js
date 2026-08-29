@@ -1685,7 +1685,7 @@ function renderNetworkRun() {
     active = Boolean(state.active);
   const start = $("networkRunStart"), cancel = $("networkRunCancel");
   const ids = [
-    "networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
+    "networkTargetProperties", "networkMaxDepth", "networkMaxPeople", "networkSeedCount", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
     "networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge",
     "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic",
   ];
@@ -1931,7 +1931,7 @@ function render() {
     selectedMode === "automatic"
       ? "Procede da solo e si ferma solo quando non può scegliere in sicurezza."
       : "Ti chiede conferma prima dei salvataggi.";
-  $("dryRunToggle").checked = appState.preferences?.dryRun !== false;
+  $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
   $("versionLabel").textContent = `v${appState.version}`;
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
@@ -2154,6 +2154,8 @@ document.addEventListener("click", async (event) => {
           settings: {
             targetProperties: Number($("networkTargetProperties").value),
             maxDepth: Number($("networkMaxDepth").value),
+            maxPeople: Number($("networkMaxPeople").value),
+            seedCount: Number($("networkSeedCount").value),
             minSharePercentage: Number($("networkMinShare").value),
             existingPropertyPolicy: $("networkIncludeExisting").checked ? "include_existing" : "new_only",
             residentialOnly: $("networkResidentialOnly").checked,
@@ -2459,7 +2461,7 @@ $("dryRunToggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget;
   renderStreetRun();
   try {
-    await window.propertyWorker.savePreferences({ dryRun: toggle.checked });
+    await window.propertyWorker.savePreferences({ keepAcquisition: toggle.checked });
   } catch (error) {
     toggle.checked = !toggle.checked;
     renderStreetRun();

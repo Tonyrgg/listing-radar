@@ -472,7 +472,11 @@ export class PropertyWorkerRunner {
             reason: String((isRecord(property.raw_payload?.acquisition) ? property.raw_payload.acquisition.reason : null) ?? "Riga esclusa dall'acquisizione"),
           })),
         };
-        const decision = await this.prompts.reviewAcquisition(review);
+        /* Con «Acquisisci e conserva» la domanda non si fa: i dati sono
+         * gia' tutti li', e la decisione la prende chi apre l'archivio. */
+        const decision = this.config.WORKER_KEEP_ACQUISITION
+          ? "save" as const
+          : await this.prompts.reviewAcquisition(review);
         if (decision === "cancel") {
           throw new WorkerError("Acquisizione annullata dal riepilogo. Premi “Riprendi” per controllarla di nuovo.", "paused", { propertyCount: review.properties.length });
         }

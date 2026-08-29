@@ -12,6 +12,7 @@ const config: WorkerConfig = {
   CONTACTS_EXCEL_PATH: "C:\\test.xlsx",
   WORKER_MODE: "automatic",
   WORKER_DRY_RUN: false,
+  WORKER_KEEP_ACQUISITION: false,
   ERROR_SCREENSHOT_DIR: "C:\\worker-errors",
   ERROR_SCREENSHOT_RETENTION_DAYS: 14,
   SISTER_TAB_MATCH: "sister",

@@ -1689,7 +1689,9 @@ dialog[open] {
 
 .network-run-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Erano tre campi, ora due: con auto-fit si dividono la riga invece di
+   * lasciare un terzo vuoto a destra. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--lr-space-3);
   align-items: end;
 }
@@ -1703,6 +1705,50 @@ dialog[open] {
 
 .network-run-controls input[type="number"] { min-height: 44px; width: 100%; }
 .network-run-card { border-color: color-mix(in srgb, #526d35 46%, var(--lr-line)); }
+
+/* Le impostazioni avanzate stanno chiuse: sono i tre numeri che decidono
+ * quanto la rete si allarga, e chi apre la scheda per lanciare una run non
+ * deve inciamparci ogni volta. */
+.network-advanced {
+  grid-column: 1 / -1;
+  margin-top: var(--lr-space-2);
+}
+
+.network-advanced > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lr-space-2);
+  min-height: var(--lr-control-height-compact);
+  color: var(--lr-ink);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-medium);
+  cursor: pointer;
+}
+
+.network-advanced > summary small { color: var(--lr-ink-3); font-weight: var(--lr-weight-regular); }
+
+.network-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(208px, 1fr));
+  gap: var(--lr-space-4) var(--lr-space-5);
+  margin-block: var(--lr-space-3) var(--lr-space-2);
+}
+
+.network-advanced-grid > label {
+  display: grid;
+  gap: var(--lr-space-1);
+  align-content: start;
+  min-width: 0;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.network-advanced-grid input { width: 100%; min-height: var(--lr-control-height); }
+.network-advanced-grid small { color: var(--lr-ink-3); line-height: var(--lr-leading-snug); }
+
+/* L'archivio sotto le run: stessa scheda della Cronologia, ma qui e' il posto
+ * dove si torna, quindi non deve sembrare un capitolo nuovo. */
+.run-keepsakes { margin-top: var(--lr-space-5); }
 
 .network-filter-set {
   grid-column: 1 / -1;
@@ -2603,8 +2649,14 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 #dryRunControl input[type="checkbox"] {
   appearance: none;
   position: relative;
+  flex: none;
   width: 40px;
   height: 24px;
+  /* `.run-carousel input` impone 44px di min-height a tutti i campi, e
+   * min-height batte height: senza questa riga la pillola viene stirata fino a
+   * diventare un cerchio, con il pallino che ci galleggia dentro. */
+  min-height: 24px;
+  padding: 0;
   margin-top: 1px;
   border: 1px solid var(--lr-line);
   border-radius: var(--lr-radius-pill);
