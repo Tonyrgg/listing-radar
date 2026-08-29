@@ -1,4 +1,5 @@
 import type { PersonRow, PropertyRow } from "./repository.js";
+import { indexJobGraph } from "./job-graph.js";
 
 export const PROPERTY_ACTIVITY_DESCRIPTION = "Inserire attività";
 export const PROPERTY_ACTIVITY_STATUS = "Da eseguire" as const;
@@ -143,14 +144,14 @@ export function buildPropertyActivityTasks(graph: {
   people: PersonRow[];
   ownerships: OwnershipShape[];
 }): PropertyActivityTask[] {
+  const index = indexJobGraph(graph);
   return graph.properties.map((property) => {
-    const ownedPeople = graph.ownerships
-      .filter((ownership) => ownership.property_id === property.id)
+    const ownedPeople = (index.ownershipsByPropertyId.get(property.id) ?? [])
       .map((ownership) => ({
         ownership,
-        person: graph.people.find((person) => person.id === ownership.person_id),
+        person: index.peopleById.get(ownership.person_id),
       }))
-      .filter((entry): entry is { ownership: OwnershipShape; person: PersonRow } => Boolean(entry.person))
+      .filter((entry): entry is { ownership: OwnershipShape; person: PersonRow } => entry.person !== undefined)
       .sort((left, right) => {
         const shareDifference = (right.ownership.share_percentage ?? -1) - (left.ownership.share_percentage ?? -1);
         return shareDifference || left.person.id.localeCompare(right.person.id);

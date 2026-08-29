@@ -36,13 +36,13 @@ Per generare l'installer Windows:
 npm run desktop:build
 ```
 
-Per creare l'installer e pubblicarlo nel canale privato degli aggiornamenti:
+Per creare l'installer e pubblicarlo nel canale GitHub Releases degli aggiornamenti:
 
 ```powershell
 npm run desktop:release
 ```
 
-Durante lo sviluppo usa l'installer locale in `worker/release/` e pubblica soltanto una versione stabile: ogni download remoto dell'installer consuma Storage Egress. Dopo la pubblicazione, la verifica standard controlla manifest, presenza e dimensione delle parti senza riscaricare i binari:
+Durante lo sviluppo usa l'installer locale in `worker/release/` e pubblica soltanto una versione stabile. Installer, manifesto e parti risiedono su GitHub: download dal sito e aggiornamenti automatici non consumano Storage Egress Supabase. Dopo la pubblicazione, la verifica standard controlla manifest, presenza e dimensione delle parti senza riscaricare i binari:
 
 ```powershell
 npm run desktop:verify-update
@@ -60,7 +60,15 @@ Quando un errore riguarda un immobile identificato, il desktop esegue al massimo
 
 Durante l'acquisizione SISTER ogni riga viene verificata tramite foglio, particella e subalterno prima di aprire gli intestatari. Una risposta vuota o un errore isolabile viene riprovato due volte sulla sola riga; se resta illeggibile, la riga viene annotata nel riepilogo e la raccolta continua. Il pulsante **Salta riga corrente** permette lo stesso comportamento su richiesta. Cambio di Comune/via/civico, sessione scaduta, struttura globale non riconoscibile o identità catastale ambigua fermano invece l'intero processo: non vengono mai convertiti in skip.
 
-Il manifesto `latest.json` e le parti firmate tramite hash SHA-256 dell'installer vengono conservati nel bucket Supabase privato `property-worker-updates`. L'app li legge con autorizzazione soltanto dal processo principale, conserva localmente ogni parte valida per riprendere un download interrotto senza nuovo traffico, ricompone l'installer e ne verifica l'integrità prima di avviarlo; nessuna chiave viene inviata al renderer o stampata nei log.
+Il manifesto `property-worker-manifest.json`, l'installer e le parti firmate tramite hash SHA-256 vengono pubblicati come asset della release GitHub `property-worker-vX.Y.Z`. L'app conserva localmente ogni parte valida per riprendere un download interrotto, ricompone l'installer e ne verifica dimensione e firma prima di avviarlo. Il pacchetto pubblico non contiene la service role key, percorsi personali o altre credenziali: la configurazione operativa resta nel deposito cifrato di Windows e sopravvive agli aggiornamenti.
+
+La `0.16.0`, prima release che introduce il canale GitHub, richiede una sola pubblicazione ponte nel vecchio bucket, perché le installazioni fino alla `0.15.1` conoscono soltanto Supabase. Pubblica prima la stessa versione su GitHub, poi esegui esplicitamente:
+
+```powershell
+npm run desktop:publish-update:legacy-bridge -- --confirm-one-time-bridge
+```
+
+Il comando verifica che binario e hash coincidano con la release GitHub ed è bloccato senza conferma. Non va più usato per le versioni successive.
 
 L'installer viene creato in `worker/release/`. Per un singolo eseguibile portabile, senza installazione:
 
@@ -70,12 +78,12 @@ npm run desktop:portable
 
 La CLI rimane disponibile come strumento tecnico di emergenza.
 
-Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni → Property Data Worker** o dal pulsante **Scarica software** nella cabina di lavorazione di Listing Radar. Il binario è pubblicato come release della repository esistente e non viene incluso né eseguito nel deploy Vercel.
+Gli utenti possono scaricare l'installer da **Impostazioni → Property Data Worker** o dal pulsante **Scarica software** nella cabina di lavorazione di Listing Radar. L'API restituisce un redirect diretto all'asset GitHub: il binario non attraversa Supabase o Vercel e resta raggiungibile anche quando Supabase limita il progetto.
 
 ## Installazione
 
 1. Applica `supabase/migrations/003_property_worker.sql`, `supabase/migrations/006_property_worker_archives.sql` e `supabase/migrations/008_crm_request_archive_import.sql` allo stesso progetto Supabase usato da Listing Radar.
-2. Nell'app installata la configurazione è inclusa nel pacchetto e viene trasferita al primo avvio nel deposito cifrato di Windows. Se una nuova installazione non è stata preconfigurata, apri **Impostazioni → Configurazione avanzata** e inserisci i valori una sola volta: non occorre creare un file `.env`.
+2. Un aggiornamento conserva automaticamente la configurazione già presente nel deposito cifrato di Windows. Su una macchina nuova, apri **Impostazioni → Configurazione avanzata** e inserisci URL Supabase, service role key e percorso Excel una sola volta: il pacchetto pubblico non contiene segreti e non occorre creare un file `.env`.
 3. Installa il worker:
 
    ```powershell
@@ -92,6 +100,8 @@ Gli utenti autenticati possono scaricare l'installer anche da **Impostazioni →
 5. Accedi manualmente a SISTER e al gestionale, lasciando entrambe le schede aperte. Le regole per riconoscere le schede sono già incluse; se cambiano, puoi aggiornarle nella configurazione avanzata dell'app.
 
 Il file `.env` resta supportato soltanto per lo sviluppo e per l'uso tecnico della CLI. Non viene mai letto dal renderer e la service role key non viene mostrata nell'interfaccia o nei log.
+
+Se Supabase risponde con HTTP 402 o segnala il superamento della quota, il worker non avvia le run che richiedono persistenza cloud: proseguire potrebbe perdere checkpoint o lasciare il gestionale in uno stato parziale. I dry-run locali della via completa possono continuare; l'interfaccia distingue questo caso da una configurazione mancante e controllo e download degli aggiornamenti restano disponibili dal canale GitHub.
 
 ## Ordine della lavorazione
 

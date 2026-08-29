@@ -33,6 +33,7 @@ describe("archivio incarichi CRM", () => {
     try {
       const page = await browser.newPage();
       await page.route("https://crm.test/**", async route => route.fulfill({ contentType: "text/html", body: await readFile(fixture("crm-mandate-detail.html"), "utf8") }));
+      await page.route("https://cdn.test/**", route => route.fulfill({ status: 204, body: "" }));
       await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/PROP-1/primo");
       const detail = await extractCrmMandateDetail(page, {
         externalId: "MAN-1", title: "IN - Primo - Vendita",

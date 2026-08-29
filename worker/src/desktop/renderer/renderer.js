@@ -158,6 +158,7 @@ let appState = null,
   uiCommandSequence = 0,
   latestUiCommand = null,
   selectedRunSlide = "civic";
+let completedImportsRenderKey = null;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 
@@ -1044,6 +1045,11 @@ function renderAction() {
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Configurazione necessaria</div><h2>Completa una sola volta le impostazioni</h2><p>Il programma non ha trovato la configurazione interna. Non serve creare un file: inserisci i valori nella sezione avanzata e Windows li proteggerà.</p><div class="now-actions"><button class="button primary" data-action="config">Apri impostazioni</button></div></div><div class="now-side"><h3>Cosa manca</h3><p>${esc(appState.configError)}</p></div></div>`;
     return;
   }
+  if (appState?.cloudError) {
+    panel.className = "now-card is-warning";
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Cloud temporaneamente limitato</div><h2>Le operazioni cloud restano ferme in sicurezza</h2><p>Il worker non avvia operazioni che richiedono checkpoint cloud e potrebbero lasciare dati incompleti nel gestionale. I dry-run locali e il controllo e download degli aggiornamenti restano disponibili perché non usano Supabase.</p></div><div class="now-side"><h3>Dettaglio</h3><p>${esc(appState.cloudError)}</p></div></div>`;
+    return;
+  }
   if (appState?.cancellingJobId) {
     panel.className = "now-card is-warning";
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Arresto sicuro</div><h2>Sto annullando la lavorazione</h2><p>Attendo la fine dell’operazione già iniziata, poi elimino i dati del lavoro.</p></div><div class="now-side"><b>Non chiudere l’app.</b><p>Ti avviserò appena l’annullamento è concluso.</p></div></div>`;
@@ -1133,27 +1139,46 @@ function renderJobs() {
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
 }
+function relationshipIndex(people = [], ownerships = []) {
+  const peopleById = new Map(people.map((person) => [person.id, person])),
+    ownershipsByPropertyId = new Map();
+  for (const ownership of ownerships) {
+    const current = ownershipsByPropertyId.get(ownership.property_id);
+    if (current) current.push(ownership);
+    else ownershipsByPropertyId.set(ownership.property_id, [ownership]);
+  }
+  return { peopleById, ownershipsByPropertyId };
+}
 function renderCompletedImports() {
   const imports = appState?.completedImports ?? [];
   $("completedImportCount").textContent = imports.length;
   updateHistoryNavHint();
+  const renderKey = imports
+    .map((item) => [
+      item.job.id,
+      item.job.updated_at ?? item.job.completed_at ?? "",
+      item.properties.length,
+      item.people.length,
+      item.ownerships.length,
+    ].join(":"))
+    .join("|");
+  if (renderKey === completedImportsRenderKey) return;
+  completedImportsRenderKey = renderKey;
   $("completedImportsList").innerHTML = imports.length
     ? imports
         .map((item) => {
           const job = item.job,
+            { peopleById, ownershipsByPropertyId } = relationshipIndex(item.people, item.ownerships),
             place =
               [job.municipality, job.street, job.civic_number]
                 .filter(Boolean)
                 .join(" · ") || `Import ${job.id.slice(0, 8)}`;
           return `<section class="completed-import"><header><div><span class="completed-check">✓</span><div><h3>${esc(place)}</h3><p>Concluso ${fmtDate(job.completed_at ?? job.updated_at)} · ${item.properties.length} immobili · ${item.people.length} nominativi</p></div></div><button class="text-button" data-detail-job="${job.id}">Apri riepilogo</button></header><div class="completed-property-list">${item.properties
             .map((property, index) => {
-              const related = item.ownerships
-                .filter((owner) => owner.property_id === property.id)
+              const related = (ownershipsByPropertyId.get(property.id) ?? [])
                 .map((owner) => ({
                   owner,
-                  person: item.people.find(
-                    (person) => person.id === owner.person_id,
-                  ),
+                  person: peopleById.get(owner.person_id),
                 }))
                 .filter((entry) => entry.person);
               const activity = property.raw_payload?.worker_activity?.state;
@@ -1211,6 +1236,7 @@ function renderCompletedSessions() {
   enhanceActionPanel();
 }
 function completedPropertyCards(detail) {
+  const { peopleById, ownershipsByPropertyId } = relationshipIndex(detail.people, detail.ownerships);
   const duplicateContacts = (detail.people ?? []).filter((person) => {
     const duplicates = person.raw_payload?.contacts_flow?.duplicatePhoneAssignments
       ?? person.raw_payload?.contact_assignments_detected
@@ -1222,13 +1248,10 @@ function completedPropertyCards(detail) {
     : "";
   return `${duplicateNote}${(detail.properties ?? [])
     .map((property, index) => {
-      const related = (detail.ownerships ?? [])
-          .filter((owner) => owner.property_id === property.id)
+      const related = (ownershipsByPropertyId.get(property.id) ?? [])
           .map((owner) => ({
             owner,
-            person: (detail.people ?? []).find(
-              (person) => person.id === owner.person_id,
-            ),
+            person: peopleById.get(owner.person_id),
           }))
           .filter((entry) => entry.person),
         activity = property.raw_payload?.worker_activity?.state,
@@ -1896,6 +1919,7 @@ function render() {
     appState.active ||
     Boolean(appState.streetRun?.active) ||
     Boolean(appState.configError) ||
+    Boolean(appState.cloudError) ||
     Boolean(appState.lastError && appState.activeJobId && !completed);
   /* La fase decide cosa merita spazio: fermi si vede come partire, in
    * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
@@ -2411,6 +2435,76 @@ window.propertyWorker.onStreetRunProgress((progress) => {
   renderStreetRunInternalProgress(progress);
   renderCommandMonitor();
   renderSteps();
+});
+window.propertyWorker.onTransientUpdate((update) => {
+  if (!appState || !update) return;
+  let renderOperation = false;
+  if (Object.prototype.hasOwnProperty.call(update, "propertyProgress")) {
+    appState.propertyProgress = update.propertyProgress;
+    renderSteps();
+    renderAction();
+    enhanceActionPanel();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "retryMonitor")) {
+    appState.retryMonitor = update.retryMonitor;
+    renderRetryMonitor();
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "requestImportProgress")) {
+    appState.requestArchive = { ...(appState.requestArchive ?? {}), progress: update.requestImportProgress };
+    renderRequestArchive();
+    renderSteps();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "mandateImportProgress")) {
+    appState.mandateArchive = { ...(appState.mandateArchive ?? {}), progress: update.mandateImportProgress };
+    renderMandateArchive();
+    renderSteps();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "networkRunProgress")) {
+    appState.networkRun = { ...(appState.networkRun ?? {}), progress: update.networkRunProgress };
+    renderNetworkRun();
+    renderSteps();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "streetRunCheckpoint")) {
+    appState.streetRun = { ...(appState.streetRun ?? {}), checkpoint: update.streetRunCheckpoint };
+    renderStreetRun();
+    renderSteps();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "networkRunCheckpoint")) {
+    appState.networkRun = { ...(appState.networkRun ?? {}), checkpoint: update.networkRunCheckpoint };
+    renderNetworkRun();
+    renderSteps();
+    renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "sisterKeepAlive")) {
+    appState.sisterKeepAlive = update.sisterKeepAlive;
+    $("keepAliveStatus").textContent = update.sisterKeepAlive?.statusLabel === "active"
+      ? `Attivo · ultimo controllo ${fmtTime(update.sisterKeepAlive.checkedAt)}`
+      : (update.sisterKeepAlive?.message ?? "In attesa");
+    renderChecks();
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "connections")) {
+    appState.connections = update.connections;
+    checks = Array.isArray(update.connections?.checks) ? update.connections.checks : [];
+    $("lastCheckLabel").textContent = update.connections?.checking
+      ? "Aggiornamento…"
+      : update.connections?.checkedAt
+        ? `Aggiornato alle ${fmtTime(update.connections.checkedAt)}`
+        : "Controllo automatico in attesa";
+    renderChecks();
+  }
+  if (update.activityItem) {
+    const items = appState.activity ?? [];
+    if (items[0]?.at !== update.activityItem.at || items[0]?.message !== update.activityItem.message) {
+      appState.activity = [update.activityItem, ...items].slice(0, 300);
+    }
+    renderActivity();
+  }
+  if (renderOperation) renderCommandMonitor();
 });
 window.propertyWorker.onState(async (state) => {
   appState = state;

@@ -1,7 +1,7 @@
 import { Download, MonitorDown } from "lucide-react";
 
 import { Card, Chip, Label, Meta, buttonClass } from "@/components/ui/primitives";
-import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { getLatestWorkerRelease } from "@/lib/worker-release";
 
 type PublishedRelease = {
   version: string;
@@ -16,24 +16,8 @@ type PublishedRelease = {
  */
 async function readPublishedRelease(): Promise<PublishedRelease | null> {
   try {
-    const supabase = getSupabaseServiceClient();
-    const { data, error } = await supabase.storage
-      .from("property-worker-updates")
-      .download("latest.json");
-
-    if (error || !data) {
-      return null;
-    }
-
-    const manifest = JSON.parse(await data.text()) as Partial<PublishedRelease>;
-
-    return manifest.version
-      ? {
-          version: manifest.version,
-          releaseDate: manifest.releaseDate ?? null,
-          size: manifest.size ?? null,
-        }
-      : null;
+    const release = await getLatestWorkerRelease();
+    return { version: release.version, releaseDate: release.releaseDate, size: release.size };
   } catch {
     return null;
   }
@@ -118,8 +102,9 @@ export async function WorkerDownloadCard() {
       ) : null}
 
       <Meta className="mt-4">
-        Il download richiede l&apos;accesso a Listing Radar: il pacchetto non è
-        raggiungibile da chi non ha effettuato l&apos;accesso.
+        Il pacchetto arriva direttamente dal canale release GitHub e non usa
+        traffico Supabase. La pubblicazione e l&apos;updater ne verificano sempre
+        dimensione e firma SHA-256.
       </Meta>
     </Card>
   );

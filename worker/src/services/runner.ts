@@ -27,6 +27,7 @@ import {
   type PropertyActivityCheckpoint,
 } from "./property-activities.js";
 import { buildPropertyWorkPlan } from "./property-workflow.js";
+import { indexJobGraph } from "./job-graph.js";
 
 function asProperty(row: PropertyRow): CadastralProperty {
   return {
@@ -422,9 +423,10 @@ export class PropertyWorkerRunner {
         const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
         const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
         const activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
+        const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
         const incompleteProperties = activeProperties.filter((item) => !item.sheet || !item.parcel || !item.subaltern);
         const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
-        const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+        const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
         const nothingToImport = !activeProperties.length && !activePeople.length;
         if ((!nothingToImport && !activePeople.length) || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
           throw new WorkerError("Dati obbligatori mancanti o quota non interpretabile", "data_incomplete", {
@@ -432,14 +434,12 @@ export class PropertyWorkerRunner {
             propertiesWithoutOwners: propertiesWithoutOwners.map((item) => item.id), noOwnersFound: !graph.people.length,
           });
         }
-        await Promise.all([
-          ...activeProperties.map((item) => this.repository.updatePropertyProcessing(item.id, { processing_status: "normalized" })),
-          ...activePeople.map((item) => this.repository.updatePersonProcessing(item.id, { tax_code: normalizeTaxCode(item.tax_code), processing_status: "normalized" })),
-        ]);
+        await this.repository.markGraphNormalized(activeProperties, activePeople);
         return { properties: activeProperties.length, people: activePeople.length, excludedProperties: graph.properties.length - activeProperties.length, nothingToImport };
       }
       case "acquisition_reviewed": {
         const graph = await this.repository.loadGraph(job.id);
+        const graphIndex = indexJobGraph(graph);
         const review: AcquisitionReview = {
           municipality: job.municipality,
           street: job.street,
@@ -452,17 +452,16 @@ export class PropertyWorkerRunner {
             class: property.class,
             consistency: property.consistency,
             cadastralIncome: property.cadastral_income,
-            owners: graph.ownerships
-              .filter((ownership) => ownership.property_id === property.id)
-              .map((ownership) => graph.people.find((person) => person.id === ownership.person_id))
-              .filter((person): person is PersonRow => Boolean(person))
-              .map((person) => ({
+            owners: (graphIndex.ownershipsByPropertyId.get(property.id) ?? [])
+              .map((ownership) => ({ ownership, person: graphIndex.peopleById.get(ownership.person_id) }))
+              .filter((entry): entry is { ownership: typeof graph.ownerships[number]; person: PersonRow } => Boolean(entry.person))
+              .map(({ ownership, person }) => ({
                 id: person.id,
                 fullName: person.full_name,
                 taxCode: person.tax_code,
                 birthPlace: person.birth_place,
                 birthDate: person.birth_date,
-                sharePercentage: graph.ownerships.find((ownership) => ownership.property_id === property.id && ownership.person_id === person.id)?.share_percentage ?? null,
+                sharePercentage: ownership.share_percentage,
               })),
           })),
           acquisitionIssues: graph.properties.filter(isAcquisitionExcluded).map((property) => ({
@@ -628,12 +627,12 @@ export class PropertyWorkerRunner {
       }
       case "property_searched": {
         const graph = await this.repository.loadGraph(job.id);
+        const graphIndex = indexJobGraph(graph);
         for (const row of graph.properties) {
           this.throwIfCancellationRequested(job.id);
           if (["matched", "not_found"].includes(row.processing_status) && Object.prototype.hasOwnProperty.call(row.raw_payload ?? {}, "checked_from_people")) continue;
-          const owners = graph.ownerships
-            .filter((ownership) => ownership.property_id === row.id)
-            .map((ownership) => graph.people.find((person) => person.id === ownership.person_id))
+          const owners = (graphIndex.ownershipsByPropertyId.get(row.id) ?? [])
+            .map((ownership) => graphIndex.peopleById.get(ownership.person_id))
             .filter((person): person is PersonRow => Boolean(person?.crm_record_id));
           const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
           for (const owner of owners) {
@@ -655,6 +654,7 @@ export class PropertyWorkerRunner {
       }
       case "property_created_or_updated": {
         const graph = await this.repository.loadGraph(job.id);
+        const graphIndex = indexJobGraph(graph);
         let processed = 0;
         for (const row of graph.properties) {
           this.throwIfCancellationRequested(job.id);
@@ -663,8 +663,8 @@ export class PropertyWorkerRunner {
             continue;
           }
           const property = asProperty(row);
-          const owner = graph.ownerships.find((item) => item.property_id === row.id);
-          const person = graph.people.find((item) => item.id === owner?.person_id);
+          const owner = graphIndex.ownershipsByPropertyId.get(row.id)?.[0];
+          const person = owner ? graphIndex.peopleById.get(owner.person_id) : undefined;
           if (job.mode === "assisted" && person) {
             const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), property)}\nModifica prevista: ${row.crm_record_id ? "aggiornamento immobile" : "creazione immobile"}\nCampi: indirizzo e dati catastali SISTER`);
             if (decision === "skip") { await this.repository.updatePropertyProcessing(row.id, { processing_status: "skipped" }); continue; }
@@ -894,6 +894,7 @@ export class PropertyWorkerRunner {
     details: Record<string, unknown> = {},
   ) {
     const graph = await this.repository.loadGraph(property.job_id);
+    const graphIndex = indexJobGraph(graph);
     const excludedAt = new Date().toISOString();
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
@@ -909,12 +910,12 @@ export class PropertyWorkerRunner {
       processing_status: status,
       raw_payload: property.raw_payload,
     });
-    const relatedOwnerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
+    const relatedOwnerships = graphIndex.ownershipsByPropertyId.get(property.id) ?? [];
     for (const ownership of relatedOwnerships) {
       await this.repository.updateOwnership(ownership.id, { processing_status: status });
-      const hasAnotherActiveProperty = graph.ownerships.some((candidate) => {
-        if (candidate.person_id !== ownership.person_id || candidate.property_id === property.id) return false;
-        const otherProperty = graph.properties.find((candidateProperty) => candidateProperty.id === candidate.property_id);
+      const hasAnotherActiveProperty = (graphIndex.ownershipsByPersonId.get(ownership.person_id) ?? []).some((candidate) => {
+        if (candidate.property_id === property.id) return false;
+        const otherProperty = graphIndex.propertiesById.get(candidate.property_id);
         return Boolean(otherProperty && !isAcquisitionExcluded(otherProperty));
       });
       if (!hasAnotherActiveProperty) {
@@ -991,8 +992,9 @@ export class PropertyWorkerRunner {
     details: Record<string, unknown> = { source: "manual", attempts: 0 },
   ) {
     const graph = await this.repository.loadGraph(property.job_id);
+    const graphIndex = indexJobGraph(graph);
     const skippedAt = new Date().toISOString();
-    const relatedOwnerships = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
+    const relatedOwnerships = graphIndex.ownershipsByPropertyId.get(property.id) ?? [];
     const relatedPersonIds = [...new Set(relatedOwnerships.map((ownership) => ownership.person_id))];
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
@@ -1007,9 +1009,9 @@ export class PropertyWorkerRunner {
       await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" });
     }
     for (const personId of relatedPersonIds) {
-      const hasAnotherActiveProperty = graph.ownerships.some((ownership) => {
-        if (ownership.person_id !== personId || ownership.property_id === property.id) return false;
-        const otherProperty = graph.properties.find((candidate) => candidate.id === ownership.property_id);
+      const hasAnotherActiveProperty = (graphIndex.ownershipsByPersonId.get(personId) ?? []).some((ownership) => {
+        if (ownership.property_id === property.id) return false;
+        const otherProperty = graphIndex.propertiesById.get(ownership.property_id);
         return Boolean(otherProperty && !["skipped", "acquisition_skipped", "acquisition_failed"].includes(otherProperty.processing_status));
       });
       if (!hasAnotherActiveProperty) await this.repository.updatePersonProcessing(personId, { processing_status: "skipped" });

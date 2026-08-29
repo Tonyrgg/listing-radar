@@ -1,4 +1,5 @@
 import type { PersonRow, PropertyRow, WorkerRepository } from "./repository.js";
+import { indexJobGraph } from "./job-graph.js";
 
 type Graph = Awaited<ReturnType<WorkerRepository["loadGraph"]>>;
 type OwnershipRow = Graph["ownerships"][number];
@@ -25,13 +26,13 @@ export const PROPERTY_WORK_SEQUENCE = [
 ] as const;
 
 export function buildPropertyWorkPlan(graph: Graph): PropertyWorkItem[] {
+  const index = indexJobGraph(graph);
   return graph.properties
     .filter((property) => !["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
       && (property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage !== "skipped")
     .map((property) => {
-    const owners = graph.ownerships
-      .filter((ownership) => ownership.property_id === property.id)
-      .map((ownership) => ({ ownership, person: graph.people.find((person) => person.id === ownership.person_id) }))
+    const owners = (index.ownershipsByPropertyId.get(property.id) ?? [])
+      .map((ownership) => ({ ownership, person: index.peopleById.get(ownership.person_id) }))
       .filter((entry): entry is PropertyWorkOwner => Boolean(entry.person))
       .sort((left, right) => {
         const byShare = (right.ownership.share_percentage ?? -1) - (left.ownership.share_percentage ?? -1);

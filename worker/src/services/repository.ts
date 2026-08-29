@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { buildCadastralKey } from "../core/normalize.js";
+import { buildCadastralKey, normalizeTaxCode } from "../core/normalize.js";
 import { normalizeCrmMandate, type CrmMandateArchiveItem, type CrmMandateDetail } from "../adapters/crm/mandates.js";
 import type { CrmRequestArchiveItem, CrmRequestDetail } from "../adapters/crm/requests.js";
 import type { CadastralOwner, CadastralProperty, ContactMatchResult, ErrorStatus, WorkflowStep, WorkerMode } from "../types.js";
@@ -13,6 +13,7 @@ import {
   type PropertyLocationZone,
 } from "./property-location.js";
 import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
+import { isSupabaseProjectRestricted } from "./supabase-errors.js";
 
 export type JobRow = {
   id: string;
@@ -139,6 +140,8 @@ export type CrmMandateImportItemRow = {
 export class WorkerRepository {
   readonly client: SupabaseClient;
   private readonly propertyGeocoder = new NominatimPropertyGeocoder();
+  private readonly peopleByIdentity = new Map<string, PersonRow>();
+  private peopleIdentityJobId: string | null = null;
 
   constructor(url: string, serviceRoleKey: string) {
     this.client = createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -149,6 +152,12 @@ export class WorkerRepository {
       .from("property_worker_jobs")
       .select("id,saved_at,import_started_at", { head: true, count: "exact" });
     if (error) {
+      if (isSupabaseProjectRestricted(error)) {
+        throw new Error(
+          "Supabase ha limitato temporaneamente il progetto (HTTP 402/quota). "
+          + "Le run con persistenza cloud sono sospese prima di modificare il gestionale; gli aggiornamenti software restano disponibili da GitHub.",
+        );
+      }
       throw new Error(
         `Supabase non pronto: applica la migration 006_property_worker_archives.sql prima di avviare il worker. ${error.message}`,
       );
@@ -609,44 +618,88 @@ export class WorkerRepository {
     await this.updateJob(jobId, { status, error_message: message, error_details: details });
   }
 
-  async insertProperties(jobId: string, properties: CadastralProperty[]): Promise<PropertyRow[]> {
+  async insertProperties(
+    jobId: string,
+    properties: CadastralProperty[],
+    options: { updateJobTotal?: boolean } = {},
+  ): Promise<PropertyRow[]> {
+    const payloads = properties.map((property) => ({
+      job_id: jobId, municipality: property.municipality, sheet: property.sheet,
+      parcel: property.parcel, subaltern: property.subaltern, cadastral_key: buildCadastralKey(property),
+      address: property.address, census_zone: property.censusZone, category: property.category,
+      class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
+      raw_payload: property.rawPayload, processing_status: "extracted",
+    }));
+    const identity = (row: Pick<PropertyRow, "municipality" | "sheet" | "parcel" | "subaltern">) =>
+      JSON.stringify([row.municipality, row.sheet, row.parcel, row.subaltern]);
+    const identities = payloads.map(identity);
+    const containsDuplicates = new Set(identities).size !== identities.length;
     const rows: PropertyRow[] = [];
-    for (const property of properties) {
-      const payload = {
-        job_id: jobId, municipality: property.municipality, sheet: property.sheet,
-        parcel: property.parcel, subaltern: property.subaltern, cadastral_key: buildCadastralKey(property),
-        address: property.address, census_zone: property.censusZone, category: property.category,
-        class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
-        raw_payload: property.rawPayload, processing_status: "extracted",
-      };
+    const saveOne = async (payload: typeof payloads[number]) => {
       const { data, error } = await this.client
         .from("property_worker_properties")
         .upsert(payload, { onConflict: "job_id,municipality,sheet,parcel,subaltern" })
         .select("*")
         .single();
-      if (error) {
-        throw new Error(
-          `Salvataggio immobile isolato per lavorazione fallito. Non verrà riutilizzato un record di un altro job. Verifica la migration 006_property_worker_archives.sql: ${error.message}`,
-        );
+      if (error) throw error;
+      return data as PropertyRow;
+    };
+    try {
+      if (payloads.length <= 1 || containsDuplicates) {
+        for (const payload of payloads) rows.push(await saveOne(payload));
+      } else {
+        const savedByIdentity = new Map<string, PropertyRow>();
+        const chunkSize = 100;
+        const chunks: typeof payloads[] = [];
+        for (let offset = 0; offset < payloads.length; offset += chunkSize) chunks.push(payloads.slice(offset, offset + chunkSize));
+        for (let offset = 0; offset < chunks.length; offset += 4) {
+          const savedChunks = await Promise.all(chunks.slice(offset, offset + 4).map(async (chunk) => {
+            const { data, error } = await this.client
+              .from("property_worker_properties")
+              .upsert(chunk, { onConflict: "job_id,municipality,sheet,parcel,subaltern" })
+              .select("*");
+            if (error) throw error;
+            return data as PropertyRow[];
+          }));
+          for (const savedChunk of savedChunks) {
+            for (const row of savedChunk) savedByIdentity.set(identity(row), row);
+          }
+        }
+        for (const rowIdentity of identities) {
+          const row = savedByIdentity.get(rowIdentity);
+          if (!row) throw new Error("Supabase non ha restituito una riga immobile salvata");
+          rows.push(row);
+        }
       }
-      if (data.job_id !== jobId) {
-        throw new Error("Integrità archivio violata: l'immobile restituito appartiene a un'altra lavorazione.");
-      }
-      rows.push(data as PropertyRow);
+    } catch (error) {
+      throw new Error(
+        `Salvataggio immobile isolato per lavorazione fallito. Non verrà riutilizzato un record di un altro job. Verifica la migration 006_property_worker_archives.sql: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
-    await this.updateJob(jobId, { total_properties: rows.length });
+    if (rows.some((row) => row.job_id !== jobId)) {
+      throw new Error("Integrità archivio violata: l'immobile restituito appartiene a un'altra lavorazione.");
+    }
+    if (options.updateJobTotal !== false) await this.updateJob(jobId, { total_properties: rows.length });
     return rows;
   }
 
   async insertOwner(jobId: string, propertyId: string, owner: CadastralOwner): Promise<PersonRow> {
-    let existingQuery = this.client.from("property_worker_people").select("*").eq("job_id", jobId);
-    if (owner.taxCode) existingQuery = existingQuery.eq("tax_code", owner.taxCode);
-    else {
-      existingQuery = existingQuery.eq("full_name", owner.fullName);
-      existingQuery = owner.birthDate ? existingQuery.eq("birth_date", owner.birthDate) : existingQuery.is("birth_date", null);
+    if (this.peopleIdentityJobId !== jobId) {
+      this.peopleByIdentity.clear();
+      this.peopleIdentityJobId = jobId;
     }
-    const { data: existing } = await existingQuery.limit(1).maybeSingle();
-    let person = existing as PersonRow | null;
+    const identityKey = JSON.stringify([jobId, owner.taxCode || null, owner.taxCode ? null : owner.fullName, owner.taxCode ? null : owner.birthDate]);
+    let person = this.peopleByIdentity.get(identityKey) ?? null;
+    if (!person) {
+      let existingQuery = this.client.from("property_worker_people").select("*").eq("job_id", jobId);
+      if (owner.taxCode) existingQuery = existingQuery.eq("tax_code", owner.taxCode);
+      else {
+        existingQuery = existingQuery.eq("full_name", owner.fullName);
+        existingQuery = owner.birthDate ? existingQuery.eq("birth_date", owner.birthDate) : existingQuery.is("birth_date", null);
+      }
+      const { data: existing } = await existingQuery.limit(1).maybeSingle();
+      person = existing as PersonRow | null;
+    }
     if (!person) {
       const { data, error } = await this.client.from("property_worker_people").insert({
         job_id: jobId, full_name: owner.fullName, birth_place: owner.birthPlace,
@@ -657,6 +710,12 @@ export class WorkerRepository {
       }).select("*").single();
       if (error) throw new Error(`Salvataggio titolare fallito: ${error.message}`);
       person = data as PersonRow;
+    }
+    this.peopleByIdentity.delete(identityKey);
+    this.peopleByIdentity.set(identityKey, person);
+    if (this.peopleByIdentity.size > 5_000) {
+      const oldestIdentity = this.peopleByIdentity.keys().next().value;
+      if (oldestIdentity) this.peopleByIdentity.delete(oldestIdentity);
     }
     const { error: ownershipError } = await this.client.from("property_worker_ownerships").upsert({
       property_id: propertyId, person_id: person.id, right_type: "Proprietà",
@@ -688,6 +747,40 @@ export class WorkerRepository {
   async updateOwnership(ownershipId: string, values: Record<string, unknown>) {
     const { error } = await this.client.from("property_worker_ownerships").update(values).eq("id", ownershipId);
     if (error) throw new Error(`Aggiornamento collegamento fallito: ${error.message}`);
+  }
+
+  private async updateRowsByIds(table: "property_worker_properties" | "property_worker_people", ids: string[], values: Record<string, unknown>) {
+    const chunkSize = 100;
+    const chunks: string[][] = [];
+    for (let offset = 0; offset < ids.length; offset += chunkSize) chunks.push(ids.slice(offset, offset + chunkSize));
+    for (let offset = 0; offset < chunks.length; offset += 4) {
+      await Promise.all(chunks.slice(offset, offset + 4).map(async (chunk) => {
+        const { error } = await this.client.from(table).update(values).in("id", chunk);
+        if (error) throw new Error(`Aggiornamento batch ${table === "property_worker_properties" ? "immobili" : "nominativi"} fallito: ${error.message}`);
+      }));
+    }
+  }
+
+  /** Marks an acquired graph ready for import without issuing one request per row. */
+  async markGraphNormalized(properties: PropertyRow[], people: PersonRow[]) {
+    const unchangedTaxCodeIds: string[] = [];
+    const changedTaxCodes: Array<{ person: PersonRow; taxCode: string }> = [];
+    for (const person of people) {
+      const taxCode = normalizeTaxCode(person.tax_code);
+      if (taxCode === person.tax_code) unchangedTaxCodeIds.push(person.id);
+      else changedTaxCodes.push({ person, taxCode });
+    }
+    const updateChangedTaxCodes = async () => {
+      for (let offset = 0; offset < changedTaxCodes.length; offset += 8) {
+        await Promise.all(changedTaxCodes.slice(offset, offset + 8).map(({ person, taxCode }) =>
+          this.updatePersonProcessing(person.id, { tax_code: taxCode, processing_status: "normalized" })));
+      }
+    };
+    await Promise.all([
+      this.updateRowsByIds("property_worker_properties", properties.map((property) => property.id), { processing_status: "normalized" }),
+      this.updateRowsByIds("property_worker_people", unchangedTaxCodeIds, { processing_status: "normalized" }),
+      updateChangedTaxCodes(),
+    ]);
   }
 
   async removePropertyFromJob(jobId: string, propertyId: string) {

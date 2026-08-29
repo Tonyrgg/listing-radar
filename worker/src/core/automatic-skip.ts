@@ -1,3 +1,4 @@
+import { indexJobGraph } from "../services/job-graph.js";
 import type { PersonRow, PropertyRow } from "../services/repository.js";
 
 type OwnershipRow = {
@@ -39,12 +40,13 @@ export function buildAutomaticSkipImpact(
   graph: { properties: PropertyRow[]; people: PersonRow[]; ownerships: OwnershipRow[] },
   propertyId: string,
 ) {
-  const ownerships = graph.ownerships.filter((ownership) => ownership.property_id === propertyId);
+  const index = indexJobGraph(graph);
+  const ownerships = index.ownershipsByPropertyId.get(propertyId) ?? [];
   const personIds = [...new Set(ownerships.map((ownership) => ownership.person_id))];
   const exclusivePersonIds = personIds.filter((personId) =>
-    !graph.ownerships.some((ownership) => {
-      if (ownership.person_id !== personId || ownership.property_id === propertyId) return false;
-      const otherProperty = graph.properties.find((property) => property.id === ownership.property_id);
+    !(index.ownershipsByPersonId.get(personId) ?? []).some((ownership) => {
+      if (ownership.property_id === propertyId) return false;
+      const otherProperty = index.propertiesById.get(ownership.property_id);
       return otherProperty && otherProperty.processing_status !== "skipped";
     }));
   return {

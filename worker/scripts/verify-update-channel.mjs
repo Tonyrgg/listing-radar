@@ -1,73 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createClient } from "@supabase/supabase-js";
+
+import { readLatestRelease } from "./worker-release-channel.mjs";
 
 const workerRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageData = JSON.parse(await readFile(path.join(workerRoot, "package.json"), "utf8"));
-const bundledConfig = JSON.parse(await readFile(path.join(workerRoot, "generated", "worker-config.json"), "utf8"));
-const supabaseUrl = bundledConfig.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = bundledConfig.SUPABASE_SERVICE_ROLE_KEY;
-if (!supabaseUrl || !serviceRoleKey) throw new Error("Configurazione Supabase mancante. Esegui prima desktop:prepare-config.");
+const { manifest } = await readLatestRelease();
 
-const bucket = "property-worker-updates";
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-const { data: signedManifest, error: signedManifestError } = await supabase.storage
-  .from(bucket)
-  .createSignedUrl("latest.json", 60);
-if (signedManifestError || !signedManifest?.signedUrl) {
-  throw new Error(`Manifest non raggiungibile: ${signedManifestError?.message ?? "URL non disponibile"}`);
-}
-const manifestResponse = await fetch(`${signedManifest.signedUrl}&verification=${Date.now()}`, { cache: "no-store" });
-if (!manifestResponse.ok) throw new Error(`Manifest non raggiungibile: HTTP ${manifestResponse.status}`);
-const manifest = await manifestResponse.json();
 if (manifest.version !== packageData.version) {
-  throw new Error(`Versione pubblicata ${manifest.version ?? "sconosciuta"}, attesa ${packageData.version}.`);
+  throw new Error(`Versione pubblicata ${manifest.version}, attesa ${packageData.version}.`);
 }
-if (!Array.isArray(manifest.chunks) || manifest.chunks.length === 0) {
-  throw new Error("Il manifest non contiene parti dell'installer.");
-}
-if (!Number.isInteger(manifest.size) || manifest.size <= 0 || !/^[a-f0-9]{64}$/i.test(manifest.sha256 ?? "")) {
-  throw new Error("Dimensione o firma dell'installer non valida nel manifest.");
-}
-
-const expectedPrefix = `releases/${manifest.version}`;
-const expectedChunks = new Map();
-let expectedTotalSize = 0;
-for (const chunk of manifest.chunks) {
-  const expectedPathPrefix = `${expectedPrefix}/`;
-  if (
-    typeof chunk.path !== "string" || !chunk.path.startsWith(expectedPathPrefix)
-    || path.posix.dirname(chunk.path) !== expectedPrefix
-    || !Number.isInteger(chunk.size) || chunk.size <= 0
-    || !/^[a-f0-9]{64}$/i.test(chunk.sha256 ?? "")
-  ) {
-    throw new Error(`Parte non valida nel manifest: ${chunk.path ?? "percorso mancante"}.`);
-  }
-  const name = path.posix.basename(chunk.path);
-  if (expectedChunks.has(name)) throw new Error(`Parte duplicata nel manifest: ${name}.`);
-  expectedChunks.set(name, chunk);
-  expectedTotalSize += chunk.size;
-}
-if (expectedTotalSize !== manifest.size) {
-  throw new Error(`La somma delle parti (${expectedTotalSize}) non coincide con la dimensione dell'installer (${manifest.size}).`);
-}
-
-const { data: publishedObjects, error: listError } = await supabase.storage.from(bucket).list(expectedPrefix, {
-  limit: 1000,
-  sortBy: { column: "name", order: "asc" },
-});
-if (listError) throw new Error(`Impossibile leggere la release pubblicata: ${listError.message}`);
-const objectsByName = new Map((publishedObjects ?? []).filter((item) => item.id != null).map((item) => [item.name, item]));
-for (const [name, chunk] of expectedChunks) {
-  const published = objectsByName.get(name);
-  if (!published) throw new Error(`Parte pubblicata non trovata: ${chunk.path}.`);
-  const publishedSize = Number(published.metadata?.size);
-  if (publishedSize !== chunk.size) {
-    throw new Error(`Dimensione remota errata per ${chunk.path}: ${publishedSize}, attesa ${chunk.size}.`);
-  }
-}
-
-console.log(`Canale aggiornamenti verificato senza download binari: versione ${manifest.version}, ${manifest.chunks.length} parti, ${manifest.size} byte.`);
+console.log(`Canale GitHub verificato senza download binari: versione ${manifest.version}, ${manifest.chunks.length} parti, ${manifest.size} byte.`);

@@ -74,4 +74,24 @@ describe("piano di lavorazione per immobile", () => {
     expect(plan[0]?.owners).toHaveLength(2);
     expect(plan[0]?.coowners.map((owner) => owner.person.crm_record_id)).toEqual(["CRM-OWNER-1"]);
   });
+
+  it("costruisce una long run di migliaia di immobili senza scansioni quadratiche", () => {
+    const total = 4_000;
+    const properties = Array.from({ length: total }, (_, index) => property(`p-${index}`));
+    const people = Array.from({ length: total }, (_, index) => person(`owner-${index}`));
+    const ownerships = properties.map((item, index) => ({
+      id: `ownership-${index}`,
+      property_id: item.id,
+      person_id: people[index]!.id,
+      share_percentage: 100,
+      processing_status: "extracted",
+      crm_link_id: null,
+    }));
+    const startedAt = performance.now();
+    const plan = buildPropertyWorkPlan({ properties, people, ownerships });
+    const elapsedMs = performance.now() - startedAt;
+    expect(plan).toHaveLength(total);
+    expect(plan[3_999]?.primary.person.id).toBe("owner-3999");
+    expect(elapsedMs).toBeLessThan(1_500);
+  });
 });

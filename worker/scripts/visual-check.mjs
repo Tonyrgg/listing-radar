@@ -14,7 +14,7 @@ const baseState = {
   activity: [{ at: new Date().toISOString(), tone: "success", message: "Configurazione importata e protetta da Windows" }],
   preferences: { mode: "assisted", dryRun: true, contactsExcelPath: "C:\\Dati\\Book1.xlsx" },
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
-  configError: null, jobs: [], completedImports: [], version: "0.5.0",
+  configError: null, cloudError: null, jobs: [], completedImports: [], version: "0.5.0",
   streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
   retryMonitor: null,
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
@@ -40,6 +40,7 @@ await page.addInitScript(({ initialState, details }) => {
   window.confirm = () => true;
   let state = initialState;
   const listeners = [];
+  const transientUpdateListeners = [];
   const streetRunProgressListeners = [];
   const calls = {};
   const called = (name, result = true) => { calls[name] = (calls[name] ?? 0) + 1; return result; };
@@ -47,6 +48,7 @@ await page.addInitScript(({ initialState, details }) => {
     getState: async () => state,
     recordUiAction: async (entry) => { (calls.uiActions ??= []).push(entry); return true; },
     onState: (callback) => { listeners.push(callback); return () => {}; },
+    onTransientUpdate: (callback) => { transientUpdateListeners.push(callback); return () => {}; },
     runChecks: async () => [
       { id: "chrome", ok: false, detail: "Chrome non raggiungibile su http://127.0.0.1:9222. Avvialo con il pulsante in alto." },
       { id: "sister", ok: false, detail: "La scheda SISTER non è ancora disponibile nel Chrome di lavoro." },
@@ -84,6 +86,16 @@ await page.addInitScript(({ initialState, details }) => {
     state = { ...state, active: false, softwareUpdate: { status: "available", currentVersion: "0.6.0", availableVersion: "0.7.0", percent: null, transferred: null, total: null, message: "Versione 0.7.0 disponibile", checkedAt: new Date().toISOString() } };
     listeners.forEach((callback) => callback(state));
   };
+  window.__showCloudRestrictedState = () => {
+    state = {
+      ...state,
+      active: false,
+      configError: null,
+      cloudError: "Supabase ha limitato temporaneamente il progetto (HTTP 402/quota).",
+      softwareUpdate: { status: "available", currentVersion: "0.15.1", availableVersion: "0.16.0", percent: null, transferred: null, total: null, message: "Versione 0.16.0 disponibile", checkedAt: new Date().toISOString() },
+    };
+    listeners.forEach((callback) => callback(state));
+  };
   window.__showStreetRunState = () => {
     state = { ...state, streetRun: { active: true, cancelling: false, lastError: null, checkpoint: {
       version: 2, requestedStreet: "VIA BORGO SAN FRANCESCO", municipality: "BITONTO", status: "running",
@@ -104,7 +116,7 @@ await page.addInitScript(({ initialState, details }) => {
       runType: "import", operation: "Attività immobile", attempt: 2, maximumAttempts: 3,
       status: "waiting", nextRetryAt: new Date(Date.now() + 45_000).toISOString(), updatedAt: new Date().toISOString(),
     } };
-    listeners.forEach((callback) => callback(state));
+    transientUpdateListeners.forEach((callback) => callback({ retryMonitor: state.retryMonitor }));
   };
   window.__showStreetRunProgress = () => {
     streetRunProgressListeners.forEach((callback) => callback({
@@ -135,7 +147,7 @@ await page.addInitScript(({ initialState, details }) => {
   window.__showCompletedState = () => {
     const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", total_properties: 1, processed_properties: 1, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const completedGraph = { ...details, job: completedJob, properties: details.properties.map((property) => ({ ...property, cadastral_key: "BITONTO|58|1234|7", raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
-    state = { ...state, active: false, activeJobId: completedJob.id, currentStep: "completed", lastError: "Vecchio errore che non deve essere mostrato", jobs: [], completedImports: [{ ...completedGraph, job: completedJob }] };
+    state = { ...state, active: false, cloudError: null, activeJobId: completedJob.id, currentStep: "completed", lastError: "Vecchio errore che non deve essere mostrato", jobs: [], completedImports: [{ ...completedGraph, job: completedJob }] };
     listeners.forEach((callback) => callback(state));
   };
 }, { initialState: baseState, details: graph });
@@ -198,6 +210,11 @@ const retryMonitorVisible = await page.locator("#retryMonitor:not(.is-hidden)").
 const retryAttemptVisible = await page.getByText("Prossimo tentativo 2 di 3", { exact: true }).count();
 await page.evaluate(() => window.__showUpdateState());
 await page.screenshot({ path: path.join(output, "update-available.png"), fullPage: true });
+await page.evaluate(() => window.__showCloudRestrictedState());
+const cloudPanelText = await page.locator("#actionPanel").textContent();
+const cloudRestrictionVisible = cloudPanelText?.includes("Le operazioni cloud restano ferme in sicurezza") === true;
+const runDisabledDuringRestriction = await page.locator("#startButton").isDisabled();
+const updaterEnabledDuringRestriction = await page.locator("#softwareUpdateAction").isEnabled();
 await page.evaluate(() => window.__showCompletedState());
 await page.screenshot({ path: path.join(output, "completed-import.png"), fullPage: true });
 const successHeading = await page.getByRole("heading", { name: "Import eseguito con successo" }).count();
@@ -209,7 +226,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -223,6 +240,8 @@ const failures = [
   ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
   ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
+  ...(!cloudRestrictionVisible || !runDisabledDuringRestriction || !updaterEnabledDuringRestriction
+    ? ["Stato HTTP 402 non separa correttamente blocco run e aggiornamenti"] : []),
   ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
   ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),

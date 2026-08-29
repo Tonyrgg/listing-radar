@@ -32,8 +32,10 @@ import {
 } from "../services/sister-network-run.js";
 import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../core/network-exploration.js";
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
+import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
 import { WorkerRepository } from "../services/repository.js";
+import { describeSupabaseOperationalError } from "../services/supabase-errors.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
@@ -184,6 +186,9 @@ let sisterKeepAlive: KeepAliveState = {
 };
 const activity: ActivityItem[] = [];
 let activityLogWrite: Promise<void> = Promise.resolve();
+let activityLogBuffer: string[] = [];
+let activityLogFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let activityLogDirectoryReady = false;
 let diagnosticErrors: DiagnosticErrorItem[] = [];
 
 type SnapshotRemoteData = {
@@ -197,6 +202,7 @@ type SnapshotRemoteData = {
   completedImportsHasMore: boolean;
   publicConfig: Record<string, unknown>;
   configError: string | null;
+  cloudError: string | null;
   latestRequestImport: Awaited<ReturnType<WorkerRepository["latestRequestImportRun"]>>;
   requestImportSchemaError: string | null;
   latestMandateImport: Awaited<ReturnType<WorkerRepository["latestMandateImportRun"]>>;
@@ -204,12 +210,17 @@ type SnapshotRemoteData = {
 };
 
 const emptySnapshotRemoteData = (): SnapshotRemoteData => ({
-  jobs: [], completedImports: [], completedImportsHasMore: false, publicConfig: {}, configError: null,
+  jobs: [], completedImports: [], completedImportsHasMore: false, publicConfig: {}, configError: null, cloudError: null,
   latestRequestImport: null, requestImportSchemaError: null, latestMandateImport: null, mandateImportSchemaError: null,
 });
 let snapshotRemoteData = emptySnapshotRemoteData();
 let snapshotRemoteLoadedAt = 0;
 let snapshotRemotePromise: Promise<SnapshotRemoteData> | null = null;
+let repositoryCache: { url: string; serviceRoleKey: string; value: WorkerRepository } | null = null;
+const completedGraphCache = new Map<string, {
+  version: string;
+  graph: Awaited<ReturnType<WorkerRepository["loadGraph"]>>;
+}>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
 let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | null = null;
@@ -253,21 +264,56 @@ function releaseOperationReservation(kind: NonNullable<typeof operationReservati
   if (operationReservation === kind) operationReservation = null;
 }
 
+function flushActivityLog() {
+  if (activityLogFlushTimer) clearTimeout(activityLogFlushTimer);
+  activityLogFlushTimer = null;
+  if (!activityLogBuffer.length) return activityLogWrite;
+  const batch = activityLogBuffer.join("");
+  activityLogBuffer = [];
+  activityLogWrite = activityLogWrite
+    .then(async () => {
+      if (!activityLogDirectoryReady) {
+        await mkdir(path.dirname(operationLogPath()), { recursive: true });
+        activityLogDirectoryReady = true;
+      }
+      await appendFile(operationLogPath(), batch, "utf8");
+    })
+    .catch(() => undefined);
+  return activityLogWrite;
+}
+
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
   const entry = { at: new Date().toISOString(), tone, message } satisfies ActivityItem;
   activity.unshift(entry);
   activity.splice(300);
-  activityLogWrite = activityLogWrite
-    .then(async () => {
-      await mkdir(path.dirname(operationLogPath()), { recursive: true });
-      await appendFile(operationLogPath(), `${JSON.stringify(entry)}\n`, "utf8");
-    })
-    .catch(() => undefined);
+  activityLogBuffer.push(`${JSON.stringify(entry)}\n`);
+  if (tone !== "info" || activityLogBuffer.length >= 50) void flushActivityLog();
+  else if (!activityLogFlushTimer) {
+    activityLogFlushTimer = setTimeout(() => void flushActivityLog(), 250);
+    activityLogFlushTimer.unref?.();
+  }
+  return entry;
+}
+
+function publishTransientUpdate(update: {
+  propertyProgress?: typeof propertyProgress;
+  retryMonitor?: typeof retryMonitor;
+  requestImportProgress?: typeof requestImportProgress;
+  mandateImportProgress?: typeof mandateImportProgress;
+  networkRunProgress?: typeof networkRunProgress;
+  streetRunCheckpoint?: typeof streetRunCheckpoint;
+  networkRunCheckpoint?: typeof networkRunCheckpoint;
+  sisterKeepAlive?: typeof sisterKeepAlive;
+  connections?: { checks: ConnectionCheck[]; checkedAt: string | null; checking: boolean };
+  activityItem?: ActivityItem;
+}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("desktop:transient-update", update);
 }
 
 function updateRetryMonitor(runType: RetryMonitorState["runType"], telemetry: RetryTelemetry) {
   retryMonitor = { ...telemetry, runType, updatedAt: new Date().toISOString() };
-  void publishState();
+  publishTransientUpdate({ retryMonitor });
 }
 
 function beginRetryMonitor(runType: RetryMonitorState["runType"], operation: string) {
@@ -516,7 +562,14 @@ function workerConfig(overrides: Partial<Preferences> = {}): WorkerConfig {
 }
 
 function repository(config = workerConfig()) {
-  return new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
+  if (
+    repositoryCache?.url === config.NEXT_PUBLIC_SUPABASE_URL
+    && repositoryCache.serviceRoleKey === config.SUPABASE_SERVICE_ROLE_KEY
+  ) return repositoryCache.value;
+  const value = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
+  repositoryCache = { url: config.NEXT_PUBLIC_SUPABASE_URL, serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY, value };
+  completedGraphCache.clear();
+  return value;
 }
 
 async function purgeJob(jobId: string) {
@@ -535,8 +588,9 @@ async function refreshSnapshotRemoteData() {
   if (snapshotRemotePromise) return snapshotRemotePromise;
   snapshotRemotePromise = (async (): Promise<SnapshotRemoteData> => {
     const next = emptySnapshotRemoteData();
+    let config: WorkerConfig;
     try {
-      const config = workerConfig();
+      config = workerConfig();
       next.publicConfig = {
         configurationReady: true,
         configurationSource: preferences.encryptedEnvironment ? "Protetta da Windows" : "Inclusa nell'app",
@@ -547,6 +601,13 @@ async function refreshSnapshotRemoteData() {
         sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
         sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
       };
+    } catch (error) {
+      next.configError = error instanceof Error ? error.message : String(error);
+      snapshotRemoteData = next;
+      snapshotRemoteLoadedAt = Date.now();
+      return next;
+    }
+    try {
       const repo = repository(config);
       const [savedJobs, completedJobsPage] = await withOperationTimeout(
         Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]),
@@ -556,8 +617,18 @@ async function refreshSnapshotRemoteData() {
       const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
       next.completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
       next.jobs = savedJobs;
+      const visibleCompletedJobIds = new Set(completedJobs.map((job) => job.id));
+      for (const jobId of completedGraphCache.keys()) {
+        if (!visibleCompletedJobIds.has(jobId)) completedGraphCache.delete(jobId);
+      }
       next.completedImports = await withOperationTimeout(
-        Promise.all(completedJobs.map(async (job) => ({ job, ...await repo.loadGraph(job.id) }))),
+        Promise.all(completedJobs.map(async (job) => {
+          const version = job.updated_at ?? job.completed_at ?? job.created_at ?? "";
+          const cached = completedGraphCache.get(job.id);
+          const graph = cached?.version === version ? cached.graph : await repo.loadGraph(job.id);
+          if (cached?.version !== version) completedGraphCache.set(job.id, { version, graph });
+          return { job, ...graph };
+        })),
         15_000,
         "Aggiornamento cronologia import",
       );
@@ -585,7 +656,7 @@ async function refreshSnapshotRemoteData() {
         }
       }
     } catch (error) {
-      next.configError = error instanceof Error ? error.message : String(error);
+      next.cloudError = describeSupabaseOperationalError(error);
     }
     snapshotRemoteData = next;
     snapshotRemoteLoadedAt = Date.now();
@@ -600,7 +671,7 @@ async function stateSnapshot() {
   if (!snapshotRemoteLoadedAt) await refreshSnapshotRemoteData();
   else if (Date.now() - snapshotRemoteLoadedAt > 10_000) void refreshSnapshotRemoteData().then(() => publishState());
   const {
-    jobs, completedImports, completedImportsHasMore, publicConfig, configError,
+    jobs, completedImports, completedImportsHasMore, publicConfig, configError, cloudError,
     latestRequestImport, requestImportSchemaError, latestMandateImport, mandateImportSchemaError,
   } = snapshotRemoteData;
   return {
@@ -630,6 +701,7 @@ async function stateSnapshot() {
     preferences,
     config: publicConfig,
     configError,
+    cloudError,
     jobs,
     completedImports,
     completedImportsHasMore,
@@ -683,53 +755,47 @@ function scheduleUpdateCheck(delayMs = 12_000) {
 }
 
 function initializeDesktopUpdater() {
-  try {
-    const config = workerConfig();
-    let previousStatus: DesktopUpdateState["status"] | null = null;
-    desktopUpdater = new DesktopUpdater({
-      currentVersion: app.getVersion(),
-      packaged: app.isPackaged,
-      supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
-      serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY,
-      updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-      isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive,
-      quitApp: () => app.quit(),
-      onState: (state) => {
-        if (state.status !== previousStatus) {
-          if (state.status === "available") pushActivity(`Aggiornamento ${state.availableVersion} disponibile`, "warning");
-          else if (state.status === "downloaded") pushActivity("Aggiornamento scaricato e pronto", "success");
-          else if (state.status === "error") pushActivity(state.message, "warning");
-          previousStatus = state.status;
-        }
-        void publishState();
-      },
-    });
-    scheduleUpdateCheck();
-  } catch (error) {
-    pushActivity(`Aggiornamenti non inizializzati: ${error instanceof Error ? error.message : String(error)}`, "warning");
-  }
+  let previousStatus: DesktopUpdateState["status"] | null = null;
+  desktopUpdater = new DesktopUpdater({
+    currentVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
+    isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive,
+    quitApp: () => app.quit(),
+    onState: (state) => {
+      if (state.status !== previousStatus) {
+        if (state.status === "available") pushActivity(`Aggiornamento ${state.availableVersion} disponibile`, "warning");
+        else if (state.status === "downloaded") pushActivity("Aggiornamento scaricato e pronto", "success");
+        else if (state.status === "error") pushActivity(state.message, "warning");
+        previousStatus = state.status;
+      }
+      void publishState();
+    },
+  });
+  scheduleUpdateCheck();
 }
 
 async function handleRequestImportEvent(event: RequestArchiveImportEvent) {
+  let activityItem: ActivityItem | undefined;
   if (event.type === "index") {
     requestImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} richieste individuate`, externalId: null, failed: 0, phase: "index" };
-    pushActivity(`Archivio richieste: pagina ${event.page}, ${event.discovered} voci individuate`);
+    activityItem = pushActivity(`Archivio richieste: pagina ${event.page}, ${event.discovered} voci individuate`);
   } else if (event.type === "retry") {
     requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: requestImportProgress?.failed ?? 0, phase: "detail" };
     updateRetryMonitor("requests", event.telemetry);
   } else if (event.type === "progress") {
     requestImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
+    activityItem = pushActivity(`Archivio richieste: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     requestImportProgress = { runId: event.run.id, index: event.run.processed_requests + event.run.failed_requests, total: event.run.total_requests, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_requests, phase: "detail" };
   }
-  await publishState();
+  publishTransientUpdate({ requestImportProgress, activityItem });
 }
 
 async function runRequestArchiveImport(resumeRunId?: string) {
   reserveOperation("requests");
   try {
-    await healthChecks({ silent: true });
+    requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
     releaseOperationReservation("requests");
     throw error;
@@ -783,25 +849,26 @@ async function runRequestArchiveImport(resumeRunId?: string) {
 }
 
 async function handleMandateImportEvent(event: MandateArchiveImportEvent) {
+  let activityItem: ActivityItem | undefined;
   if (event.type === "index") {
     mandateImportProgress = { runId: null, index: event.page, total: 0, title: `${event.discovered} incarichi individuati`, externalId: null, failed: 0, phase: "index" };
-    pushActivity(`Archivio incarichi: pagina ${event.page}, ${event.discovered} voci individuate`);
+    activityItem = pushActivity(`Archivio incarichi: pagina ${event.page}, ${event.discovered} voci individuate`);
   } else if (event.type === "retry") {
     mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: mandateImportProgress?.failed ?? 0, phase: "detail" };
     updateRetryMonitor("mandates", event.telemetry);
   } else if (event.type === "progress") {
     mandateImportProgress = { runId: event.runId, index: event.index, total: event.total, title: event.title, externalId: event.externalId, failed: event.failed, phase: "detail" };
-    pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
+    activityItem = pushActivity(`Archivio incarichi: voce ${event.index}/${event.total} · ${event.title}`);
   } else {
     mandateImportProgress = { runId: event.run.id, index: event.run.processed_mandates + event.run.failed_mandates, total: event.run.total_mandates, title: "Sincronizzazione conclusa", externalId: null, failed: event.run.failed_mandates, phase: "detail" };
   }
-  await publishState();
+  publishTransientUpdate({ mandateImportProgress, activityItem });
 }
 
 async function runMandateArchiveImport(resumeRunId?: string) {
   reserveOperation("mandates");
   try {
-    await healthChecks({ silent: true });
+    requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
     releaseOperationReservation("mandates");
     throw error;
@@ -859,9 +926,13 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
+  const longRunMode = input.resume && resumeCheckpoint
+    ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
+    : (input.dryRun ? "dry_run" : "live");
   reserveOperation("street");
   try {
-    await healthChecks({ silent: true });
+    const checks = await healthChecks({ silent: true });
+    if (longRunMode === "live") requireCloudAvailable(checks);
     if (!input.resume && streetRunCheckpoint) {
       await archiveStreetRunCheckpoint("Checkpoint precedente archiviato prima di una nuova run via");
     }
@@ -869,10 +940,6 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     releaseOperationReservation("street");
     throw error;
   }
-  const longRunMode = input.resume && resumeCheckpoint
-    ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
-    : (input.dryRun ? "dry_run" : "live");
-
   streetRunActive = true;
   streetRunCancellationRequested = false;
   streetRunAbandonRequested = false;
@@ -920,7 +987,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
               ...property.rawPayload,
               long_run: { strategy: "bulk_exact_variants", variantId: variant.sourceId, acquiredAt: new Date().toISOString() },
             },
-          }]);
+          }], { updateJobTotal: false });
           if (!savedProperty) throw new Error("Immobile long run non salvato");
           if (!owners.length) {
             await liveRepository.updatePropertyProcessing(savedProperty.id, {
@@ -938,7 +1005,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
-          await publishState();
+          publishTransientUpdate({ streetRunCheckpoint });
         },
       });
       const result = await scanner.run(street, resumeCheckpoint);
@@ -953,7 +1020,8 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
         const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
         const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
-        const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+        const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
+        const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
         const invalidLongRunProperties = new Map<string, string>();
         for (const property of incompleteProperties) invalidLongRunProperties.set(property.id, "Dati catastali obbligatori mancanti");
         for (const property of propertiesWithoutOwners) invalidLongRunProperties.set(property.id, "Nessun proprietario interpretabile");
@@ -975,10 +1043,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           pushActivity(`${invalidLongRunProperties.size} immobili esclusi dalla long run per dati incompleti; continuo con gli elementi validi`, "warning");
         }
 
-        await Promise.all([
-          ...activeProperties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
-          ...activePeople.map((person) => liveRepository.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
-        ]);
+        await liveRepository.markGraphNormalized(activeProperties, activePeople);
         const totals = { total_properties: graph.properties.length, total_people: graph.people.length };
         if (result.status === "completed" && activeProperties.length && activePeople.length) {
           await liveRepository.updateJob(result.importJobId, {
@@ -1086,7 +1151,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     throw new Error("Non esiste un'esplorazione rete da riprendere");
   }
   try {
-    await healthChecks({ silent: true });
+    requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
     releaseOperationReservation("network");
     throw error;
@@ -1124,21 +1189,18 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         isCancelled: () => networkRunCancellationRequested,
         onProgress: (progress) => {
           networkRunProgress = progress;
-          void publishState();
+          publishTransientUpdate({ networkRunProgress });
         },
         onRetryTelemetry: (telemetry) => updateRetryMonitor("network", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistNetworkRunCheckpoint(checkpoint);
-          await publishState();
+          publishTransientUpdate({ networkRunCheckpoint });
         },
       });
       const graph = await liveRepository.loadGraph(jobId);
       if (["completed", "paused"].includes(result.status)) clearRetryMonitor();
       if (result.status === "completed" && graph.properties.length) {
-        await Promise.all([
-          ...graph.properties.map((property) => liveRepository.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
-          ...graph.people.map((person) => liveRepository.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
-        ]);
+        await liveRepository.markGraphNormalized(graph.properties, graph.people);
         await liveRepository.updateJob(jobId, {
           total_properties: graph.properties.length,
           total_people: graph.people.length,
@@ -1232,10 +1294,11 @@ async function markCaseSkipped(
   repo = repository(),
 ) {
   const graph = await repo.loadGraph(jobId);
-  const property = graph.properties.find((row) => row.id === propertyId);
+  const graphIndex = indexJobGraph(graph);
+  const property = graphIndex.propertiesById.get(propertyId);
   if (!property) throw new Error("Immobile da saltare non appartenente alla lavorazione");
   const impact = buildAutomaticSkipImpact(graph, propertyId);
-  const relatedOwnerships = graph.ownerships.filter((ownership) => impact.ownershipIds.includes(ownership.id));
+  const relatedOwnerships = graphIndex.ownershipsByPropertyId.get(propertyId) ?? [];
   const relatedPersonIds = impact.personIds;
   const skippedAt = new Date().toISOString();
   const skipStatus = values.status ?? "skipped";
@@ -1259,7 +1322,7 @@ async function markCaseSkipped(
     await repo.updateOwnership(ownership.id, { processing_status: skipStatus });
   }
   for (const personId of relatedPersonIds) {
-    const person = graph.people.find((row) => row.id === personId);
+    const person = graphIndex.peopleById.get(personId);
     if (!person) continue;
     const previousCases = Array.isArray(person.raw_payload?.skipped_cases)
       ? person.raw_payload.skipped_cases
@@ -1291,7 +1354,8 @@ async function repairLongRunJobForImport(jobId: string) {
   const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
   const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
   const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
-  const propertiesWithoutOwners = activeProperties.filter((property) => !activeOwnerships.some((ownership) => ownership.property_id === property.id));
+  const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
+  const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
   const invalidProperties = new Map<string, string>();
   for (const property of incompleteProperties) invalidProperties.set(property.id, "Dati catastali obbligatori mancanti");
   for (const property of propertiesWithoutOwners) invalidProperties.set(property.id, "Nessun proprietario interpretabile");
@@ -1309,10 +1373,7 @@ async function repairLongRunJobForImport(jobId: string) {
     activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
     activePeople = refreshedGraph.people.filter((person) => activePersonIds.has(person.id));
   }
-  await Promise.all([
-    ...activeProperties.map((property) => repo.updatePropertyProcessing(property.id, { processing_status: "normalized" })),
-    ...activePeople.map((person) => repo.updatePersonProcessing(person.id, { tax_code: normalizeTaxCode(person.tax_code), processing_status: "normalized" })),
-  ]);
+  await repo.markGraphNormalized(activeProperties, activePeople);
   if (!(activeProperties.length && activePeople.length)) return false;
   await repo.updateJob(jobId, {
     total_properties: graph.properties.length,
@@ -1471,9 +1532,12 @@ function handleRunnerEvent(event: RunnerEvent) {
     pushActivity("Ricerca SISTER salvata nell'archivio", "success");
   } else if (event.type === "sister-keepalive") {
     updateKeepAliveState(event.result);
+    return;
   } else if (event.type === "property-progress") {
     propertyProgress = { propertyId: event.propertyId, index: event.index, total: event.total, address: event.address, stage: event.stage, message: event.message };
-    pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
+    const activityItem = pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
+    publishTransientUpdate({ propertyProgress, activityItem });
+    return;
   } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
     clearRetryMonitor();
     pushActivity("Arresto del processo completato", "warning");
@@ -1537,10 +1601,10 @@ function updateKeepAliveState(result: SisterKeepAliveResult) {
     nextAttemptAt: sisterKeepAlive.nextAttemptAt,
     statusLabel: result.ok ? "active" : result.sessionExpired ? "expired" : "error",
   };
-  if (!result.ok && previousStatus !== sisterKeepAlive.statusLabel) {
-    pushActivity(result.message, result.sessionExpired ? "error" : "warning");
-  }
-  void publishState();
+  const activityItem = !result.ok && previousStatus !== sisterKeepAlive.statusLabel
+    ? pushActivity(result.message, result.sessionExpired ? "error" : "warning")
+    : undefined;
+  publishTransientUpdate({ sisterKeepAlive, activityItem });
 }
 
 function scheduleDesktopKeepAlive(delayMs?: number) {
@@ -1555,14 +1619,14 @@ function scheduleDesktopKeepAlive(delayMs?: number) {
   }
   if (!config.SISTER_KEEPALIVE_ENABLED) {
     sisterKeepAlive = { ...sisterKeepAlive, statusLabel: "disabled", message: "Mantenimento sessione disattivato", nextAttemptAt: null };
-    void publishState();
+    publishTransientUpdate({ sisterKeepAlive });
     return;
   }
   const delay = delayMs ?? nextKeepAliveDelay(config.SISTER_KEEPALIVE_MIN_SECONDS, config.SISTER_KEEPALIVE_MAX_SECONDS);
   sisterKeepAlive = { ...sisterKeepAlive, nextAttemptAt: new Date(Date.now() + delay).toISOString() };
   keepAliveTimer = setTimeout(() => void runDesktopKeepAlive(), delay);
   keepAliveTimer.unref?.();
-  void publishState();
+  publishTransientUpdate({ sisterKeepAlive });
 }
 
 async function runDesktopKeepAlive() {
@@ -1649,7 +1713,7 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
 async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
   reserveOperation("worker");
   try {
-    await healthChecks({ silent: true });
+    requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
     releaseOperationReservation("worker");
     throw error;
@@ -1834,6 +1898,7 @@ async function stopEverything() {
 
 async function healthChecks(options: { silent?: boolean } = {}) {
   if (healthCheckPromise) return healthCheckPromise;
+  let activityItem: ActivityItem | undefined;
   healthCheckPromise = (async () => {
     const config = workerConfig();
     const checks: ConnectionCheck[] = [];
@@ -1851,7 +1916,7 @@ async function healthChecks(options: { silent?: boolean } = {}) {
       await withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase");
       checks.push({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" });
     } catch (error) {
-      checks.push({ id: "supabase", label: "Cloud", ok: false, detail: error instanceof Error ? error.message : String(error) });
+      checks.push({ id: "supabase", label: "Cloud", ok: false, detail: describeSupabaseOperationalError(error) });
     }
     try {
       const response = await withOperationTimeout(fetch(`${config.CHROME_CDP_URL.replace(/\/$/, "")}/json/list`), 8_000, "Controllo Chrome");
@@ -1873,14 +1938,24 @@ async function healthChecks(options: { silent?: boolean } = {}) {
     connectionChecks = checks;
     connectionChecksAt = new Date().toISOString();
     if (!options.silent) {
-      pushActivity(checks.every((item) => item.ok) ? "Controlli completati" : "Alcuni controlli richiedono attenzione", checks.every((item) => item.ok) ? "success" : "warning");
+      activityItem = pushActivity(checks.every((item) => item.ok) ? "Controlli completati" : "Alcuni controlli richiedono attenzione", checks.every((item) => item.ok) ? "success" : "warning");
     }
     return checks;
-  })().finally(async () => {
+  })().finally(() => {
     healthCheckPromise = null;
-    await publishState();
+    publishTransientUpdate({
+      connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: false },
+      activityItem,
+    });
   });
   return healthCheckPromise;
+}
+
+function requireCloudAvailable(checks: ConnectionCheck[]) {
+  const cloud = checks.find((check) => check.id === "supabase");
+  if (!cloud?.ok) {
+    throw new Error(cloud?.detail ?? "Cloud non raggiungibile: la run non e stata avviata.");
+  }
 }
 
 function scheduleHealthChecks(delayMs = 2_000) {
@@ -1993,7 +2068,6 @@ function registerIpc() {
       encryptedEnvironment: safeStorage.encryptString(JSON.stringify(secured)).toString("base64"),
     };
     await persistPreferences();
-    initializeDesktopUpdater();
     pushActivity("Configurazione salvata e protetta da Windows", "success");
     await publishState();
     return true;
@@ -2186,14 +2260,15 @@ function registerIpc() {
     const values = manualCorrectionSchema.parse(rawValues);
     const repo = repository();
     const graph = await repo.loadGraph(values.jobId);
-    const allowedProperties = new Set(graph.properties.map((row) => row.id));
-    const allowedPeople = new Set(graph.people.map((row) => row.id));
+    const graphIndex = indexJobGraph(graph);
+    const allowedProperties = new Set(graphIndex.propertiesById.keys());
+    const allowedPeople = new Set(graphIndex.peopleById.keys());
     const allowedOwnerships = new Map(graph.ownerships.map((row) => [row.id, row]));
     for (const property of values.properties) {
       if (!allowedProperties.has(property.id)) throw new Error("Immobile non appartenente alla lavorazione");
       await repo.updatePropertyProcessing(property.id, {
         sheet: property.sheet, parcel: property.parcel, subaltern: property.subaltern,
-        cadastral_key: [graph.properties.find((row) => row.id === property.id)?.municipality, property.sheet, property.parcel, property.subaltern].join("|"),
+        cadastral_key: [graphIndex.propertiesById.get(property.id)?.municipality, property.sheet, property.parcel, property.subaltern].join("|"),
         address: property.address ?? null, category: property.category, class: property.class ?? null,
         consistency: property.consistency ?? null, cadastral_income: property.cadastralIncome ?? null,
         processing_status: "normalized",
@@ -2212,7 +2287,7 @@ function registerIpc() {
         if (!ownership || ownership.person_id !== person.id) throw new Error("Quota non appartenente al nominativo indicato");
         await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
       } else {
-        const related = graph.ownerships.filter((row) => row.person_id === person.id);
+        const related = graphIndex.ownershipsByPersonId.get(person.id) ?? [];
         for (const ownership of related) await repo.updateOwnership(ownership.id, { share_percentage: person.sharePercentage ?? null, processing_status: "extracted" });
       }
     }
@@ -2272,6 +2347,7 @@ app.on("before-quit", () => {
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (attentionTimer) clearTimeout(attentionTimer);
+  void flushActivityLog();
 });
 
 app.on("window-all-closed", () => {

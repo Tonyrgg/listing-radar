@@ -79,7 +79,8 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 - Supabase/PostgreSQL con RLS;
 - migrazioni SQL versionate;
 - Vercel per la web app;
-- bucket privato Supabase `property-worker-updates` per il canale aggiornamenti del worker;
+- GitHub Releases per installer, manifest e parti del canale aggiornamenti del worker, senza Storage Egress Supabase;
+- bucket Supabase `property-worker-updates` mantenuto soltanto per il ponte una tantum dalle installazioni fino alla `0.15.1`;
 - GitHub Actions in `.github/` per i workflow presenti nel repository.
 
 ## 5. Architettura ad alto livello
@@ -511,9 +512,13 @@ npm.cmd run desktop:verify-update
 ```
 
 - `desktop:build` crea l'installer locale;
-- `desktop:release` crea e pubblica sul canale privato;
-- `desktop:verify-update` verifica manifest e parti senza riscaricare tutto;
+- `desktop:release` crea e pubblica una release GitHub solo se il worktree è pulito e `HEAD` coincide con il branch remoto;
+- `desktop:verify-update` verifica manifest e asset GitHub senza riscaricare tutto;
 - `desktop:verify-update:full` riscarica e ricompone l'installer ed è riservato a release importanti.
+
+La prima versione dotata dell'updater GitHub deve essere pubblicata anche una sola volta nel canale precedente con `npm.cmd run desktop:publish-update:legacy-bridge -- --confirm-one-time-bridge`. Dalla versione seguente questo comando non va più usato. Le release pubbliche sono prive di credenziali: gli aggiornamenti conservano le preferenze cifrate esistenti, mentre una nuova installazione richiede la configurazione avanzata iniziale.
+
+Un HTTP 402/quota Supabase blocca l'avvio delle run che richiedono persistenza cloud prima di modificare il CRM, perché job e checkpoint non sarebbero persistibili. Non blocca i dry-run locali della via completa, il canale aggiornamenti GitHub o l'endpoint di download diretto.
 
 Prima di pubblicare:
 

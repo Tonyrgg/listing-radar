@@ -47,4 +47,9 @@ contextBridge.exposeInMainWorld("propertyWorker", {
     ipcRenderer.on("desktop:street-run-progress", handler);
     return () => ipcRenderer.removeListener("desktop:street-run-progress", handler);
   },
+  onTransientUpdate: (listener) => {
+    const handler = (_event, update) => listener(update);
+    ipcRenderer.on("desktop:transient-update", handler);
+    return () => ipcRenderer.removeListener("desktop:transient-update", handler);
+  },
 });
