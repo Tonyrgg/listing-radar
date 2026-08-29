@@ -40,9 +40,12 @@ import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
 import {
+  EMPTY_BROWSER_CONNECTION_STABILITY,
   detectBrowserConnections,
+  stabilizeBrowserConnections,
   unreachableBrowserConnections,
   type BrowserConnectionCheck,
+  type BrowserConnectionStability,
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
 import {
@@ -182,6 +185,7 @@ let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let healthCheckPromise: Promise<ConnectionCheck[]> | null = null;
 let browserCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let browserCheckPromise: Promise<BrowserConnectionCheck[]> | null = null;
+let browserConnectionStability: BrowserConnectionStability = EMPTY_BROWSER_CONNECTION_STABILITY;
 let connectionChecks: ConnectionCheck[] = [];
 let connectionChecksAt: string | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1950,7 +1954,9 @@ function mergeBrowserConnections(browserChecks: BrowserConnectionCheck[]) {
 
 async function refreshBrowserConnections() {
   if (browserCheckPromise) return browserCheckPromise;
-  browserCheckPromise = readBrowserConnections(workerConfig()).then((browserChecks) => {
+  browserCheckPromise = readBrowserConnections(workerConfig()).then((candidateChecks) => {
+    browserConnectionStability = stabilizeBrowserConnections(browserConnectionStability, candidateChecks);
+    const browserChecks = browserConnectionStability.confirmed;
     mergeBrowserConnections(browserChecks);
     publishTransientUpdate({
       connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: false },
@@ -1968,7 +1974,7 @@ async function healthChecks(options: { silent?: boolean } = {}) {
   healthCheckPromise = (async () => {
     const config = workerConfig();
     const [browserChecks, contactsCheck, cloudCheck] = await Promise.all([
-      readBrowserConnections(config),
+      refreshBrowserConnections(),
       withOperationTimeout((async () => {
         await access(config.CONTACTS_EXCEL_PATH);
         const excel = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);

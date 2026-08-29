@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  EMPTY_BROWSER_CONNECTION_STABILITY,
   detectBrowserConnections,
+  stabilizeBrowserConnections,
   unreachableBrowserConnections,
 } from "../src/desktop/connection-detection.js";
 
@@ -37,5 +39,37 @@ describe("rilevamento tempestivo dei collegamenti desktop", () => {
     expect(main).toContain("scheduleBrowserChecks(ready ? 10_000 : 2_000)");
     expect(main).toContain("scheduleBrowserChecks(250)");
     expect(main).toContain("Promise.all([");
+  });
+
+  it("non trasforma un singolo campione CDP fallito in un errore visibile", () => {
+    const ready = detectBrowserConnections([
+      { type: "page", title: "SISTER", url: "https://sister3.agenziaentrate.gov.it/Visure/SceltaLink.do" },
+      { type: "page", title: "Gestionale", url: "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/home" },
+    ], "sister", "crmimmobiliarelightning");
+    const stable = stabilizeBrowserConnections(EMPTY_BROWSER_CONNECTION_STABILITY, ready);
+    const firstFailure = stabilizeBrowserConnections(stable, unreachableBrowserConnections("timeout transitorio"));
+    expect(firstFailure.confirmed.every((check) => check.ok)).toBe(true);
+    expect(firstFailure.pendingFailureCount).toBe(1);
+
+    const confirmedFailure = stabilizeBrowserConnections(firstFailure, unreachableBrowserConnections("altro dettaglio"));
+    expect(confirmedFailure.confirmed.find((check) => check.id === "chrome")).toMatchObject({ ok: false, state: "unreachable" });
+  });
+
+  it("accetta immediatamente il recupero dopo un errore confermato", () => {
+    const failed = stabilizeBrowserConnections(
+      stabilizeBrowserConnections(EMPTY_BROWSER_CONNECTION_STABILITY, unreachableBrowserConnections("offline")),
+      unreachableBrowserConnections("offline"),
+    );
+    const ready = detectBrowserConnections([
+      { type: "page", title: "SISTER", url: "https://sister3.agenziaentrate.gov.it/Visure/SceltaLink.do" },
+      { type: "page", title: "Gestionale", url: "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/home" },
+    ], "sister", "crmimmobiliarelightning");
+    expect(stabilizeBrowserConnections(failed, ready).confirmed.every((check) => check.ok)).toBe(true);
+  });
+
+  it("non lascia che un errore transitorio del keep-alive sovrascriva una scheda SISTER pronta", () => {
+    const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
+    expect(renderer).toContain('keep?.ok || keep?.sessionExpired');
+    expect(renderer).not.toContain('![' + '"waiting", "disabled"' + '].includes(keep?.statusLabel)');
   });
 });

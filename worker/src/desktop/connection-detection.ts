@@ -12,6 +12,18 @@ export type BrowserConnectionCheck = {
   state: "ready" | "missing" | "login" | "unreachable";
 };
 
+export type BrowserConnectionStability = {
+  confirmed: BrowserConnectionCheck[];
+  pendingFailureSignature: string | null;
+  pendingFailureCount: number;
+};
+
+export const EMPTY_BROWSER_CONNECTION_STABILITY: BrowserConnectionStability = {
+  confirmed: [],
+  pendingFailureSignature: null,
+  pendingFailureCount: 0,
+};
+
 const LOGIN_PATTERN = /(login|signin|accesso|autenticazione|logout-success|sessione[_-]?scaduta)/i;
 
 function pageText(page: BrowserPageDescriptor) {
@@ -63,4 +75,46 @@ export function unreachableBrowserConnections(detail: string): BrowserConnection
     { id: "sister", label: "SISTER", ok: false, detail: "Chrome non raggiungibile", state: "unreachable" },
     { id: "crm", label: "Gestionale", ok: false, detail: "Chrome non raggiungibile", state: "unreachable" },
   ];
+}
+
+function failureSignature(checks: BrowserConnectionCheck[]) {
+  return checks
+    .filter((check) => !check.ok)
+    .map((check) => `${check.id}:${check.state}`)
+    .sort()
+    .join("|");
+}
+
+/**
+ * Chrome's local debugging endpoint can disappear for a single sample while a
+ * tab navigates or Chrome is busy. Keep the last fully ready state until the
+ * same failure is observed twice; genuine recovery is accepted immediately.
+ */
+export function stabilizeBrowserConnections(
+  state: BrowserConnectionStability,
+  candidate: BrowserConnectionCheck[],
+  confirmationSamples = 2,
+): BrowserConnectionStability {
+  const candidateReady = candidate.length === 3 && candidate.every((check) => check.ok);
+  if (candidateReady) {
+    return { confirmed: candidate, pendingFailureSignature: null, pendingFailureCount: 0 };
+  }
+
+  const confirmedReady = state.confirmed.length === 3 && state.confirmed.every((check) => check.ok);
+  if (!confirmedReady) {
+    return { confirmed: candidate, pendingFailureSignature: null, pendingFailureCount: 0 };
+  }
+
+  const signature = failureSignature(candidate);
+  const pendingFailureCount = signature === state.pendingFailureSignature
+    ? state.pendingFailureCount + 1
+    : 1;
+  if (pendingFailureCount < confirmationSamples) {
+    return {
+      confirmed: state.confirmed,
+      pendingFailureSignature: signature,
+      pendingFailureCount,
+    };
+  }
+  return { confirmed: candidate, pendingFailureSignature: null, pendingFailureCount: 0 };
 }
