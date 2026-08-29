@@ -30,7 +30,9 @@ La `0.15.1` e le versioni precedenti leggono ancora `property-worker-updates/lat
 4. verificare su un'installazione precedente che aggiornamento e preferenze cifrate siano conservati;
 5. non utilizzare più il ponte dalle release successive.
 
-Nessuno di questi comandi è stato eseguito durante il lavoro locale del 29 agosto: non sono stati creati commit, push o release.
+## Attivazione
+
+Il 29 agosto 2026 il cambiamento è stato integrato in `main`, la release GitHub `property-worker-v0.16.0` è stata pubblicata e verificata integralmente e il ponte legacy è stato pubblicato e verificato nel bucket precedente. Il ponte non deve essere rieseguito: dalla versione successiva il canale è esclusivamente GitHub.
 
 ## Gate locali eseguiti
 
@@ -40,6 +42,8 @@ Nessuno di questi comandi è stato eseguito durante il lavoro locale del 29 agos
 - lint, typecheck, 248 test unitari e build di produzione Next.js: PASS;
 - installer Windows `0.16.0`: build locale PASS, 98.010.305 byte;
 - configurazione nell'installer estratto: presenti soltanto nove chiavi non sensibili, nessuna service role key o percorso Excel;
-- protezioni dei comandi di pubblicazione: worktree pulito obbligatorio per GitHub e conferma esplicita obbligatoria per il ponte, entrambi verificati senza upload.
+- protezioni dei comandi di pubblicazione: worktree pulito obbligatorio per GitHub e conferma esplicita obbligatoria per il ponte;
+- release GitHub `0.16.0`: manifest e asset verificati senza download binari, poi 3 parti riscaricate e ricomposte con hash finale corretto;
+- ponte legacy `0.16.0`: manifest e dimensioni remote verificati dopo la pubblicazione.
 
-La verifica del canale remoto `0.16.0` potrà essere eseguita soltanto dopo una futura pubblicazione autorizzata.
+Le versioni successive devono usare soltanto `desktop:release`, `desktop:verify-update` e, quando necessario, `desktop:verify-update:full` sul canale GitHub.

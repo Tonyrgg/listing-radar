@@ -70,6 +70,8 @@ npm run desktop:publish-update:legacy-bridge -- --confirm-one-time-bridge
 
 Il comando verifica che binario e hash coincidano con la release GitHub ed è bloccato senza conferma. Non va più usato per le versioni successive.
 
+Stato operativo: il ponte della `0.16.0` è stato pubblicato e verificato il 29 agosto 2026. Non rieseguire il comando per questa o per le versioni successive.
+
 L'installer viene creato in `worker/release/`. Per un singolo eseguibile portabile, senza installazione:
 
 ```powershell
