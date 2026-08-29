@@ -3,6 +3,27 @@ import { describe, expect, it } from "vitest";
 import { WorkerRepository, type PersonRow, type PropertyRow } from "../src/services/repository.js";
 
 describe("persistenza alleggerita del grafo worker", () => {
+  it("considera riuscita anche la cancellazione di un job già assente", async () => {
+    const selectedColumns: string[] = [];
+    const client = {
+      from: () => ({
+        delete: () => ({
+          eq: () => ({
+            select: async (columns: string) => {
+              selectedColumns.push(columns);
+              return { error: null, data: [] };
+            },
+          }),
+        }),
+      }),
+    };
+    const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
+    Object.defineProperty(repository, "client", { value: client });
+
+    await expect(repository.deleteJob("job-gia-eliminato")).resolves.toBeUndefined();
+    expect(selectedColumns).toEqual(["id"]);
+  });
+
   it("salva un inventario grande in blocchi e restituisce l'ordine SISTER originale", async () => {
     const batchSizes: number[] = [];
     const client = {

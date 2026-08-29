@@ -18,19 +18,20 @@ describe("controlli desktop esplorazione rete", () => {
       expect(html).toContain(`id="${id}"`);
       expect(renderer).toContain(id);
     }
-    expect(html).toContain("Non importa nulla");
     expect(renderer).toContain("startNetworkRun");
     // I filtri stanno in banda, non in righe: una colonna sola vorrebbe dire
     // essere tornati al modulo precedente al riferimento 6b.
     expect(html).toContain('class="network-filter-grid"');
     expect(html.match(/class="network-filter-field"/g)).toHaveLength(4);
     expect(html).not.toContain('class="network-filter-row"');
-    for (const id of ["networkRunRestart", "networkFilterReset", "networkRunCounters"]) {
-      expect(html).toContain(`id="${id}"`);
-      expect(renderer).toContain(id);
+    expect(html).toContain('id="networkFilterReset"');
+    expect(renderer).toContain("networkFilterReset");
+    for (const obsolete of ["networkRunRestart", "Torna al checkpoint", "Rete esplorata", "Coda congelata"]) {
+      expect(html).not.toContain(obsolete);
+      expect(renderer).not.toContain(obsolete);
     }
-    // «Ricomincia da capo» non deve poter cancellare la coda senza conferma.
-    expect(renderer).toContain("Ricominciare da capo?");
+    expect(renderer).toContain("resume: false");
+    expect(main).toContain('pushActivity("Nuova esplorazione rete proprietaria avviata"');
     expect(preload).toContain("startNetworkRun");
     expect(main).toContain('ipcMain.handle("desktop:start-network-run"');
     expect(main).toContain("networkRunCancellationRequested = true");

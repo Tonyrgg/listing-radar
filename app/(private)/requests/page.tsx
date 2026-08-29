@@ -1,7 +1,6 @@
 import {
   ArrowLeft,
   ArrowRight,
-  ArrowUpRight,
   Flame,
   UserRound,
   X,
@@ -12,10 +11,16 @@ import Link from "next/link";
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { LoadingAnchor } from "@/components/loading-controls";
 import { QuickRequestButton } from "@/components/matching/quick-request";
+import {
+  RecordCardHeader,
+  RequestFacts,
+  cardFooterLinkClass,
+} from "@/components/matching/record-card";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import {
   Campo,
   Card,
+  CardBody,
   Chip,
   EmptyState,
   FilterBar,
@@ -24,7 +29,7 @@ import {
   Scelta,
   buttonClass,
 } from "@/components/ui/primitives";
-import { formatCurrency, formatNumber } from "@/lib/formatting";
+import { formatNumber } from "@/lib/formatting";
 import {
   cleanRequestTitle,
   crmField,
@@ -60,16 +65,6 @@ export const metadata: Metadata = { title: "Chi ci ha chiesto una casa" };
 
 const PER_PAGINA = 24;
 
-const TIPI: Record<string, string> = {
-  apartment: "un appartamento",
-  independent_house: "una casa indipendente",
-  villa: "una villa",
-  townhouse: "una villetta",
-  penthouse: "un attico",
-  ground_floor: "un piano terra",
-  entire_building: "un intero stabile",
-};
-
 const STATI: Record<string, string> = {
   draft: "Bozza",
   active: "Aperta",
@@ -84,51 +79,21 @@ function param(value: string | string[] | undefined) {
   return typeof value === "string" ? value : "";
 }
 
-/** Cosa cerca il cliente, in una frase invece che in dodici righe. */
-function cosaCerca(request: RichiestaCompleta) {
-  /* Il campo strutturato è quasi sempre vuoto: la tipologia vera sta nella
-   * scheda del gestionale, ed è quella che il cliente ha detto. */
+/**
+ * La tipologia come l'ha scritta l'agente nel gestionale.
+ *
+ * Il campo strutturato è quasi sempre vuoto, e quando c'è dice «villa» dove il
+ * cliente ha detto «villa singola». Se la riga scritta a mano esiste vince
+ * lei: è l'unica che porta la sfumatura.
+ */
+function sottotipologia(request: RichiestaCompleta) {
   const dalGestionale = crmField(
     requestPayload(request),
     "Sottotipologia Immobile",
   );
   const scritta = typeof dalGestionale === "string" ? dalGestionale.trim() : "";
 
-  const cosa = scritta
-    ? scritta.toLocaleLowerCase("it")
-    : request.property_types?.length
-      ? request.property_types.map((tipo) => TIPI[tipo] ?? tipo).join(" o ")
-      : "una casa";
-
-  const pezzi: string[] = [];
-
-  const budget =
-    request.contract_type === "sale"
-      ? (request.budget_max ?? request.budget_ideal)
-      : (request.monthly_rent_max ?? request.monthly_rent_ideal);
-  if (budget != null) {
-    pezzi.push(
-      request.contract_type === "sale"
-        ? `fino a ${formatCurrency(budget)}`
-        : `fino a ${formatCurrency(budget)} al mese`,
-    );
-  }
-
-  const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
-  if (superficie != null)
-    pezzi.push(`intorno ai ${formatNumber(superficie)} mq`);
-
-  const locali = request.rooms_ideal ?? request.rooms_min;
-  if (locali != null) pezzi.push(`${formatNumber(locali)} locali`);
-
-  const zone = (request.request_zones ?? [])
-    .filter((item) => item.preference_level !== "excluded")
-    .map((item) => item.zone?.name)
-    .filter((nome): nome is string => Boolean(nome));
-  if (zone.length) pezzi.push(`in ${zone.join(", ")}`);
-  else if (request.municipality) pezzi.push(`a ${request.municipality}`);
-
-  return `Cerca ${cosa}${pezzi.length ? `, ${pezzi.join(", ")}` : ""}.`;
+  return scritta || null;
 }
 
 /** La frase che il cliente ha detto: vale più di ogni campo. */
@@ -280,74 +245,84 @@ export default async function RichiesteClientiPage({
               request.clients?.full_name || "Cliente da collegare";
 
             return (
-              <Card key={request.id} className="flex gap-3 p-4">
-                <Link
-                  href={`/requests/${request.id}`}
-                  className="group min-w-0 flex-1"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                    <p className="flex min-w-0 items-center gap-2 text-[length:var(--lr-text-record)] font-[650] leading-tight text-[var(--lr-ink)]">
-                      <UserRound
-                        aria-hidden="true"
-                        className="size-4 shrink-0"
-                      />
-                      <span className="truncate">{cliente}</span>
-                    </p>
-                    <span className="flex shrink-0 items-center gap-2">
+              <Card key={request.id}>
+                <RecordCardHeader
+                  icon={UserRound}
+                  title={
+                    <Link
+                      href={`/requests/${request.id}`}
+                      className="truncate transition-colors hover:text-[var(--lr-accent)]"
+                    >
+                      {cliente}
+                    </Link>
+                  }
+                  factsLabel="Criteri della richiesta"
+                  facts={
+                    <RequestFacts
+                      request={request}
+                      subtype={sottotipologia(request)}
+                    />
+                  }
+                  subtitle={
+                    request.title ? cleanRequestTitle(request.title) : null
+                  }
+                  chips={
+                    <>
                       {calda ? (
                         <Chip tone="warn">
                           <Flame aria-hidden="true" className="size-3" />
                           Calda
                         </Chip>
                       ) : null}
+                      {case_ ? (
+                        <Chip tone="neutral">
+                          {formatNumber(case_)}{" "}
+                          {case_ === 1 ? "casa" : "case"}
+                        </Chip>
+                      ) : null}
                       <Meta>{STATI[request.status] ?? request.status}</Meta>
-                      <ArrowUpRight
-                        aria-hidden="true"
-                        className="size-4 text-[var(--lr-ink-3)] transition-colors group-hover:text-[var(--lr-ink)]"
-                      />
-                    </span>
-                  </div>
+                    </>
+                  }
+                  action={
+                    <Link
+                      href={`/requests/${request.id}`}
+                      className={buttonClass("quiet", { compact: true })}
+                    >
+                      La richiesta
+                      <ArrowRight aria-hidden="true" className="size-4" />
+                    </Link>
+                  }
+                />
 
-                  <p className="mt-2 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-                    {cosaCerca(request)}
-                  </p>
-
+                <CardBody className="space-y-2">
                   {/* Le parole del cliente, quando ci sono, valgono più di ogni campo. */}
                   {parole ? (
-                    <p className="mt-2 border-l-2 border-[var(--lr-line)] pl-3 text-[length:var(--lr-text-body)] italic text-[var(--lr-ink-2)]">
+                    <p className="border-l-2 border-[var(--lr-line)] pl-3 text-[length:var(--lr-text-body)] italic text-[var(--lr-ink-2)]">
                       «{parole}»
                     </p>
                   ) : null}
 
-                  <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                    <span
-                      className={case_ ? "text-[var(--lr-accent)]" : undefined}
-                    >
-                      {case_
-                        ? `${formatNumber(case_)} ${case_ === 1 ? "casa che può andare" : "case che possono andare"}`
-                        : "nessuna casa in portafoglio le somiglia"}
-                    </span>
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                     <span>{formatDate(request.created_at)}</span>
                     <span>{requestSourceLabel(request)}</span>
                     {requestActivityCount(request) ? (
                       <span>{requestActivityCount(request)} contatti</span>
                     ) : null}
-                    {request.title ? (
-                      <span className="truncate">
-                        {cleanRequestTitle(request.title)}
-                      </span>
-                    ) : null}
+                    {case_ ? null : (
+                      <span>nessuna casa in portafoglio le somiglia</span>
+                    )}
                   </p>
-                </Link>
+                </CardBody>
+
                 {payload.url ? (
                   <LoadingAnchor
                     href={payload.url}
                     target="_blank"
                     rel="noreferrer"
                     pendingLabel="Apro CRM"
-                    className="inline-flex min-h-11 shrink-0 items-center gap-1.5 self-start rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] px-3 text-[length:var(--lr-text-label)] font-semibold text-[var(--lr-ink-2)] transition-colors hover:border-[var(--lr-accent)] hover:text-[var(--lr-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lr-accent)]"
+                    className={cardFooterLinkClass}
                   >
-                    Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-3.5" />
+                    Apri la scheda nel gestionale ↗
                   </LoadingAnchor>
                 ) : null}
               </Card>

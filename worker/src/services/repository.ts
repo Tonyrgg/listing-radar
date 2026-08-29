@@ -571,14 +571,12 @@ export class WorkerRepository {
   }
 
   async deleteJob(jobId: string): Promise<void> {
-    const { data, error } = await this.client
+    const { error } = await this.client
       .from("property_worker_jobs")
       .delete()
       .eq("id", jobId)
-      .select("id")
-      .maybeSingle();
+      .select("id");
     if (error) throw new Error(`Annullamento job fallito: ${error.message}`);
-    if (!data) throw new Error(`Job ${jobId} non trovato o già eliminato`);
   }
 
   async setJobContext(jobId: string, context: { municipality: string; street: string | null; civicNumber: string | null; sourceUrl: string }) {

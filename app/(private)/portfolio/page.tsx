@@ -1,9 +1,18 @@
+import {
+  ArrowRight,
+  Banknote,
+  Building2,
+  FileSignature,
+  MapPin,
+  Search,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { PropertyEditor } from "@/components/matching/management-panels";
 import { PortfolioRow } from "@/components/matching/portfolio-row";
+import { FactPill, RecordCardHeader } from "@/components/matching/record-card";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import { ProgressiveList } from "@/components/progressive-list";
 import {
@@ -113,6 +122,7 @@ export default async function PortafoglioPage({
   const filtriAttivi = Boolean(
     cerca || contratto || tipo || zonaId || incarico,
   );
+  const zonaNome = zones.find((zone) => zone.id === zonaId)?.name ?? null;
 
   return (
     <div className="space-y-5">
@@ -183,6 +193,56 @@ export default async function PortafoglioPage({
 
       {filtrate.length ? (
         <Card>
+          {/* Le case in mano si presentano come le richieste: chi sono a
+            * sinistra, con le pastiglie di quello che le seleziona, e a destra
+            * la porta verso l'altra metà del lavoro. */}
+          <RecordCardHeader
+            icon={Building2}
+            title={
+              filtriAttivi ? "Le case che stai guardando" : "Tutte le case che abbiamo"
+            }
+            factsLabel="Filtri attivi"
+            facts={
+              filtriAttivi ? (
+                <>
+                  {cerca ? (
+                    <FactPill icon={Search} label="Ricerca">
+                      «{param(query.q).trim()}»
+                    </FactPill>
+                  ) : null}
+                  {contratto ? (
+                    <FactPill icon={Banknote} label="Contratto">
+                      {contratto === "rent" ? "In affitto" : "In vendita"}
+                    </FactPill>
+                  ) : null}
+                  {tipo ? (
+                    <FactPill icon={Building2} label="Tipologia">
+                      {TIPI[tipo] ?? tipo}
+                    </FactPill>
+                  ) : null}
+                  {zonaNome ? (
+                    <FactPill icon={MapPin} label="Zona">
+                      {zonaNome}
+                    </FactPill>
+                  ) : null}
+                  {incarico ? (
+                    <FactPill icon={FileSignature} label="Stato dell'incarico">
+                      {STATI_INCARICO[incarico] ?? incarico}
+                    </FactPill>
+                  ) : null}
+                </>
+              ) : null
+            }
+            action={
+              <Link
+                href="/matching"
+                className={buttonClass("quiet", { compact: true })}
+              >
+                Chi le cerca
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            }
+          />
           <ProgressiveList initialCount={12} step={12} noun="immobili">
             {filtrate.map((property) => (
               <PortfolioRow

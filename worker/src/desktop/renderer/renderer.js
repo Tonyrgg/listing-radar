@@ -157,9 +157,10 @@ let appState = null,
   propertyRemovalInFlight = false,
   uiCommandSequence = 0,
   latestUiCommand = null,
-  selectedRunSlide = "civic",
-  networkFreshStart = false;
-let completedImportsRenderKey = null;
+  selectedRunSlide = "civic";
+let completedImportsRenderKey = null,
+  jobsRenderKey = null,
+  lastRunRenderKey = null;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 
@@ -319,7 +320,6 @@ function commandIdentity(target) {
       streetRunAbandon: "Ferma e abbandona acquisizione via",
       networkRunStart: "Esplora rete proprietaria",
       networkRunCancel: "Metti in pausa esplorazione rete",
-      networkRunRestart: "Ricomincia esplorazione rete da capo",
       networkFilterReset: "Azzera i filtri della coda",
       stopAfterNextImportButton: "Ferma dopo il prossimo import",
       stopAllButton: "Ferma tutte le operazioni",
@@ -423,7 +423,7 @@ function currentOperation() {
       status: "warning",
       title: "Pausa richiesta e acquisita",
       detail:
-        "Completo l’azione atomica corrente e salvo il checkpoint prima di fermarmi.",
+        "Completo l’azione atomica corrente e salvo l’avanzamento prima di fermarmi.",
       position: "Arresto sicuro",
       percent: null,
     };
@@ -868,21 +868,25 @@ function renderChecks() {
   const rotti = [];
   $("checksGrid").innerHTML = wanted
     .map(([id, label]) => {
-      const keep = appState?.sisterKeepAlive;
+      const keep = appState?.sisterKeepAlive,
+        browserResult = checks.find((x) => x.id === id),
+        keepIsNewer = Date.parse(keep?.checkedAt ?? "") > Date.parse(appState?.connections?.checkedAt ?? "");
       const keepResult =
-        id === "sister" && !["waiting", "disabled"].includes(keep?.statusLabel)
+        id === "sister" && keepIsNewer && !["waiting", "disabled"].includes(keep?.statusLabel)
           ? {
               ok: keep.ok,
+              state: keep.ok ? "ready" : keep.sessionExpired ? "login" : "unreachable",
               detail: keep.ok
                 ? `Sessione attiva · ${fmtTime(keep.checkedAt)}`
                 : keep.message,
             }
           : null;
-      const result = keepResult ?? checks.find((x) => x.id === id);
-      if (result && !result.ok) rotti.push(label);
+      const result = keepResult ?? browserResult;
+      if (result && !result.ok) rotti.push({ label, state: result.state, detail: result.detail });
       return `<div class="check-item ${result ? (result.ok ? "is-ok" : "is-error") : ""}"><span></span><div><b>${label}</b><small title="${esc(result?.detail ?? "Da controllare")}">${esc(result?.detail ?? "Da controllare")}</small></div></div>`;
     })
     .join("");
+  $("chromeButton").classList.toggle("is-hidden", checks.find((check) => check.id === "chrome")?.ok === true);
   renderConnectionState(rotti, checks.length > 0);
 }
 
@@ -903,6 +907,16 @@ function renderLastRun() {
   const panel = $("lastRunPanel");
   if (!panel) return;
   const ultimo = (appState?.completedImports ?? [])[0];
+  const renderKey = ultimo
+    ? [
+        ultimo.job.id,
+        ultimo.job.updated_at ?? ultimo.job.completed_at ?? "",
+        ultimo.propertyCount ?? ultimo.properties?.length ?? 0,
+        ultimo.peopleCount ?? ultimo.people?.length ?? 0,
+      ].join(":")
+    : "empty";
+  if (renderKey === lastRunRenderKey) return;
+  lastRunRenderKey = renderKey;
   if (!ultimo) {
     panel.innerHTML = `<p class="run-last-empty">Nessuna lavorazione conclusa: la prima comparirà qui.</p>`;
     return;
@@ -918,8 +932,8 @@ function renderLastRun() {
     <b class="run-last-place">${esc(luogo)}</b>
     <span class="run-last-when">${esc(fmtDate(job.completed_at ?? job.updated_at))}</span>
     <dl class="run-last-figures">
-      <div><dt>Immobili</dt><dd>${fmtCount(ultimo.properties.length)}</dd></div>
-      <div><dt>Nominativi</dt><dd>${fmtCount(ultimo.people.length)}</dd></div>
+      <div><dt>Immobili</dt><dd>${fmtCount(ultimo.propertyCount ?? ultimo.properties?.length ?? 0)}</dd></div>
+      <div><dt>Nominativi</dt><dd>${fmtCount(ultimo.peopleCount ?? ultimo.people?.length ?? 0)}</dd></div>
     </dl>
     <button class="text-button run-last-open" data-detail-job="${esc(job.id)}">Apri il riepilogo</button>`;
 }
@@ -939,9 +953,17 @@ function renderConnectionState(rotti, controllato) {
         : `${rotti.length} collegamenti da sistemare`;
 
   alert.classList.toggle("is-hidden", rotti.length === 0);
-  if (rotti.length) {
-    $("connectionAlertTitle").textContent = `${rotti.join(" e ")} ${rotti.length === 1 ? "non risponde" : "non rispondono"}.`;
-  }
+  if (!rotti.length) return;
+  const login = rotti.filter((item) => item.state === "login").map((item) => item.label),
+    missing = rotti.filter((item) => item.state === "missing").map((item) => item.label),
+    unreachable = rotti.filter((item) => item.state === "unreachable").map((item) => item.label);
+  $("connectionAlertTitle").textContent = login.length
+    ? `Completa l’accesso in ${login.join(" e ")}.`
+    : missing.length
+      ? `Apri ${missing.join(" e ")} in Chrome.`
+      : unreachable.includes("Chrome")
+        ? "Chrome di lavoro non è raggiungibile."
+        : `Controlla ${rotti.map((item) => item.label).join(" e ")}.`;
 }
 function currentPhase(step) {
   if (step === "ready") return 0;
@@ -1053,7 +1075,7 @@ function renderAction() {
   }
   if (appState?.cloudError) {
     panel.className = "now-card is-warning";
-    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Cloud temporaneamente limitato</div><h2>Le operazioni cloud restano ferme in sicurezza</h2><p>Il worker non avvia operazioni che richiedono checkpoint cloud e potrebbero lasciare dati incompleti nel gestionale. I dry-run locali e il controllo e download degli aggiornamenti restano disponibili perché non usano Supabase.</p></div><div class="now-side"><h3>Dettaglio</h3><p>${esc(appState.cloudError)}</p></div></div>`;
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Cloud temporaneamente limitato</div><h2>Le operazioni cloud restano ferme in sicurezza</h2><p>Il worker non avvia operazioni cloud che potrebbero lasciare dati incompleti nel gestionale. I dry-run locali e il controllo e download degli aggiornamenti restano disponibili perché non usano Supabase.</p></div><div class="now-side"><h3>Dettaglio</h3><p>${esc(appState.cloudError)}</p></div></div>`;
     return;
   }
   if (appState?.cancellingJobId) {
@@ -1097,7 +1119,7 @@ function renderAction() {
     return;
   }
   const backgroundRun = appState?.streetRun?.active
-    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. Il checkpoint viene aggiornato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
+    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
     : appState?.networkRun?.active
       ? { label: "Rete proprietari", title: "Esplorazione della rete in corso", detail: "Attraverso proprietà e comproprietari, verificando ogni candidato prima di inserirlo nella coda.", action: "pause-network-run", actionLabel: "Metti in pausa" }
       : appState?.requestArchive?.active
@@ -1130,6 +1152,17 @@ function renderJobs() {
   const jobs = appState?.jobs ?? [];
   $("jobCount").textContent = jobs.length;
   updateHistoryNavHint();
+  const renderKey = [
+    appState?.active ? "active" : "idle",
+    ...jobs.map((job) => [
+      job.id,
+      job.updated_at ?? job.saved_at ?? job.created_at ?? "",
+      job.status,
+      job.import_started_at ?? "",
+    ].join(":")),
+  ].join("|");
+  if (renderKey === jobsRenderKey) return;
+  jobsRenderKey = renderKey;
   $("jobsList").innerHTML = jobs.length
     ? jobs
         .map((job) => {
@@ -1203,6 +1236,17 @@ function isSkippedProperty(property) {
   );
 }
 function completedSessionStats(item) {
+  if (
+    Number.isFinite(item?.completedProperties) &&
+    Number.isFinite(item?.skippedProperties) &&
+    Number.isFinite(item?.skippedPeople)
+  ) {
+    return {
+      completedProperties: item.completedProperties,
+      skippedProperties: item.skippedProperties,
+      skippedPeople: item.skippedPeople,
+    };
+  }
   const skippedProperties = (item.properties ?? []).filter(isSkippedProperty),
     skippedIds = new Set(skippedProperties.map((property) => property.id)),
     skippedPeople = new Set(
@@ -1221,6 +1265,22 @@ function renderCompletedSessions() {
   const imports = appState?.completedImports ?? [];
   $("completedImportCount").textContent = imports.length;
   updateHistoryNavHint();
+  const renderKey = [
+    appState?.completedImportsHasMore ? "more" : "end",
+    ...imports.map((item) => [
+      item.job.id,
+      item.job.updated_at ?? item.job.completed_at ?? "",
+      item.propertyCount ?? item.properties?.length ?? 0,
+      item.peopleCount ?? item.people?.length ?? 0,
+      item.skippedProperties ?? "",
+      item.skippedPeople ?? "",
+    ].join(":")),
+  ].join("|");
+  if (renderKey === completedImportsRenderKey) {
+    enhanceActionPanel();
+    return;
+  }
+  completedImportsRenderKey = renderKey;
   $("completedImportsList").innerHTML = imports.length
     ? imports
         .map((item) => {
@@ -1230,10 +1290,11 @@ function renderCompletedSessions() {
                 .filter(Boolean)
                 .join(" · ") || `Import ${job.id.slice(0, 8)}`,
             stats = completedSessionStats(item),
+            peopleCount = item.peopleCount ?? item.people?.length ?? 0,
             skipText = stats.skippedProperties
               ? ` · ${stats.skippedProperties} immobili e ${stats.skippedPeople} nominativi saltati`
               : "";
-          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(item.people.length)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} immobili e ${fmtCount(stats.skippedPeople)} nominativi saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-completed-session="${job.id}">Apri sessione</button></span></article>`;
+          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(peopleCount)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} immobili e ${fmtCount(stats.skippedPeople)} nominativi saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-completed-session="${job.id}">Apri sessione</button></span></article>`;
         })
         .join("")
     : `<div class="completed-empty"><span>✓</span><div><b>Nessun import concluso</b><p>Le sessioni completate compariranno qui.</p></div></div>`;
@@ -1510,52 +1571,15 @@ function renderStreetRun() {
   const state = appState?.streetRun ?? {},
     checkpoint = state.checkpoint,
     active = Boolean(state.active),
-    status = checkpoint?.status,
-    canResume =
-      Boolean(checkpoint) &&
-      ["paused", "failed", "running"].includes(status) &&
-      !active,
-    error = state.lastError || (["failed", "paused"].includes(status) ? checkpoint?.lastError : null);
-  const badge = $("streetRunBadge"),
-    start = $("streetRunStart"),
+    error = state.lastError || checkpoint?.lastError;
+  const start = $("streetRunStart"),
     cancel = $("streetRunCancel"),
     abandon = $("streetRunAbandon"),
     input = $("streetRunInput"),
     dryToggle = $("dryRunToggle");
-  if (checkpoint && !input.value)
-    input.value = checkpoint.requestedStreet ?? "";
-  /* Ripresa di un checkpoint: la modalita non si cambia a meta strada, quindi
-   * la regola globale viene riportata a quella con cui la run era partita. */
-  if (canResume && checkpoint?.mode)
-    dryToggle.checked = checkpoint.mode === "dry_run";
-  dryToggle.disabled = active || canResume;
-  input.disabled = active || canResume;
-  let label = "Mai avviato",
-    tone = "is-idle";
-  if (active) {
-    label = state.cancelling
-      ? "Pausa in corso"
-      : checkpoint?.mode === "live"
-        ? "Acquisizione reale"
-        : "Dry-run attivo";
-    tone = "is-running";
-  } else if (status === "completed") {
-    label = "Completata";
-    tone = "is-complete";
-  } else if (canResume) {
-    label = "Riprendibile";
-    tone = "is-resumable";
-  }
-  badge.className = `status-pill ${tone}`;
-  badge.innerHTML = `<span></span>${label}`;
-  start.textContent = canResume
-    ? "Riprendi dal checkpoint"
-    : status === "completed"
-      ? "Avvia nuova acquisizione"
-      : dryToggle.checked
-        ? "Avvia dry-run"
-        : "Avvia run reale";
-  start.dataset.resumeStreet = canResume ? "true" : "false";
+  dryToggle.disabled = active;
+  input.disabled = active;
+  $("streetRunStartLabel").textContent = dryToggle.checked ? "Avvia dry-run" : "Avvia run reale";
   start.disabled =
     Boolean(appState?.active) ||
     Boolean(appState?.requestArchive?.active) ||
@@ -1563,15 +1587,16 @@ function renderStreetRun() {
   start.classList.toggle("is-hidden", active);
   cancel.classList.toggle("is-hidden", !active);
   cancel.disabled = Boolean(state.cancelling);
-  abandon.classList.toggle("is-hidden", !active && !canResume);
-  abandon.textContent = active ? "Ferma e abbandona" : "Abbandona checkpoint";
+  abandon.classList.toggle("is-hidden", !active);
+  abandon.textContent = "Interrompi";
   abandon.disabled = Boolean(appState?.stoppingAll);
-  if (!checkpoint) {
-    $("streetRunSummary").innerHTML =
-      `<p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p>`;
+  if (!active || !checkpoint) {
+    $("streetRunSummary").classList.add("is-hidden");
+    $("streetRunSummary").innerHTML = "";
     $("streetRunProgress").classList.add("is-hidden");
     return;
   }
+  $("streetRunSummary").classList.remove("is-hidden");
   const variants = checkpoint.variants ?? [],
     completedVariants = Math.min(
       checkpoint.currentVariantIndex ?? 0,
@@ -1588,7 +1613,7 @@ function renderStreetRun() {
       checkpoint.totalAcceptedProperties ??
       0;
   $("streetRunSummary").innerHTML =
-    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>${active ? "Acquisizione bulk senza civico in corso" : "Avanzamento conservato nel checkpoint"}</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
+    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione bulk senza civico in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
   const progress = $("streetRunProgress");
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
@@ -1632,6 +1657,7 @@ function renderStreetRunInternalProgress(progress) {
 }
 function renderNetworkCounters(checkpoint, state) {
   const counters = $("networkRunCounters");
+  if (!counters) return;
   if (!checkpoint) {
     counters.classList.add("is-hidden");
     counters.innerHTML = "";
@@ -1653,52 +1679,27 @@ function renderNetworkCounters(checkpoint, state) {
 }
 function renderNetworkRun() {
   const state = appState?.networkRun ?? {}, checkpoint = state.checkpoint,
-    active = Boolean(state.active), canResume = Boolean(checkpoint) && ["paused", "failed", "running"].includes(checkpoint.status) && !active;
-  const start = $("networkRunStart"), cancel = $("networkRunCancel"), badge = $("networkRunBadge"), restart = $("networkRunRestart");
-  if (!canResume) networkFreshStart = false;
-  const resuming = canResume && !networkFreshStart;
+    active = Boolean(state.active);
+  const start = $("networkRunStart"), cancel = $("networkRunCancel");
   const ids = [
     "networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
     "networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge",
     "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic",
   ];
-  if (checkpoint?.settings) {
-    $("networkTargetProperties").value = checkpoint.settings.targetProperties;
-    $("networkMaxDepth").value = checkpoint.settings.maxDepth;
-    $("networkMinShare").value = checkpoint.settings.minSharePercentage;
-    $("networkIncludeExisting").checked = checkpoint.settings.existingPropertyPolicy === "include_existing";
-    $("networkResidentialOnly").checked = checkpoint.settings.residentialOnly !== false;
-    $("networkFloorMode").value = checkpoint.settings.floorMode ?? "any";
-    $("networkFloorValue").value = checkpoint.settings.floorValue ?? "";
-    $("networkMinOwnerAge").value = checkpoint.settings.minOwnerAge ?? "";
-    $("networkMaxOwnerAge").value = checkpoint.settings.maxOwnerAge ?? "";
-    $("networkMinOwnerCount").value = checkpoint.settings.minOwnerCount ?? "";
-    $("networkMaxOwnerCount").value = checkpoint.settings.maxOwnerCount ?? "";
-    $("networkMinCivic").value = checkpoint.settings.minCivicNumber ?? "";
-    $("networkMaxCivic").value = checkpoint.settings.maxCivicNumber ?? "";
-  }
-  ids.forEach((id) => { $(id).disabled = active || resuming; });
-  $("networkFloorValue").disabled = active || resuming || $("networkFloorMode").value === "any";
-  $("networkFilterReset").disabled = active || resuming;
-  badge.className = `status-pill ${active ? "is-running" : checkpoint?.status === "completed" ? "is-complete" : canResume ? "is-resumable" : "is-idle"}`;
-  badge.innerHTML = `<span></span>${active ? (state.cancelling ? "Pausa in corso" : "Esplorazione") : checkpoint?.status === "completed" ? "Coda pronta" : canResume ? "Riprendibile" : "Mai avviata"}`;
-  start.textContent = resuming ? "Riprendi esplorazione" : checkpoint?.status === "completed" ? "Avvia nuova esplorazione" : "Esplora e prepara coda";
-  start.dataset.resumeNetwork = resuming ? "true" : "false";
+  ids.forEach((id) => { $(id).disabled = active; });
+  $("networkFloorValue").disabled = active || $("networkFloorMode").value === "any";
+  $("networkFilterReset").disabled = active;
   start.disabled = Boolean(appState?.active) || Boolean(appState?.streetRun?.active) || Boolean(appState?.requestArchive?.active) || Boolean(appState?.mandateArchive?.active);
   start.classList.toggle("is-hidden", active);
   cancel.classList.toggle("is-hidden", !active);
   cancel.disabled = Boolean(state.cancelling);
-  // «Ricomincia da capo» non cancella nulla da solo: sblocca i campi e passa
-  // la partenza a resume=false, cosi' la coda salvata muore solo quando parte
-  // davvero la run nuova, con la conferma davanti.
-  restart.classList.toggle("is-hidden", active || !canResume);
-  restart.textContent = networkFreshStart ? "Torna al checkpoint" : "Ricomincia da capo";
-  renderNetworkCounters(checkpoint, state);
-  if (!checkpoint) {
-    $("networkRunSummary").innerHTML = `<p class="empty-message">Non importa nulla: la coda viene salvata e resta lì. Potrai controllarla e avviare l’import quando decidi tu.</p>`;
+  if (!active || !checkpoint) {
+    $("networkRunSummary").classList.add("is-hidden");
+    $("networkRunSummary").innerHTML = "";
     $("networkRunProgress").classList.add("is-hidden");
     return;
   }
+  $("networkRunSummary").classList.remove("is-hidden");
   const settings = checkpoint.settings;
   const range = (min, max, suffix = "") => min == null && max == null ? null : min != null && max != null ? `${min}-${max}${suffix}` : min != null ? `da ${min}${suffix}` : `fino a ${max}${suffix}`;
   const floorLabels = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
@@ -1708,7 +1709,7 @@ function renderNetworkRun() {
     range(settings.minOwnerCount, settings.maxOwnerCount, " proprietari"),
     range(settings.minCivicNumber, settings.maxCivicNumber, " civico"),
   ].filter(Boolean);
-  $("networkRunSummary").innerHTML = `<div class="street-run-current network-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"} · già nel CRM ${checkpoint.existingProperties ?? 0}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
+  $("networkRunSummary").innerHTML = `<div class="street-run-current network-run-current"><div><small>Avanzamento corrente</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>Ricerca SISTER e controllo CRM</span></div></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
   const progress = state.progress;
   const percent = checkpoint.settings.targetProperties ? Math.round(Math.min(100, ((progress?.acceptedProperties ?? checkpoint.acceptedProperties ?? 0) / checkpoint.settings.targetProperties) * 100)) : 0;
   $("networkRunProgress").classList.remove("is-hidden");
@@ -1820,16 +1821,12 @@ function renderSoftwareUpdate() {
 }
 
 function renderStopAll() {
-  const checkpoint = appState?.streetRun?.checkpoint;
-  const hasStreetCheckpoint =
-    checkpoint && ["paused", "failed", "running"].includes(checkpoint.status);
   const canStop =
     Boolean(appState?.active) ||
     Boolean(appState?.requestArchive?.active) ||
     Boolean(appState?.mandateArchive?.active) ||
     Boolean(appState?.streetRun?.active) ||
     Boolean(appState?.networkRun?.active) ||
-    Boolean(hasStreetCheckpoint) ||
     appState?.softwareUpdate?.status === "downloading";
   const button = $("stopAllButton");
   button.classList.toggle("is-hidden", !canStop);
@@ -1974,12 +1971,8 @@ function render() {
         : appState.lastError
           ? "attenzione"
           : "pronto";
-  /* La run autonoma resta a schermo solo se è sua la lavorazione in corso, o
-   * se ha un checkpoint da riprendere: altrimenti, durante un lavoro SISTER,
-   * è una scheda grande quanto uno schermo che non riguarda quello che stai
-   * facendo. */
   document.body.dataset.via =
-    appState.streetRun?.active || appState.streetRun?.checkpoint || appState.networkRun?.active || appState.networkRun?.checkpoint ? "attiva" : "no";
+    appState.streetRun?.active || appState.networkRun?.active ? "attiva" : "no";
   /* Il titolo della pagina dice in che momento sei: chiedere «cosa vuoi fare?»
    * mentre il programma sta già lavorando è la domanda sbagliata. */
   const intestazioni = {
@@ -2062,7 +2055,7 @@ document.addEventListener("click", async (event) => {
       if (target.id === "stopAllButton") {
         if (
           !window.confirm(
-            "Fermare tutte le operazioni? Le lavorazioni normali verranno messe in pausa; l'eventuale checkpoint della run via verrà archiviato e non impedirà nuovi avvii.",
+            "Fermare tutte le operazioni? Le lavorazioni in corso verranno arrestate in sicurezza e potrai avviarne subito di nuove.",
           )
         )
           return COMMAND_CANCELLED;
@@ -2133,26 +2126,19 @@ document.addEventListener("click", async (event) => {
         });
       if (target.id === "streetRunStart") {
         const street = $("streetRunInput").value.trim(),
-          resume = target.dataset.resumeStreet === "true",
           dryRun = $("dryRunToggle").checked;
         if (!street) throw new Error("Inserisci la via esatta");
         if (
-          !resume &&
           !dryRun &&
           !window.confirm(
             "La run reale interrogherà tutte le varianti esatte senza civico; per ogni riga ricaverà il primo civico da Indirizzo e, al termine, importerà automaticamente immobili, proprietari e attività nel gestionale. Continuare?",
           )
         )
           return COMMAND_CANCELLED;
-        return window.propertyWorker.startStreetRun({ street, resume, dryRun });
+        return window.propertyWorker.startStreetRun({ street, resume: false, dryRun });
       }
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
-      if (target.id === "networkRunRestart") {
-        networkFreshStart = !networkFreshStart;
-        renderNetworkRun();
-        return true;
-      }
       if (target.id === "networkFilterReset") {
         $("networkFloorMode").value = "any";
         for (const id of ["networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge", "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic"]) $(id).value = "";
@@ -2160,17 +2146,8 @@ document.addEventListener("click", async (event) => {
         return true;
       }
       if (target.id === "networkRunStart") {
-        const resume = target.dataset.resumeNetwork === "true";
-        if (
-          !resume &&
-          appState?.networkRun?.checkpoint &&
-          !window.confirm(
-            "Ricominciare da capo? La coda salvata e i codici fiscali già visitati vengono sostituiti dalla nuova esplorazione.",
-          )
-        )
-          return COMMAND_CANCELLED;
         return window.propertyWorker.startNetworkRun({
-          resume,
+          resume: false,
           settings: {
             targetProperties: Number($("networkTargetProperties").value),
             maxDepth: Number($("networkMaxDepth").value),
@@ -2193,7 +2170,7 @@ document.addEventListener("click", async (event) => {
       if (target.id === "streetRunAbandon") {
         if (
           !window.confirm(
-            "Abbandonare questa run via? Il checkpoint verrà archiviato per diagnosi e potrai avviare subito una nuova acquisizione.",
+            "Interrompere questa run via? L’operazione corrente verrà chiusa in sicurezza e potrai avviare subito una nuova acquisizione.",
           )
         )
           return COMMAND_CANCELLED;
@@ -2383,10 +2360,18 @@ document.addEventListener("click", async (event) => {
         $("cancelProcessDialog")
           .querySelectorAll("button")
           .forEach((b) => (b.disabled = true));
-        await window.propertyWorker.cancelJob(pendingCancelJobId);
-        $("cancelProcessDialog").close();
-        toast("Lavorazione annullata");
-        return true;
+        try {
+          await window.propertyWorker.cancelJob(pendingCancelJobId);
+          pendingCancelJobId = null;
+          $("cancelProcessDialog").close();
+          toast("Lavorazione annullata");
+          return true;
+        } finally {
+          cancelInFlight = false;
+          $("cancelProcessDialog")
+            .querySelectorAll("button")
+            .forEach((b) => (b.disabled = false));
+        }
       }
       throw new Error(
         `Il pulsante “${command.label}” non ha un comando collegato`,

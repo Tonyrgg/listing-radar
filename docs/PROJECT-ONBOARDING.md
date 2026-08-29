@@ -386,6 +386,8 @@ La modalità «Segui una rete di proprietari» parte da codici fiscali verificat
 
 Gli immobili esclusi da questi filtri non consumano il limite della coda. Un dato necessario ma assente, come piano o data di nascita, non viene inventato: quando il relativo filtro è attivo l'immobile viene escluso e conteggiato nel primo motivo di scarto deterministico applicabile.
 
+La preparazione delle tre run è sempre orientata a una nuova operazione. Non mostra né ripropone checkpoint, risultati o azioni di lavori precedenti; ciò che è già stato raccolto resta consultabile soltanto in Cronologia. I checkpoint locali continuano a esistere come protezione tecnica durante l'operazione atomica corrente, non come percorso di navigazione della schermata iniziale.
+
 ## 11. Sessione SISTER
 
 Il processo Electron esegue un keepalive silenzioso a intervallo casuale configurato, senza ricaricare la pagina visibile. Il controllo deve verificare marker autenticati e cookie applicativi.

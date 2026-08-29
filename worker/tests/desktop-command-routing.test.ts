@@ -28,7 +28,6 @@ describe("instradamento comandi desktop", () => {
       "streetRunStart",
       "streetRunCancel",
       "streetRunAbandon",
-      "networkRunRestart",
       "networkFilterReset",
       "stopAllButton",
       "requestArchiveStart",

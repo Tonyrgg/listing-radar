@@ -56,6 +56,81 @@ describe("matching engine", () => {
     expect(middleFloor.missing_preferences).toContain("piano non preferito");
     expect(lastFloor.score).toBeGreaterThan(middleFloor.score);
   });
+  it("non regala il pieno a un immobile che costa molto meno della richiesta", () => {
+    // Il caso della richiesta Vinciguerra: 35.000 su un tetto da 130.000
+    // prendeva punteggio pieno, perche' bastava stare sotto il target.
+    const svenduto = calculateMatch({ request, property: { ...property, price: 35000 } });
+    const giusto = calculateMatch({ request, property: { ...property, price: 98000 } });
+    expect(svenduto.matched_criteria).not.toContain("budget");
+    expect(svenduto.missing_preferences).toContain("budget fuori fascia");
+    expect(svenduto.score).toBeLessThan(giusto.score);
+    // Meta' del prezzo chiesto resta un buon punteggio, non una bocciatura.
+    const metaPrezzo = calculateMatch({ request, property: { ...property, price: 50000 } });
+    expect(metaPrezzo.matched_criteria).toContain("budget");
+  });
+
+  it("lascia un quarto di margine sopra il tetto dichiarato, poi chiude", () => {
+    const trattabile = calculateMatch({ request, property: { ...property, price: 132000 } });
+    const fuori = calculateMatch({ request, property: { ...property, price: 160000 } });
+    expect(trattabile.score).toBeGreaterThan(fuori.score);
+    expect(fuori.missing_preferences).toContain("budget fuori fascia");
+  });
+
+  it("misura la metratura a scaglioni invece di promuovere tutto", () => {
+    const soloIdeale = { ...request, internal_sqm_min: null, internal_sqm_max: null };
+    // 50 mq su 90 richiesti: prima passava, perche' il calcolo aveva un
+    // pavimento a 0.75 che coincideva con la soglia della spunta.
+    const piccolo = calculateMatch({ request: soloIdeale, property: { ...property, internal_sqm: 50 } });
+    const vicino = calculateMatch({ request: soloIdeale, property: { ...property, internal_sqm: 82 } });
+    expect(piccolo.matched_criteria).not.toContain("metratura");
+    expect(vicino.matched_criteria).toContain("metratura");
+    expect(vicino.score).toBeGreaterThan(piccolo.score);
+  });
+
+  it("toglie la spunta metratura gia' oltre i dieci metri di scarto", () => {
+    const soloIdeale = { ...request, internal_sqm_min: null, internal_sqm_max: null };
+    const dieci = calculateMatch({ request: soloIdeale, property: { ...property, internal_sqm: 80 } });
+    const venti = calculateMatch({ request: soloIdeale, property: { ...property, internal_sqm: 70 } });
+    expect(dieci.matched_criteria).toContain("metratura");
+    expect(venti.matched_criteria).not.toContain("metratura");
+    expect(venti.classification).not.toBe("compatible");
+  });
+
+  it("accetta la metratura ai bordi dell'intervallo dichiarato dal cliente", () => {
+    // 110 mq distano 20 dall'ideale, ma il cliente ha scritto lui «fino a 110».
+    const bordo = calculateMatch({ request, property: { ...property, internal_sqm: 110 } });
+    expect(bordo.matched_criteria).toContain("metratura");
+  });
+
+  it("tollera un vano di scarto e non due", () => {
+    const unoInMeno = calculateMatch({ request, property: { ...property, rooms: 3 } });
+    const dueInMeno = calculateMatch({ request, property: { ...property, rooms: 2 } });
+    expect(unoInMeno.matched_criteria).toContain("vani");
+    expect(dueInMeno.matched_criteria).not.toContain("vani");
+    expect(dueInMeno.missing_preferences).toContain("vani fuori intervallo");
+    expect(unoInMeno.score).toBeGreaterThan(dueInMeno.score);
+  });
+
+  it("non propone altre famiglie di immobile a chi cerca una villa", () => {
+    const villa = { ...request, property_types: ["villa"] };
+    for (const tipo of ["garage", "apartment", "commercial_space", "townhouse"]) {
+      const risultato = calculateMatch({ request: villa, property: { ...property, property_type: tipo } });
+      expect(risultato.score, `${tipo} non deve entrare in lista`).toBe(0);
+      expect(risultato.classification).toBe("not_relevant");
+      expect(risultato.conflicting_criteria).toContain("tipologia incompatibile");
+    }
+  });
+
+  it("tiene le tipologie affini, a punteggio ridotto", () => {
+    const villa = { ...request, property_types: ["villa"] };
+    const indipendente = calculateMatch({ request: villa, property: { ...property, property_type: "independent_house" } });
+    const esatta = calculateMatch({ request: villa, property: { ...property, property_type: "villa" } });
+    expect(indipendente.score).toBeGreaterThan(0);
+    expect(indipendente.score).toBeLessThan(esatta.score);
+    const attico = calculateMatch({ request, property: { ...property, property_type: "penthouse" } });
+    expect(attico.matched_criteria).toContain("tipologia");
+  });
+
   it("pesa la zona in base alla distanza reale tra i perimetri", () => {
     const centro = square(16.690, 41.107);
     const santiMedici = square(16.695, 41.112);

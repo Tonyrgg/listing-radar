@@ -1,8 +1,8 @@
 import { buildExplanation } from "./explanations";
 import { polygonLabelPoint, type MapPoint } from "@/lib/map/geometry";
 import {
-  DEFAULT_MATCHING_CONFIG, clampScore, classifyScore, scoreBudget, scoreRange,
-  sqmCoherenceWarnings,
+  DEFAULT_MATCHING_CONFIG, clampScore, classifyScore, scoreBudget, scoreInternalSqm,
+  scorePropertyType, scoreRange, scoreRooms, sqmCoherenceWarnings,
 } from "./scoring";
 import type { MatchResult, MatchingContext } from "./types";
 
@@ -27,8 +27,12 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   const conflicts: string[] = [];
   const warnings = sqmCoherenceWarnings(request.internal_sqm_ideal, request.rooms_ideal);
 
-  if (request.contract_type !== property.contract_type) {
-    conflicts.push("tipo di contratto diverso");
+  const typeRatio = scorePropertyType(request.property_types, property.property_type, config);
+  // Contratto e tipologia sono le due domande a cui non si risponde «quasi»:
+  // se sbagliano, il match non nasce invece di nascere debole e restare in lista.
+  const blocking = request.contract_type !== property.contract_type ? "tipo di contratto diverso" : null;
+  if (blocking || typeRatio == null) {
+    conflicts.push(blocking ?? "tipologia incompatibile");
     return {
       score: 0, classification: "not_relevant", matched_criteria: [],
       missing_preferences: [], conflicting_criteria: conflicts,
@@ -45,11 +49,7 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     else if (no) missing.push(no);
   };
 
-  add(
-    config.weights.propertyType,
-    request.property_types.length === 0 || request.property_types.includes(property.property_type) ? 1 : 0,
-    "tipologia", "tipologia diversa",
-  );
+  add(config.weights.propertyType, typeRatio, "tipologia", "tipologia affine ma diversa");
 
   const zones = context.requestZones ?? [];
   if (zones.length) {
@@ -83,9 +83,9 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   const price = request.contract_type === "sale" ? property.price : property.monthly_rent;
   const ideal = request.contract_type === "sale" ? request.budget_ideal : request.monthly_rent_ideal;
   const maximum = request.contract_type === "sale" ? request.budget_max : request.monthly_rent_max;
-  add(config.weights.budget, scoreBudget(price, ideal, maximum, config), "budget", "budget oltre la preferenza");
-  add(config.weights.internalSqm, scoreRange(property.internal_sqm, request.internal_sqm_min, request.internal_sqm_ideal, request.internal_sqm_max), "metratura", "metratura fuori intervallo");
-  add(config.weights.rooms, scoreRange(property.rooms, request.rooms_min, request.rooms_ideal, request.rooms_max), "vani", "vani fuori intervallo");
+  add(config.weights.budget, scoreBudget(price, ideal, maximum, config), "budget", "budget fuori fascia");
+  add(config.weights.internalSqm, scoreInternalSqm(property.internal_sqm, request.internal_sqm_min, request.internal_sqm_ideal, request.internal_sqm_max, config), "metratura", "metratura fuori intervallo");
+  add(config.weights.rooms, scoreRooms(property.rooms, request.rooms_min, request.rooms_ideal, request.rooms_max, config), "vani", "vani fuori intervallo");
 
   const floorBandScore = scoreFloorBand(
     request.requested_floor_band,

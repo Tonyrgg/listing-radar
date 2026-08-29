@@ -154,8 +154,17 @@ await page.addInitScript(({ initialState, details }) => {
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+const runSlideHeights = {};
+for (const slide of ["civic", "street", "network"]) {
+  await page.locator(`[data-run-slide-target="${slide}"]`).click();
+  runSlideHeights[slide] = await page.locator(`[data-run-slide="${slide}"]`).evaluate((element) => element.getBoundingClientRect().height);
+  if (slide === "network") await page.locator(".run-launcher").screenshot({ path: path.join(output, "network-ready.png") });
+}
+const runSlideHeightSpread = Math.max(...Object.values(runSlideHeights)) - Math.min(...Object.values(runSlideHeights));
+const networkPreparationOverflow = await page.locator('[data-run-slide="network"]').evaluate((element) => element.scrollHeight > element.clientHeight + 1);
+await page.locator('[data-run-slide-target="civic"]').click();
 await page.locator('[data-mode="automatic"]').click();
-await page.locator("#chromeButton").click();
+await page.locator("#chromeButton").evaluate((button) => button.click());
 await page.locator("#startButton").click();
 await page.locator('[data-run-slide-target="street"]').click();
 await page.locator("#streetRunInput").fill("via borgo san francesco");
@@ -172,6 +181,7 @@ await page.locator('[data-scroll="operations"]').click();
 await page.evaluate(() => window.__showStreetRunState());
 await page.evaluate(() => window.__showStreetRunProgress());
 await page.locator("#operationConsole").screenshot({ path: path.join(output, "street-run.png") });
+await page.locator("#stopAllButton").click();
 const streetRunProgressVisible = await page.getByText("Leggo gli intestatari 413 di 1743", { exact: false }).count();
 const streetMonitorText = await page.locator("#commandMonitor").innerText();
 const streetRunOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -180,8 +190,6 @@ await page.locator("#operationConsole").screenshot({ path: path.join(output, "st
 const streetRunMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
 await page.evaluate(() => window.__showPausedStreetRunState());
-await page.locator("#streetRunAbandon").click();
-await page.locator("#stopAllButton").click();
 await page.evaluate(() => window.__showPartialArchives());
 await page.locator('[data-scroll="sync"]').click();
 await page.locator("#requestArchiveNew").click();
@@ -226,12 +234,14 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
   ...([readyOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
+  ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
+  ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
   ...(streetRunProgressVisible !== 1 ? ["Avanzamento interno long mode non visibile"] : []),
   ...(!streetMonitorText.includes("Voce 413 di 1.743") ? ["Contatore voce/totale della long mode non visibile"] : []),
   ...(requestMonitorVisible < 1 ? ["Totale import richieste non visibile"] : []),
@@ -242,7 +252,7 @@ const failures = [
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
   ...(!cloudRestrictionVisible || !runDisabledDuringRestriction || !updaterEnabledDuringRestriction
     ? ["Stato HTTP 402 non separa correttamente blocco run e aggiornamenti"] : []),
-  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "abandonStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
   ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),

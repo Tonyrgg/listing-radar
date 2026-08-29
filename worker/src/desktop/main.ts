@@ -39,7 +39,17 @@ import { describeSupabaseOperationalError } from "../services/supabase-errors.js
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
+import {
+  detectBrowserConnections,
+  unreachableBrowserConnections,
+  type BrowserConnectionCheck,
+} from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
+import {
+  projectStreetCheckpointForRenderer,
+  summarizeCompletedGraph,
+  type CompletedImportSummary,
+} from "./state-projection.js";
 import { DesktopUpdater, type DesktopUpdateState } from "./updater.js";
 
 type Preferences = {
@@ -170,6 +180,8 @@ let stopAfterNextImportRequested = false;
 let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let healthCheckPromise: Promise<ConnectionCheck[]> | null = null;
+let browserCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let browserCheckPromise: Promise<BrowserConnectionCheck[]> | null = null;
 let connectionChecks: ConnectionCheck[] = [];
 let connectionChecksAt: string | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,11 +205,8 @@ let diagnosticErrors: DiagnosticErrorItem[] = [];
 
 type SnapshotRemoteData = {
   jobs: Awaited<ReturnType<WorkerRepository["listJobs"]>>;
-  completedImports: Array<{
+  completedImports: Array<CompletedImportSummary & {
     job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
-    properties: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["properties"];
-    people: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["people"];
-    ownerships: Awaited<ReturnType<WorkerRepository["loadGraph"]>>["ownerships"];
   }>;
   completedImportsHasMore: boolean;
   publicConfig: Record<string, unknown>;
@@ -216,16 +225,23 @@ const emptySnapshotRemoteData = (): SnapshotRemoteData => ({
 let snapshotRemoteData = emptySnapshotRemoteData();
 let snapshotRemoteLoadedAt = 0;
 let snapshotRemotePromise: Promise<SnapshotRemoteData> | null = null;
+let snapshotRemoteRevision = 0;
 let repositoryCache: { url: string; serviceRoleKey: string; value: WorkerRepository } | null = null;
-const completedGraphCache = new Map<string, {
+const completedSummaryCache = new Map<string, {
   version: string;
-  graph: Awaited<ReturnType<WorkerRepository["loadGraph"]>>;
+  summary: CompletedImportSummary;
 }>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
 let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | null = null;
 
-type ConnectionCheck = { id: string; label: string; ok: boolean; detail: string };
+type ConnectionCheck = BrowserConnectionCheck | {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  state?: "ready" | "missing" | "login" | "unreachable";
+};
 
 async function withOperationTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -568,7 +584,7 @@ function repository(config = workerConfig()) {
   ) return repositoryCache.value;
   const value = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
   repositoryCache = { url: config.NEXT_PUBLIC_SUPABASE_URL, serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY, value };
-  completedGraphCache.clear();
+  completedSummaryCache.clear();
   return value;
 }
 
@@ -577,6 +593,14 @@ async function purgeJob(jobId: string) {
   const repo = repository(config);
   const screenshotPaths = await repo.listJobScreenshotPaths(jobId);
   await repo.deleteJob(jobId);
+  snapshotRemoteRevision += 1;
+  snapshotRemoteData = {
+    ...snapshotRemoteData,
+    jobs: snapshotRemoteData.jobs.filter((job) => job.id !== jobId),
+    completedImports: snapshotRemoteData.completedImports.filter(({ job }) => job.id !== jobId),
+  };
+  snapshotRemoteLoadedAt = Date.now();
+  completedSummaryCache.delete(jobId);
   const cleanup = await removeDiagnosticScreenshots(config.ERROR_SCREENSHOT_DIR, screenshotPaths);
   if (cleanup.failed.length) {
     pushActivity(`${cleanup.failed.length} screenshot non rimossi; verranno gestiti dalla pulizia automatica`, "warning");
@@ -586,6 +610,7 @@ async function purgeJob(jobId: string) {
 
 async function refreshSnapshotRemoteData() {
   if (snapshotRemotePromise) return snapshotRemotePromise;
+  const revision = snapshotRemoteRevision;
   snapshotRemotePromise = (async (): Promise<SnapshotRemoteData> => {
     const next = emptySnapshotRemoteData();
     let config: WorkerConfig;
@@ -603,8 +628,10 @@ async function refreshSnapshotRemoteData() {
       };
     } catch (error) {
       next.configError = error instanceof Error ? error.message : String(error);
-      snapshotRemoteData = next;
-      snapshotRemoteLoadedAt = Date.now();
+      if (snapshotRemoteRevision === revision) {
+        snapshotRemoteData = next;
+        snapshotRemoteLoadedAt = Date.now();
+      }
       return next;
     }
     try {
@@ -618,16 +645,18 @@ async function refreshSnapshotRemoteData() {
       next.completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
       next.jobs = savedJobs;
       const visibleCompletedJobIds = new Set(completedJobs.map((job) => job.id));
-      for (const jobId of completedGraphCache.keys()) {
-        if (!visibleCompletedJobIds.has(jobId)) completedGraphCache.delete(jobId);
+      for (const jobId of completedSummaryCache.keys()) {
+        if (!visibleCompletedJobIds.has(jobId)) completedSummaryCache.delete(jobId);
       }
       next.completedImports = await withOperationTimeout(
         Promise.all(completedJobs.map(async (job) => {
           const version = job.updated_at ?? job.completed_at ?? job.created_at ?? "";
-          const cached = completedGraphCache.get(job.id);
-          const graph = cached?.version === version ? cached.graph : await repo.loadGraph(job.id);
-          if (cached?.version !== version) completedGraphCache.set(job.id, { version, graph });
-          return { job, ...graph };
+          const cached = completedSummaryCache.get(job.id);
+          const summary = cached?.version === version
+            ? cached.summary
+            : summarizeCompletedGraph(await repo.loadGraph(job.id));
+          if (cached?.version !== version) completedSummaryCache.set(job.id, { version, summary });
+          return { job, ...summary };
         })),
         15_000,
         "Aggiornamento cronologia import",
@@ -658,8 +687,10 @@ async function refreshSnapshotRemoteData() {
     } catch (error) {
       next.cloudError = describeSupabaseOperationalError(error);
     }
-    snapshotRemoteData = next;
-    snapshotRemoteLoadedAt = Date.now();
+    if (snapshotRemoteRevision === revision) {
+      snapshotRemoteData = next;
+      snapshotRemoteLoadedAt = Date.now();
+    }
     return next;
   })().finally(() => {
     snapshotRemotePromise = null;
@@ -724,7 +755,7 @@ async function stateSnapshot() {
     streetRun: {
       active: streetRunActive,
       cancelling: streetRunCancellationRequested,
-      checkpoint: streetRunCheckpoint,
+      checkpoint: streetRunActive ? projectStreetCheckpointForRenderer(streetRunCheckpoint) : null,
       progress: streetRunProgress,
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
@@ -732,7 +763,7 @@ async function stateSnapshot() {
     networkRun: {
       active: networkRunActive,
       cancelling: networkRunCancellationRequested,
-      checkpoint: networkRunCheckpoint,
+      checkpoint: networkRunActive ? networkRunCheckpoint : null,
       progress: networkRunProgress,
       lastError: networkRunError,
       checkpointPath: networkRunCheckpointPath(),
@@ -1005,7 +1036,9 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
-          publishTransientUpdate({ streetRunCheckpoint });
+          publishTransientUpdate({
+            streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint),
+          });
         },
       });
       const result = await scanner.run(street, resumeCheckpoint);
@@ -1143,13 +1176,8 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   void runPromise;
 }
 
-async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings>; resume: boolean }) {
+async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings> }) {
   reserveOperation("network");
-  const resumeCheckpoint = input.resume ? networkRunCheckpoint ?? undefined : undefined;
-  if (input.resume && !resumeCheckpoint) {
-    releaseOperationReservation("network");
-    throw new Error("Non esiste un'esplorazione rete da riprendere");
-  }
   try {
     requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
@@ -1161,7 +1189,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
   networkRunError = null;
   networkRunProgress = null;
   beginRetryMonitor("network", "Esplorazione rete proprietaria");
-  pushActivity(input.resume ? "Ripresa esplorazione rete proprietaria" : "Esplorazione rete proprietaria avviata", "info");
+  pushActivity("Nuova esplorazione rete proprietaria avviata", "info");
   await publishState();
 
   const config = workerConfig({ dryRun: false });
@@ -1169,14 +1197,12 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     activeNetworkBrowser = tabs.browser;
     try {
       const liveRepository = repository(config);
-      const settings = normalizeNetworkSettings(resumeCheckpoint?.settings ?? input.settings);
-      const jobId = resumeCheckpoint?.jobId ?? (await liveRepository.createJob("automatic")).id;
-      if (!resumeCheckpoint) {
-        await liveRepository.setJobContext(jobId, {
-          municipality: "BITONTO", street: null, civicNumber: null, sourceUrl: tabs.sisterPage.url(),
-        });
-      }
-      const seeds = resumeCheckpoint ? [] : await liveRepository.listVerifiedNetworkSeedTaxCodes(settings.seedCount);
+      const settings = normalizeNetworkSettings(input.settings);
+      const jobId = (await liveRepository.createJob("automatic")).id;
+      await liveRepository.setJobContext(jobId, {
+        municipality: "BITONTO", street: null, civicNumber: null, sourceUrl: tabs.sisterPage.url(),
+      });
+      const seeds = await liveRepository.listVerifiedNetworkSeedTaxCodes(settings.seedCount);
       const scanner = new SisterNetworkRun(
         new PlaywrightSisterAdapter(tabs.sisterPage),
         new PlaywrightCrmAdapter(tabs.crmPage, false),
@@ -1185,7 +1211,6 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
       const result = await scanner.run(jobId, {
         settings,
         seeds,
-        resume: resumeCheckpoint,
         isCancelled: () => networkRunCancellationRequested,
         onProgress: (progress) => {
           networkRunProgress = progress;
@@ -1896,45 +1921,67 @@ async function stopEverything() {
   return { stopped: actions.length > 0, pending: stoppingAll, actions };
 }
 
+async function readBrowserConnections(config: WorkerConfig): Promise<BrowserConnectionCheck[]> {
+  try {
+    const response = await withOperationTimeout(
+      fetch(`${config.CHROME_CDP_URL.replace(/\/$/, "")}/json/list`, { cache: "no-store" }),
+      3_000,
+      "Controllo Chrome",
+    );
+    if (!response.ok) throw new Error(`Chrome ha risposto HTTP ${response.status}`);
+    return detectBrowserConnections(
+      await response.json() as Array<{ title?: string; url?: string; type?: string }>,
+      config.SISTER_TAB_MATCH,
+      config.CRM_TAB_MATCH,
+    );
+  } catch (error) {
+    return unreachableBrowserConnections(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function mergeBrowserConnections(browserChecks: BrowserConnectionCheck[]) {
+  const browserIds = new Set(["chrome", "sister", "crm"]);
+  connectionChecks = [
+    ...browserChecks,
+    ...connectionChecks.filter((check) => !browserIds.has(check.id)),
+  ];
+  connectionChecksAt = new Date().toISOString();
+}
+
+async function refreshBrowserConnections() {
+  if (browserCheckPromise) return browserCheckPromise;
+  browserCheckPromise = readBrowserConnections(workerConfig()).then((browserChecks) => {
+    mergeBrowserConnections(browserChecks);
+    publishTransientUpdate({
+      connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: false },
+    });
+    return browserChecks;
+  }).finally(() => {
+    browserCheckPromise = null;
+  });
+  return browserCheckPromise;
+}
+
 async function healthChecks(options: { silent?: boolean } = {}) {
   if (healthCheckPromise) return healthCheckPromise;
   let activityItem: ActivityItem | undefined;
   healthCheckPromise = (async () => {
     const config = workerConfig();
-    const checks: ConnectionCheck[] = [];
-    try {
-      await withOperationTimeout((async () => {
+    const [browserChecks, contactsCheck, cloudCheck] = await Promise.all([
+      readBrowserConnections(config),
+      withOperationTimeout((async () => {
         await access(config.CONTACTS_EXCEL_PATH);
         const excel = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);
         await excel.load();
-      })(), 12_000, "Controllo file recapiti");
-      checks.push({ id: "excel", label: "Recapiti", ok: true, detail: `${REQUIRED_CONTACT_COLUMNS.length} colonne riconosciute` });
-    } catch (error) {
-      checks.push({ id: "excel", label: "Recapiti", ok: false, detail: error instanceof Error ? error.message : String(error) });
-    }
-    try {
-      await withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase");
-      checks.push({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" });
-    } catch (error) {
-      checks.push({ id: "supabase", label: "Cloud", ok: false, detail: describeSupabaseOperationalError(error) });
-    }
-    try {
-      const response = await withOperationTimeout(fetch(`${config.CHROME_CDP_URL.replace(/\/$/, "")}/json/list`), 8_000, "Controllo Chrome");
-      if (!response.ok) throw new Error(`Chrome ha risposto HTTP ${response.status}`);
-      const pages = await response.json() as Array<{ title?: string; url?: string; type?: string }>;
-      const visiblePages = pages.filter((page) => page.type === "page" || !page.type);
-      const findPage = (match: string) => visiblePages.find((page) => `${page.title ?? ""} ${page.url ?? ""}`.toLocaleLowerCase("it").includes(match.toLocaleLowerCase("it")));
-      const sisterPage = findPage(config.SISTER_TAB_MATCH);
-      const crmPage = findPage(config.CRM_TAB_MATCH);
-      const authenticated = (url: string | undefined) => Boolean(url) && !/(login|signin|accesso|autenticazione|logout-success|sessione[_-]?scaduta)/i.test(url!);
-      checks.push({ id: "chrome", label: "Chrome", ok: true, detail: `${visiblePages.length} schede aperte` });
-      checks.push({ id: "sister", label: "SISTER", ok: authenticated(sisterPage?.url), detail: sisterPage?.title || "Scheda non trovata" });
-      checks.push({ id: "crm", label: "Gestionale", ok: authenticated(crmPage?.url), detail: crmPage?.title || "Scheda non trovata" });
-    } catch (error) {
-      checks.push({ id: "chrome", label: "Chrome", ok: false, detail: error instanceof Error ? error.message : String(error) });
-      checks.push({ id: "sister", label: "SISTER", ok: false, detail: "Non raggiungibile" });
-      checks.push({ id: "crm", label: "Gestionale", ok: false, detail: "Non raggiungibile" });
-    }
+        return { id: "excel", label: "Recapiti", ok: true, detail: `${REQUIRED_CONTACT_COLUMNS.length} colonne riconosciute` } satisfies ConnectionCheck;
+      })(), 12_000, "Controllo file recapiti").catch((error) => ({
+        id: "excel", label: "Recapiti", ok: false, detail: error instanceof Error ? error.message : String(error),
+      }) satisfies ConnectionCheck),
+      withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase")
+        .then(() => ({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" }) satisfies ConnectionCheck)
+        .catch((error) => ({ id: "supabase", label: "Cloud", ok: false, detail: describeSupabaseOperationalError(error) }) satisfies ConnectionCheck),
+    ]);
+    const checks: ConnectionCheck[] = [...browserChecks, contactsCheck, cloudCheck];
     connectionChecks = checks;
     connectionChecksAt = new Date().toISOString();
     if (!options.silent) {
@@ -1965,6 +2012,16 @@ function scheduleHealthChecks(delayMs = 2_000) {
     scheduleHealthChecks(30_000);
   }, delayMs);
   healthCheckTimer.unref?.();
+}
+
+function scheduleBrowserChecks(delayMs = 500) {
+  if (browserCheckTimer) clearTimeout(browserCheckTimer);
+  browserCheckTimer = setTimeout(async () => {
+    const checks = await refreshBrowserConnections().catch(() => []);
+    const ready = checks.length === 3 && checks.every((check) => check.ok);
+    scheduleBrowserChecks(ready ? 10_000 : 2_000);
+  }, delayMs);
+  browserCheckTimer.unref?.();
 }
 
 function findChromeExecutable() {
@@ -2077,6 +2134,7 @@ function registerIpc() {
     if (!executable) throw new Error("Google Chrome non trovato");
     spawn(executable, ["--remote-debugging-port=9222", "--user-data-dir=C:\\ChromeListingRadar"], { detached: true, stdio: "ignore" }).unref();
     pushActivity("Chrome dedicato avviato", "success");
+    scheduleBrowserChecks(250);
     await publishState();
     return true;
   });
@@ -2093,11 +2151,11 @@ function registerIpc() {
     return stopAfterNextImportRequested;
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
-    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false });
+    await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false });
     return true;
   });
   ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
-    await runSisterNetwork({ settings: values.settings ?? {}, resume: values.resume === true });
+    await runSisterNetwork({ settings: values.settings ?? {} });
     return true;
   });
   ipcMain.handle("desktop:cancel-network-run", async () => {
@@ -2339,12 +2397,14 @@ app.whenReady().then(async () => {
   await createWindow();
   scheduleDesktopKeepAlive(3_000);
   scheduleHealthChecks();
+  scheduleBrowserChecks();
   initializeDesktopUpdater();
 });
 
 app.on("before-quit", () => {
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
+  if (browserCheckTimer) clearTimeout(browserCheckTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
   if (attentionTimer) clearTimeout(attentionTimer);
   void flushActivityLog();

@@ -1,15 +1,14 @@
 import { clsx } from "clsx";
-import { ArrowRight, Banknote, Building2, Layers3, MapPin, Ruler, ScanSearch, UserRound } from "lucide-react";
+import { ArrowRight, Building2, ScanSearch, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
 
 import { AutoSubmitFiltersForm } from "@/components/auto-submit-filters-form";
 import { RecalculateButton } from "@/components/matching/management-panels";
 import { PropertyMatchRow } from "@/components/matching/property-match-row";
+import { CardFooterLink, RecordCardHeader, RequestFacts } from "@/components/matching/record-card";
 import { QuickRequestButton } from "@/components/matching/quick-request";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
-import { PropertyTypeMark } from "@/components/matching/visual-language";
 import { ProgressiveList } from "@/components/progressive-list";
 import {
   Campo,
@@ -23,7 +22,7 @@ import {
   Scelta,
   buttonClass,
 } from "@/components/ui/primitives";
-import { formatCurrency, formatNumber } from "@/lib/formatting";
+import { formatNumber } from "@/lib/formatting";
 import { cleanRequestTitle } from "@/lib/matching/request-presentation";
 import {
   listMatches,
@@ -51,28 +50,6 @@ const QUANTE_PER_RICHIESTA = 4;
 
 function param(value: string | string[] | undefined) {
   return typeof value === "string" ? value : "";
-}
-
-/** Cosa cerca un cliente, in una riga che si legge. */
-function RequestFact({
-  icon: Icon,
-  label,
-  children,
-}: Readonly<{
-  icon: typeof Banknote;
-  label: string;
-  children: ReactNode;
-}>) {
-  return (
-    <span
-      title={label}
-      className="inline-flex min-h-8 items-center gap-1.5 rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-2.5 text-[length:var(--lr-text-meta)] font-medium text-[var(--lr-ink-2)]"
-    >
-      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-[var(--lr-ink-3)]" />
-      <span className="sr-only">{label}: </span>
-      {children}
-    </span>
-  );
 }
 
 /**
@@ -300,65 +277,20 @@ export default async function ChiCercaCosaPage({
 
             const cliente =
               request.clients?.full_name ?? "Cliente da collegare";
-            const budget = request.contract_type === "sale"
-              ? (request.budget_max ?? request.budget_ideal)
-              : (request.monthly_rent_max ?? request.monthly_rent_ideal);
-            const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
-            const locali = request.rooms_ideal ?? request.rooms_min;
-            const zone = [...new Set(
-              (request.request_zones ?? [])
-                .filter((item) => item.preference_level !== "excluded")
-                .map((item) => item.zone?.name)
-                .filter((name): name is string => Boolean(name)),
-            )];
-            const posizione = zone.join(" · ") || request.municipality;
-
             return (
               <Card key={requestId}>
-                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-[var(--lr-line-quiet)] px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-[length:var(--lr-text-record)] font-[650] leading-tight text-[var(--lr-ink)]">
-                      <UserRound
-                        aria-hidden="true"
-                        className="size-4 shrink-0"
-                      />
-                      {cliente}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Criteri della richiesta">
-                      {request.property_types?.map((type) => (
-                        <PropertyTypeMark key={type} type={type} />
-                      ))}
-                      {budget != null ? (
-                        <RequestFact icon={Banknote} label="Budget">
-                          {request.contract_type === "sale" ? `fino a ${formatCurrency(budget)}` : `fino a ${formatCurrency(budget)} al mese`}
-                        </RequestFact>
-                      ) : null}
-                      {superficie != null ? (
-                        <RequestFact icon={Ruler} label="Superficie">
-                          {formatNumber(superficie)} mq
-                        </RequestFact>
-                      ) : null}
-                      {locali != null ? (
-                        <RequestFact icon={Layers3} label="Locali">
-                          {formatNumber(locali)} locali
-                        </RequestFact>
-                      ) : null}
-                      {posizione ? (
-                        <RequestFact icon={MapPin} label="Zone richieste">
-                          {posizione}
-                        </RequestFact>
-                      ) : null}
-                    </div>
-                    {request.title ? (
-                      <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                        {cleanRequestTitle(request.title)}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                <RecordCardHeader
+                  icon={UserRound}
+                  title={cliente}
+                  factsLabel="Criteri della richiesta"
+                  facts={<RequestFacts request={request} />}
+                  subtitle={request.title ? cleanRequestTitle(request.title) : null}
+                  chips={
                     <Chip tone="neutral">
                       {gruppo.length} {gruppo.length === 1 ? "casa" : "case"}
                     </Chip>
+                  }
+                  action={
                     <Link
                       href={`/requests/${request.id}`}
                       className={buttonClass("quiet", { compact: true })}
@@ -366,8 +298,8 @@ export default async function ChiCercaCosaPage({
                       La richiesta
                       <ArrowRight aria-hidden="true" className="size-4" />
                     </Link>
-                  </div>
-                </div>
+                  }
+                />
 
                 <div>
                   {gruppo.slice(0, QUANTE_PER_RICHIESTA).map((match) => {
@@ -387,13 +319,10 @@ export default async function ChiCercaCosaPage({
                 </div>
 
                 {gruppo.length > QUANTE_PER_RICHIESTA ? (
-                  <Link
-                    href={`/requests/${request.id}`}
-                    className="block border-t border-[var(--lr-line-quiet)] px-4 py-2 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] transition-colors hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]"
-                  >
+                  <CardFooterLink href={`/requests/${request.id}`}>
                     Altre {gruppo.length - QUANTE_PER_RICHIESTA} case ci vanno
                     vicino: si vedono tutte nella richiesta di {cliente}.
-                  </Link>
+                  </CardFooterLink>
                 ) : null}
               </Card>
             );

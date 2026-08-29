@@ -90,14 +90,18 @@ export function Card({
   className,
   floating = false,
   as: Tag = "section",
+  id,
 }: Readonly<{
   children?: ReactNode;
   className?: string;
   floating?: boolean;
   as?: "section" | "article" | "div" | "aside";
+  /** Serve quando un comando della pagina porta qui: `<a href="#correggi">`. */
+  id?: string;
 }>) {
   return (
     <Tag
+      id={id}
       className={clsx(
         "rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
         floating && "shadow-[var(--lr-floating)]",

@@ -207,6 +207,11 @@ export interface RequestPropertyMatch {
   last_calculated_at?: string;
 }
 
+export interface ScoreBand {
+  upTo: number;
+  score: number;
+}
+
 export interface MatchingConfig {
   thresholds: { compatible: number; almostCompatible: number; weak: number };
   budgetTolerance: { near: number; weak: number };
@@ -215,6 +220,13 @@ export interface MatchingConfig {
     propertyType: number; zone: number; budget: number; internalSqm: number;
     rooms: number; floor: number; condition: number; availability: number;
   };
+  budgetBands: { floorRatio: number; halfRatio: number; sweetRatio: number; overRatio: number };
+  sqmBands: ScoreBand[];
+  sqmBeyondScore: number;
+  roomsBands: ScoreBand[];
+  roomsBeyondScore: number;
+  declaredRangeFloor: number;
+  propertyTypeFamilyRatio: number;
 }
 
 export interface MatchingContext {

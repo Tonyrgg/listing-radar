@@ -60,11 +60,10 @@ export function PortfolioRow({
       </span>
 
       <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1">
-        <p className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-          {property.contract_type === "rent" ? "In affitto" : "In vendita"}
-          {dove ? ` · ${dove}` : ""}
-        </p>
-
+        {/* Stessa riga della casa proposta a un cliente: prima il nome, poi i
+          * quattro numeri che la descrivono. L'occhiello «In vendita · Zona»
+          * spendeva una riga per ripetere quello che il prezzo e la riga sotto
+          * dicono gia'. */}
         <h3 className="truncate text-[length:var(--lr-text-record)] font-[650] leading-snug text-[var(--lr-ink)]">
           {nome}
         </h3>
@@ -77,6 +76,7 @@ export function PortfolioRow({
           )}
           {superficie != null ? <span>{formatNumber(superficie)} mq</span> : null}
           {property.rooms != null ? <span>{formatNumber(property.rooms)} locali</span> : null}
+          {dove ? <span>{dove}</span> : null}
           {property.floor != null ? (
             <span>{property.floor === 0 ? "piano terra" : `piano ${formatNumber(property.floor)}`}</span>
           ) : null}

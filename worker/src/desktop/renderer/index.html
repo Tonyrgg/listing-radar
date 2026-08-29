@@ -28,7 +28,6 @@
         <span id="versionLabel" class="version">v—</span>
         <button id="stopAllButton" class="button danger is-hidden">Arresta processo</button>
         <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
-        <button id="chromeButton" class="button primary">Apri Chrome di lavoro</button>
       </div>
     </header>
 
@@ -50,6 +49,7 @@
               <small id="lastCheckLabel">Controllo automatico in corso</small>
             </div>
             <div class="connection-alert-actions">
+              <button id="chromeButton" class="button primary" type="button">Apri Chrome</button>
               <button id="checkButton" class="button secondary" type="button">Riprova</button>
               <button class="button quiet" type="button" data-action="toggle-checks" aria-expanded="false" aria-controls="checksGrid">Dettagli</button>
             </div>
@@ -115,14 +115,10 @@
           <header class="run-launcher-header">
             <div class="run-carousel-nav" role="tablist" aria-label="Tipi di lavorazione">
               <button class="run-mode-tab is-selected" data-run-slide-target="civic" data-run-description="Una ricerca aperta su un solo civico, guidata oppure automatica." role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6M3 20h18"/></svg><b>Civico</b></button>
-              <button class="run-mode-tab" data-run-slide-target="street" data-run-description="Long run autonoma: ogni variante esatta della via, un checkpoint per volta." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l3-10h6l3 10M9 11h6"/></svg><b>Via completa</b></button>
+              <button class="run-mode-tab" data-run-slide-target="street" data-run-description="Acquisisce tutte le varianti esatte della via partendo dall’elenco SISTER." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l3-10h6l3 10M9 11h6"/></svg><b>Via completa</b></button>
               <button class="run-mode-tab" data-run-slide-target="network" data-run-description="Parte dai codici fiscali già verificati nel CRM e attraversa i comproprietari." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="m8 11 8-4M8 13l8 4"/></svg><b>Rete proprietari</b></button>
             </div>
             <p id="runModeDescription" class="run-mode-description">Una ricerca aperta su un solo civico, guidata oppure automatica.</p>
-            <div class="run-mode-status">
-              <span id="streetRunBadge" class="status-pill is-idle" data-run-status="street"><span></span>Mai avviato</span>
-              <span id="networkRunBadge" class="status-pill is-idle" data-run-status="network"><span></span>Mai avviata</span>
-            </div>
           </header>
         <div class="run-carousel" data-active-slide="civic">
         <section class="start-card run-slide is-selected" data-run-slide="civic">
@@ -139,22 +135,21 @@
               <div class="segmented"><button data-mode="assisted" class="is-selected">Guidata</button><button data-mode="automatic">Automatica</button></div>
               <small id="modeHelp">Ti chiede conferma prima dei salvataggi.</small>
             </fieldset>
-            <button id="startButton" class="button primary large">Inizia lavorazione</button>
+            <button id="startButton" class="button primary large"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>Inizia lavorazione</button>
           </div>
-          <aside id="lastRunPanel" class="run-last" aria-label="Ultima lavorazione"></aside>
         </section>
 
         <section id="streetRun" class="street-run-card run-slide" data-run-slide="street">
           <header>
-            <div><p class="eyebrow">Run autonoma SISTER</p><h2>Acquisisci una via completa</h2><p>Partendo dall'Elenco indirizzi, interroga senza civico ogni variante con dizione identica. SISTER restituisce in un solo blocco tutti gli immobili della variante; il worker ricava il primo civico dalla stringa interna <b>Indirizzo</b> di ogni riga.</p></div>
+            <div><p class="eyebrow">Nuova acquisizione</p><h2>Acquisisci una via completa</h2><p>Prepara SISTER sull’Elenco indirizzi e indica la via esatta.</p></div>
           </header>
           <div class="street-run-controls">
             <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
-            <button id="streetRunStart" class="button primary">Avvia dry-run</button>
+            <button id="streetRunStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span id="streetRunStartLabel">Avvia dry-run</span></button>
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
-            <button id="streetRunAbandon" class="button danger is-hidden">Abbandona checkpoint</button>
+            <button id="streetRunAbandon" class="button danger is-hidden">Interrompi</button>
           </div>
-          <div id="streetRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Prepara manualmente SISTER fino a Elenco indirizzi. Il checkpoint verrà salvato dopo ogni variante esatta.</p></div>
+          <div id="streetRunSummary" class="street-run-summary is-hidden" aria-live="polite"></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
 
@@ -179,7 +174,7 @@
                   </div>
                 </div>
                 <div class="network-filter-field" role="group" aria-labelledby="networkOwnerAgeName">
-                  <span class="network-filter-name" id="networkOwnerAgeName">Età proprietario</span>
+                  <span class="network-filter-name" id="networkOwnerAgeName">Età proprietario (almeno uno)</span>
                   <div class="network-filter-inputs">
                     <input id="networkMinOwnerAge" type="number" min="0" max="120" placeholder="min" aria-label="Età minima di almeno un proprietario" />
                     <span class="network-filter-dash" aria-hidden="true">&ndash;</span>
@@ -187,7 +182,7 @@
                   </div>
                 </div>
                 <div class="network-filter-field" role="group" aria-labelledby="networkOwnerCountName">
-                  <span class="network-filter-name" id="networkOwnerCountName">Numero di proprietari</span>
+                  <span class="network-filter-name" id="networkOwnerCountName">Numero proprietari (totale)</span>
                   <div class="network-filter-inputs">
                     <input id="networkMinOwnerCount" type="number" min="1" max="100" placeholder="min" aria-label="Numero minimo di proprietari" />
                     <span class="network-filter-dash" aria-hidden="true">&ndash;</span>
@@ -210,17 +205,14 @@
               <small class="network-filter-hint">Piani: terra 0, primo 1, seminterrato -1. Un campo vuoto non limita la ricerca.</small>
             </div>
             <div class="network-run-actions">
-              <button id="networkRunStart" class="button primary">Esplora e prepara coda</button>
-              <button id="networkRunRestart" class="button secondary is-hidden" type="button">Ricomincia da capo</button>
+              <button id="networkRunStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>Esplora e prepara coda</span></button>
               <button id="networkRunCancel" class="button danger is-hidden">Metti in pausa</button>
-              <dl id="networkRunCounters" class="network-run-counters is-hidden"></dl>
             </div>
           </div>
-          <div id="networkRunSummary" class="street-run-summary" aria-live="polite"><p class="empty-message">Non importa nulla: la coda viene salvata e resta lì. Potrai controllarla e avviare l’import quando decidi tu.</p></div>
+          <div id="networkRunSummary" class="street-run-summary is-hidden" aria-live="polite"></div>
           <div id="networkRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>
         </div>
-        <footer class="run-carousel-footer"><button class="carousel-arrow" data-carousel-direction="previous" aria-label="Modalità precedente">←</button><span id="runCarouselPosition">1 di 3</span><button class="carousel-arrow" data-carousel-direction="next" aria-label="Modalità successiva">→</button></footer>
         </section>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
