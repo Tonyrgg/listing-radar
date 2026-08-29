@@ -81,7 +81,8 @@ for (const chunk of chunks) {
   if (error) throw new Error(`Upload ${chunk.path} fallito: ${error.message}`);
 }
 const manifestBody = Buffer.from(JSON.stringify(manifest));
-for (const manifestPath of [`releases/${version}/manifest.json`, "latest.json"]) {
+const versionManifestPath = `releases/${version}/manifest.json`;
+for (const manifestPath of [versionManifestPath, "latest.json"]) {
   const { error } = await supabase.storage.from(bucket).upload(manifestPath, manifestBody, {
     upsert: true,
     contentType: "application/json",
@@ -90,6 +91,28 @@ for (const manifestPath of [`releases/${version}/manifest.json`, "latest.json"])
   if (error) throw new Error(`Upload ${manifestPath} fallito: ${error.message}`);
 }
 
+const { data: publishedManifest, error: manifestError } = await supabase.storage.from(bucket).download("latest.json");
+if (manifestError || !publishedManifest) {
+  throw new Error(`Verifica latest.json fallita: ${manifestError?.message ?? "manifest non disponibile"}`);
+}
+const verifiedManifest = JSON.parse(await publishedManifest.text());
+if (verifiedManifest.version !== version || verifiedManifest.sha256 !== manifest.sha256) {
+  throw new Error("Il manifest legacy pubblicato non coincide con la release GitHub.");
+}
+const releasePrefix = `releases/${version}`;
+const { data: publishedObjects, error: listError } = await supabase.storage.from(bucket).list(releasePrefix, {
+  limit: 1000,
+  sortBy: { column: "name", order: "asc" },
+});
+if (listError) throw new Error(`Verifica parti legacy fallita: ${listError.message}`);
+const publishedByName = new Map((publishedObjects ?? []).map((item) => [item.name, item]));
+for (const chunk of chunks) {
+  const published = publishedByName.get(path.posix.basename(chunk.path));
+  if (!published || Number(published.metadata?.size) !== chunk.size) {
+    throw new Error(`Parte legacy mancante o incompleta: ${chunk.path}.`);
+  }
+}
+
 console.log(
-  `Ponte legacy pubblicato per ${version}. Non usare piu questo comando: le versioni successive passano soltanto da GitHub.`,
+  `Ponte legacy pubblicato e verificato per ${version}. Non usare piu questo comando: le versioni successive passano soltanto da GitHub.`,
 );
