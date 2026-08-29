@@ -20,6 +20,9 @@ Prima di intervenire, leggere `docs/PROJECT-ONBOARDING.md`: contiene architettur
 - Never infer disappearance from a failed crawler or source.
 - Prefer deterministic evidence over inference.
 - Always run relevant regression tests after changes.
+- When worker changes are committed and pushed for delivery, also bump the worker version,
+  publish the corresponding GitHub worker release, and verify the update channel. A source
+  push alone does not deliver the desktop worker. Do not reuse an already published version.
 - Respect the geographic scope Bitonto / Palombaio / Mariotto for future operational data.
 - Use direct HTTP when possible; use Playwright only where it is useful.
 - Keep source-specific crawler logic isolated in adapters.
