@@ -91,11 +91,13 @@ for (const manifestPath of [versionManifestPath, "latest.json"]) {
   if (error) throw new Error(`Upload ${manifestPath} fallito: ${error.message}`);
 }
 
-const { data: publishedManifest, error: manifestError } = await supabase.storage.from(bucket).download("latest.json");
-if (manifestError || !publishedManifest) {
-  throw new Error(`Verifica latest.json fallita: ${manifestError?.message ?? "manifest non disponibile"}`);
+const { data: signedManifest, error: manifestError } = await supabase.storage.from(bucket).createSignedUrl("latest.json", 60);
+if (manifestError || !signedManifest?.signedUrl) {
+  throw new Error(`Verifica latest.json fallita: ${manifestError?.message ?? "URL firmato non disponibile"}`);
 }
-const verifiedManifest = JSON.parse(await publishedManifest.text());
+const manifestResponse = await fetch(`${signedManifest.signedUrl}&verification=${Date.now()}`, { cache: "no-store" });
+if (!manifestResponse.ok) throw new Error(`Verifica latest.json fallita: HTTP ${manifestResponse.status}.`);
+const verifiedManifest = JSON.parse(await manifestResponse.text());
 if (verifiedManifest.version !== version || verifiedManifest.sha256 !== manifest.sha256) {
   throw new Error("Il manifest legacy pubblicato non coincide con la release GitHub.");
 }
