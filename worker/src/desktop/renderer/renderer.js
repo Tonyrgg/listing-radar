@@ -157,7 +157,8 @@ let appState = null,
   propertyRemovalInFlight = false,
   uiCommandSequence = 0,
   latestUiCommand = null,
-  selectedRunSlide = "civic";
+  selectedRunSlide = "civic",
+  networkFreshStart = false;
 let completedImportsRenderKey = null;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
@@ -249,10 +250,13 @@ function setRunSlide(slide) {
   const index = RUN_SLIDES.indexOf(slide);
   document.querySelector(".run-carousel")?.setAttribute("data-active-slide", slide);
   document.querySelectorAll("[data-run-slide]").forEach((panel) => panel.classList.toggle("is-selected", panel.dataset.runSlide === slide));
+  document.querySelectorAll("[data-run-status]").forEach((pill) => pill.classList.toggle("is-selected", pill.dataset.runStatus === slide));
   document.querySelectorAll("[data-run-slide-target]").forEach((button) => {
     const selected = button.dataset.runSlideTarget === slide;
     button.classList.toggle("is-selected", selected);
     button.setAttribute("aria-selected", String(selected));
+    if (selected && button.dataset.runDescription && $("runModeDescription"))
+      $("runModeDescription").textContent = button.dataset.runDescription;
   });
   if ($("runCarouselPosition")) $("runCarouselPosition").textContent = `${index + 1} di ${RUN_SLIDES.length}`;
 }
@@ -315,6 +319,8 @@ function commandIdentity(target) {
       streetRunAbandon: "Ferma e abbandona acquisizione via",
       networkRunStart: "Esplora rete proprietaria",
       networkRunCancel: "Metti in pausa esplorazione rete",
+      networkRunRestart: "Ricomincia esplorazione rete da capo",
+      networkFilterReset: "Azzera i filtri della coda",
       stopAfterNextImportButton: "Ferma dopo il prossimo import",
       stopAllButton: "Ferma tutte le operazioni",
       requestArchiveStart: "Sincronizza archivio richieste",
@@ -1624,10 +1630,33 @@ function renderStreetRunInternalProgress(progress) {
   $("streetRunProgress").classList.remove("is-hidden");
   $("streetRunProgress").querySelector("span").style.width = `${percent}%`;
 }
+function renderNetworkCounters(checkpoint, state) {
+  const counters = $("networkRunCounters");
+  if (!checkpoint) {
+    counters.classList.add("is-hidden");
+    counters.innerHTML = "";
+    return;
+  }
+  const skipped = checkpoint.skipped ?? {},
+    skipTotal = Object.values(skipped).reduce((sum, value) => sum + Number(value || 0), 0),
+    depth = state?.progress?.depth ?? checkpoint.pending?.[0]?.depth ?? null,
+    rows = [
+      // «CF in coda», non «in coda»: qui il numero conta persone da visitare,
+      // e «in coda» in questa app ha sempre voluto dire immobili.
+      ["CF in coda", `${checkpoint.pending?.length ?? 0}`, "Codici fiscali ancora da visitare"],
+      ["Ottenuti", `${checkpoint.acceptedProperties ?? 0}/${checkpoint.settings.targetProperties}`, "Immobili accettati sul totale richiesto"],
+      ["Livello", depth == null ? "—" : `${depth}/${checkpoint.settings.maxDepth}`, "Distanza dai codici fiscali di partenza"],
+      ["Scartati", `${skipTotal}`, "Candidati esclusi dai filtri o dal controllo catastale"],
+    ];
+  counters.classList.remove("is-hidden");
+  counters.innerHTML = rows.map(([name, value, hint]) => `<div title="${esc(hint)}"><dt>${esc(name)}</dt><dd>${esc(value)}</dd></div>`).join("");
+}
 function renderNetworkRun() {
   const state = appState?.networkRun ?? {}, checkpoint = state.checkpoint,
     active = Boolean(state.active), canResume = Boolean(checkpoint) && ["paused", "failed", "running"].includes(checkpoint.status) && !active;
-  const start = $("networkRunStart"), cancel = $("networkRunCancel"), badge = $("networkRunBadge");
+  const start = $("networkRunStart"), cancel = $("networkRunCancel"), badge = $("networkRunBadge"), restart = $("networkRunRestart");
+  if (!canResume) networkFreshStart = false;
+  const resuming = canResume && !networkFreshStart;
   const ids = [
     "networkTargetProperties", "networkMaxDepth", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
     "networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge",
@@ -1648,22 +1677,28 @@ function renderNetworkRun() {
     $("networkMinCivic").value = checkpoint.settings.minCivicNumber ?? "";
     $("networkMaxCivic").value = checkpoint.settings.maxCivicNumber ?? "";
   }
-  ids.forEach((id) => { $(id).disabled = active || canResume; });
-  $("networkFloorValue").disabled = active || canResume || $("networkFloorMode").value === "any";
+  ids.forEach((id) => { $(id).disabled = active || resuming; });
+  $("networkFloorValue").disabled = active || resuming || $("networkFloorMode").value === "any";
+  $("networkFilterReset").disabled = active || resuming;
   badge.className = `status-pill ${active ? "is-running" : checkpoint?.status === "completed" ? "is-complete" : canResume ? "is-resumable" : "is-idle"}`;
   badge.innerHTML = `<span></span>${active ? (state.cancelling ? "Pausa in corso" : "Esplorazione") : checkpoint?.status === "completed" ? "Coda pronta" : canResume ? "Riprendibile" : "Mai avviata"}`;
-  start.textContent = canResume ? "Riprendi esplorazione" : checkpoint?.status === "completed" ? "Avvia nuova esplorazione" : "Esplora e prepara coda";
-  start.dataset.resumeNetwork = canResume ? "true" : "false";
+  start.textContent = resuming ? "Riprendi esplorazione" : checkpoint?.status === "completed" ? "Avvia nuova esplorazione" : "Esplora e prepara coda";
+  start.dataset.resumeNetwork = resuming ? "true" : "false";
   start.disabled = Boolean(appState?.active) || Boolean(appState?.streetRun?.active) || Boolean(appState?.requestArchive?.active) || Boolean(appState?.mandateArchive?.active);
   start.classList.toggle("is-hidden", active);
   cancel.classList.toggle("is-hidden", !active);
   cancel.disabled = Boolean(state.cancelling);
+  // «Ricomincia da capo» non cancella nulla da solo: sblocca i campi e passa
+  // la partenza a resume=false, cosi' la coda salvata muore solo quando parte
+  // davvero la run nuova, con la conferma davanti.
+  restart.classList.toggle("is-hidden", active || !canResume);
+  restart.textContent = networkFreshStart ? "Torna al checkpoint" : "Ricomincia da capo";
+  renderNetworkCounters(checkpoint, state);
   if (!checkpoint) {
-    $("networkRunSummary").innerHTML = `<p class="empty-message">La coda verrà salvata senza importare. Potrai controllarla e poi avviare l’import quando decidi tu.</p>`;
+    $("networkRunSummary").innerHTML = `<p class="empty-message">Non importa nulla: la coda viene salvata e resta lì. Potrai controllarla e avviare l’import quando decidi tu.</p>`;
     $("networkRunProgress").classList.add("is-hidden");
     return;
   }
-  const skipped = checkpoint.skipped ?? {}, skipTotal = Object.values(skipped).reduce((sum, value) => sum + Number(value || 0), 0);
   const settings = checkpoint.settings;
   const range = (min, max, suffix = "") => min == null && max == null ? null : min != null && max != null ? `${min}-${max}${suffix}` : min != null ? `da ${min}${suffix}` : `fino a ${max}${suffix}`;
   const floorLabels = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
@@ -1673,7 +1708,7 @@ function renderNetworkRun() {
     range(settings.minOwnerCount, settings.maxOwnerCount, " proprietari"),
     range(settings.minCivicNumber, settings.maxCivicNumber, " civico"),
   ].filter(Boolean);
-  $("networkRunSummary").innerHTML = `<div class="street-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div><dl><div><dt>In coda</dt><dd>${checkpoint.acceptedProperties ?? 0}/${checkpoint.settings.targetProperties}</dd></div><div><dt>Già CRM</dt><dd>${checkpoint.existingProperties ?? 0}</dd></div><div><dt>CF in attesa</dt><dd>${checkpoint.pending?.length ?? 0}</dd></div><div><dt>Scartati</dt><dd>${skipTotal}</dd></div></dl></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
+  $("networkRunSummary").innerHTML = `<div class="street-run-current network-run-current"><div><small>Rete esplorata</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>${active ? "Ricerca SISTER e controllo CRM" : "Coda congelata, pronta quando vuoi"}</span></div></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"} · già nel CRM ${checkpoint.existingProperties ?? 0}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
   const progress = state.progress;
   const percent = checkpoint.settings.targetProperties ? Math.round(Math.min(100, ((progress?.acceptedProperties ?? checkpoint.acceptedProperties ?? 0) / checkpoint.settings.targetProperties) * 100)) : 0;
   $("networkRunProgress").classList.remove("is-hidden");
@@ -2113,8 +2148,27 @@ document.addEventListener("click", async (event) => {
       }
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
+      if (target.id === "networkRunRestart") {
+        networkFreshStart = !networkFreshStart;
+        renderNetworkRun();
+        return true;
+      }
+      if (target.id === "networkFilterReset") {
+        $("networkFloorMode").value = "any";
+        for (const id of ["networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge", "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic"]) $(id).value = "";
+        $("networkFloorValue").disabled = true;
+        return true;
+      }
       if (target.id === "networkRunStart") {
         const resume = target.dataset.resumeNetwork === "true";
+        if (
+          !resume &&
+          appState?.networkRun?.checkpoint &&
+          !window.confirm(
+            "Ricominciare da capo? La coda salvata e i codici fiscali già visitati vengono sostituiti dalla nuova esplorazione.",
+          )
+        )
+          return COMMAND_CANCELLED;
         return window.propertyWorker.startNetworkRun({
           resume,
           settings: {

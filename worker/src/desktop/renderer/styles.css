@@ -1692,7 +1692,6 @@ dialog[open] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--lr-space-3);
   align-items: end;
-  margin-top: var(--lr-space-3);
 }
 
 .network-run-controls > label:not(.safe-check) {
@@ -1714,60 +1713,129 @@ dialog[open] {
 }
 
 .network-filter-set legend {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lr-space-3);
+  width: 100%;
   padding: 0;
   color: var(--lr-ink);
   font-size: var(--lr-text-record);
   font-weight: var(--lr-weight-strong);
 }
 
-.network-filter-set > p,
-.network-filter-set > small {
-  display: block;
-  margin-top: var(--lr-space-1);
+/* Titolo e spiegazione su una riga sola: la banda dei filtri deve poter
+ * cominciare subito sotto, non dopo un paragrafo. */
+.network-filter-set legend small {
+  flex: 1 1 auto;
   color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-regular);
+}
+
+/* «Azzera» sta sulla riga del titolo, dove si guarda quando si vuole
+ * disfare, non in fondo alla banda dopo tutti i campi. */
+.network-filter-reset {
+  flex: none;
+  min-height: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--lr-accent);
   font-size: var(--lr-text-meta);
 }
 
+.network-filter-reset:hover:not(:disabled) { text-decoration: underline; transform: none; }
+.network-filter-reset:disabled { color: var(--lr-ink-3); }
+
+/* I quattro filtri stanno in banda, uno accanto all'altro: si leggono in
+ * orizzontale come una riga di condizioni, non come quattro domande in fila.
+ * auto-fit li accorpa da sé quando la scheda si stringe — senza @media, che
+ * guarderebbero la finestra invece dello spazio che la scheda ha davvero. */
 .network-filter-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1px var(--lr-space-5);
-  margin-block: var(--lr-space-3);
-  background: var(--lr-line-quiet);
+  grid-template-columns: repeat(auto-fit, minmax(208px, 1fr));
+  gap: var(--lr-space-4) var(--lr-space-5);
+  margin-block: var(--lr-space-4) 0;
 }
 
-.network-filter-row {
+.network-filter-field {
   display: grid;
-  grid-template-columns: minmax(145px, 1fr) minmax(90px, 0.85fr) minmax(90px, 0.85fr);
-  align-items: end;
+  align-content: start;
   gap: var(--lr-space-2);
   min-width: 0;
-  padding-block: var(--lr-space-3);
-  background: var(--lr-surface);
 }
 
-.network-filter-row > label:first-child,
-.network-filter-row > span {
-  align-self: center;
+.network-filter-name {
   color: var(--lr-ink);
   font-size: var(--lr-text-meta);
   font-weight: var(--lr-weight-medium);
 }
 
-.network-filter-row select,
-.network-filter-row input {
-  width: 100%;
+.network-filter-inputs {
+  display: flex;
+  align-items: center;
+  gap: var(--lr-space-2);
+  min-width: 0;
+}
+
+.network-filter-inputs > select,
+.network-filter-inputs > input {
+  flex: 1 1 0;
+  min-width: 0;
   min-height: var(--lr-control-height);
 }
 
-.network-filter-row select { grid-column: 2; }
-.network-filter-row select + .compact-field { grid-column: 3; }
-.compact-field { display: grid; gap: var(--lr-space-1); color: var(--lr-ink-2); font-size: var(--lr-text-label); }
-.network-filter-row input:disabled { cursor: not-allowed; opacity: 0.48; }
+.network-filter-inputs > select { flex-grow: 1.5; }
+.network-filter-inputs > select + input { flex-grow: 0.8; }
+.network-filter-dash { flex: none; color: var(--lr-ink-3); }
 
-/* Niente varianti a più colonne: la scheda vive in mezza schermata, e le
- * @media guardano la finestra, non lo spazio che la scheda ha davvero. Una
- * colonna sola è l'unica larghezza che non si sbriciola. */
+.network-filter-inputs input:disabled,
+.network-filter-inputs select:disabled { cursor: not-allowed; opacity: 0.48; }
+
+.network-toggle-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: center;
+  gap: var(--lr-space-3);
+  margin-top: var(--lr-space-4);
+}
+
+.network-filter-hint { color: var(--lr-ink-3); font-size: var(--lr-text-meta); }
+
+.network-run-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lr-space-3);
+  margin-top: var(--lr-space-2);
+}
+
+/* I contatori stanno accanto ai comandi: sono lo stato che decide se premere
+ * «Riprendi» o «Ricomincia», quindi si leggono senza scendere al riepilogo. */
+.network-run-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2) var(--lr-space-5);
+  margin: 0 0 0 auto;
+}
+
+.network-run-counters > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lr-space-2);
+}
+
+.network-run-counters dt { color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+
+.network-run-counters dd {
+  margin: 0;
+  color: var(--lr-ink);
+  font-family: var(--lr-font-mono);
+  font-size: var(--lr-text-record);
+  font-weight: var(--lr-weight-strong);
+}
 
 .street-run-controls > label:not(.safe-check) {
   display: grid;
@@ -1792,6 +1860,10 @@ dialog[open] {
   gap: var(--lr-space-4);
   align-items: stretch;
 }
+
+/* Senza la dl dei contatori — che ora sta accanto ai comandi — la riga della
+ * rete tiene solo il riquadro: non deve stirarsi per mezza scheda. */
+.network-run-current { grid-template-columns: minmax(200px, 340px); }
 
 .street-run-current > div:first-child {
   display: grid;
@@ -1882,10 +1954,6 @@ dialog[open] {
   .network-run-controls,
   .street-run-current {
     grid-template-columns: 1fr;
-  }
-
-  .network-filter-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .street-run-current dl {
@@ -2533,32 +2601,32 @@ body[data-fase="pronto"] #runControls { display: grid; }
 }
 
 .run-launcher-header {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(580px, 1.6fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 28px;
-  padding: 22px 24px;
+  gap: var(--lr-space-3) var(--lr-space-5);
+  padding: var(--lr-space-4) var(--lr-space-6);
   border-bottom: 1px solid var(--lr-line-quiet);
 }
 
-.run-launcher-header h2 { margin: 3px 0 0; font-size: 1.35rem; }
-
 .run-carousel-nav {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2);
 }
 
+/* Le tre modalità sono pastiglie su una riga: il titolo della sezione lo dà
+ * già la testata, e la descrizione della modalità scelta sta qui accanto
+ * invece che dentro ogni scheda. */
 .run-mode-tab {
   min-width: 0;
-  min-height: 64px;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  min-height: var(--lr-control-height);
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--lr-space-2);
+  padding: 0 var(--lr-space-4);
   border: 1px solid var(--lr-line-quiet);
-  border-radius: 13px;
+  border-radius: var(--lr-radius-pill);
   background: transparent;
   color: var(--lr-ink-2);
   text-align: left;
@@ -2566,7 +2634,9 @@ body[data-fase="pronto"] #runControls { display: grid; }
 }
 
 .run-mode-tab svg {
-  width: 24px;
+  flex: none;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -2574,11 +2644,22 @@ body[data-fase="pronto"] #runControls { display: grid; }
   stroke-linejoin: round;
 }
 
-.run-mode-tab span { min-width: 0; display: grid; gap: 4px; }
-.run-mode-tab b { color: var(--lr-ink); font-size: 0.86rem; }
-.run-mode-tab small { overflow: hidden; color: var(--lr-ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.run-mode-tab b { color: var(--lr-ink); font-size: var(--lr-text-body); font-weight: var(--lr-weight-medium); white-space: nowrap; }
 .run-mode-tab:hover { border-color: var(--lr-line); }
 .run-mode-tab.is-selected { border-color: var(--lr-accent); background: var(--lr-accent-soft); color: var(--lr-accent); }
+.run-mode-tab.is-selected b { color: var(--lr-accent); }
+
+.run-mode-description {
+  flex: 1 1 220px;
+  min-width: 0;
+  margin: 0;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+}
+
+.run-mode-status { flex: none; margin-left: auto; }
+.run-mode-status > [data-run-status] { display: none; }
+.run-mode-status > [data-run-status].is-selected { display: inline-flex; }
 
 .run-carousel { min-height: 430px; }
 .run-slide { display: none !important; }
@@ -2615,7 +2696,6 @@ body[data-fase="pronto"] #runControls { display: grid; }
 .run-carousel select:focus { border-color: var(--lr-accent); outline: 2px solid color-mix(in srgb, var(--lr-accent) 25%, transparent); }
 
 .network-filter-set { border-color: var(--lr-line-quiet); background: transparent; }
-.network-filter-row { border-color: var(--lr-line-quiet); }
 
 .run-carousel-footer {
   display: flex;
@@ -2697,7 +2777,6 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .top-nav { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: center; }
   .header-actions { justify-self: end; }
   .connection-strip .checks-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .run-launcher-header { grid-template-columns: 1fr; }
   .run-carousel .start-card { grid-template-columns: 1fr; }
   .operation-console-body { grid-template-columns: 1fr; }
   .operation-console-body > .command-monitor,
@@ -2715,7 +2794,6 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .page-intro { align-items: start; }
   .connection-strip .checks-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .run-controls { grid-template-columns: 1fr; }
-  .run-carousel-nav { grid-template-columns: 1fr; }
   .run-carousel { min-height: 0; }
   .run-carousel .start-card,
   .run-carousel .street-run-card { min-height: 0; padding: 22px 18px; }
