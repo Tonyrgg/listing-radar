@@ -32,7 +32,7 @@ La `0.15.1` e le versioni precedenti leggono ancora `property-worker-updates/lat
 
 ## Attivazione
 
-Il 29 agosto 2026 il cambiamento è stato integrato in `main`, la release GitHub `property-worker-v0.16.0` è stata pubblicata e verificata integralmente e il ponte legacy è stato pubblicato e verificato nel bucket precedente. Il ponte non deve essere rieseguito: dalla versione successiva il canale è esclusivamente GitHub.
+Il 29 agosto 2026 il cambiamento è stato integrato in `main` e distribuito in Production, la release GitHub `property-worker-v0.16.0` è stata pubblicata e verificata integralmente e il ponte legacy è stato pubblicato e verificato nel bucket precedente. Il ponte non deve essere rieseguito: dalla versione successiva il canale è esclusivamente GitHub.
 
 ## Gate locali eseguiti
 
