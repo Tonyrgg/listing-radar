@@ -280,6 +280,34 @@ export function locationPrecisionLabel(value: string): string {
   return PRECISION_LABELS[value] ?? humanize(value);
 }
 
+/**
+ * Perché di questo annuncio non sappiamo dire dove sia.
+ *
+ * Erano le chiavi del risolutore geografico, scritte a schermo così com'erano:
+ * `postal_code_only_requires_review`. Chi decide ha bisogno di sapere cosa
+ * manca, non come si chiama il controllo che è fallito.
+ */
+const GEOGRAPHY_REASON_LABELS: Record<string, string> = {
+  conflicting_in_scope_and_out_of_scope_place_names:
+    "L'annuncio nomina insieme un posto in zona e uno fuori zona",
+  postal_code_only_requires_review:
+    "C'è solo il CAP 70032: il testo non nomina nessun posto che riconosciamo",
+  no_explicit_monitored_place: "Il testo non nomina Bitonto, Palombaio o Mariotto",
+};
+
+export function geographyReasonLabel(value: string): string {
+  const [key, detail] = value.split(":");
+  const places = detail
+    ?.split(",")
+    .map((place) => humanize(place))
+    .join(", ");
+  if (key === "explicit_monitored_place") return `Nomina un posto in zona: ${places}`;
+  if (key === "explicit_out_of_scope_place") return `Nomina un posto fuori zona: ${places}`;
+  if (key === "street_named_after_place")
+    return `Il nome del paese vicino compare solo dentro una via: ${places}`;
+  return GEOGRAPHY_REASON_LABELS[value] ?? humanize(value);
+}
+
 export function claimKeyLabel(value: string): string {
   return CLAIM_KEY_LABELS[value] ?? humanize(value);
 }

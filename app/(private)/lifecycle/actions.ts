@@ -18,7 +18,20 @@ const AGENCY_STATES = new Set([
   "CLOSED_TO_PRIVATE",
   "OFF_MARKET_NO_SALE_EVIDENCE",
 ]);
-const REVIEW_DECISIONS = new Set(["SAME", "DIFFERENT", "NOT_SURE"]);
+/* Ogni tipo di caso ha le sue risposte: a «sono la stessa casa?» non si
+ * risponde «è fuori zona». Prima l'insieme era uno solo e i casi di posizione
+ * si chiudevano registrando una decisione di identità che non voleva dire
+ * niente. */
+const REVIEW_DECISIONS: Record<string, ReadonlySet<string>> = {
+  IDENTITY: new Set(["SAME", "DIFFERENT", "NOT_SURE"]),
+  GEOGRAPHY: new Set(["IN_SCOPE", "OUT_OF_SCOPE", "NOT_SURE"]),
+};
+const DEFAULT_REVIEW_DECISIONS = REVIEW_DECISIONS.IDENTITY;
+
+const OVERRIDE_TARGET_BY_REVIEW_TYPE: Record<string, "IDENTITY_MATCH" | "GEOGRAPHY_SCOPE"> = {
+  IDENTITY: "IDENTITY_MATCH",
+  GEOGRAPHY: "GEOGRAPHY_SCOPE",
+};
 
 function requiredText(formData: FormData, key: string): string {
   const value = String(formData.get(key) ?? "").trim();
@@ -167,18 +180,20 @@ export async function recordReviewDecision(formData: FormData) {
   /* Con più candidate «stessa casa» da solo non dice quale: la decisione
    * resta scritta insieme alla scheda che stavi guardando. */
   const candidatePropertyId = optionalText(formData, "candidatePropertyId");
-  if (!REVIEW_DECISIONS.has(decision)) {
-    throw new Error("Decisione di revisione non supportata.");
-  }
   const db = getSupabaseServiceClient();
   const review = await db
     .from("review_queue")
-    .select("id,status,property_id")
+    .select("id,status,property_id,review_type")
     .eq("id", reviewId)
     .single();
   if (review.error) throw new Error(review.error.message);
+  const reviewType = String(review.data.review_type);
+  const ammesse = REVIEW_DECISIONS[reviewType] ?? DEFAULT_REVIEW_DECISIONS;
+  if (!ammesse.has(decision)) {
+    throw new Error("Decisione di revisione non supportata.");
+  }
   const override = await new PropertyLifecycleRepository(db).recordManualOverride({
-    targetType: "IDENTITY_MATCH",
+    targetType: OVERRIDE_TARGET_BY_REVIEW_TYPE[reviewType] ?? "IDENTITY_MATCH",
     targetId: reviewId,
     overrideKey: "review_decision",
     overrideValue: candidatePropertyId ? { decision, candidatePropertyId } : decision,

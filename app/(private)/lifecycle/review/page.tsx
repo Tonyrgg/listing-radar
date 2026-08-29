@@ -1,7 +1,10 @@
 import { clsx } from "clsx";
 import {
   ArrowRight,
+  ExternalLink,
   GitCompareArrows,
+  MapPin,
+  MapPinOff,
   ShieldCheck,
   ShieldQuestion,
 } from "lucide-react";
@@ -27,7 +30,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import {
+  geographyReasonLabel,
   humanize,
+  locationPrecisionLabel,
   reviewTypeLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
@@ -72,6 +77,99 @@ function domanda(review: LifecycleReviewItem) {
 
 function nome(property: LifecyclePropertySummary) {
   return formatShouty(property.address ?? property.title);
+}
+
+/**
+ * Un caso di posizione non ha una scheda dietro, e non è un errore.
+ *
+ * Quando il risolutore non sa dire se un annuncio è a Bitonto, la sincronia lo
+ * lascia fuori dall'archivio proprio perché non sa dove metterlo: la proprietà
+ * non nasce, e il caso porta con sé solo l'indirizzo grezzo e il link. La
+ * pagina lo leggeva come una scheda mancante e scriveva «non c'è più», che è
+ * la storia di una cosa cancellata invece di una mai entrata.
+ */
+type ProveGeografiche = {
+  indirizzo: string | null;
+  ragioni: string[];
+  precisione: string | null;
+  link: string | null;
+  coordinate: string | null;
+  cap: string | null;
+};
+
+function testo(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function proveGeografiche(details: Record<string, unknown>): ProveGeografiche {
+  const location = (details.location ?? {}) as Record<string, unknown>;
+  const latitude = location.latitude;
+  const longitude = location.longitude;
+  return {
+    indirizzo: testo(location.rawText),
+    ragioni: Array.isArray(location.reasons)
+      ? location.reasons.filter((reason): reason is string => typeof reason === "string")
+      : [],
+    precisione: testo(location.precision),
+    link: testo(details.canonicalUrl),
+    coordinate:
+      typeof latitude === "number" && typeof longitude === "number"
+        ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+        : null,
+    cap: testo(location.postalCode),
+  };
+}
+
+/** Le prove che ha il caso di posizione: l'indirizzo com'è scritto, e perché non basta. */
+function SchedaPosizione({
+  prove,
+  agenzia,
+}: Readonly<{ prove: ProveGeografiche; agenzia: string | null }>) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label>Come lo scrive l&apos;annuncio</Label>
+        <p className="text-[length:var(--lr-text-record)] font-[650] text-[var(--lr-ink)]">
+          <Dato certainty={prove.indirizzo ? "guess" : "unknown"}>
+            {prove.indirizzo ?? "Nessun indirizzo nell'annuncio"}
+          </Dato>
+        </p>
+        <Meta>
+          {[
+            agenzia ? formatShouty(agenzia) : null,
+            prove.precisione ? locationPrecisionLabel(prove.precisione) : null,
+            prove.cap ? `CAP ${prove.cap}` : null,
+            prove.coordinate,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "—"}
+        </Meta>
+      </div>
+
+      {prove.ragioni.length ? (
+        <div className="space-y-1">
+          <Label tone="warn">Perché non sappiamo dire dov&apos;è</Label>
+          <ul className="space-y-1 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
+            {prove.ragioni.map((ragione) => (
+              <li key={ragione}>{geographyReasonLabel(ragione)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {prove.link ? (
+        <a
+          href={prove.link}
+          target="_blank"
+          rel="noreferrer"
+          className={buttonClass("quiet", { compact: true })}
+        >
+          <ExternalLink aria-hidden="true" className="size-4" />
+          Apri l&apos;annuncio sul sito dell&apos;agenzia
+        </a>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -232,6 +330,12 @@ export default async function DaDecidereePage({
   const caso = casi[indice];
   const prossimo = indice + 2 <= casi.length ? indice + 2 : null;
 
+  /* Un caso di posizione non ha una scheda: la domanda è dov'è l'annuncio,
+   * non a quale scheda somiglia. Le due pagine sono la stessa, ma le prove che
+   * mostrano e le risposte che accettano non lo sono. */
+  const posizione = caso.reviewType === "GEOGRAPHY";
+  const prove = posizione ? proveGeografiche(caso.details) : null;
+
   const candidati = [...caso.candidates].sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0),
   );
@@ -257,7 +361,11 @@ export default async function DaDecidereePage({
       <LifecycleHeader
         eyebrow="Segnali"
         title={domanda(caso)}
-        description="Il sistema elimina automaticamente confronti con vie, prezzi, metrature o locali incompatibili. Qui restano solo casi con prove ancora plausibili."
+        description={
+          posizione
+            ? "L'annuncio non nomina un posto che sappiamo riconoscere: finché non lo dici tu, resta fuori dall'archivio."
+            : "Il sistema elimina automaticamente confronti con vie, prezzi, metrature o locali incompatibili. Qui restano solo casi con prove ancora plausibili."
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {esclusioniAutomatiche > 0 ? (
@@ -296,8 +404,12 @@ export default async function DaDecidereePage({
 
       <Card>
         <CardHeader
-          title="Guarda, e decidi"
-          meta="In verde quello che coincide, in giallo quello che non torna."
+          title={posizione ? "Leggi, e decidi" : "Guarda, e decidi"}
+          meta={
+            posizione
+              ? "Bitonto, Palombaio e Mariotto sono la zona che seguiamo. Il resto no."
+              : "In verde quello che coincide, in giallo quello che non torna."
+          }
           action={
             prossimo ? (
               <Link
@@ -311,31 +423,35 @@ export default async function DaDecidereePage({
           }
         />
         <CardBody className="space-y-5">
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
-            {caso.property ? (
-              <SchedaConfronto
-                property={caso.property}
-                foto={foto.get(caso.property.id)}
-                etichetta="La scheda in esame"
-              />
-            ) : (
-              <EmptyState
-                title="La scheda in esame non c'è più"
-                description="Il caso resta aperto, ma la proprietà a cui si riferiva non è più nell'archivio."
-              />
-            )}
+          {prove ? <SchedaPosizione prove={prove} agenzia={caso.agencyName} /> : null}
 
-            {migliore ? (
-              <SchedaConfronto
-                property={migliore.property}
-                foto={foto.get(migliore.property.id)}
-                etichetta="Le somiglia di più"
-                riferimento={caso.property}
-                punteggio={migliore.score}
-                contraddizioni={migliore.contradictions}
-              />
-            ) : null}
-          </div>
+          {posizione ? null : (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
+              {caso.property ? (
+                <SchedaConfronto
+                  property={caso.property}
+                  foto={foto.get(caso.property.id)}
+                  etichetta="La scheda in esame"
+                />
+              ) : (
+                <EmptyState
+                  title="La scheda in esame non c'è più"
+                  description="Il caso resta aperto, ma la proprietà a cui si riferiva non è più nell'archivio."
+                />
+              )}
+
+              {migliore ? (
+                <SchedaConfronto
+                  property={migliore.property}
+                  foto={foto.get(migliore.property.id)}
+                  etichetta="Le somiglia di più"
+                  riferimento={caso.property}
+                  punteggio={migliore.score}
+                  contraddizioni={migliore.contradictions}
+                />
+              ) : null}
+            </div>
+          )}
 
           {altri.length ? (
             <div>
@@ -367,35 +483,54 @@ export default async function DaDecidereePage({
                   value={migliore.property.id}
                 />
               ) : null}
-              <Campo label="Cosa ti fa dire di sì o di no?">
+              <Campo
+                label={
+                  posizione
+                    ? "Come fai a dirlo?"
+                    : "Cosa ti fa dire di sì o di no?"
+                }
+              >
                 <Testo
                   name="reason"
                   required
                   minLength={5}
-                  placeholder="Es. stesse foto, stesso piano, prezzo diverso perché ribassato"
+                  placeholder={
+                    posizione
+                      ? "Es. via Modugno è a Bitonto, la zona Santi Medici pure"
+                      : "Es. stesse foto, stesso piano, prezzo diverso perché ribassato"
+                  }
                 />
               </Campo>
               <div className={styles.decisionGrid}>
                 <PendingSubmitButton
                   type="submit"
                   name="decision"
-                  value="SAME"
+                  value={posizione ? "IN_SCOPE" : "SAME"}
                   pendingLabel="Registro"
                   icon={
-                    <GitCompareArrows aria-hidden="true" className="size-4" />
+                    posizione ? (
+                      <MapPin aria-hidden="true" className="size-4" />
+                    ) : (
+                      <GitCompareArrows aria-hidden="true" className="size-4" />
+                    )
                   }
                   className={styles.primaryAction}
                 >
-                  È la stessa casa
+                  {posizione ? "È nella zona che seguiamo" : "È la stessa casa"}
                 </PendingSubmitButton>
                 <PendingSubmitButton
                   type="submit"
                   name="decision"
-                  value="DIFFERENT"
+                  value={posizione ? "OUT_OF_SCOPE" : "DIFFERENT"}
                   pendingLabel="Registro"
+                  icon={
+                    posizione ? (
+                      <MapPinOff aria-hidden="true" className="size-4" />
+                    ) : undefined
+                  }
                   className={styles.secondaryAction}
                 >
-                  Sono due case diverse
+                  {posizione ? "È fuori zona" : "Sono due case diverse"}
                 </PendingSubmitButton>
                 <PendingSubmitButton
                   type="submit"
@@ -433,21 +568,36 @@ export default async function DaDecidereePage({
                 href={`/lifecycle/review?caso=${indice + 2 + posizione}`}
                 className="flex items-center gap-3 border-t border-[var(--lr-line-quiet)] px-3 py-2.5 transition-colors first:border-t-0 hover:bg-[var(--lr-raised)]"
               >
-                <span className="block h-12 w-16 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]">
-                  {altro.property && foto.get(altro.property.id) ? (
-                    <span
-                      className="block size-full bg-cover bg-center"
-                      style={{
-                        backgroundImage: `url("${foto.get(altro.property.id)}")`,
-                      }}
-                    />
-                  ) : null}
-                </span>
+                {/* Un caso di posizione non ha una scheda, e quindi non ha una
+                    foto: il riquadro vuoto prometteva un'immagine che non
+                    poteva arrivare. */}
+                {altro.property ? (
+                  <span className="block h-12 w-16 shrink-0 overflow-hidden rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)]">
+                    {foto.get(altro.property.id) ? (
+                      <span
+                        className="block size-full bg-cover bg-center"
+                        style={{
+                          backgroundImage: `url("${foto.get(altro.property.id)}")`,
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                ) : (
+                  <MapPin
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-[var(--lr-ink-3)]"
+                  />
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
                     {altro.property
                       ? nome(altro.property)
-                      : "Scheda non più in archivio"}
+                      : altro.reviewType === "GEOGRAPHY"
+                        ? formatShouty(
+                            proveGeografiche(altro.details).indirizzo ??
+                              "Annuncio senza indirizzo",
+                          )
+                        : "Scheda non più in archivio"}
                   </span>
                   <span className="block text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                     {domanda(altro)}

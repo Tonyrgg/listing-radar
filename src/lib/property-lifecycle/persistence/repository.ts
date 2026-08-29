@@ -1512,15 +1512,84 @@ export class PropertyLifecycleRepository {
     }
   }
 
+  private geographyDedupeKey(agencyId: string, sourceKey: string): string {
+    return `geography:${agencyId}:${sourceKey}`;
+  }
+
+  /**
+   * La risposta che una persona ha già dato su dove sta questo annuncio.
+   *
+   * Un caso di posizione non ha una proprietà dietro: l'annuncio resta fuori
+   * dall'archivio proprio perché non sappiamo dove metterlo. La decisione vive
+   * quindi sulla riga della coda, ed è lì che la sincronia successiva la va a
+   * cercare prima di scartare di nuovo lo stesso annuncio.
+   */
+  async resolvedGeographyScope(input: {
+    agencyId: string;
+    sourceKey: string;
+  }): Promise<"IN_SCOPE" | "OUT_OF_SCOPE" | null> {
+    const { data, error } = await this.db
+      .from("review_queue")
+      .select("resolution")
+      .eq("dedupe_key", this.geographyDedupeKey(input.agencyId, input.sourceKey))
+      .eq("status", "RESOLVED")
+      .maybeSingle();
+    throwIfError(error);
+    const resolution = (data as { resolution: unknown } | null)?.resolution;
+    const decision =
+      resolution && typeof resolution === "object"
+        ? (resolution as { decision?: unknown }).decision
+        : null;
+    return decision === "IN_SCOPE" || decision === "OUT_OF_SCOPE" ? decision : null;
+  }
+
+  /**
+   * Il caso che non ha più niente da chiedere.
+   *
+   * Quando il risolutore impara a leggere un indirizzo che prima non capiva —
+   * «via Modugno» è una via di Bitonto, non il comune di Modugno — i casi già
+   * aperti su quegli annunci restavano in coda per sempre, perché nessuno li
+   * chiudeva: la sincronia smetteva soltanto di riproporli. Qui si chiudono da
+   * soli, e si dice chi li ha chiusi.
+   *
+   * Le righe già decise da una persona non si toccano: il filtro sullo stato è
+   * quello che le protegge.
+   */
+  async closeSettledGeographyReview(input: {
+    agencyId: string;
+    sourceKey: string;
+    scope: "IN_SCOPE" | "OUT_OF_SCOPE";
+    reasons: string[];
+  }): Promise<void> {
+    const { error } = await this.db
+      .from("review_queue")
+      .update({
+        status: "RESOLVED",
+        resolution: {
+          decision: input.scope,
+          reason: "Il risolutore geografico ora sa leggere questo indirizzo.",
+          reasons: input.reasons,
+          settledBy: "STRICT_PLACE_NAME_V1",
+        },
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("dedupe_key", this.geographyDedupeKey(input.agencyId, input.sourceKey))
+      .in("status", ["OPEN", "IN_REVIEW"]);
+    throwIfError(error);
+  }
+
   async recordGeographyReview(input: {
     agencyId: string;
     syncRunId: string;
     listing: NormalizedListingV2;
   }): Promise<void> {
+    /* `status` non è nel payload di proposito: l'upsert su `dedupe_key`
+     * riscrive le colonne che gli passi, e rimetterci 'OPEN' faceva
+     * riaprire a ogni sincronia i casi già decisi. La coda non si è mai
+     * svuotata per questo. */
     const { error } = await this.db.from("review_queue").upsert(
       {
         review_type: "GEOGRAPHY",
-        status: "OPEN",
         agency_id: input.agencyId,
         sync_run_id: input.syncRunId,
         title: "Listing geography requires review",
@@ -1529,7 +1598,7 @@ export class PropertyLifecycleRepository {
           canonicalUrl: input.listing.source.canonicalUrl,
           location: input.listing.location,
         },
-        dedupe_key: `geography:${input.agencyId}:${input.listing.source.sourceKey}`,
+        dedupe_key: this.geographyDedupeKey(input.agencyId, input.listing.source.sourceKey),
       },
       { onConflict: "dedupe_key" },
     );
@@ -1805,6 +1874,7 @@ export class PropertyLifecycleRepository {
       | "PRIVATE_PUBLICATION"
       | "EVENT"
       | "IDENTITY_MATCH"
+      | "GEOGRAPHY_SCOPE"
       | "MARKET_AGE";
     targetId: string;
     overrideKey: string;

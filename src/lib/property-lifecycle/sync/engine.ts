@@ -74,9 +74,48 @@ export async function runAgencySync(input: {
         const listing = await input.adapter.normalize(document);
         counts.normalizedCount += 1;
 
-        if (listing.location.scope !== "IN_SCOPE") {
+        /* Un dubbio già sciolto da una persona non si ripropone: quando
+         * qualcuno ha detto dove sta questo annuncio, la sua risposta vale più
+         * del risolutore, entra nella posizione salvata e la coda non lo
+         * rivede. */
+        if (listing.location.scope !== "REVIEW") {
+          /* Il risolutore ha imparato a leggere questo indirizzo: il caso che
+           * ne era nato non ha più niente da chiedere. */
+          await input.repository.closeSettledGeographyReview({
+            agencyId: agency.id,
+            sourceKey: listing.source.sourceKey,
+            scope: listing.location.scope,
+            reasons: listing.location.reasons,
+          });
+        }
+
+        const deciso =
+          listing.location.scope === "REVIEW"
+            ? await input.repository.resolvedGeographyScope({
+                agencyId: agency.id,
+                sourceKey: listing.source.sourceKey,
+              })
+            : null;
+        const situato: NormalizedListingV2 = deciso
+          ? {
+              ...listing,
+              location: {
+                ...listing.location,
+                scope: deciso,
+                municipality:
+                  deciso === "IN_SCOPE"
+                    ? listing.location.municipality ?? "Bitonto"
+                    : listing.location.municipality,
+                resolutionMethod: "HUMAN_DECISION_V1",
+                resolutionConfidence: 1,
+                reasons: [...listing.location.reasons, "human_geography_decision"],
+              },
+            }
+          : listing;
+
+        if (situato.location.scope !== "IN_SCOPE") {
           counts.excludedCount += 1;
-          if (listing.location.scope === "REVIEW") {
+          if (situato.location.scope === "REVIEW") {
             await input.repository.recordGeographyReview({
               agencyId: agency.id,
               syncRunId,
@@ -88,13 +127,13 @@ export async function runAgencySync(input: {
 
         counts.inScopeCount += 1;
         const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)
-          ? await (input.assetProcessor ?? processListingAssets)(listing)
+          ? await (input.assetProcessor ?? processListingAssets)(situato)
           : { assets: [], warnings: [] };
         assetWarnings.push(...assetResult.warnings);
         const persisted = await input.repository.persistObservation(
           agency.id,
           syncRunId,
-          listing,
+          situato,
           assetResult.assets,
         );
         if (persisted.createdPublication) {
