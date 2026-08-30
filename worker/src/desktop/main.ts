@@ -628,6 +628,47 @@ function repository(config = workerConfig()) {
   return value;
 }
 
+/**
+ * Una run che si ferma prima di acquisire qualcosa non è un'acquisizione.
+ *
+ * La lavorazione nasce all'inizio della run e `setJobContext` la porta subito
+ * a «running». Se poi la run muore al primo passo — SISTER non preparato,
+ * nessun seme da cui partire — quella riga resta lì, e il pannello la mostra
+ * fra le «Pronte da importare» con zero immobili: importarla non farebbe
+ * niente. Qui la riga vuota viene tolta.
+ *
+ * Se invece qualcosa era già stato raccolto, la lavorazione resta e prende i
+ * totali veri: è da lì che si riprende. I totali arrivano dal database
+ * perché durante la run non vengono aggiornati riga per riga, e una
+ * lavorazione interrotta a metà mostrerebbe altrimenti zero immobili pur
+ * avendone.
+ */
+async function chiudiAcquisizioneInterrotta(jobId: string | null, motivo: string) {
+  if (!jobId) return;
+  try {
+    const repo = repository(workerConfig({ dryRun: false }));
+    const totali = await repo.countAcquisition(jobId);
+    if (!totali.properties) {
+      await repo.deleteJob(jobId);
+      pushActivity("Nessun immobile acquisito: la lavorazione vuota non resta fra le acquisizioni.", "info");
+      return;
+    }
+    await repo.updateJob(jobId, {
+      total_properties: totali.properties,
+      total_people: totali.people,
+      status: "paused",
+      saved_at: new Date().toISOString(),
+      error_message: motivo,
+    });
+    pushActivity(`Acquisizione interrotta con ${totali.properties} immobili già raccolti: resta salvata e riprendibile.`, "warning");
+  } catch (error) {
+    pushActivity(
+      `Lavorazione interrotta non ripulita: ${error instanceof Error ? error.message : String(error)}`,
+      "warning",
+    );
+  }
+}
+
 async function purgeJob(jobId: string) {
   const config = workerConfig();
   const repo = repository(config);
@@ -1100,6 +1141,14 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         mode: longRunMode,
         importJobId,
         acquireOwners: true,
+        /* La via la cerca il worker. Prima toccava all'operatore portare SISTER
+         * fino all'Elenco indirizzi, e una run avviata su una pagina qualsiasi
+         * moriva al primo passo. La preparazione sceglie BITONTO, il toponimo
+         * che corrisponde e la dizione esatta: le omonimie restano filtrate
+         * dalla stessa regola di prima, quindi traverse, vie private e contrade
+         * continuano a non entrare. Vale anche a run avviata: se la pagina si
+         * perde per strada, viene rifatta invece di fermare tutto. */
+        prepareSearchAutomatically: true,
         isCancelled: () => streetRunCancellationRequested,
         onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
           const [savedProperty] = await liveRepository.insertProperties(importJobId!, [{
@@ -1211,7 +1260,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       activeStreetBrowser = null;
       await tabs.browser.close().catch(() => undefined);
     }
-  }).catch((error) => {
+  }).catch(async (error) => {
     if (streetRunAbandonRequested) {
       clearRetryMonitor();
       pushActivity("Run via arrestata dall'operatore", "warning");
@@ -1220,6 +1269,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     streetRunError = error instanceof Error ? error.message : String(error);
     reportRunInterruption("street", "Acquisizione via interrotta");
     pushActivity(streetRunError, "error");
+    await chiudiAcquisizioneInterrotta(streetImportJobId, streetRunError);
     void recordDiagnosticErrorSafely({
       source: "street-run",
       status: "failed",
@@ -1268,8 +1318,21 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
 
 async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings> }) {
   reserveOperation("network");
+  const settings = normalizeNetworkSettings(input.settings);
+  const config = workerConfig({ dryRun: false });
+  let seeds: string[];
   try {
     requireCloudAvailable(await healthChecks({ silent: true }));
+    /* I punti di partenza si leggono prima di aprire il browser e prima di
+     * creare la lavorazione: senza semi non c'è niente da esplorare, e una run
+     * che nasce per morire al primo passo lascerebbe soltanto una riga vuota
+     * fra le acquisizioni pronte. */
+    seeds = await repository(config).listVerifiedNetworkSeedTaxCodes(settings.seedCount);
+    if (!seeds.length) {
+      throw new Error(
+        "La rete proprietari parte dalle persone già verificate nel gestionale da un'acquisizione precedente, e l'archivio del worker non ne contiene ancora nessuna. Acquisisci prima una via completa o un immobile singolo e importalo: da lì la rete avrà i suoi punti di partenza.",
+      );
+    }
   } catch (error) {
     releaseOperationReservation("network");
     throw error;
@@ -1282,17 +1345,16 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
   pushActivity("Nuova esplorazione rete proprietaria avviata", "info");
   await publishState();
 
-  const config = workerConfig({ dryRun: false });
+  let networkImportJobId: string | null = null;
   const runPromise = connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
     activeNetworkBrowser = tabs.browser;
     try {
       const liveRepository = repository(config);
-      const settings = normalizeNetworkSettings(input.settings);
       const jobId = (await liveRepository.createJob("automatic")).id;
+      networkImportJobId = jobId;
       await liveRepository.setJobContext(jobId, {
         municipality: "BITONTO", street: null, civicNumber: null, sourceUrl: tabs.sisterPage.url(),
       });
-      const seeds = await liveRepository.listVerifiedNetworkSeedTaxCodes(settings.seedCount);
       const scanner = new SisterNetworkRun(
         new PlaywrightSisterAdapter(tabs.sisterPage),
         new PlaywrightCrmAdapter(tabs.crmPage, false),
@@ -1351,10 +1413,11 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
       activeNetworkBrowser = null;
       await tabs.browser.close().catch(() => undefined);
     }
-  }).catch((error) => {
+  }).catch(async (error) => {
     networkRunError = error instanceof Error ? error.message : String(error);
     reportRunInterruption("network", "Esplorazione rete interrotta");
     pushActivity(networkRunError, "error");
+    await chiudiAcquisizioneInterrotta(networkImportJobId, networkRunError);
   }).finally(async () => {
     networkRunPromise = null;
     networkRunActive = false;

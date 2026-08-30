@@ -345,7 +345,7 @@ Gli screenshot diagnostici sono separati, hanno retention configurabile e non de
 
 ### Preparazione
 
-Per ora Comune, toponimo e testo indirizzo vengono preparati manualmente. Il desktop parte dalla pagina `Elenco indirizzi`. I comandi di preparazione automatica restano disponibili soltanto per diagnostica CLI e non sono attivati nel flusso desktop.
+Comune, toponimo e testo indirizzo li imposta il worker. Il desktop avvia la ricerca per dizione esatta su BITONTO e prosegue dall'`Elenco indirizzi` che ne risulta; la preparazione viene rifatta anche a run avviata, se la pagina si perde per strada, invece di fermare la lavorazione. Le omonimie restano filtrate da `exactStreetVariants`: traverse, vie private e contrade non entrano. Il flusso manuale resta valido — se l'`Elenco indirizzi` è già aperto viene usato quello — e il comando CLI `--auto-prepare-search` resta per la diagnostica.
 
 ### Strategia corrente
 

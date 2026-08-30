@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -243,4 +244,119 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   }, 20_000);
+});
+
+describe("preparazione automatica della via", () => {
+  /**
+   * SISTER servito in finto: form di ricerca, elenco indirizzi, risultati.
+   *
+   * Il form registra cosa gli e' stato chiesto, cosi' il test verifica che la
+   * preparazione scelga BITONTO, il toponimo giusto e la dizione esatta invece
+   * di limitarsi a constatare che la pagina e' cambiata.
+   */
+  function sisterFinto() {
+    const richieste: Array<Record<string, string>> = [];
+    const server = createServer((request, response) => {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      const [percorso, query] = (request.url ?? "/").split("?");
+      if (percorso === "/cerca") {
+        richieste.push(Object.fromEntries(new URLSearchParams(query ?? "")));
+        response.end(`<!doctype html><body>
+          <form name="SceltaIndirizzoForm" action="/results">
+            <select name="indirizzoSel">
+              <option value="542250#236#VIA BORGO SAN FRANCESCO">VIA BORGO SAN FRANCESCO</option>
+              <option value="557509#236#VIA BORGO SAN FRANCESCO">VIA BORGO SAN FRANCESCO</option>
+              <option value="38719#812#VIA PRIVATA BORGO SAN FRANCESCO">VIA PRIVATA BORGO SAN FRANCESCO</option>
+            </select>
+            <input name="numCivicoDal"><input name="numCivicoAl"><input name="ricerca" type="submit" value="Ricerca">
+          </form>
+        </body>`);
+        return;
+      }
+      response.end(`<!doctype html><body>
+        <form name="ricercaIndForm" action="/cerca" method="get">
+          <select name="comuneCat"><option value="">Scegli</option><option value="A893">BITONTO</option><option value="A662">BARI</option></select>
+          <select name="toponimo"><option value="0">TUTTI</option><option value="236">VIA</option><option value="812">VIALE</option></select>
+          <input name="indirizzo">
+          <label><input name="parIntera" type="radio" value="0">Contiene</label>
+          <label><input name="parIntera" type="radio" value="1">Dizione esatta</label>
+          <input name="ricerca" type="submit" value="Ricerca">
+        </form>
+      </body>`);
+    });
+    return { server, richieste };
+  }
+
+  it("compila comune, toponimo e dizione esatta, e tiene solo le omonimie esatte", async () => {
+    const { server, richieste } = sisterFinto();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/`);
+      const run = new SisterStreetRun(page, {
+        prepareSearchAutomatically: true,
+        isCancelled: () => true,
+      });
+
+      const checkpoint = await run.run("via borgo san francesco");
+
+      expect(richieste).toHaveLength(1);
+      expect(richieste[0]).toMatchObject({
+        comuneCat: "A893",
+        toponimo: "236",
+        indirizzo: "BORGO SAN FRANCESCO",
+        parIntera: "1",
+      });
+      /* La via privata ha lo stesso nome dentro, ma non e' la stessa via. */
+      expect(checkpoint.variants.map((variant) => variant.sourceId)).toEqual(["542250", "557509"]);
+      expect(checkpoint.requestedStreet).toBe("VIA BORGO SAN FRANCESCO");
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 30_000);
+
+  it("senza preparazione automatica il comportamento resta quello di prima", async () => {
+    const { server, richieste } = sisterFinto();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/`);
+
+      await expect(new SisterStreetRun(page).run("via borgo san francesco")).rejects.toMatchObject({
+        status: "needs_review",
+        details: { action: "street-run-manual-address-list" },
+      });
+      expect(richieste).toHaveLength(0);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 30_000);
+
+  it("riusa l'Elenco indirizzi gia' aperto sulla via giusta senza rifare la ricerca", async () => {
+    const { page, locator } = preparedAddressListPage([
+      { text: "VIA BORGO SAN FRANCESCO", value: "542250#236#VIA BORGO SAN FRANCESCO" },
+      { text: "VIA PRIVATA BORGO SAN FRANCESCO", value: "38719#812#VIA PRIVATA BORGO SAN FRANCESCO" },
+    ]);
+    const run = new SisterStreetRun(page, {
+      prepareSearchAutomatically: true,
+      isCancelled: () => true,
+    });
+
+    const checkpoint = await run.run("via borgo san francesco");
+
+    expect(checkpoint.variants.map((variant) => variant.sourceId)).toEqual(["542250"]);
+    /* Il form di ricerca non viene nemmeno cercato: la pagina buona era gia' li'. */
+    expect(locator.mock.calls.map(([selector]) => selector)).not.toContain('form[name="ricercaIndForm"]');
+  });
+
+  it("il desktop chiede la preparazione automatica", () => {
+    const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
+    expect(main).toContain("prepareSearchAutomatically: true,");
+  });
 });

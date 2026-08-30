@@ -143,7 +143,7 @@ export class SisterStreetRun {
       current: 0, total: 0, address: null,
     });
     const variants = this.prepareSearchAutomatically
-      ? await this.prepareStreet(requestedStreet)
+      ? await this.prepareStreetOrReuseOpenList(requestedStreet)
       : await this.readPreparedAddressList(requestedStreet, Boolean(resume));
     const normalizedRequestedStreet = normalizeSisterStreet(requestedStreet);
     if (resume && normalizeSisterStreet(resume.requestedStreet) !== normalizedRequestedStreet) {
@@ -384,6 +384,24 @@ export class SisterStreetRun {
         true,
       );
     }
+  }
+
+  /**
+   * L'Elenco indirizzi già aperto sulla via giusta vale quanto una ricerca.
+   *
+   * Chi prepara SISTER a mano non deve vedersi rifare tutto da capo: se la
+   * pagina aperta contiene già la via esatta richiesta, si riparte da lì. In
+   * ogni altro caso — pagina qualunque, via diversa, elenco perso per strada —
+   * la ricerca la imposta il worker.
+   */
+  private async prepareStreetOrReuseOpenList(requestedStreet: string): Promise<SisterStreetVariant[]> {
+    await this.assertSession();
+    const select = this.page.locator(ADDRESS_SELECT);
+    if (await select.count() === 1) {
+      const aperte = exactStreetVariants(normalizeSisterStreet(requestedStreet), await readOptions(select));
+      if (aperte.length) return aperte;
+    }
+    return this.prepareStreet(requestedStreet);
   }
 
   private async prepareStreet(requestedStreet: string): Promise<SisterStreetVariant[]> {

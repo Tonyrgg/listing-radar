@@ -572,6 +572,22 @@ export class WorkerRepository {
       .filter((value): value is string => typeof value === "string" && value.length > 0);
   }
 
+  /**
+   * Quante case e quante persone ha davvero raccolto una lavorazione.
+   *
+   * `loadGraph` riporterebbe indietro le righe intere solo per contarle: qui
+   * servono i due numeri, e li chiede il database.
+   */
+  async countAcquisition(jobId: string): Promise<{ properties: number; people: number }> {
+    const [properties, people] = await Promise.all([
+      this.client.from("property_worker_properties").select("id", { head: true, count: "exact" }).eq("job_id", jobId),
+      this.client.from("property_worker_people").select("id", { head: true, count: "exact" }).eq("job_id", jobId),
+    ]);
+    const failure = properties.error ?? people.error;
+    if (failure) throw new Error(`Conteggio della lavorazione fallito: ${failure.message}`);
+    return { properties: properties.count ?? 0, people: people.count ?? 0 };
+  }
+
   async deleteJob(jobId: string): Promise<void> {
     const { error } = await this.client
       .from("property_worker_jobs")
