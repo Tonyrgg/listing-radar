@@ -1,6 +1,6 @@
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { listRequests, listZones } from "@/lib/matching/repository";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaRicerca } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 import type { InternalZone, PortfolioProperty, PropertyRequest } from "@/lib/matching/types";
 
@@ -62,7 +62,7 @@ export async function cercaOvunque(termine: string, limite = 8): Promise<Risulta
   const minuscolo = parola.toLocaleLowerCase("it");
 
   const [mercato, nostre, richieste, zone] = await Promise.all([
-    loadLifecycleView((repository) => repository.searchProperties(parola, limite)),
+    vistaRicerca(parola, limite),
     nostreCase(modello, limite),
     listRequests(),
     listZones(),

@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electro
 import dotenv from "dotenv";
 import { z } from "zod";
 
-import { ExcelContactsAdapter, REQUIRED_CONTACT_COLUMNS } from "../adapters/excel/index.js";
+import { REQUIRED_CONTACT_COLUMNS, verifyContactsFile } from "../adapters/excel/index.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
@@ -576,10 +576,36 @@ function internalEnvironment(): Record<string, string> {
   return readEnvironmentFiles(preferences.environmentFilePath);
 }
 
+/**
+ * La configurazione, ricostruita solo quando cambia.
+ *
+ * `workerConfig()` sembrava una lettura da niente, ed e' il pezzo di codice
+ * piu' chiamato dell'app: il controllo di Chrome la chiede ogni due secondi,
+ * il riepilogo cloud ogni dieci, i controlli ogni trenta. Ogni volta faceva
+ * per intero il lavoro piu' caro che ci sia qui dentro: decifrare la
+ * configurazione protetta da Windows, rileggere e sgranare i file `.env`, e
+ * rivalidare con Zod tutte le variabili d'ambiente del processo. Tutto
+ * sincrono, nel processo che disegna la finestra.
+ *
+ * La chiave tiene solo cio' da cui la configurazione dipende davvero: appena
+ * una preferenza cambia, la chiave cambia con lei e si rilegge.
+ */
+let configurazioneInCache: { chiave: string; valore: WorkerConfig } | null = null;
+
 function workerConfig(overrides: Partial<Preferences> = {}): WorkerConfig {
   const merged = { ...preferences, ...overrides };
+  const chiave = JSON.stringify([
+    merged.contactsExcelPath ?? null,
+    merged.mode,
+    merged.dryRun,
+    merged.keepAcquisition,
+    merged.environmentFilePath ?? null,
+    merged.encryptedEnvironment ?? null,
+  ]);
+  if (configurazioneInCache?.chiave === chiave) return configurazioneInCache.valore;
+
   const fileEnvironment = internalEnvironment();
-  return loadConfig({
+  const valore = loadConfig({
     ...process.env,
     ...fileEnvironment,
     ...(merged.contactsExcelPath ? { CONTACTS_EXCEL_PATH: merged.contactsExcelPath } : {}),
@@ -587,6 +613,8 @@ function workerConfig(overrides: Partial<Preferences> = {}): WorkerConfig {
     WORKER_DRY_RUN: String(merged.dryRun),
     WORKER_KEEP_ACQUISITION: String(merged.keepAcquisition),
   });
+  configurazioneInCache = { chiave, valore };
+  return valore;
 }
 
 function repository(config = workerConfig()) {
@@ -648,6 +676,33 @@ async function refreshSnapshotRemoteData() {
     }
     try {
       const repo = repository(config);
+
+      /* Le due sincronizzazioni d'archivio non dipendono dai job: aspettarle in
+       * fila costava quattro andate e ritorni al cloud, uno dopo l'altro, a
+       * ogni aggiornamento della plancia. Partono adesso, insieme al resto. */
+      const richieste = (async () => {
+        try {
+          await withOperationTimeout(repo.requestArchiveHealthCheck(), 8_000, "Verifica archivio richieste");
+          return {
+            run: await withOperationTimeout(repo.latestRequestImportRun(), 8_000, "Ultima sincronizzazione richieste"),
+            error: null as string | null,
+          };
+        } catch (error) {
+          return { run: null, error: error instanceof Error ? error.message : String(error) };
+        }
+      })();
+      const incarichi = (async () => {
+        try {
+          await withOperationTimeout(repo.mandateArchiveHealthCheck(), 8_000, "Verifica archivio incarichi");
+          return {
+            run: await withOperationTimeout(repo.latestMandateImportRun(), 8_000, "Ultima sincronizzazione incarichi"),
+            error: null as string | null,
+          };
+        } catch (error) {
+          return { run: null, error: error instanceof Error ? error.message : String(error) };
+        }
+      })();
+
       const [savedJobs, completedJobsPage] = await withOperationTimeout(
         Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]),
         12_000,
@@ -673,18 +728,11 @@ async function refreshSnapshotRemoteData() {
         15_000,
         "Aggiornamento cronologia import",
       );
-      try {
-        await withOperationTimeout(repo.requestArchiveHealthCheck(), 8_000, "Verifica archivio richieste");
-        next.latestRequestImport = await withOperationTimeout(repo.latestRequestImportRun(), 8_000, "Ultima sincronizzazione richieste");
-      } catch (error) {
-        next.requestImportSchemaError = error instanceof Error ? error.message : String(error);
-      }
-      try {
-        await withOperationTimeout(repo.mandateArchiveHealthCheck(), 8_000, "Verifica archivio incarichi");
-        next.latestMandateImport = await withOperationTimeout(repo.latestMandateImportRun(), 8_000, "Ultima sincronizzazione incarichi");
-      } catch (error) {
-        next.mandateImportSchemaError = error instanceof Error ? error.message : String(error);
-      }
+      const [esitoRichieste, esitoIncarichi] = await Promise.all([richieste, incarichi]);
+      next.latestRequestImport = esitoRichieste.run;
+      next.requestImportSchemaError = esitoRichieste.error;
+      next.latestMandateImport = esitoIncarichi.run;
+      next.mandateImportSchemaError = esitoIncarichi.error;
       if (activeJobId) {
         const activeJob = completedJobs.find((job) => job.id === activeJobId)
           ?? savedJobs.find((job) => job.id === activeJobId)
@@ -732,8 +780,17 @@ async function assertSpazioPerConservare() {
 }
 
 async function stateSnapshot() {
-  if (!snapshotRemoteLoadedAt) await refreshSnapshotRemoteData();
-  else if (Date.now() - snapshotRemoteLoadedAt > 10_000) void refreshSnapshotRemoteData().then(() => publishState());
+  /* La plancia non aspetta il cloud per comparire.
+   *
+   * Al primo disegno il riepilogo remoto veniva atteso: finche' Supabase non
+   * rispondeva — e se e' lento o irraggiungibile puo' volerci parecchio — la
+   * finestra restava vuota, e sembrava che il programma non partisse. Adesso
+   * la plancia si disegna subito con quello che c'e' in casa, e le sezioni
+   * che vengono dal cloud si riempiono da sole appena arrivano: la lettura
+   * chiama `publishState()` quando ha finito. */
+  if (!snapshotRemoteLoadedAt || Date.now() - snapshotRemoteLoadedAt > 10_000) {
+    void refreshSnapshotRemoteData().then(() => publishState()).catch(() => undefined);
+  }
   const {
     jobs, completedImports, completedImportsHasMore, publicConfig, configError, cloudError,
     latestRequestImport, requestImportSchemaError, latestMandateImport, mandateImportSchemaError,
@@ -2017,8 +2074,10 @@ async function healthChecks(options: { silent?: boolean } = {}) {
       refreshBrowserConnections(),
       withOperationTimeout((async () => {
         await access(config.CONTACTS_EXCEL_PATH);
-        const excel = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);
-        await excel.load();
+        /* Solo l'intestazione: sgranare tutte le righe qui bloccava la
+         * finestra per il tempo della lettura, ogni trenta secondi. Le righe
+         * le legge la run, quando servono davvero. */
+        await verifyContactsFile(config.CONTACTS_EXCEL_PATH);
         return { id: "excel", label: "Recapiti", ok: true, detail: `${REQUIRED_CONTACT_COLUMNS.length} colonne riconosciute` } satisfies ConnectionCheck;
       })(), 12_000, "Controllo file recapiti").catch((error) => ({
         id: "excel", label: "Recapiti", ok: false, detail: error instanceof Error ? error.message : String(error),

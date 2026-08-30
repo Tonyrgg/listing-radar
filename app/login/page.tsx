@@ -1,4 +1,3 @@
-import { Radar } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
@@ -23,8 +22,12 @@ export default async function LoginPage({
     <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
       <section className="w-full max-w-sm rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-6">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]">
-            <Radar aria-hidden="true" className="size-5" />
+          <span className="flex size-10 items-center justify-center">
+            <span
+              aria-hidden="true"
+              className="block size-10 bg-contain bg-center bg-no-repeat"
+              style={{ backgroundImage: 'url("/brand/listing-radar-icon.png")' }}
+            />
           </span>
           <div>
             <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">

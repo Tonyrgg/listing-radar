@@ -32,7 +32,8 @@
     "worker:desktop:build": "npm --prefix worker run desktop:build",
     "lifecycle:bootstrap:live": "tsx --env-file=.env.local scripts/property-lifecycle-live-bootstrap.ts",
     "design:sync": "node scripts/sync-design-tokens.mjs",
-    "design:check": "node scripts/sync-design-tokens.mjs --check && node scripts/check-design-contrast.mjs"
+    "design:check": "node scripts/sync-design-tokens.mjs --check && node scripts/check-design-contrast.mjs",
+    "brand:assets": "node scripts/generate-brand-assets.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

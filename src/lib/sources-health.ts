@@ -1,5 +1,5 @@
 import type { SourceHealth } from "@/components/ui/atoms";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
 
 /**
  * Di quali fonti ci si può fidare stamattina.
@@ -50,7 +50,7 @@ function noteFor(health: SourceHealth, raw: string | null): string | null {
 }
 
 export async function getSourcesSummary(): Promise<SourcesSummary> {
-  const view = await loadLifecycleView((repository) => repository.agencies());
+  const view = await vistaAgenzie();
 
   if (!view.available || !view.data) {
     return {

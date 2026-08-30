@@ -9,7 +9,7 @@ import { formatCurrency, formatDate, formatNumber, formatShouty } from "@/lib/fo
 import { getSourceLabel } from "@/lib/labels";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { identityOutcomeLabel } from "@/lib/property-lifecycle/read-models/presentation";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaPrivati } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
 
@@ -31,7 +31,7 @@ export const metadata: Metadata = { title: "Privati" };
 export default async function PrivatiPage() {
   await connection();
 
-  const view = await loadLifecycleView((repository) => repository.privateRadar());
+  const view = await vistaPrivati();
   if (!view.available || !view.data) return <LifecycleUnavailable message={view.message} />;
 
   const annunci = view.data;

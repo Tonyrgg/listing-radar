@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { readNow } from "@/lib/clock";
 import { getProperty } from "@/lib/matching/repository";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaCasa } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleUnavailable } from "@/app/(private)/lifecycle/_components/ui";
 
@@ -34,7 +34,7 @@ export default async function CasaPage({
   const { id } = await params;
 
   const [vistaMercato, user, now] = await Promise.all([
-    loadLifecycleView((repository) => repository.property(id)),
+    vistaCasa(id),
     getCurrentUser(),
     readNow(),
   ]);

@@ -163,6 +163,12 @@ let completedImportsRenderKey = null,
   lastRunRenderKey = null,
   importJobId = null,
   importActivityMode = null;
+/* Firma dell'ultima riga disegnata nel diario e quante ne sono a schermo:
+ * servono a capire quali righe sono nuove senza ridisegnare le altre. */
+let attivitaCimaDisegnata = null,
+  attivitaRigheDisegnate = 0,
+  diagnosticiRenderKey = null;
+const MAX_RIGHE_DIARIO = 300;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 
@@ -1800,22 +1806,72 @@ function renderNetworkRun() {
   $("networkRunProgress").classList.remove("is-hidden");
   $("networkRunProgress").querySelector("span").style.width = `${percent}%`;
 }
+function rigaDiario(x) {
+  return `<div class="activity-item is-${x.tone}"><time>${fmtTime(x.at)}</time><i></i><p>${esc(x.message)}</p></div>`;
+}
+
+function firmaRigaDiario(x) {
+  return x ? `${x.at}${x.message}` : "";
+}
+
+/**
+ * Il diario delle operazioni, scritto una riga alla volta.
+ *
+ * Ogni riga di diario ridisegnava tutte e trecento le righe — e con loro i due
+ * pannelli degli archivi, che con il diario non c'entrano niente. Durante una
+ * run il diario scrive di continuo: era l'interfaccia che si inchiodava mentre
+ * il worker lavorava, cioè esattamente quando serviva poterla guardare.
+ *
+ * Adesso le righe nuove si aggiungono in cima e quelle in fondo cadono: si
+ * ridisegna tutto solo quando il diario è cambiato in un modo che non è
+ * «sono arrivate delle righe nuove».
+ */
 function renderActivity() {
-  renderRequestArchive();
-  renderMandateArchive();
   const items = appState?.activity ?? [];
-  $("activityList").innerHTML = items.length
-    ? items
-        .map(
-          (x) =>
-            `<div class="activity-item is-${x.tone}"><time>${fmtTime(x.at)}</time><i></i><p>${esc(x.message)}</p></div>`,
-        )
-        .join("")
-    : `<p class="empty-message">Qui compariranno le operazioni svolte.</p>`;
+  const lista = $("activityList");
+  const cima = firmaRigaDiario(items[0]);
+
+  if (cima === attivitaCimaDisegnata && items.length === attivitaRigheDisegnate) return;
+
+  if (!items.length) {
+    lista.innerHTML = `<p class="empty-message">Qui compariranno le operazioni svolte.</p>`;
+    attivitaCimaDisegnata = "";
+    attivitaRigheDisegnate = 0;
+    return;
+  }
+
+  /* Quante righe sono comparse in cima rispetto all'ultimo disegno. -1 vuol
+   * dire «non lo so»: si ridisegna tutto. */
+  let nuove = -1;
+  if (attivitaCimaDisegnata && attivitaRigheDisegnate) {
+    const limite = Math.min(items.length, 32);
+    for (let indice = 0; indice < limite; indice += 1) {
+      if (firmaRigaDiario(items[indice]) === attivitaCimaDisegnata) {
+        nuove = indice;
+        break;
+      }
+    }
+  }
+
+  if (nuove > 0 && lista.firstElementChild && !lista.querySelector(".empty-message")) {
+    lista.insertAdjacentHTML("afterbegin", items.slice(0, nuove).map(rigaDiario).join(""));
+    while (lista.childElementCount > MAX_RIGHE_DIARIO) lista.lastElementChild.remove();
+  } else if (nuove !== 0) {
+    lista.innerHTML = items.slice(0, MAX_RIGHE_DIARIO).map(rigaDiario).join("");
+  }
+
+  attivitaCimaDisegnata = cima;
+  attivitaRigheDisegnate = items.length;
 }
 function renderDiagnosticErrors() {
   const items = appState?.diagnosticErrors ?? [];
   $("diagnosticErrorCount").textContent = items.length;
+  /* Ogni arresto porta con sé il suo dettaglio tecnico in JSON indentato:
+   * riscriverli tutti a ogni disegno costa, e cambiano solo quando il worker
+   * si ferma. */
+  const renderKey = items.map((item) => `${item.at}${item.jobId ?? ""}`).join("|");
+  if (renderKey === diagnosticiRenderKey) return;
+  diagnosticiRenderKey = renderKey;
   $("diagnosticErrorList").innerHTML = items.length
     ? items
         .map((item) => {
@@ -2090,6 +2146,8 @@ function render() {
   renderAction();
   renderJobs();
   renderCompletedImports();
+  renderRequestArchive();
+  renderMandateArchive();
   renderLastRun();
   renderActivity();
   renderDiagnosticErrors();

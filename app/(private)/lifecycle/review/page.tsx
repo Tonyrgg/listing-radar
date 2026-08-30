@@ -35,7 +35,7 @@ import {
   locationPrecisionLabel,
   reviewTypeLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaRecensioni } from "@/lib/property-lifecycle/read-models/server";
 import type {
   LifecyclePropertySummary,
   LifecycleReviewItem,
@@ -295,7 +295,7 @@ export default async function DaDecidereePage({
 
   const query = await searchParams;
   const [view, user] = await Promise.all([
-    loadLifecycleView((repository) => repository.reviews()),
+    vistaRecensioni(),
     getCurrentUser(),
   ]);
 

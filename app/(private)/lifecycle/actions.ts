@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getCurrentUser, requireUser } from "@/lib/auth";
 import { LifecycleJobQueue } from "@/lib/property-lifecycle/jobs/queue";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
+import { LIFECYCLE_CACHE_TAG } from "@/lib/property-lifecycle/read-models/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 
 const PROPERTY_SALE_STATES = new Set([
@@ -56,6 +57,9 @@ async function currentReviewerId(): Promise<string> {
 }
 
 function revalidateLifecycle(propertyId?: string) {
+  /* Le viste dell'archivio vivono un minuto in cache: una decisione presa
+   * adesso deve vedersi adesso, non al prossimo minuto. */
+  revalidateTag(LIFECYCLE_CACHE_TAG, { expire: 0 });
   revalidatePath("/lifecycle");
   revalidatePath("/lifecycle/opportunities");
   revalidatePath("/lifecycle/agencies");

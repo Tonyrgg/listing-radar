@@ -462,76 +462,89 @@ export async function listListingMapData(): Promise<ListingMapData> {
 export async function listPropertyMapData(): Promise<ListingMapData> {
   const supabase = await getMapSupabase();
 
-  const [proprieta, posizioni] = await Promise.all([
+  const [segnaposti, osservate, conIndirizzo] = await Promise.all([
+    supabase.rpc("map_property_pins"),
     supabase
       .from("properties")
-      .select("id,primary_location_id,canonical_attributes,property_state")
-      .neq("identity_status", "MERGED")
-      .limit(2000),
+      .select("id", { count: "exact", head: true })
+      .neq("identity_status", "MERGED"),
     supabase
-      .from("locations")
-      .select("id,latitude,longitude,raw_text,street_name,street_number,municipality")
-      .not("latitude", "is", null)
-      .limit(2000),
+      .from("properties")
+      .select("id", { count: "exact", head: true })
+      .neq("identity_status", "MERGED")
+      .not("canonical_attributes->>address", "is", null),
   ]);
 
-  assertNoError(proprieta.error, "Impossibile caricare le case sulla mappa");
-  assertNoError(posizioni.error, "Impossibile caricare le posizioni delle case");
+  assertNoError(segnaposti.error, "Impossibile caricare le case sulla mappa");
+  assertNoError(osservate.error, "Impossibile contare le case osservate");
+  assertNoError(conIndirizzo.error, "Impossibile contare le case con indirizzo");
 
-  type RigaPosizione = {
+  type RigaSegnaposto = {
     id: string;
-    latitude: number | null;
-    longitude: number | null;
+    address: string | null;
+    price_amount: number | string | null;
+    surface_sqm: number | string | null;
+    latitude: number;
+    longitude: number;
     raw_text: string | null;
     street_name: string | null;
     street_number: string | null;
     municipality: string | null;
   };
 
-  type RigaProprieta = {
-    id: string;
-    primary_location_id: string | null;
-    canonical_attributes: Record<string, unknown> | null;
-    property_state: string | null;
+  const numero = (valore: number | string | null) => {
+    if (typeof valore === "number") return Number.isFinite(valore) ? valore : null;
+    if (typeof valore === "string" && valore.trim()) {
+      const letto = Number(valore);
+      return Number.isFinite(letto) ? letto : null;
+    }
+    return null;
   };
 
-  const perId = new Map(
-    ((posizioni.data ?? []) as RigaPosizione[]).map((riga) => [riga.id, riga]),
-  );
-
-  const righe = (proprieta.data ?? []) as RigaProprieta[];
-  const pins: ListingMapPin[] = [];
-  let conIndirizzoPreciso = 0;
-
-  for (const riga of righe) {
-    const attributi = riga.canonical_attributes ?? {};
-    const indirizzo = typeof attributi.address === "string" ? attributi.address : null;
-    if (indirizzo) conIndirizzoPreciso += 1;
-
-    const posizione = riga.primary_location_id ? perId.get(riga.primary_location_id) : undefined;
-    if (!posizione?.latitude || !posizione.longitude) continue;
-
-    pins.push({
-      id: riga.id,
-      title:
-        indirizzo ??
-        [posizione.street_name, posizione.street_number].filter(Boolean).join(" ") ??
-        "Casa osservata",
-      source: posizione.municipality ?? "Bitonto",
-      url: `/casa/${riga.id}`,
-      price: typeof attributi.priceAmount === "number" ? attributi.priceAmount : null,
-      sqm: typeof attributi.surfaceSqm === "number" ? attributi.surfaceSqm : null,
-      addressRaw: indirizzo ?? posizione.raw_text,
-      latitude: posizione.latitude,
-      longitude: posizione.longitude,
-    });
-  }
+  const pins: ListingMapPin[] = ((segnaposti.data ?? []) as RigaSegnaposto[]).map((riga) => ({
+    id: riga.id,
+    title:
+      riga.address ??
+      [riga.street_name, riga.street_number].filter(Boolean).join(" ") ??
+      "Casa osservata",
+    source: riga.municipality ?? "Bitonto",
+    url: `/casa/${riga.id}`,
+    price: numero(riga.price_amount),
+    sqm: numero(riga.surface_sqm),
+    addressRaw: riga.address ?? riga.raw_text,
+    latitude: riga.latitude,
+    longitude: riga.longitude,
+  }));
 
   return {
     pins,
-    totalListings: righe.length,
-    streetAddressListings: conIndirizzoPreciso,
+    totalListings: osservate.count ?? 0,
+    streetAddressListings: conIndirizzo.count ?? 0,
   };
+}
+
+/**
+ * Tutto quello che serve alla mappa, in un viaggio solo.
+ *
+ * Il Territorio apriva sei azioni server in parallelo — agenti, aree, strade,
+ * segnaposti, storico e case — ma le azioni server vengono servite una alla
+ * volta, in fila: sei andate e ritorni prima che comparisse la prima area
+ * disegnata. Adesso il parallelo lo fa il server, e la rete la si attraversa
+ * una volta.
+ */
+export async function loadMapWorkspace() {
+  await requireUser();
+
+  const [agents, areas, streets, pins, activityLogs, listingMapData] = await Promise.all([
+    listAgents(),
+    listMapAreas(),
+    listMapStreets(),
+    listMapPins(),
+    listMapActivityLogs(20),
+    listPropertyMapData(),
+  ]);
+
+  return { agents, areas, streets, pins, activityLogs, listingMapData };
 }
 
 export async function createMapPin(input: CreateMapPinInput) {

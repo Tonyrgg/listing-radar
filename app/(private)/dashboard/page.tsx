@@ -12,7 +12,7 @@ import { livelloFromOpportunity } from "@/components/ui/atoms";
 import { Chip, buttonClass } from "@/components/ui/primitives";
 import { readNow } from "@/lib/clock";
 import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaOggi } from "@/lib/property-lifecycle/read-models/server";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { getSourcesSummary } from "@/lib/sources-health";
 
@@ -26,7 +26,7 @@ export default async function TodayPage() {
 
   const [sources, segnali, now] = await Promise.all([
     getSourcesSummary(),
-    loadLifecycleView((repository) => repository.dashboard()),
+    vistaOggi(),
     readNow(),
   ]);
 

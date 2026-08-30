@@ -34,12 +34,8 @@ import {
   deleteMapArea,
   deleteMapPin,
   deleteMapStreet,
-  listAgents,
-  listPropertyMapData,
   listMapActivityLogs,
-  listMapAreas,
-  listMapPins,
-  listMapStreets,
+  loadMapWorkspace,
   updateMapArea,
   updateMapPin,
   updateMapStreet,
@@ -202,18 +198,9 @@ function activeFilterCount(filters: MapFiltersState) {
   return count;
 }
 
-async function fetchMapData() {
-  const [agents, areas, streets, pins, activityLogs, listingMapData] = await Promise.all([
-    listAgents(),
-    listMapAreas(),
-    listMapStreets(),
-    listMapPins(),
-    listMapActivityLogs(20),
-    listPropertyMapData(),
-  ]);
-
-  return { agents, areas, streets, pins, activityLogs, listingMapData };
-}
+/* Sei azioni server sono sei viaggi in fila: il server le mette in parallelo
+ * da sé e ne risponde una. */
+const fetchMapData = loadMapWorkspace;
 
 type SnapRoute = {
   geometry: GeoJsonGeometry;

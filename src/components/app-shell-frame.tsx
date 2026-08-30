@@ -1,8 +1,8 @@
 "use client";
 
 import { clsx } from "clsx";
-import { LogOut, PanelLeftClose, PanelLeftOpen, Radar } from "lucide-react";
-import { useEffect, useState } from "react";
+import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Suspense, useState } from "react";
 
 import { logout } from "@/app/login/actions";
 import { PendingSubmitButton } from "@/components/loading-controls";
@@ -19,8 +19,12 @@ import type { Flash } from "@/lib/flash-shared";
 function Brand() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] bg-[var(--lr-accent)] text-[var(--lr-accent-ink)]">
-        <Radar aria-hidden="true" className="size-5" />
+      <span className="flex size-9 shrink-0 items-center justify-center">
+        <span
+          aria-hidden="true"
+          className="block size-9 bg-contain bg-center bg-no-repeat"
+          style={{ backgroundImage: 'url("/brand/listing-radar-icon.png")' }}
+        />
       </span>
       <div className="min-w-0">
         <p className="font-display text-[length:var(--lr-text-section)] leading-tight text-[var(--lr-ink)]">
@@ -38,24 +42,23 @@ export function AppShellFrame({
   children,
   showLogout,
   flash,
+  segnoDiDisegno,
+  barraAperta,
 }: Readonly<{
   children: React.ReactNode;
   showLogout: boolean;
   flash: Flash | null;
+  segnoDiDisegno: number;
+  barraAperta: boolean;
 }>) {
-  const [collapsed, setCollapsed] = useState(true);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setCollapsed(window.localStorage.getItem("listing-radar-sidebar") !== "expanded");
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const [collapsed, setCollapsed] = useState(!barraAperta);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
       const next = !current;
-      window.localStorage.setItem("listing-radar-sidebar", next ? "collapsed" : "expanded");
+      /* Un anno: la preferenza deve valere anche alla prossima apertura, e
+       * deve arrivare al server per il primo disegno. */
+      document.cookie = `listing-radar-sidebar=${next ? "collapsed" : "expanded"}; path=/; max-age=31536000; samesite=lax`;
       return next;
     });
   }
@@ -67,7 +70,9 @@ export function AppShellFrame({
         collapsed ? "lg:grid-cols-[84px_minmax(0,1fr)]" : "lg:grid-cols-[252px_minmax(0,1fr)]",
       )}
     >
-      <GlobalActionLoader />
+      <Suspense fallback={null}>
+        <GlobalActionLoader segnoDiDisegno={segnoDiDisegno} />
+      </Suspense>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[220] focus:rounded-[var(--lr-radius-control)] focus:border focus:border-[var(--lr-line)] focus:bg-[var(--lr-surface)] focus:px-3 focus:py-2 focus:text-[var(--lr-ink)]"

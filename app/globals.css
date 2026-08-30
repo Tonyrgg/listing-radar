@@ -211,6 +211,41 @@ body {
 
 .lr-action-loader svg { animation: lr-action-spin .75s linear infinite; }
 
+.lr-action-loader {
+  animation: lr-action-enter .18s ease-out both;
+}
+
+@keyframes lr-action-enter {
+  from { opacity: 0; transform: translateY(-.35rem); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Il filo in cima allo schermo: dice che il programma sta lavorando anche
+ * quando la pagina sotto non è ancora cambiata di un pixel. Non promette una
+ * percentuale che non conosciamo — avanza e rallenta, come un'attesa vera. */
+.lr-action-progress {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 130;
+  height: 2px;
+  width: 100%;
+  transform-origin: 0 50%;
+  background: var(--lr-accent);
+  animation: lr-action-progress 12s cubic-bezier(.15, .7, .2, 1) forwards;
+}
+
+@keyframes lr-action-progress {
+  from { transform: scaleX(0); }
+  40% { transform: scaleX(.55); }
+  to { transform: scaleX(.94); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lr-action-loader,
+  .lr-action-loader svg { animation: none; }
+  .lr-action-progress { animation: none; transform: scaleX(1); opacity: .5; }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

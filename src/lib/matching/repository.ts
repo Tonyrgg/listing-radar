@@ -150,40 +150,40 @@ export async function getMatchingStats(): Promise<MatchingStats> {
 }
 
 /**
- * Gli abbinamenti compatibili, tutti.
+ * Quante case somigliano a ogni richiesta.
  *
- * Senza `range` PostgREST ne restituisce mille e tace: i compatibili sono
- * 1.872, e le mille righe che tornavano coprivano 95 richieste su 254. Le
- * altre 159 leggevano «nessuna casa le somiglia» — una frase falsa, scritta
- * con la stessa sicurezza di una vera.
+ * Prima si scaricavano tutti gli abbinamenti compatibili per contarli qui:
+ * quasi duemila righe, chieste mille alla volta una dopo l'altra, per ottenere
+ * un numero per richiesta. Il conteggio lo fa il database, e torna già fatto.
+ *
+ * La paginazione esisteva perché senza `range` PostgREST ne restituisce mille
+ * e tace: le 872 righe oltre il migliaio sparivano, e 159 richieste su 254
+ * leggevano «nessuna casa le somiglia» — una frase falsa scritta con la stessa
+ * sicurezza di una vera. Con un conteggio raggruppato il problema non esiste.
  */
-export async function listCompatibleMatchReferences(): Promise<Array<Pick<RequestPropertyMatch, "request_id" | "classification">>> {
-  if (!configured()) return [];
-
-  const PAGINA = 1000;
-  const tutte: Array<Pick<RequestPropertyMatch, "request_id" | "classification">> = [];
+export async function countCompatibleMatchesByRequest(): Promise<Map<string, number>> {
+  const conteggi = new Map<string, number>();
+  if (!configured()) return conteggi;
 
   try {
-    const db = getSupabaseServiceClient();
+    const { data, error } = await getSupabaseServiceClient().rpc(
+      "matching_compatible_counts",
+    );
+    if (error) return conteggi;
 
-    for (let inizio = 0; ; inizio += PAGINA) {
-      const { data, error } = await db
-        .from("request_property_matches")
-        .select("request_id,classification")
-        .eq("classification", "compatible")
-        .range(inizio, inizio + PAGINA - 1);
-
-      if (error) return tutte;
-
-      const righe = (data ?? []) as Array<Pick<RequestPropertyMatch, "request_id" | "classification">>;
-      tutte.push(...righe);
-
-      if (righe.length < PAGINA) return tutte;
+    for (const riga of (data ?? []) as Array<{
+      request_id: string;
+      compatible_count: number;
+    }>) {
+      conteggi.set(riga.request_id, riga.compatible_count);
     }
   } catch {
-    return tutte;
+    return conteggi;
   }
+
+  return conteggi;
 }
+
 export const listClients = () => safeList<Client>("clients", "full_name", true);
 
 export async function getRequest(id: string) {

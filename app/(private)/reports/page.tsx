@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader, Chip, EmptyState, Meta, buttonClass } from 
 import { formatNumber } from "@/lib/formatting";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { lifecycleEventCountLabel } from "@/lib/property-lifecycle/read-models/presentation";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaMovimenti } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +62,7 @@ function riassunto(eventi: LifecycleEventItem[]) {
 export default async function GiornoPerGiornoPage() {
   await connection();
 
-  const vista = await loadLifecycleView((repository) => repository.marketEvents(300));
+  const vista = await vistaMovimenti(300);
 
   if (!vista.available || !vista.data) {
     return (

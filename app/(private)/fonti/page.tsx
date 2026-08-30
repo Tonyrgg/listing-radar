@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, Chip, EmptyState, Label, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
 import { Fonte } from "@/components/ui/atoms";
 import { formatDateTime, formatNumber } from "@/lib/formatting";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
 import { getSourcesSummary } from "@/lib/sources-health";
 import type { SourceHealth } from "@/components/ui/atoms";
 
@@ -49,7 +49,7 @@ export default async function FontiPage() {
 
   const [sommario, vista] = await Promise.all([
     getSourcesSummary(),
-    loadLifecycleView((repository) => repository.agencies()),
+    vistaAgenzie(),
   ]);
 
   if (!vista.available || !vista.data) {

@@ -7,7 +7,7 @@ import { livelloFromOpportunity } from "@/components/ui/atoms";
 import { Card, CardBody, Chip, EmptyState, Meta, buttonClass } from "@/components/ui/primitives";
 import { readNow } from "@/lib/clock";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaOpportunita } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleHeader, LifecycleUnavailable } from "../_components/ui";
 
@@ -51,7 +51,7 @@ export default async function OpportunitaPage({
     : "tutte";
 
   const [view, now] = await Promise.all([
-    loadLifecycleView((repository) => repository.opportunities()),
+    vistaOpportunita(),
     readNow(),
   ]);
 

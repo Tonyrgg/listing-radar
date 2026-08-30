@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { ingestEmailAlerts } from "@/lib/email-alerts/ingest";
 import { upsertListings } from "@/lib/listings/upsert-listings";
 import { sendTelegramMessage } from "@/lib/notifications/telegram";
+import { LIFECYCLE_CACHE_TAG } from "@/lib/property-lifecycle/read-models/server";
 import { generateReport } from "@/lib/reports/generate-report";
 import { getProvidersForRun } from "@/lib/scrapers/providers";
 import { getPersistedScoringConfig } from "@/lib/settings/scoring-config-repository";
@@ -331,6 +332,9 @@ async function handleCronRequest(request: NextRequest) {
       error_count: errorCount,
     });
 
+    /* Una lettura delle fonti cambia l'archivio: le viste in cache vanno
+     * buttate, altrimenti il risultato del run si vede un minuto dopo. */
+    revalidateTag(LIFECYCLE_CACHE_TAG, { expire: 0 });
     revalidatePath("/listings");
     revalidatePath("/incoming");
     revalidatePath("/dashboard");

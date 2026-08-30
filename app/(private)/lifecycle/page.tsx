@@ -21,7 +21,7 @@ import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events
 import {
   lifecycleEventLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaOggi } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecycleEventItem } from "@/lib/property-lifecycle/read-models/types";
 
 import { enqueueGlobalLifecycleRefresh } from "./actions";
@@ -118,7 +118,7 @@ export default async function SegnaliPage() {
   await connection();
 
   const [view, now] = await Promise.all([
-    loadLifecycleView((repository) => repository.dashboard()),
+    vistaOggi(),
     readNow(),
   ]);
 

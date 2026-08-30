@@ -20,7 +20,10 @@ import { readNow } from "@/lib/clock";
 import { formatNumber } from "@/lib/formatting";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { listProperties } from "@/lib/matching/repository";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import {
+  vistaArchivio,
+  vistaSegnaliOpportunita,
+} from "@/lib/property-lifecycle/read-models/server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Le case" };
@@ -63,25 +66,27 @@ export default async function CasePage({
   const stato = param(query.stato, "attive") as Stato;
   const fermeDa = Number(param(query.ferme, "0")) || 0;
 
-  const [vista, nostre, now] = await Promise.all([
-    loadLifecycleView(async (repository) => ({
-      proprieta: await repository.archive(),
-      opportunita: await repository.opportunities(),
-    })),
+  /* Archivio e opportunità sono due letture indipendenti: aspettarle in fila
+   * costava un viaggio di rete in più a ogni apertura della pagina. */
+  const [archivio, opportunita, nostre, now] = await Promise.all([
+    vistaArchivio(),
+    vistaSegnaliOpportunita(),
     listProperties(),
     readNow(),
   ]);
 
+  const proprieta = archivio.data ?? [];
+
   const opportunitaPerCasa = new Map<string, { level: string; reasons: string[] }>();
-  for (const opportunita of vista.data?.opportunita ?? []) {
-    if (opportunitaPerCasa.has(opportunita.propertyId)) continue;
-    opportunitaPerCasa.set(opportunita.propertyId, {
-      level: opportunita.level,
-      reasons: opportunita.reasons,
+  for (const occasione of opportunita.data ?? []) {
+    if (opportunitaPerCasa.has(occasione.propertyId)) continue;
+    opportunitaPerCasa.set(occasione.propertyId, {
+      level: occasione.level,
+      reasons: occasione.reasons,
     });
   }
 
-  const delMercato = (vista.data?.proprieta ?? []).map((property) =>
+  const delMercato = proprieta.map((property) =>
     rigaDaMercato(property, now, { opportunita: opportunitaPerCasa.get(property.id) }),
   );
 
@@ -93,7 +98,7 @@ export default async function CasePage({
     nostre.filter((property) => property.mandate_status === "active").map((property) => property.id),
   );
   const attiveDelMercato = new Set(
-    (vista.data?.proprieta ?? [])
+    proprieta
       .filter((property) => property.propertyState.startsWith("ACTIVE"))
       .map((property) => property.id),
   );
@@ -131,9 +136,12 @@ export default async function CasePage({
   const visibili = ordinate.slice(0, PER_PAGINA);
 
   /* Le foto del mercato vanno firmate; quelle nostre sono già indirizzi. */
-  const daFirmare = (vista.data?.proprieta ?? []).filter((property) =>
-    visibili.some((riga) => riga.chi !== "noi" && riga.id === property.id),
+  /* Solo le foto delle righe che si vedono davvero: cercarle una per una
+   * dentro l'elenco intero era un confronto per ogni coppia. */
+  const idVisibili = new Set(
+    visibili.filter((riga) => riga.chi !== "noi").map((riga) => riga.id),
   );
+  const daFirmare = proprieta.filter((property) => idVisibili.has(property.id));
   const foto = await signPropertyPhotos(daFirmare);
   const conFoto = visibili.map((riga) =>
     riga.chi === "noi" ? riga : { ...riga, foto: foto.get(riga.id) },

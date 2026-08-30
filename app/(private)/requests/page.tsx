@@ -40,7 +40,7 @@ import {
   requestSourceLabel,
 } from "@/lib/matching/request-presentation";
 import {
-  listCompatibleMatchReferences,
+  countCompatibleMatchesByRequest,
   listRequests,
 } from "@/lib/matching/repository";
 import type { PropertyRequest } from "@/lib/matching/types";
@@ -116,19 +116,10 @@ export default async function RichiesteClientiPage({
   const contratto = param(query.contratto);
   const zona = param(query.zona);
 
-  const [requests, matches] = await Promise.all([
+  const [requests, quanteCase] = await Promise.all([
     listRequests(),
-    listCompatibleMatchReferences(),
+    countCompatibleMatchesByRequest(),
   ]);
-
-  const quanteCase = new Map<string, number>();
-  for (const match of matches) {
-    if (match.classification !== "compatible") continue;
-    quanteCase.set(
-      match.request_id,
-      (quanteCase.get(match.request_id) ?? 0) + 1,
-    );
-  }
 
   const zoneDisponibili = [...new Set(
     requests.flatMap((request) =>

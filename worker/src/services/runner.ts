@@ -242,13 +242,17 @@ export class PropertyWorkerRunner {
         const step = state.current;
         this.onEvent({ type: "step-started", jobId: job.id, step });
         const stepId = await this.repository.beginStep(job.id, step);
+        /* Quanto e' durato ogni passaggio: senza questo numero non si sa dove
+         * se ne va il tempo di una run, e si finisce a indovinare quale attesa
+         * togliere. */
+        const stepStartedAt = Date.now();
         try {
           const output = await this.executeStep(step, job, sister, crm, contacts);
           this.throwIfCancellationRequested(job.id);
           const next = state.complete(step);
           await this.repository.completeStep(job.id, stepId, step, next, output);
           this.onEvent({ type: "step-completed", jobId: job.id, step, next, output });
-          logger.info({ jobId: job.id, step, next }, "Step completato");
+          logger.info({ jobId: job.id, step, next, durationMs: Date.now() - stepStartedAt }, "Step completato");
           if (output.savedForLater === true) {
             /* La modalita' di attivita' si registra adesso, non all'import: i
              * dati sono stati raccolti con questa, e fra tre giorni la
@@ -1068,6 +1072,7 @@ export class PropertyWorkerRunner {
     const activePersonIds = new Set(plan.flatMap((item) => item.owners.map((owner) => owner.person.id)));
     propertyLoop: for (const [propertyIndex, item] of plan.entries()) {
       this.throwIfCancellationRequested(job.id);
+      const propertyStartedAt = Date.now();
       const { property, owners } = item;
       let primary = item.primary;
       let coowners = item.coowners;
@@ -1320,7 +1325,26 @@ export class PropertyWorkerRunner {
         await advanceStage("completed");
         completed += 1;
         await this.repository.updateJob(job.id, { processed_properties: completed });
-        this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "completed", `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato`);
+        const propertyDurationMs = Date.now() - propertyStartedAt;
+        logger.info(
+          {
+            jobId: job.id,
+            propertyId: property.id,
+            index: propertyIndex + 1,
+            total: graph.properties.length,
+            owners: activeOwners.length,
+            durationMs: propertyDurationMs,
+          },
+          "Immobile completato",
+        );
+        this.emitPropertyProgress(
+          job,
+          property,
+          propertyIndex + 1,
+          graph.properties.length,
+          "completed",
+          `Immobile ${propertyIndex + 1} di ${graph.properties.length} completato in ${Math.round(propertyDurationMs / 1000)} s`,
+        );
         if (this.isStopAfterNextImportRequested(job.id)) {
           throw new WorkerError(
             "Run fermata dopo il prossimo import: il resto della lavorazione resta salvato e riprendibile.",

@@ -12,7 +12,7 @@ import { Card, CardBody, CardHeader, EmptyState, Meta, buttonClass } from "@/com
 import { readNow } from "@/lib/clock";
 import { formatDateTime, formatNumber, formatShouty } from "@/lib/formatting";
 import { signPropertyPhotos } from "@/lib/lifecycle-photos";
-import { loadLifecycleView } from "@/lib/property-lifecycle/read-models/server";
+import { vistaAgenzia } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
 import { enqueueAgencyLifecycleRefresh } from "../../actions";
@@ -94,7 +94,7 @@ export default async function AgenziaPage({
     : "tutti";
 
   const [view, now] = await Promise.all([
-    loadLifecycleView((repository) => repository.agency(slug)),
+    vistaAgenzia(slug),
     readNow(),
   ]);
 

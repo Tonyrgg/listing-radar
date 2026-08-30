@@ -20,9 +20,13 @@ import type {
   PersonSearchInput,
   PropertyMatchResult,
 } from "../../types.js";
+import { logger } from "../../logger.js";
 import { crmSelectors, type CrmSelectors } from "./selectors.js";
 
 const CRM_PATH = "/CRMImmobiliareLightning/s";
+/** Oltre questa soglia un'azione sul gestionale merita una riga nel registro. */
+const AZIONE_LENTA_MS = 3_000;
+
 const ACTIVITY_FORM_TIMEOUT = 20_000;
 // CRM renders the activity modal in several asynchronous phases. A failed
 // preparation has not produced any data yet, so it is safe to retry it three
@@ -99,9 +103,24 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     if (missing.length) throw new SelectorConfigurationError("CRM", missing);
   }
 
+  /**
+   * Ogni azione sul gestionale, cronometrata.
+   *
+   * Solo osservazione: qui non si cambia niente di quello che il worker fa ne'
+   * di quanto aspetta. Serve a sapere dove va il tempo di una run prima di
+   * decidere se e dove valga la pena intervenire.
+   */
   private async friendly<T>(action: string, message: string, work: () => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
     try {
-      return await work();
+      const result = await work();
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= AZIONE_LENTA_MS) {
+        logger.info({ portal: "CRM", action, durationMs }, "Azione gestionale lenta");
+      } else {
+        logger.debug({ portal: "CRM", action, durationMs }, "Azione gestionale conclusa");
+      }
+      return result;
     } catch (error) {
       if (error instanceof WorkerError) throw error;
       throw new WorkerError(
