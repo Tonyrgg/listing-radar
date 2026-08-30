@@ -9,6 +9,24 @@ import { sisterSelectors, type SisterSelectors } from "./selectors.js";
 
 const NO_MATCH_PATTERN = /nessuna corrispondenza trovata/i;
 
+/**
+ * Il modulo di ricerca si riconosce dal suo campo, non dal suo nome.
+ *
+ * `RicercaPFForm` compare anche su altre pagine di SISTER — l'elenco omonimi,
+ * per dire — ridotto al solo pulsante «Indietro». Bastava il nome per credersi
+ * arrivati, e poi la compilazione falliva aspettando campi che li' non ci sono.
+ */
+const MODULO_PERSONA_FISICA = 'form[name="RicercaPFForm"] input[name="cod_fisc_pf"]';
+
+/**
+ * Il riquadro che riassume la ricerca cambia nome secondo come si e' cercato.
+ *
+ * Per indirizzo si chiama «Dati della ricerca»; per persona «Soggetto
+ * selezionato». Guardando solo il primo, l'elenco immobili di una persona
+ * sembrava non dichiarare nessun comune.
+ */
+const CONTESTO_PERSONA = 'fieldset:has(legend:text-is("Soggetto selezionato"))';
+
 export type SisterAdapterOptions = {
   ignoreOwnerNoMatch?: boolean;
 };
@@ -28,14 +46,19 @@ function parseIncome(value: string): number | null {
 }
 
 function normalizeCategory(value: string): string {
-  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  /* L'elenco immobili di una persona scrive «Cat.A/2» dove la ricerca per
+   * indirizzo scrive «A/2». Senza togliere quel prefisso la categoria non
+   * veniva riconosciuta come abitativa e l'immobile finiva scartato. */
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "").replace(/^CAT\.?/, "");
   const compact = normalized.match(/^([AC])\/?0*(\d+)$/);
   return compact ? `${compact[1]}/${compact[2]}` : normalized;
 }
 
 function parseSearchContext(value: string): Pick<SearchContext, "municipality" | "street" | "civicNumber"> {
   const normalized = value.replace(/\s+/g, " ").trim();
-  const municipality = normalized.match(/Comune:\s*(.*?)\s+Codice:/i)?.[1]?.trim() ?? "";
+  /* Cercando un indirizzo SISTER scrive «Comune:», cercando una persona
+   * scrive «Immobile nel comune di:». E' lo stesso dato con due nomi. */
+  const municipality = normalized.match(/(?:Immobile nel comune di|Comune):\s*(.*?)\s+Codice:/i)?.[1]?.trim() ?? "";
   const street = normalized.match(/Indirizzo:\s*(.*?)\s+Numeri civici/i)?.[1]?.trim() || null;
   const civicNumber = normalized.match(/(?:dal\s+nr\.|nr\.)\s*([^\s]+)/i)?.[1]?.trim() || null;
   return { municipality, street, civicNumber };
@@ -49,6 +72,7 @@ async function columnIndexes(
   table: Locator,
   expected: Record<string, string[]>,
   tableName: string,
+  facoltative: string[] = [],
 ): Promise<Record<string, number>> {
   const headers = await table.locator("tr:has(th)").first().locator("th").allTextContents();
   const normalized = headers.map(normalizeHeader);
@@ -57,8 +81,11 @@ async function columnIndexes(
   for (const [key, aliases] of Object.entries(expected)) {
     const normalizedAliases = aliases.map(normalizeHeader);
     const index = normalized.findIndex((header) => normalizedAliases.some((alias) => header === alias || header.startsWith(`${alias} `)));
-    if (index < 0) missing.push(key);
-    else indexes[key] = index;
+    if (index < 0) {
+      /* Una colonna facoltativa che manca non e' una tabella incomprensibile:
+       * l'elenco immobili di una persona non riporta la zona censuaria. */
+      if (!facoltative.includes(key)) missing.push(key);
+    } else indexes[key] = index;
   }
   if (missing.length) {
     throw new WorkerError(
@@ -193,12 +220,60 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     }
     await clickAndWait(this.page, form.locator('input[name="ricerca"]'));
     await this.checkSession();
+    await this.passThroughHomonyms(normalizedTaxCode);
     const resultReady = await this.page.locator(this.selectors.resultsPageMarker).count() > 0;
     const noMatch = await this.page.getByText(NO_MATCH_PATTERN).count() > 0;
     if (!resultReady && !noMatch) {
       throw new WorkerError("Risposta SISTER non riconosciuta dopo la ricerca per codice fiscale.", "portal_error", { portal: "SISTER", action: "person-tax-code-result", url: this.page.url() }, true);
     }
     return noMatch ? [] : this.extractProperties();
+  }
+
+  /**
+   * L'Elenco Omonimi che SISTER mette in mezzo dopo la ricerca per codice
+   * fiscale.
+   *
+   * Cercando un codice fiscale non si arriva dritti agli immobili: prima
+   * compare una scelta con una riga per ogni anagrafica registrata su quel
+   * codice. Il codice non la conosceva — non era ne' i risultati ne' un
+   * "nessuna corrispondenza" — e l'esplorazione si fermava dicendo di non
+   * aver capito la risposta.
+   *
+   * Si prende la prima riga e si preme «Immobili». Mai «Visura per Soggetto»:
+   * quello e' il documento a pagamento, e qui serve soltanto l'elenco.
+   *
+   * Prima di proseguire si controlla che il codice fiscale chiesto compaia
+   * davvero nella tabella: senza quella verifica un elenco inatteso porterebbe
+   * a esplorare gli immobili di un'altra persona, attribuendoli a questa.
+   */
+  private async passThroughHomonyms(taxCode: string) {
+    const form = this.page.locator('form[name="SceltaOmonimiForm"]');
+    const scelte = form.locator('input[type="radio"][name="omonimoSelezionato"]');
+    if (await scelte.count() === 0) return;
+
+    const tabella = (await form.locator("table.listaIsp4").innerText().catch(() => "")).replace(/\s+/g, "").toUpperCase();
+    if (!tabella.includes(taxCode)) {
+      throw new WorkerError(
+        "L'elenco omonimi di SISTER non contiene il codice fiscale cercato.",
+        "portal_error",
+        { portal: "SISTER", action: "person-homonyms-mismatch", url: this.page.url() },
+        true,
+      );
+    }
+
+    const prima = scelte.first();
+    if (!(await prima.isChecked())) await prima.check();
+    const immobili = form.locator('input[name="immobili"]');
+    if (await immobili.count() !== 1) {
+      throw new WorkerError(
+        "Nell'elenco omonimi di SISTER non trovo il comando Immobili.",
+        "portal_error",
+        { portal: "SISTER", action: "person-homonyms-properties", url: this.page.url() },
+        true,
+      );
+    }
+    await clickAndWait(this.page, immobili);
+    await this.checkSession();
   }
 
   /**
@@ -227,14 +302,14 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
      * voce si prende com'e' scritta, cosi' l'ufficio resta quello scelto. */
     for (let attempt = 0; attempt < 4; attempt += 1) {
       await this.checkSession();
-      if (await this.page.locator('form[name="RicercaPFForm"]').count() === 1) return;
+      if (await this.page.locator(MODULO_PERSONA_FISICA).count() === 1) return;
 
       const voce = this.page.locator('a[href*="SceltaLink.do?lista=PF"]').first();
       if (await voce.count()) {
         const indirizzo = await voce.getAttribute("href");
         await voce.click().catch(() => undefined);
         const arrivato = await this.page
-          .locator('form[name="RicercaPFForm"]')
+          .locator(MODULO_PERSONA_FISICA)
           .waitFor({ state: "attached", timeout: 15_000 })
           .then(() => true)
           .catch(() => false);
@@ -259,7 +334,10 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
 
   async extractSearchContext(): Promise<SearchContext> {
     if (this.selectors.searchContext) {
-      const context = parseSearchContext(await text(this.page, this.selectors.searchContext));
+      const selettore = await this.page.locator(this.selectors.searchContext).count()
+        ? this.selectors.searchContext
+        : CONTESTO_PERSONA;
+      const context = parseSearchContext(await text(this.page, selettore));
       if (!context.municipality) {
         throw new WorkerError("Comune non riconosciuto nei risultati SISTER", "data_incomplete", { sourceUrl: this.page.url() });
       }
@@ -281,9 +359,14 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     const columns = this.selectors.resultsTable
       ? await columnIndexes(this.page.locator(this.selectors.resultsTable), {
           sheet: ["Foglio"], parcel: ["Particella"], subaltern: ["Sub", "Subalterno"],
-          address: ["Indirizzo"], censusZone: ["Zona cens", "Zona censuaria"], category: ["Categoria"],
+          /* Due tabelle per due ricerche. Cercando un indirizzo la colonna si
+           * chiama «Indirizzo» e la categoria «Categoria»; nell'elenco degli
+           * immobili di una persona sono «Ubicazione» e «Classamento», e la
+           * zona censuaria non c'e' proprio. */
+          address: ["Indirizzo", "Ubicazione"], censusZone: ["Zona cens", "Zona censuaria"],
+          category: ["Categoria", "Classamento"],
           class: ["Classe"], consistency: ["Consistenza"], cadastralIncome: ["Rendita"],
-        }, "immobili")
+        }, "immobili", ["censusZone"])
       : null;
     type RawPropertyRow = {
       sheet: string;
