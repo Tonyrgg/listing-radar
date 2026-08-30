@@ -244,6 +244,8 @@ export async function collectCrmPersonSeeds(
     isCancelled?: () => boolean;
     onProgress?: (progress: { pagina: number; persone: number }) => void;
     random?: () => number;
+    /** Codici fiscali gia' usati, da non riproporre. */
+    escludi?: readonly string[];
   },
 ): Promise<CrmPersonSeed[]> {
   const selectors = options.selectors ?? crmSelectors;
@@ -270,7 +272,9 @@ export async function collectCrmPersonSeeds(
 
   const mescolate = mescola([...perRecordId.values()], random);
   const semi: CrmPersonSeed[] = [];
-  const visti = new Set<string>();
+  /* Chi e' gia' stato usato parte come «gia' visto»: cosi' un ripescaggio non
+   * ripropone le stesse persone della manche precedente. */
+  const visti = new Set<string>((options.escludi ?? []).map((taxCode) => normalizeTaxCode(taxCode)));
 
   /* Prima quelli che l'elenco mostra già: non costano niente. */
   for (const riga of mescolate) {

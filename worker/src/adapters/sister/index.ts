@@ -57,8 +57,9 @@ function normalizeCategory(value: string): string {
 function parseSearchContext(value: string): Pick<SearchContext, "municipality" | "street" | "civicNumber"> {
   const normalized = value.replace(/\s+/g, " ").trim();
   /* Cercando un indirizzo SISTER scrive «Comune:», cercando una persona
-   * scrive «Immobile nel comune di:». E' lo stesso dato con due nomi. */
-  const municipality = normalized.match(/(?:Immobile nel comune di|Comune):\s*(.*?)\s+Codice:/i)?.[1]?.trim() ?? "";
+   * scrive «Immobile nel comune di:» — e «Immobili» al plurale quando gli
+   * immobili sono piu' di uno. Chi ne aveva due o piu' non veniva letto. */
+  const municipality = normalized.match(/(?:Immobil[ei] nel comune di|Comune):\s*(.*?)\s+Codice:/i)?.[1]?.trim() ?? "";
   const street = normalized.match(/Indirizzo:\s*(.*?)\s+Numeri civici/i)?.[1]?.trim() || null;
   const civicNumber = normalized.match(/(?:dal\s+nr\.|nr\.)\s*([^\s]+)/i)?.[1]?.trim() || null;
   return { municipality, street, civicNumber };

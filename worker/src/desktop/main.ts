@@ -1381,6 +1381,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           "Non ho trovato nessun codice fiscale da cui partire, né fra le persone già acquisite né nell'elenco Clienti del gestionale. Controlla che l'elenco Clienti sia raggiungibile e che le anagrafiche abbiano il codice fiscale.",
         );
       }
+      let erroriSisterVisti = 0;
       const jobId = (await liveRepository.createJob("automatic")).id;
       networkImportJobId = jobId;
       await liveRepository.setJobContext(jobId, {
@@ -1395,12 +1396,36 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         settings,
         seeds,
         isCancelled: () => networkRunCancellationRequested,
+        /* Coda finita e obiettivo non raggiunto: si torna a pescare fra i
+         * Clienti del gestionale, saltando chi e' gia' stato visitato. */
+        refillSeeds: async (escludi) => {
+          pushActivity(`Coda esaurita senza raggiungere l'obiettivo: ripesco altri nominativi dal gestionale (${escludi.length} gia' visti).`, "info");
+          const altri = await collectCrmPersonSeeds(tabs.crmPage, {
+            wanted: settings.seedCount,
+            escludi,
+            isCancelled: () => networkRunCancellationRequested,
+          });
+          pushActivity(
+            altri.length
+              ? `Altri punti di partenza dal gestionale: ${altri.map((seme) => seme.label).filter(Boolean).join(", ")}`
+              : "Nel gestionale non restano altri nominativi da cui ripartire.",
+            altri.length ? "success" : "warning",
+          );
+          return altri.map((seme) => seme.taxCode);
+        },
         onProgress: (progress) => {
           networkRunProgress = progress;
           publishTransientUpdate({ networkRunProgress });
         },
         onRetryTelemetry: (telemetry) => updateRetryMonitor("network", telemetry),
         onCheckpoint: async (checkpoint) => {
+          /* Una persona non letta da SISTER non lasciava traccia: il
+           * contatore saliva in silenzio e la run chiudeva dicendo soltanto
+           * che nessun immobile aveva superato le barriere. */
+          if (checkpoint.skipped.sister_error > erroriSisterVisti) {
+            erroriSisterVisti = checkpoint.skipped.sister_error;
+            pushActivity(`Persona non letta da SISTER: ${checkpoint.lastError ?? "motivo non riportato"}`, "warning");
+          }
           await persistNetworkRunCheckpoint(checkpoint);
           publishTransientUpdate({ networkRunCheckpoint });
         },
@@ -1436,7 +1461,16 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           error_message: "Esplorazione conclusa senza immobili importabili.", error_details: { action: "network-exploration-empty", skipped: result.skipped },
           acquisition: provenienza,
         });
-        pushActivity("Esplorazione conclusa: nessun immobile ha superato le barriere impostate.", "warning");
+        const motivi = Object.entries(result.skipped)
+          .filter(([, quanti]) => quanti > 0)
+          .map(([motivo, quanti]) => `${motivo}: ${quanti}`)
+          .join(", ");
+        pushActivity(
+          `Esplorazione conclusa senza immobili. Persone visitate: ${result.visitedTaxCodes.length}.`
+          + (motivi ? ` Scarti — ${motivi}.` : "")
+          + (result.lastError ? ` Ultimo errore: ${result.lastError}` : ""),
+          "warning",
+        );
       } else {
         await liveRepository.updateJob(jobId, { status: "paused", saved_at: new Date().toISOString(), error_message: "Esplorazione rete messa in pausa: la coda è salvata.", error_details: { action: "network-exploration-paused" } });
       }

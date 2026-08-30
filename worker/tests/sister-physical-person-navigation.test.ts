@@ -50,11 +50,11 @@ function paginaOmonimi(codiceFiscale: string) {
  * di «Indirizzo», «Classamento» invece di «Categoria» — nessuna zona
  * censuaria, categoria scritta «Cat.A/2» e rendita scritta «Euro: 836,66».
  */
-function paginaImmobiliDelSoggetto() {
+function paginaImmobiliDelSoggetto(quantiSingolare = false) {
   return `<!doctype html><body>${MENU}
     <fieldset><legend>Soggetto selezionato</legend>
       Cognome: RUTIGLIANO Nome: SAVERIO Codice Fiscale: RTGSVR75L02A893X
-      Immobile nel comune di: BITONTO Codice: A893 Immobili individuati: 2
+      ${quantiSingolare ? "Immobile" : "Immobili"} nel comune di: BITONTO Codice: A893
     </fieldset>
     <form name="SceltaVisuraImmSoggForm" action="/intestati">
       <table class="listaIsp4">
@@ -70,7 +70,7 @@ function paginaImmobiliDelSoggetto() {
     </form></body>`;
 }
 
-function sisterFinto(opzioni: { codiceFiscaleOmonimi?: string; nessunaCorrispondenza?: boolean } = {}) {
+function sisterFinto(opzioni: { codiceFiscaleOmonimi?: string; nessunaCorrispondenza?: boolean; unSoloImmobile?: boolean } = {}) {
   const visitati: string[] = [];
   const server = createServer((request, response) => {
     response.setHeader("content-type", "text/html; charset=utf-8");
@@ -97,7 +97,7 @@ function sisterFinto(opzioni: { codiceFiscaleOmonimi?: string; nessunaCorrispond
       return;
     }
     if (url.startsWith("/immobili")) {
-      response.end(paginaImmobiliDelSoggetto());
+      response.end(paginaImmobiliDelSoggetto(opzioni.unSoloImmobile));
       return;
     }
     /* La pagina di partenza. Il `RicercaPFForm` ridotto al solo «Indietro»
@@ -166,6 +166,26 @@ describe("ricerca Persona fisica, dal menu agli immobili", () => {
     });
     /* L'elenco di una persona non ha la zona censuaria. */
     expect(immobili[0]!.censusZone).toBeNull();
+  }, 30_000);
+
+  /**
+   * Una lettera sola faceva fallire chiunque avesse piu' di un immobile.
+   *
+   * SISTER scrive «Immobile nel comune di» quando l'immobile e' uno solo e
+   * «Immobili nel comune di» quando sono di piu'. Leggendo solo il singolare,
+   * ogni persona con due o piu' immobili finiva scartata come «Comune non
+   * riconosciuto» — cioe' quasi tutte.
+   */
+  it("legge il comune sia al singolare sia al plurale", async () => {
+    const plurale = sisterFinto();
+    const conPiuImmobili = await conSister(plurale, (adapter) =>
+      adapter.searchPhysicalPersonByTaxCode("RTGSVR75L02A893X"));
+    expect(conPiuImmobili.map((immobile) => immobile.municipality)).toEqual(["BITONTO", "BITONTO"]);
+
+    const singolare = sisterFinto({ unSoloImmobile: true });
+    const conUnoSolo = await conSister(singolare, (adapter) =>
+      adapter.searchPhysicalPersonByTaxCode("RTGSVR75L02A893X"));
+    expect(conUnoSolo[0]!.municipality).toBe("BITONTO");
   }, 30_000);
 
   it("non scambia il modulo ridotto al solo «Indietro» per quello di ricerca", async () => {

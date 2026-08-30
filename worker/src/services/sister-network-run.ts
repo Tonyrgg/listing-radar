@@ -47,6 +47,15 @@ type Options = {
   onCheckpoint?: (checkpoint: SisterNetworkRunCheckpoint) => void | Promise<void>;
   onProgress?: (progress: SisterNetworkRunProgress) => void | Promise<void>;
   onRetryTelemetry?: (telemetry: RetryTelemetry) => void | Promise<void>;
+  /**
+   * Altri punti di partenza, quando la coda si svuota senza aver raggiunto
+   * l'obiettivo.
+   *
+   * Riceve i codici fiscali gia' visti o gia' in coda, cosi' non li
+   * ripropone. Restituendo una lista vuota dice che non ce ne sono altri, e
+   * l'esplorazione si chiude.
+   */
+  refillSeeds?: (escludi: string[]) => Promise<string[]>;
 };
 
 const skipReasons: NetworkSkipReason[] = [
@@ -96,6 +105,11 @@ export class SisterNetworkRun {
     };
     await this.publish(checkpoint, options);
 
+    /* Finita la prima manche senza aver raggiunto l'obiettivo si torna al
+     * gestionale a pescare altri nominativi, invece di chiudere. Ogni giro
+     * esclude chi e' gia' stato visto: quando non c'e' piu' nessuno da
+     * proporre, la lista torna vuota e si chiude davvero. */
+    for (;;) {
     while (checkpoint.pending.length && checkpoint.acceptedProperties < settings.targetProperties && checkpoint.visitedTaxCodes.length < settings.maxPeople) {
       if (options.isCancelled?.()) {
         checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
@@ -209,7 +223,27 @@ export class SisterNetworkRun {
       checkpoint.updatedAt = new Date().toISOString();
       await this.publish(checkpoint, options);
     }
-    checkpoint = { ...checkpoint, status: "completed", updatedAt: new Date().toISOString(), lastError: null };
+
+    if (checkpoint.pending.length
+      || checkpoint.acceptedProperties >= settings.targetProperties
+      || checkpoint.visitedTaxCodes.length >= settings.maxPeople
+      || options.isCancelled?.()
+      || !options.refillSeeds) break;
+
+    const gia = [...checkpoint.visitedTaxCodes, ...checkpoint.pending.map((entry) => entry.taxCode)];
+    const altri = (await options.refillSeeds(gia))
+      .map(normalizeTaxCode)
+      .filter((taxCode) => /^[A-Z0-9]{16}$/.test(taxCode) && !gia.includes(taxCode));
+    if (!altri.length) break;
+    checkpoint.pending.push(...altri.map((taxCode) => ({ taxCode, depth: 0, discoveredFrom: null })));
+    checkpoint.updatedAt = new Date().toISOString();
+    await this.publish(checkpoint, options);
+    }
+
+    /* L'ultimo errore non si azzera: se qualcuno non e' stato letto, quel
+     * messaggio e' l'unica traccia del perche' la run non ha trovato niente,
+     * e cancellarlo lasciava un esito muto. */
+    checkpoint = { ...checkpoint, status: "completed", updatedAt: new Date().toISOString() };
     await this.publish(checkpoint, options);
     return checkpoint;
   }
