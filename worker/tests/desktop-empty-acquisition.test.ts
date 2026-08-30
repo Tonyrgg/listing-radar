@@ -68,6 +68,8 @@ describe("acquisizioni interrotte senza nulla dentro", () => {
 
     expect(main).toContain("await chiudiAcquisizioneInterrotta(streetImportJobId, streetRunError);");
     expect(main).toContain("await chiudiAcquisizioneInterrotta(networkImportJobId, networkRunError);");
+    /* Anche fermare la run a mano lasciava la stessa riga vuota. */
+    expect(main).toContain(`await chiudiAcquisizioneInterrotta(streetImportJobId, "Run via interrotta dall'operatore.");`);
     expect(main).toContain("let networkImportJobId: string | null = null;");
   });
 

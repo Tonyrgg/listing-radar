@@ -1287,6 +1287,9 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       });
       streetRunAbandonRequested = false;
       jobToImport = null;
+      /* Anche fermare la run a mano puo' lasciare una lavorazione senza
+       * niente dentro: vale lo stesso rimedio del fallimento. */
+      await chiudiAcquisizioneInterrotta(streetImportJobId, "Run via interrotta dall'operatore.");
     }
     refreshStoppingAll();
     await publishState();
