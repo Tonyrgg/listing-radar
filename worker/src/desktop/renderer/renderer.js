@@ -2732,15 +2732,18 @@ $("manualCorrectionForm").addEventListener("submit", async (event) => {
 });
 $("configurationForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = event.currentTarget.querySelector('button[type="submit"]'),
+  /* currentTarget viene azzerato dal browser appena l'handler cede il
+   * controllo a una Promise. Conserviamo il form prima del primo await. */
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]'),
     command = { action: "save-configuration", label: "Salva configurazione" };
   try {
     await executeButtonCommand(button, command, async () => {
-      const data = new FormData(event.currentTarget);
+      const data = new FormData(form);
       await window.propertyWorker.saveInternalConfiguration(
         Object.fromEntries(data),
       );
-      event.currentTarget.querySelector('[name="serviceRoleKey"]').value = "";
+      form.querySelector('[name="serviceRoleKey"]').value = "";
       toast("Configurazione salvata e protetta");
       return true;
     });

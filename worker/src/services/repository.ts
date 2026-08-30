@@ -152,7 +152,7 @@ export class WorkerRepository {
   async healthCheck() {
     const { error } = await this.client
       .from("property_worker_jobs")
-      .select("id,saved_at,import_started_at", { head: true, count: "exact" });
+      .select("id", { head: true, count: "exact" });
     if (error) {
       if (isSupabaseProjectRestricted(error)) {
         throw new Error(
@@ -160,9 +160,8 @@ export class WorkerRepository {
           + "Le run con persistenza cloud sono sospese prima di modificare il gestionale; gli aggiornamenti software restano disponibili da GitHub.",
         );
       }
-      throw new Error(
-        `Supabase non pronto: applica la migration 006_property_worker_archives.sql prima di avviare il worker. ${error.message}`,
-      );
+      const detail = [error.code, error.message].filter(Boolean).join(" · ");
+      throw new Error(`Archivio dati non raggiungibile${detail ? `: ${detail}` : "."}`);
     }
   }
 
