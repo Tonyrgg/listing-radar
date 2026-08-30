@@ -107,7 +107,17 @@ async function apriElencoClienti(page: Page, selectors: CrmSelectors) {
       "Nel gestionale non trovo l'elenco Clienti da cui prendere i punti di partenza. Aprilo e riprova.",
     );
   }
+  /* Il clic sulla voce di menu a volte non naviga: e' un'applicazione a pagina
+   * singola, e la stessa risalita la fa gia' la ricerca nominativi. */
+  const href = await voce.getAttribute("href");
   await voce.click();
+  const arrivato = await page
+    .waitForURL(/\/s\/account\/Account(?:[/?#]|$)/i, { timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!arrivato && href) {
+    await page.goto(new URL(href, page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+  }
   await page.locator(selettoreRighe(selectors)).first().waitFor({ state: "visible", timeout: 30_000 });
 }
 
