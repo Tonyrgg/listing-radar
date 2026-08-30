@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { decideNetworkProperty, extractPropertyFloors, normalizeNetworkSettings, ownerAgeAt } from "../src/core/network-exploration.js";
+import { birthDateFromTaxCode } from "../src/core/normalize.js";
 import { SisterNetworkRun } from "../src/services/sister-network-run.js";
 
 const property = (category: string, address = "VIA TEST n. 1 Piano T") => ({ municipality: "BITONTO", sheet: "1", parcel: "2", subaltern: "3", address, censusZone: null, category, class: null, consistency: null, cadastralIncome: null, rawPayload: {} });
@@ -109,5 +110,167 @@ describe("rete proprietaria", () => {
     expect(crmChecks).toEqual(["3"]);
     expect(checkpoint.acceptedProperties).toBe(1);
     expect(checkpoint.skipped.owner_count_out_of_range).toBe(1);
+  });
+});
+
+describe("data di nascita letta dal codice fiscale", () => {
+  it("legge anno, mese e giorno di un uomo e di una donna", () => {
+    expect(birthDateFromTaxCode("RSSMRA80A01A893P")).toBe("1980-01-01");
+    /* Alle donne il giorno e' scritto con quaranta aggiunto. */
+    expect(birthDateFromTaxCode("BNCNNA85B41A893K")).toBe("1985-02-01");
+  });
+
+  it("rilegge le lettere dell'omocodia come cifre", () => {
+    /* U vale 8, L vale 0, M vale 1: stessa data del primo. */
+    expect(birthDateFromTaxCode("RSSMRAULA0MA893X")).toBe("1980-01-01");
+  });
+
+  it("sceglie il secolo che non cade nel futuro", () => {
+    const oggi = new Date("2026-08-30T00:00:00Z");
+    expect(birthDateFromTaxCode("RSSMRA30A01A893X", oggi)).toBe("1930-01-01");
+    expect(birthDateFromTaxCode("RSSMRA10A01A893X", oggi)).toBe("2010-01-01");
+  });
+
+  it("non restituisce una data che non esiste", () => {
+    /* 30 febbraio: il calendario lo sposterebbe a marzo. */
+    expect(birthDateFromTaxCode("RSSMRA80B30A893X")).toBeNull();
+    expect(birthDateFromTaxCode("non-un-codice")).toBeNull();
+  });
+});
+
+describe("attraversamento della rete", () => {
+  const immobile = (parcel: string, category = "A/3") => ({
+    municipality: "BITONTO", sheet: "1", parcel, subaltern: "1", address: "VIA TEST n. 1 Piano 1",
+    censusZone: null, category, class: null, consistency: null, cadastralIncome: null, rawPayload: {},
+  });
+  const persona = (taxCode: string) => ({
+    fullName: "Persona Test", birthPlace: null, birthProvince: null, birthDate: null, taxCode,
+    rightType: "Proprietà", shareOriginal: "1/1", shareNumerator: null, shareDenominator: null,
+    sharePercentage: 100, rawPayload: {},
+  });
+  const GIOVANE = "RSSMRA80A01A893P";   // 1980
+  const ALTRO_GIOVANE = "BNCNNA75A01A893X"; // 1975
+  const ANZIANO = "VRDLGU30A01A893X";   // 1930, oltre 85
+
+  /**
+   * Un immobile scartato dal requisito d'eta' non deve fermare la rete: i
+   * suoi comproprietari sono comunque rami da percorrere.
+   */
+  it("mette in coda i comproprietari anche quando l'immobile non passa il filtro", async () => {
+    const salvati: string[] = [];
+    const immobiliPerPersona: Record<string, ReturnType<typeof immobile>[]> = {
+      [GIOVANE]: [immobile("10")],
+      [ALTRO_GIOVANE]: [immobile("20")],
+    };
+    const proprietariPerParticella: Record<string, ReturnType<typeof persona>[]> = {
+      "10": [persona(GIOVANE), persona(ALTRO_GIOVANE)],
+      "20": [persona(ALTRO_GIOVANE), persona(ANZIANO)],
+    };
+
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async (taxCode: string) => immobiliPerPersona[taxCode] ?? [],
+      extractOwners: async (property: { parcel: string }) => proprietariPerParticella[property.parcel] ?? [],
+    } as any, {
+      findPropertyByCadastralIdentity: async () => ({ match: null }),
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => {
+        salvati.push(...properties.map((item) => item.parcel));
+        return properties.map((item, index) => ({ ...item, id: `property-${index}` }));
+      },
+      insertOwner: async () => ({ id: "person-1" }),
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { minOwnerAge: 85, targetProperties: 10, maxDepth: 3, maxPeople: 10 },
+      seeds: [GIOVANE],
+    });
+
+    /* La particella 10 non ha proprietari sopra gli 85: scartata. */
+    expect(checkpoint.skipped.owner_age_out_of_range).toBe(1);
+    /* Ma il comproprietario e' stato visitato lo stesso... */
+    expect(checkpoint.visitedTaxCodes).toContain(ALTRO_GIOVANE);
+    /* ...e da lui si e' arrivati all'immobile che il requisito lo rispetta. */
+    expect(salvati).toEqual(["20"]);
+    expect(checkpoint.acceptedProperties).toBe(1);
+    /* E la rete prosegue: anche l'anziano trovato entra in coda. */
+    expect(checkpoint.visitedTaxCodes).toContain(ANZIANO);
+  });
+
+  /**
+   * Vale per ogni criterio, non solo per l'eta'.
+   *
+   * Cambia il modo di calcolare — l'eta' dal codice fiscale, il numero dei
+   * proprietari dalla riga, il piano dall'indirizzo — ma la regola e' la
+   * stessa: il filtro decide cosa si porta a casa, mai dove si passa. Anche
+   * un box rivela con chi si possiede.
+   */
+  it("attraversa la rete anche da un box e da un immobile con troppi proprietari", async () => {
+    const salvati: string[] = [];
+    const CONOSCIUTO = "MRRSFN70A01A893X";
+    const immobiliPerPersona: Record<string, ReturnType<typeof immobile>[]> = {
+      [GIOVANE]: [immobile("40", "C/6"), immobile("41")],
+      [ALTRO_GIOVANE]: [immobile("50")],
+      [CONOSCIUTO]: [],
+    };
+    const proprietariPerParticella: Record<string, ReturnType<typeof persona>[]> = {
+      /* Un box: categoria non strategica, mai acquisito. */
+      "40": [persona(GIOVANE), persona(ALTRO_GIOVANE)],
+      /* Tre proprietari, quando il filtro ne ammette al massimo due. */
+      "41": [persona(GIOVANE), persona(ALTRO_GIOVANE), persona(CONOSCIUTO)],
+      "50": [persona(ALTRO_GIOVANE)],
+    };
+
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async (taxCode: string) => immobiliPerPersona[taxCode] ?? [],
+      extractOwners: async (property: { parcel: string }) => proprietariPerParticella[property.parcel] ?? [],
+    } as any, {
+      findPropertyByCadastralIdentity: async () => ({ match: null }),
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => {
+        salvati.push(...properties.map((item) => item.parcel));
+        return properties.map((item, index) => ({ ...item, id: `property-${index}` }));
+      },
+      insertOwner: async () => ({ id: "person-1" }),
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { maxOwnerCount: 2, targetProperties: 10, maxDepth: 3, maxPeople: 10 },
+      seeds: [GIOVANE],
+    });
+
+    expect(checkpoint.skipped.non_strategic_category).toBe(1);
+    expect(checkpoint.skipped.owner_count_out_of_range).toBe(1);
+    /* Nessuno dei due immobili e' stato preso, ma entrambi hanno indicato
+     * dove proseguire. */
+    expect(checkpoint.visitedTaxCodes).toContain(ALTRO_GIOVANE);
+    expect(checkpoint.visitedTaxCodes).toContain(CONOSCIUTO);
+    /* E dal ramo aperto dal box e' arrivato l'unico immobile buono. */
+    expect(salvati).toEqual(["50"]);
+  });
+
+  it("l'eta' si ricava dal codice fiscale quando SISTER non stampa la data", async () => {
+    const salvati: string[] = [];
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => [immobile("30")],
+      extractOwners: async () => [persona(ANZIANO)],
+    } as any, {
+      findPropertyByCadastralIdentity: async () => ({ match: null }),
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => {
+        salvati.push(...properties.map((item) => item.parcel));
+        return properties.map((item, index) => ({ ...item, id: `property-${index}` }));
+      },
+      insertOwner: async () => ({ id: "person-1" }),
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { minOwnerAge: 85, targetProperties: 1, maxDepth: 1, maxPeople: 5 },
+      seeds: [ANZIANO],
+    });
+
+    /* Nessuna data di nascita in nessun proprietario: senza la lettura del
+     * codice fiscale questo immobile sarebbe stato scartato. */
+    expect(checkpoint.skipped.owner_age_out_of_range).toBe(0);
+    expect(salvati).toEqual(["30"]);
   });
 });

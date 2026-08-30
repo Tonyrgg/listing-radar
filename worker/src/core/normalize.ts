@@ -27,6 +27,51 @@ export function genderFromTaxCode(value: unknown): "M" | "F" | null {
   return null;
 }
 
+/**
+ * La data di nascita scritta dentro il codice fiscale.
+ *
+ * SISTER la stampa quasi sempre accanto al nominativo, ma non sempre: quando
+ * manca, il requisito d'eta' scartava la persona invece di leggerla da dove
+ * comunque c'e'. Non e' una stima — il codice fiscale la contiene per
+ * costruzione: due cifre d'anno, una lettera di mese, due cifre di giorno con
+ * quaranta aggiunto alle donne.
+ *
+ * L'omocodia sostituisce le cifre con lettere secondo una tabella fissa, e
+ * vanno rilette come cifre. Del secolo il codice non dice niente: si prende
+ * l'anno piu' recente che non cada nel futuro.
+ */
+const OMOCODIA = "LMNPQRSTUV";
+const MESI_CODICE_FISCALE = "ABCDEHLMPRST";
+
+function cifreCodiceFiscale(pezzo: string): string {
+  return [...pezzo].map((carattere) => {
+    const omocodia = OMOCODIA.indexOf(carattere);
+    return omocodia >= 0 ? String(omocodia) : carattere;
+  }).join("");
+}
+
+export function birthDateFromTaxCode(value: unknown, asOf = new Date()): string | null {
+  const taxCode = normalizeTaxCode(value);
+  if (!/^[A-Z0-9]{16}$/.test(taxCode)) return null;
+
+  const anno = Number(cifreCodiceFiscale(taxCode.slice(6, 8)));
+  const mese = MESI_CODICE_FISCALE.indexOf(taxCode[8] ?? "") + 1;
+  const giornoGrezzo = Number(cifreCodiceFiscale(taxCode.slice(9, 11)));
+  if (!Number.isFinite(anno) || mese < 1 || !Number.isFinite(giornoGrezzo)) return null;
+
+  /* Sopra il quaranta e' una donna: il giorno vero e' quello meno quaranta. */
+  const giorno = giornoGrezzo > 40 ? giornoGrezzo - 40 : giornoGrezzo;
+  if (giorno < 1 || giorno > 31) return null;
+
+  const recente = 2000 + anno;
+  const annoIntero = recente > asOf.getUTCFullYear() ? 1900 + anno : recente;
+  const data = new Date(Date.UTC(annoIntero, mese - 1, giorno));
+  /* Un 31 di novembre non esiste: se il calendario lo sposta, il codice non
+   * portava una data vera. */
+  if (data.getUTCMonth() !== mese - 1 || data.getUTCDate() !== giorno) return null;
+  return data.toISOString().slice(0, 10);
+}
+
 export function normalizePhone(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";

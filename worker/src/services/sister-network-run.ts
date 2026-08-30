@@ -153,6 +153,28 @@ export class SisterNetworkRun {
           checkpoint.lastError = error instanceof Error ? error.message : String(error);
           continue;
         }
+        /* La rete si attraversa tutta; i filtri dicono solo cosa portare a
+         * casa.
+         *
+         * I comproprietari finivano in coda soltanto dopo che l'immobile
+         * aveva superato ogni barriera. Con un requisito stretto — «piu' di
+         * ottantacinque anni», per dire — quasi nessun immobile passava,
+         * quindi non entrava in coda nessuno, e l'esplorazione moriva dopo i
+         * punti di partenza dicendo che nessun immobile aveva superato le
+         * barriere. Chi possiede insieme a qualcuno e' un ramo della rete a
+         * prescindere da quanti anni ha: si visita comunque, e sara' poi il
+         * filtro a decidere se i suoi immobili si acquisiscono. */
+        if (node.depth < settings.maxDepth) {
+          const giaNoti = new Set([...checkpoint.visitedTaxCodes, ...checkpoint.pending.map((entry) => entry.taxCode)]);
+          for (const owner of owners) {
+            const taxCode = normalizeTaxCode(owner.taxCode);
+            if (/^[A-Z0-9]{16}$/.test(taxCode) && !giaNoti.has(taxCode)) {
+              checkpoint.pending.push({ taxCode, depth: node.depth + 1, discoveredFrom: propertyKey });
+              giaNoti.add(taxCode);
+            }
+          }
+        }
+
         const preDecision = decideNetworkProperty(property, owners, settings, false);
         if (!preDecision.eligible && preDecision.reason !== "already_in_crm") {
           checkpoint.skipped[preDecision.reason] += 1;
@@ -181,16 +203,6 @@ export class SisterNetworkRun {
         checkpoint.acceptedPropertyKeys.push(propertyKey);
         checkpoint.acceptedProperties += 1;
         if (decision.kind === "existing_update") checkpoint.existingProperties += 1;
-        if (node.depth < settings.maxDepth) {
-          const queued = new Set([...checkpoint.visitedTaxCodes, ...checkpoint.pending.map((entry) => entry.taxCode)]);
-          for (const owner of owners) {
-            const taxCode = normalizeTaxCode(owner.taxCode);
-            if (/^[A-Z0-9]{16}$/.test(taxCode) && !queued.has(taxCode)) {
-              checkpoint.pending.push({ taxCode, depth: node.depth + 1, discoveredFrom: propertyKey });
-              queued.add(taxCode);
-            }
-          }
-        }
         checkpoint.updatedAt = new Date().toISOString();
         await this.publish(checkpoint, options);
       }

@@ -1,5 +1,5 @@
 import type { CadastralOwner, CadastralProperty } from "../types.js";
-import { extractFirstCivicNumber } from "./normalize.js";
+import { birthDateFromTaxCode, extractFirstCivicNumber } from "./normalize.js";
 
 export type NetworkExistingPropertyPolicy = "new_only" | "include_existing";
 export type NetworkFloorMode = "any" | "exact" | "minimum" | "maximum";
@@ -108,7 +108,11 @@ export function decideNetworkProperty(
   }
   if (settings.minOwnerAge != null || settings.maxOwnerAge != null) {
     const matchingOwner = owners.some((owner) => {
-      const age = ownerAgeAt(owner.birthDate, asOf);
+      /* Se SISTER non stampa la data di nascita, quella vera sta comunque
+       * dentro il codice fiscale: senza questa lettura il requisito d'eta'
+       * scartava persone che invece lo soddisfano. */
+      const age = ownerAgeAt(owner.birthDate, asOf)
+        ?? ownerAgeAt(birthDateFromTaxCode(owner.taxCode, asOf), asOf);
       return age != null
         && (settings.minOwnerAge == null || age >= settings.minOwnerAge)
         && (settings.maxOwnerAge == null || age <= settings.maxOwnerAge);
