@@ -85,9 +85,19 @@ describe("acquisizioni interrotte senza nulla dentro", () => {
     expect(semi).toBeGreaterThan(-1);
     expect(browser).toBeGreaterThan(semi);
     expect(lavorazione).toBeGreaterThan(semi);
-    /* Il vecchio messaggio diceva soltanto che i semi non c'erano. Questo dice
-     * anche da dove arrivano e cosa fare per averli. */
-    expect(main).toContain("Acquisisci prima una via completa o un immobile singolo e importalo");
     expect(main).not.toContain("const seeds = await liveRepository.listVerifiedNetworkSeedTaxCodes");
+
+    /* Se l'archivio non basta, i punti di partenza li sorteggia il gestionale,
+     * e anche quello succede prima che nasca la lavorazione. */
+    const sorteggio = rete.indexOf("collectCrmPersonSeeds(tabs.crmPage");
+    expect(sorteggio).toBeGreaterThan(-1);
+    expect(lavorazione).toBeGreaterThan(sorteggio);
+    expect(rete).toContain("if (seeds.length < settings.seedCount) {");
+
+    /* Il rifiuto resta, ma solo quando non c'e' proprio niente da nessuna
+     * delle due parti. */
+    const rifiuto = rete.indexOf("Non ho trovato nessun codice fiscale da cui partire");
+    expect(rifiuto).toBeGreaterThan(sorteggio);
+    expect(lavorazione).toBeGreaterThan(rifiuto);
   });
 });

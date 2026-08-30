@@ -34,6 +34,7 @@ import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../co
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
+import { collectCrmPersonSeeds } from "../adapters/crm/people.js";
 import { WorkerRepository } from "../services/repository.js";
 import { describeSupabaseOperationalError } from "../services/supabase-errors.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
@@ -1331,16 +1332,11 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     settings = normalizeNetworkSettings(input.settings);
     config = workerConfig({ dryRun: false });
     requireCloudAvailable(await healthChecks({ silent: true }));
-    /* I punti di partenza si leggono prima di aprire il browser e prima di
-     * creare la lavorazione: senza semi non c'è niente da esplorare, e una run
-     * che nasce per morire al primo passo lascerebbe soltanto una riga vuota
-     * fra le acquisizioni pronte. */
+    /* I punti di partenza noti si leggono prima di aprire il browser: sono
+     * le persone che un'acquisizione precedente ha già portato nel gestionale.
+     * Se non bastano, il resto lo sorteggia il gestionale stesso, ma per
+     * quello serve la scheda aperta e quindi si fa più avanti. */
     seeds = await repository(config).listVerifiedNetworkSeedTaxCodes(settings.seedCount);
-    if (!seeds.length) {
-      throw new Error(
-        "La rete proprietari parte dalle persone già verificate nel gestionale da un'acquisizione precedente, e l'archivio del worker non ne contiene ancora nessuna. Acquisisci prima una via completa o un immobile singolo e importalo: da lì la rete avrà i suoi punti di partenza.",
-      );
-    }
   } catch (error) {
     releaseOperationReservation("network");
     throw error;
@@ -1358,6 +1354,33 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     activeNetworkBrowser = tabs.browser;
     try {
       const liveRepository = repository(config);
+      if (seeds.length < settings.seedCount) {
+        /* Ad archivio corto i punti di partenza si sorteggiano fra i Clienti
+         * del gestionale: di persone ne ha già, e senza questo la rete non si
+         * poteva avviare finché non era stata importata almeno
+         * un'acquisizione. Il sorteggio serve a non ripartire ogni volta dalle
+         * stesse persone, che vorrebbe dire ribattere la stessa porzione di
+         * rete senza scoprire niente di nuovo. */
+        pushActivity("Punti di partenza insufficienti in archivio: li sorteggio fra i Clienti del gestionale.", "info");
+        const sorteggiati = await collectCrmPersonSeeds(tabs.crmPage, {
+          wanted: settings.seedCount - seeds.length,
+          isCancelled: () => networkRunCancellationRequested,
+          onProgress: ({ pagina, persone }) => pushActivity(`Elenco Clienti: pagina ${pagina}, ${persone} persone lette`),
+        });
+        const nuovi = sorteggiati.filter((seme) => !seeds.includes(seme.taxCode));
+        seeds = [...seeds, ...nuovi.map((seme) => seme.taxCode)];
+        if (nuovi.length) {
+          pushActivity(
+            `Punti di partenza sorteggiati dal gestionale: ${nuovi.map((seme) => seme.label).filter(Boolean).join(", ") || nuovi.length}`,
+            "success",
+          );
+        }
+      }
+      if (!seeds.length) {
+        throw new Error(
+          "Non ho trovato nessun codice fiscale da cui partire, né fra le persone già acquisite né nell'elenco Clienti del gestionale. Controlla che l'elenco Clienti sia raggiungibile e che le anagrafiche abbiano il codice fiscale.",
+        );
+      }
       const jobId = (await liveRepository.createJob("automatic")).id;
       networkImportJobId = jobId;
       await liveRepository.setJobContext(jobId, {

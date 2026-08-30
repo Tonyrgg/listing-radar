@@ -377,7 +377,7 @@ La scansione civico per civico e la regola dei 50 civici vuoti restano come stra
 
 ### Esplorazione della rete proprietaria
 
-La modalità «Segui una rete di proprietari» parte da codici fiscali verificati nel CRM, interroga SISTER e attraversa i comproprietari fino al limite impostato. Costruisce una coda senza avviare l'import. Prima del controllo CRM applica filtri facoltativi su:
+La modalità «Segui una rete di proprietari» parte da codici fiscali verificati nel CRM, interroga SISTER e attraversa i comproprietari fino al limite impostato. I punti di partenza sono le persone che una acquisizione precedente ha già portato nel gestionale; quando non bastano a coprire «Da quanti clienti partire», il resto viene sorteggiato fra i Clienti del gestionale leggendo l'elenco anagrafiche. Il sorteggio è voluto: due esplorazioni di seguito non devono ripartire dalle stesse persone e ribattere la stessa porzione di rete. Un codice fiscale viene riconosciuto solo se ne ha la forma completa, omocodia inclusa, così un identificativo interno del gestionale non può essere scambiato per tale. Costruisce una coda senza avviare l'import. Prima del controllo CRM applica filtri facoltativi su:
 
 - piano esatto, da un piano in su oppure da un piano in giù (`0` terra, `-1` primo seminterrato);
 - età minima e massima di almeno un proprietario con data di nascita disponibile;
