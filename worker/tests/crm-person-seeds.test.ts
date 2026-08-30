@@ -27,7 +27,7 @@ const ANAGRAFICHE = [
 function paginaElenco(anagrafiche: typeof ANAGRAFICHE, pagina: number, ultima: number, conColonnaCf: boolean) {
   const righe = anagrafiche.map((persona) => `
     <tr>
-      <td><a data-refid="recordId" data-recordid="${persona.id}" href="/s/account/${persona.id}" title="${persona.nome}">${persona.nome}</a></td>
+      <td><a title="${persona.nome}" target="_blank" href="/CRMImmobiliareLightning/s/account/${persona.id}/${persona.nome.toLowerCase().replace(/ /g, "-")}">${persona.nome}</a></td>
       <td>A1B2C3D4E5F6G7H8</td>
       ${conColonnaCf ? `<td>${persona.cf}</td>` : ""}
     </tr>`).join("");
@@ -49,7 +49,7 @@ function crmFinto(options: { conColonnaCf: boolean; perPagina?: number }) {
   const server = createServer((request, response) => {
     response.setHeader("content-type", "text/html; charset=utf-8");
     const [percorso = "/", query] = (request.url ?? "/").split("?");
-    const scheda = percorso.match(/^\/s\/account\/(.+)$/);
+    const scheda = percorso.match(/\/s\/account\/([^/]+)\/[^/]+$/);
     if (scheda) {
       const persona = ANAGRAFICHE.find((voce) => voce.id === scheda[1]);
       schedeAperte.push(scheda[1]!);
@@ -131,6 +131,20 @@ describe("sorteggio", () => {
 });
 
 describe("punti di partenza presi dall'elenco Clienti", () => {
+  it("riconosce le righe dell'elenco, che non hanno gli attributi dei risultati di ricerca", async () => {
+    const finto = crmFinto({ conColonnaCf: false });
+    const semi = await conCrm(finto, async (indirizzo, apri) => {
+      const page = await apri(indirizzo);
+      return collectCrmPersonSeeds(page, { wanted: 1 });
+    });
+
+    /* Le ancore dell'elenco portano solo title/target/href: cercare
+     * `data-refid="recordId"` faceva scadere l'attesa a vuoto. */
+    expect(semi).toHaveLength(1);
+    expect(semi[0]!.recordId).toMatch(/^001A/);
+    expect(semi[0]!.label).not.toBe("");
+  }, 30_000);
+
   it("legge i codici fiscali dalla colonna e ne prende quanti gliene servono", async () => {
     const finto = crmFinto({ conColonnaCf: true });
     const semi = await conCrm(finto, async (indirizzo, apri) => {

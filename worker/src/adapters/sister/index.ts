@@ -201,12 +201,54 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     return noMatch ? [] : this.extractProperties();
   }
 
+  /**
+   * Porta SISTER sulla ricerca Persona fisica.
+   *
+   * Prima si limitava a tornare indietro qualche volta: se la pagina era
+   * un'altra — l'elenco indirizzi, per dire — l'esplorazione si fermava e
+   * chiedeva all'operatore di aprire il modulo a mano. Il menu di SISTER ha
+   * gia' la voce che serve, e conserva l'ufficio scelto perche' la si prende
+   * per com'e' scritta invece di ricostruirne l'indirizzo.
+   *
+   * `lista=PF` e' la persona fisica; `lista=PNF` e' quella giuridica, e non
+   * combacia perche' il confronto e' sul testo esatto del parametro.
+   */
   private async ensurePhysicalPersonForm() {
+    /* Prima la voce di menu, il ritorno indietro solo se non c'e'.
+     *
+     * Prima si tornava indietro quattro volte e basta: se la scheda era su
+     * un'altra pagina — l'elenco indirizzi, per dire — l'esplorazione si
+     * fermava e chiedeva all'operatore di aprire il modulo a mano. E tornare
+     * indietro alla cieca puo' anche far finire su una pagina vuota, dove il
+     * menu non c'e' piu' e non si risale piu' da nessuna parte.
+     *
+     * `lista=PF` e' la persona fisica; `lista=PNF` e' quella giuridica, e non
+     * combacia perche' il confronto e' sul testo esatto del parametro. La
+     * voce si prende com'e' scritta, cosi' l'ufficio resta quello scelto. */
     for (let attempt = 0; attempt < 4; attempt += 1) {
       await this.checkSession();
       if (await this.page.locator('form[name="RicercaPFForm"]').count() === 1) return;
+
+      const voce = this.page.locator('a[href*="SceltaLink.do?lista=PF"]').first();
+      if (await voce.count()) {
+        const indirizzo = await voce.getAttribute("href");
+        await voce.click().catch(() => undefined);
+        const arrivato = await this.page
+          .locator('form[name="RicercaPFForm"]')
+          .waitFor({ state: "attached", timeout: 15_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!arrivato && indirizzo) {
+          await this.page
+            .goto(new URL(indirizzo, this.page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 20_000 })
+            .catch(() => undefined);
+        }
+        continue;
+      }
+
       await this.page.goBack({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => undefined);
     }
+
     throw new WorkerError(
       "SISTER non è sulla pagina Persona fisica. Apri la ricerca Persona fisica e riprendi.",
       "needs_review",

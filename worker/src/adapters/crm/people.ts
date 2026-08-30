@@ -40,8 +40,26 @@ type ElencoRiga = {
  */
 const CODICE_FISCALE = /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/;
 
+/**
+ * L'elenco Clienti non è la pagina dei risultati di ricerca.
+ *
+ * Nei risultati ogni collegamento porta `data-refid="recordId"` e
+ * `data-recordid`, ed è su quelli che lavora la ricerca nominativi. Nella
+ * lista quegli attributi non esistono: restano `title`, `target` e `href`, e
+ * l'indirizzo ha la forma `/s/account/<id>/<nome-nell-indirizzo>`. Chiedere
+ * qui gli attributi dei risultati voleva dire aspettare righe che non
+ * sarebbero mai comparse, e la run moriva sul tempo scaduto.
+ *
+ * L'elenco non mostra il codice fiscale in nessuna colonna: le sue sono nome,
+ * recapiti e residenza. Per averlo si deve aprire la scheda, e non è un
+ * ripiego ma la strada normale.
+ */
+const RIGHE_ELENCO = 'table tbody tr:has(a[href*="/s/account/"])';
+const ANCORA_CLIENTE = 'a[href*="/s/account/"]';
+
 const PAGINE_MASSIME = 30;
 const SCHEDE_APRIBILI_PER_SEME = 5;
+const ATTESA_CODICE_FISCALE_MS = 12_000;
 
 function pulisci(value: string | null | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim();
@@ -66,23 +84,26 @@ export function mescola<T>(valori: readonly T[], random: () => number = Math.ran
   return copia;
 }
 
-function selettoreRighe(selectors: CrmSelectors) {
-  return selectors.personResultRows;
+/** L'identificativo del cliente sta nell'indirizzo, non in un attributo. */
+function recordIdDaHref(href: string | null): string {
+  const trovato = href?.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
+  /* `/s/account/Account` è l'elenco stesso, non una persona. */
+  return trovato.toLowerCase() === "account" ? "" : trovato;
 }
 
-async function firmaElenco(page: Page, selectors: CrmSelectors) {
+async function firmaElenco(page: Page) {
   return (await page
-    .locator(selectors.personResultId)
+    .locator(`${RIGHE_ELENCO} ${ANCORA_CLIENTE}`)
     .evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? "")))
     .join("\n");
 }
 
-async function attendiPaginaSuccessiva(page: Page, firmaPrecedente: string, selectors: CrmSelectors) {
+async function attendiPaginaSuccessiva(page: Page, firmaPrecedente: string) {
   const scadenza = Date.now() + 20_000;
   let ultima = "";
   let stabili = 0;
   while (Date.now() < scadenza) {
-    const corrente = await firmaElenco(page, selectors).catch(() => "");
+    const corrente = await firmaElenco(page).catch(() => "");
     if (corrente && corrente !== firmaPrecedente) {
       stabili = corrente === ultima ? stabili + 1 : 0;
       if (stabili >= 2) return;
@@ -100,7 +121,7 @@ async function attendiPaginaSuccessiva(page: Page, firmaPrecedente: string, sele
  * senza motivo.
  */
 async function apriElencoClienti(page: Page, selectors: CrmSelectors) {
-  if (await page.locator(selettoreRighe(selectors)).first().count()) return;
+  if (await page.locator(RIGHE_ELENCO).first().count()) return;
   const voce = page.locator(selectors.personSearchPage).filter({ visible: true }).first();
   if (!(await voce.count())) {
     throw new Error(
@@ -118,29 +139,67 @@ async function apriElencoClienti(page: Page, selectors: CrmSelectors) {
   if (!arrivato && href) {
     await page.goto(new URL(href, page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
-  await page.locator(selettoreRighe(selectors)).first().waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator(RIGHE_ELENCO).first().waitFor({ state: "visible", timeout: 30_000 });
 }
 
-async function leggiPagina(page: Page, selectors: CrmSelectors): Promise<ElencoRiga[]> {
-  const righe = page.locator(selettoreRighe(selectors));
-  const lette: ElencoRiga[] = [];
-  for (let indice = 0; indice < await righe.count(); indice += 1) {
-    const riga = righe.nth(indice);
-    const collegamento = riga.locator(selectors.personResultId).first();
-    if (!(await collegamento.count())) continue;
-    const href = await collegamento.getAttribute("href");
-    const recordId = (await collegamento.getAttribute("data-recordid"))
-      || href?.match(/\/s\/account\/([^/?#]+)/i)?.[1]
-      || "";
+async function leggiPagina(page: Page): Promise<ElencoRiga[]> {
+  /* Una pagina sola, un viaggio solo.
+   *
+   * Interrogare le righe una per una — conta, leggi l'indirizzo, leggi le
+   * celle — voleva dire un centinaio e mezzo di andate e ritorni col browser
+   * per cinquanta clienti, e quasi un minuto buttato prima ancora di aprire
+   * una scheda. Qui la pagina viene letta tutta insieme dentro il browser.
+   *
+   * `evaluateAll` riceve le righe risolte da Playwright, che attraversa le
+   * shadow root: dentro non si potrebbe ritrovarle da `document`, perche' la
+   * tabella di questo gestionale non e' nel documento principale.
+   */
+  const lette = await page.locator(RIGHE_ELENCO).evaluateAll((righe) => righe.map((riga) => {
+    /* Il collegamento al cliente non e' nella riga: sta in una shadow root
+     * annidata dentro di essa. I locator di Playwright le attraversano, ma
+     * `querySelector` dentro la riga no, e cercando li' non si trovava niente.
+     * Qui si scende di shadow root in shadow root fino a incontrarlo.
+     *
+     * Niente funzioni con nome in questo corpo: viene serializzato ed eseguito
+     * nel browser, e chi compila ne avvolge i nomi con un aiutante che nella
+     * pagina non esiste. */
+    let href = "";
+    let label = "";
+    const pila: Array<Element | ShadowRoot | Document> = [riga];
+    while (pila.length && !href) {
+      const nodo = pila.pop()!;
+      const discendenti = nodo.querySelectorAll("*");
+      for (let indice = 0; indice < discendenti.length; indice += 1) {
+        const elemento = discendenti[indice] as HTMLElement;
+        const collegamento = elemento.getAttribute("href") ?? "";
+        if (elemento.tagName === "A" && collegamento.includes("/s/account/")) {
+          href = collegamento;
+          label = elemento.getAttribute("title") ?? elemento.textContent ?? "";
+          break;
+        }
+        if (elemento.shadowRoot) pila.push(elemento.shadowRoot);
+      }
+    }
+    const celle: string[] = [];
+    const caselle = riga.querySelectorAll("td, th");
+    for (let indice = 0; indice < caselle.length; indice += 1) {
+      celle.push(((caselle[indice] as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim());
+    }
+    return { href, label: label.replace(/\s+/g, " ").trim(), celle };
+  }));
+
+  const risultato: ElencoRiga[] = [];
+  for (const riga of lette) {
+    const recordId = recordIdDaHref(riga.href);
     if (!recordId) continue;
-    lette.push({
+    risultato.push({
       recordId,
-      label: pulisci((await collegamento.getAttribute("title")) ?? (await collegamento.textContent())),
-      url: href ? new URL(href, page.url()).toString() : "",
-      celle: (await riga.locator("td").allInnerTexts()).map(pulisci),
+      label: riga.label,
+      url: riga.href ? new URL(riga.href, page.url()).toString() : "",
+      celle: riga.celle,
     });
   }
-  return lette;
+  return risultato;
 }
 
 /**
@@ -153,9 +212,20 @@ async function leggiPagina(page: Page, selectors: CrmSelectors): Promise<ElencoR
 async function leggiCodiceFiscaleDallaScheda(page: Page, url: string): Promise<string | null> {
   if (!url) return null;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.locator("h1").first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
-  const testo = await page.evaluate(() => document.body.innerText).catch(() => "");
-  return codiceFiscaleDaTesto(testo);
+  /* Niente attesa di un titolo: su questa scheda `h1`/`h2` non diventa mai
+   * visibile, e aspettarlo costava venticinque secondi a persona per poi
+   * proseguire lo stesso. Il codice fiscale invece c'e' subito. Si aspetta
+   * quello, che e' la cosa che serve davvero, e di norma basta la prima
+   * lettura. `innerText` riporta anche il testo reso dentro le shadow root,
+   * che qui sono dappertutto. */
+  const scadenza = Date.now() + ATTESA_CODICE_FISCALE_MS;
+  for (;;) {
+    const testo = await page.evaluate(() => document.body.innerText).catch(() => "");
+    const trovato = codiceFiscaleDaTesto(testo);
+    if (trovato) return trovato;
+    if (Date.now() >= scadenza) return null;
+    await page.waitForTimeout(400);
+  }
 }
 
 /**
@@ -186,16 +256,16 @@ export async function collectCrmPersonSeeds(
   const perRecordId = new Map<string, ElencoRiga>();
   for (let pagina = 1; pagina <= pagineMassime; pagina += 1) {
     if (options.isCancelled?.()) break;
-    for (const riga of await leggiPagina(page, selectors)) {
+    for (const riga of await leggiPagina(page)) {
       if (!perRecordId.has(riga.recordId)) perRecordId.set(riga.recordId, riga);
     }
     options.onProgress?.({ pagina, persone: perRecordId.size });
 
     const avanti = page.locator('button:has(svg[data-key="right"])').filter({ visible: true }).first();
     if (!(await avanti.count()) || !(await avanti.isEnabled())) break;
-    const firma = await firmaElenco(page, selectors);
+    const firma = await firmaElenco(page);
     await avanti.click();
-    await attendiPaginaSuccessiva(page, firma, selectors);
+    await attendiPaginaSuccessiva(page, firma);
   }
 
   const mescolate = mescola([...perRecordId.values()], random);
