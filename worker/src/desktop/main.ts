@@ -1318,10 +1318,15 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
 
 async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings> }) {
   reserveOperation("network");
-  const settings = normalizeNetworkSettings(input.settings);
-  const config = workerConfig({ dryRun: false });
+  /* Tutto quello che puo' fallire sta dentro il try: la prenotazione
+   * dell'operazione va restituita anche se a saltare e' la lettura della
+   * configurazione, non solo il controllo del cloud. */
+  let settings: NetworkExplorationSettings;
+  let config: WorkerConfig;
   let seeds: string[];
   try {
+    settings = normalizeNetworkSettings(input.settings);
+    config = workerConfig({ dryRun: false });
     requireCloudAvailable(await healthChecks({ silent: true }));
     /* I punti di partenza si leggono prima di aprire il browser e prima di
      * creare la lavorazione: senza semi non c'è niente da esplorare, e una run
