@@ -1706,46 +1706,6 @@ dialog[open] {
 .network-run-controls input[type="number"] { min-height: 44px; width: 100%; }
 .network-run-card { border-color: color-mix(in srgb, #526d35 46%, var(--lr-line)); }
 
-/* Le impostazioni avanzate stanno chiuse: sono i tre numeri che decidono
- * quanto la rete si allarga, e chi apre la scheda per lanciare una run non
- * deve inciamparci ogni volta. */
-.network-advanced {
-  grid-column: 1 / -1;
-  margin-top: var(--lr-space-2);
-}
-
-.network-advanced > summary {
-  display: flex;
-  align-items: baseline;
-  gap: var(--lr-space-2);
-  min-height: var(--lr-control-height-compact);
-  color: var(--lr-ink);
-  font-size: var(--lr-text-meta);
-  font-weight: var(--lr-weight-medium);
-  cursor: pointer;
-}
-
-.network-advanced > summary small { color: var(--lr-ink-3); font-weight: var(--lr-weight-regular); }
-
-.network-advanced-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(208px, 1fr));
-  gap: var(--lr-space-4) var(--lr-space-5);
-  margin-block: var(--lr-space-3) var(--lr-space-2);
-}
-
-.network-advanced-grid > label {
-  display: grid;
-  gap: var(--lr-space-1);
-  align-content: start;
-  min-width: 0;
-  color: var(--lr-ink-2);
-  font-size: var(--lr-text-meta);
-}
-
-.network-advanced-grid input { width: 100%; min-height: var(--lr-control-height); }
-.network-advanced-grid small { color: var(--lr-ink-3); line-height: var(--lr-leading-snug); }
-
 /* La riga delle impostazioni dentro la finestra dell'import: sta sopra i dati,
  * perche' e' la sola cosa che cambi tu, e i dati sotto sono solo da leggere. */
 .import-settings {
@@ -1766,94 +1726,6 @@ dialog[open] {
  * dove si torna, quindi non deve sembrare un capitolo nuovo. */
 .run-keepsakes { margin-top: var(--lr-space-5); }
 
-.network-filter-set {
-  grid-column: 1 / -1;
-  margin: var(--lr-space-2) 0 0;
-  padding: var(--lr-space-4) 0;
-  border: 0;
-  border-block: 1px solid var(--lr-line-quiet);
-}
-
-.network-filter-set legend {
-  display: flex;
-  align-items: baseline;
-  gap: var(--lr-space-3);
-  width: 100%;
-  padding: 0;
-  color: var(--lr-ink);
-  font-size: var(--lr-text-record);
-  font-weight: var(--lr-weight-strong);
-}
-
-/* Titolo e spiegazione su una riga sola: la banda dei filtri deve poter
- * cominciare subito sotto, non dopo un paragrafo. */
-.network-filter-set legend small {
-  flex: 1 1 auto;
-  color: var(--lr-ink-2);
-  font-size: var(--lr-text-meta);
-  font-weight: var(--lr-weight-regular);
-}
-
-/* «Azzera» sta sulla riga del titolo, dove si guarda quando si vuole
- * disfare, non in fondo alla banda dopo tutti i campi. */
-.network-filter-reset {
-  flex: none;
-  min-height: auto;
-  padding: 2px 4px;
-  border: 0;
-  background: transparent;
-  color: var(--lr-accent);
-  font-size: var(--lr-text-meta);
-}
-
-.network-filter-reset:hover:not(:disabled) { text-decoration: underline; transform: none; }
-.network-filter-reset:disabled { color: var(--lr-ink-3); }
-
-/* I quattro filtri stanno in banda, uno accanto all'altro: si leggono in
- * orizzontale come una riga di condizioni, non come quattro domande in fila.
- * auto-fit li accorpa da sé quando la scheda si stringe — senza @media, che
- * guarderebbero la finestra invece dello spazio che la scheda ha davvero. */
-.network-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(208px, 1fr));
-  gap: var(--lr-space-4) var(--lr-space-5);
-  margin-block: var(--lr-space-4) 0;
-}
-
-.network-filter-field {
-  display: grid;
-  align-content: start;
-  gap: var(--lr-space-2);
-  min-width: 0;
-}
-
-.network-filter-name {
-  color: var(--lr-ink);
-  font-size: var(--lr-text-meta);
-  font-weight: var(--lr-weight-medium);
-}
-
-.network-filter-inputs {
-  display: flex;
-  align-items: center;
-  gap: var(--lr-space-2);
-  min-width: 0;
-}
-
-.network-filter-inputs > select,
-.network-filter-inputs > input {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: var(--lr-control-height);
-}
-
-.network-filter-inputs > select { flex-grow: 1.5; }
-.network-filter-inputs > select + input { flex-grow: 0.8; }
-.network-filter-dash { flex: none; color: var(--lr-ink-3); }
-
-.network-filter-inputs input:disabled,
-.network-filter-inputs select:disabled { cursor: not-allowed; opacity: 0.48; }
-
 .network-toggle-row {
   grid-column: 1 / -1;
   display: grid;
@@ -1862,8 +1734,6 @@ dialog[open] {
   gap: var(--lr-space-3);
   margin-top: var(--lr-space-4);
 }
-
-.network-filter-hint { color: var(--lr-ink-3); font-size: var(--lr-text-meta); }
 
 .network-run-actions {
   grid-column: 1 / -1;
@@ -2512,30 +2382,6 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 }
 
 .network-run-controls > label:not(.safe-check),
-.network-filter-name {
-  gap: 3px;
-  color: var(--lr-ink-2);
-  font-size: var(--lr-text-meta);
-  font-weight: var(--lr-weight-regular);
-}
-
-.network-filter-set {
-  margin: 2px 0 0;
-  padding: 9px 0 10px;
-}
-
-.network-filter-set legend { font-size: var(--lr-text-body); }
-.network-filter-set legend small { font-size: var(--lr-text-meta); }
-
-.network-filter-grid {
-  grid-template-columns: 1.35fr repeat(3, minmax(0, 1fr));
-  gap: var(--lr-space-3);
-  margin-top: 8px;
-}
-
-.network-filter-field { gap: 3px; }
-.network-filter-inputs { gap: 6px; }
-
 .network-toggle-row {
   grid-template-columns: auto auto minmax(260px, 1fr);
   gap: var(--lr-space-4);
@@ -2551,7 +2397,6 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 }
 
 .network-toggle-row .safe-check small { display: none; }
-.network-filter-hint { justify-self: end; }
 
 .network-run-actions {
   min-height: var(--lr-control-height);
@@ -2565,9 +2410,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 
 @media (max-width: 980px) {
   .run-mode-description { display: none; }
-  .network-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .network-toggle-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .network-filter-hint { grid-column: 1 / -1; justify-self: start; }
 }
 
 @media (max-width: 720px) {
@@ -2578,9 +2421,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   .start-card[data-run-slide="civic"] { grid-template-columns: 1fr; grid-template-areas: "copy" "options"; }
   .street-run-controls,
   .network-run-controls,
-  .network-filter-grid,
   .network-toggle-row { grid-template-columns: 1fr; }
-  .network-filter-hint { grid-column: auto; }
 }
 
 /* ---------- 4a · la lavorazione: una scelta, poi il contorno ---------- */
@@ -2973,8 +2814,6 @@ body[data-fase="pronto"] #runControls { display: grid; }
 
 .run-carousel input:focus,
 .run-carousel select:focus { border-color: var(--lr-accent); outline: 2px solid color-mix(in srgb, var(--lr-accent) 25%, transparent); }
-
-.network-filter-set { border-color: var(--lr-line-quiet); background: transparent; }
 
 .run-carousel-footer {
   display: flex;
@@ -3512,25 +3351,16 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .run-carousel .street-run-card > header p:last-child { margin-top: 3px; font-size: var(--lr-text-meta); }
 .street-run-controls { grid-template-columns: minmax(0, 1fr) auto; gap: var(--lr-space-3); margin-top: 0; }
 .network-run-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px var(--lr-space-3); }
-.network-run-controls .network-advanced { grid-column: auto; align-self: end; margin-top: 0; }
-.network-filter-set { margin: 2px 0 0; padding: 9px 0 10px; }
-.network-filter-set legend { font-size: var(--lr-text-body); }
-.network-filter-grid { grid-template-columns: 1.35fr repeat(3, minmax(0, 1fr)); gap: var(--lr-space-3); margin-top: 8px; }
-.network-filter-field,
 .network-run-controls > label:not(.safe-check) { gap: 3px; }
-.network-filter-inputs { gap: 6px; }
 .network-toggle-row { grid-template-columns: auto auto minmax(260px, 1fr); gap: var(--lr-space-4); margin-top: 0; }
 .network-toggle-row .safe-check { min-height: 34px; gap: var(--lr-space-2); padding: 0; border: 0; background: transparent; }
 .network-toggle-row .safe-check small { display: none; }
-.network-filter-hint { justify-self: end; }
 .network-run-actions { min-height: var(--lr-control-height); margin-top: 0; }
 .button-icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 @media (max-width: 980px) {
   .run-mode-description { display: none; }
-  .network-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .network-toggle-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .network-filter-hint { grid-column: 1 / -1; justify-self: start; }
 }
 
 @media (max-width: 720px) {
@@ -3538,7 +3368,269 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   .start-card[data-run-slide="civic"] { grid-template-columns: 1fr; grid-template-areas: "copy" "options"; }
   .street-run-controls,
   .network-run-controls,
-  .network-filter-grid,
   .network-toggle-row { grid-template-columns: 1fr; }
-  .network-filter-hint { grid-column: auto; }
+}
+
+/* ========================================================================== */
+/* Rete proprietari — un obiettivo, e filtri che si aprono uno per volta      */
+/* ========================================================================== */
+
+/*
+ * Le impostazioni stavano tutte aperte insieme: tre numeri dentro un
+ * «Impostazioni avanzate» che spingeva fuori la scheda, più quattro filtri in
+ * riga sempre visibili. Chi apriva la pagina non poteva sapere quali campi
+ * fossero obbligatori e quali no, e per arrivare al pulsante doveva scorrere
+ * dentro un riquadro alto trecento pixel.
+ *
+ * Adesso l'obiettivo sta da solo in cima, perché è l'unica cosa che conta, e
+ * tutto il resto è una fila di bottoni: se ne apre uno per volta, quindi
+ * l'altezza non cresce mai. Un bottone acceso vuol dire «questo filtro sta
+ * agendo»: si vede senza aprirlo.
+ */
+
+.network-run-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--lr-space-2);
+  align-items: start;
+}
+
+.net-goal {
+  display: grid;
+  grid-template-columns: auto minmax(96px, 132px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lr-space-2) var(--lr-space-3);
+}
+
+.net-goal > label {
+  color: var(--lr-ink);
+  font-size: var(--lr-text-record);
+  font-weight: var(--lr-weight-strong);
+}
+
+.net-goal > input { min-height: var(--lr-control-height); width: 100%; }
+.net-goal > small { color: var(--lr-ink-3); font-size: var(--lr-text-meta); }
+
+.net-refine {
+  display: grid;
+  gap: var(--lr-space-2);
+  padding-top: var(--lr-space-2);
+  border-top: 1px solid var(--lr-line-quiet);
+}
+
+.net-refine-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2) var(--lr-space-3);
+}
+
+.net-refine-title {
+  color: var(--lr-ink);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-strong);
+}
+
+.net-refine-head > small {
+  flex: 1 1 auto;
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-meta);
+}
+
+.net-clear-all {
+  flex: none;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--lr-accent);
+  font-size: var(--lr-text-meta);
+  cursor: pointer;
+}
+
+.net-clear-all:hover { text-decoration: underline; }
+
+.net-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2);
+}
+
+.net-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lr-space-2);
+  min-height: 34px;
+  padding-inline: var(--lr-space-3);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-pill);
+  background: transparent;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-medium);
+  cursor: pointer;
+  transition: border-color .12s ease, background-color .12s ease, color .12s ease;
+}
+
+.net-chip:hover { border-color: var(--lr-ink-3); color: var(--lr-ink); }
+
+/* Il pallino resta sempre in pagina, anche spento: accendendosi non sposta
+ * l'etichetta di un pixel. */
+.net-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lr-line);
+  transition: background-color .12s ease;
+}
+
+/* Acceso: questo filtro ha un valore e agirà sulla ricerca. */
+.net-chip.is-active {
+  border-color: color-mix(in srgb, var(--lr-accent) 55%, var(--lr-line));
+  color: var(--lr-ink);
+}
+
+.net-chip.is-active .net-chip-dot { background: var(--lr-accent); }
+
+/* Aperto: è il pannello che stai compilando adesso. */
+.net-chip.is-open {
+  border-color: var(--lr-accent);
+  background: var(--lr-accent-soft);
+  color: var(--lr-ink);
+}
+
+.net-panel {
+  display: grid;
+  gap: var(--lr-space-2);
+  padding: var(--lr-space-2) var(--lr-space-3);
+  border: 1px solid color-mix(in srgb, var(--lr-accent) 40%, var(--lr-line));
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-raised);
+}
+
+.net-panel[hidden] { display: none; }
+
+/* Il contenitore non deve occupare una riga della griglia quando tutti i
+ * pannelli sono chiusi: senza questo resterebbe lo spazio vuoto del gap. */
+.net-panels { display: contents; }
+
+.net-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--lr-space-3);
+  min-width: 0;
+}
+
+.net-panel-fields {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--lr-space-2);
+  min-width: 0;
+}
+
+.net-panel-fields > input,
+.net-panel-fields > select {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--lr-control-height);
+}
+
+.net-panel-fields > select { flex-grow: 1.2; }
+.net-dash { flex: none; color: var(--lr-ink-3); }
+
+.net-panel-fields-wide { gap: var(--lr-space-3); }
+
+.net-mini {
+  display: grid;
+  flex: 1 1 0;
+  gap: 2px;
+  min-width: 0;
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-label);
+}
+
+.net-mini > input { width: 100%; min-height: var(--lr-control-height); }
+
+/* La «i» apre la spiegazione dentro il pannello, non in un riquadro
+ * fluttuante: questa scheda vive dentro un contenitore che scorre, e un
+ * riquadro sospeso verrebbe tagliato dal suo bordo. */
+.net-info {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--lr-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-label);
+  font-weight: var(--lr-weight-strong);
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.net-info:hover,
+.net-info[aria-expanded="true"] {
+  border-color: var(--lr-accent);
+  background: var(--lr-accent);
+  color: var(--lr-accent-ink);
+}
+
+.net-clear {
+  flex: none;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--lr-accent);
+  font-size: var(--lr-text-meta);
+  cursor: pointer;
+}
+
+.net-clear:hover { text-decoration: underline; }
+.net-clear:disabled { color: var(--lr-ink-3); cursor: default; text-decoration: none; }
+
+.net-explain {
+  margin: 0;
+  padding-top: var(--lr-space-2);
+  border-top: 1px solid var(--lr-line-quiet);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-meta);
+  line-height: var(--lr-leading-body);
+}
+
+.net-explain[hidden] { display: none; }
+.net-explain b { color: var(--lr-ink); }
+
+.network-toggle-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--lr-space-3) var(--lr-space-5);
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .net-goal { grid-template-columns: minmax(0, 1fr); }
+  .net-panel-bar { flex-wrap: wrap; }
+  .net-panel-fields { flex: 1 1 100%; order: 2; }
+}
+
+/* Aprire la «i» allarga la scheda invece di farla scorrere: la spiegazione si
+ * legge e si richiude, e nel frattempo il pulsante di avvio resta al suo
+ * posto. Senza questo, l'unico gesto che riportava lo scorrimento era proprio
+ * quello con cui si chiede aiuto. */
+.run-carousel.is-tall {
+  height: auto;
+  min-height: 340px;
+  overflow: visible;
+}
+
+.run-carousel.is-tall .run-slide.is-selected {
+  height: auto;
+  overflow-y: visible;
 }

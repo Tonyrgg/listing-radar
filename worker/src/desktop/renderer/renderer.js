@@ -2054,6 +2054,116 @@ function nullableNumber(value) {
   return value.trim() === "" ? null : Number(value.replace(",", "."));
 }
 
+/**
+ * Un campo vuoto vuol dire «usa il valore predefinito», non zero.
+ *
+ * `Number("")` restituisce 0, non `NaN`: mandando quello, il normalizzatore
+ * della run lo prendeva per un numero valido e lo stringeva dentro l'intervallo
+ * consentito. Lasciare vuoto «Persone da visitare» non dava il tetto di 80: ne
+ * dava 1, e la run visitava una persona sola e si chiudeva dicendo che era
+ * andata bene. Con `undefined` il predefinito documentato torna a valere.
+ */
+function numeroOMancante(value) {
+  return String(value).trim() === "" ? undefined : Number(String(value).replace(",", "."));
+}
+
+/**
+ * I filtri della rete proprietari.
+ *
+ * Ogni gruppo e' un bottone: si apre uno per volta, cosi' la scheda non
+ * cresce mai in altezza e non nasce lo scorrimento interno. Un bottone acceso
+ * dice che quel filtro ha un valore e restringera' la ricerca — si vede senza
+ * doverlo aprire.
+ *
+ * Nessun campo e' obbligatorio: quello che lasci vuoto non limita niente, e
+ * per l'estensione della rete vale il valore predefinito scritto nel
+ * segnaposto.
+ */
+const FILTRI_RETE = {
+  floor: ["networkFloorMode", "networkFloorValue"],
+  age: ["networkMinOwnerAge", "networkMaxOwnerAge"],
+  count: ["networkMinOwnerCount", "networkMaxOwnerCount"],
+  civic: ["networkMinCivic", "networkMaxCivic"],
+  share: ["networkMinShare"],
+  reach: ["networkMaxDepth", "networkSeedCount", "networkMaxPeople"],
+};
+
+let filtroReteAperto = null;
+
+/** Un filtro e' attivo quando almeno un suo campo dice qualcosa. */
+function filtroReteAttivo(gruppo) {
+  if (gruppo === "floor") {
+    return $("networkFloorMode").value !== "any" && $("networkFloorValue").value.trim() !== "";
+  }
+  return (FILTRI_RETE[gruppo] ?? []).some((id) => $(id).value.trim() !== "");
+}
+
+function svuotaFiltroRete(gruppo) {
+  for (const id of FILTRI_RETE[gruppo] ?? []) {
+    if (id === "networkFloorMode") $(id).value = "any";
+    else $(id).value = "";
+  }
+  if (gruppo === "floor") $("networkFloorValue").disabled = true;
+}
+
+function apriFiltroRete(gruppo) {
+  filtroReteAperto = filtroReteAperto === gruppo ? null : gruppo;
+  /* Aprendo un gruppo si chiude il precedente, spiegazione compresa: due
+   * pannelli aperti riporterebbero lo scorrimento da cui siamo partiti. */
+  for (const esistente of Object.keys(FILTRI_RETE)) {
+    const spiegazione = document.querySelector(`[data-net-explain="${esistente}"]`);
+    if (spiegazione && esistente !== filtroReteAperto) {
+      spiegazione.hidden = true;
+      document.querySelector(`[data-net-info="${esistente}"]`)?.setAttribute("aria-expanded", "false");
+    }
+  }
+  renderFiltriRete();
+  if (filtroReteAperto) {
+    const pannello = document.querySelector(`[data-net-panel="${filtroReteAperto}"]`);
+    pannello?.querySelector("input:not([disabled]), select")?.focus();
+  }
+}
+
+/* La scheda si allarga quando una spiegazione e' aperta, invece di scorrere. */
+function adeguaAltezzaCarosello() {
+  const apertaUnaSpiegazione = Boolean(
+    document.querySelector(".net-explain:not([hidden])"),
+  );
+  document.querySelector(".run-carousel")?.classList.toggle("is-tall", apertaUnaSpiegazione);
+}
+
+function renderFiltriRete() {
+  const inCorso = Boolean(appState?.networkRun?.active);
+  let almenoUnoAttivo = false;
+
+  for (const gruppo of Object.keys(FILTRI_RETE)) {
+    const attivo = filtroReteAttivo(gruppo);
+    almenoUnoAttivo = almenoUnoAttivo || attivo;
+
+    const chip = document.querySelector(`[data-net-chip="${gruppo}"]`);
+    if (chip) {
+      chip.classList.toggle("is-active", attivo);
+      chip.classList.toggle("is-open", filtroReteAperto === gruppo);
+      chip.setAttribute("aria-expanded", String(filtroReteAperto === gruppo));
+      chip.disabled = inCorso;
+    }
+
+    const pannello = document.querySelector(`[data-net-panel="${gruppo}"]`);
+    if (pannello) pannello.hidden = filtroReteAperto !== gruppo;
+
+    const azzera = document.querySelector(`[data-net-clear="${gruppo}"]`);
+    if (azzera) azzera.disabled = inCorso || !attivo;
+  }
+
+  const azzeraTutti = $("networkFilterReset");
+  if (azzeraTutti) {
+    azzeraTutti.hidden = !almenoUnoAttivo;
+    azzeraTutti.disabled = inCorso;
+  }
+
+  adeguaAltezzaCarosello();
+}
+
 function render() {
   if (!appState) return;
   selectedMode = appState.preferences?.mode ?? selectedMode;
@@ -2153,6 +2263,7 @@ function render() {
   renderDiagnosticErrors();
   renderStreetRun();
   renderNetworkRun();
+  renderFiltriRete();
   renderReview();
   renderSoftwareUpdate();
   renderStopAll();
@@ -2192,6 +2303,28 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target || (target.form && target.type === "submit")) return;
   event.preventDefault();
+
+  /* I bottoni dei filtri non sono comandi: non chiedono niente al processo
+   * principale, quindi non passano dal monitor delle operazioni. */
+  if (target.dataset.netChip) {
+    apriFiltroRete(target.dataset.netChip);
+    return;
+  }
+  if (target.dataset.netClear) {
+    svuotaFiltroRete(target.dataset.netClear);
+    renderFiltriRete();
+    return;
+  }
+  if (target.dataset.netInfo) {
+    const spiegazione = document.querySelector(`[data-net-explain="${target.dataset.netInfo}"]`);
+    if (spiegazione) {
+      spiegazione.hidden = !spiegazione.hidden;
+      target.setAttribute("aria-expanded", String(!spiegazione.hidden));
+      adeguaAltezzaCarosello();
+    }
+    return;
+  }
+
   const command = commandIdentity(target);
   try {
     await executeButtonCommand(target, command, async () => {
@@ -2283,20 +2416,19 @@ document.addEventListener("click", async (event) => {
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
       if (target.id === "networkFilterReset") {
-        $("networkFloorMode").value = "any";
-        for (const id of ["networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge", "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic"]) $(id).value = "";
-        $("networkFloorValue").disabled = true;
+        for (const gruppo of Object.keys(FILTRI_RETE)) svuotaFiltroRete(gruppo);
+        renderFiltriRete();
         return true;
       }
       if (target.id === "networkRunStart") {
         return window.propertyWorker.startNetworkRun({
           resume: false,
           settings: {
-            targetProperties: Number($("networkTargetProperties").value),
-            maxDepth: Number($("networkMaxDepth").value),
-            maxPeople: Number($("networkMaxPeople").value),
-            seedCount: Number($("networkSeedCount").value),
-            minSharePercentage: Number($("networkMinShare").value),
+            targetProperties: numeroOMancante($("networkTargetProperties").value),
+            maxDepth: numeroOMancante($("networkMaxDepth").value),
+            maxPeople: numeroOMancante($("networkMaxPeople").value),
+            seedCount: numeroOMancante($("networkSeedCount").value),
+            minSharePercentage: numeroOMancante($("networkMinShare").value),
             existingPropertyPolicy: $("networkIncludeExisting").checked ? "include_existing" : "new_only",
             residentialOnly: $("networkResidentialOnly").checked,
             floorMode: $("networkFloorMode").value,
@@ -2630,7 +2762,14 @@ $("dryRunToggle").addEventListener("change", async (event) => {
 $("networkFloorMode").addEventListener("change", () => {
   $("networkFloorValue").disabled = $("networkFloorMode").value === "any";
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
+  else $("networkFloorValue").value = "";
+  renderFiltriRete();
 });
+
+/* Il bottone si accende mentre scrivi, non al prossimo disegno della pagina:
+ * e' il riscontro che dice «questo filtro adesso agisce». */
+$("networkPanels").addEventListener("input", renderFiltriRete);
+$("networkPanels").addEventListener("change", renderFiltriRete);
 
 window.propertyWorker.onStreetRunProgress((progress) => {
   if (!appState) return;

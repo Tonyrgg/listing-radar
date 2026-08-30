@@ -19,13 +19,24 @@ describe("controlli desktop esplorazione rete", () => {
       expect(renderer).toContain(id);
     }
     expect(renderer).toContain("startNetworkRun");
-    // I filtri stanno in banda, non in righe: una colonna sola vorrebbe dire
-    // essere tornati al modulo precedente al riferimento 6b.
-    expect(html).toContain('class="network-filter-grid"');
-    expect(html.match(/class="network-filter-field"/g)).toHaveLength(4);
-    expect(html).not.toContain('class="network-filter-row"');
+    // I filtri sono bottoni che si aprono uno per volta: sei gruppi, sei
+    // pannelli, e per ognuno una spiegazione e un azzeramento suoi. Tutti
+    // aperti insieme era il modulo che faceva scorrere la scheda.
+    expect(html.match(/data-net-chip="/g)).toHaveLength(6);
+    expect(html.match(/data-net-panel="/g)).toHaveLength(6);
+    expect(html.match(/data-net-info="/g)).toHaveLength(6);
+    expect(html.match(/data-net-explain="/g)).toHaveLength(6);
+    expect(html.match(/data-net-clear="/g)).toHaveLength(6);
+    expect(html).not.toContain('class="network-advanced"');
     expect(html).toContain('id="networkFilterReset"');
     expect(renderer).toContain("networkFilterReset");
+
+    // Nessun campo dell'estensione parte valorizzato: il segnaposto dice il
+    // predefinito, e il vuoto deve arrivare al normalizzatore come "mancante".
+    for (const id of ["networkMaxDepth", "networkMaxPeople", "networkSeedCount", "networkMinShare"]) {
+      expect(html).not.toMatch(new RegExp(`id="${id}"[^>]*\svalue="`));
+      expect(renderer).toContain(`numeroOMancante($("${id}").value)`);
+    }
     for (const obsolete of ["networkRunRestart", "Torna al checkpoint", "Rete esplorata", "Coda congelata"]) {
       expect(html).not.toContain(obsolete);
       expect(renderer).not.toContain(obsolete);
