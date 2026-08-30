@@ -160,7 +160,9 @@ let appState = null,
   selectedRunSlide = "civic";
 let completedImportsRenderKey = null,
   jobsRenderKey = null,
-  lastRunRenderKey = null;
+  lastRunRenderKey = null,
+  importJobId = null,
+  importActivityMode = null;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 
@@ -321,6 +323,8 @@ function commandIdentity(target) {
       networkRunStart: "Esplora rete proprietaria",
       networkRunCancel: "Metti in pausa esplorazione rete",
       networkFilterReset: "Azzera i filtri della coda",
+      "import-dialog-confirm": "Avvia l'import dell'acquisizione",
+      "import-dialog-close": "Chiudi la finestra dell'import",
       stopAfterNextImportButton: "Ferma dopo il prossimo import",
       stopAllButton: "Ferma tutte le operazioni",
       requestArchiveStart: "Sincronizza archivio richieste",
@@ -1151,9 +1155,37 @@ function renderAction() {
   panel.innerHTML = "";
 }
 
+/* Da dove viene una raccolta e con quali limiti: senza questa riga tre
+ * acquisizioni conservate si distinguono solo per la data. */
+const ACQUISIZIONE_TIPO = { network: "Rete proprietari", street: "Via completa", civic: "Civico" };
+const ATTIVITA_ETICHETTA = { direct_contact: "attività autocompilata", plain: "attività generica", none: "nessuna attività" };
+
+function riassuntoAcquisizione(acquisition) {
+  if (!acquisition || typeof acquisition !== "object") return "";
+  const pezzi = [];
+  if (acquisition.kind === "network") {
+    const s = acquisition.settings ?? {};
+    if (s.targetProperties != null) pezzi.push(`obiettivo ${fmtCount(s.targetProperties)}`);
+    if (s.maxDepth != null) pezzi.push(`profondità ${fmtCount(s.maxDepth)}`);
+    if (s.maxPeople != null) pezzi.push(`${fmtCount(s.maxPeople)} persone`);
+    if (s.seedCount != null) pezzi.push(`${fmtCount(s.seedCount)} clienti`);
+    if (s.residentialOnly) pezzi.push("solo abitazioni");
+    if (acquisition.peopleVisited != null) pezzi.push(`${fmtCount(acquisition.peopleVisited)} visitate`);
+    const scartati = Object.values(acquisition.skipped ?? {}).reduce((somma, valore) => somma + Number(valore || 0), 0);
+    if (scartati) pezzi.push(`${fmtCount(scartati)} scartati`);
+  } else if (acquisition.workerMode) {
+    pezzi.push(acquisition.workerMode === "automatic" ? "automatica" : "guidata");
+  }
+  const attivita = ATTIVITA_ETICHETTA[acquisition.activityMode];
+  if (attivita) pezzi.push(attivita);
+
+  return pezzi.join(" · ");
+}
+
 function renderJobs() {
   const jobs = appState?.jobs ?? [];
-  $("jobCount").textContent = jobs.length;
+  const conservate = jobs.filter((job) => job.status === "saved" && !job.import_started_at).length;
+  $("jobCount").textContent = `${conservate}/3`;
   updateHistoryNavHint();
   const renderKey = [
     appState?.active ? "active" : "idle",
@@ -1162,6 +1194,7 @@ function renderJobs() {
       job.updated_at ?? job.saved_at ?? job.created_at ?? "",
       job.status,
       job.import_started_at ?? "",
+      job.acquisition ? "p" : "",
     ].join(":")),
   ].join("|");
   if (renderKey === jobsRenderKey) return;
@@ -1170,17 +1203,66 @@ function renderJobs() {
     ? jobs
         .map((job) => {
           const canImport = !appState.active && job.status !== "completed",
-            place =
+            tipo = ACQUISIZIONE_TIPO[job.acquisition?.kind] ?? null,
+            luogo =
               [job.municipality, job.street, job.civic_number]
                 .filter(Boolean)
-                .join(" · ") || `Ricerca ${job.id.slice(0, 8)}`,
+                .join(" · "),
+            place = luogo || tipo || `Ricerca ${job.id.slice(0, 8)}`,
+            fattori = riassuntoAcquisizione(job.acquisition),
             imported = job.status === "completed",
             inProgress = Boolean(job.import_started_at) && !imported;
-          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span class="ledger-mark"></span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))}</small></span><span class="ledger-figure">${fmtCount(job.total_properties ?? 0)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${imported ? "Importazione completata" : inProgress ? `Iniziata · ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per l'import"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Continua" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span class="ledger-mark"></span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(job.total_properties ?? 0)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${imported ? "Importazione completata" : inProgress ? `Iniziata · ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per l'import"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Continua" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
 }
+function markImportActivity() {
+  for (const scelta of document.querySelectorAll("#importActivityChoices [data-import-activity]")) {
+    const attiva = scelta.dataset.importActivity === importActivityMode;
+    scelta.classList.toggle("is-selected", attiva);
+    scelta.setAttribute("aria-checked", String(attiva));
+  }
+}
+
+async function openImportDialog(jobId) {
+  const job = (appState?.jobs ?? []).find((riga) => riga.id === jobId);
+  importJobId = jobId;
+  /* Il modo con cui i dati sono stati raccolti e' il default: se allora le
+   * attivita' erano autocompilate, importarle mute sarebbe una sorpresa. */
+  importActivityMode = job?.acquisition?.activityMode
+    ?? appState?.preferences?.propertyActivityMode
+    ?? "direct_contact";
+  markImportActivity();
+
+  const luogo = [job?.municipality, job?.street, job?.civic_number].filter(Boolean).join(" · ");
+  const tipo = ACQUISIZIONE_TIPO[job?.acquisition?.kind] ?? null;
+  $("importDialogTitle").textContent = luogo || tipo || "Acquisizione conservata";
+  const fattori = riassuntoAcquisizione(job?.acquisition);
+  $("importDialogMeta").textContent = [
+    tipo && luogo ? tipo : null,
+    job?.saved_at ? `raccolta il ${fmtDate(job.saved_at)}` : null,
+    fattori,
+  ].filter(Boolean).join(" · ");
+  $("importDialogContent").innerHTML = `<p class="empty-message">Rileggo i dati…</p>`;
+  $("importDialog").showModal();
+
+  const detail = await window.propertyWorker.getJobDetails(jobId);
+  if (importJobId !== jobId) return;
+  const { peopleById, ownershipsByPropertyId } = relationshipIndex(detail.people, detail.ownerships);
+  $("importDialogContent").innerHTML = `<p class="review-count"><b>${fmtCount(detail.properties.length)}</b> immobili · <b>${fmtCount(detail.people.length)}</b> proprietari · <b>${fmtCount(detail.ownerships.length)}</b> quote</p>${detail.properties
+    .map((immobile) => {
+      const quote = ownershipsByPropertyId.get(immobile.id) ?? [];
+      const nomi = quote
+        .map((quota) => peopleById.get(quota.person_id))
+        .filter(Boolean)
+        .map((persona) => esc(persona.full_name ?? "Senza nome"))
+        .join(", ");
+      return `<div class="detail-group"><b>${esc(immobile.address ?? immobile.cadastral_key)}</b><small>${esc(immobile.cadastral_key)}${nomi ? ` · ${nomi}` : " · nessun proprietario collegato"}</small></div>`;
+    })
+    .join("")}`;
+}
+
 function relationshipIndex(people = [], ownerships = []) {
   const peopleById = new Map(people.map((person) => [person.id, person])),
     ownershipsByPropertyId = new Map();
@@ -2265,8 +2347,27 @@ document.addEventListener("click", async (event) => {
       }
       if (target.dataset.action === "resume-current" && appState.activeJobId)
         return window.propertyWorker.resumeJob(appState.activeJobId);
-      if (target.dataset.resumeJob)
-        return window.propertyWorker.resumeJob(target.dataset.resumeJob);
+      if (target.dataset.resumeJob) {
+        await openImportDialog(target.dataset.resumeJob);
+        return true;
+      }
+      if (target.dataset.importActivity) {
+        importActivityMode = target.dataset.importActivity;
+        markImportActivity();
+        return true;
+      }
+      if (target.dataset.importDialog === "close") {
+        $("importDialog").close();
+        importJobId = null;
+        return true;
+      }
+      if (target.dataset.importDialog === "confirm") {
+        const jobId = importJobId;
+        if (!jobId) return true;
+        $("importDialog").close();
+        importJobId = null;
+        return window.propertyWorker.resumeJob({ jobId, activityMode: importActivityMode ?? undefined });
+      }
       if (target.dataset.fixJob) return loadResolution(target.dataset.fixJob);
       if (target.dataset.action === "open-corrections" && appState.activeJobId)
         return loadResolution(appState.activeJobId);

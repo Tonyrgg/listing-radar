@@ -250,7 +250,19 @@ export class PropertyWorkerRunner {
           this.onEvent({ type: "step-completed", jobId: job.id, step, next, output });
           logger.info({ jobId: job.id, step, next }, "Step completato");
           if (output.savedForLater === true) {
-            await this.repository.saveAcquisition(job.id);
+            /* La modalita' di attivita' si registra adesso, non all'import: i
+             * dati sono stati raccolti con questa, e fra tre giorni la
+             * preferenza puo' essere un'altra. */
+            await this.repository.saveAcquisition(job.id, {
+              kind: job.street && !job.civic_number ? "street" : "civic",
+              collectedAt: new Date().toISOString(),
+              workerMode: job.mode,
+              dryRun: this.config.WORKER_DRY_RUN,
+              activityMode: this.propertyActivityMode(),
+              place: [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || null,
+              properties: output.propertyCount ?? null,
+              owners: output.ownerCount ?? null,
+            });
             this.onEvent({ type: "job-archived", jobId: job.id });
             logger.info({ jobId: job.id }, "Acquisizione salvata per un import futuro");
             return job.id;

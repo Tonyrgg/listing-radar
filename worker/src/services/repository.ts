@@ -36,6 +36,8 @@ export type JobRow = {
   completed_at?: string | null;
   saved_at?: string | null;
   import_started_at?: string | null;
+  /* Da dove viene la raccolta e con quali limiti: vedi migration 034. */
+  acquisition?: Record<string, unknown> | null;
   created_at?: string;
 };
 
@@ -545,13 +547,14 @@ export class WorkerRepository {
     return unique.slice(0, limit);
   }
 
-  async saveAcquisition(jobId: string) {
+  async saveAcquisition(jobId: string, acquisition?: Record<string, unknown>) {
     await this.updateJob(jobId, {
       status: "saved",
       saved_at: new Date().toISOString(),
       import_started_at: null,
       error_message: null,
       error_details: null,
+      ...(acquisition ? { acquisition } : {}),
     });
   }
 

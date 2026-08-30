@@ -30,7 +30,10 @@ describe("controlli di arresto desktop", () => {
     expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
     expect(main).toContain('ipcMain.handle("desktop:stop-all"');
-    expect(main).toContain("propertyActivityMode: () => preferences.propertyActivityMode");
+    /* Resta una funzione, non un valore fissato all'avvio: la modalita' si
+     * legge quando serve. L'override vale per il singolo import scelto
+     * dalla finestra, e ricade sempre sulla preferenza. */
+    expect(main).toContain("propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");
     expect(main).toContain("repairLongRunJobForImport");

@@ -146,6 +146,7 @@ let activeRunner: PropertyWorkerRunner | null = null;
 let cancellingJobId: string | null = null;
 let pausingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
+let activityModeOverride: PropertyActivityMode | null = null;
 let currentStep: string | null = null;
 let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string } | null = null;
 let lastError: string | null = null;
@@ -1256,6 +1257,15 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
       });
       const graph = await liveRepository.loadGraph(jobId);
       if (["completed", "paused"].includes(result.status)) clearRetryMonitor();
+      const provenienza = {
+        kind: "network" as const,
+        collectedAt: new Date().toISOString(),
+        activityMode: preferences.propertyActivityMode,
+        dryRun: preferences.dryRun,
+        settings: result.settings,
+        skipped: result.skipped,
+        peopleVisited: result.visitedTaxCodes?.length ?? null,
+      };
       if (result.status === "completed" && graph.properties.length) {
         await liveRepository.markGraphNormalized(graph.properties, graph.people);
         await liveRepository.updateJob(jobId, {
@@ -1267,12 +1277,14 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           current_step: "properties_processed",
           error_message: null,
           error_details: null,
+          acquisition: provenienza,
         });
         pushActivity(`Esplorazione conclusa: ${graph.properties.length} immobili verificati in coda. L'import non è partito.`, "success");
       } else if (result.status === "completed") {
         await liveRepository.updateJob(jobId, {
           status: "saved", saved_at: new Date().toISOString(), last_completed_step: "acquisition_reviewed", current_step: "properties_processed",
           error_message: "Esplorazione conclusa senza immobili importabili.", error_details: { action: "network-exploration-empty", skipped: result.skipped },
+          acquisition: provenienza,
         });
         pushActivity("Esplorazione conclusa: nessun immobile ha superato le barriere impostate.", "warning");
       } else {
@@ -1813,7 +1825,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isCancellationRequested: (jobId) => cancellingJobId === jobId,
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
-    propertyActivityMode: () => preferences.propertyActivityMode,
+    propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;
@@ -2243,12 +2255,23 @@ function registerIpc() {
     await publishState();
     return true;
   });
-  ipcMain.handle("desktop:resume-job", async (_event, jobId: string) => {
+  ipcMain.handle("desktop:resume-job", async (_event, values: string | { jobId: string; activityMode?: PropertyActivityMode }) => {
+    const jobId = typeof values === "string" ? values : values.jobId;
+    const chosen = typeof values === "string" ? null : values.activityMode ?? null;
     clearAutoRetry();
     const repo = repository();
     const job = await repo.getJob(jobId);
     if (job.saved_at) await repo.markImportStarted(jobId);
-    await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId });
+    activityModeOverride = chosen;
+    try {
+      /* Un import dall'archivio e' sempre vero: e' il gesto per cui
+       * l'acquisizione era stata conservata. Se qui passasse la preferenza,
+       * con «Acquisisci e conserva» acceso girerebbe in simulazione e non
+       * scriverebbe niente, dicendo di aver importato. */
+      await runWorker({ mode: job.mode, dryRun: false, jobId });
+    } finally {
+      activityModeOverride = null;
+    }
     return true;
   });
   ipcMain.handle("desktop:set-auto-retry-enabled", async (_event, enabled: boolean) => {

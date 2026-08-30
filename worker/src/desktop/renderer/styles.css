@@ -1746,6 +1746,22 @@ dialog[open] {
 .network-advanced-grid input { width: 100%; min-height: var(--lr-control-height); }
 .network-advanced-grid small { color: var(--lr-ink-3); line-height: var(--lr-leading-snug); }
 
+/* La riga delle impostazioni dentro la finestra dell'import: sta sopra i dati,
+ * perche' e' la sola cosa che cambi tu, e i dati sotto sono solo da leggere. */
+.import-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lr-space-3) var(--lr-space-5);
+  padding: var(--lr-space-3) var(--lr-space-4);
+  border-bottom: 1px solid var(--lr-line-quiet);
+  background: var(--lr-raised);
+}
+
+#importDialogWarning { color: var(--lr-warn); font-size: var(--lr-text-meta); }
+.review-count { margin-bottom: var(--lr-space-3); }
+
 /* L'archivio sotto le run: stessa scheda della Cronologia, ma qui e' il posto
  * dove si torna, quindi non deve sembrare un capitolo nuovo. */
 .run-keepsakes { margin-top: var(--lr-space-5); }
@@ -3496,6 +3512,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .run-carousel .street-run-card > header p:last-child { margin-top: 3px; font-size: var(--lr-text-meta); }
 .street-run-controls { grid-template-columns: minmax(0, 1fr) auto; gap: var(--lr-space-3); margin-top: 0; }
 .network-run-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px var(--lr-space-3); }
+.network-run-controls .network-advanced { grid-column: auto; align-self: end; margin-top: 0; }
 .network-filter-set { margin: 2px 0 0; padding: 9px 0 10px; }
 .network-filter-set legend { font-size: var(--lr-text-body); }
 .network-filter-grid { grid-template-columns: 1.35fr repeat(3, minmax(0, 1fr)); gap: var(--lr-space-3); margin-top: 8px; }

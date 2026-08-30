@@ -8,10 +8,10 @@ import type { PortfolioProperty, RequestPropertyMatch } from "@/lib/matching/typ
 /**
  * Una casa che potrebbe andare bene a un cliente.
  *
- * Prima ogni riga apriva con «100% COMPATIBILE» in grande: una percentuale che
- * per essere letta va prima capita, e che comunque non cambia quello che fai.
- * Conta la casa — la foto, dove sta, quanto costa — e due parole sul perché è
- * lì. La percentuale resta, ma nel titolo del cursore: serve a chi la cerca.
+ * Prima ogni riga apriva con «100% COMPATIBILE» in grande: la casa deve restare
+ * il soggetto principale, ma il punteggio serve per confrontare rapidamente
+ * risultati con lo stesso verdetto. Per questo resta compatto, accanto alle
+ * parole che ne spiegano il significato.
  */
 
 /* Il verdetto è un giudizio, non un comando: la parola porta la scala e il
@@ -101,10 +101,13 @@ export function PropertyMatchRow({
 
       <div className="relative z-10 flex shrink-0 flex-col items-end justify-center gap-2">
         <span
-          className={`text-[length:var(--lr-text-record)] font-[650] ${verdetto.forte ? "text-[var(--lr-ink)]" : COLORE[verdetto.tono]}`}
+          className={`inline-flex items-baseline gap-2 text-[length:var(--lr-text-record)] font-[650] ${verdetto.forte ? "text-[var(--lr-ink)]" : COLORE[verdetto.tono]}`}
           title={`Affinità calcolata: ${Math.round(match.score)} su 100`}
         >
-          {verdetto.parola}
+          <span>{verdetto.parola}</span>
+          <span className={`font-mono text-[length:var(--lr-text-meta)] ${COLORE[verdetto.tono]}`}>
+            {Math.round(match.score)}%
+          </span>
         </span>
         {match.id ? <RowAction label="Analizza" /> : null}
       </div>
