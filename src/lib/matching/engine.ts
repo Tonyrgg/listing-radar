@@ -1,4 +1,5 @@
 import { buildExplanation } from "./explanations";
+import { ELEVATOR_FEATURE_KEY, evaluateElevatorRequirement } from "./elevator";
 import { polygonLabelPoint, type MapPoint } from "@/lib/map/geometry";
 import {
   DEFAULT_MATCHING_CONFIG, clampScore, classifyScore, scoreBudget, scoreInternalSqm,
@@ -28,9 +29,13 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   const warnings = sqmCoherenceWarnings(request.internal_sqm_ideal, request.rooms_ideal);
 
   const typeRatio = scorePropertyType(request.property_types, property.property_type, config);
-  // Contratto e tipologia sono le due domande a cui non si risponde «quasi»:
-  // se sbagliano, il match non nasce invece di nascere debole e restare in lista.
-  const blocking = request.contract_type !== property.contract_type ? "tipo di contratto diverso" : null;
+  // Contratto, tipologia e ascensore obbligatorio sono le domande a cui non si
+  // risponde «quasi»: se sbagliano, il match non nasce invece di nascere debole
+  // e restare in lista.
+  const elevator = evaluateElevatorRequirement(context);
+  const blocking = request.contract_type !== property.contract_type
+    ? "tipo di contratto diverso"
+    : elevator.kind === "excluded" ? elevator.reason : null;
   if (blocking || typeRatio == null) {
     conflicts.push(blocking ?? "tipologia incompatibile");
     return {
@@ -112,6 +117,14 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     available += weight;
     const present = Boolean(values.get(preference.feature_definition_id));
     const label = preference.feature?.label ?? "caratteristica";
+    // L'ascensore obbligatorio ha gia' una risposta: qui arriva solo quando non
+    // esclude, e la logica generica non saprebbe che al piano terra va bene
+    // anche senza. Le altre caratteristiche restano preferenze pesate.
+    if (preference.feature?.key === ELEVATOR_FEATURE_KEY && preference.preference_level === "required") {
+      if (elevator.kind === "satisfied") { earned += weight; matched.push(elevator.label); }
+      else if (elevator.kind === "unverified") conflicts.push(elevator.reason);
+      continue;
+    }
     if (preference.preference_level === "avoid") {
       if (present) conflicts.push(`${label} da evitare`);
       else { earned += weight; matched.push(`senza ${label.toLowerCase()}`); }
