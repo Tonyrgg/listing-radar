@@ -122,7 +122,6 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     // anche senza. Le altre caratteristiche restano preferenze pesate.
     if (preference.feature?.key === ELEVATOR_FEATURE_KEY && preference.preference_level === "required") {
       if (elevator.kind === "satisfied") { earned += weight; matched.push(elevator.label); }
-      else if (elevator.kind === "unverified") conflicts.push(elevator.reason);
       continue;
     }
     if (preference.preference_level === "avoid") {

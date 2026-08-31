@@ -32,7 +32,7 @@ Quando un README storico contraddice il codice o una migration più recente, non
 - Property Lifecycle V2 è stato promosso esplicitamente il 25 agosto 2026 ed è l'archivio di riferimento del prodotto. Il Listing Radar legacy è in dismissione: sei fonti agenzia sono spente perché duplicate, i portali accettano solo ciò che non è di agenzia, e le tabelle `listings` e satellite verranno rimosse a fine migrazione. Non costruire funzioni nuove sopra di esse.
 - Un crawler fallito, degradato o con struttura cambiata non prova la scomparsa di un annuncio.
 - Una scomparsa non prova una vendita.
-- Nel matching commerciale l'ascensore obbligatorio esclude, non penalizza: una richiesta che lo pretende non deve vedere immobili che ne sono privi. Fanno eccezione il piano terra, dove l'ascensore non serve, e il dato mancante, che non prova l'assenza e lascia il match visibile con un conflitto da verificare (`src/lib/matching/elevator.ts`).
+- Nel matching commerciale l'ascensore obbligatorio esclude, non penalizza: una richiesta che lo pretende non deve vedere immobili che ne sono privi. L'unica eccezione è il piano terra, dove l'ascensore non serve. Passa solo l'ascensore dichiarato presente: una scheda nasce con l'ascensore a «no», quindi un valore assente vale «no», e senza piano valorizzato entrano soltanto gli immobili con ascensore (`src/lib/matching/elevator.ts`).
 - I valori confermati manualmente non devono essere sovrascritti silenziosamente.
 - Per i dati operativi immobiliari il perimetro è Bitonto, Palombaio e Mariotto.
 - Usare HTTP diretto quando è sufficiente; usare Playwright dove serve davvero un browser.

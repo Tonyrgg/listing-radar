@@ -9,13 +9,14 @@ import type { MatchingContext } from "./types";
  * fa perdere tempo a tutti. Per questo la regola esclude invece di togliere
  * punti, come gia' fanno contratto e tipologia.
  *
- * Con due eccezioni che contano quanto la regola:
+ * L'unica eccezione e' il piano terra: li' l'ascensore non serve, quindi non
+ * averlo non e' un difetto e l'immobile prende comunque il punteggio pieno.
  *
- * 1. al piano terra l'ascensore non serve, quindi non averlo non e' un difetto;
- * 2. quando il dato non c'e', non si esclude. Una riga mai compilata non prova
- *    l'assenza dell'ascensore, e far sparire un immobile per un campo vuoto
- *    sarebbe un errore silenzioso. In quel caso il match resta visibile con un
- *    conflitto che dice all'operatore cosa andare a verificare.
+ * Fuori da quel caso passa solo l'ascensore dichiarato presente. Una scheda
+ * nasce con l'ascensore a «no» e viene corretta dopo, quindi un valore assente
+ * o illeggibile vale «no» come il default da cui proviene. Vale anche quando il
+ * piano non e' compilato: senza il piano non si puo' dire che l'ascensore sia
+ * superfluo, e chi lo ha chiesto non deve vedere quell'immobile.
  */
 
 export const ELEVATOR_FEATURE_KEY = "elevator";
@@ -25,10 +26,8 @@ export type ElevatorVerdict =
   | { kind: "not_requested" }
   /** L'ascensore c'e', oppure non serve perche' l'immobile e' al piano terra. */
   | { kind: "satisfied"; label: string }
-  /** Assenza accertata dove l'ascensore serve davvero: l'immobile esce. */
-  | { kind: "excluded"; reason: string }
-  /** Dato insufficiente per decidere: si segnala, non si esclude. */
-  | { kind: "unverified"; reason: string };
+  /** Ascensore non dichiarato presente dove servirebbe: l'immobile esce. */
+  | { kind: "excluded"; reason: string };
 
 const TRUTHY = new Set(["true", "si", "sì", "yes", "y", "1", "presente"]);
 const FALSY = new Set(["false", "no", "n", "0", "assente"]);
@@ -81,14 +80,13 @@ export function evaluateElevatorRequirement(context: MatchingContext): ElevatorV
   const stored = (context.propertyFeatures ?? []).find(
     (item) => item.feature_definition_id === preference.feature_definition_id,
   );
-  const present = stored ? readBooleanFeature(stored.value) : null;
+  if (stored && readBooleanFeature(stored.value) === true) {
+    return { kind: "satisfied", label: "Ascensore" };
+  }
 
-  if (present === true) return { kind: "satisfied", label: "Ascensore" };
-  if (present == null) {
-    return { kind: "unverified", reason: "ascensore obbligatorio: dato non disponibile, da verificare" };
-  }
-  if (relevant == null) {
-    return { kind: "unverified", reason: "ascensore assente ma piano non indicato, da verificare" };
-  }
-  return { kind: "excluded", reason: "ascensore obbligatorio assente" };
+  // Il piano mancante non attenua l'esclusione, ma cambia cosa deve correggere
+  // l'operatore: compilare il piano puo' riportare l'immobile in lista.
+  return relevant == null
+    ? { kind: "excluded", reason: "ascensore obbligatorio assente e piano non indicato" }
+    : { kind: "excluded", reason: "ascensore obbligatorio assente" };
 }

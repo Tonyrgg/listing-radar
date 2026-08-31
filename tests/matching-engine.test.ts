@@ -216,24 +216,30 @@ describe("regola dell'ascensore", () => {
     expect(result.matched_criteria).toContain("piano terra: ascensore non necessario");
   });
 
-  it("non esclude quando il dato sull'ascensore non e' stato registrato", () => {
-    // Una riga mai compilata non prova l'assenza: l'immobile resta visibile
-    // con l'indicazione di cosa verificare.
+  it("esclude anche quando la riga dell'ascensore non e' stata registrata", () => {
+    // Una scheda nasce con l'ascensore a «no»: un valore assente vale quanto
+    // il default da cui proviene, non un dubbio da lasciare in lista.
     const result = calculateMatch({
       request, property: { ...property, floor: 2 },
       requestFeatures: requires(), propertyFeatures: [],
     });
-    expect(result.score).toBeGreaterThan(0);
-    expect(result.conflicting_criteria).toContain("ascensore obbligatorio: dato non disponibile, da verificare");
+    expect(result.score).toBe(0);
+    expect(result.classification).toBe("not_relevant");
   });
 
-  it("non esclude quando manca l'ascensore ma il piano non e' noto", () => {
-    const result = calculateMatch({
+  it("senza piano valorizzato lascia passare solo chi ha l'ascensore", () => {
+    const senza = calculateMatch({
       request, property: { ...property, floor: null },
       requestFeatures: requires(), propertyFeatures: hasElevator(false),
     });
-    expect(result.score).toBeGreaterThan(0);
-    expect(result.conflicting_criteria).toContain("ascensore assente ma piano non indicato, da verificare");
+    const con = calculateMatch({
+      request, property: { ...property, floor: null },
+      requestFeatures: requires(), propertyFeatures: hasElevator(true),
+    });
+    expect(senza.score).toBe(0);
+    expect(senza.conflicting_criteria).toContain("ascensore obbligatorio assente e piano non indicato");
+    expect(con.score).toBeGreaterThan(0);
+    expect(con.matched_criteria).toContain("Ascensore");
   });
 
   it("se la richiesta non pretende l'ascensore, propone entrambi gli immobili", () => {
