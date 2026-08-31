@@ -50,6 +50,7 @@
             </div>
             <div class="connection-alert-actions">
               <button id="chromeButton" class="button primary" type="button">Apri Chrome</button>
+              <button id="configurationButton" class="button primary is-hidden" type="button" data-action="config">Aggiorna archivio</button>
               <button id="checkButton" class="button secondary" type="button">Riprova</button>
               <button class="button quiet" type="button" data-action="toggle-checks" aria-expanded="false" aria-controls="checksGrid">Dettagli</button>
             </div>
@@ -149,6 +150,30 @@
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
             <button id="streetRunAbandon" class="button danger is-hidden">Interrompi</button>
           </div>
+          <fieldset class="street-run-filters">
+            <legend>Affina la via <small>Facoltativo: i filtri decidono cosa acquisire, la via viene comunque letta tutta.</small></legend>
+            <div class="street-filter-grid">
+              <label>Piano
+                <span class="street-floor-fields">
+                  <select id="streetFloorMode" aria-label="Come confrontare il piano nella via completa">
+                    <option value="any">Qualsiasi</option>
+                    <option value="exact">Solo</option>
+                    <option value="minimum">Da questo in su</option>
+                    <option value="maximum">Da questo in gi&ugrave;</option>
+                  </select>
+                  <input id="streetFloorValue" type="number" min="-10" max="100" placeholder="0" aria-label="Piano di riferimento della via completa" disabled />
+                </span>
+              </label>
+              <label>Civici
+                <span class="street-civic-fields">
+                  <input id="streetMinCivic" type="number" min="0" max="999999" placeholder="da" aria-label="Civico minimo della via completa" />
+                  <span aria-hidden="true">&ndash;</span>
+                  <input id="streetMaxCivic" type="number" min="0" max="999999" placeholder="a" aria-label="Civico massimo della via completa" />
+                </span>
+              </label>
+              <label class="safe-check street-residential-check"><input id="streetResidentialOnly" type="checkbox" checked /><span><b>Solo abitazioni</b><small>Esclude box, cantine e categorie C/.</small></span></label>
+            </div>
+          </fieldset>
           <div id="streetRunSummary" class="street-run-summary is-hidden" aria-live="polite"></div>
           <div id="streetRunProgress" class="street-run-progress is-hidden"><span></span></div>
         </section>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { decideNetworkProperty, extractPropertyFloors, normalizeNetworkSettings, ownerAgeAt } from "../src/core/network-exploration.js";
 import { birthDateFromTaxCode } from "../src/core/normalize.js";
@@ -9,6 +9,44 @@ const property = (category: string, address = "VIA TEST n. 1 Piano T") => ({ mun
 const owner = (sharePercentage: number | null, birthDate: string | null = null, taxCode = "RSSMRA80A01A893P") => ({ fullName: "Persona Test", birthPlace: null, birthProvince: null, birthDate, taxCode, rightType: "Proprietà", shareOriginal: "1/1", shareNumerator: null, shareDenominator: null, sharePercentage, rawPayload: {} });
 
 describe("rete proprietaria", () => {
+  it("pubblica il nominativo corrente prima di attendere SISTER", async () => {
+    let releaseSearch!: (properties: any[]) => void;
+    const search = new Promise<any[]>((resolve) => { releaseSearch = resolve; });
+    const checkpoints: any[] = [];
+    const runPromise = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => search,
+    } as any, {} as any, {} as any).run("job-1", {
+      settings: { targetProperties: 1 },
+      seeds: ["RSSMRA80A01A893P"],
+      onCheckpoint: (checkpoint) => { checkpoints.push(checkpoint); },
+    });
+
+    await vi.waitFor(() => expect(checkpoints.at(-1)?.visitedTaxCodes).toEqual(["RSSMRA80A01A893P"]));
+    releaseSearch([]);
+    await runPromise;
+  });
+
+  it("una pausa durante la ricerca rimette il nominativo in coda senza contare un errore", async () => {
+    let cancelled = false;
+    const checkpoint = await new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => {
+        cancelled = true;
+        throw new Error("Target page closed");
+      },
+    } as any, {} as any, {} as any).run("job-1", {
+      settings: { targetProperties: 1 },
+      seeds: ["RSSMRA80A01A893P"],
+      isCancelled: () => cancelled,
+    });
+
+    expect(checkpoint).toMatchObject({
+      status: "paused",
+      visitedTaxCodes: [],
+      skipped: { sister_error: 0 },
+    });
+    expect(checkpoint.pending[0]?.taxCode).toBe("RSSMRA80A01A893P");
+  });
+
   it("esclude box e cantine prima che consumino uno slot", () => {
     expect(decideNetworkProperty(property("C/6"), [owner(100)], normalizeNetworkSettings({}), false)).toEqual({ eligible: false, reason: "non_strategic_category" });
   });

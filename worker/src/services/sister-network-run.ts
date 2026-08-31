@@ -140,6 +140,11 @@ export class SisterNetworkRun {
       }
       const node = checkpoint.pending[0]!;
       checkpoint = { ...checkpoint, pending: checkpoint.pending.slice(1), visitedTaxCodes: [...checkpoint.visitedTaxCodes, node.taxCode] };
+      /* Il nominativo diventa visibile e persistito prima di entrare nel
+       * portale. Se SISTER rallenta o cambia pagina, il checkpoint non resta
+       * falsamente fermo a zero e l'operatore sa quale ricerca e' in corso. */
+      checkpoint.updatedAt = new Date().toISOString();
+      await this.publish(checkpoint, options);
       await options.onProgress?.({ phase: "searching_person", peopleVisited: checkpoint.visitedTaxCodes.length, peopleLimit: settings.maxPeople, acceptedProperties: checkpoint.acceptedProperties, targetProperties: settings.targetProperties, depth: node.depth });
 
       let properties: CadastralProperty[];
@@ -148,11 +153,22 @@ export class SisterNetworkRun {
           () => this.sister.searchPhysicalPersonByTaxCode(node.taxCode),
           {
             operation: "Ricerca persona fisica SISTER", maximumAttempts: 3, delayMs: 3_000,
-            shouldRetry: isTransientPortalFailure,
+            shouldRetry: (error) => !options.isCancelled?.() && isTransientPortalFailure(error),
             onTelemetry: options.onRetryTelemetry,
           },
         );
       } catch (error) {
+        if (options.isCancelled?.()) {
+          checkpoint = {
+            ...checkpoint,
+            status: "paused",
+            pending: [node, ...checkpoint.pending],
+            visitedTaxCodes: checkpoint.visitedTaxCodes.filter((taxCode) => taxCode !== node.taxCode),
+            updatedAt: new Date().toISOString(),
+          };
+          await this.publish(checkpoint, options);
+          return checkpoint;
+        }
         if (isSessionStoppingFailure(error)) throw error;
         checkpoint.skipped.sister_error += 1;
         checkpoint.lastError = error instanceof Error ? error.message : String(error);
@@ -181,14 +197,21 @@ export class SisterNetworkRun {
             () => this.sister.extractOwners(property),
             {
               operation: "Lettura comproprietari SISTER", maximumAttempts: 3, delayMs: 3_000,
-              shouldRetry: isTransientPortalFailure,
+              shouldRetry: (error) => !options.isCancelled?.() && isTransientPortalFailure(error),
               onTelemetry: options.onRetryTelemetry,
             },
           );
         } catch (error) {
+          if (options.isCancelled?.()) {
+            checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+            await this.publish(checkpoint, options);
+            return checkpoint;
+          }
           if (isSessionStoppingFailure(error)) throw error;
           checkpoint.skipped.sister_error += 1;
           checkpoint.lastError = error instanceof Error ? error.message : String(error);
+          checkpoint.updatedAt = new Date().toISOString();
+          await this.publish(checkpoint, options);
           continue;
         }
         checkpoint.examinedPropertyKeys.push(propertyKey);
@@ -224,7 +247,7 @@ export class SisterNetworkRun {
         try {
           existing = await runWithRetryTelemetry(
             () => this.crm.findPropertyByCadastralIdentity(property),
-            { operation: "Controllo immobile nel CRM", maximumAttempts: 3, delayMs: 3_000, shouldRetry: isTransientPortalFailure, onTelemetry: options.onRetryTelemetry },
+            { operation: "Controllo immobile nel CRM", maximumAttempts: 3, delayMs: 3_000, shouldRetry: (error) => !options.isCancelled?.() && isTransientPortalFailure(error), onTelemetry: options.onRetryTelemetry },
           );
         } catch (error) {
           if (isSessionStoppingFailure(error)) throw error;

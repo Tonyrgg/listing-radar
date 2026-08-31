@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page } from "playwright";
 
+import { matchesWorkerPortal, type WorkerPortal } from "../core/browser-page-matching.js";
 import { WorkerError } from "../core/errors.js";
 
 export interface ChromeTabs {
@@ -35,16 +36,38 @@ async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   }
 }
 
+export async function pageTitleWithin(
+  page: Pick<Page, "title">,
+  timeoutMs = 3_000,
+): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      page.title().catch(() => ""),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(""), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function describePage(page: Page) {
-  return { title: await page.title().catch(() => ""), url: page.url(), page };
+  /* Una scheda occupata puo' non rispondere a `document.title` per quasi un
+   * minuto. L'URL e' gia' disponibile senza round-trip ed e' sufficiente per
+   * riconoscere SISTER e gestionale; il titolo resta un aiuto, mai un freno
+   * all'avvio della run. */
+  return { title: await pageTitleWithin(page), url: page.url(), page };
 }
 
 function findMatchingPage(
   pages: Array<{ title: string; url: string; page: Page }>,
   match: string,
+  portal: WorkerPortal,
 ): Page | undefined {
-  const needle = match.toLocaleLowerCase("it");
-  return pages.find(({ title, url }) => `${title} ${url}`.toLocaleLowerCase("it").includes(needle))?.page;
+  return pages.find((page) => matchesWorkerPortal(page, match, portal))?.page;
 }
 
 export async function connectToChrome(
@@ -63,8 +86,8 @@ export async function connectToChrome(
     );
   }
   const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  const sisterPage = findMatchingPage(described, sisterMatch);
-  const crmPage = findMatchingPage(described, crmMatch);
+  const sisterPage = findMatchingPage(described, sisterMatch, "sister");
+  const crmPage = findMatchingPage(described, crmMatch, "crm");
   if (!sisterPage || !crmPage) {
     throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
       missing: [!sisterPage ? "SISTER" : null, !crmPage ? "CRM" : null].filter(Boolean),

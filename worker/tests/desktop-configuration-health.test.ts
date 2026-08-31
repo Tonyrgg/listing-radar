@@ -19,4 +19,15 @@ describe("configurazione e controllo archivio desktop", () => {
     expect(repository).not.toContain("Supabase non pronto: applica la migration 006_property_worker_archives.sql prima di avviare il worker");
     expect(repository).toContain("Archivio dati non raggiungibile");
   });
+
+  it("ferma l’uso silenzioso dell’archivio precedente dopo una migrazione", async () => {
+    const main = await readFile(source("desktop", "main.ts"), "utf8");
+    const renderer = await readFile(source("desktop", "renderer", "renderer.js"), "utf8");
+    const html = await readFile(source("desktop", "renderer", "index.html"), "utf8");
+    expect(main).toContain("archivedDatabaseConfigurationNeedsRefresh");
+    expect(main).toContain("ARCHIVED_DATABASE_CONFIGURATION_MESSAGE");
+    expect(main).toContain('state: "configuration"');
+    expect(renderer).toContain("databaseConfiguration");
+    expect(html).toContain('id="configurationButton"');
+  });
 });

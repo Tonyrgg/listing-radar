@@ -2221,6 +2221,11 @@ body[data-worker-view="settings"] #settings {
   display: block;
 }
 
+details.section[data-operation-locked] :is(button, input, select, textarea) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 body[data-worker-view="sync"] #sync::before,
 body[data-worker-view="history"] #history::before,
 body[data-worker-view="settings"] #settings::before {
@@ -3350,6 +3355,15 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .run-carousel .street-run-card > header h2 { font-size: var(--lr-text-record); }
 .run-carousel .street-run-card > header p:last-child { margin-top: 3px; font-size: var(--lr-text-meta); }
 .street-run-controls { grid-template-columns: minmax(0, 1fr) auto; gap: var(--lr-space-3); margin-top: 0; }
+.street-run-filters { margin: var(--lr-space-3) 0 0; padding: var(--lr-space-3); border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); }
+.street-run-filters legend { padding-inline: var(--lr-space-2); color: var(--lr-ink-1); font-weight: var(--lr-weight-strong); }
+.street-run-filters legend small { margin-left: var(--lr-space-2); color: var(--lr-ink-3); font-weight: var(--lr-weight-regular); }
+.street-filter-grid { display: grid; grid-template-columns: minmax(250px, 1.2fr) minmax(220px, 1fr) auto; gap: var(--lr-space-3); align-items: end; }
+.street-filter-grid > label:not(.safe-check) { display: grid; gap: 3px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+.street-floor-fields { display: grid; grid-template-columns: minmax(150px, 1fr) 76px; gap: var(--lr-space-2); }
+.street-civic-fields { display: grid; grid-template-columns: minmax(80px, 1fr) auto minmax(80px, 1fr); gap: var(--lr-space-2); align-items: center; }
+.street-residential-check { min-height: var(--lr-control-height); padding: 0; border: 0; background: transparent; white-space: nowrap; }
+.street-residential-check small { display: none; }
 .network-run-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px var(--lr-space-3); }
 .network-run-controls > label:not(.safe-check) { gap: 3px; }
 .network-toggle-row { grid-template-columns: auto auto minmax(260px, 1fr); gap: var(--lr-space-4); margin-top: 0; }
@@ -3367,6 +3381,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   .run-carousel { height: 430px; min-height: 430px; }
   .start-card[data-run-slide="civic"] { grid-template-columns: 1fr; grid-template-areas: "copy" "options"; }
   .street-run-controls,
+  .street-filter-grid,
   .network-run-controls,
   .network-toggle-row { grid-template-columns: 1fr; }
 }

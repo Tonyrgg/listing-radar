@@ -4,6 +4,18 @@ import { birthDateFromTaxCode, extractFirstCivicNumber } from "./normalize.js";
 export type NetworkExistingPropertyPolicy = "new_only" | "include_existing";
 export type NetworkFloorMode = "any" | "exact" | "minimum" | "maximum";
 
+export type StreetPropertyFilters = {
+  residentialOnly: boolean;
+  floorMode: NetworkFloorMode;
+  floorValue: number | null;
+  minCivicNumber: number | null;
+  maxCivicNumber: number | null;
+};
+
+export type StreetPropertyDecision =
+  | { eligible: true }
+  | { eligible: false; reason: "non_strategic_category" | "floor_out_of_range" | "civic_out_of_range" };
+
 export type NetworkExplorationSettings = {
   targetProperties: number;
   seedCount: number;
@@ -72,6 +84,33 @@ export function isStrategicNetworkCategory(category: string | null | undefined, 
   // are where garages, cellars and warehouses accumulate, and can be enabled
   // later only through an explicit profile rather than slipping in by chance.
   return residentialOnly ? /^A\/?\d+$/i.test(normalized) : /^(?:A|C)\/?\d+$/i.test(normalized);
+}
+
+export function decideStreetProperty(
+  property: CadastralProperty,
+  filters: StreetPropertyFilters,
+): StreetPropertyDecision {
+  if (!isStrategicNetworkCategory(property.category, filters.residentialOnly)) {
+    return { eligible: false, reason: "non_strategic_category" };
+  }
+  if (filters.floorMode !== "any" && filters.floorValue != null) {
+    const floors = extractPropertyFloors(property.address);
+    const floorMatch = filters.floorMode === "exact"
+      ? floors.includes(filters.floorValue)
+      : filters.floorMode === "minimum"
+        ? floors.some((floor) => floor >= filters.floorValue!)
+        : floors.some((floor) => floor <= filters.floorValue!);
+    if (!floorMatch) return { eligible: false, reason: "floor_out_of_range" };
+  }
+  if (filters.minCivicNumber != null || filters.maxCivicNumber != null) {
+    const civic = Number.parseInt(extractFirstCivicNumber(property.address) ?? "", 10);
+    if (!Number.isFinite(civic)
+      || (filters.minCivicNumber != null && civic < filters.minCivicNumber)
+      || (filters.maxCivicNumber != null && civic > filters.maxCivicNumber)) {
+      return { eligible: false, reason: "civic_out_of_range" };
+    }
+  }
+  return { eligible: true };
 }
 
 export function decideNetworkProperty(
@@ -163,5 +202,18 @@ export function normalizeNetworkSettings(value: Partial<NetworkExplorationSettin
     maxOwnerCount,
     minCivicNumber,
     maxCivicNumber,
+  };
+}
+
+export function normalizeStreetPropertyFilters(
+  value: Partial<StreetPropertyFilters> | null | undefined,
+): StreetPropertyFilters {
+  const normalized = normalizeNetworkSettings(value ?? {});
+  return {
+    residentialOnly: normalized.residentialOnly,
+    floorMode: normalized.floorMode,
+    floorValue: normalized.floorValue,
+    minCivicNumber: normalized.minCivicNumber,
+    maxCivicNumber: normalized.maxCivicNumber,
   };
 }

@@ -191,6 +191,70 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
     }
   }, 20_000);
 
+  it("applica i filtri prima di aprire gli intestatari", async () => {
+    let ownerRequests = 0;
+    const server = createServer((request, response) => {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      if (request.url?.startsWith("/owners")) {
+        ownerRequests += 1;
+        response.end(`<!doctype html><body>
+          <form name="SceltaIntestatiForm"><table class="listaIsp4">
+            <tr><th></th><th>Nominativo o denominazione</th><th>Codice fiscale</th><th>Titolarita</th><th>Quota</th></tr>
+            <tr><td><input name="intestatoSelezionato"></td><td>ROSSI MARIO nato a BITONTO (BA) il 01/01/1970</td><td>RSSMRA70A01A893X</td><td>Proprieta'</td><td>1/1</td></tr>
+          </table></form>
+          <form name="SceltaVisuraImmSoggForm" action="/results"><input name="indietro" type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      if (request.url?.startsWith("/results")) {
+        response.end(`<!doctype html><body>
+          <fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici</fieldset>
+          <form name="SceltaVisuraImmSoggForm" action="/owners">
+            <table class="listaIsp4">
+              <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
+              <tr><td><input name="visImmSel" type="radio" value="1"></td><td>50</td><td>100</td><td>1</td><td>VIA TEST n. 4 PIANO T</td><td>U</td><td>C06</td><td>2</td><td>20 mq</td><td>100,00</td></tr>
+              <tr><td><input name="visImmSel" type="radio" value="2"></td><td>50</td><td>200</td><td>2</td><td>VIA TEST n. 12 PIANO 2</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>500,00</td></tr>
+            </table>
+            <input name="intestati" type="submit" value="Intestati">
+          </form>
+          <form name="SceltaIndirizzoForm" action="/addresses"><input type="submit" value="Indietro"></form>
+        </body>`);
+        return;
+      }
+      response.end(`<!doctype html><body>
+        <form name="SceltaIndirizzoForm" action="/results">
+          <select name="indirizzoSel"><option value="test##VIA TEST">VIA TEST</option></select>
+          <input name="numCivicoDal"><input name="numCivicoAl"><input name="ricerca" type="submit" value="Ricerca">
+        </form>
+      </body>`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/addresses`);
+      const acquired: string[] = [];
+      const checkpoint = await new SisterStreetRun(page, {
+        filters: { residentialOnly: true, floorMode: "minimum", floorValue: 1, minCivicNumber: 10, maxCivicNumber: 20 },
+        onPropertyAcquired: (_variant, property) => { acquired.push(property.parcel); },
+      }).run("VIA TEST");
+
+      expect(ownerRequests).toBe(1);
+      expect(acquired).toEqual(["200"]);
+      expect(checkpoint).toMatchObject({
+        status: "completed",
+        totalAcceptedProperties: 1,
+        totalSkippedPropertyRows: 1,
+        filters: { residentialOnly: true, floorMode: "minimum", floorValue: 1, minCivicNumber: 10, maxCivicNumber: 20 },
+      });
+      expect(checkpoint.results[0]?.filterSkips).toEqual({ non_strategic_category: 1 });
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 20_000);
+
   it("riprova tre volte lo stesso record e poi continua senza bloccare la via", async () => {
     let ownerRequests = 0;
     const server = createServer((request, response) => {

@@ -180,6 +180,12 @@ const unknownCommandFailureRecorded = (await page.evaluate(() => window.__worker
 await page.locator('[data-scroll="operations"]').click();
 await page.evaluate(() => window.__showStreetRunState());
 await page.evaluate(() => window.__showStreetRunProgress());
+await page.locator('[data-scroll="sync"]').click();
+const navigationDuringRunVisible = await page.evaluate(() =>
+  document.body.dataset.workerView === "sync" && document.querySelector("#sync")?.open === true,
+);
+const secondaryActionsLocked = await page.locator("#sync").evaluate((section) => section.inert === true);
+await page.locator('[data-scroll="operations"]').click();
 await page.locator("#operationConsole").screenshot({ path: path.join(output, "street-run.png") });
 await page.locator("#stopAllButton").click();
 const streetRunProgressVisible = await page.getByText("Leggo gli intestatari 413 di 1743", { exact: false }).count();
@@ -234,7 +240,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -242,6 +248,8 @@ const failures = [
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
+  ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),
+  ...(!secondaryActionsLocked ? ["Le azioni secondarie non vengono bloccate durante una run"] : []),
   ...(streetRunProgressVisible !== 1 ? ["Avanzamento interno long mode non visibile"] : []),
   ...(!streetMonitorText.includes("Voce 413 di 1.743") ? ["Contatore voce/totale della long mode non visibile"] : []),
   ...(requestMonitorVisible < 1 ? ["Totale import richieste non visibile"] : []),

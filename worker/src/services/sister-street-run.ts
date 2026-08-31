@@ -3,6 +3,11 @@ import type { Locator, Page } from "playwright";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { WorkerError } from "../core/errors.js";
+import {
+  decideStreetProperty,
+  normalizeStreetPropertyFilters,
+  type StreetPropertyFilters,
+} from "../core/network-exploration.js";
 import { buildCadastralKey, selectSisterAddressForStreet } from "../core/normalize.js";
 import type { CadastralOwner, CadastralProperty } from "../types.js";
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
@@ -25,6 +30,8 @@ export type SisterStreetQueryResult = {
   rawRecords: number;
   acceptedProperties: number;
   propertyKeys: string[];
+  filteredPropertyKeys?: string[];
+  filterSkips?: Partial<Record<"non_strategic_category" | "floor_out_of_range" | "civic_out_of_range", number>>;
   ownersRead: number;
   skippedPropertyRows: number;
   warnings: string[];
@@ -48,6 +55,7 @@ export type SisterStreetRunCheckpoint = {
   importJobId: string | null;
   requestedStreet: string;
   municipality: "BITONTO";
+  filters?: StreetPropertyFilters;
   status: "running" | "paused" | "completed" | "failed";
   startedAt: string;
   updatedAt: string;
@@ -78,6 +86,7 @@ type StreetRunOptions = {
   strategy?: "bulk_exact_variants" | "civic_fallback";
   mode?: "dry_run" | "live";
   importJobId?: string | null;
+  filters?: Partial<StreetPropertyFilters>;
   onPropertyAcquired?: (
     variant: SisterStreetVariant,
     property: CadastralProperty,
@@ -124,6 +133,7 @@ export class SisterStreetRun {
   private readonly prepareSearchAutomatically: boolean;
   private readonly strategy: "bulk_exact_variants" | "civic_fallback";
   private readonly mode: "dry_run" | "live";
+  private readonly filters: StreetPropertyFilters;
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
     this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, { ignoreOwnerNoMatch: true });
@@ -135,6 +145,7 @@ export class SisterStreetRun {
     this.prepareSearchAutomatically = options.prepareSearchAutomatically === true;
     this.strategy = options.strategy ?? "bulk_exact_variants";
     this.mode = options.mode ?? "dry_run";
+    this.filters = normalizeStreetPropertyFilters(options.filters);
   }
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
@@ -158,6 +169,7 @@ export class SisterStreetRun {
           updatedAt: now,
           completedAt: null,
           variants,
+          filters: this.filters,
           consecutiveEmptyByVariant: Object.fromEntries(variants.map((variant) => [
             variant.key,
             compatibleResume.consecutiveEmptyByVariant[variant.key] ?? 0,
@@ -171,6 +183,7 @@ export class SisterStreetRun {
           importJobId: this.options.importJobId ?? null,
           requestedStreet: normalizedRequestedStreet,
           municipality: "BITONTO",
+          filters: this.filters,
           status: "running",
           startedAt: now,
           updatedAt: now,
@@ -666,6 +679,9 @@ export class SisterStreetRun {
     let skippedPropertyRows = previousPartial?.skippedPropertyRows ?? 0;
     const acquiredPropertyKeys: string[] = [...(previousPartial?.propertyKeys ?? [])];
     const acquiredPropertyKeySet = new Set(acquiredPropertyKeys);
+    const filteredPropertyKeys: string[] = [...(previousPartial?.filteredPropertyKeys ?? [])];
+    const filteredPropertyKeySet = new Set(filteredPropertyKeys);
+    const filterSkips = { ...(previousPartial?.filterSkips ?? {}) };
     const warnings: string[] = (previousPartial?.warnings ?? [])
       .filter((warning) => !warning.startsWith("Pausa richiesta"));
     if (this.acquireOwners) {
@@ -675,7 +691,19 @@ export class SisterStreetRun {
       });
       for (const [propertyIndex, property] of properties.entries()) {
         const propertyKey = buildCadastralKey(property);
-        if (acquiredPropertyKeySet.has(propertyKey)) {
+        if (acquiredPropertyKeySet.has(propertyKey) || filteredPropertyKeySet.has(propertyKey)) {
+          await this.options.onProgress?.({
+            phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
+            current: propertyIndex + 1, total: properties.length, address: property.address,
+          });
+          continue;
+        }
+        const filterDecision = decideStreetProperty(property, this.filters);
+        if (!filterDecision.eligible) {
+          filteredPropertyKeys.push(propertyKey);
+          filteredPropertyKeySet.add(propertyKey);
+          filterSkips[filterDecision.reason] = (filterSkips[filterDecision.reason] ?? 0) + 1;
+          skippedPropertyRows += 1;
           await this.options.onProgress?.({
             phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
             current: propertyIndex + 1, total: properties.length, address: property.address,
@@ -693,6 +721,8 @@ export class SisterStreetRun {
             rawRecords,
             acceptedProperties: acquiredPropertyKeys.length,
             propertyKeys: acquiredPropertyKeys,
+            filteredPropertyKeys,
+            filterSkips,
             ownersRead,
             skippedPropertyRows,
             warnings: ["Pausa richiesta durante la lettura dei proprietari; la variante verrà ripresa in modo idempotente."],
@@ -775,6 +805,8 @@ export class SisterStreetRun {
       rawRecords,
       acceptedProperties: acquiredPropertyKeys.length,
       propertyKeys: acquiredPropertyKeys,
+      filteredPropertyKeys,
+      filterSkips,
       ownersRead,
       skippedPropertyRows,
       warnings,

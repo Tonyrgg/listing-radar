@@ -50,5 +50,6 @@ describe("controlli desktop esplorazione rete", () => {
     expect(preload).toContain("startNetworkRun");
     expect(main).toContain('ipcMain.handle("desktop:start-network-run"');
     expect(main).toContain("networkRunCancellationRequested = true");
+    expect(main).toContain("await activeNetworkBrowser?.close().catch(() => undefined)");
   });
 });
