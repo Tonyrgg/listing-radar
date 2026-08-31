@@ -7,6 +7,10 @@ import {
   readBooleanFeature,
   requestRequiresElevator,
 } from "@/lib/matching/elevator";
+import {
+  propertyTypeFromText,
+  resolveRequestPropertyTypes,
+} from "@/lib/matching/property-types";
 import type { PortfolioProperty, PropertyRequest } from "@/lib/matching/types";
 import type { GeoJsonGeometry } from "@/lib/map/types";
 
@@ -339,6 +343,73 @@ describe("etichette dell'ascensore nelle schede", () => {
       property_feature_values: [{ value: true, feature: { key: "balcony" } }],
     })).toBe(false);
     expect(propertyHasElevator({})).toBe(false);
+  });
+});
+
+describe("tipologia presa dalla sottotipologia del gestionale", () => {
+  // Il caso Terry: «Sottotipologia Immobile: Villa singola» compilata, campo
+  // «Tipologia Immobile» vuoto. property_types arrivava vuoto e il motore dava
+  // punteggio pieno con la spunta «tipologia» a un appartamento.
+  const terry: PropertyRequest = {
+    ...request,
+    property_types: [],
+    raw_payload: { fields: { "Sottotipologia Immobile": "Villa singola" } },
+  };
+
+  it("non propone un appartamento a chi ha chiesto una villa singola", () => {
+    const appartamento = calculateMatch({ request: terry, property: { ...property, property_type: "apartment" } });
+    expect(appartamento.score).toBe(0);
+    expect(appartamento.classification).toBe("not_relevant");
+    expect(appartamento.conflicting_criteria).toContain("tipologia incompatibile");
+    expect(appartamento.matched_criteria).not.toContain("tipologia");
+  });
+
+  it("continua a proporre la villa", () => {
+    const villa = calculateMatch({ request: terry, property: { ...property, property_type: "villa" } });
+    expect(villa.score).toBeGreaterThan(0);
+    expect(villa.matched_criteria).toContain("tipologia");
+  });
+
+  it("non spunta la tipologia quando nessuno l'ha indicata", () => {
+    const senzaTipologia = calculateMatch({
+      request: { ...request, property_types: [] },
+      property: { ...property, property_type: "garage" },
+    });
+    expect(senzaTipologia.matched_criteria).not.toContain("tipologia");
+    expect(senzaTipologia.missing_preferences).toContain("tipologia non indicata nella richiesta");
+    // Non sapere non e' un motivo per escludere: la casa resta valutabile.
+    expect(senzaTipologia.score).toBeGreaterThan(0);
+  });
+
+  it("il campo strutturato ha la precedenza sulla sottotipologia", () => {
+    const dichiarata = resolveRequestPropertyTypes({
+      ...terry,
+      property_types: ["apartment"],
+    });
+    expect(dichiarata).toEqual(["apartment"]);
+  });
+});
+
+describe("lettura delle dizioni del gestionale", () => {
+  it("distingue la villa dalla villetta a schiera", () => {
+    expect(propertyTypeFromText("Villa singola")).toBe("villa");
+    expect(propertyTypeFromText("Villetta a schiera")).toBe("townhouse");
+    expect(propertyTypeFromText("Bifamiliare")).toBe("townhouse");
+  });
+
+  it("riconosce le dizioni piu' comuni", () => {
+    expect(propertyTypeFromText("Appartamento")).toBe("apartment");
+    expect(propertyTypeFromText("Trilocale")).toBe("apartment");
+    expect(propertyTypeFromText("Attico")).toBe("penthouse");
+    expect(propertyTypeFromText("Piano terra")).toBe("ground_floor");
+    expect(propertyTypeFromText("Box auto")).toBe("garage");
+    expect(propertyTypeFromText("Negozio")).toBe("commercial_space");
+  });
+
+  it("non indovina su un testo che non riconosce", () => {
+    expect(propertyTypeFromText("qualcosa di non previsto")).toBeNull();
+    expect(propertyTypeFromText("")).toBeNull();
+    expect(propertyTypeFromText(null)).toBeNull();
   });
 });
 

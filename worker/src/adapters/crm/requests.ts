@@ -314,9 +314,14 @@ export function normalizeCrmRequest(detail: CrmRequestDetail) {
         : need.includes("permut") ? "exchange"
           : need ? "other" : null;
   const type = text("Tipologia Immobile")?.toLocaleLowerCase("it") ?? "";
+  /* «Villa» finiva in `townhouse`, cioe' villetta a schiera: due prodotti che
+   * il motore tiene separati apposta, per cui chi cercava una villa singola
+   * vedeva schiere e non ville. La schiera va riconosciuta per prima, perche'
+   * «villetta a schiera» contiene comunque «villa». */
   const propertyTypes = type.includes("appart") ? ["apartment"]
-    : type.includes("indipendent") ? ["independent_house"]
-      : type.includes("villa") ? ["townhouse"] : [];
+    : type.includes("schiera") ? ["townhouse"]
+      : type.includes("villa") ? ["villa"]
+        : type.includes("indipendent") ? ["independent_house"] : [];
   const floorRaw = text("Piano Immobile")?.toLocaleLowerCase("it") ?? "";
   const requestedFloorBand = floorRaw.includes("medio") ? "medium" : floorRaw.includes("basso") ? "low"
     : floorRaw.includes("alto") ? "high" : floorRaw.includes("ultimo") ? "top" : floorRaw ? "any" : null;

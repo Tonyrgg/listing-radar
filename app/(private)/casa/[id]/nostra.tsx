@@ -1,10 +1,11 @@
-import { MapPin } from "lucide-react";
+import { ArrowUpRight, MapPin } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { DeletePropertyButton, PropertyEditor, RecalculateButton } from "@/components/matching/management-panels";
 import { ColpoDocchio } from "@/components/casa/colpo-docchio";
 import { PageHeader } from "@/components/page-header";
-import { Meta } from "@/components/ui/primitives";
+import { LoadingAnchor } from "@/components/loading-controls";
+import { Meta, buttonClass } from "@/components/ui/primitives";
 import { readNow } from "@/lib/clock";
 import { MatchCard } from "@/components/matching/match-card";
 import { formatShouty } from "@/lib/formatting";
@@ -12,7 +13,7 @@ import { cleanPropertyTitle, cleanRequestTitle } from "@/lib/matching/request-pr
 import { ProgressiveList } from "@/components/progressive-list";
 import styles from "@/components/matching/section-design.module.css";
 import { ZoneMap } from "@/components/matching/zone-map";
-import { propertyConditionLabel, propertyCrmCondition } from "@/lib/matching/property-presentation";
+import { propertyConditionLabel, propertyCrmCondition, propertyCrmUrl } from "@/lib/matching/property-presentation";
 import { getProperty, listFeatures, listZones } from "@/lib/matching/repository";
 import type { MatchClassification, PortfolioProperty } from "@/lib/matching/types";
 
@@ -47,6 +48,7 @@ export async function SchedaNostra({ id }: Readonly<{ id: string }>) {
   const propertyPoint = property.latitude != null && property.longitude != null
     ? { latitude: Number(property.latitude), longitude: Number(property.longitude) }
     : null;
+  const crmUrl = propertyCrmUrl(property);
   const internalCondition = propertyCrmCondition(property as PortfolioProperty, "Stato Interno");
   const externalCondition = propertyCrmCondition(property as PortfolioProperty, "Stato Esterno");
 
@@ -74,6 +76,17 @@ export async function SchedaNostra({ id }: Readonly<{ id: string }>) {
         backLabel="Torna al portafoglio"
         actions={
           <div className="flex flex-wrap gap-2">
+            {crmUrl ? (
+              <LoadingAnchor
+                className={buttonClass("secondary", { compact: true })}
+                href={crmUrl}
+                target="_blank"
+                rel="noreferrer"
+                pendingLabel="Apro CRM"
+              >
+                Apri nel CRM <ArrowUpRight aria-hidden="true" className="size-4" />
+              </LoadingAnchor>
+            ) : null}
             <PropertyEditor
               zones={zones}
               features={features}

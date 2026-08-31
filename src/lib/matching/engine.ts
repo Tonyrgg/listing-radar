@@ -1,5 +1,6 @@
 import { buildExplanation } from "./explanations";
 import { ELEVATOR_FEATURE_KEY, evaluateElevatorRequirement } from "./elevator";
+import { resolveRequestPropertyTypes } from "./property-types";
 import { polygonLabelPoint, type MapPoint } from "@/lib/map/geometry";
 import {
   DEFAULT_MATCHING_CONFIG, clampScore, classifyScore, scoreBudget, scoreInternalSqm,
@@ -28,7 +29,13 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   const conflicts: string[] = [];
   const warnings = sqmCoherenceWarnings(request.internal_sqm_ideal, request.rooms_ideal);
 
-  const typeRatio = scorePropertyType(request.property_types, property.property_type, config);
+  // Una richiesta senza tipologia non e' una richiesta che accetta tutto: e' una
+  // richiesta di cui non sappiamo la tipologia. Prima prendeva punteggio pieno e
+  // la spunta «tipologia», che certificava un controllo mai fatto.
+  const requestedTypes = resolveRequestPropertyTypes(request);
+  const typeRatio = requestedTypes.length
+    ? scorePropertyType(requestedTypes, property.property_type, config)
+    : undefined;
   // Contratto, tipologia e ascensore obbligatorio sono le domande a cui non si
   // risponde «quasi»: se sbagliano, il match non nasce invece di nascere debole
   // e restare in lista.
@@ -36,7 +43,7 @@ export function calculateMatch(context: MatchingContext): MatchResult {
   const blocking = request.contract_type !== property.contract_type
     ? "tipo di contratto diverso"
     : elevator.kind === "excluded" ? elevator.reason : null;
-  if (blocking || typeRatio == null) {
+  if (blocking || typeRatio === null) {
     conflicts.push(blocking ?? "tipologia incompatibile");
     return {
       score: 0, classification: "not_relevant", matched_criteria: [],
@@ -54,7 +61,8 @@ export function calculateMatch(context: MatchingContext): MatchResult {
     else if (no) missing.push(no);
   };
 
-  add(config.weights.propertyType, typeRatio, "tipologia", "tipologia affine ma diversa");
+  if (typeRatio === undefined) missing.push("tipologia non indicata nella richiesta");
+  else add(config.weights.propertyType, typeRatio, "tipologia", "tipologia affine ma diversa");
 
   const zones = context.requestZones ?? [];
   if (zones.length) {
