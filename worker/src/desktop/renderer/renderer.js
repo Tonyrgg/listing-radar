@@ -252,6 +252,14 @@ function markActiveNav(id) {
     item.classList.toggle("is-active", item.dataset.scroll === id);
   });
 }
+function lockSecondaryPageActions(locked) {
+  for (const id of ["sync", "history", "settings"]) {
+    const section = $(id);
+    if (!section) continue;
+    section.inert = locked;
+    section.toggleAttribute("data-operation-locked", locked);
+  }
+}
 const RUN_SLIDES = ["civic", "street", "network"];
 function setRunSlide(slide) {
   if (!RUN_SLIDES.includes(slide)) return;
@@ -895,7 +903,7 @@ function renderChecks() {
             }
           : null;
       const result = keepResult ?? browserResult;
-      if (result && !result.ok) rotti.push({ label, state: result.state, detail: result.detail });
+      if (result && !result.ok) rotti.push({ id, label, state: result.state, detail: result.detail });
       return `<div class="check-item ${result ? (result.ok ? "is-ok" : "is-error") : ""}"><span></span><div><b>${label}</b><small title="${esc(result?.detail ?? "Da controllare")}">${esc(result?.detail ?? "Da controllare")}</small></div></div>`;
     })
     .join("");
@@ -969,8 +977,12 @@ function renderConnectionState(rotti, controllato) {
   if (!rotti.length) return;
   const login = rotti.filter((item) => item.state === "login").map((item) => item.label),
     missing = rotti.filter((item) => item.state === "missing").map((item) => item.label),
-    unreachable = rotti.filter((item) => item.state === "unreachable").map((item) => item.label);
-  $("connectionAlertTitle").textContent = login.length
+    unreachable = rotti.filter((item) => item.state === "unreachable").map((item) => item.label),
+    databaseConfiguration = rotti.some((item) => item.id === "supabase" && item.state === "configuration");
+  $("configurationButton").classList.toggle("is-hidden", !databaseConfiguration);
+  $("connectionAlertTitle").textContent = databaseConfiguration
+    ? "Aggiorna il collegamento al nuovo archivio dati."
+    : login.length
     ? `Completa l’accesso in ${login.join(" e ")}.`
     : missing.length
       ? `Apri ${missing.join(" e ")} in Chrome.`
@@ -1013,6 +1025,14 @@ function nextStepName(last) {
     : STEPS[Math.min(index + 1, STEPS.length - 1)];
 }
 function renderSteps() {
+  const completion = appState?.operationCompletion;
+  if (completion) {
+    $("operationTitle").textContent = completion.title;
+    $("progressPercent").textContent = "100%";
+    $("progressBar").style.width = "100%";
+    $("workflowSteps").innerHTML = `<li class="workflow-step is-done"><span class="index">✓</span><b>Operazione conclusa<small>${esc(completion.summary)}</small></b></li>`;
+    return;
+  }
   const nonPropertyRun = appState?.streetRun?.active || appState?.networkRun?.active || appState?.requestArchive?.active || appState?.mandateArchive?.active;
   if (nonPropertyRun) {
     const operation = currentOperation();
@@ -1076,6 +1096,23 @@ function promptButtons(prompt) {
     return `<button class="button primary" data-prompt="confirm">Conferma</button><button class="button secondary" data-prompt="skip">Salta questo caso</button><button class="button secondary" data-prompt="manual">Modifico nel gestionale</button><button class="button danger" data-prompt="review">Segna da verificare</button>`;
   return `<button class="button primary" data-prompt="confirm">${prompt.kind === "acquisition" ? "Acquisisci risultati" : "Ho terminato, continua"}</button>`;
 }
+function activeBackgroundOperation() {
+  return appState?.streetRun?.active
+    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
+    : appState?.networkRun?.active
+      ? { label: "Rete proprietari", title: "Esplorazione della rete in corso", detail: "Attraverso proprietà e comproprietari, verificando ogni candidato prima di inserirlo nella coda.", action: "pause-network-run", actionLabel: "Metti in pausa" }
+      : appState?.requestArchive?.active
+        ? { label: "Sincronizzazione", title: "Sto sincronizzando le richieste", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-request-sync", actionLabel: "Interrompi" }
+        : appState?.mandateArchive?.active
+          ? { label: "Sincronizzazione", title: "Sto sincronizzando gli incarichi", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-mandate-sync", actionLabel: "Interrompi" }
+          : null;
+}
+function hasActiveBackgroundOperation() {
+  return Boolean(activeBackgroundOperation());
+}
+function hasVisibleForegroundError() {
+  return Boolean(appState?.lastError && !hasActiveBackgroundOperation());
+}
 function renderAction() {
   const panel = $("actionPanel"),
     job = currentJob(),
@@ -1106,6 +1143,19 @@ function renderAction() {
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>Serve una tua conferma</div><h2>${esc(appState.prompt.title)}</h2><p>${esc(appState.prompt.summary)}</p><div class="now-actions">${promptButtons(appState.prompt)}${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>Perché mi sono fermato?</h3><p>Questa scelta può modificare dati nel gestionale. Attendo la tua decisione per sicurezza.</p></div></div>`;
     return;
   }
+  const backgroundRun = activeBackgroundOperation();
+  if (backgroundRun) {
+    panel.className = "now-card";
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${esc(backgroundRun.label)}</div><h2>${esc(backgroundRun.title)}</h2><p>${esc(backgroundRun.detail)}</p><div class="now-actions"><button class="button secondary" data-action="${backgroundRun.action}">${backgroundRun.actionLabel}</button></div></div><div class="now-side"><h3>Nessuna finestra da gestire</h3><p>Tutto l'avanzamento e tutti i controlli sono raccolti in questa plancia. Se serve una decisione, comparirà qui.</p></div></div>`;
+    return;
+  }
+  const completion = appState?.operationCompletion;
+  if (completion) {
+    const stats = Array.isArray(completion.stats) ? completion.stats : [];
+    panel.className = "now-card is-success";
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span>✓</span>Operazione completata</div><h2>${esc(completion.title)}</h2><p>${esc(completion.summary)}</p>${stats.length ? `<div class="success-summary">${stats.map((stat) => `<b>${fmtCount(stat.value)} ${esc(stat.label.toLowerCase())}</b>`).join("")}</div>` : ""}</div><div class="now-side"><h3>Tutto concluso con successo</h3><p>Conclusa il ${esc(fmtDate(completion.completedAt))}. Puoi avviare una nuova operazione: questa schermata verrà sostituita automaticamente.</p></div></div>`;
+    return;
+  }
   if (completed) {
     const properties = job?.processed_properties ?? job?.total_properties ?? 0,
       people = job?.processed_people ?? job?.total_people ?? 0;
@@ -1113,7 +1163,7 @@ function renderAction() {
     panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span>✓</span>Import concluso</div><h2>Import eseguito con successo</h2><p>Il gestionale è stato aggiornato e tutti i passaggi risultano completati.</p><div class="success-summary"><b>${properties} immobili completati</b><b>${people} nominativi elaborati</b></div><div class="now-actions"><button class="button primary" data-scroll="completedImports">Vedi cosa è stato importato</button></div></div><div class="now-side"><h3>Nessuna azione richiesta</h3><p>Il lavoro è memorizzato nella sezione “Import effettuati con successo”. Puoi iniziare una nuova lavorazione.</p></div></div>`;
     return;
   }
-  if (appState?.lastError) {
+  if (hasVisibleForegroundError()) {
     const advice = errorAdvice(job, appState.lastError),
       last = guide(job?.last_completed_step),
       next = guide(nextStepName(job?.last_completed_step)),
@@ -1129,20 +1179,6 @@ function renderAction() {
       );
       panel.querySelector(".now-side p").textContent = "Rianalizza situazione riparte da questo immobile, conserva ciò che il Cloud ha già e aggiunge soltanto gli elementi mancanti.";
     }
-    return;
-  }
-  const backgroundRun = appState?.streetRun?.active
-    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
-    : appState?.networkRun?.active
-      ? { label: "Rete proprietari", title: "Esplorazione della rete in corso", detail: "Attraverso proprietà e comproprietari, verificando ogni candidato prima di inserirlo nella coda.", action: "pause-network-run", actionLabel: "Metti in pausa" }
-      : appState?.requestArchive?.active
-        ? { label: "Sincronizzazione", title: "Sto sincronizzando le richieste", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-request-sync", actionLabel: "Interrompi" }
-        : appState?.mandateArchive?.active
-          ? { label: "Sincronizzazione", title: "Sto sincronizzando gli incarichi", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-mandate-sync", actionLabel: "Interrompi" }
-          : null;
-  if (backgroundRun) {
-    panel.className = "now-card";
-    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${esc(backgroundRun.label)}</div><h2>${esc(backgroundRun.title)}</h2><p>${esc(backgroundRun.detail)}</p><div class="now-actions"><button class="button secondary" data-action="${backgroundRun.action}">${backgroundRun.actionLabel}</button></div></div><div class="now-side"><h3>Nessuna finestra da gestire</h3><p>Tutto l'avanzamento e tutti i controlli sono raccolti in questa plancia. Se serve una decisione, comparirà qui.</p></div></div>`;
     return;
   }
   const current = guide(appState?.currentStep ?? "ready");
@@ -1453,14 +1489,14 @@ function enhanceActionPanel() {
       `<div class="automation-plan"><b>Controlli automatici inclusi</b><p>Verifico e, se necessario, sposto i recapiti dal vecchio nominativo a quello corretto. Compilo anche sezione urbana BA, foglio, particella, subalterno e rendita.</p></div>`,
     );
   if (
-    appState?.lastError &&
+    hasVisibleForegroundError() &&
     !actions.querySelector('[data-action="toggle-auto-retry"]')
   )
     actions.insertAdjacentHTML(
       "beforeend",
       `<button class="button secondary" data-action="toggle-auto-retry">${appState.autoRetryEnabled === false ? "Riattiva riprova automatico" : "Ferma riprova automatico"}</button>`,
     );
-  if (appState?.lastError && !$("#autoRetryCountdown")) {
+  if (hasVisibleForegroundError() && !$("#autoRetryCountdown")) {
     const details = $("actionPanel").querySelector(".technical-details");
     const notice = document.createElement("p");
     notice.id = "autoRetryCountdown";
@@ -1667,9 +1703,13 @@ function renderStreetRun() {
     cancel = $("streetRunCancel"),
     abandon = $("streetRunAbandon"),
     input = $("streetRunInput"),
-    dryToggle = $("dryRunToggle");
+    dryToggle = $("dryRunToggle"),
+    streetFilterInputs = ["streetFloorMode", "streetFloorValue", "streetMinCivic", "streetMaxCivic", "streetResidentialOnly"]
+      .map((id) => $(id));
   dryToggle.disabled = active;
   input.disabled = active;
+  for (const control of streetFilterInputs) control.disabled = active;
+  $("streetFloorValue").disabled = active || $("streetFloorMode").value === "any";
   $("streetRunStartLabel").textContent = dryToggle.checked ? "Avvia dry-run" : "Avvia run reale";
   start.disabled =
     Boolean(appState?.active) ||
@@ -1702,9 +1742,18 @@ function renderStreetRun() {
     occurrences =
       checkpoint.totalAcceptedOccurrences ??
       checkpoint.totalAcceptedProperties ??
-      0;
+      0,
+    filterSkips = (checkpoint.results ?? []).reduce((total, result) =>
+      total + Object.values(result.filterSkips ?? {}).reduce((sum, count) => sum + Number(count ?? 0), 0), 0),
+    activeFilters = [
+      checkpoint.filters?.residentialOnly !== false ? "solo abitazioni" : null,
+      checkpoint.filters?.floorMode !== "any" && checkpoint.filters?.floorValue != null
+        ? `piano ${checkpoint.filters.floorMode === "exact" ? "=" : checkpoint.filters.floorMode === "minimum" ? "≥" : "≤"} ${checkpoint.filters.floorValue}` : null,
+      checkpoint.filters?.minCivicNumber != null || checkpoint.filters?.maxCivicNumber != null
+        ? `civici ${checkpoint.filters.minCivicNumber ?? "inizio"}–${checkpoint.filters.maxCivicNumber ?? "fine"}` : null,
+    ].filter(Boolean).join(" · ");
   $("streetRunSummary").innerHTML =
-    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione bulk senza civico in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
+    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione bulk senza civico in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Escluse dai filtri</dt><dd>${filterSkips}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")}${activeFilters ? ` · ${esc(activeFilters)}` : ""} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
   const progress = $("streetRunProgress");
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
@@ -2210,14 +2259,11 @@ function render() {
     appState.active || appState.streetRun?.active || appState.networkRun?.active ||
     appState.requestArchive?.active || appState.mandateArchive?.active || appState.stoppingAll,
   );
-  if (anyOperationActive && document.body.dataset.workerView !== "operations") {
-    document.body.dataset.workerView = "operations";
-    markActiveNav("operations");
-  }
+  lockSecondaryPageActions(anyOperationActive);
   document.body.dataset.fase =
     anyOperationActive
       ? "lavora"
-      : completed
+      : appState.operationCompletion || completed
         ? "finita"
         : appState.lastError
           ? "attenzione"
@@ -2236,12 +2282,14 @@ function render() {
   $("workspaceTitle").textContent = titolo;
   $("workspaceSubtitle").textContent = sottotitolo;
   $("runBadge").className =
-    `status-pill ${appState.active ? "is-running" : completed ? "is-complete" : appState.lastError ? "is-error" : "is-idle"}`;
+    `status-pill ${anyOperationActive ? "is-running" : appState.operationCompletion || completed ? "is-complete" : appState.lastError ? "is-error" : "is-idle"}`;
   $("runBadge").innerHTML =
-    `<span></span>${appState.active ? "In lavorazione" : completed ? "Completata" : appState.lastError ? "Serve attenzione" : "Pronto"}`;
+    `<span></span>${anyOperationActive ? "In lavorazione" : appState.operationCompletion || completed ? "Completata" : appState.lastError ? "Serve attenzione" : "Pronto"}`;
   $("operationTitle").textContent = appState.active
     ? guide(appState.currentStep).label
-    : completed
+    : appState.operationCompletion
+      ? appState.operationCompletion.title
+      : completed
       ? "Import completato"
       : "Percorso completo";
   if (Array.isArray(appState.connections?.checks)) checks = appState.connections.checks;
@@ -2411,7 +2459,18 @@ document.addEventListener("click", async (event) => {
           )
         )
           return COMMAND_CANCELLED;
-        return window.propertyWorker.startStreetRun({ street, resume: false, dryRun });
+        return window.propertyWorker.startStreetRun({
+          street,
+          resume: false,
+          dryRun,
+          filters: {
+            residentialOnly: $("streetResidentialOnly").checked,
+            floorMode: $("streetFloorMode").value,
+            floorValue: nullableNumber($("streetFloorValue").value),
+            minCivicNumber: nullableNumber($("streetMinCivic").value),
+            maxCivicNumber: nullableNumber($("streetMaxCivic").value),
+          },
+        });
       }
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
@@ -2775,6 +2834,11 @@ $("networkFloorMode").addEventListener("change", () => {
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
   else $("networkFloorValue").value = "";
   renderFiltriRete();
+});
+$("streetFloorMode").addEventListener("change", () => {
+  $("streetFloorValue").disabled = $("streetFloorMode").value === "any";
+  if ($("streetFloorMode").value !== "any") $("streetFloorValue").focus();
+  else $("streetFloorValue").value = "";
 });
 
 /* Il bottone si accende mentre scrivi, non al prossimo disegno della pagina:

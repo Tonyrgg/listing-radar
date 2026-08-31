@@ -82,7 +82,7 @@ function sisterFinto(opzioni: { codiceFiscaleOmonimi?: string; nessunaCorrispond
       response.end(`<!doctype html><body>${MENU}
         <form name="RicercaPFForm" action="${destinazione}" method="get">
           <select name="tipoCatasto"><option value="F">Fabbricati</option><option value="T">Terreni</option></select>
-          <select name="comuneCat"><option value="">Scegli</option><option value="A893">BITONTO</option></select>
+          <select name="comuneCat"><option value="">Scegli</option><option value="A893">A893 - BITONTO</option></select>
           <label><input name="selDatiAna" type="radio" value="CF_PF">Codice fiscale</label>
           <input name="cod_fisc_pf">
           <input name="ricerca" type="submit" value="Ricerca">

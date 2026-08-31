@@ -29,7 +29,11 @@ const CONTESTO_PERSONA = 'fieldset:has(legend:text-is("Soggetto selezionato"))';
 
 export type SisterAdapterOptions = {
   ignoreOwnerNoMatch?: boolean;
+  isCancelled?: () => boolean;
 };
+
+const PERSON_SEARCH_CONTROL_TIMEOUT_MS = 8_000;
+const PERSON_SEARCH_OUTCOME_TIMEOUT_MS = 20_000;
 
 async function text(scope: Page | Locator, selector: string): Promise<string> {
   if (!selector) return "";
@@ -130,6 +134,30 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     if (missing.length) throw new SelectorConfigurationError("SISTER", missing);
   }
 
+  private throwIfCancelled() {
+    if (this.options.isCancelled?.()) {
+      throw new WorkerError("Esplorazione SISTER messa in pausa", "paused", { portal: "SISTER" }, true);
+    }
+  }
+
+  private async waitForPersonSearchOutcome(description: string) {
+    const deadline = Date.now() + PERSON_SEARCH_OUTCOME_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      this.throwIfCancelled();
+      await this.checkSession();
+      if (await this.page.locator(this.selectors.resultsPageMarker).count() > 0) return;
+      if (await this.page.locator('form[name="SceltaOmonimiForm"] input[name="omonimoSelezionato"]').count() > 0) return;
+      if (await this.page.getByText(NO_MATCH_PATTERN).count() > 0) return;
+      await this.page.waitForTimeout(200);
+    }
+    throw new WorkerError(
+      `SISTER non ha concluso ${description} entro ${Math.round(PERSON_SEARCH_OUTCOME_TIMEOUT_MS / 1_000)} secondi.`,
+      "portal_error",
+      { portal: "SISTER", action: "person-search-timeout", url: this.page.url(), description },
+      false,
+    );
+  }
+
   private async checkSession() {
     const expiredByUrl = /sessione[_-]?scaduta|login|accesso/i.test(this.page.url());
     const expiredByTitle = /sessione\s+scaduta|accesso/i.test(await this.page.title().catch(() => ""));
@@ -212,19 +240,42 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     if (!/^[A-Z0-9]{16}$/.test(normalizedTaxCode)) {
       throw new WorkerError("Codice fiscale non valido per la ricerca SISTER persona fisica.", "data_incomplete", { portal: "SISTER", action: "person-tax-code", taxCodeLength: normalizedTaxCode.length }, true);
     }
+    this.throwIfCancelled();
     await this.ensurePhysicalPersonForm();
     const form = this.page.locator('form[name="RicercaPFForm"]');
-    await form.locator('select[name="tipoCatasto"]').selectOption("F");
-    await form.locator('select[name="comuneCat"]').selectOption({ label: "BITONTO" });
-    await form.locator('input[name="selDatiAna"][value="CF_PF"]').check();
+    await form.locator('select[name="tipoCatasto"]').selectOption("F", { timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS });
+    const municipality = form.locator('select[name="comuneCat"]');
+    const municipalityOptions = await municipality.locator("option").evaluateAll((options) => options.map((option) => ({
+      value: (option as HTMLOptionElement).value,
+      label: (option.textContent ?? "").replace(/\s+/g, " ").trim(),
+    })));
+    const bitontoOptions = municipalityOptions.filter((option) => /(?:^|\b)BITONTO(?:\b|$)/i.test(option.label));
+    if (bitontoOptions.length !== 1) {
+      throw new WorkerError(
+        bitontoOptions.length
+          ? "SISTER mostra più comuni chiamati BITONTO: impossibile scegliere in sicurezza."
+          : "Nel modulo Persona fisica di SISTER non trovo il comune BITONTO.",
+        "portal_error",
+        { portal: "SISTER", action: "person-municipality-option", matches: bitontoOptions.length },
+        true,
+      );
+    }
+    await municipality.selectOption(bitontoOptions[0]!.value, { timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS });
+    await form.locator('input[name="selDatiAna"][value="CF_PF"]').check({ timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS });
     const field = form.locator('input[name="cod_fisc_pf"]');
-    await field.fill(normalizedTaxCode);
+    await field.fill(normalizedTaxCode, { timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS });
     if ((await field.inputValue()).replace(/\s+/g, "").toUpperCase() !== normalizedTaxCode) {
       throw new WorkerError("SISTER non ha acquisito il codice fiscale nella ricerca persona fisica.", "portal_error", { portal: "SISTER", action: "person-tax-code-input" }, true);
     }
-    await clickAndWait(this.page, form.locator('input[name="ricerca"]'));
+    this.throwIfCancelled();
+    await Promise.all([
+      this.page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null),
+      form.locator('input[name="ricerca"]').click({ timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS }),
+    ]);
     await this.checkSession();
+    await this.waitForPersonSearchOutcome("la ricerca della persona fisica");
     await this.passThroughHomonyms(normalizedTaxCode);
+    await this.waitForPersonSearchOutcome("l'apertura degli immobili della persona");
     const resultReady = await this.page.locator(this.selectors.resultsPageMarker).count() > 0;
     const noMatch = await this.page.getByText(NO_MATCH_PATTERN).count() > 0;
     if (!resultReady && !noMatch) {
@@ -266,7 +317,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     }
 
     const prima = scelte.first();
-    if (!(await prima.isChecked())) await prima.check();
+    if (!(await prima.isChecked())) await prima.check({ timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS });
     const immobili = form.locator('input[name="immobili"]');
     if (await immobili.count() !== 1) {
       throw new WorkerError(
@@ -276,7 +327,11 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         true,
       );
     }
-    await clickAndWait(this.page, immobili);
+    this.throwIfCancelled();
+    await Promise.all([
+      this.page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15_000 }).catch(() => null),
+      immobili.click({ timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS }),
+    ]);
     await this.checkSession();
   }
 
@@ -305,13 +360,14 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
      * combacia perche' il confronto e' sul testo esatto del parametro. La
      * voce si prende com'e' scritta, cosi' l'ufficio resta quello scelto. */
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      this.throwIfCancelled();
       await this.checkSession();
       if (await this.page.locator(MODULO_PERSONA_FISICA).count() === 1) return;
 
       const voce = this.page.locator('a[href*="SceltaLink.do?lista=PF"]').first();
       if (await voce.count()) {
         const indirizzo = await voce.getAttribute("href");
-        await voce.click().catch(() => undefined);
+        await voce.click({ timeout: PERSON_SEARCH_CONTROL_TIMEOUT_MS }).catch(() => undefined);
         const arrivato = await this.page
           .locator(MODULO_PERSONA_FISICA)
           .waitFor({ state: "attached", timeout: 15_000 })

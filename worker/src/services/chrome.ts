@@ -35,8 +35,30 @@ async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   }
 }
 
+export async function pageTitleWithin(
+  page: Pick<Page, "title">,
+  timeoutMs = 3_000,
+): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      page.title().catch(() => ""),
+      new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve(""), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function describePage(page: Page) {
-  return { title: await page.title().catch(() => ""), url: page.url(), page };
+  /* Una scheda occupata puo' non rispondere a `document.title` per quasi un
+   * minuto. L'URL e' gia' disponibile senza round-trip ed e' sufficiente per
+   * riconoscere SISTER e gestionale; il titolo resta un aiuto, mai un freno
+   * all'avvio della run. */
+  return { title: await pageTitleWithin(page), url: page.url(), page };
 }
 
 function findMatchingPage(

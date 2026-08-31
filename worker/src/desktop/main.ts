@@ -12,6 +12,7 @@ import { z } from "zod";
 import { REQUIRED_CONTACT_COLUMNS, verifyContactsFile } from "../adapters/excel/index.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
+import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
@@ -31,7 +32,12 @@ import {
   type SisterNetworkRunCheckpoint,
   type SisterNetworkRunProgress,
 } from "../services/sister-network-run.js";
-import { normalizeNetworkSettings, type NetworkExplorationSettings } from "../core/network-exploration.js";
+import {
+  normalizeNetworkSettings,
+  normalizeStreetPropertyFilters,
+  type NetworkExplorationSettings,
+  type StreetPropertyFilters,
+} from "../core/network-exploration.js";
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
@@ -167,6 +173,14 @@ let activeRequestImporter: RequestArchiveImporter | null = null;
 let requestImportPromise: Promise<void> | null = null;
 let requestImportError: string | null = null;
 let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
+type DesktopOperationCompletion = {
+  kind: "acquisition" | "requests" | "mandates" | "street" | "network";
+  title: string;
+  summary: string;
+  completedAt: string;
+  stats: Array<{ label: string; value: number }>;
+};
+let operationCompletion: DesktopOperationCompletion | null = null;
 let mandateImportActive = false;
 let mandateImportCancellationRequested = false;
 let activeMandateImporter: MandateArchiveImporter | null = null;
@@ -253,7 +267,7 @@ type ConnectionCheck = BrowserConnectionCheck | {
   label: string;
   ok: boolean;
   detail: string;
-  state?: "ready" | "missing" | "login" | "unreachable";
+  state?: "ready" | "missing" | "login" | "unreachable" | "configuration";
 };
 
 async function withOperationTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -564,11 +578,20 @@ function readEnvironmentFiles(environmentFilePath?: string): Record<string, stri
     if (existsSync(rootEnvironment)) Object.assign(values, dotenv.parse(readFileSync(rootEnvironment)));
     Object.assign(values, dotenv.parse(readFileSync(environmentFilePath)));
   }
-  const bundledPath = app.isPackaged ? path.join(process.resourcesPath, "worker-config.json") : path.join(workerRoot, "generated", "worker-config.json");
-  if (existsSync(bundledPath)) {
-    try { Object.assign(values, JSON.parse(readFileSync(bundledPath, "utf8")) as Record<string, string>); } catch { /* Configurazione opzionale non valida. */ }
-  }
+  Object.assign(values, readBundledEnvironment());
   return values;
+}
+
+function readBundledEnvironment(): Record<string, string> {
+  const bundledPath = app.isPackaged
+    ? path.join(process.resourcesPath, "worker-config.json")
+    : path.join(workerRoot, "generated", "worker-config.json");
+  if (!existsSync(bundledPath)) return {};
+  try {
+    return JSON.parse(readFileSync(bundledPath, "utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 function internalEnvironment(): Record<string, string> {
@@ -579,6 +602,29 @@ function internalEnvironment(): Record<string, string> {
   }
   return readEnvironmentFiles(preferences.environmentFilePath);
 }
+
+function normalizedSupabaseUrl(value: string | undefined) {
+  return value?.trim().replace(/\/$/, "").toLowerCase() ?? "";
+}
+
+/**
+ * Le preferenze cifrate sopravvivono a disinstallazione e aggiornamento per
+ * non chiedere a ogni release una nuova configurazione. Se però il prodotto
+ * passa a un altro progetto Supabase, riutilizzare URL e chiave precedenti è
+ * pericoloso e porta a un errore generico. Il pacchetto contiene il nuovo URL
+ * pubblico, non la service-role: rileviamo il cambio e chiediamo la chiave al
+ * proprietario invece di copiarla o esporla nel binario.
+ */
+function archivedDatabaseConfigurationNeedsRefresh() {
+  if (!app.isPackaged || !preferences.encryptedEnvironment) return false;
+  const bundledUrl = normalizedSupabaseUrl(readBundledEnvironment().NEXT_PUBLIC_SUPABASE_URL);
+  const configuredUrl = normalizedSupabaseUrl(internalEnvironment().NEXT_PUBLIC_SUPABASE_URL);
+  return Boolean(bundledUrl && configuredUrl && bundledUrl !== configuredUrl);
+}
+
+const ARCHIVED_DATABASE_CONFIGURATION_MESSAGE =
+  "L’archivio dati è stato spostato. Questa installazione conserva ancora il collegamento al progetto precedente. "
+  + "Apri Impostazioni → Configurazione avanzata e inserisci la chiave service-role del nuovo archivio; il worker non la include nell’installer per sicurezza.";
 
 /**
  * La configurazione, ricostruita solo quando cambia.
@@ -711,6 +757,14 @@ async function refreshSnapshotRemoteData() {
         sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
         sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
       };
+      if (archivedDatabaseConfigurationNeedsRefresh()) {
+        next.cloudError = ARCHIVED_DATABASE_CONFIGURATION_MESSAGE;
+        if (snapshotRemoteRevision === revision) {
+          snapshotRemoteData = next;
+          snapshotRemoteLoadedAt = Date.now();
+        }
+        return next;
+      }
     } catch (error) {
       next.configError = error instanceof Error ? error.message : String(error);
       if (snapshotRemoteRevision === revision) {
@@ -856,6 +910,7 @@ async function stateSnapshot() {
     retryMonitor,
     prompt,
     lastError,
+    operationCompletion,
     sisterKeepAlive,
     connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: Boolean(healthCheckPromise) },
     softwareUpdate: desktopUpdater?.snapshot() ?? {
@@ -967,6 +1022,7 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     throw error;
   }
   requestImportActive = true;
+  operationCompletion = null;
   requestImportCancellationRequested = false;
   requestImportError = null;
   requestImportProgress = null;
@@ -983,7 +1039,19 @@ async function runRequestArchiveImport(resumeRunId?: string) {
     clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione richieste interrotta: l’avanzamento è stato salvato", "warning");
     else if (run.failed_requests) pushActivity(`Sincronizzazione conclusa con ${run.failed_requests} richieste da riprovare`, "warning");
-    else pushActivity(`${run.processed_requests} richieste immobiliari sincronizzate`, "success");
+    else if (run.status === "completed") {
+      operationCompletion = {
+        kind: "requests",
+        title: "Sincronizzazione richieste completata",
+        summary: "L’archivio richieste è aggiornato e non ci sono elementi da riprovare.",
+        completedAt: run.completed_at ?? run.updated_at ?? new Date().toISOString(),
+        stats: [
+          { label: "Richieste sincronizzate", value: run.processed_requests },
+          { label: "Da riprovare", value: 0 },
+        ],
+      };
+      pushActivity(`${run.processed_requests} richieste immobiliari sincronizzate`, "success");
+    } else pushActivity("Sincronizzazione richieste conclusa senza conferma completa: controlla il riepilogo prima di proseguire", "warning");
   }).catch((error) => {
     if (requestImportCancellationRequested) {
       clearRetryMonitor();
@@ -1040,6 +1108,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     throw error;
   }
   mandateImportActive = true;
+  operationCompletion = null;
   mandateImportCancellationRequested = false;
   mandateImportError = null;
   mandateImportProgress = null;
@@ -1056,7 +1125,19 @@ async function runMandateArchiveImport(resumeRunId?: string) {
     clearRetryMonitor();
     if (run.status === "cancelled") pushActivity("Sincronizzazione incarichi interrotta: l'avanzamento è stato salvato", "warning");
     else if (run.failed_mandates) pushActivity(`Sincronizzazione conclusa con ${run.failed_mandates} incarichi da riprovare`, "warning");
-    else pushActivity(`${run.processed_mandates} immobili con incarico sincronizzati`, "success");
+    else if (run.status === "completed") {
+      operationCompletion = {
+        kind: "mandates",
+        title: "Sincronizzazione incarichi completata",
+        summary: "Il portafoglio incarichi è aggiornato e non ci sono elementi da riprovare.",
+        completedAt: run.completed_at ?? run.updated_at ?? new Date().toISOString(),
+        stats: [
+          { label: "Incarichi sincronizzati", value: run.processed_mandates },
+          { label: "Da riprovare", value: 0 },
+        ],
+      };
+      pushActivity(`${run.processed_mandates} immobili con incarico sincronizzati`, "success");
+    } else pushActivity("Sincronizzazione incarichi conclusa senza conferma completa: controlla il riepilogo prima di proseguire", "warning");
   }).catch((error) => {
     if (mandateImportCancellationRequested) {
       clearRetryMonitor();
@@ -1087,8 +1168,9 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   void runPromise;
 }
 
-async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean }) {
+async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean; filters?: Partial<StreetPropertyFilters> }) {
   const street = input.street.replace(/\s+/g, " ").trim();
+  const filters = normalizeStreetPropertyFilters(input.filters);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
@@ -1107,6 +1189,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     throw error;
   }
   streetRunActive = true;
+  operationCompletion = null;
   streetRunCancellationRequested = false;
   streetRunAbandonRequested = false;
   streetRunError = null;
@@ -1144,6 +1227,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         strategy: "bulk_exact_variants",
         mode: longRunMode,
         importJobId,
+        filters,
         acquireOwners: true,
         /* La via la cerca il worker. Prima toccava all'operatore portare SISTER
          * fino all'Elenco indirizzi, e una run avviata su una pagina qualsiasi
@@ -1159,7 +1243,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
             ...property,
             rawPayload: {
               ...property.rawPayload,
-              long_run: { strategy: "bulk_exact_variants", variantId: variant.sourceId, acquiredAt: new Date().toISOString() },
+              long_run: { strategy: "bulk_exact_variants", variantId: variant.sourceId, filters, acquiredAt: new Date().toISOString() },
             },
           }], { updateJobTotal: false });
           if (!savedProperty) throw new Error("Immobile long run non salvato");
@@ -1260,6 +1344,20 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via sospesa dopo ${result.currentVariantIndex} varianti`,
         result.status === "completed" ? "success" : "warning",
       );
+      if (result.status === "completed" && !result.lastError && !streetRunError) {
+        operationCompletion = {
+          kind: "street",
+          title: longRunMode === "dry_run" ? "Dry-run della via completato" : "Acquisizione della via completata",
+          summary: jobToImport
+            ? "La raccolta è conclusa. Ora completo automaticamente l’import nel gestionale."
+            : "La run ha concluso tutte le varianti esatte previste.",
+          completedAt: result.completedAt ?? result.updatedAt ?? new Date().toISOString(),
+          stats: [
+            { label: "Immobili distinti", value: result.totalAcceptedProperties },
+            { label: "Proprietari letti", value: result.totalOwnersRead },
+          ],
+        };
+      }
     } finally {
       activeStreetBrowser = null;
       await tabs.browser.close().catch(() => undefined);
@@ -1303,6 +1401,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         await repository(config).markImportStarted(jobToImport);
         await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport });
       } catch (error) {
+        operationCompletion = null;
         const message = `Acquisizione salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
         streetRunError = message;
         pushActivity(message, "error");
@@ -1345,6 +1444,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     throw error;
   }
   networkRunActive = true;
+  operationCompletion = null;
   networkRunCancellationRequested = false;
   networkRunError = null;
   networkRunProgress = null;
@@ -1394,7 +1494,9 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         municipality: "BITONTO", street: null, civicNumber: null, sourceUrl: tabs.sisterPage.url(),
       });
       const scanner = new SisterNetworkRun(
-        new PlaywrightSisterAdapter(tabs.sisterPage),
+        new PlaywrightSisterAdapter(tabs.sisterPage, sisterSelectors, {
+          isCancelled: () => networkRunCancellationRequested,
+        }),
         new PlaywrightCrmAdapter(tabs.crmPage, false),
         liveRepository,
       );
@@ -1477,6 +1579,16 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           jobToImport = jobId;
           pushActivity(`Esplorazione conclusa: obiettivo raggiunto con ${graph.properties.length} immobili verificati. Avvio l'import automatico.`, "success");
         } else if (result.completionReason === "target_reached") {
+          operationCompletion = {
+            kind: "network",
+            title: "Traguardo della rete raggiunto",
+            summary: "Gli immobili richiesti sono stati verificati e la raccolta è pronta per l’import.",
+            completedAt: result.updatedAt ?? new Date().toISOString(),
+            stats: [
+              { label: "Immobili ottenuti", value: graph.properties.length },
+              { label: "Persone visitate", value: result.visitedTaxCodes.length },
+            ],
+          };
           pushActivity(`Esplorazione conclusa: ${graph.properties.length} immobili verificati e conservati per l'import.`, "success");
         } else {
           pushActivity(
@@ -1524,6 +1636,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         await repository(config).markImportStarted(jobToImport);
         await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport });
       } catch (error) {
+        operationCompletion = null;
         const message = `Rete acquisita e salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
         networkRunError = message;
         pushActivity(message, "error");
@@ -1830,6 +1943,13 @@ function handleRunnerEvent(event: RunnerEvent) {
     currentStep = "properties_processed";
     propertyProgress = null;
     activeJobId = null;
+    operationCompletion = {
+      kind: "acquisition",
+      title: "Acquisizione completata",
+      summary: "Immobili e proprietari sono stati raccolti e salvati. Potrai avviare l’import dalla cronologia quando vuoi.",
+      completedAt: new Date().toISOString(),
+      stats: [],
+    };
     pushActivity("Ricerca SISTER salvata nell'archivio", "success");
   } else if (event.type === "sister-keepalive") {
     updateKeepAliveState(event.result);
@@ -2041,6 +2161,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     throw error;
   }
   active = true;
+  operationCompletion = null;
   cancellingJobId = null;
   pausingJobId = null;
   lastError = null;
@@ -2245,6 +2366,7 @@ async function healthChecks(options: { silent?: boolean } = {}) {
   let activityItem: ActivityItem | undefined;
   healthCheckPromise = (async () => {
     const config = workerConfig();
+    const databaseConfigurationNeedsRefresh = archivedDatabaseConfigurationNeedsRefresh();
     const [browserChecks, contactsCheck, cloudCheck] = await Promise.all([
       refreshBrowserConnections(),
       withOperationTimeout((async () => {
@@ -2257,9 +2379,13 @@ async function healthChecks(options: { silent?: boolean } = {}) {
       })(), 12_000, "Controllo file recapiti").catch((error) => ({
         id: "excel", label: "Recapiti", ok: false, detail: error instanceof Error ? error.message : String(error),
       }) satisfies ConnectionCheck),
-      withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase")
-        .then(() => ({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" }) satisfies ConnectionCheck)
-        .catch((error) => ({ id: "supabase", label: "Cloud", ok: false, detail: describeSupabaseOperationalError(error) }) satisfies ConnectionCheck),
+      databaseConfigurationNeedsRefresh
+        ? Promise.resolve({
+          id: "supabase", label: "Cloud", ok: false, state: "configuration", detail: ARCHIVED_DATABASE_CONFIGURATION_MESSAGE,
+        } satisfies ConnectionCheck)
+        : withOperationTimeout(repository(config).healthCheck(), 12_000, "Controllo Supabase")
+          .then(() => ({ id: "supabase", label: "Cloud", ok: true, detail: "Connesso" }) satisfies ConnectionCheck)
+          .catch((error) => ({ id: "supabase", label: "Cloud", ok: false, detail: describeSupabaseOperationalError(error) }) satisfies ConnectionCheck),
     ]);
     const checks: ConnectionCheck[] = [...browserChecks, contactsCheck, cloudCheck];
     connectionChecks = checks;
@@ -2439,9 +2565,9 @@ function registerIpc() {
     await publishState();
     return stopAfterNextImportRequested;
   });
-  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean }) => {
+  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
     await assertSpazioPerConservare();
-    await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false });
+    await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
   ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
@@ -2452,7 +2578,12 @@ function registerIpc() {
   ipcMain.handle("desktop:cancel-network-run", async () => {
     if (!networkRunActive) return false;
     networkRunCancellationRequested = true;
-    pushActivity("Pausa esplorazione rete richiesta: salvo la coda dopo l'immobile corrente", "warning");
+    /* Una navigazione Playwright gia' avviata non osserva il flag finche' non
+     * termina. Disconnettere il client CDP la interrompe senza chiudere le
+     * schede Chrome dell'operatore; il runner riconosce il flag e salva la
+     * coda invece di contare un errore SISTER. */
+    await activeNetworkBrowser?.close().catch(() => undefined);
+    pushActivity("Pausa esplorazione rete richiesta: interrompo l'attesa corrente e salvo la coda", "warning");
     await publishState();
     return true;
   });

@@ -51,6 +51,10 @@ export function projectStreetCheckpointForRenderer(
   return {
     ...checkpoint,
     uniquePropertyKeys: [],
-    results: checkpoint.results.map((result) => ({ ...result, propertyKeys: [] })),
+    results: checkpoint.results.map((result) => ({
+      ...result,
+      propertyKeys: [],
+      filteredPropertyKeys: [],
+    })),
   };
 }
