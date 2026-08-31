@@ -27,6 +27,7 @@
     "desktop:portable": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win portable && node scripts/prune-local-releases.mjs",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:ci": "vitest run --config vitest.config.ci.ts",
     "test:watch": "vitest",
     "sister:street:dry-run": "tsx scripts/dry-run-sister-street.ts",
     "mandates:backfill-locations": "tsx scripts/backfill-property-locations.ts",

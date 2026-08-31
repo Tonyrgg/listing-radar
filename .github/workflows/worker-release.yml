@@ -53,8 +53,14 @@ jobs:
       # pacchetto, e una release non e' il posto dove farlo.
       - run: npm install --no-audit --no-fund
 
+      # `npm test` non e' eseguibile qui: sei file di test aprono Chrome reale
+      # decine di volte e su runner restano appesi fino allo scadere del job.
+      # `test:ci` esegue tutto il resto; i test con browser restano parte della
+      # verifica su macchina pulita prevista prima di una release.
+      # Il timeout evita che un blocco imprevisto costi un'ora di runner.
       - name: Test worker
-        run: npm test
+        timeout-minutes: 10
+        run: npm run test:ci
 
       # Una release non firmata non deve poter essere pubblicata per errore:
       # e' esattamente lo stato che stiamo cercando di superare.
