@@ -125,7 +125,10 @@ describe("adattatori con fixture HTML", () => {
         data: { matchedBy: "address-for-person-selection", addressVerified: true },
       });
       const addressMatch = (await adapter.findPropertyForPerson("P-42", { ...property, sheet: "99", parcel: "9999", subaltern: "99" })).match;
-      expect(addressMatch).toBeNull();
+      expect(addressMatch).toMatchObject({
+        id: "I-42",
+        data: { matchedBy: "address", needsUpdate: true, addressVerified: true },
+      });
       expect((await adapter.findPropertyForPerson("P-42", property, ["I-42"])).match).toBeNull();
     } finally { await browser.close(); }
   });
@@ -156,7 +159,7 @@ describe("adattatori con fixture HTML", () => {
                 <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-NEWS">NT - Via Roma 12 - Notizia</a></td>
               </tr>
               <tr data-worker-crm="personPropertiesModalRows">
-                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-WRONG">IM - Via Roma 12 - Abitazione</a></td>
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-WRONG">IM - Via Milano 4 - Abitazione</a></td>
               </tr>
               <tr data-worker-crm="personPropertiesModalRows">
                 <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-MATCH">IM - Via Roma 12 - Abitazione</a></td>
@@ -219,7 +222,7 @@ describe("adattatori con fixture HTML", () => {
           subaltern: "9",
         },
       });
-      expect(visitedProperties).toEqual(["I-WRONG", "I-MATCH"]);
+      expect(visitedProperties).toEqual(["I-MATCH"]);
 
       // If the full-list modal is still open at a later property step, the
       // adapter must click the exact property in Nome instead of treating the
@@ -239,7 +242,7 @@ describe("adattatori con fixture HTML", () => {
         cadastralIncome: null,
         rawPayload: {},
       })).resolves.toMatchObject({ match: { id: "I-MATCH" } });
-      expect(visitedProperties).toEqual(["I-WRONG", "I-MATCH", "I-MATCH"]);
+      expect(visitedProperties).toEqual(["I-MATCH", "I-MATCH"]);
     } finally { await browser.close(); }
   });
 
@@ -541,6 +544,32 @@ describe("adattatori con fixture HTML", () => {
     } finally { await browser.close(); }
   });
 
+  it("cerca il nominativo soltanto per codice fiscale anche quando sono disponibili telefoni", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <button data-worker-crm="personSearchPage">Nominativi</button>
+        <input data-worker-crm="personSearchTaxCode">
+        <input data-worker-crm="personSearchPhone">
+        <button data-worker-crm="personSearchSubmit" onclick="document.body.dataset.submits=String(Number(document.body.dataset.submits||0)+1)">Cerca</button>
+        <h1 data-worker-crm="personResultsReady">Risultati di ricerca</h1>
+      </body>`);
+      const adapter = new PlaywrightCrmAdapter(page, true, crmFixtureSelectors);
+
+      await expect(adapter.findPerson({
+        taxCode: "RSSMRA80A01A893X",
+        phones: ["3331234567", "0801234567"],
+        fullName: "ROSSI MARIO",
+        birthDate: "1980-01-01",
+      })).resolves.toEqual({ matches: [] });
+
+      expect(await page.locator('[data-worker-crm="personSearchTaxCode"]').inputValue()).toBe("RSSMRA80A01A893X");
+      expect(await page.locator('[data-worker-crm="personSearchPhone"]').inputValue()).toBe("");
+      expect(await page.locator("body").getAttribute("data-submits")).toBe("1");
+    } finally { await browser.close(); }
+  });
+
   it("chiude la richiesta di pianificare un'altra attività e prosegue", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -829,6 +858,36 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator("body").getAttribute("data-owner-saved")).toBe("true");
     } finally { await browser.close(); }
   }, 12_000);
+
+  it("riprova nello stesso dialogo se Lightning ignora il primo click sul comproprietario", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = await readFile(fixture("crm.html"), "utf8");
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-42");
+      await page.locator('[data-worker-crm="ownerPersonOption"]').evaluate((option) => {
+        option.setAttribute("onclick", `
+          document.body.dataset.ownerLookupClicks = String(Number(document.body.dataset.ownerLookupClicks || 0) + 1);
+          if (Number(document.body.dataset.ownerLookupClicks) < 2) return;
+          const input = document.querySelector('[data-worker-crm=ownerPersonId]');
+          input.value = 'Rossi Mario';
+          input.readOnly = true;
+          this.hidden = true;
+        `);
+      });
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.linkOwner("I-42", {
+        personId: "P-99",
+        searchLabel: "Mario Rossi",
+        phones: ["3331234567"],
+      }, 50)).resolves.toMatchObject({ linkId: "owner-link-P-99", selection: "crm_id" });
+
+      expect(await page.locator("body").getAttribute("data-owner-lookup-clicks")).toBe("2");
+      expect(await page.locator("body").getAttribute("data-owner-saved")).toBe("true");
+    } finally { await browser.close(); }
+  }, 18_000);
 
   it("non ripete Nuovo se il salvataggio del comproprietario è chiuso ma l'elenco non si aggiorna", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

@@ -21,6 +21,18 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(renderer).toContain("if (renderKey === completedImportsRenderKey)");
   });
 
+  it("non limita il numero di acquisizioni conservate pronte da importare", () => {
+    const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
+    const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
+    const html = readFileSync(new URL("../src/desktop/renderer/index.html", import.meta.url), "utf8");
+
+    expect(main).not.toContain("MAX_ACQUISIZIONI_CONSERVATE");
+    expect(main).not.toContain("assertSpazioPerConservare");
+    expect(renderer).toContain('$("jobCount").textContent = String(conservate)');
+    expect(renderer).not.toContain("${conservate}/3");
+    expect(html).not.toContain("Al massimo tre");
+  });
+
   it("riassume un grafo grande senza inviare immobili, persone e quote al renderer", () => {
     const properties = Array.from({ length: 2_000 }, (_, index) => ({
       id: `property-${index}`,

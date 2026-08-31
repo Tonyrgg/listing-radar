@@ -136,6 +136,7 @@ describe("flusso identità nominativo e immobile", () => {
           { id: "CRM-PERSON-2", label: "Mario Rossi", confidence: "certain", data: { source: "crm-tax-code-search" } },
         ],
       }),
+      updatePerson: vi.fn().mockResolvedValue(undefined),
       createPerson: vi.fn(),
     };
 
@@ -144,6 +145,7 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.findPerson).toHaveBeenCalledOnce();
     expect(crm.openExistingPerson).toHaveBeenCalledTimes(2);
     expect(crm.createPerson).not.toHaveBeenCalled();
+    expect(crm.updatePerson).toHaveBeenCalledWith(row.crm_record_id, expect.objectContaining({ taxCode: row.tax_code }));
     expect(["CRM-PERSON-1", "CRM-PERSON-2"]).toContain(row.crm_record_id);
     expect(row.raw_payload?.person_flow).toMatchObject({ selectionPolicy: "random-exact-tax-code-candidate", identityVerified: true });
   });
@@ -162,6 +164,7 @@ describe("flusso identità nominativo e immobile", () => {
         id: expectedId,
         data: { taxCodeVerified: true, nameVerified: true },
       })),
+      updatePerson: vi.fn().mockResolvedValue(undefined),
       findPhoneAssignments: vi.fn().mockResolvedValue([
         { phone: "3331234567", personId: "CRM-PERSON-2", label: "Mario Rossi" },
       ]),
@@ -188,6 +191,7 @@ describe("flusso identità nominativo e immobile", () => {
         id: "CRM-PERSON-1",
         data: { taxCodeVerified: true, nameVerified: true },
       }),
+      updatePerson: vi.fn().mockResolvedValue(undefined),
       createPerson: vi.fn(),
     };
 
@@ -206,7 +210,7 @@ describe("flusso identità nominativo e immobile", () => {
       crm_record_id: "CRM-PERSON-DELETED",
       raw_payload: {
         person_flow: {
-          version: 3,
+          version: 4,
           complete: true,
           dryRun: false,
           crmPersonId: "CRM-PERSON-DELETED",
@@ -218,6 +222,7 @@ describe("flusso identità nominativo e immobile", () => {
         id: "CRM-PERSON-MERGED",
         data: { recoveredFromAccessDenied: true },
       }),
+      updatePerson: vi.fn().mockResolvedValue(undefined),
       findPerson: vi.fn(),
       createPerson: vi.fn(),
     };
@@ -246,6 +251,7 @@ describe("flusso identità nominativo e immobile", () => {
         id: expectedId,
         data: { taxCodeVerified: true, nameVerified: true },
       })),
+      updatePerson: vi.fn().mockResolvedValue(undefined),
       createPerson: vi.fn(),
     };
 
@@ -360,7 +366,7 @@ describe("flusso identità nominativo e immobile", () => {
     );
   });
 
-  it("riutilizza in sola lettura l'immobile trovato sotto il nominativo", async () => {
+  it("aggiorna l'immobile trovato sotto il nominativo", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-1" };
@@ -375,14 +381,14 @@ describe("flusso identità nominativo e immobile", () => {
     await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
 
     expect(crm.findPropertyForPerson).toHaveBeenCalledOnce();
-    expect(crm.updateProperty).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-1", expect.any(Object));
     expect(crm.createProperty).not.toHaveBeenCalled();
     expect(property.raw_payload?.existing_property_reused).toMatchObject({
-      crmPropertyId: "CRM-PROPERTY-1", mode: "read_only",
+      crmPropertyId: "CRM-PROPERTY-1", mode: "sister_data_updated",
     });
   });
 
-  it("riutilizza in sola lettura l'immobile trovato globalmente sotto un altro proprietario", async () => {
+  it("aggiorna l'immobile trovato globalmente sotto un altro proprietario", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-NOT-LINKED" };
@@ -400,12 +406,43 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.findPropertyByCadastralIdentity).toHaveBeenCalledWith(expect.objectContaining({
       sheet: "50", parcel: "100", subaltern: "4",
     }));
-    expect(crm.updateProperty).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-OTHER-OWNER", expect.any(Object));
     expect(crm.createProperty).not.toHaveBeenCalled();
     expect(property.raw_payload?.property_search).toMatchObject({
       strategy: "global-cadastral",
       linkedToVerifiedPerson: false,
     });
+  });
+
+  it("controlla l'immobile sotto ogni proprietario verificato", async () => {
+    const { runner } = runnerWithRepository();
+    const property = propertyRow();
+    const primary = { ...personRow(), id: "primary", crm_record_id: "CRM-PRIMARY" };
+    const coowner = { ...personRow(), id: "coowner", crm_record_id: "CRM-COOWNER" };
+    const match = { id: "CRM-PROPERTY-COOWNER", data: { identityVerified: true, matchedBy: "cadastral" } };
+    const crm = {
+      findPropertyForPerson: vi.fn()
+        .mockResolvedValueOnce({ match: null })
+        .mockResolvedValueOnce({ match }),
+      findPropertyByCadastralIdentity: vi.fn(),
+      verifyProperty: vi.fn().mockResolvedValue({ match }),
+      updateProperty: vi.fn().mockResolvedValue(undefined),
+      createProperty: vi.fn(),
+    };
+
+    await (runner as unknown as { ensureProperty: Function }).ensureProperty(
+      job,
+      property,
+      primary,
+      crm,
+      [primary, coowner],
+    );
+
+    expect(crm.findPropertyForPerson).toHaveBeenNthCalledWith(1, "CRM-PRIMARY", expect.any(Object));
+    expect(crm.findPropertyForPerson).toHaveBeenNthCalledWith(2, "CRM-COOWNER", expect.any(Object));
+    expect(crm.findPropertyByCadastralIdentity).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-COOWNER", expect.any(Object));
+    expect(property.raw_payload?.checked_from_people).toEqual(["primary", "coowner"]);
   });
 
   it("crea l'immobile assente, ne verifica l'identità e passa direttamente all'attività", async () => {
@@ -432,41 +469,31 @@ describe("flusso identità nominativo e immobile", () => {
     expect(property.crm_record_id).toBe("CRM-PROPERTY-NEW");
   });
 
-  it("mette in quarantena un vecchio abbinamento basato soltanto sull'indirizzo", async () => {
+  it("aggiorna i dati catastali quando coincide soltanto l'indirizzo", async () => {
     const { runner } = runnerWithRepository();
     const property = {
       ...propertyRow(),
-      crm_record_id: "CRM-PROPERTY-WRONG",
-      raw_payload: {
-        crm_match: {
-          id: "CRM-PROPERTY-WRONG",
-          data: { matchedBy: "street-and-civic" },
-        },
-      },
+      crm_record_id: null,
     };
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-1" };
-    const verifiedNew = { id: "CRM-PROPERTY-NEW", data: { identityVerified: true } };
+    const addressMatch = { id: "CRM-PROPERTY-WRONG", data: { matchedBy: "address", needsUpdate: true, addressVerified: true } };
+    const verifiedNew = { id: "CRM-PROPERTY-WRONG", data: { identityVerified: true } };
     const crm = {
-      findPropertyForPerson: vi.fn()
-        .mockResolvedValueOnce({ match: null })
-        .mockResolvedValueOnce({ match: verifiedNew }),
-      findPropertyByCadastralIdentity: vi.fn().mockResolvedValue({ match: null }),
-      updateProperty: vi.fn(),
-      createProperty: vi.fn().mockResolvedValue("CRM-PROPERTY-NEW"),
+      findPropertyForPerson: vi.fn().mockResolvedValue({ match: addressMatch }),
+      findPropertyByCadastralIdentity: vi.fn(),
+      updateProperty: vi.fn().mockResolvedValue(undefined),
+      createProperty: vi.fn(),
       verifyProperty: vi.fn().mockResolvedValue({ match: verifiedNew }),
     };
 
     await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
 
-    expect(crm.findPropertyForPerson).toHaveBeenNthCalledWith(
-      1,
-      "CRM-PERSON-1",
-      expect.any(Object),
-      ["CRM-PROPERTY-WRONG"],
-    );
-    expect(crm.updateProperty).not.toHaveBeenCalled();
-    expect(crm.createProperty).toHaveBeenCalledOnce();
-    expect(property.crm_record_id).toBe("CRM-PROPERTY-NEW");
+    expect(crm.findPropertyForPerson).toHaveBeenCalledWith("CRM-PERSON-1", expect.any(Object));
+    expect(crm.findPropertyByCadastralIdentity).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-WRONG", expect.any(Object));
+    expect(crm.createProperty).not.toHaveBeenCalled();
+    expect(property.crm_record_id).toBe("CRM-PROPERTY-WRONG");
+    expect(property.raw_payload?.existing_property_reused).toMatchObject({ mode: "address_match_cadastral_updated" });
   });
 
   it("dopo un errore sull'immobile riparte dall'immobile senza ricercare nominativo e recapiti", async () => {
@@ -515,7 +542,7 @@ describe("flusso identità nominativo e immobile", () => {
 
     expect(crm.findPerson).not.toHaveBeenCalled();
     expect(contacts.findByTaxCode).not.toHaveBeenCalled();
-    expect(crm.updateProperty).not.toHaveBeenCalled();
+    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-1", expect.any(Object));
     expect(crm.createPropertyActivity).toHaveBeenCalledOnce();
   });
 
@@ -555,7 +582,7 @@ describe("flusso identità nominativo e immobile", () => {
     }));
   });
 
-  it("verifica tutti i proprietari e collega i comproprietari dopo immobile e attività", async () => {
+  it("verifica tutti i proprietari e collega i comproprietari prima dell'attività", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const primary = { ...personRow(), id: "primary", crm_record_id: "CRM-PRIMARY", share_percentage: 70 };
     const coowner = {
@@ -593,7 +620,7 @@ describe("flusso identità nominativo e immobile", () => {
     internals.ensureProperty = vi.fn().mockImplementation(async () => { property.crm_record_id = "CRM-PROPERTY"; });
     internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
     const crm = {
-      findLinkedOwnerIds: vi.fn().mockResolvedValue([]),
+      findLinkedOwnerIds: vi.fn().mockResolvedValueOnce([]).mockResolvedValue(["CRM-COOWNER"]),
       linkOwner: vi.fn().mockResolvedValue({
         linkId: "owner-link-CRM-COOWNER",
         selection: "phone",
@@ -624,10 +651,66 @@ describe("flusso identità nominativo e immobile", () => {
       30,
     );
     expect(crm.linkOwner).toHaveBeenCalledTimes(1);
+    expect(crm.linkOwner.mock.invocationCallOrder[0]).toBeLessThan(internals.ensurePropertyActivity.mock.invocationCallOrder[0]!);
     expect(repository.updateOwnership).toHaveBeenCalledWith(
       "ownership-coowner",
       expect.objectContaining({ crm_link_id: "owner-link-CRM-COOWNER", processing_status: "linked" }),
     );
+  });
+
+  it("prosegue con l'attività quando il comproprietario salvato non è ancora visibile nel pannello", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const primary = { ...personRow(), id: "primary", crm_record_id: "CRM-PRIMARY", share_percentage: 50 };
+    const coowner = { ...personRow(), id: "coowner", crm_record_id: "CRM-COOWNER", share_percentage: 50 };
+    const property = {
+      ...propertyRow(),
+      crm_record_id: "CRM-PROPERTY",
+      raw_payload: { property_flow: { version: 4, stage: "property_ready", dryRun: false } },
+    };
+    const ownerships = [
+      { id: "ownership-primary", property_id: property.id, person_id: primary.id, right_type: "Proprietà", share_percentage: 50, crm_link_id: null, processing_status: "normalized" },
+      { id: "ownership-coowner", property_id: property.id, person_id: coowner.id, right_type: "Proprietà", share_percentage: 50, crm_link_id: null, processing_status: "normalized" },
+    ];
+    const repository = {
+      loadGraph: vi.fn().mockResolvedValue({ properties: [property], people: [primary, coowner], ownerships }),
+      updatePersonProcessing: vi.fn().mockResolvedValue(undefined),
+      updatePropertyProcessing: vi.fn().mockResolvedValue(undefined),
+      updateOwnership: vi.fn().mockResolvedValue(undefined),
+      updateJob: vi.fn().mockResolvedValue(undefined),
+      logChange: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(runner, "repository", { value: repository });
+    const internals = runner as unknown as {
+      ensurePropertyActivity: ReturnType<typeof vi.fn>;
+      processPropertiesInOrder: Function;
+    };
+    internals.ensurePropertyActivity = vi.fn().mockResolvedValue(undefined);
+    const crm = {
+      findLinkedOwnerIds: vi.fn().mockResolvedValue([]),
+      linkOwner: vi.fn().mockResolvedValue({
+        linkId: "saved-owner-link-CRM-COOWNER",
+        selection: "saved_unverified",
+        candidateCount: 1,
+        note: "Salvataggio inviato ma non ancora visibile",
+      }),
+    };
+
+    await expect(internals.processPropertiesInOrder(
+      { ...job, total_properties: 1, processed_properties: 0 },
+      crm,
+      { findByTaxCode: vi.fn() },
+    )).resolves.toMatchObject({ processedProperties: 1 });
+
+    expect(internals.ensurePropertyActivity).toHaveBeenCalledOnce();
+    expect(repository.updateOwnership).toHaveBeenCalledWith(
+      "ownership-coowner",
+      expect.objectContaining({ processing_status: "submitted_unverified" }),
+    );
+    expect((property.raw_payload as Record<string, unknown>).correlated_owners).toMatchObject({
+      state: "linked",
+      submittedPendingVisibility: 1,
+    });
+    expect((property.raw_payload?.property_flow as Record<string, unknown>).stage).toBe("completed");
   });
 
   it("ignora il socio con codice fiscale rifiutato e usa l'altro socio per l'immobile", async () => {
@@ -659,7 +742,7 @@ describe("flusso identità nominativo e immobile", () => {
       { findByTaxCode: vi.fn() },
     );
 
-    expect(internals.ensureProperty).toHaveBeenCalledWith(expect.anything(), property, usable, expect.anything());
+    expect(internals.ensureProperty).toHaveBeenCalledWith(expect.anything(), property, usable, expect.anything(), [usable]);
     expect(rejected.raw_payload?.tax_code_rejection).toMatchObject({ action: "person-tax-code-invalid" });
     expect((property.raw_payload as Record<string, unknown>)?.effective_primary_owner_id).toBe(usable.id);
     expect((property.raw_payload?.property_flow as Record<string, unknown>)?.stage).toBe("completed");

@@ -233,7 +233,7 @@ export interface CrmAdapter {
   createProperty(property: NormalizedProperty): Promise<string>;
   updateProperty(id: string, property: NormalizedProperty): Promise<void>;
   createPropertyActivity(input: CrmActivityInput): Promise<CrmActivityResult>;
-  findLinkedOwnerIds(propertyId: string): Promise<string[]>;
+  findLinkedOwnerIds(propertyId: string, refresh?: boolean): Promise<string[]>;
   linkOwner(propertyId: string, person: OwnerLinkInput, share: number): Promise<OwnerLinkResult>;
 }
 

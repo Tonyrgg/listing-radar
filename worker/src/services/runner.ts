@@ -2,7 +2,7 @@ import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey, extractFirstCivicNumber, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
 import { logger } from "../logger.js";
-import type { AcquisitionReview, CadastralProperty, ErrorStatus, NormalizedPerson, WorkflowStep, WorkerMode } from "../types.js";
+import type { AcquisitionReview, CadastralProperty, ErrorStatus, NormalizedPerson, PropertyMatchResult, WorkflowStep, WorkerMode } from "../types.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
@@ -887,7 +887,7 @@ export class PropertyWorkerRunner {
               if (decision === "review") throw new WorkerError("Recapiti segnati da verificare", "needs_review", { personId: row.id });
               if (decision === "manual") { await this.prompts.waitForManualEdit(); continue; }
             }
-            await crm.updatePerson(row.crm_record_id, asPerson(refreshed));
+            await crm.syncPersonContacts(row.crm_record_id, asPerson(refreshed));
             updated += 1;
           }
         }
@@ -1017,7 +1017,7 @@ export class PropertyWorkerRunner {
   private async markPropertyStage(property: PropertyRow, stage: string) {
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
-      property_flow: { version: 3, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
+      property_flow: { version: 4, stage, dryRun: this.config.WORKER_DRY_RUN, updatedAt: new Date().toISOString() },
     };
     await this.repository.updatePropertyProcessing(property.id, {
       raw_payload: property.raw_payload,
@@ -1037,7 +1037,7 @@ export class PropertyWorkerRunner {
     const relatedPersonIds = [...new Set(relatedOwnerships.map((ownership) => ownership.person_id))];
     property.raw_payload = {
       ...(property.raw_payload ?? {}),
-      property_flow: { version: 3, stage: "skipped", dryRun: this.config.WORKER_DRY_RUN, updatedAt: skippedAt },
+      property_flow: { version: 4, stage: "skipped", dryRun: this.config.WORKER_DRY_RUN, updatedAt: skippedAt },
       skip_details: { ...details, reason, personIds: relatedPersonIds, skippedAt },
     };
     await this.repository.updatePropertyProcessing(property.id, {
@@ -1105,8 +1105,8 @@ export class PropertyWorkerRunner {
         "owners_ready",
         "contacts_synced",
         "property_ready",
-        "activity_ready",
         "owners_linked",
+        "activity_ready",
         "completed",
       ];
       propertyRecovery: for (
@@ -1126,6 +1126,12 @@ export class PropertyWorkerRunner {
           activity_ready: "activity_ready",
         };
           propertyStage = coowners.length ? "ready" : singleOwnerStageMap[propertyStage] ?? "ready";
+        }
+        // V3 created the activity before linking co-owners. Replaying from the
+        // property checkpoint is safe because activity creation has its own
+        // idempotency checkpoint, and guarantees no co-owner is skipped.
+        if (Number(savedPropertyFlow?.version ?? 0) === 3 && propertyStage === "activity_ready") {
+          propertyStage = "property_ready";
         }
         const stageReached = (target: string) => stageOrder.indexOf(propertyStage) >= stageOrder.indexOf(target);
         const advanceStage = async (stage: string) => {
@@ -1252,27 +1258,12 @@ export class PropertyWorkerRunner {
 
         if (!stageReached("property_ready")) {
           this.throwIfPropertySkipRequested(job.id, property.id);
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Confronto gli immobili usando soltanto foglio, particella e subalterno");
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "property", "Abbino gli indirizzi sotto tutti i proprietari e verifico i dati catastali");
           await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Passaggio nominativo-immobile", () =>
-            this.ensureProperty(job, property, primary.person, crm));
+            this.ensureProperty(job, property, primary.person, crm, activeOwners.map((owner) => owner.person)));
           await advanceStage("property_ready");
         }
 
-        if (!stageReached("activity_ready")) {
-          this.throwIfPropertySkipRequested(job.id, property.id);
-          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Apro l’attività dall’immobile verificato, compilo la descrizione e salvo");
-          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Attività immobile", () =>
-            this.ensurePropertyActivity(
-              job,
-              property,
-              primary.person,
-              activeOwners.map((owner) => owner.person),
-              crm,
-              directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
-              propertyActivityMode,
-            ));
-          await advanceStage("activity_ready");
-        }
         this.throwIfPropertySkipRequested(job.id, property.id);
 
         if (!stageReached("owners_linked")) {
@@ -1296,13 +1287,28 @@ export class PropertyWorkerRunner {
                 { propertyId: property.id, personId: owner.person.id, ownershipId: owner.ownership.id },
               );
             }
-            if (owner.ownership.crm_link_id && ["linked", "verified_existing"].includes(owner.ownership.processing_status)) continue;
             if (linkedOwnerIds.has(owner.person.crm_record_id)) {
               owner.ownership.crm_link_id = `existing-link-${owner.person.crm_record_id}`;
+              owner.ownership.processing_status = "verified_existing";
               await this.repository.updateOwnership(owner.ownership.id, {
                 crm_link_id: owner.ownership.crm_link_id,
                 processing_status: "verified_existing",
               });
+              continue;
+            }
+            if (owner.ownership.processing_status === "submitted_unverified") {
+              const refreshedIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id, true));
+              if (refreshedIds.has(owner.person.crm_record_id)) {
+                linkedOwnerIds.add(owner.person.crm_record_id);
+                owner.ownership.crm_link_id = `existing-link-${owner.person.crm_record_id}`;
+                owner.ownership.processing_status = "verified_existing";
+                await this.repository.updateOwnership(owner.ownership.id, {
+                  crm_link_id: owner.ownership.crm_link_id,
+                  processing_status: "verified_existing",
+                });
+              } else {
+                notes.push(`Collegamento di ${owner.person.full_name} già salvato e ancora in propagazione nel pannello; nessun secondo inserimento eseguito.`);
+              }
               continue;
             }
             const name = splitPersonName(owner.person.full_name, owner.person.tax_code);
@@ -1315,22 +1321,44 @@ export class PropertyWorkerRunner {
                 interruptionRequested: () => this.interruptionFor(job.id, property.id),
               }, owner.ownership.share_percentage!));
             owner.ownership.crm_link_id = link.linkId;
-            linkedOwnerIds.add(owner.person.crm_record_id);
+            if (link.selection !== "saved_unverified") linkedOwnerIds.add(owner.person.crm_record_id);
+            owner.ownership.processing_status = link.selection === "saved_unverified"
+              ? "submitted_unverified"
+              : link.selection === "existing" ? "verified_existing" : "linked";
             await this.repository.updateOwnership(owner.ownership.id, {
               crm_link_id: link.linkId,
-              processing_status: link.selection === "existing" ? "verified_existing" : "linked",
+              processing_status: owner.ownership.processing_status,
             });
             if (link.note) {
               notes.push(link.note);
               await this.repository.logChange(job.id, "property", property.cadastral_key, "correlated_owner_selection_note", null, link.note, "WORKER");
             }
           }
+          if (!this.config.WORKER_DRY_RUN && ownersToLink.length) {
+            // linkOwner has already checked the panel and performed its one
+            // allowed refresh after Salva. Read the current card once: more
+            // reloads only amplify Lightning's eventual-consistency delay.
+            const verifiedOwnerIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
+            for (const owner of ownersToLink) {
+              const visible = Boolean(owner.person.crm_record_id && verifiedOwnerIds.has(owner.person.crm_record_id));
+              owner.ownership.crm_link_id ||= visible
+                ? `existing-link-${owner.person.crm_record_id}`
+                : `saved-owner-link-${owner.person.crm_record_id}`;
+              owner.ownership.processing_status = visible ? "verified_existing" : "submitted_unverified";
+              await this.repository.updateOwnership(owner.ownership.id, {
+                crm_link_id: owner.ownership.crm_link_id,
+                processing_status: owner.ownership.processing_status,
+              });
+            }
+          }
+          const submittedOwners = ownersToLink.filter((owner) => owner.ownership.processing_status === "submitted_unverified").length;
           property.raw_payload = {
             ...(property.raw_payload ?? {}),
             correlated_owners: {
               state: "linked",
               count: allOwners.length,
-              linked: allOwners.filter((owner) => Boolean(owner.ownership.crm_link_id)).length,
+              linked: allOwners.length,
+              submittedPendingVisibility: submittedOwners,
               primaryPersonId: primary.person.id,
               primarySharePercentage: primary.ownership.share_percentage,
               existingLinksBeforeSync,
@@ -1340,6 +1368,21 @@ export class PropertyWorkerRunner {
           };
           await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload });
           await advanceStage("owners_linked");
+        }
+        if (!stageReached("activity_ready")) {
+          this.throwIfPropertySkipRequested(job.id, property.id);
+          this.emitPropertyProgress(job, property, propertyIndex + 1, graph.properties.length, "activity", "Apro l’attività dall’immobile verificato, compilo la descrizione e salvo");
+          await this.withAutomaticRecovery(job, property, propertyIndex + 1, graph.properties.length, "Attività immobile", () =>
+            this.ensurePropertyActivity(
+              job,
+              property,
+              primary.person,
+              activeOwners.map((owner) => owner.person),
+              crm,
+              directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
+              propertyActivityMode,
+            ));
+          await advanceStage("activity_ready");
         }
         await advanceStage("completed");
         completed += 1;
@@ -1392,6 +1435,10 @@ export class PropertyWorkerRunner {
           continue propertyLoop;
         }
         if (workerError.status === "paused") throw workerError;
+        // Deterministic identity/relationship conflicts need human review.
+        // Retrying or quarantining the whole property would hide a missing
+        // co-owner and incorrectly let the import look complete.
+        if (workerError.status === "needs_review") throw workerError;
         const automaticRetry = isRecord(property.raw_payload?.automatic_retry)
           ? property.raw_payload.automatic_retry
           : {};
@@ -1473,7 +1520,7 @@ export class PropertyWorkerRunner {
     const existingCheckpoint = isRecord(row.raw_payload?.person_flow) ? row.raw_payload.person_flow : null;
     if (
       existingCheckpoint?.complete === true
-      && Number(existingCheckpoint.version ?? 0) >= 3
+      && Number(existingCheckpoint.version ?? 0) >= 4
       && existingCheckpoint.dryRun === this.config.WORKER_DRY_RUN
       && row.crm_record_id
     ) {
@@ -1485,7 +1532,7 @@ export class PropertyWorkerRunner {
           ...(row.raw_payload ?? {}),
           person_flow: {
             ...existingCheckpoint,
-            version: 3,
+            version: 4,
             complete: true,
             identityVerified: true,
             crmPersonId: verifiedCheckpoint.id,
@@ -1529,7 +1576,7 @@ export class PropertyWorkerRunner {
       }
       row.crm_record_id = verifiedAfterMerge.id;
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 3, complete: true, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+      row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 4, complete: true, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
       await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
       return;
     }
@@ -1565,11 +1612,15 @@ export class PropertyWorkerRunner {
     };
     if (selectedMatch) {
       row.crm_record_id = selectedMatch.id;
+      // Exact tax-code identity is authoritative. Refresh every non-contact
+      // field from SISTER; phones and emails are merged additively later.
+      await this.logPersonChanges(job.id, row, person);
+      await crm.updatePerson(row.crm_record_id, person);
       row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "reused";
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         person_flow: {
-          version: 3,
+          version: 4,
           complete: true,
           existing: true,
           identityVerified: true,
@@ -1620,7 +1671,7 @@ export class PropertyWorkerRunner {
       row.crm_record_id = verifiedCreated.id;
     }
     row.processing_status = this.config.WORKER_DRY_RUN ? "dry_run" : "synced";
-    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 3, complete: true, existing: false, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
+    row.raw_payload = { ...(row.raw_payload ?? {}), person_flow: { version: 4, complete: true, existing: false, identityVerified: true, dryRun: this.config.WORKER_DRY_RUN, crmPersonId: row.crm_record_id, updatedAt: new Date().toISOString() } };
     await this.repository.updatePersonProcessing(row.id, { crm_record_id: row.crm_record_id, processing_status: row.processing_status, raw_payload: row.raw_payload });
   }
 
@@ -1644,7 +1695,13 @@ export class PropertyWorkerRunner {
     }
   }
 
-  private async ensureProperty(job: JobRow, row: PropertyRow, primary: PersonRow, crm: PlaywrightCrmAdapter) {
+  private async ensureProperty(
+    job: JobRow,
+    row: PropertyRow,
+    primary: PersonRow,
+    crm: PlaywrightCrmAdapter,
+    owners: PersonRow[] = [primary],
+  ) {
     if (!primary.crm_record_id) throw new WorkerError("La scheda del proprietario principale non è disponibile", "data_incomplete", { personId: primary.id, propertyId: row.id });
     const property = asProperty(row);
     property.rawPayload = {
@@ -1657,47 +1714,39 @@ export class PropertyWorkerRunner {
           : job.civic_number,
       },
     };
-    const persistedCrmMatch = isRecord(row.raw_payload?.crm_match) ? row.raw_payload.crm_match : null;
-    const persistedCrmMatchData = isRecord(persistedCrmMatch?.data) ? persistedCrmMatch.data : null;
-    const persistedQuarantine = isRecord(row.raw_payload?.unsafe_address_only_match)
-      ? row.raw_payload.unsafe_address_only_match
-      : null;
-    const persistedMatchMethod = String(persistedCrmMatchData?.matchedBy ?? "");
-    const unsafePersistedPropertyId = String(
-      persistedQuarantine?.crmPropertyId
-      ?? (row.crm_record_id && persistedMatchMethod && persistedMatchMethod !== "cadastral" ? row.crm_record_id : ""),
-    ) || null;
-    if (unsafePersistedPropertyId && row.crm_record_id) {
-      row.crm_record_id = null;
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}),
-        unsafe_address_only_match: {
-          crmPropertyId: unsafePersistedPropertyId,
-          matchedBy: persistedMatchMethod,
-          quarantinedAt: new Date().toISOString(),
-        },
-        crm_match: null,
-      };
-      await this.repository.updatePropertyProcessing(row.id, {
-        crm_record_id: null,
-        processing_status: "not_found",
-        raw_payload: row.raw_payload,
-      });
-    }
     let propertyMatchedGlobally = false;
     let propertyCreatedInThisRun = false;
-    const linkedResult = await crm.findPropertyForPerson(
-      primary.crm_record_id,
-      property,
-      unsafePersistedPropertyId ? [unsafePersistedPropertyId] : [],
-    );
+    let propertyMatchedByAddress = false;
+    const checkedOwners = [...new Map([primary, ...owners]
+      .filter((person): person is PersonRow & { crm_record_id: string } => Boolean(person.crm_record_id))
+      .map((person) => [person.crm_record_id, person])).values()];
+    const linkedMatches: Array<{ person: PersonRow; match: NonNullable<PropertyMatchResult["match"]> }> = [];
+    for (const person of checkedOwners) {
+      const result = await crm.findPropertyForPerson(person.crm_record_id!, property);
+      if (result.match && !linkedMatches.some(({ match }) => match.id === result.match!.id)) {
+        linkedMatches.push({ person, match: result.match });
+      }
+    }
+    if (linkedMatches.length > 1) {
+      throw new WorkerError(
+        "L'immobile risulta associato a più schede diverse tra i proprietari. Il worker non sceglie quale aggiornare.",
+        "needs_review",
+        { action: "property-owner-matches-ambiguous", propertyId: row.id, matches: linkedMatches },
+        true,
+      );
+    }
+    const linkedResult: PropertyMatchResult = { match: linkedMatches[0]?.match ?? null };
     // A property can legitimately be visible only under another co-owner.
     // Never create a record until the immutable cadastral triple has also
     // been searched in the whole CRM.
     const globalResult = linkedResult.match ? null : await crm.findPropertyByCadastralIdentity(property);
     const existingResult = linkedResult.match ? linkedResult : globalResult;
     if (existingResult?.match) {
-      const verifiedLinkedProperty = await crm.verifyProperty(existingResult.match.id, property);
+      const matchData = isRecord(existingResult.match.data) ? existingResult.match.data : {};
+      propertyMatchedByAddress = matchData.matchedBy === "address" && matchData.needsUpdate === true;
+      const verifiedLinkedProperty = propertyMatchedByAddress
+        ? existingResult
+        : await crm.verifyProperty(existingResult.match.id, property);
       if (!verifiedLinkedProperty.match || verifiedLinkedProperty.match.id !== existingResult.match.id) {
         throw new WorkerError(
           "L’immobile trovato non supera la verifica catastale finale. Il worker non lo aggiornerà.",
@@ -1712,18 +1761,20 @@ export class PropertyWorkerRunner {
           true,
         );
       }
-      const foundThroughPrimary = Boolean(linkedResult.match);
-      propertyMatchedGlobally = !foundThroughPrimary;
+      const foundThroughOwner = Boolean(linkedResult.match);
+      propertyMatchedGlobally = !foundThroughOwner;
       row.crm_record_id = existingResult.match.id;
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         crm_match: verifiedLinkedProperty.match,
-        checked_from_people: [primary.id],
+        checked_from_people: checkedOwners.map((person) => person.id),
         property_search: {
-          strategy: foundThroughPrimary ? "primary-person-cadastral" : "global-cadastral",
-          linkedToVerifiedPerson: foundThroughPrimary,
+          strategy: foundThroughOwner
+            ? propertyMatchedByAddress ? "owner-address" : "owner-cadastral"
+            : "global-cadastral",
+          linkedToVerifiedPerson: foundThroughOwner,
           searchedAt: new Date().toISOString(),
-          personCrmId: primary.crm_record_id,
+          personCrmId: linkedMatches[0]?.person.crm_record_id ?? primary.crm_record_id,
         },
       };
       await this.repository.updatePropertyProcessing(row.id, {
@@ -1767,7 +1818,7 @@ export class PropertyWorkerRunner {
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         crm_match: null,
-        checked_from_people: [primary.id],
+        checked_from_people: checkedOwners.map((person) => person.id),
         property_search: {
           linkedToVerifiedPerson: false,
           searchedAt: new Date().toISOString(),
@@ -1781,20 +1832,19 @@ export class PropertyWorkerRunner {
       });
     }
     if (job.mode === "assisted") {
-      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nOperazione prevista: ${row.crm_record_id ? "riutilizzo in sola lettura dell'immobile esistente" : "creazione di un nuovo immobile"}`);
+      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nOperazione prevista: ${row.crm_record_id ? "aggiornamento dell'immobile esistente" : "creazione di un nuovo immobile"}`);
       if (decision === "skip") { await this.repository.updatePropertyProcessing(row.id, { processing_status: "skipped" }); return; }
       if (decision === "review") throw new WorkerError("Immobile segnato da verificare", "needs_review", { propertyId: row.id });
       if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); return; }
     }
     if (row.crm_record_id) {
-      /* Un record gia' presente e verificato e' autorevole. Il flusso
-       * automatico puo' riutilizzarlo e collegare i comproprietari, ma non
-       * riscrive mai indirizzo, tipo o dati catastali. */
+      await this.logPropertyChanges(job.id, row, property);
+      await crm.updateProperty(row.crm_record_id, property);
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         existing_property_reused: {
           crmPropertyId: row.crm_record_id,
-          mode: "read_only",
+          mode: propertyMatchedByAddress ? "address_match_cadastral_updated" : "sister_data_updated",
           verifiedAt: new Date().toISOString(),
         },
       };
@@ -1839,7 +1889,9 @@ export class PropertyWorkerRunner {
         identityVerified: true,
         linkedToVerifiedPerson: !propertyMatchedGlobally,
         existingPropertyFoundGlobally: propertyMatchedGlobally,
-        writeMode: propertyCreatedInThisRun ? "created" : "existing_read_only",
+        writeMode: propertyCreatedInThisRun
+          ? "created"
+          : propertyMatchedByAddress ? "existing_address_match_updated" : "existing_updated",
         dryRun: this.config.WORKER_DRY_RUN,
         crmPropertyId: row.crm_record_id,
         primaryPersonId: primary.id,

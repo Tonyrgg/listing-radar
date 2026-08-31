@@ -89,6 +89,18 @@ function hasSameMunicipality(rawAddress: string | null | undefined, municipality
   return expectedWords.length > 0 && expectedWords.every((word) => addressWords.includes(word));
 }
 
+/**
+ * The full related-records modal renders property names as
+ * `IM - <address> - <zone>`.  Use that cheap, deterministic hint before
+ * opening records; the detail page remains the source of truth.
+ */
+function propertyListLabelMatchesAddress(label: string, expectedAddress: string | null | undefined) {
+  const withoutPrefix = label.replace(/^\s*IM\s*-\s*/i, "").trim();
+  if (!withoutPrefix) return false;
+  const withoutTrailingZone = withoutPrefix.replace(/\s+-\s+[^-]+$/, "").trim();
+  return samePropertyAddress(withoutTrailingZone, expectedAddress);
+}
+
 function recordIdFromHref(href: string | null, entity: "account" | "immobile") {
   return href?.match(new RegExp(`/s/${entity}/([^/?#]+)`, "i"))?.[1] ?? "";
 }
@@ -697,10 +709,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     const compactBody = body.replaceAll(" ", "");
     if (!taxCode || !compactBody.includes(taxCode)) return null;
     const nameWords = normalizedUiText(input.fullName).split(" ").filter((word) => word.length > 1);
-    if (nameWords.length && !nameWords.every((word) => body.includes(word))) return null;
+    const nameVerified = !nameWords.length || nameWords.every((word) => body.includes(word));
     return {
       id: personId,
-      data: { source: "crm-open-person", taxCodeVerified: true, nameVerified: true, pageUrl: this.page.url() },
+      // The tax code is the only identity key.  A different name is precisely
+      // why the existing record must be overwritten with the SISTER data.
+      data: { source: "crm-open-person", taxCodeVerified: true, nameVerified, pageUrl: this.page.url() },
     };
   }
 
@@ -784,16 +798,6 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await this.enterGlobalSearch(this.selectors.personSearchTaxCode, this.selectors.personSearchSubmit, input.taxCode);
       await this.checkSession();
       const matches = await this.collectPersonMatches("certain", "crm-tax-code-search");
-      if (!matches.length && input.phones.length) {
-        this.require("personSearchPhone");
-        for (const phone of input.phones) {
-          await this.enterGlobalSearch(this.selectors.personSearchPhone, this.selectors.personSearchSubmit, phone);
-          await this.checkSession();
-          for (const match of await this.collectPersonMatches("possible", "crm-phone-search", phone)) {
-            if (!matches.some((current) => current.id === match.id)) matches.push(match);
-          }
-        }
-      }
       return { matches };
     });
   }
@@ -1143,7 +1147,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     );
   }
 
-  private async fillPerson(person: NormalizedPerson) {
+  private async fillPerson(person: NormalizedPerson, includeContacts = true) {
     const name = splitPersonName(person.fullName, person.taxCode);
     if (this.selectors.personFirstName && this.selectors.personLastName && !name.verified) {
       throw new WorkerError("Nome e cognome non sono separabili con certezza tramite il codice fiscale. Correggi manualmente l’anagrafica e premi “Riprendi”.", "needs_review", { portal: "CRM", action: "person-name-split" });
@@ -1155,10 +1159,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       ...(this.selectors.personFirstName && this.selectors.personLastName
         ? [["personFirstName", "Nome", formatPersonName(name.firstName)], ["personLastName", "Cognome", formatPersonName(name.lastName)]] as Array<[keyof CrmSelectors, string, string]>
         : [["personFullName", "Nominativo", formatPersonName(person.fullName)]] as Array<[keyof CrmSelectors, string, string]>),
-      ["personEmail", "Email", person.emails[0] ?? ""],
-      ["personMobile", "Cellulare", person.mobiles[0] ?? ""],
-      ["personOfficePhone", "Telefono fisso", person.landlines[0] ?? ""],
-      ["personOtherPhone", "Altro telefono", [...person.mobiles.slice(1), ...person.landlines.slice(1)][0] ?? ""],
+      ...(includeContacts ? [
+        ["personEmail", "Email", person.emails[0] ?? ""],
+        ["personMobile", "Cellulare", person.mobiles[0] ?? ""],
+        ["personOfficePhone", "Telefono fisso", person.landlines[0] ?? ""],
+        ["personOtherPhone", "Altro telefono", [...person.mobiles.slice(1), ...person.landlines.slice(1)][0] ?? ""],
+      ] as Array<[keyof CrmSelectors, string, string]> : []),
     ];
     for (const [key, label, value] of fields) await this.fillPersonText(key, label, value);
     await this.selectPersonGender(person);
@@ -1549,7 +1555,10 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     if (this.dryRun) return;
     await this.friendly("person-update", "Non riesco ad aggiornare il nominativo.", async () => {
       await this.openPerson(id);
-      await this.fillPerson(person);
+      // Existing phone/email slots are not blanked here.  The dedicated
+      // contact synchronizer adds missing values while retaining every
+      // distinct number already present.
+      await this.fillPerson(person, false);
       this.require("personSave");
       await this.page.locator(this.selectors.personSave).click();
       await this.page.waitForTimeout(700);
@@ -1657,12 +1666,16 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       }
       const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
       const identityConflicts: Array<{ id: string; address: string }> = [];
-      for (const link of links) {
+      const propertyLinks = links.filter((link) => link.href.startsWith("#fixture-property")
+        || (/\/s\/immobile\//i.test(link.href) && /^\s*IM\s*-/i.test(link.label)));
+      const pairedLinks = propertyLinks.filter((link) => propertyListLabelMatchesAddress(link.label, property.address));
+      // Pairing the modal label avoids opening unrelated properties. The
+      // detail page below remains the source of truth; unknown label formats
+      // safely fall back to inspecting every IM row.
+      const linksToInspect = pairedLinks.length ? pairedLinks : propertyLinks;
+      for (const link of linksToInspect) {
         const href = link.href;
         const isFixture = href.startsWith("#fixture-property");
-        const isConfirmedPropertyLink = isFixture
-          || (/\/s\/immobile\//i.test(href) && /^\s*IM\s*-/i.test(link.label));
-        if (!isConfirmedPropertyLink) continue;
         const hrefPropertyId = link.id || (isFixture
           ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
           : recordIdFromHref(href, "immobile"));
@@ -1690,6 +1703,21 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
               href,
             },
           });
+        } else if (addressMatch && municipalityMatch) {
+          const id = hrefPropertyId || recordIdFromHref(this.page.url(), "immobile");
+          matches.push({
+            id,
+            data: {
+              source: "crm-person-related-properties",
+              matchedBy: "address",
+              identityVerified: false,
+              ...identity,
+              addressVerified: true,
+              municipalityVerified: true,
+              needsUpdate: true,
+              href,
+            },
+          });
         } else if (cadastralMatch) {
           identityConflicts.push({
             id: hrefPropertyId || recordIdFromHref(this.page.url(), "immobile"),
@@ -1705,12 +1733,14 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           true,
         );
       }
-      if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili con gli stessi dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
+      const cadastralMatches = matches.filter(({ data }) => data.matchedBy === "cadastral");
+      const usableMatches = cadastralMatches.length ? cadastralMatches : matches;
+      if (usableMatches.length > 1) throw new WorkerError("Il nominativo ha più immobili compatibili con indirizzo o dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: usableMatches }, true);
       if (!matches.length && !links.every(({ href }) => href.startsWith("#fixture-property"))) {
         await this.page.goto(personUrl, { waitUntil: "domcontentloaded" });
         await this.waitForPersonWorkspace(personId);
       }
-      return { match: matches[0] ?? null };
+      return { match: usableMatches[0] ?? null };
     });
   }
 
@@ -2682,6 +2712,90 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
     });
   }
 
+  private async selectOwnerPerson(
+    dialog: Locator,
+    personField: Locator,
+    input: Pick<OwnerLinkInput, "personId" | "searchLabel" | "phones">,
+  ) {
+    let lastCandidateCount = 0;
+    let sawCandidates = false;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await personField.fill("");
+      await personField.pressSequentially(input.searchLabel, { delay: 90 });
+      const options = dialog.locator(this.selectors.ownerPersonOption).filter({ visible: true });
+      const appeared = await options.first().waitFor({ state: "visible", timeout: 7_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!appeared) continue;
+
+      let previousSnapshot = "";
+      let stableSnapshots = 0;
+      for (let wait = 0; wait < 10 && stableSnapshots < 2; wait += 1) {
+        await this.page.waitForTimeout(250);
+        const snapshot = JSON.stringify(await options.allTextContents());
+        stableSnapshots = snapshot === previousSnapshot ? stableSnapshots + 1 : 0;
+        previousSnapshot = snapshot;
+      }
+
+      const candidateCount = await options.count();
+      lastCandidateCount = candidateCount;
+      sawCandidates ||= candidateCount > 0;
+      const candidates: Array<{ option: Locator; personId: string; text: string }> = [];
+      for (let index = 0; index < candidateCount; index += 1) {
+        // Resolve each option from the current list. Lightning can replace the
+        // whole lookup between two frames while retaining identical text.
+        const option = options.nth(index);
+        const identity = option.locator('[data-item-id], [data-recordid], [data-id], a[href*="/s/account/"]').first();
+        let candidatePersonId = "";
+        if (await identity.count()) {
+          const href = await identity.getAttribute("href");
+          candidatePersonId = await identity.getAttribute("data-item-id")
+            ?? await identity.getAttribute("data-recordid")
+            ?? await identity.getAttribute("data-id")
+            ?? recordIdFromHref(href, "account");
+        }
+        candidates.push({ option, personId: candidatePersonId, text: await option.innerText().catch(() => "") });
+      }
+
+      const selectionResult = selectOwnerLookupCandidate(candidates, input.personId, input.phones, input.searchLabel);
+      if (!selectionResult) continue;
+      const selected = candidates[selectionResult.index];
+      if (!selected) continue;
+      const clicked = await selected.option.click({ force: true, timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!clicked) continue;
+
+      const expectedWords = normalizedUiText(input.searchLabel).split(" ").filter(Boolean);
+      for (let check = 0; check < 25; check += 1) {
+        const selectedLabel = (await personField.inputValue().catch(() => "")).trim();
+        const selectedText = normalizedUiText(selectedLabel);
+        const nameConfirmed = expectedWords.length > 0 && expectedWords.every((word) => selectedText.includes(word));
+        const lookupCommitted = await personField.getAttribute("readonly") !== null || await options.count() === 0;
+        const formAdvanced = await this.visible(this.selectors.ownerRight).count() > 0;
+        if (nameConfirmed && lookupCommitted && formAdvanced) {
+          return { ...selectionResult, candidateCount, selectedPersonLabel: selectedLabel, attempts: attempt };
+        }
+        await this.page.waitForTimeout(160);
+      }
+    }
+
+    if (sawCandidates) {
+      throw new WorkerError(
+        "Il lookup mostra nominativi, ma nessuno coincide in modo sicuro con il comproprietario verificato.",
+        "needs_review",
+        { portal: "CRM", action: "property-owner-person", personId: input.personId, searchLabel: input.searchLabel, candidateCount: lastCandidateCount },
+        true,
+      );
+    }
+    throw new WorkerError(
+      "Il lookup del comproprietario non ha completato il caricamento dopo tre tentativi automatici.",
+      "portal_error",
+      { portal: "CRM", action: "property-owner-lookup-retries", personId: input.personId, searchLabel: input.searchLabel, attempts: 3 },
+      true,
+    );
+  }
+
   async linkOwner(propertyId: string, personInput: OwnerLinkInput, share: number): Promise<OwnerLinkResult> {
     const { personId, searchLabel, phones } = personInput;
     const throwIfInterrupted = () => {
@@ -2710,67 +2824,26 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
 
       const dialog = await this.uniqueVisible("ownerDialog", "Soggetto correlato", 15_000);
       const person = await this.uniqueVisible("ownerPersonId", "Cliente comproprietario", 10_000);
-      await person.fill("");
-      await person.pressSequentially(searchLabel, { delay: 180 });
-      const options = dialog.locator(this.selectors.ownerPersonOption).filter({ visible: true });
-      await options.first().waitFor({ state: "visible", timeout: 10_000 });
-      let previousSnapshot = "";
-      let stableSnapshots = 0;
-      for (let wait = 0; wait < 8 && stableSnapshots < 2; wait += 1) {
-        await this.page.waitForTimeout(500);
-        const snapshot = JSON.stringify(await options.allTextContents());
-        stableSnapshots = snapshot === previousSnapshot ? stableSnapshots + 1 : 0;
-        previousSnapshot = snapshot;
-      }
-      const candidateCount = await options.count();
-      const candidates: Array<{ option: Locator; personId: string; text: string }> = [];
-      for (let index = 0; index < candidateCount; index += 1) {
-        const option = options.nth(index);
-        const identity = option.locator('[data-item-id], [data-recordid], [data-id], a[href*="/s/account/"]').first();
-        let candidatePersonId = "";
-        if (await identity.count()) {
-          const href = await identity.getAttribute("href");
-          candidatePersonId = await identity.getAttribute("data-item-id")
-            ?? await identity.getAttribute("data-recordid")
-            ?? await identity.getAttribute("data-id")
-            ?? recordIdFromHref(href, "account");
-        }
-        candidates.push({
-          option,
-          personId: candidatePersonId,
-          text: await option.innerText().catch(() => ""),
-        });
-      }
-      const selectionResult = selectOwnerLookupCandidate(candidates, personId, phones, searchLabel);
-      if (!selectionResult) {
-        throw new WorkerError(
-          "Il gestionale non ha restituito alcun nominativo selezionabile per il comproprietario.",
-          "needs_review",
-          { portal: "CRM", action: "property-owner-person", personId, searchLabel, candidateCount },
-          true,
-        );
-      }
-      const selected = candidates[selectionResult.index]!;
-      const { selection, note } = selectionResult;
       throwIfInterrupted();
-      await this.page.waitForTimeout(500);
-      await selected.option.click();
-      await this.page.waitForTimeout(500);
-      const selectedPersonLabel = (await person.inputValue()).trim();
-      if (!normalizedUiText(selectedPersonLabel).includes(normalizedUiText(searchLabel))) {
-        throw new WorkerError(
-          "Il nominativo scelto nella scheda del comproprietario non coincide con nome e cognome raccolti. Nessun collegamento è stato salvato.",
-          "needs_review",
-          { portal: "CRM", action: "property-owner-selected-identity", personId, searchLabel, selectedPersonLabel, selection },
-          true,
-        );
-      }
+      const selectionResult = await this.selectOwnerPerson(dialog, person, { personId, searchLabel, phones });
+      const { selection, note, candidateCount } = selectionResult;
 
       const right = await this.uniqueVisible("ownerRight", "Diritto", 8_000);
       await right.fill("Proprietà");
       await this.propertyPicklist("ownerRole", "Ruolo", "Comproprietario");
+      const roleValue = this.visible(this.selectors.ownerRole).first().locator('input[role="textbox"]').filter({ visible: true }).first();
       const quota = await this.uniqueVisible("ownerShare", "Quota", 8_000);
       await quota.fill(formatShareForUi(share));
+      if (normalizedUiText(await right.inputValue()) !== normalizedUiText("Proprietà")
+        || normalizedUiText(await roleValue.inputValue().catch(() => "")) !== normalizedUiText("Comproprietario")
+        || normalizedUiText(await quota.inputValue()) !== normalizedUiText(formatShareForUi(share))) {
+        throw new WorkerError(
+          "Il gestionale ha cancellato diritto, ruolo o quota durante la compilazione del comproprietario; il worker riproverà automaticamente.",
+          "portal_error",
+          { portal: "CRM", action: "property-owner-form-reset", personId, searchLabel },
+          true,
+        );
+      }
       throwIfInterrupted();
 
       const save = dialog.locator(this.selectors.ownerSave).filter({ visible: true });

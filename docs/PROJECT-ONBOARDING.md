@@ -275,14 +275,24 @@ Ogni operazione mutante deve essere idempotente o verificata prima di essere rip
 Per ogni immobile:
 
 1. caricare i recapiti di tutti i proprietari;
-2. verificare o creare tutte le anagrafiche;
+2. cercare ogni anagrafica esclusivamente per codice fiscale; se esiste,
+   sovrascrivere i dati anagrafici SISTER conservando e integrando i recapiti;
+   se non esiste, crearla;
 3. scegliere il proprietario principale con quota maggiore;
 4. in caso di quota pari conservare l'ordine SISTER;
-5. cercare o creare l'immobile sotto il principale;
-6. creare una sola attività dalla scheda immobile;
-7. collegare gli altri come `Comproprietario`;
+5. cercare l'immobile sotto tutti i proprietari verificati, usando il pairing
+   del nome nella lista completa prima di aprire le schede; indirizzo e terna
+   catastale identificano il record, mentre il solo indirizzo autorizza
+   l'aggiornamento dei dati catastali;
+6. collegare e verificare tutti gli altri come `Comproprietario`;
+7. creare, se configurata, una sola attività dalla scheda immobile;
 8. salvare checkpoint e audit;
 9. passare all'immobile successivo.
+
+Notizie e incarichi presenti nella sezione aggregata non partecipano al
+matching e non vengono aperti o modificati. Nei merge anagrafici si scelgono
+i valori dell'importer nella colonna sinistra; i soli campi telefono possono
+conservare valori CRM aggiuntivi per non perdere numeri distinti.
 
 ### Quote
 
@@ -295,6 +305,12 @@ Le frazioni SISTER vengono conservate nel dato originale e convertite in percent
 ### Scelta del comproprietario
 
 La digitazione di nome e cognome è intenzionalmente lenta. Il worker attende che la lista risultati sia stabile prima di selezionare.
+
+Il lookup Lightning può sostituire le opzioni mentre vengono cliccate: il
+worker risolve nuovamente la lista e riprova nello stesso dialogo fino a tre
+volte. Dopo che `Salva` ha chiuso la finestra, un ritardo di propagazione nel
+pannello `Soggetti collegati` non ferma l'immobile e non provoca un secondo
+inserimento; il collegamento resta annotato come inviato finché diventa visibile.
 
 - il nome deve corrispondere sempre;
 - se esiste un telefono raccolto, deve corrispondere anche un telefono mostrato nel risultato;
