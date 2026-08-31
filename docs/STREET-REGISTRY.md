@@ -1,6 +1,6 @@
 # Street Registry canonico di Bitonto
 
-Stato al 1 settembre 2026: migration 0006 e 0007, inventario ufficiale, centri, crosswalk OpenStreetMap e metriche applicati all'ambiente Supabase reale. A database ci sono 1.118 Codvia (1.089 attivi, 29 `needs_review`), 1.089 lavorazioni `owner_network` in stato `pending`, 1 centro città e 15 centri zona, 236 vie con geometria e rank, 266 associazioni di zona primarie. Resta da fare l'aggancio del servizio all'interfaccia desktop del Property Worker. Data dell'audit iniziale: 31 agosto 2026.
+Stato al 1 settembre 2026: migration 0006 e 0007, inventario ufficiale, centri, crosswalk OpenStreetMap e metriche applicati all'ambiente Supabase reale. A database ci sono 1.118 Codvia (1.089 attivi, 29 `needs_review`), 1.089 lavorazioni `owner_network` in stato `pending`, 1 centro città e 15 centri zona, 236 vie con geometria e rank, 266 associazioni di zona primarie. La scheda «Via completa» del Property Worker mostra la coda e prende in carico la prossima via da sola: presa in carico atomica con lease, chiusura dell'esito al termine della run. Data dell'audit iniziale: 31 agosto 2026.
 
 Le 853 vie senza geometria hanno `city_rank` nullo e finiscono in fondo alla coda, ordinate per `Codvia`: un ordine stabile ma non geografico. Sono in larga parte gli `ARCO`, `CORTE` e `VICO` del centro storico, che OpenStreetMap non mappa con il nome.
 
@@ -143,6 +143,10 @@ La relazione è molti-a-molti, ma una sola zona può essere primaria per ogni vi
 - `complete`: registra esito, risultato/errore e l'eventuale `property_worker_job_id`.
 
 Una lavorazione torna disponibile quando il lease scade, quando l'esito è `to_recheck` e finché `attempts` resta sotto `max_attempts`. Gli esiti `completed`, `skipped` e `failed` non vengono ripresi automaticamente: il ritorno in coda di una via fallita è una decisione manuale.
+
+Nel desktop la presa in carico vive nella scheda «Via completa». Il pannello del registro mostra la prossima via e le dieci successive; il bottone prende in carico la prima e avvia su quella la run reale, con gli stessi filtri della run manuale. Le vie senza geometria restano in elenco, marcate come prive di posizione geografica, invece di sparire.
+
+Solo run reali: una prova a vuoto consumerebbe un tentativo della coda durevole senza portare a casa niente. La chiusura segue l'esito della run — completata, oppure da ricontrollare se la run è stata sospesa o ha lasciato un errore — e una uscita imprevista rimette comunque la via in coda invece di lasciarla bloccata fino alla scadenza del lease.
 
 Il Worker usa la chiave di servizio già prevista per le sue operazioni server-side. Le RPC mutative non sono eseguibili da utenti `anon` o `authenticated`; le tabelle hanno RLS e sola lettura autenticata.
 
