@@ -42,7 +42,7 @@ vi.mock("@/lib/supabase/service", () => ({
 }));
 
 const {
-  EXCLUDED_MATCH_SCORE,
+  MIN_PROPOSABLE_SCORE,
   getRequestCoverage,
   getProperty,
   getRequest,
@@ -54,7 +54,7 @@ function matchQueries() {
 }
 
 function appliedFilter(query: { methods: Array<[string, unknown[]]> }) {
-  return query.methods.find(([name]) => name === "gt");
+  return query.methods.find(([name]) => name === "gte");
 }
 
 describe("liste dei match", () => {
@@ -71,28 +71,28 @@ describe("liste dei match", () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
 
-  it("tiene fuori dall'elenco generale i match esclusi", async () => {
+  it("tiene fuori dall'elenco generale gli abbinamenti sotto soglia", async () => {
     await listMatches({ limit: 10 });
     const query = matchQueries()[0];
     expect(query).toBeDefined();
-    expect(appliedFilter(query!)).toEqual(["gt", ["score", EXCLUDED_MATCH_SCORE]]);
+    expect(appliedFilter(query!)).toEqual(["gte", ["score", MIN_PROPOSABLE_SCORE]]);
   });
 
   it("li tiene fuori anche dalla scheda della richiesta", async () => {
     await getRequest("richiesta-1");
     const query = matchQueries()[0];
     expect(query).toBeDefined();
-    expect(appliedFilter(query!)).toEqual(["gt", ["score", EXCLUDED_MATCH_SCORE]]);
+    expect(appliedFilter(query!)).toEqual(["gte", ["score", MIN_PROPOSABLE_SCORE]]);
   });
 
   it("li tiene fuori anche dalla scheda dell'immobile", async () => {
     await getProperty("immobile-1");
     const query = matchQueries()[0];
     expect(query).toBeDefined();
-    expect(appliedFilter(query!)).toEqual(["gt", ["score", EXCLUDED_MATCH_SCORE]]);
+    expect(appliedFilter(query!)).toEqual(["gte", ["score", MIN_PROPOSABLE_SCORE]]);
   });
 
-  it("permette di richiederli esplicitamente per capire perche' un immobile non compare", async () => {
+  it("permette di richiederli comunque, per capire perche' un immobile non compare", async () => {
     await listMatches({ includeExcluded: true });
     const query = matchQueries()[0];
     expect(query).toBeDefined();
@@ -103,7 +103,7 @@ describe("liste dei match", () => {
     await listMatches({ classification: "compatible", requestIds: ["r1"], limit: 50 });
     const query = matchQueries()[0];
     const names = query!.methods.map(([name]) => name);
-    expect(names).toContain("gt");
+    expect(names).toContain("gte");
     expect(names).toContain("eq");
     expect(names).toContain("in");
     expect(query!.methods).toContainEqual(["limit", [50]]);
@@ -113,8 +113,8 @@ describe("liste dei match", () => {
     rpcResponse = {
       data: [
         { request_id: "r1", best_score: 91, proposable_count: 5, relevant_count: 3 },
-        // Ha abbinamenti, ma nessuno che valga una proposta: e' scoperta.
-        { request_id: "r2", best_score: "18.4", proposable_count: 7, relevant_count: 0 },
+        // Ha abbinamenti, ma nessuno arriva a 70: e' scoperta.
+        { request_id: "r2", best_score: "68.4", proposable_count: 7, relevant_count: 0 },
       ],
       error: null,
     };
@@ -124,7 +124,7 @@ describe("liste dei match", () => {
     expect(rpcCalls).toEqual(["matching_request_coverage"]);
     expect(copertura?.get("r1")).toEqual({ bestScore: 91, proposableCount: 5, relevantCount: 3 });
     // Il punteggio arriva da una colonna numeric, quindi puo' essere stringa.
-    expect(copertura?.get("r2")?.bestScore).toBeCloseTo(18.4);
+    expect(copertura?.get("r2")?.bestScore).toBeCloseTo(68.4);
     expect(copertura?.get("r2")?.relevantCount).toBe(0);
     expect(copertura?.get("r3")).toBeUndefined();
   });

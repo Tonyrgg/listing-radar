@@ -7,13 +7,17 @@
 -- richiesta risultava scoperta e la funzione non diceva niente a nessuno.
 --
 -- Scoperta non vuol dire «non ha nemmeno una riga in tabella»: vuol dire «non
--- ha niente che valga la pena mostrare al cliente». La soglia è la stessa che
--- l'interfaccia usa già per dire «Poco pertinente», cioè la classificazione
--- calcolata dal motore: sotto quella non è una proposta.
+-- ha niente che valga la pena portare al cliente». La soglia è il settanta per
+-- cento, la stessa che la web app usa per decidere quali abbinamenti mostrare:
+-- sotto, la casa non si propone, quindi non copre nessuno.
+--
+-- Se la soglia cambia qui, va cambiata anche in `MIN_PROPOSABLE_SCORE`
+-- (src/lib/matching/repository.ts): sono la stessa decisione detta due volte,
+-- una al database e una alla pagina.
 --
 -- Torna anche il punteggio migliore, perché una richiesta ferma al dodici per
--- cento e una ferma al trentotto sono due urgenze diverse, e chi cerca casa per
--- quel cliente merita di saperlo prima di uscire.
+-- cento e una ferma al sessantotto sono due urgenze diverse, e chi cerca casa
+-- per quel cliente merita di saperlo prima di uscire.
 create or replace function public.matching_request_coverage()
 returns table (
   request_id uuid,
@@ -28,13 +32,13 @@ as $$
     m.request_id,
     max(m.score) as best_score,
     count(*) filter (where m.score > 0)::integer as proposable_count,
-    count(*) filter (where m.classification <> 'not_relevant')::integer as relevant_count
+    count(*) filter (where m.score >= 70)::integer as relevant_count
   from public.request_property_matches m
   group by m.request_id;
 $$;
 
 comment on function public.matching_request_coverage() is
-  'Copertura di ogni richiesta: punteggio migliore, abbinamenti proponibili e abbinamenti che superano la soglia di rilevanza.';
+  'Copertura di ogni richiesta: punteggio migliore, abbinamenti non esclusi e abbinamenti proponibili (almeno 70).';
 
 grant execute on function public.matching_request_coverage() to authenticated, service_role;
 

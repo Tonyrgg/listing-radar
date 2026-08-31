@@ -33,6 +33,7 @@ Quando un README storico contraddice il codice o una migration più recente, non
 - Un crawler fallito, degradato o con struttura cambiata non prova la scomparsa di un annuncio.
 - Una scomparsa non prova una vendita.
 - Nel matching commerciale l'ascensore obbligatorio esclude, non penalizza: una richiesta che lo pretende non deve vedere immobili che ne sono privi. L'unica eccezione è il piano terra, dove l'ascensore non serve. Passa solo l'ascensore dichiarato presente: una scheda nasce con l'ascensore a «no», quindi un valore assente vale «no», e senza piano valorizzato entrano soltanto gli immobili con ascensore (`src/lib/matching/elevator.ts`).
+- Un abbinamento sotto il 70% non è proponibile: non entra nelle liste operative e non copre la richiesta. La soglia è dichiarata in `MIN_PROPOSABLE_SCORE` (`src/lib/matching/repository.ts`) e ripetuta nella funzione `matching_request_coverage`; se cambia, vanno cambiate entrambe.
 - I valori confermati manualmente non devono essere sovrascritti silenziosamente.
 - Per i dati operativi immobiliari il perimetro è Bitonto, Palombaio e Mariotto.
 - Usare HTTP diretto quando è sufficiente; usare Playwright dove serve davvero un browser.
