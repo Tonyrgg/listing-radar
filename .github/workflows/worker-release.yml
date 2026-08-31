@@ -46,10 +46,12 @@ jobs:
         with:
           node-version: "22"
 
-      # `npm ci` e non `npm install`: una release deve partire dalle versioni
-      # esatte del lockfile. Qui funziona, a differenza del workflow Linux,
-      # perche' il lockfile e' stato generato su Windows come questo runner.
-      - run: npm ci --no-audit --no-fund
+      # Non npm ci, per la stessa ragione del workflow Property Lifecycle: il
+      # lockfile committato non e' in sync con package.json (mancano le
+      # dipendenze opzionali @emnapi/*) e `npm ci` si rifiuta di installare.
+      # Rigenerarlo per sanare il disallineamento sposterebbe 155 versioni di
+      # pacchetto, e una release non e' il posto dove farlo.
+      - run: npm install --no-audit --no-fund
 
       - name: Test worker
         run: npm test
