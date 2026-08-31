@@ -19,7 +19,13 @@
 -- La soglia degli 80 è ripetuta in `MIN_PROPOSABLE_SCORE`
 -- (src/lib/matching/repository.ts): sono la stessa decisione detta due volte,
 -- una al database e una alla pagina. Se cambia, vanno cambiate entrambe.
-create or replace function public.matching_request_coverage()
+
+-- La 0004 aveva creato la funzione con altre colonne. `create or replace` non
+-- può cambiare il tipo restituito — Postgres risponde 42P13 — quindi la vecchia
+-- va rimossa prima. Nessun dato è coinvolto: è solo una funzione di lettura.
+drop function if exists public.matching_request_coverage();
+
+create function public.matching_request_coverage()
 returns table (
   request_id uuid,
   best_score numeric,
