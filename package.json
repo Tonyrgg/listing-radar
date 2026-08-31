@@ -33,7 +33,12 @@
     "lifecycle:bootstrap:live": "tsx --env-file=.env.local scripts/property-lifecycle-live-bootstrap.ts",
     "design:sync": "node scripts/sync-design-tokens.mjs",
     "design:check": "node scripts/sync-design-tokens.mjs --check && node scripts/check-design-contrast.mjs",
-    "brand:assets": "node scripts/generate-brand-assets.mjs"
+    "brand:assets": "node scripts/generate-brand-assets.mjs",
+    "street-registry:import": "tsx --env-file=.env.local scripts/street-registry/import-bitonto-inventory.ts",
+    "street-registry:centers": "tsx --env-file=.env.local scripts/street-registry/seed-bitonto-centers.ts",
+    "street-registry:geometry": "tsx --env-file=.env.local scripts/street-registry/import-street-geometry.ts",
+    "street-registry:metrics": "tsx --env-file=.env.local scripts/street-registry/recompute-metrics.ts",
+    "street-registry:crosswalk": "tsx --env-file=.env.local scripts/street-registry/build-osm-crosswalk.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

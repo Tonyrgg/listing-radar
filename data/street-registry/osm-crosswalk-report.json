@@ -1,0 +1,4378 @@
+{
+  "generated_at": "2026-08-31T22:08:00.136Z",
+  "overpass_query": "[out:json][timeout:180];\narea[\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"][\"name\"=\"Bitonto\"]->.bitonto;\nway(area.bitonto)[\"highway\"][\"name\"];\nout geom;",
+  "span_over_length_tolerance": 1.15,
+  "span_absolute_tolerance_meters": 250,
+  "active_streets": 1089,
+  "osm_named_ways": 926,
+  "osm_distinct_names": 494,
+  "matched": 236,
+  "matched_by_basis": {
+    "nome_completo": 228,
+    "nome_completo_senza_apostrofi": 4,
+    "descrizione_senza_specie": 4
+  },
+  "excluded": {
+    "duplicate_name_in_registry": 84,
+    "absent_from_osm": 768,
+    "disjoint_homonyms": 1
+  },
+  "duplicate_name_in_registry": [
+    {
+      "normalized_name": "CORSO VITTORIO EMANUELE",
+      "codes": [
+        "1586",
+        "3041"
+      ]
+    },
+    {
+      "normalized_name": "PIAZZA MILITE IGNOTO",
+      "codes": [
+        "21179",
+        "3021"
+      ]
+    },
+    {
+      "normalized_name": "TRAV PRIV VIA TOGLIATTI",
+      "codes": [
+        "296",
+        "321"
+      ]
+    },
+    {
+      "normalized_name": "VIA ALESSANDRO MANZONI",
+      "codes": [
+        "651",
+        "3018"
+      ]
+    },
+    {
+      "normalized_name": "VIA AMEDEO",
+      "codes": [
+        "20",
+        "3072"
+      ]
+    },
+    {
+      "normalized_name": "VIA AMERIGO VESPUCCI",
+      "codes": [
+        "3134",
+        "1581"
+      ]
+    },
+    {
+      "normalized_name": "VIA ASPROMONTE",
+      "codes": [
+        "37",
+        "3002"
+      ]
+    },
+    {
+      "normalized_name": "VIA CAPRERA",
+      "codes": [
+        "87",
+        "3081"
+      ]
+    },
+    {
+      "normalized_name": "VIA CARLO ROSA",
+      "codes": [
+        "3124",
+        "1154"
+      ]
+    },
+    {
+      "normalized_name": "VIA CESARE BATTISTI",
+      "codes": [
+        "52",
+        "3073",
+        "3007"
+      ]
+    },
+    {
+      "normalized_name": "VIA DANTE ALIGHIERI",
+      "codes": [
+        "14",
+        "3088",
+        "3009"
+      ]
+    },
+    {
+      "normalized_name": "VIA DIEGO GENTILE",
+      "codes": [
+        "3095",
+        "562"
+      ]
+    },
+    {
+      "normalized_name": "VIA ENRICO CORRIDONI",
+      "codes": [
+        "140",
+        "3008"
+      ]
+    },
+    {
+      "normalized_name": "VIA FRANCESCO PETRARCA",
+      "codes": [
+        "1091",
+        "3027"
+      ]
+    },
+    {
+      "normalized_name": "VIA GENERALE CANTORE",
+      "codes": [
+        "83",
+        "3012"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIACOMO LEOPARDI",
+      "codes": [
+        "626",
+        "3015",
+        "3104"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIOTTO",
+      "codes": [
+        "572",
+        "3096"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIUSEPPE CAPRUZZI",
+      "codes": [
+        "88",
+        "25723"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIUSEPPE GARIBALDI",
+      "codes": [
+        "555",
+        "3094"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIUSEPPE MAZZINI",
+      "codes": [
+        "1005",
+        "3107"
+      ]
+    },
+    {
+      "normalized_name": "VIA GIUSEPPE VERDI",
+      "codes": [
+        "1578",
+        "3040"
+      ]
+    },
+    {
+      "normalized_name": "VIA GOFFREDO MAMELI",
+      "codes": [
+        "649",
+        "3108"
+      ]
+    },
+    {
+      "normalized_name": "VIA ISONZO",
+      "codes": [
+        "3013",
+        "607",
+        "3099"
+      ]
+    },
+    {
+      "normalized_name": "VIA LAMARMORA",
+      "codes": [
+        "3101",
+        "3014"
+      ]
+    },
+    {
+      "normalized_name": "VIA LUIGI SETTEMBRINI",
+      "codes": [
+        "3125",
+        "1506"
+      ]
+    },
+    {
+      "normalized_name": "VIA MEGRA",
+      "codes": [
+        "1009",
+        "3006"
+      ]
+    },
+    {
+      "normalized_name": "VIA MICHELANGELO",
+      "codes": [
+        "1021",
+        "3112"
+      ]
+    },
+    {
+      "normalized_name": "VIA MONTEBELLO",
+      "codes": [
+        "1041",
+        "3114"
+      ]
+    },
+    {
+      "normalized_name": "VIA MONTEGRAPPA",
+      "codes": [
+        "1042",
+        "3115",
+        "3022"
+      ]
+    },
+    {
+      "normalized_name": "VIA PIAVE",
+      "codes": [
+        "1094",
+        "3117",
+        "3028"
+      ]
+    },
+    {
+      "normalized_name": "VIA PROF ORONZO RUCCI",
+      "codes": [
+        "1158",
+        "25637"
+      ]
+    },
+    {
+      "normalized_name": "VIA QUATTRO NOVEMBRE",
+      "codes": [
+        "1126",
+        "3032"
+      ]
+    },
+    {
+      "normalized_name": "VIA RAFFAELLO",
+      "codes": [
+        "1134",
+        "3122"
+      ]
+    },
+    {
+      "normalized_name": "VIA TOMMASO TRAETTA",
+      "codes": [
+        "1542",
+        "3130"
+      ]
+    },
+    {
+      "normalized_name": "VIA VENTIQUATTRO MAGGIO",
+      "codes": [
+        "1573",
+        "3039"
+      ]
+    },
+    {
+      "normalized_name": "VIA VINCENZO BELLINI",
+      "codes": [
+        "56",
+        "3003"
+      ]
+    },
+    {
+      "normalized_name": "VIA VITALE GIORDANO",
+      "codes": [
+        "1585",
+        "3135"
+      ]
+    },
+    {
+      "normalized_name": "VICO PONCHIELLI",
+      "codes": [
+        "1114",
+        "3029"
+      ]
+    },
+    {
+      "normalized_name": "VICO QUARTO",
+      "codes": [
+        "3121",
+        "1125"
+      ]
+    }
+  ],
+  "disjoint_homonyms": [
+    {
+      "official_code": "3077",
+      "canonical_name": "VIA BERNINI",
+      "span_m": 11985,
+      "length_m": 99,
+      "osm_ways": 2,
+      "basis": "nome_completo"
+    }
+  ],
+  "absent_from_osm": [
+    {
+      "official_code": "1596",
+      "canonical_name": "1 VICO SAN ANDREA",
+      "locality": null
+    },
+    {
+      "official_code": "127",
+      "canonical_name": "ARCO CICORELLA",
+      "locality": null
+    },
+    {
+      "official_code": "170",
+      "canonical_name": "ARCO DE ILDERIS",
+      "locality": null
+    },
+    {
+      "official_code": "546",
+      "canonical_name": "ARCO DEI GALASSI",
+      "locality": null
+    },
+    {
+      "official_code": "241",
+      "canonical_name": "ARCO DEL SASSO",
+      "locality": null
+    },
+    {
+      "official_code": "511",
+      "canonical_name": "ARCO DI CRISTO",
+      "locality": null
+    },
+    {
+      "official_code": "509",
+      "canonical_name": "ARCO DI SENZIO",
+      "locality": null
+    },
+    {
+      "official_code": "413",
+      "canonical_name": "ARCO FIORE",
+      "locality": null
+    },
+    {
+      "official_code": "541",
+      "canonical_name": "ARCO FORNO POPOLARE",
+      "locality": null
+    },
+    {
+      "official_code": "597",
+      "canonical_name": "ARCO GREGORIO",
+      "locality": null
+    },
+    {
+      "official_code": "623",
+      "canonical_name": "ARCO LA VIGNA",
+      "locality": null
+    },
+    {
+      "official_code": "643",
+      "canonical_name": "ARCO MAFFEI",
+      "locality": null
+    },
+    {
+      "official_code": "1003",
+      "canonical_name": "ARCO MASTROMARINO",
+      "locality": null
+    },
+    {
+      "official_code": "1024",
+      "canonical_name": "ARCO MINARDI",
+      "locality": null
+    },
+    {
+      "official_code": "1025",
+      "canonical_name": "ARCO MINCALEONE",
+      "locality": null
+    },
+    {
+      "official_code": "1049",
+      "canonical_name": "ARCO MURGOLO",
+      "locality": null
+    },
+    {
+      "official_code": "1156",
+      "canonical_name": "ARCO ROVRICCIO",
+      "locality": null
+    },
+    {
+      "official_code": "1503",
+      "canonical_name": "ARCO SCIACQUA",
+      "locality": null
+    },
+    {
+      "official_code": "78",
+      "canonical_name": "ARCO STANISLAO CALO'",
+      "locality": null
+    },
+    {
+      "official_code": "387",
+      "canonical_name": "CASE SPARSE PEZZA DELLA GAVIDA",
+      "locality": null
+    },
+    {
+      "official_code": "195",
+      "canonical_name": "CONTRADA ALFONSO SYLOS",
+      "locality": null
+    },
+    {
+      "official_code": "414",
+      "canonical_name": "CONTRADA ARSO S.S. 96",
+      "locality": null
+    },
+    {
+      "official_code": "53",
+      "canonical_name": "CONTRADA BAVOTTA",
+      "locality": null
+    },
+    {
+      "official_code": "311",
+      "canonical_name": "CONTRADA BAVOTTA BORGO FIORITO",
+      "locality": null
+    },
+    {
+      "official_code": "3076",
+      "canonical_name": "CONTRADA BELLAVEDUTA",
+      "locality": null
+    },
+    {
+      "official_code": "39",
+      "canonical_name": "CONTRADA BELVEDERE",
+      "locality": null
+    },
+    {
+      "official_code": "418",
+      "canonical_name": "CONTRADA BOSCO VALENTE",
+      "locality": null
+    },
+    {
+      "official_code": "3067",
+      "canonical_name": "CONTRADA CILIANO",
+      "locality": null
+    },
+    {
+      "official_code": "338",
+      "canonical_name": "CONTRADA DELLA LUCERTOLA",
+      "locality": null
+    },
+    {
+      "official_code": "3149",
+      "canonical_name": "CONTRADA LA MANDRA",
+      "locality": null
+    },
+    {
+      "official_code": "3169",
+      "canonical_name": "CONTRADA LA STELLA",
+      "locality": null
+    },
+    {
+      "official_code": "129",
+      "canonical_name": "CONTRADA LAGO DI CHITRO",
+      "locality": null
+    },
+    {
+      "official_code": "1612",
+      "canonical_name": "CONTRADA LAGO SIGNORA",
+      "locality": null
+    },
+    {
+      "official_code": "1622",
+      "canonical_name": "CONTRADA MARIOTTO - PEZZA DI SAN FRANCESCO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "20933",
+      "canonical_name": "CONTRADA MISCIANO",
+      "locality": null
+    },
+    {
+      "official_code": "326",
+      "canonical_name": "CONTRADA MURGE CERASE",
+      "locality": null
+    },
+    {
+      "official_code": "396",
+      "canonical_name": "CONTRADA PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "1597",
+      "canonical_name": "CONTRADA PETRARO O PEZZA D'AVENA",
+      "locality": null
+    },
+    {
+      "official_code": "3171",
+      "canonical_name": "CONTRADA PIETRETAGLIATE",
+      "locality": null
+    },
+    {
+      "official_code": "388",
+      "canonical_name": "CONTRADA PINGELLO PARCO TAURO",
+      "locality": null
+    },
+    {
+      "official_code": "3160",
+      "canonical_name": "CONTRADA ROGADEO",
+      "locality": null
+    },
+    {
+      "official_code": "1613",
+      "canonical_name": "CONTRADA SAN MARCO",
+      "locality": null
+    },
+    {
+      "official_code": "1600",
+      "canonical_name": "CONTRADA SAN NICOLA VECCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "3154",
+      "canonical_name": "CONTRADA SCARTUCCIA S. F.CO",
+      "locality": null
+    },
+    {
+      "official_code": "1525",
+      "canonical_name": "CONTRADA TORRE DELLO SQUARTATO",
+      "locality": null
+    },
+    {
+      "official_code": "325",
+      "canonical_name": "CONTRADA TORRE DI REGNA",
+      "locality": null
+    },
+    {
+      "official_code": "3174",
+      "canonical_name": "CONTRADA TORRE QUADRA DEL CERASO",
+      "locality": null
+    },
+    {
+      "official_code": "1563",
+      "canonical_name": "CONTRADA VADO FRANCIOSO",
+      "locality": null
+    },
+    {
+      "official_code": "29354",
+      "canonical_name": "CORSO VIA IV NOVEMBRE",
+      "locality": null
+    },
+    {
+      "official_code": "29344",
+      "canonical_name": "CORSO VITT. EMANUELE ANG.BIXIO",
+      "locality": null
+    },
+    {
+      "official_code": "28072",
+      "canonical_name": "CORSO VITTORIE EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "526",
+      "canonical_name": "CORTE A. FARNESE",
+      "locality": null
+    },
+    {
+      "official_code": "632",
+      "canonical_name": "CORTE ABATE LOIACONO",
+      "locality": null
+    },
+    {
+      "official_code": "655",
+      "canonical_name": "CORTE ABATE MARINO",
+      "locality": null
+    },
+    {
+      "official_code": "10",
+      "canonical_name": "CORTE ABBENANTE",
+      "locality": null
+    },
+    {
+      "official_code": "595",
+      "canonical_name": "CORTE ACHILLE GRANDI",
+      "locality": null
+    },
+    {
+      "official_code": "15",
+      "canonical_name": "CORTE ALTOBELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1582",
+      "canonical_name": "CORTE AMERIGO VESPUCCI",
+      "locality": null
+    },
+    {
+      "official_code": "23",
+      "canonical_name": "CORTE ANCARANO",
+      "locality": null
+    },
+    {
+      "official_code": "33",
+      "canonical_name": "CORTE APOLLINARE",
+      "locality": null
+    },
+    {
+      "official_code": "36",
+      "canonical_name": "CORTE ARIANELLA",
+      "locality": null
+    },
+    {
+      "official_code": "38",
+      "canonical_name": "CORTE ASPROMONTE",
+      "locality": null
+    },
+    {
+      "official_code": "42",
+      "canonical_name": "CORTE AURICARECTA",
+      "locality": null
+    },
+    {
+      "official_code": "54",
+      "canonical_name": "CORTE BELLAVILLA",
+      "locality": null
+    },
+    {
+      "official_code": "1141",
+      "canonical_name": "CORTE BERNARDO REGNA",
+      "locality": null
+    },
+    {
+      "official_code": "58",
+      "canonical_name": "CORTE BERTANI",
+      "locality": null
+    },
+    {
+      "official_code": "3078",
+      "canonical_name": "CORTE BETTAZZI",
+      "locality": null
+    },
+    {
+      "official_code": "65",
+      "canonical_name": "CORTE BRACCIONERO",
+      "locality": null
+    },
+    {
+      "official_code": "73",
+      "canonical_name": "CORTE CALAMITA",
+      "locality": null
+    },
+    {
+      "official_code": "79",
+      "canonical_name": "CORTE CAMERATA",
+      "locality": null
+    },
+    {
+      "official_code": "80",
+      "canonical_name": "CORTE CANALE",
+      "locality": null
+    },
+    {
+      "official_code": "82",
+      "canonical_name": "CORTE CANOSA",
+      "locality": null
+    },
+    {
+      "official_code": "1212",
+      "canonical_name": "CORTE CARLO SARACINO",
+      "locality": null
+    },
+    {
+      "official_code": "99",
+      "canonical_name": "CORTE CASALE",
+      "locality": null
+    },
+    {
+      "official_code": "118",
+      "canonical_name": "CORTE CERVELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1107",
+      "canonical_name": "CORTE CESARE PISANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "119",
+      "canonical_name": "CORTE CHERUBINI",
+      "locality": null
+    },
+    {
+      "official_code": "240",
+      "canonical_name": "CORTE CIOFFRESE",
+      "locality": null
+    },
+    {
+      "official_code": "150",
+      "canonical_name": "CORTE D'AGRESTIS",
+      "locality": null
+    },
+    {
+      "official_code": "160",
+      "canonical_name": "CORTE DAUNIA",
+      "locality": null
+    },
+    {
+      "official_code": "163",
+      "canonical_name": "CORTE DE FABRITIIS",
+      "locality": null
+    },
+    {
+      "official_code": "165",
+      "canonical_name": "CORTE DE FACENDIS",
+      "locality": null
+    },
+    {
+      "official_code": "166",
+      "canonical_name": "CORTE DE FERRARIS",
+      "locality": null
+    },
+    {
+      "official_code": "169",
+      "canonical_name": "CORTE DE ILDERIS",
+      "locality": null
+    },
+    {
+      "official_code": "506",
+      "canonical_name": "CORTE DE RUBEIS",
+      "locality": null
+    },
+    {
+      "official_code": "565",
+      "canonical_name": "CORTE DEI GERARDI",
+      "locality": null
+    },
+    {
+      "official_code": "599",
+      "canonical_name": "CORTE DEI GUARDIA",
+      "locality": null
+    },
+    {
+      "official_code": "1016",
+      "canonical_name": "CORTE DEI MERCANTI",
+      "locality": null
+    },
+    {
+      "official_code": "1023",
+      "canonical_name": "CORTE DEI MILLE",
+      "locality": null
+    },
+    {
+      "official_code": "1081",
+      "canonical_name": "CORTE DEI PAU'",
+      "locality": null
+    },
+    {
+      "official_code": "1090",
+      "canonical_name": "CORTE DEI PERRESI",
+      "locality": null
+    },
+    {
+      "official_code": "1588",
+      "canonical_name": "CORTE DEI VULPANI",
+      "locality": null
+    },
+    {
+      "official_code": "533",
+      "canonical_name": "CORTE DEL FIORE",
+      "locality": null
+    },
+    {
+      "official_code": "560",
+      "canonical_name": "CORTE DEL GELSO",
+      "locality": null
+    },
+    {
+      "official_code": "1054",
+      "canonical_name": "CORTE DEL NIGLIO",
+      "locality": null
+    },
+    {
+      "official_code": "1507",
+      "canonical_name": "CORTE DEL SILENZIO",
+      "locality": null
+    },
+    {
+      "official_code": "1100",
+      "canonical_name": "CORTE DELLA PIETA'",
+      "locality": null
+    },
+    {
+      "official_code": "1526",
+      "canonical_name": "CORTE DELLO STATUTO",
+      "locality": null
+    },
+    {
+      "official_code": "228",
+      "canonical_name": "CORTE DI SENZIO",
+      "locality": null
+    },
+    {
+      "official_code": "1071",
+      "canonical_name": "CORTE DOMENICO G. PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "532",
+      "canonical_name": "CORTE DR. FIONE",
+      "locality": null
+    },
+    {
+      "official_code": "1214",
+      "canonical_name": "CORTE EMANUELE SARACINO",
+      "locality": null
+    },
+    {
+      "official_code": "501",
+      "canonical_name": "CORTE FABRIZIO DE MONTE",
+      "locality": null
+    },
+    {
+      "official_code": "51",
+      "canonical_name": "CORTE FRANCESCO BASSO",
+      "locality": null
+    },
+    {
+      "official_code": "1012",
+      "canonical_name": "CORTE FRANCESCO MELE",
+      "locality": null
+    },
+    {
+      "official_code": "1089",
+      "canonical_name": "CORTE FRANCESCO PERRESE",
+      "locality": null
+    },
+    {
+      "official_code": "627",
+      "canonical_name": "CORTE FRANCESCO SAVERIO LEZOCHE",
+      "locality": null
+    },
+    {
+      "official_code": "1530",
+      "canonical_name": "CORTE FRANCESCO SYLOS",
+      "locality": null
+    },
+    {
+      "official_code": "545",
+      "canonical_name": "CORTE FUSARO",
+      "locality": null
+    },
+    {
+      "official_code": "561",
+      "canonical_name": "CORTE GENTILE",
+      "locality": null
+    },
+    {
+      "official_code": "507",
+      "canonical_name": "CORTE GIOVANBATTISTA DE TAURIS",
+      "locality": null
+    },
+    {
+      "official_code": "158",
+      "canonical_name": "CORTE GIOVANNA D'ARAGONA",
+      "locality": null
+    },
+    {
+      "official_code": "516",
+      "canonical_name": "CORTE GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1028",
+      "canonical_name": "CORTE GIOVANNI PAOLO MINISTRI",
+      "locality": null
+    },
+    {
+      "official_code": "513",
+      "canonical_name": "CORTE GIUSEPPE DI VITTORIO",
+      "locality": null
+    },
+    {
+      "official_code": "598",
+      "canonical_name": "CORTE GUALTIERO DA FOGGIA",
+      "locality": null
+    },
+    {
+      "official_code": "600",
+      "canonical_name": "CORTE IAPIGIA",
+      "locality": null
+    },
+    {
+      "official_code": "156",
+      "canonical_name": "CORTE ISABELLA D'ARAGONA",
+      "locality": null
+    },
+    {
+      "official_code": "616",
+      "canonical_name": "CORTE LA ROCCA",
+      "locality": null
+    },
+    {
+      "official_code": "611",
+      "canonical_name": "CORTE LABINI",
+      "locality": null
+    },
+    {
+      "official_code": "622",
+      "canonical_name": "CORTE LAURITO",
+      "locality": null
+    },
+    {
+      "official_code": "624",
+      "canonical_name": "CORTE LEONDARI",
+      "locality": null
+    },
+    {
+      "official_code": "635",
+      "canonical_name": "CORTE LOSITO",
+      "locality": null
+    },
+    {
+      "official_code": "66",
+      "canonical_name": "CORTE LUIGI BRUNO",
+      "locality": null
+    },
+    {
+      "official_code": "654",
+      "canonical_name": "CORTE MARIANO DA BITONTO",
+      "locality": null
+    },
+    {
+      "official_code": "1522",
+      "canonical_name": "CORTE MARIO SPINELLI",
+      "locality": null
+    },
+    {
+      "official_code": "656",
+      "canonical_name": "CORTE MARONE",
+      "locality": null
+    },
+    {
+      "official_code": "660",
+      "canonical_name": "CORTE MARTINO DA BITONTO",
+      "locality": null
+    },
+    {
+      "official_code": "1014",
+      "canonical_name": "CORTE MEMOLECCHIA",
+      "locality": null
+    },
+    {
+      "official_code": "1020",
+      "canonical_name": "CORTE MICCOLIS",
+      "locality": null
+    },
+    {
+      "official_code": "162",
+      "canonical_name": "CORTE MONS. DE CRESCENZO",
+      "locality": null
+    },
+    {
+      "official_code": "1045",
+      "canonical_name": "CORTE MORMORIO",
+      "locality": null
+    },
+    {
+      "official_code": "1052",
+      "canonical_name": "CORTE MOSCATIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "503",
+      "canonical_name": "CORTE NICOLA DE PICE",
+      "locality": null
+    },
+    {
+      "official_code": "647",
+      "canonical_name": "CORTE NICOLAUS MAGISTER",
+      "locality": null
+    },
+    {
+      "official_code": "60",
+      "canonical_name": "CORTE NINO BIXIO",
+      "locality": null
+    },
+    {
+      "official_code": "549",
+      "canonical_name": "CORTE PARROCO GALLIANI",
+      "locality": null
+    },
+    {
+      "official_code": "1092",
+      "canonical_name": "CORTE PEUCEZIA",
+      "locality": null
+    },
+    {
+      "official_code": "1143",
+      "canonical_name": "CORTE PIETRO PAOLO REGNA",
+      "locality": null
+    },
+    {
+      "official_code": "1101",
+      "canonical_name": "CORTE PIETROGGIANNI",
+      "locality": null
+    },
+    {
+      "official_code": "1106",
+      "canonical_name": "CORTE PINTO",
+      "locality": null
+    },
+    {
+      "official_code": "633",
+      "canonical_name": "CORTE PIRO LOISIO",
+      "locality": null
+    },
+    {
+      "official_code": "574",
+      "canonical_name": "CORTE PRIV VIALE GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "1148",
+      "canonical_name": "CORTE PRIV. RICCI",
+      "locality": null
+    },
+    {
+      "official_code": "224",
+      "canonical_name": "CORTE PRIV. V. RE MANFREDI",
+      "locality": null
+    },
+    {
+      "official_code": "1117",
+      "canonical_name": "CORTE PROCACCI",
+      "locality": null
+    },
+    {
+      "official_code": "539",
+      "canonical_name": "CORTE PROF. NICOLA FORNELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1138",
+      "canonical_name": "CORTE RAPIO",
+      "locality": null
+    },
+    {
+      "official_code": "1140",
+      "canonical_name": "CORTE RE BOTONE",
+      "locality": null
+    },
+    {
+      "official_code": "18257",
+      "canonical_name": "CORTE REGNA",
+      "locality": null
+    },
+    {
+      "official_code": "1149",
+      "canonical_name": "CORTE RIPELLA",
+      "locality": null
+    },
+    {
+      "official_code": "1222",
+      "canonical_name": "CORTE RIVELLA",
+      "locality": null
+    },
+    {
+      "official_code": "1153",
+      "canonical_name": "CORTE ROMANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1167",
+      "canonical_name": "CORTE S. ANGELO",
+      "locality": null
+    },
+    {
+      "official_code": "1169",
+      "canonical_name": "CORTE S. BARBARA",
+      "locality": null
+    },
+    {
+      "official_code": "1170",
+      "canonical_name": "CORTE S. BENEDETTO",
+      "locality": null
+    },
+    {
+      "official_code": "1171",
+      "canonical_name": "CORTE S. CATERINA",
+      "locality": null
+    },
+    {
+      "official_code": "1172",
+      "canonical_name": "CORTE S. DOMENICO",
+      "locality": null
+    },
+    {
+      "official_code": "1173",
+      "canonical_name": "CORTE S. EGIDIO",
+      "locality": null
+    },
+    {
+      "official_code": "1174",
+      "canonical_name": "CORTE S. ELIGIO",
+      "locality": null
+    },
+    {
+      "official_code": "1183",
+      "canonical_name": "CORTE S. GIACOMO",
+      "locality": null
+    },
+    {
+      "official_code": "1186",
+      "canonical_name": "CORTE S. LEONARDO",
+      "locality": null
+    },
+    {
+      "official_code": "1188",
+      "canonical_name": "CORTE S. LEUCIO",
+      "locality": null
+    },
+    {
+      "official_code": "1194",
+      "canonical_name": "CORTE S. LUCIA",
+      "locality": null
+    },
+    {
+      "official_code": "392",
+      "canonical_name": "CORTE S. NICOLA",
+      "locality": null
+    },
+    {
+      "official_code": "1200",
+      "canonical_name": "CORTE S. RITA",
+      "locality": null
+    },
+    {
+      "official_code": "62",
+      "canonical_name": "CORTE SERGIO BOVE",
+      "locality": null
+    },
+    {
+      "official_code": "230",
+      "canonical_name": "CORTE SYLOS LABINI",
+      "locality": null
+    },
+    {
+      "official_code": "1538",
+      "canonical_name": "CORTE TEATINI",
+      "locality": null
+    },
+    {
+      "official_code": "593",
+      "canonical_name": "CORTE TERESA GRANDET",
+      "locality": null
+    },
+    {
+      "official_code": "24580",
+      "canonical_name": "CORTE TITO BERNI CANANE",
+      "locality": null
+    },
+    {
+      "official_code": "81",
+      "canonical_name": "CORTE TITO BERNI CANANI",
+      "locality": null
+    },
+    {
+      "official_code": "612",
+      "canonical_name": "CORTE TOMMASO LABINI",
+      "locality": null
+    },
+    {
+      "official_code": "1535",
+      "canonical_name": "CORTE TORQUATO TASSO",
+      "locality": null
+    },
+    {
+      "official_code": "1552",
+      "canonical_name": "CORTE TURPETO",
+      "locality": null
+    },
+    {
+      "official_code": "1553",
+      "canonical_name": "CORTE TURRIBIO MONGROVESCIO",
+      "locality": null
+    },
+    {
+      "official_code": "1564",
+      "canonical_name": "CORTE VALCARCERI",
+      "locality": null
+    },
+    {
+      "official_code": "1566",
+      "canonical_name": "CORTE VALENZUOLO",
+      "locality": null
+    },
+    {
+      "official_code": "1569",
+      "canonical_name": "CORTE VECCHIA CAPPUCCINI",
+      "locality": null
+    },
+    {
+      "official_code": "1584",
+      "canonical_name": "CORTE VISSICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "3136",
+      "canonical_name": "CORTE VITALE GIORDANO",
+      "locality": null
+    },
+    {
+      "official_code": "21",
+      "canonical_name": "CORTE VITO AMENDOLAGINE",
+      "locality": null
+    },
+    {
+      "official_code": "1589",
+      "canonical_name": "CORTE ZAPPULLO",
+      "locality": null
+    },
+    {
+      "official_code": "1591",
+      "canonical_name": "CORTE ZUAVO",
+      "locality": null
+    },
+    {
+      "official_code": "1176",
+      "canonical_name": "DISCESA S. FRANCESCO D'ASSISI",
+      "locality": null
+    },
+    {
+      "official_code": "1198",
+      "canonical_name": "DISCESA S. PIETRO DE CASTRIS",
+      "locality": null
+    },
+    {
+      "official_code": "25780",
+      "canonical_name": "DISCESA SAN PIETRO",
+      "locality": null
+    },
+    {
+      "official_code": "3153",
+      "canonical_name": "I PARALLELA VIA MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "1033",
+      "canonical_name": "I PARALLELA VIA MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "147",
+      "canonical_name": "I PARALLELA VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "1178",
+      "canonical_name": "I TRAV. BORGO S. FRANCESCO",
+      "locality": null
+    },
+    {
+      "official_code": "332",
+      "canonical_name": "I TRAV. CORSO VITTORIO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "318",
+      "canonical_name": "I TRAV. PROL.VIA DAMASCELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1119",
+      "canonical_name": "I TRAV. PROV.LE BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "1517",
+      "canonical_name": "I TRAV.VIA TEN. SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "269",
+      "canonical_name": "I TRAV.VIA UGO LA MALFA",
+      "locality": null
+    },
+    {
+      "official_code": "3043",
+      "canonical_name": "I TRAVERSA VIA ALESSANDRO MANZONI",
+      "locality": null
+    },
+    {
+      "official_code": "1557",
+      "canonical_name": "I TRAVERSA VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "30",
+      "canonical_name": "I TRAVERSA VIA ANTICA DEL PETTO",
+      "locality": null
+    },
+    {
+      "official_code": "3159",
+      "canonical_name": "I TRAVERSA VIA BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "69",
+      "canonical_name": "I TRAVERSA VIA BURRONE",
+      "locality": null
+    },
+    {
+      "official_code": "3151",
+      "canonical_name": "I TRAVERSA VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "3051",
+      "canonical_name": "I TRAVERSA VIA DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "185",
+      "canonical_name": "I TRAVERSA VIA GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "582",
+      "canonical_name": "I TRAVERSA VIA GIOVINAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1103",
+      "canonical_name": "I TRAVERSA VIA GIUSEPPE PIGLIONICA",
+      "locality": null
+    },
+    {
+      "official_code": "153",
+      "canonical_name": "I TRAVERSA VIA LUDOVICO D'ANGIO'",
+      "locality": null
+    },
+    {
+      "official_code": "1011",
+      "canonical_name": "I TRAVERSA VIA MEGRA",
+      "locality": null
+    },
+    {
+      "official_code": "3140",
+      "canonical_name": "I TRAVERSA VIA MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "197",
+      "canonical_name": "I TRAVERSA VIA MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "1080",
+      "canonical_name": "I TRAVERSA VIA PATIERNO",
+      "locality": null
+    },
+    {
+      "official_code": "538",
+      "canonical_name": "I TRAVERSA VIA PROF. FORNELLI",
+      "locality": null
+    },
+    {
+      "official_code": "149",
+      "canonical_name": "I TRAVERSA VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "1548",
+      "canonical_name": "I TRAVERSA VIA TRAIANA",
+      "locality": null
+    },
+    {
+      "official_code": "1570",
+      "canonical_name": "I TRAVERSA VIA VECCHIA CAPPUCCINI",
+      "locality": null
+    },
+    {
+      "official_code": "1509",
+      "canonical_name": "I TRAVERSA VIA VITO SIRAGUSA",
+      "locality": null
+    },
+    {
+      "official_code": "3056",
+      "canonical_name": "I VICO VIA ASPROMONTE",
+      "locality": null
+    },
+    {
+      "official_code": "3138",
+      "canonical_name": "I VICO VIA BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "98",
+      "canonical_name": "I VICO VIA CARRARA",
+      "locality": null
+    },
+    {
+      "official_code": "177",
+      "canonical_name": "I VICO VIA CHIANCARIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "355",
+      "canonical_name": "I VICO VIA DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "3139",
+      "canonical_name": "I VICO VIA MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "1065",
+      "canonical_name": "I VICO VIA PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "148",
+      "canonical_name": "II PARALLELA VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "3045",
+      "canonical_name": "II TRAV. CORSO VITTORIO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "3079",
+      "canonical_name": "II TRAV. PRIV. VIA CAPRERA",
+      "locality": null
+    },
+    {
+      "official_code": "667",
+      "canonical_name": "II TRAV. PRIV. VIA DELLE FORNACI",
+      "locality": null
+    },
+    {
+      "official_code": "1120",
+      "canonical_name": "II TRAV. PROV.LE BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "294",
+      "canonical_name": "II TRAV. STRADA QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "1558",
+      "canonical_name": "II TRAV. VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "531",
+      "canonical_name": "II TRAV. VIA FILIERI",
+      "locality": null
+    },
+    {
+      "official_code": "520",
+      "canonical_name": "II TRAV. VIA GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "583",
+      "canonical_name": "II TRAV. VIA GIOVINAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1104",
+      "canonical_name": "II TRAV. VIA GIUSEPPE PIGLIONICA",
+      "locality": null
+    },
+    {
+      "official_code": "1060",
+      "canonical_name": "II TRAV. VIA PALO",
+      "locality": null
+    },
+    {
+      "official_code": "303",
+      "canonical_name": "II TRAV. VIA PATIERNO",
+      "locality": null
+    },
+    {
+      "official_code": "537",
+      "canonical_name": "II TRAV. VIA PROF. FORNELLI",
+      "locality": null
+    },
+    {
+      "official_code": "189",
+      "canonical_name": "II TRAV. VIA RAFFAELE GALLO",
+      "locality": null
+    },
+    {
+      "official_code": "1510",
+      "canonical_name": "II TRAV. VIA VITO SIRAGUSA",
+      "locality": null
+    },
+    {
+      "official_code": "576",
+      "canonical_name": "II TRAV. VIALE GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "1518",
+      "canonical_name": "II TRAV.VIA TEN. SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "3200",
+      "canonical_name": "II TRAVERSA VIA ALESSANDRO MANZONI",
+      "locality": null
+    },
+    {
+      "official_code": "3142",
+      "canonical_name": "II TRAVERSA VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "3137",
+      "canonical_name": "II TRAVERSA VIA LIBERTA'",
+      "locality": null
+    },
+    {
+      "official_code": "3070",
+      "canonical_name": "II TRAVERSA VIA QUATTRO NOVEMBRE",
+      "locality": null
+    },
+    {
+      "official_code": "3143",
+      "canonical_name": "II VICO VIA BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "3141",
+      "canonical_name": "II VICO VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "3061",
+      "canonical_name": "II VICO VIA DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "3147",
+      "canonical_name": "II VICO VIA LIBERTA'",
+      "locality": null
+    },
+    {
+      "official_code": "3057",
+      "canonical_name": "II VICO VIA PUCCINI",
+      "locality": null
+    },
+    {
+      "official_code": "334",
+      "canonical_name": "III TRAV. CORSO VITTORIO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "3176",
+      "canonical_name": "III TRAV. PRIVATA MANZONI",
+      "locality": null
+    },
+    {
+      "official_code": "1121",
+      "canonical_name": "III TRAV. PROV.L BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "1559",
+      "canonical_name": "III TRAV. VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "328",
+      "canonical_name": "III TRAV. VIA TRAETTA",
+      "locality": null
+    },
+    {
+      "official_code": "1572",
+      "canonical_name": "III TRAV. VIA VECCHIA CAPPUCCINI",
+      "locality": null
+    },
+    {
+      "official_code": "3175",
+      "canonical_name": "III TRAVERSA VIA ALESSANDRO MANZONI",
+      "locality": null
+    },
+    {
+      "official_code": "3146",
+      "canonical_name": "III TRAVERSA VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "356",
+      "canonical_name": "III VICO DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "3150",
+      "canonical_name": "III VICO VIA BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "3163",
+      "canonical_name": "III VICO VIA MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "1036",
+      "canonical_name": "IV PARALLELA VIA MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "1122",
+      "canonical_name": "IV TRAV. PROV.LE BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "1560",
+      "canonical_name": "IV TRAV. VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "3164",
+      "canonical_name": "IV TRAV. VIA LE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "552",
+      "canonical_name": "IV TRAV. VIA RAFFAELE GALLO",
+      "locality": null
+    },
+    {
+      "official_code": "577",
+      "canonical_name": "IV TRAV. VIALE GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "336",
+      "canonical_name": "IV VICO DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "77",
+      "canonical_name": "LARGO CALDAROLA",
+      "locality": null
+    },
+    {
+      "official_code": "1219",
+      "canonical_name": "LARGO DEL SASSO",
+      "locality": null
+    },
+    {
+      "official_code": "619",
+      "canonical_name": "LARGO LASCESCIOLA",
+      "locality": null
+    },
+    {
+      "official_code": "1616",
+      "canonical_name": "LARGO PAPA GIOVANNI PAOLO II",
+      "locality": null
+    },
+    {
+      "official_code": "1523",
+      "canonical_name": "LARGO SPOTO",
+      "locality": null
+    },
+    {
+      "official_code": "1539",
+      "canonical_name": "LARGO TEATRO",
+      "locality": null
+    },
+    {
+      "official_code": "27383",
+      "canonical_name": "LUNGOMARE CRISTOFORO COLOMBO",
+      "locality": null
+    },
+    {
+      "official_code": "3168",
+      "canonical_name": "MARIOTTO I VICO TRAV. LIBERTA'",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "3144",
+      "canonical_name": "MARIOTTO II VICO TRAV. LIBERTA'",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "3152",
+      "canonical_name": "MARIOTTO V ENTE RIFORMA MASS. SUMMO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "3156",
+      "canonical_name": "MARIOTTO VI LE MATTINECASE SPARSE",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "641",
+      "canonical_name": "MURO MACELLO",
+      "locality": null
+    },
+    {
+      "official_code": "1055",
+      "canonical_name": "MURO PADULO",
+      "locality": null
+    },
+    {
+      "official_code": "1085",
+      "canonical_name": "MURO PENDILE",
+      "locality": null
+    },
+    {
+      "official_code": "1208",
+      "canonical_name": "MURO S. MARIA DEL MONTE CARMELO",
+      "locality": null
+    },
+    {
+      "official_code": "333",
+      "canonical_name": "PALOMBAIO II TR. C.SO VITTORIO EM.LE SOPPRESA",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3119",
+      "canonical_name": "PALOMBAIO PROV.LE BITONTOPALOMB.MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "25896",
+      "canonical_name": "PALOMBAIO VIA 4 NOVEMBRE",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3063",
+      "canonical_name": "PALOMBAIO VIA SEN. SYLOS\"CHIASCIA S.BARBATO\"SOPP",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3053",
+      "canonical_name": "PARALLELA CORSO VITTORIO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "143",
+      "canonical_name": "PARALLELA VIA CROCIFISSO",
+      "locality": null
+    },
+    {
+      "official_code": "233",
+      "canonical_name": "PARALLELA VIA GEN. PLANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1063",
+      "canonical_name": "PARALLELA VIA PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "1128",
+      "canonical_name": "PARALLELA VIA QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "1206",
+      "canonical_name": "PARALLELA VIA S. SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "146",
+      "canonical_name": "PARALLELA VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "3202",
+      "canonical_name": "PARALLELA VIA TRAETTA",
+      "locality": null
+    },
+    {
+      "official_code": "384",
+      "canonical_name": "PARALLELA VIA TRAIANA",
+      "locality": null
+    },
+    {
+      "official_code": "304",
+      "canonical_name": "PARALLELA VIA UGO LA MALFA",
+      "locality": null
+    },
+    {
+      "official_code": "111",
+      "canonical_name": "PIAZZA CAVOUR",
+      "locality": null
+    },
+    {
+      "official_code": "157",
+      "canonical_name": "PIAZZA FERDINANDO D'ARAGONA",
+      "locality": null
+    },
+    {
+      "official_code": "381",
+      "canonical_name": "PIAZZA FERDINANDO II",
+      "locality": null
+    },
+    {
+      "official_code": "542",
+      "canonical_name": "PIAZZA FORTIGUERRA",
+      "locality": null
+    },
+    {
+      "official_code": "26175",
+      "canonical_name": "PIAZZA FORTINGUERRA",
+      "locality": null
+    },
+    {
+      "official_code": "47",
+      "canonical_name": "PIAZZA FRATELLI BANDIERA",
+      "locality": null
+    },
+    {
+      "official_code": "1161",
+      "canonical_name": "PIAZZA G. SALUZZO",
+      "locality": null
+    },
+    {
+      "official_code": "159",
+      "canonical_name": "PIAZZA ISABELLA D'ARAGONA",
+      "locality": null
+    },
+    {
+      "official_code": "652",
+      "canonical_name": "PIAZZA MARCONI",
+      "locality": null
+    },
+    {
+      "official_code": "522",
+      "canonical_name": "PIAZZA MARGHERITA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1501",
+      "canonical_name": "PIAZZA MARIA CRISTINA DI SAVOIA",
+      "locality": null
+    },
+    {
+      "official_code": "653",
+      "canonical_name": "PIAZZA MONS. AURELIO MARENA",
+      "locality": null
+    },
+    {
+      "official_code": "3204",
+      "canonical_name": "PIAZZA MONSIGNOR FORNELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1209",
+      "canonical_name": "PIAZZA REGINA SANCIA",
+      "locality": null
+    },
+    {
+      "official_code": "3123",
+      "canonical_name": "PIAZZA ROMA",
+      "locality": null
+    },
+    {
+      "official_code": "1187",
+      "canonical_name": "PIAZZA S. LEONE",
+      "locality": null
+    },
+    {
+      "official_code": "1605",
+      "canonical_name": "PIAZZA TOMMASO PAZIENZA",
+      "locality": null
+    },
+    {
+      "official_code": "1577",
+      "canonical_name": "PIAZZA VENTISEI MAGGIO",
+      "locality": null
+    },
+    {
+      "official_code": "25548",
+      "canonical_name": "PIAZZALE G. TEMPESTA",
+      "locality": null
+    },
+    {
+      "official_code": "25456",
+      "canonical_name": "PIAZZALE GIUSEPPE TEMPESTA",
+      "locality": null
+    },
+    {
+      "official_code": "19098",
+      "canonical_name": "PIAZZALE MARTIN LUTHER KING",
+      "locality": null
+    },
+    {
+      "official_code": "1047",
+      "canonical_name": "PIAZZETTA MOROSINI",
+      "locality": null
+    },
+    {
+      "official_code": "3180",
+      "canonical_name": "PIAZZETTA PROF. F. SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "1532",
+      "canonical_name": "PIAZZETTA SYLOS SERSALE",
+      "locality": null
+    },
+    {
+      "official_code": "290",
+      "canonical_name": "PR.VIA SPERANZA\"COOP.PRIMAVERA 80\"",
+      "locality": null
+    },
+    {
+      "official_code": "1533",
+      "canonical_name": "PRIV. ANTONIO TARANTINO",
+      "locality": null
+    },
+    {
+      "official_code": "116",
+      "canonical_name": "PRIV. CENTOLA",
+      "locality": null
+    },
+    {
+      "official_code": "1098",
+      "canonical_name": "PRIV. DONATO PIEPOLI",
+      "locality": null
+    },
+    {
+      "official_code": "636",
+      "canonical_name": "PRIV. ING. LOVASCIO",
+      "locality": null
+    },
+    {
+      "official_code": "639",
+      "canonical_name": "PRIV. ING. LUISO",
+      "locality": null
+    },
+    {
+      "official_code": "1159",
+      "canonical_name": "PRIV. RUCCI-SANTUARIO",
+      "locality": null
+    },
+    {
+      "official_code": "1127",
+      "canonical_name": "PRIV. VICINALE V QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "184",
+      "canonical_name": "PROL. VIA DOTT. DOMENICO DAMASCELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1516",
+      "canonical_name": "PROL. VIA TEN. DOMENICO SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "423",
+      "canonical_name": "PROV.LE BITONTO PALO KM",
+      "locality": null
+    },
+    {
+      "official_code": "324",
+      "canonical_name": "PROV.LE C.DA FONS SYLOS",
+      "locality": null
+    },
+    {
+      "official_code": "405",
+      "canonical_name": "PROV.LE C.DA MONTE STEFANO",
+      "locality": null
+    },
+    {
+      "official_code": "1595",
+      "canonical_name": "PROV.LE MARIOTTO-PROV.LE MARIOTTO-MELLITTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "26100",
+      "canonical_name": "STR. PRIV. CASSANO IN VIA MACELLO NUOVO",
+      "locality": null
+    },
+    {
+      "official_code": "194",
+      "canonical_name": "STR.PRIV. CASSANO MACELLO NUOVO",
+      "locality": null
+    },
+    {
+      "official_code": "29545",
+      "canonical_name": "STRADA CAMMINATE LERMA",
+      "locality": null
+    },
+    {
+      "official_code": "24451",
+      "canonical_name": "STRADA CASASCIANNA (C.DA LAGO DEL SIGNORE)",
+      "locality": null
+    },
+    {
+      "official_code": "1624",
+      "canonical_name": "STRADA CICERALE",
+      "locality": null
+    },
+    {
+      "official_code": "21478",
+      "canonical_name": "STRADA COCEVOLI",
+      "locality": null
+    },
+    {
+      "official_code": "312",
+      "canonical_name": "STRADA COMUNALE BALICE",
+      "locality": null
+    },
+    {
+      "official_code": "30597",
+      "canonical_name": "STRADA COMUNALE BITETTO",
+      "locality": null
+    },
+    {
+      "official_code": "3178",
+      "canonical_name": "STRADA COMUNALE BOSCO IACONO",
+      "locality": null
+    },
+    {
+      "official_code": "29640",
+      "canonical_name": "STRADA COMUNALE CROCIFISSO",
+      "locality": null
+    },
+    {
+      "official_code": "3093",
+      "canonical_name": "STRADA COMUNALE FORNACE",
+      "locality": null
+    },
+    {
+      "official_code": "3157",
+      "canonical_name": "STRADA COMUNALE LANGONE - CASE SPARSE",
+      "locality": null
+    },
+    {
+      "official_code": "25369",
+      "canonical_name": "STRADA COMUNALE MONTEFREDDO",
+      "locality": null
+    },
+    {
+      "official_code": "20001",
+      "canonical_name": "STRADA COMUNALE PINGIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "22862",
+      "canonical_name": "STRADA COMUNALE PONTICELLO BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "24493",
+      "canonical_name": "STRADA COMUNALE TORITTO",
+      "locality": null
+    },
+    {
+      "official_code": "3046",
+      "canonical_name": "STRADA COMUNALE TORRE DI LERMA - CASE SPARSE",
+      "locality": null
+    },
+    {
+      "official_code": "22748",
+      "canonical_name": "STRADA OTTAVA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "3179",
+      "canonical_name": "STRADA PEZZA DELLA PARATA",
+      "locality": null
+    },
+    {
+      "official_code": "22116",
+      "canonical_name": "STRADA POLIGONALE (TRATTO SP89 - VIA CELA)",
+      "locality": null
+    },
+    {
+      "official_code": "410",
+      "canonical_name": "STRADA PORTONE DI BOVIO",
+      "locality": null
+    },
+    {
+      "official_code": "323",
+      "canonical_name": "STRADA PRIMA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "20165",
+      "canonical_name": "STRADA PRIMA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "22281",
+      "canonical_name": "STRADA PRIMA VIALE LAZZATI",
+      "locality": null
+    },
+    {
+      "official_code": "1040",
+      "canonical_name": "STRADA PRIV. GIOVANNI MONGIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "1137",
+      "canonical_name": "STRADA PRIV. RANIERI",
+      "locality": null
+    },
+    {
+      "official_code": "1147",
+      "canonical_name": "STRADA PRIV. RICCHIZZI",
+      "locality": null
+    },
+    {
+      "official_code": "630",
+      "canonical_name": "STRADA PRIVATA LOBUONO",
+      "locality": null
+    },
+    {
+      "official_code": "1576",
+      "canonical_name": "STRADA PRIVATA VENTAFRIDDA",
+      "locality": null
+    },
+    {
+      "official_code": "20755",
+      "canonical_name": "STRADA PRIVATA VIA CROCIFISSO",
+      "locality": null
+    },
+    {
+      "official_code": "22746",
+      "canonical_name": "STRADA PROVINCIALE 156 BITONTO-AEROPORTO",
+      "locality": null
+    },
+    {
+      "official_code": "24198",
+      "canonical_name": "STRADA PROVINCIALE 22 RUVO-PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "6",
+      "canonical_name": "STRADA PROVINCIALE 231",
+      "locality": null
+    },
+    {
+      "official_code": "29860",
+      "canonical_name": "STRADA PROVINCIALE 36",
+      "locality": null
+    },
+    {
+      "official_code": "1118",
+      "canonical_name": "STRADA PROVINCIALE 55 BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "1608",
+      "canonical_name": "STRADA PROVINCIALE 89 BITONTO - PALOMBAIO - MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "23604",
+      "canonical_name": "STRADA PROVINCIALE 89 PRIMO TRATTO BITONTO-PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "24149",
+      "canonical_name": "STRADA PROVINCIALE 89 SECONDO TRATTO PALOMBAIO-MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "1611",
+      "canonical_name": "STRADA PROVINCIALE 89 TERZO TRATTO MARIOTTO - MELLITTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "22118",
+      "canonical_name": "STRADA PROVINCIALE 91 BITONTO-SANTO SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "1592",
+      "canonical_name": "STRADA PROVINCIALE N. 218",
+      "locality": null
+    },
+    {
+      "official_code": "3177",
+      "canonical_name": "STRADA PROVINCIALE SP 108 MARIOTTO-TERLIZZI",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "1626",
+      "canonical_name": "STRADA QUARTA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "3181",
+      "canonical_name": "STRADA QUARTA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "24020",
+      "canonical_name": "STRADA QUINTA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "1630",
+      "canonical_name": "STRADA QUINTA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "21814",
+      "canonical_name": "STRADA SECONDA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "20369",
+      "canonical_name": "STRADA SECONDA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "22270",
+      "canonical_name": "STRADA SECONDA VIALE LAZZATI",
+      "locality": null
+    },
+    {
+      "official_code": "20849",
+      "canonical_name": "STRADA SESTA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "20478",
+      "canonical_name": "STRADA SESTA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "1621",
+      "canonical_name": "STRADA SETTIMA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "22469",
+      "canonical_name": "STRADA SETTIMA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "1625",
+      "canonical_name": "STRADA TERZA VIALE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "1619",
+      "canonical_name": "STRADA TERZA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "181",
+      "canonical_name": "STRADA TERZA VIALE LAZZATI",
+      "locality": null
+    },
+    {
+      "official_code": "16",
+      "canonical_name": "STRADA VICINALE ALTONE",
+      "locality": null
+    },
+    {
+      "official_code": "23399",
+      "canonical_name": "STRADA VICINALE DEL CERASO",
+      "locality": null
+    },
+    {
+      "official_code": "315",
+      "canonical_name": "STRADA VICINALE PATIERNO",
+      "locality": null
+    },
+    {
+      "official_code": "519",
+      "canonical_name": "TR. PRIV. VIA G. DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "364",
+      "canonical_name": "TR.AL N.265 VIAL GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "339",
+      "canonical_name": "TR.AL N.283 VIAL GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "518",
+      "canonical_name": "TR.AL N.8 VICO DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "3129",
+      "canonical_name": "TRATTURO TORRE QUADRA",
+      "locality": null
+    },
+    {
+      "official_code": "1556",
+      "canonical_name": "TRAV. 109 VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "366",
+      "canonical_name": "TRAV. 167 VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "191",
+      "canonical_name": "TRAV. AL N. 29 V GLIRO",
+      "locality": null
+    },
+    {
+      "official_code": "178",
+      "canonical_name": "TRAV. AL N.128 V CROCIFISSO",
+      "locality": null
+    },
+    {
+      "official_code": "385",
+      "canonical_name": "TRAV. AL N.37 VIA TORRE D'AGERO",
+      "locality": null
+    },
+    {
+      "official_code": "278",
+      "canonical_name": "TRAV. ANGELO MESSENI",
+      "locality": null
+    },
+    {
+      "official_code": "1628",
+      "canonical_name": "TRAV. CONTRADA PERE ROSSE",
+      "locality": null
+    },
+    {
+      "official_code": "180",
+      "canonical_name": "TRAV. CROCIFISSO",
+      "locality": null
+    },
+    {
+      "official_code": "1097",
+      "canonical_name": "TRAV. DONATO PIEPOLI",
+      "locality": null
+    },
+    {
+      "official_code": "1110",
+      "canonical_name": "TRAV. GEN. FRANCESCO PLANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "395",
+      "canonical_name": "TRAV. GIORGIO LA PIRA",
+      "locality": null
+    },
+    {
+      "official_code": "1010",
+      "canonical_name": "TRAV. MEGRA",
+      "locality": null
+    },
+    {
+      "official_code": "1068",
+      "canonical_name": "TRAV. N.126 VIA PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "192",
+      "canonical_name": "TRAV. N.141 VIA PIEPOLI",
+      "locality": null
+    },
+    {
+      "official_code": "588",
+      "canonical_name": "TRAV. NICOLA GLIRO",
+      "locality": null
+    },
+    {
+      "official_code": "1058",
+      "canonical_name": "TRAV. PALO",
+      "locality": null
+    },
+    {
+      "official_code": "115",
+      "canonical_name": "TRAV. PASQUALE CENTOLA",
+      "locality": null
+    },
+    {
+      "official_code": "1079",
+      "canonical_name": "TRAV. PATIERNO",
+      "locality": null
+    },
+    {
+      "official_code": "416",
+      "canonical_name": "TRAV. PIGLIONICA",
+      "locality": null
+    },
+    {
+      "official_code": "394",
+      "canonical_name": "TRAV. PRIV. VIA FILIERI",
+      "locality": null
+    },
+    {
+      "official_code": "1203",
+      "canonical_name": "TRAV. PRIV. VIA S. SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "1549",
+      "canonical_name": "TRAV. PRIV. VIA TRAIANA",
+      "locality": null
+    },
+    {
+      "official_code": "7",
+      "canonical_name": "TRAV. RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "299",
+      "canonical_name": "TRAV. VECCHIA CAPPUC.(COOP.6 ANGELINI) SOPPR",
+      "locality": null
+    },
+    {
+      "official_code": "3065",
+      "canonical_name": "TRAV. VIA BELLINI",
+      "locality": null
+    },
+    {
+      "official_code": "585",
+      "canonical_name": "TRAV. VIA GIOVINAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1030",
+      "canonical_name": "TRAV. VIA MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "209",
+      "canonical_name": "TRAV. VIA PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "1073",
+      "canonical_name": "TRAV. VIA PANTALEO",
+      "locality": null
+    },
+    {
+      "official_code": "1627",
+      "canonical_name": "TRAV. VIA PASQUALE STELLACCI",
+      "locality": null
+    },
+    {
+      "official_code": "1537",
+      "canonical_name": "TRAV. VIA RAFFAELE TAURO",
+      "locality": null
+    },
+    {
+      "official_code": "27404",
+      "canonical_name": "TRAV. VIA TENENTE DOMENICO MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "302",
+      "canonical_name": "TRAV. VIA TOGLIATTI PALMIRO",
+      "locality": null
+    },
+    {
+      "official_code": "670",
+      "canonical_name": "TRAV. VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "268",
+      "canonical_name": "TRAV. VIA UGO LA MALFA",
+      "locality": null
+    },
+    {
+      "official_code": "188",
+      "canonical_name": "TRAV. VICO GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1598",
+      "canonical_name": "TRAV.AL N.172 VIA PALMIRO TOGLIATTI",
+      "locality": null
+    },
+    {
+      "official_code": "406",
+      "canonical_name": "TRAV.AL N.29 DI STELLACCI",
+      "locality": null
+    },
+    {
+      "official_code": "231",
+      "canonical_name": "TRAV.AL N.69 DI TRAIANA",
+      "locality": null
+    },
+    {
+      "official_code": "295",
+      "canonical_name": "TRAV.AL N.76 DI TOGLIATTI",
+      "locality": null
+    },
+    {
+      "official_code": "183",
+      "canonical_name": "TRAV.AL N.9 DI V PLANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1123",
+      "canonical_name": "TRAV.PRIV PROV.L BITONTO-MOLFETTA",
+      "locality": null
+    },
+    {
+      "official_code": "173",
+      "canonical_name": "TRAV.PRIV.VIALE DUE CAPPELLE",
+      "locality": null
+    },
+    {
+      "official_code": "421",
+      "canonical_name": "TRAV.PRIVATA VIA ALESSANDRO MANZONI",
+      "locality": null
+    },
+    {
+      "official_code": "8",
+      "canonical_name": "TRAV.PRIVATA VIA RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "263",
+      "canonical_name": "TRAVERSA AL N. 21 DI VIA PIETRO NENNI",
+      "locality": null
+    },
+    {
+      "official_code": "264",
+      "canonical_name": "TRAVERSA AL N. 45 DI VIA PIETRO NENNI",
+      "locality": null
+    },
+    {
+      "official_code": "3068",
+      "canonical_name": "TRAVERSA CASINA DI DENTRO",
+      "locality": null
+    },
+    {
+      "official_code": "3066",
+      "canonical_name": "TRAVERSA CORSO VITTORIO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "3131",
+      "canonical_name": "TRAVERSA DI VIA TRAETTA",
+      "locality": null
+    },
+    {
+      "official_code": "186",
+      "canonical_name": "TRAVERSA GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "26333",
+      "canonical_name": "TRAVERSA I TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "26242",
+      "canonical_name": "TRAVERSA N. 76 VIA TRAIANA",
+      "locality": null
+    },
+    {
+      "official_code": "1603",
+      "canonical_name": "TRAVERSA P. TOGLIATTI",
+      "locality": null
+    },
+    {
+      "official_code": "3064",
+      "canonical_name": "TRAVERSA PRIMA CASINA DI DENTRO",
+      "locality": null
+    },
+    {
+      "official_code": "123",
+      "canonical_name": "TRAVERSA PRIMA DI VIA ANTICA DELLA CHINISE",
+      "locality": null
+    },
+    {
+      "official_code": "1059",
+      "canonical_name": "TRAVERSA PRIMA DI VIA PALO",
+      "locality": null
+    },
+    {
+      "official_code": "2",
+      "canonical_name": "TRAVERSA PRIMA DI VIA RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "23364",
+      "canonical_name": "TRAVERSA PRIMA PROV. 91 BITONTO S.SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "27674",
+      "canonical_name": "TRAVERSA PRIMA VIA ACHILLE GRANDI",
+      "locality": null
+    },
+    {
+      "official_code": "22439",
+      "canonical_name": "TRAVERSA PRIMA VIA CATINO",
+      "locality": null
+    },
+    {
+      "official_code": "310",
+      "canonical_name": "TRAVERSA PRIVATA DI VIA PIETRO NENNI",
+      "locality": null
+    },
+    {
+      "official_code": "25781",
+      "canonical_name": "TRAVERSA PRIVATA PRIMA DI VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "24473",
+      "canonical_name": "TRAVERSA QUARTA CASINA DI DENTRO",
+      "locality": null
+    },
+    {
+      "official_code": "5",
+      "canonical_name": "TRAVERSA QUARTA DI VIA RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "24425",
+      "canonical_name": "TRAVERSA QUARTA SP 91 BITONTO S. SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "24447",
+      "canonical_name": "TRAVERSA QUARTA VIA DELLE FORNACI",
+      "locality": null
+    },
+    {
+      "official_code": "22530",
+      "canonical_name": "TRAVERSA QUINTA PROVINCIALE 91 BITONTO-S.SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "124",
+      "canonical_name": "TRAVERSA SECONDA DI VIA ANTICA DELLA CHINISE",
+      "locality": null
+    },
+    {
+      "official_code": "22975",
+      "canonical_name": "TRAVERSA SECONDA DI VIA PALO VECCHIA",
+      "locality": null
+    },
+    {
+      "official_code": "3",
+      "canonical_name": "TRAVERSA SECONDA DI VIA RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "211",
+      "canonical_name": "TRAVERSA SECONDA PROVINCIALE 91 BITONTO-S.SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "596",
+      "canonical_name": "TRAVERSA SECONDA VIA ACHILLE GRANDI",
+      "locality": null
+    },
+    {
+      "official_code": "24337",
+      "canonical_name": "TRAVERSA SECONDA VIA TOMMASO TRAETTA",
+      "locality": null
+    },
+    {
+      "official_code": "23587",
+      "canonical_name": "TRAVERSA SECONDA VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "22863",
+      "canonical_name": "TRAVERSA STRADA PONTICELLO BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "28417",
+      "canonical_name": "TRAVERSA STRADA VICINALE BOSCARIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "1634",
+      "canonical_name": "TRAVERSA TENENTE D. MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "4",
+      "canonical_name": "TRAVERSA TERZA DI VIA RAFFAELE ABBATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "21224",
+      "canonical_name": "TRAVERSA TERZA PROVINCIALE 91 BITONTO-S.SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "3055",
+      "canonical_name": "TRAVERSA TERZA TRAVERSA CASINA DI DENTRO",
+      "locality": null
+    },
+    {
+      "official_code": "3161",
+      "canonical_name": "TRAVERSA VIA LE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "3031",
+      "canonical_name": "V VICO DOMENICO PANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "1620",
+      "canonical_name": "VI TRAV. VIA AMM. VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "1594",
+      "canonical_name": "VIA ADRIANI PIETRO",
+      "locality": null
+    },
+    {
+      "official_code": "3047",
+      "canonical_name": "VIA ALDO MORO",
+      "locality": null
+    },
+    {
+      "official_code": "1617",
+      "canonical_name": "VIA AMMIRAGLIO FRANCO ROGADEO",
+      "locality": null
+    },
+    {
+      "official_code": "620",
+      "canonical_name": "VIA AMOREA LATANO",
+      "locality": null
+    },
+    {
+      "official_code": "258",
+      "canonical_name": "VIA ANNA ROLLI DEMICHELE",
+      "locality": null
+    },
+    {
+      "official_code": "29",
+      "canonical_name": "VIA ANTICA DEL PETTO",
+      "locality": null
+    },
+    {
+      "official_code": "121",
+      "canonical_name": "VIA ANTICA DELLA CHINISE",
+      "locality": null
+    },
+    {
+      "official_code": "24566",
+      "canonical_name": "VIA ANTICA MORZONE",
+      "locality": null
+    },
+    {
+      "official_code": "308",
+      "canonical_name": "VIA APPIA ANTICA",
+      "locality": null
+    },
+    {
+      "official_code": "359",
+      "canonical_name": "VIA ARCANGELO LISO",
+      "locality": null
+    },
+    {
+      "official_code": "3001",
+      "canonical_name": "VIA ARIOSTO",
+      "locality": null
+    },
+    {
+      "official_code": "1528",
+      "canonical_name": "VIA AVV. CARMINE GALLO",
+      "locality": null
+    },
+    {
+      "official_code": "420",
+      "canonical_name": "VIA AVVOCATO PASQUALE CASCIONE",
+      "locality": null
+    },
+    {
+      "official_code": "3074",
+      "canonical_name": "VIA BAZZARICO",
+      "locality": null
+    },
+    {
+      "official_code": "112",
+      "canonical_name": "VIA BENVENUTO CELLINI",
+      "locality": null
+    },
+    {
+      "official_code": "1177",
+      "canonical_name": "VIA BORGO S. FRANCESCO",
+      "locality": null
+    },
+    {
+      "official_code": "71",
+      "canonical_name": "VIA CAGNANO",
+      "locality": null
+    },
+    {
+      "official_code": "3080",
+      "canonical_name": "VIA CANTORE",
+      "locality": null
+    },
+    {
+      "official_code": "375",
+      "canonical_name": "VIA CAPITANO PAOLO MANCINI",
+      "locality": null
+    },
+    {
+      "official_code": "26156",
+      "canonical_name": "VIA CAPRERA - MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "3004",
+      "canonical_name": "VIA CARLO ALBERTO",
+      "locality": null
+    },
+    {
+      "official_code": "3005",
+      "canonical_name": "VIA CASINA DI DENTRO",
+      "locality": null
+    },
+    {
+      "official_code": "329",
+      "canonical_name": "VIA CATINO",
+      "locality": null
+    },
+    {
+      "official_code": "107",
+      "canonical_name": "VIA CATTEDRALE",
+      "locality": null
+    },
+    {
+      "official_code": "400",
+      "canonical_name": "VIA CAV. GIUSEPPE CAZZOLLA",
+      "locality": null
+    },
+    {
+      "official_code": "1604",
+      "canonical_name": "VIA CELA",
+      "locality": null
+    },
+    {
+      "official_code": "29288",
+      "canonical_name": "VIA CHIANCHIARIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "1599",
+      "canonical_name": "VIA CHIUSA DELLE COLONNE",
+      "locality": null
+    },
+    {
+      "official_code": "3084",
+      "canonical_name": "VIA CIALDINI",
+      "locality": null
+    },
+    {
+      "official_code": "26563",
+      "canonical_name": "VIA CICEREALE",
+      "locality": null
+    },
+    {
+      "official_code": "132",
+      "canonical_name": "VIA CIVILIZIO",
+      "locality": null
+    },
+    {
+      "official_code": "30745",
+      "canonical_name": "VIA CLELIA ROMANO",
+      "locality": null
+    },
+    {
+      "official_code": "1561",
+      "canonical_name": "VIA COLETTO EMANUELE",
+      "locality": null
+    },
+    {
+      "official_code": "1629",
+      "canonical_name": "VIA DE BIASE FRANCESCO",
+      "locality": null
+    },
+    {
+      "official_code": "505",
+      "canonical_name": "VIA DE ROSSI",
+      "locality": null
+    },
+    {
+      "official_code": "25669",
+      "canonical_name": "VIA DEI CARRADORI",
+      "locality": null
+    },
+    {
+      "official_code": "27743",
+      "canonical_name": "VIA DEI MERCANTI",
+      "locality": null
+    },
+    {
+      "official_code": "3113",
+      "canonical_name": "VIA DEI MILLE",
+      "locality": null
+    },
+    {
+      "official_code": "800",
+      "canonical_name": "VIA DEI SENZA FISSA DIMORA E SENZA TETTO",
+      "locality": null
+    },
+    {
+      "official_code": "19998",
+      "canonical_name": "VIA DEL PIGNONE",
+      "locality": null
+    },
+    {
+      "official_code": "1218",
+      "canonical_name": "VIA DEL SASSO",
+      "locality": null
+    },
+    {
+      "official_code": "26370",
+      "canonical_name": "VIA DELLE MATINE",
+      "locality": null
+    },
+    {
+      "official_code": "3103",
+      "canonical_name": "VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "322",
+      "canonical_name": "VIA DELLE MATTINE C.DA GISELDA",
+      "locality": null
+    },
+    {
+      "official_code": "23531",
+      "canonical_name": "VIA DI SOTTO (CASALICCHIO)",
+      "locality": null
+    },
+    {
+      "official_code": "27449",
+      "canonical_name": "VIA DISCESA S. FRANCESCO D'ASSISI",
+      "locality": null
+    },
+    {
+      "official_code": "3024",
+      "canonical_name": "VIA DOMENICO PANNONE PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3010",
+      "canonical_name": "VIA DON BOSCO",
+      "locality": null
+    },
+    {
+      "official_code": "563",
+      "canonical_name": "VIA DON EUSTACHIO GENTILE",
+      "locality": null
+    },
+    {
+      "official_code": "151",
+      "canonical_name": "VIA DOTT. DOMENICO DAMASCELLI",
+      "locality": null
+    },
+    {
+      "official_code": "367",
+      "canonical_name": "VIA DOTT. DONATO ANTONIO DE CAPUA",
+      "locality": null
+    },
+    {
+      "official_code": "402",
+      "canonical_name": "VIA DOTT.FRANCESCO PAOLO PROCACCI",
+      "locality": null
+    },
+    {
+      "official_code": "1527",
+      "canonical_name": "VIA DR. MICHELE SULMONE CALIA",
+      "locality": null
+    },
+    {
+      "official_code": "11",
+      "canonical_name": "VIA DUCA DEGLI ABRUZZI",
+      "locality": null
+    },
+    {
+      "official_code": "1150",
+      "canonical_name": "VIA EUSTACHIO ROGADEO",
+      "locality": null
+    },
+    {
+      "official_code": "377",
+      "canonical_name": "VIA FALCONE - BORSELLINO E SCORTE",
+      "locality": null
+    },
+    {
+      "official_code": "3091",
+      "canonical_name": "VIA FARNESE",
+      "locality": null
+    },
+    {
+      "official_code": "25922",
+      "canonical_name": "VIA FEDERICO FELLINI",
+      "locality": null
+    },
+    {
+      "official_code": "378",
+      "canonical_name": "VIA FEDERICO II",
+      "locality": null
+    },
+    {
+      "official_code": "424",
+      "canonical_name": "VIA FILIPPO TURATI",
+      "locality": null
+    },
+    {
+      "official_code": "17",
+      "canonical_name": "VIA FRANCESCO AMBROSI",
+      "locality": null
+    },
+    {
+      "official_code": "48",
+      "canonical_name": "VIA FRANCESCO BARACCA",
+      "locality": null
+    },
+    {
+      "official_code": "3106",
+      "canonical_name": "VIA FRANCESCO BONASIA",
+      "locality": null
+    },
+    {
+      "official_code": "26963",
+      "canonical_name": "VIA FRANCESCO FERRARA",
+      "locality": null
+    },
+    {
+      "official_code": "1614",
+      "canonical_name": "VIA FRANCESCO PISCOPO",
+      "locality": null
+    },
+    {
+      "official_code": "3090",
+      "canonical_name": "VIA FRANCESCO SANNINO",
+      "locality": null
+    },
+    {
+      "official_code": "569",
+      "canonical_name": "VIA G. ANTONIO GIANNONE",
+      "locality": null
+    },
+    {
+      "official_code": "1521",
+      "canonical_name": "VIA GAETANO SPINELLI",
+      "locality": null
+    },
+    {
+      "official_code": "31439",
+      "canonical_name": "VIA GAETANO VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "247",
+      "canonical_name": "VIA GANGA DI LUPO",
+      "locality": null
+    },
+    {
+      "official_code": "1136",
+      "canonical_name": "VIA GEN. ANDREA RAGNI",
+      "locality": null
+    },
+    {
+      "official_code": "504",
+      "canonical_name": "VIA GEN. MICHELE DE RENZIO",
+      "locality": null
+    },
+    {
+      "official_code": "275",
+      "canonical_name": "VIA GEN. PASQUALE MIRABELLA",
+      "locality": null
+    },
+    {
+      "official_code": "1550",
+      "canonical_name": "VIA GEN. TRAVERSA",
+      "locality": null
+    },
+    {
+      "official_code": "407",
+      "canonical_name": "VIA GEN.CARLO ALBERTO DALLA CHIESA",
+      "locality": null
+    },
+    {
+      "official_code": "566",
+      "canonical_name": "VIA GERMANO",
+      "locality": null
+    },
+    {
+      "official_code": "24789",
+      "canonical_name": "VIA GIACOMO LEONGITO",
+      "locality": null
+    },
+    {
+      "official_code": "1151",
+      "canonical_name": "VIA GIAN DONATO ROGADEO",
+      "locality": null
+    },
+    {
+      "official_code": "168",
+      "canonical_name": "VIA GIOVANNI ANTONIO DE ILDERIS",
+      "locality": null
+    },
+    {
+      "official_code": "90",
+      "canonical_name": "VIA GIOVANNI CARBONARA",
+      "locality": null
+    },
+    {
+      "official_code": "95",
+      "canonical_name": "VIA GIOVANNI CARELLI",
+      "locality": null
+    },
+    {
+      "official_code": "625",
+      "canonical_name": "VIA GIOVANNI LEONGITO",
+      "locality": null
+    },
+    {
+      "official_code": "134",
+      "canonical_name": "VIA GIOVANNI MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "300",
+      "canonical_name": "VIA GIOVANNI SPADOLINI",
+      "locality": null
+    },
+    {
+      "official_code": "581",
+      "canonical_name": "VIA GIOVINAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1593",
+      "canonical_name": "VIA GIROLAMO DEVANNA",
+      "locality": null
+    },
+    {
+      "official_code": "1007",
+      "canonical_name": "VIA GIULIO DEI MEDICI",
+      "locality": null
+    },
+    {
+      "official_code": "24",
+      "canonical_name": "VIA GIUSEPPE ANCONA",
+      "locality": null
+    },
+    {
+      "official_code": "135",
+      "canonical_name": "VIA GIUSEPPE COMES",
+      "locality": null
+    },
+    {
+      "official_code": "1077",
+      "canonical_name": "VIA GIUSEPPE PASTORESSA",
+      "locality": null
+    },
+    {
+      "official_code": "1102",
+      "canonical_name": "VIA GIUSEPPE PIGLIONICA",
+      "locality": null
+    },
+    {
+      "official_code": "1504",
+      "canonical_name": "VIA GIUSEPPE SCIVITTARO",
+      "locality": null
+    },
+    {
+      "official_code": "24387",
+      "canonical_name": "VIA GRECIA",
+      "locality": null
+    },
+    {
+      "official_code": "27142",
+      "canonical_name": "VIA I^ PARALLELA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "27660",
+      "canonical_name": "VIA II TRAV. VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "27199",
+      "canonical_name": "VIA III TRAV. SP BITONTO-S.SPIRITO",
+      "locality": null
+    },
+    {
+      "official_code": "3097",
+      "canonical_name": "VIA INDIPENDENZA",
+      "locality": null
+    },
+    {
+      "official_code": "27386",
+      "canonical_name": "VIA ING. GIOVANNI ANTONINO",
+      "locality": null
+    },
+    {
+      "official_code": "28983",
+      "canonical_name": "VIA IV",
+      "locality": null
+    },
+    {
+      "official_code": "25690",
+      "canonical_name": "VIA IV TRAVERSA VIALE DELLE NAZION",
+      "locality": null
+    },
+    {
+      "official_code": "608",
+      "canonical_name": "VIA KENNEDY",
+      "locality": null
+    },
+    {
+      "official_code": "1129",
+      "canonical_name": "VIA LAMA CARBONE",
+      "locality": null
+    },
+    {
+      "official_code": "3172",
+      "canonical_name": "VIA LE MATTINE CONTR.QUARTO DI PALO",
+      "locality": null
+    },
+    {
+      "official_code": "369",
+      "canonical_name": "VIA LEONARDO GIANNINI",
+      "locality": null
+    },
+    {
+      "official_code": "3105",
+      "canonical_name": "VIA LIBERTA'",
+      "locality": null
+    },
+    {
+      "official_code": "25678",
+      "canonical_name": "VIA LUDOVICO D'ANGIÒ",
+      "locality": null
+    },
+    {
+      "official_code": "152",
+      "canonical_name": "VIA LUDOVICO D'ANGIO'",
+      "locality": null
+    },
+    {
+      "official_code": "23429",
+      "canonical_name": "VIA LUDOVICO D'ANGIO' 83 70032 BITONTO BA",
+      "locality": null
+    },
+    {
+      "official_code": "18",
+      "canonical_name": "VIA LUIGI AMBROSI",
+      "locality": null
+    },
+    {
+      "official_code": "24923",
+      "canonical_name": "VIA LUIGI BOVIO",
+      "locality": null
+    },
+    {
+      "official_code": "3058",
+      "canonical_name": "VIA LUIGI DELLA NOCE",
+      "locality": null
+    },
+    {
+      "official_code": "229",
+      "canonical_name": "VIA LUIGI SYLOS",
+      "locality": null
+    },
+    {
+      "official_code": "642",
+      "canonical_name": "VIA MACELLO NUOVO",
+      "locality": null
+    },
+    {
+      "official_code": "650",
+      "canonical_name": "VIA MAIULLARI",
+      "locality": null
+    },
+    {
+      "official_code": "22747",
+      "canonical_name": "VIA MALTA",
+      "locality": null
+    },
+    {
+      "official_code": "130",
+      "canonical_name": "VIA MARCO CIOFFRESE",
+      "locality": null
+    },
+    {
+      "official_code": "27714",
+      "canonical_name": "VIA MARCONI",
+      "locality": null
+    },
+    {
+      "official_code": "27023",
+      "canonical_name": "VIA MASSIMO D' AZEGLIO",
+      "locality": null
+    },
+    {
+      "official_code": "3109",
+      "canonical_name": "VIA MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "3020",
+      "canonical_name": "VIA MERCADANTE",
+      "locality": null
+    },
+    {
+      "official_code": "26776",
+      "canonical_name": "VIA MEZZAFALCE",
+      "locality": null
+    },
+    {
+      "official_code": "19966",
+      "canonical_name": "VIA MICHELE CARBONE",
+      "locality": null
+    },
+    {
+      "official_code": "1562",
+      "canonical_name": "VIA MINISTRO GIUSEPPE VACCA",
+      "locality": null
+    },
+    {
+      "official_code": "397",
+      "canonical_name": "VIA MONS. ANDREA TACCONE",
+      "locality": null
+    },
+    {
+      "official_code": "75",
+      "canonical_name": "VIA MONS. CALAMITA",
+      "locality": null
+    },
+    {
+      "official_code": "63",
+      "canonical_name": "VIA MONS. LUIGI BOVIO",
+      "locality": null
+    },
+    {
+      "official_code": "28985",
+      "canonical_name": "VIA MONSIGNOR PLACIDO FERNIANI",
+      "locality": null
+    },
+    {
+      "official_code": "3173",
+      "canonical_name": "VIA MURGIA DELLA CITTA' (BOSCO DI BITONTO)",
+      "locality": null
+    },
+    {
+      "official_code": "25871",
+      "canonical_name": "VIA MURO MACELLO",
+      "locality": null
+    },
+    {
+      "official_code": "25927",
+      "canonical_name": "VIA N UZZO BARBA",
+      "locality": null
+    },
+    {
+      "official_code": "3116",
+      "canonical_name": "VIA NAPOLI",
+      "locality": null
+    },
+    {
+      "official_code": "631",
+      "canonical_name": "VIA NICOLA LOGROSCINO",
+      "locality": null
+    },
+    {
+      "official_code": "666",
+      "canonical_name": "VIA NICOLO' PISCHETOLA",
+      "locality": null
+    },
+    {
+      "official_code": "3023",
+      "canonical_name": "VIA OBERDAN",
+      "locality": null
+    },
+    {
+      "official_code": "1632",
+      "canonical_name": "VIA OLANDA",
+      "locality": null
+    },
+    {
+      "official_code": "27446",
+      "canonical_name": "VIA P. LOMAGLIO",
+      "locality": null
+    },
+    {
+      "official_code": "3207",
+      "canonical_name": "VIA PALESE",
+      "locality": null
+    },
+    {
+      "official_code": "29159",
+      "canonical_name": "VIA PALMENTO NATURALE",
+      "locality": null
+    },
+    {
+      "official_code": "1057",
+      "canonical_name": "VIA PALO",
+      "locality": null
+    },
+    {
+      "official_code": "22504",
+      "canonical_name": "VIA PALO VECCHIA",
+      "locality": null
+    },
+    {
+      "official_code": "1224",
+      "canonical_name": "VIA PALOMBAIO VARIANTE SS.98",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "1601",
+      "canonical_name": "VIA PANTANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "3026",
+      "canonical_name": "VIA PARINI",
+      "locality": null
+    },
+    {
+      "official_code": "1623",
+      "canonical_name": "VIA PASOLINI PIER PAOLO",
+      "locality": null
+    },
+    {
+      "official_code": "91",
+      "canonical_name": "VIA PASQUALE CARBONARA",
+      "locality": null
+    },
+    {
+      "official_code": "1083",
+      "canonical_name": "VIA PENDILE",
+      "locality": null
+    },
+    {
+      "official_code": "26360",
+      "canonical_name": "VIA PER MELLITTO",
+      "locality": null
+    },
+    {
+      "official_code": "1093",
+      "canonical_name": "VIA PIANO REGOLATORE GENERALE",
+      "locality": null
+    },
+    {
+      "official_code": "3118",
+      "canonical_name": "VIA PICCINNI",
+      "locality": null
+    },
+    {
+      "official_code": "391",
+      "canonical_name": "VIA PIER PAOLO PASOLINI",
+      "locality": null
+    },
+    {
+      "official_code": "26542",
+      "canonical_name": "VIA PIERPAOLO PASOLINI",
+      "locality": null
+    },
+    {
+      "official_code": "265",
+      "canonical_name": "VIA PIETRO NENNI-COOP.ALTERNATIVA-",
+      "locality": null
+    },
+    {
+      "official_code": "3049",
+      "canonical_name": "VIA PONCHIELLI",
+      "locality": null
+    },
+    {
+      "official_code": "1086",
+      "canonical_name": "VIA POZZO PERAGINE",
+      "locality": null
+    },
+    {
+      "official_code": "29188",
+      "canonical_name": "VIA PR STR V.LE DELLE NAZIONI",
+      "locality": null
+    },
+    {
+      "official_code": "27342",
+      "canonical_name": "VIA PRIV INTINI",
+      "locality": null
+    },
+    {
+      "official_code": "27815",
+      "canonical_name": "VIA PRIVATA CHIDDO",
+      "locality": null
+    },
+    {
+      "official_code": "25",
+      "canonical_name": "VIA PRIVATA GIUSEPPE ANCONA",
+      "locality": null
+    },
+    {
+      "official_code": "19",
+      "canonical_name": "VIA PRIVATA ING. AMBROSI",
+      "locality": null
+    },
+    {
+      "official_code": "606",
+      "canonical_name": "VIA PRIVATA INTINI",
+      "locality": null
+    },
+    {
+      "official_code": "28067",
+      "canonical_name": "VIA PRIVATA QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "25889",
+      "canonical_name": "VIA PRIVATA VIA PERRINI",
+      "locality": null
+    },
+    {
+      "official_code": "27804",
+      "canonical_name": "VIA PRIVATA VIA QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "403",
+      "canonical_name": "VIA PROF. AVV. GIUSEPPE DONADIO",
+      "locality": null
+    },
+    {
+      "official_code": "401",
+      "canonical_name": "VIA PROF. ENRICO PANTANELLI",
+      "locality": null
+    },
+    {
+      "official_code": "524",
+      "canonical_name": "VIA PROF. FANO",
+      "locality": null
+    },
+    {
+      "official_code": "3205",
+      "canonical_name": "VIA PROF. GIOVANNI MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "536",
+      "canonical_name": "VIA PROF. NICOLA FORNELLI",
+      "locality": null
+    },
+    {
+      "official_code": "398",
+      "canonical_name": "VIA PROF.G.PPE ANT. AMENDOLAGINE",
+      "locality": null
+    },
+    {
+      "official_code": "374",
+      "canonical_name": "VIA PROF.SSA ANTONIA MOSCHETTA",
+      "locality": null
+    },
+    {
+      "official_code": "26187",
+      "canonical_name": "VIA PROFESSORE GIUSEPPE PIGLIONICA",
+      "locality": null
+    },
+    {
+      "official_code": "29049",
+      "canonical_name": "VIA PROV.LE",
+      "locality": null
+    },
+    {
+      "official_code": "3030",
+      "canonical_name": "VIA PUCCINI",
+      "locality": null
+    },
+    {
+      "official_code": "26314",
+      "canonical_name": "VIA PUCCINI GIACOMO - PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3120",
+      "canonical_name": "VIA QUARTO",
+      "locality": null
+    },
+    {
+      "official_code": "24962",
+      "canonical_name": "VIA QUARTO - MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "19874",
+      "canonical_name": "VIA QUORCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "27535",
+      "canonical_name": "VIA RAFF. PASCULLI",
+      "locality": null
+    },
+    {
+      "official_code": "508",
+      "canonical_name": "VIA RAFFAELE DI LORENZO",
+      "locality": null
+    },
+    {
+      "official_code": "1144",
+      "canonical_name": "VIA RE MANFREDI",
+      "locality": null
+    },
+    {
+      "official_code": "1145",
+      "canonical_name": "VIA REPUBBLICA ITALIANA",
+      "locality": null
+    },
+    {
+      "official_code": "3059",
+      "canonical_name": "VIA ROSSINI",
+      "locality": null
+    },
+    {
+      "official_code": "1163",
+      "canonical_name": "VIA S. ANDREA",
+      "locality": null
+    },
+    {
+      "official_code": "1168",
+      "canonical_name": "VIA S. ANTUONO",
+      "locality": null
+    },
+    {
+      "official_code": "1182",
+      "canonical_name": "VIA S. FRANCESCO DA PAOLA",
+      "locality": null
+    },
+    {
+      "official_code": "1184",
+      "canonical_name": "VIA S. GIORGIO",
+      "locality": null
+    },
+    {
+      "official_code": "1185",
+      "canonical_name": "VIA S. GIOVANNI",
+      "locality": null
+    },
+    {
+      "official_code": "1190",
+      "canonical_name": "VIA S. LUCA",
+      "locality": null
+    },
+    {
+      "official_code": "1195",
+      "canonical_name": "VIA S. LUCIA FILIPPINI",
+      "locality": null
+    },
+    {
+      "official_code": "25499",
+      "canonical_name": "VIA S. PELLICO,",
+      "locality": null
+    },
+    {
+      "official_code": "1201",
+      "canonical_name": "VIA S. ROCCO",
+      "locality": null
+    },
+    {
+      "official_code": "27140",
+      "canonical_name": "VIA S.FRANCESCO",
+      "locality": null
+    },
+    {
+      "official_code": "29100",
+      "canonical_name": "VIA S.P.",
+      "locality": null
+    },
+    {
+      "official_code": "665",
+      "canonical_name": "VIA SAC. NUNZIO VINCENZO CERROTTI",
+      "locality": null
+    },
+    {
+      "official_code": "419",
+      "canonical_name": "VIA SALVATORE ROSA",
+      "locality": null
+    },
+    {
+      "official_code": "26916",
+      "canonical_name": "VIA SAN GASPARE BERTONI",
+      "locality": null
+    },
+    {
+      "official_code": "23471",
+      "canonical_name": "VIA SAN GIOVANNI BOSCO",
+      "locality": null
+    },
+    {
+      "official_code": "408",
+      "canonical_name": "VIA SAN SABINO",
+      "locality": null
+    },
+    {
+      "official_code": "1607",
+      "canonical_name": "VIA SANTORUVO FRANCESCO",
+      "locality": null
+    },
+    {
+      "official_code": "19997",
+      "canonical_name": "VIA SAVARINO",
+      "locality": null
+    },
+    {
+      "official_code": "1099",
+      "canonical_name": "VIA SEN. MASCIALE ANGELO CUSTODE",
+      "locality": null
+    },
+    {
+      "official_code": "26",
+      "canonical_name": "VIA SEN. NICOLA ANGELINI",
+      "locality": null
+    },
+    {
+      "official_code": "1531",
+      "canonical_name": "VIA SEN. VINCENZO SYLOS LABINI",
+      "locality": null
+    },
+    {
+      "official_code": "25918",
+      "canonical_name": "VIA SETTEMBRINI",
+      "locality": null
+    },
+    {
+      "official_code": "3036",
+      "canonical_name": "VIA SORGENTE",
+      "locality": null
+    },
+    {
+      "official_code": "1196",
+      "canonical_name": "VIA SS. MEDICI",
+      "locality": null
+    },
+    {
+      "official_code": "25187",
+      "canonical_name": "VIA STELLACCI",
+      "locality": null
+    },
+    {
+      "official_code": "390",
+      "canonical_name": "VIA SVEN OLOF PALME",
+      "locality": null
+    },
+    {
+      "official_code": "3167",
+      "canonical_name": "VIA TAGLIAMENTO",
+      "locality": null
+    },
+    {
+      "official_code": "3037",
+      "canonical_name": "VIA TASSO",
+      "locality": null
+    },
+    {
+      "official_code": "521",
+      "canonical_name": "VIA TATULLI MICHELE",
+      "locality": null
+    },
+    {
+      "official_code": "25984",
+      "canonical_name": "VIA TEN. D. SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "1515",
+      "canonical_name": "VIA TEN. DOMENICO SPERANZA",
+      "locality": null
+    },
+    {
+      "official_code": "628",
+      "canonical_name": "VIA TENENTE LILLO",
+      "locality": null
+    },
+    {
+      "official_code": "281",
+      "canonical_name": "VIA TENENTE MODUGNO",
+      "locality": null
+    },
+    {
+      "official_code": "3038",
+      "canonical_name": "VIA TEOLOGO VALENTE",
+      "locality": null
+    },
+    {
+      "official_code": "358",
+      "canonical_name": "VIA TOMMASO SALTARELLA",
+      "locality": null
+    },
+    {
+      "official_code": "28315",
+      "canonical_name": "VIA TORRE D'AGERA TRAV. QUORCH",
+      "locality": null
+    },
+    {
+      "official_code": "25589",
+      "canonical_name": "VIA TRAV. VIA TORRE D'AGERA",
+      "locality": null
+    },
+    {
+      "official_code": "3132",
+      "canonical_name": "VIA TRENTO",
+      "locality": null
+    },
+    {
+      "official_code": "16037",
+      "canonical_name": "VIA TREPUZZI",
+      "locality": null
+    },
+    {
+      "official_code": "3011",
+      "canonical_name": "VIA UGO FOSCOLO",
+      "locality": null
+    },
+    {
+      "official_code": "28678",
+      "canonical_name": "VIA V STRADA VIALE EUROPA",
+      "locality": null
+    },
+    {
+      "official_code": "3133",
+      "canonical_name": "VIA VENTI SETTEMBRE",
+      "locality": null
+    },
+    {
+      "official_code": "1574",
+      "canonical_name": "VIA VENTICINQUE APRILE",
+      "locality": null
+    },
+    {
+      "official_code": "27417",
+      "canonical_name": "VIA VIA DELLE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "29316",
+      "canonical_name": "VIA VIA GLIRO",
+      "locality": null
+    },
+    {
+      "official_code": "26419",
+      "canonical_name": "VIA VIA LE MATINE",
+      "locality": null
+    },
+    {
+      "official_code": "28964",
+      "canonical_name": "VIA VIA LE MATTINE - MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "29305",
+      "canonical_name": "VIA VIA MACELLO NUOVO",
+      "locality": null
+    },
+    {
+      "official_code": "29169",
+      "canonical_name": "VIA VIA MALTA",
+      "locality": null
+    },
+    {
+      "official_code": "29003",
+      "canonical_name": "VIA VIA PRIVATA INGEGNERE LOVASCIO",
+      "locality": null
+    },
+    {
+      "official_code": "29189",
+      "canonical_name": "VIA VIA REPUBBLICA ITALIANA",
+      "locality": null
+    },
+    {
+      "official_code": "29261",
+      "canonical_name": "VIA VIA SAC. NUNZIO VINCENZO CERROTTI",
+      "locality": null
+    },
+    {
+      "official_code": "3042",
+      "canonical_name": "VIA VITTORIO VENETO",
+      "locality": null
+    },
+    {
+      "official_code": "25689",
+      "canonical_name": "VIA XX SETTEMBRE",
+      "locality": null
+    },
+    {
+      "official_code": "573",
+      "canonical_name": "VIALE GIOVANNI XXIII",
+      "locality": null
+    },
+    {
+      "official_code": "9",
+      "canonical_name": "VICO ABATICCHIO",
+      "locality": null
+    },
+    {
+      "official_code": "604",
+      "canonical_name": "VICO ACCADEMIA DEGLI INFIAMMATI",
+      "locality": null
+    },
+    {
+      "official_code": "28",
+      "canonical_name": "VICO ANNUNZIATELLA",
+      "locality": null
+    },
+    {
+      "official_code": "35",
+      "canonical_name": "VICO APULIA",
+      "locality": null
+    },
+    {
+      "official_code": "100",
+      "canonical_name": "VICO CASALE",
+      "locality": null
+    },
+    {
+      "official_code": "3052",
+      "canonical_name": "VICO CESARE BATTISTI",
+      "locality": null
+    },
+    {
+      "official_code": "3086",
+      "canonical_name": "VICO CIMABUE",
+      "locality": null
+    },
+    {
+      "official_code": "172",
+      "canonical_name": "VICO DE MARINIS",
+      "locality": null
+    },
+    {
+      "official_code": "1006",
+      "canonical_name": "VICO F. MASANIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "534",
+      "canonical_name": "VICO FIORITO",
+      "locality": null
+    },
+    {
+      "official_code": "571",
+      "canonical_name": "VICO GIORDANO",
+      "locality": null
+    },
+    {
+      "official_code": "517",
+      "canonical_name": "VICO GIOVANNA DA DURAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1008",
+      "canonical_name": "VICO GIULIO DEI MEDICI",
+      "locality": null
+    },
+    {
+      "official_code": "3098",
+      "canonical_name": "VICO INDIPENDENZA",
+      "locality": null
+    },
+    {
+      "official_code": "605",
+      "canonical_name": "VICO INGANNAMORTE",
+      "locality": null
+    },
+    {
+      "official_code": "3100",
+      "canonical_name": "VICO ISONZO",
+      "locality": null
+    },
+    {
+      "official_code": "613",
+      "canonical_name": "VICO LA CRETA",
+      "locality": null
+    },
+    {
+      "official_code": "3158",
+      "canonical_name": "VICO LE MATTINE",
+      "locality": null
+    },
+    {
+      "official_code": "637",
+      "canonical_name": "VICO LUCERTOLA",
+      "locality": null
+    },
+    {
+      "official_code": "3126",
+      "canonical_name": "VICO LUIGI SETTEMBRINI",
+      "locality": null
+    },
+    {
+      "official_code": "3111",
+      "canonical_name": "VICO MENTANA",
+      "locality": null
+    },
+    {
+      "official_code": "1018",
+      "canonical_name": "VICO MESSAPIA",
+      "locality": null
+    },
+    {
+      "official_code": "1017",
+      "canonical_name": "VICO MEZZAFALCE",
+      "locality": null
+    },
+    {
+      "official_code": "1022",
+      "canonical_name": "VICO MICHELANGELO",
+      "locality": null
+    },
+    {
+      "official_code": "49",
+      "canonical_name": "VICO MONS. BARBA",
+      "locality": null
+    },
+    {
+      "official_code": "1056",
+      "canonical_name": "VICO PAISIELLO",
+      "locality": null
+    },
+    {
+      "official_code": "3060",
+      "canonical_name": "VICO PARINI",
+      "locality": null
+    },
+    {
+      "official_code": "1067",
+      "canonical_name": "VICO PRIVATO TERZO DI VIA PALOMBAIO",
+      "locality": "PALOMBAIO"
+    },
+    {
+      "official_code": "3071",
+      "canonical_name": "VICO PRIVATO VITTORIO VENETO",
+      "locality": null
+    },
+    {
+      "official_code": "1124",
+      "canonical_name": "VICO PUGLIESE",
+      "locality": null
+    },
+    {
+      "official_code": "1133",
+      "canonical_name": "VICO QUATTORDICI MARZO 1848",
+      "locality": null
+    },
+    {
+      "official_code": "3033",
+      "canonical_name": "VICO ROSSINI",
+      "locality": null
+    },
+    {
+      "official_code": "1189",
+      "canonical_name": "VICO S. LORENZO",
+      "locality": null
+    },
+    {
+      "official_code": "1192",
+      "canonical_name": "VICO S. LUCA",
+      "locality": null
+    },
+    {
+      "official_code": "1197",
+      "canonical_name": "VICO S. PAOLO",
+      "locality": null
+    },
+    {
+      "official_code": "1202",
+      "canonical_name": "VICO S. SILVESTRO",
+      "locality": null
+    },
+    {
+      "official_code": "372",
+      "canonical_name": "VICO S. VALENTINO",
+      "locality": null
+    },
+    {
+      "official_code": "357",
+      "canonical_name": "VICO SECONDO S. ANDREA",
+      "locality": null
+    },
+    {
+      "official_code": "3034",
+      "canonical_name": "VICO SENATORE SYLOS",
+      "locality": null
+    },
+    {
+      "official_code": "50",
+      "canonical_name": "VICO STORTO GIOVANNI BARONE",
+      "locality": null
+    },
+    {
+      "official_code": "1175",
+      "canonical_name": "VICO STORTO S. ELIGIO",
+      "locality": null
+    },
+    {
+      "official_code": "1199",
+      "canonical_name": "VICO STORTO S. PIETRO NUOVO",
+      "locality": null
+    },
+    {
+      "official_code": "3127",
+      "canonical_name": "VICO TAGLIAMENTO",
+      "locality": null
+    },
+    {
+      "official_code": "1615",
+      "canonical_name": "VICO VERDI",
+      "locality": null
+    },
+    {
+      "official_code": "586",
+      "canonical_name": "VICO VIA GIOVINAZZO",
+      "locality": null
+    },
+    {
+      "official_code": "1633",
+      "canonical_name": "VICO VINCENZO BELLINI",
+      "locality": null
+    },
+    {
+      "official_code": "26614",
+      "canonical_name": "VICOLO SETTEMBRINI - MARIOTTO",
+      "locality": "MARIOTTO"
+    },
+    {
+      "official_code": "3102",
+      "canonical_name": "VILLAGGIO LAMIONE",
+      "locality": null
+    }
+  ],
+  "osm_names_without_registry_match": [
+    "1 STRADA VIALE DELLE NAZIONI",
+    "1 STRADA VIALE EUROPA",
+    "1 STRADA VIALE GIUSEPPE LAZZATI",
+    "1 TRAVERSA VIA PATIERNO",
+    "1 VICO CARRARA",
+    "2 STRADA VIALE DELLE NAZIONI",
+    "2 STRADA VIALE EUROPA",
+    "2 STRADA VIALE GIUSEPPE LAZZATI",
+    "3 STRADA VIALE DELLE NAZIONI",
+    "3 STRADA VIALE EUROPA",
+    "3 STRADA VIALE GIUSEPPE LAZZATI",
+    "4 STRADA VIALE DELLE NAZIONI",
+    "4 STRADA VIALE EUROPA",
+    "5 STRADA VIALE DELLE NAZIONI",
+    "5 STRADA VIALE EUROPA",
+    "6 STRADA VIALE DELLE NAZIONI",
+    "6 STRADA VIALE EUROPA",
+    "7 STRADA VIALE DELLE NAZIONI",
+    "8 STRADA VIALE DELLE NAZIONI",
+    "9 STRADA VIALE DELLE NAZIONI",
+    "AQP ACQUEDOTTO PUGLIESE",
+    "AUTOSTRADA ADRIATICA",
+    "BITONTO AEROPORTO DI PALESE",
+    "BRETELLA",
+    "CONTRADA CATAPANO",
+    "CONTRADA CHIUSO DELLE COLONNE",
+    "CORSO VITTORIO EMANUELE II",
+    "CORTE BENVENUTO CELLINI",
+    "CORTE DELLA LUCERTOLA",
+    "CORTE FENICE",
+    "CORTE GIOVANNI DE FERRARIS",
+    "CORTE GUALTIERI DA FOGGIA",
+    "CORTE ILDERIS",
+    "CORTE LUISE",
+    "CORTE MAURO DE MARINIS",
+    "CORTE SANTA LUCIA",
+    "CORTE STATUTO",
+    "CROCE ROSSA ITALIANA",
+    "III VICO PALOMBAIO",
+    "LARGO ANTONIO GRAMSCI",
+    "LARGO ARCANGELO PASTORESSA",
+    "LARGO DONATORI DI SANGUE",
+    "LARGO MONS ORONZO CALDAROLA",
+    "LARGO TEATRO UMBERTO I",
+    "MOLFETTA BITONTO",
+    "PARCHEGGIO AZZARO",
+    "PERCORSO LAMA BALICE",
+    "PERIMETRALE AEROPORTO DI PALESE",
+    "PIAZZA 26 MAGGIO 1734",
+    "PIAZZA CAMILLO BENSO CONTE DI CAVOUR",
+    "PIAZZA GUGLIELMO MARCONI",
+    "PIAZZA MARTIN LUTHER KING",
+    "PIAZZA MONSIGNOR AURELIO MARENA",
+    "PIAZZA MONSIGNOR AURELLIO MARENA",
+    "PIAZZA MONSIGNOR FRANCESCO FORNELLI",
+    "PIAZZA PARTIGIANI DITALIA",
+    "PIAZZA SAN PIO DA PIETRELCINA",
+    "PIAZZA SANTA CHIARA DASSISI",
+    "PIAZZA SANTAGOSTINO",
+    "PIAZZA SYLOS SERSALE",
+    "PIAZZA XX SETTEMBRE",
+    "PIAZZA XXVI MAGGIO 1734",
+    "PIAZZALE FEDERICO II DI BORBONE",
+    "PIAZZETA CAFFARELLI",
+    "PIAZZETTA ANGELO CARDONE",
+    "PIAZZETTA FERDINANDO I DI ARAGONA",
+    "PIAZZETTA FRATELLI BANDIERA",
+    "PIAZZETTA GIUSEPPE MOROSINI",
+    "PIAZZETTA ISABELLA DARAGONA",
+    "PIAZZETTA MARGHERITA DI DURAZZO",
+    "PIAZZETTA PROF FRANCESCO SPERANZA",
+    "POLIGONALE DI BITONTO 1 TRATTO",
+    "POLIGONALE DI BITONTO 2 TRATTO",
+    "PONTE SANTA TERESA",
+    "PRIMA TRAVERSA VIA DELLE FORNACI",
+    "PROLUNGAMENTO VIA DOMENICO DAMASCELLI",
+    "REGIO TRATTURO N 18",
+    "SCESA SAN FRANCESCO DASSISI",
+    "SOTTOPASSAGGIO UGO PASQUINI",
+    "STR PRIVATA GIOVANNI MONGIELLO",
+    "STRADA CATINO",
+    "STRADA COMUNALE",
+    "STRADA COMUNALE BRUNETTA",
+    "STRADA COMUNALE CAZZILLO",
+    "STRADA COMUNALE DEL VICO",
+    "STRADA COMUNALE LAMA DI SORICE",
+    "STRADA COMUNALE NENNAMIA",
+    "STRADA COMUNALE PARCO DELLE MONACHE",
+    "STRADA COMUNALE VECCHIA DI MODUGNO",
+    "STRADA DELLA PIAZZA",
+    "STRADA DETTA ANTICONE DELLANNUNZIATA",
+    "STRADA LAMA BALICE",
+    "STRADA POZZO PASQUALE",
+    "STRADA PRIVATA PERRINI",
+    "STRADA PROVINCIALE 119 PALO DEL COLLE BITONTO",
+    "STRADA PROVINCIALE 231 ANDRIESE CORATINA",
+    "STRADA PROVINCIALE 68",
+    "STRADA PROVINCIALE 69 PALO PALOMBAIO",
+    "STRADA PROVINCIALE 89 BITONTO MARIOTTO MELLITTO",
+    "STRADA PROVINCIALE BITONTO AEROPORTO PALESE",
+    "STRADA PROVINCIALE BITONTO MARIOTTO MELLITTO",
+    "STRADA PROVINCIALE BITONTO SANTO SPIRITO",
+    "STRADA PROVINCIALE POLIGONALE DI BITONTO",
+    "STRADA PROVINCIALE RUVO DI PUGLIA ALTAMURA E TRAVERSA PARISI",
+    "STRADA PROVINCIALE RUVO PALOMBAIO",
+    "STRADA PROVINCIALE TERLIZZI MARIOTTO",
+    "STRADA SAN PIETRO DI CASTRO",
+    "STRADA VICINALE ARSO",
+    "STRADA VICINALE BALICE",
+    "STRADA VICINALE FONDO LA CORNOLE",
+    "STRADA VICINALE NEVIERA",
+    "STRADA VICINALE PEZZA DAVENA",
+    "STRADA VICINALE S FORTUNATO",
+    "STRADA VICINALE SAN MARTINO",
+    "STRADA VICINALE TORRE CAPITOLO",
+    "STRADELLA DELLANNUNZIATA",
+    "TRATTURO TORRE REGINELLA",
+    "TRAVERSA TENENTE DOMENICO MODUGNO",
+    "TRAVERSA VIA GIOVANNA DA DURAZZO",
+    "TRAVERSA VIA TRAIANA",
+    "VIA 25 APRILE 1945",
+    "VIA ACQUAFREDDA",
+    "VIA ALTONE",
+    "VIA ANCONA",
+    "VIA ANGELO CUSTODIO MASCIALE",
+    "VIA ANNA ROLLI DE MICHELE",
+    "VIA ANTICA DELLA CHINISA",
+    "VIA APPIA TRAIANA",
+    "VIA ARCO DI SENZIO",
+    "VIA ARCO GALLIANI",
+    "VIA ASTROLOGO BONOMIO",
+    "VIA AVVOCATO CARMINE GALLO",
+    "VIA BARTOLOMEO MAIULLARI",
+    "VIA BONIFACIO NICOLA LAGROSCINO",
+    "VIA BORGO SAN FRANCESCO",
+    "VIA CASINA DENTRO",
+    "VIA CAVALIERE GIUSEPPE CAZZOLLA",
+    "VIA CICERALE",
+    "VIA DEI GAROFANI",
+    "VIA DEI GLADIOLI",
+    "VIA DELLA REPUBBLICA ITALIANA",
+    "VIA DELLE NAZIONI",
+    "VIA DELLE VIOLETTE",
+    "VIA DONATO ANTONIO DE CAPUA",
+    "VIA DOTTOR DOMENICO DAMASCELLI",
+    "VIA DOTTOR FRANCESCO AMBROSI",
+    "VIA DOTTOR GIOVANNI CARBONARA",
+    "VIA DOTTOR LUIGI AMBROSI",
+    "VIA DOTTOR MICHELE CARBONE",
+    "VIA ENRICO PANTANELLI",
+    "VIA FIEGO",
+    "VIA FILIPPO MASSARENGHI",
+    "VIA FRANCESCO DE BIASE",
+    "VIA FRANCESCO SANTORUVO",
+    "VIA GENERALE ANDREA RAGNI",
+    "VIA GENERALE CARLO ALBERTO DALLA CHIESA",
+    "VIA GENERALE FRANCESCO TRAVERSA",
+    "VIA GENERALE MICHELE DE RENZIO",
+    "VIA GENERALE PASQUALE MIRABELLA",
+    "VIA GIACOMO ANTONIO GIANNONE",
+    "VIA GIACOMO PUCCINI",
+    "VIA GIANDONATO ROGADEO",
+    "VIA GIOVANNI ANTONIO DE ILDARIS",
+    "VIA GIUDICI FALCONE E BORSELLINO E RELATIVE SCORTE",
+    "VIA GIUSEPPE COMEZ",
+    "VIA GIUSEPPE LAZZATI",
+    "VIA GUGLIELMO PUGLIESE",
+    "VIA I TRAVERSA AMMIRAGLIO VACCA",
+    "VIA JOHN FITZGERALD KENNEDY",
+    "VIA LEONGITO",
+    "VIA LUDOVICO I DANGIO",
+    "VIA MINISTRO VACCA",
+    "VIA MONSIGNOR FRANCESCO PAOLO CALAMITA",
+    "VIA MONSIGNOR LUIGI BOVIO",
+    "VIA MONTE PELOSO",
+    "VIA NICOLA ANGELINI",
+    "VIA OLOF SVEN PALME",
+    "VIA ONOREVOLE FILIPPO TURATI",
+    "VIA ORONZO RUCCI",
+    "VIA PAOLO MANCINI",
+    "VIA PAPA GIOVANNI VENTITREESIMO",
+    "VIA PARALLELA TRAIANA",
+    "VIA PASSATELLA",
+    "VIA PIGLIONICA",
+    "VIA PLACIDO FERNIANI",
+    "VIA PRIVATA INGEGNER L AMBROSI",
+    "VIA PRIVATA INGEGNER LOVASCIO",
+    "VIA PRIVATA INGEGNER LUISO",
+    "VIA PROFESSOR GIUSEPPE ANTONIO AMENDOLAGINE",
+    "VIA PROFESSOR NICOLA FORNELLI",
+    "VIA PROFESSORESSA ANTONIETTA MOSCHETTA",
+    "VIA RAFFAELE DILORENZO",
+    "VIA S SABINO",
+    "VIA SAN GIORGIO",
+    "VIA SAN LUCA",
+    "VIA SAN ROCCO",
+    "VIA SANTA LUCIA FILIPPINI",
+    "VIA SANTANDREA",
+    "VIA SANTI MEDICI",
+    "VIA SANTUARIO",
+    "VIA SENATORE GIOVANNI SPADOLINI",
+    "VIA SULMONE CALIA",
+    "VIA TENENTE DOMENICO MODUGNO",
+    "VIA TENENTE DOMENICO SPERANZA",
+    "VIA TENENTE FRANCESCO LILLO",
+    "VIA VALENTE",
+    "VIA VINCENZO SYLOS LABINI",
+    "VIA XIV MARZO 1848",
+    "VICCHI SAN ROCCO",
+    "VICO ABBATICCHIO",
+    "VICO DOTTOR GIOVANNI CARELLI",
+    "VICO DUCA DEGLI ABRUZZI",
+    "VICO FRANCESCO MELE",
+    "VICO GIOVINAZZO",
+    "VICO MARCANTONIO INGANNAMORTE",
+    "VICO MODUGNO",
+    "VICO MONSIGNOR BARBA",
+    "VICO SAN FRANCESCO DA PAOLA",
+    "VICO SAN LUCA",
+    "VICO SAN PAOLO",
+    "VICO SAN SILVESTRO",
+    "VICO SAN VALENTINO",
+    "VICO STORTO SAN PIETRO NUOVO"
+  ]
+}

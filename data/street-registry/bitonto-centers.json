@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "municipality": "BITONTO",
+  "city": {
+    "name": "Piazza Cavour",
+    "latitude": 41.10761735,
+    "longitude": 16.69101624,
+    "method": "official_landmark",
+    "sourceKey": "cartapulia-piazza-cavour",
+    "sourceReference": "CartApulia ICCD 16_00227676",
+    "sourceUrl": "https://catalogazione.cartapulia.it/api/print/card/12337?profile=STAMPA_PDF_PORTALE"
+  },
+  "zoneFallbacks": [
+    {
+      "zoneNumber": 11,
+      "name": "Zona Expert",
+      "latitude": 41.116162,
+      "longitude": 16.6995815,
+      "reference": "Expert Bitonto"
+    },
+    {
+      "zoneNumber": 12,
+      "name": "Zona Scuole",
+      "latitude": 41.1075414,
+      "longitude": 16.705452,
+      "reference": "Piazza Unità d'Italia"
+    },
+    {
+      "zoneNumber": 13,
+      "name": "Borgo San Francesco",
+      "latitude": 41.1085497,
+      "longitude": 16.6996058,
+      "reference": "Piazza Monsignor Francesco Fornelli"
+    },
+    {
+      "zoneNumber": 14,
+      "name": "Palombaio",
+      "latitude": 41.0699154,
+      "longitude": 16.60894,
+      "reference": "Piazza Milite Ignoto"
+    },
+    {
+      "zoneNumber": 15,
+      "name": "Mariotto",
+      "latitude": 41.05181,
+      "longitude": 16.5622,
+      "reference": "centro abitato Mariotto"
+    }
+  ],
+  "fallbackSource": {
+    "sourceKey": "osm-supporting-zone-centers",
+    "authority": "OpenStreetMap contributors",
+    "datasetName": "Supporting geocoder coordinates for missing Listing Radar zone geometries",
+    "sourceUrl": "https://nominatim.openstreetmap.org/",
+    "license": "ODbL 1.0"
+  }
+}

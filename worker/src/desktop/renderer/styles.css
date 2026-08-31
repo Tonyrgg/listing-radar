@@ -3649,3 +3649,92 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   height: auto;
   overflow-y: visible;
 }
+
+/* ---------- registro vie ---------- */
+
+.street-registry {
+  margin-top: var(--lr-space-3);
+  padding: var(--lr-space-3);
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-raised);
+}
+
+.street-registry-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.street-registry-next {
+  margin: var(--lr-space-1) 0 0;
+  font-weight: var(--lr-weight-medium);
+  color: var(--lr-ink);
+}
+
+.street-registry-meta {
+  margin: 2px 0 0;
+  font-size: var(--lr-text-meta);
+  color: var(--lr-ink-3);
+}
+
+.street-registry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lr-space-2);
+  align-items: center;
+}
+
+.street-registry-queue {
+  margin: var(--lr-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.street-registry-queue li {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: var(--lr-space-2);
+  align-items: baseline;
+  padding: 4px var(--lr-space-2);
+  border-radius: var(--lr-radius-control);
+  font-size: var(--lr-text-meta);
+}
+
+.street-registry-queue li:nth-child(odd) { background: var(--lr-surface); }
+
+.street-registry-queue .srq-rank {
+  font-family: var(--lr-font-mono);
+  color: var(--lr-ink-3);
+  text-align: right;
+}
+
+.street-registry-queue .srq-name { color: var(--lr-ink); }
+
+.street-registry-queue .srq-zone {
+  color: var(--lr-ink-3);
+  text-align: right;
+}
+
+/* Le vie senza geometria non hanno posizione geografica: restano in elenco,
+ * ma devono dichiararlo invece di sembrare ordinate come le altre. */
+.street-registry-queue li.is-unranked .srq-rank,
+.street-registry-queue li.is-unranked .srq-zone { color: var(--lr-warn); }
+
+.street-registry-claim {
+  margin-top: var(--lr-space-2);
+  padding: var(--lr-space-2);
+  border-left: 3px solid var(--lr-accent);
+  background: var(--lr-surface);
+  font-size: var(--lr-text-meta);
+}
+
+.street-registry-error {
+  margin: var(--lr-space-2) 0 0;
+  color: var(--lr-danger);
+  font-size: var(--lr-text-meta);
+}

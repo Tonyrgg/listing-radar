@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +43,12 @@ import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
 import { collectCrmPersonSeeds } from "../adapters/crm/people.js";
 import { WorkerRepository } from "../services/repository.js";
+import {
+  StreetRegistryService,
+  streetRunRegistryOutcome,
+  type StreetRegistryOutcome,
+  type StreetRegistryQueueItem,
+} from "../services/street-registry.js";
 import { describeSupabaseOperationalError } from "../services/supabase-errors.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
@@ -187,6 +193,14 @@ let activeMandateImporter: MandateArchiveImporter | null = null;
 let mandateImportPromise: Promise<void> | null = null;
 let mandateImportError: string | null = null;
 let mandateImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
+/* La via in lavorazione arriva dallo Street Registry con un lease: finche' la
+ * run e' viva questo riferimento tiene insieme la lavorazione remota e quella
+ * locale, cosi' la chiusura sa sempre quale voce di coda liberare. */
+let streetRegistryClaim: StreetRegistryQueueItem | null = null;
+let streetRegistryPreview: StreetRegistryQueueItem[] = [];
+let streetRegistryError: string | null = null;
+let streetRegistryLoading = false;
+
 let streetRunActive = false;
 let streetRunCancellationRequested = false;
 let streetRunAbandonRequested = false;
@@ -678,6 +692,67 @@ function repository(config = workerConfig()) {
   return value;
 }
 
+/* Il lease della coda vive sul database, quindi l'identita' del Worker deve
+ * restare la stessa fra un avvio e l'altro: altrimenti dopo un riavvio nessuno
+ * potrebbe piu' chiudere la lavorazione che aveva preso in carico. */
+function streetRegistryWorkerId() {
+  return `worker-desktop:${hostname()}`;
+}
+
+function streetRegistryService(config = workerConfig()) {
+  return new StreetRegistryService(repository(config).client);
+}
+
+/* Le vie senza geometria non hanno rank e restano in fondo: si vedono
+ * comunque, perche' nascondere meta' dell'inventario sarebbe peggio che
+ * mostrarlo in un ordine imperfetto. */
+async function refreshStreetRegistryPreview(limit = 12) {
+  streetRegistryLoading = true;
+  try {
+    streetRegistryPreview = await streetRegistryService().list({ status: "pending", limit });
+    streetRegistryError = null;
+  } catch (error) {
+    streetRegistryPreview = [];
+    streetRegistryError = error instanceof Error ? error.message : String(error);
+  } finally {
+    streetRegistryLoading = false;
+  }
+}
+
+function describeRegistryStreet(item: StreetRegistryQueueItem) {
+  const posizione = item.city_rank == null
+    ? "senza posizione geografica"
+    : `${item.city_rank}ª dal centro${item.city_distance_m == null ? "" : `, ${Math.round(item.city_distance_m)} m`}`;
+  return `${item.canonical_name} (${posizione}${item.zone_name ? `, ${item.zone_name}` : ""})`;
+}
+
+/* La chiusura non deve mai far fallire la run: se il registro non risponde la
+ * lavorazione resta con il lease, che scade da solo e la rimette in coda. */
+async function closeStreetRegistryClaim(
+  outcome: StreetRegistryOutcome,
+  details: { jobId?: string | null; result?: Record<string, unknown>; error?: Record<string, unknown> },
+) {
+  const claim = streetRegistryClaim;
+  if (!claim) return;
+  streetRegistryClaim = null;
+  try {
+    await streetRegistryService().complete({
+      workItemId: claim.work_item_id,
+      workerId: streetRegistryWorkerId(),
+      outcome,
+      propertyWorkerJobId: details.jobId ?? undefined,
+      result: details.result,
+      error: details.error,
+    });
+    pushActivity(`Via ${claim.canonical_name} chiusa nel registro come ${outcome}`, outcome === "completed" ? "success" : "warning");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    streetRegistryError = `Chiusura della via nel registro non riuscita: ${message}`;
+    pushActivity(`${streetRegistryError} Il lease scadra' da solo e la via tornera' in coda.`, "warning");
+  }
+  await refreshStreetRegistryPreview().catch(() => undefined);
+}
+
 /**
  * Una run che si ferma prima di acquisire qualcosa non è un'acquisizione.
  *
@@ -857,27 +932,6 @@ async function refreshSnapshotRemoteData() {
   return snapshotRemotePromise;
 }
 
-/* Tre acquisizioni conservate bastano: oltre, nessuno le ricorda piu' e i
- * dati invecchiano in archivio. Il freno sta all'avvio, non allo scarico:
- * buttare via una raccolta gia' fatta per far posto sarebbe peggio. */
-const MAX_ACQUISIZIONI_CONSERVATE = 3;
-
-function acquisizioniConservate() {
-  return snapshotRemoteData.jobs.filter(
-    (job) => job.status === "saved" && !job.import_started_at,
-  );
-}
-
-async function assertSpazioPerConservare() {
-  if (!preferences.keepAcquisition) return;
-  await refreshSnapshotRemoteData();
-  const conservate = acquisizioniConservate();
-  if (conservate.length < MAX_ACQUISIZIONI_CONSERVATE) return;
-  throw new Error(
-    `Ci sono gia' ${conservate.length} acquisizioni conservate, il massimo e' ${MAX_ACQUISIZIONI_CONSERVATE}. Importane una dall'archivio, oppure eliminala, e poi ricomincia.`,
-  );
-}
-
 async function stateSnapshot() {
   /* La plancia non aspetta il cloud per comparire.
    *
@@ -949,6 +1003,13 @@ async function stateSnapshot() {
       progress: streetRunProgress,
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
+    },
+    streetRegistry: {
+      claim: streetRegistryClaim,
+      queue: streetRegistryPreview,
+      loading: streetRegistryLoading,
+      lastError: streetRegistryError,
+      workerId: streetRegistryWorkerId(),
     },
     networkRun: {
       active: networkRunActive,
@@ -1344,6 +1405,21 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via sospesa dopo ${result.currentVariantIndex} varianti`,
         result.status === "completed" ? "success" : "warning",
       );
+      /* Una run sospesa non e' una via fallita: torna in coda come da
+       * ricontrollare, cosi' la ripresa non consuma un tentativo per niente. */
+      await closeStreetRegistryClaim(
+        streetRunRegistryOutcome({ status: result.status, lastError: result.lastError, runError: streetRunError }),
+        {
+          jobId: result.importJobId ?? streetImportJobId,
+          result: {
+            status: result.status,
+            mode: longRunMode,
+            accepted_properties: result.totalAcceptedProperties,
+            owners_read: result.totalOwnersRead,
+          },
+          error: streetRunError ? { message: streetRunError } : undefined,
+        },
+      );
       if (result.status === "completed" && !result.lastError && !streetRunError) {
         operationCompletion = {
           kind: "street",
@@ -1369,6 +1445,10 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       return;
     }
     streetRunError = error instanceof Error ? error.message : String(error);
+    await closeStreetRegistryClaim("failed", {
+      jobId: streetImportJobId,
+      error: { message: streetRunError },
+    });
     reportRunInterruption("street", "Acquisizione via interrotta");
     pushActivity(streetRunError, "error");
     await chiudiAcquisizioneInterrotta(streetImportJobId, streetRunError);
@@ -1383,6 +1463,12 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     streetRunActive = false;
     streetRunCancellationRequested = false;
     streetRunProgress = null;
+    /* Rete di sicurezza: qualunque uscita non prevista sopra lascerebbe la via
+     * bloccata fino alla scadenza del lease. Qui torna in coda subito. */
+    await closeStreetRegistryClaim("to_recheck", {
+      jobId: streetImportJobId,
+      result: { status: "interrupted", mode: longRunMode },
+    });
     if (streetRunAbandonRequested) {
       await archiveStreetRunCheckpoint("Run via interrotta e abbandonata dall'operatore").catch((error) => {
         streetRunError = `Checkpoint non archiviato: ${error instanceof Error ? error.message : String(error)}`;
@@ -1420,6 +1506,58 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   streetRunPromise = runPromise;
   releaseOperationReservation("street");
   void runPromise;
+}
+
+/**
+ * Prende dal registro la prossima via e ci avvia sopra la run.
+ *
+ * L'ordine lo decide il database, non l'interfaccia: prima le vie con rank
+ * geografico, dal centro verso fuori, poi quelle senza geometria in ordine di
+ * Codvia. La presa in carico e' atomica e lascia un lease, quindi due Worker
+ * sulla stessa coda non possono ricevere la stessa via.
+ *
+ * Solo run reali: una prova a vuoto consumerebbe un tentativo della coda
+ * durevole senza portare a casa niente.
+ */
+async function runNextStreetFromRegistry(input: { filters?: Partial<StreetPropertyFilters> } = {}) {
+  if (streetRegistryClaim) {
+    throw new Error(`C'è già una via presa in carico dal registro: ${streetRegistryClaim.canonical_name}`);
+  }
+  /* Il controllo del cloud viene prima della presa in carico: prenderla e poi
+   * fallire brucerebbe un tentativo senza aver aperto neanche il browser. */
+  requireCloudAvailable(await healthChecks({ silent: true }));
+  const claim = await streetRegistryService().claim({
+    workerId: streetRegistryWorkerId(),
+    scope: "city",
+  });
+  if (!claim) {
+    streetRegistryError = null;
+    pushActivity(
+      "Nessuna via disponibile nel registro: la coda è esaurita oppure le lavorazioni rimaste sono già prese in carico.",
+      "warning",
+    );
+    await refreshStreetRegistryPreview().catch(() => undefined);
+    await publishState();
+    return null;
+  }
+  streetRegistryClaim = claim;
+  pushActivity(`Presa in carico dal registro: ${describeRegistryStreet(claim)}`, "info");
+  try {
+    await runSisterStreet({
+      street: claim.sister_search_name,
+      resume: false,
+      dryRun: false,
+      filters: input.filters,
+    });
+  } catch (error) {
+    /* La run non e' neanche partita: la via torna subito in coda invece di
+     * restare bloccata fino alla scadenza del lease. */
+    await closeStreetRegistryClaim("to_recheck", {
+      error: { message: error instanceof Error ? error.message : String(error) },
+    });
+    throw error;
+  }
+  return claim;
 }
 
 async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings> }) {
@@ -2553,7 +2691,6 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
-    await assertSpazioPerConservare();
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
   });
@@ -2566,12 +2703,19 @@ function registerIpc() {
     return stopAfterNextImportRequested;
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
-    await assertSpazioPerConservare();
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
+  ipcMain.handle("desktop:refresh-street-registry", async () => {
+    await refreshStreetRegistryPreview();
+    await publishState();
+    return !streetRegistryError;
+  });
+  ipcMain.handle("desktop:start-registry-street-run", async (_event, values: { filters?: Partial<StreetPropertyFilters> } = {}) => {
+    const claim = await runNextStreetFromRegistry({ filters: values?.filters });
+    return claim ? { started: true, street: claim.canonical_name } : { started: false, street: null };
+  });
   ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
-    if (!values.resume) await assertSpazioPerConservare();
     await runSisterNetwork({ settings: values.settings ?? {} });
     return true;
   });
@@ -2829,6 +2973,9 @@ app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
   scheduleDesktopKeepAlive(3_000);
+  /* La coda si carica in sottofondo: se il registro non risponde la finestra
+   * si apre lo stesso e l'errore si legge nel pannello, non blocca l'avvio. */
+  void refreshStreetRegistryPreview().then(() => publishState()).catch(() => undefined);
   scheduleHealthChecks();
   scheduleBrowserChecks();
   initializeDesktopUpdater();

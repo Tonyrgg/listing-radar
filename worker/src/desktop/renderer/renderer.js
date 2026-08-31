@@ -81,8 +81,8 @@ const GUIDE = {
   person_searched: {
     label: "Ricerca nominativi",
     doing:
-      "Cerco ogni persona nel gestionale prima per codice fiscale, poi per telefono e anagrafica.",
-    next: "Se non esiste, preparerò una nuova scheda; se esiste, completerò solo i dati mancanti.",
+      "Cerco ogni persona nel gestionale soltanto per codice fiscale e aggiorno l’anagrafica verificata.",
+    next: "Se non esiste, preparerò una nuova scheda; se esiste, sostituirò i dati anagrafici conservando i recapiti.",
   },
   person_created_or_updated: {
     label: "Aggiornamento nominativi",
@@ -332,6 +332,8 @@ function commandIdentity(target) {
       openOperationLogButton: "Apri registro operativo",
       startButton: "Avvia lavorazione",
       streetRunStart: "Avvia acquisizione via completa",
+      streetRegistryStart: "Lavora la prossima via del registro",
+      streetRegistryRefresh: "Aggiorna la coda del registro",
       streetRunCancel: "Metti in pausa acquisizione via",
       streetRunAbandon: "Ferma e abbandona acquisizione via",
       networkRunStart: "Esplora rete proprietaria",
@@ -1227,7 +1229,7 @@ function riassuntoAcquisizione(acquisition) {
 function renderJobs() {
   const jobs = appState?.jobs ?? [];
   const conservate = jobs.filter((job) => job.status === "saved" && !job.import_started_at).length;
-  $("jobCount").textContent = `${conservate}/3`;
+  $("jobCount").textContent = String(conservate);
   updateHistoryNavHint();
   const renderKey = [
     appState?.active ? "active" : "idle",
@@ -1758,6 +1760,65 @@ function renderStreetRun() {
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
 }
+/* La coda del registro e' un dato del database, non una preferenza locale:
+ * qui si mostra soltanto, l'ordine e la presa in carico li decide il server. */
+function renderStreetRegistry() {
+  const registry = appState?.streetRegistry ?? {},
+    claim = registry.claim ?? null,
+    queue = Array.isArray(registry.queue) ? registry.queue : [],
+    streetActive = Boolean(appState?.streetRun?.active),
+    start = $("streetRegistryStart"),
+    refresh = $("streetRegistryRefresh"),
+    next = $("streetRegistryNext"),
+    meta = $("streetRegistryMeta"),
+    list = $("streetRegistryQueue"),
+    errore = $("streetRegistryError");
+
+  start.disabled = streetActive
+    || Boolean(claim)
+    || Boolean(registry.loading)
+    || Boolean(appState?.active)
+    || Boolean(appState?.requestArchive?.active)
+    || Boolean(appState?.mandateArchive?.active)
+    || Boolean(appState?.networkRun?.active);
+  refresh.disabled = Boolean(registry.loading);
+
+  if (claim) {
+    next.textContent = `In lavorazione: ${claim.canonical_name}`;
+    meta.textContent = descriviPosizioneVia(claim);
+  } else if (registry.loading) {
+    next.textContent = "Carico la coda…";
+    meta.textContent = "";
+  } else if (queue.length) {
+    next.textContent = `Prossima via: ${queue[0].canonical_name}`;
+    meta.textContent = descriviPosizioneVia(queue[0]);
+  } else {
+    next.textContent = "Nessuna via in attesa nel registro.";
+    meta.textContent = registry.lastError ? "" : "La coda è esaurita oppure le lavorazioni sono già prese in carico.";
+  }
+
+  list.innerHTML = queue.slice(0, 10).map((item) => {
+    const senzaRank = item.city_rank == null;
+    return `<li class="${senzaRank ? "is-unranked" : ""}">`
+      + `<span class="srq-rank">${senzaRank ? "—" : esc(String(item.city_rank))}</span>`
+      + `<span class="srq-name">${esc(item.canonical_name)}</span>`
+      + `<span class="srq-zone">${esc(senzaRank ? "senza posizione" : item.zone_name || "zona non assegnata")}</span>`
+      + "</li>";
+  }).join("");
+
+  errore.classList.toggle("is-hidden", !registry.lastError);
+  errore.textContent = registry.lastError ?? "";
+}
+
+function descriviPosizioneVia(item) {
+  if (!item) return "";
+  if (item.city_rank == null) {
+    return "Senza geometria: nessuna posizione dal centro, resta in fondo alla coda in ordine di Codvia.";
+  }
+  const distanza = item.city_distance_m == null ? null : `${Math.round(Number(item.city_distance_m))} m dal centro`;
+  return [`${item.city_rank}ª dal centro`, distanza, item.zone_name].filter(Boolean).join(" · ");
+}
+
 function renderStreetRunInternalProgress(progress) {
   if (!progress) return;
   const summary = $("streetRunSummary"),
@@ -2310,6 +2371,7 @@ function render() {
   renderActivity();
   renderDiagnosticErrors();
   renderStreetRun();
+  renderStreetRegistry();
   renderNetworkRun();
   renderFiltriRete();
   renderReview();
@@ -2463,6 +2525,27 @@ document.addEventListener("click", async (event) => {
           street,
           resume: false,
           dryRun,
+          filters: {
+            residentialOnly: $("streetResidentialOnly").checked,
+            floorMode: $("streetFloorMode").value,
+            floorValue: nullableNumber($("streetFloorValue").value),
+            minCivicNumber: nullableNumber($("streetMinCivic").value),
+            maxCivicNumber: nullableNumber($("streetMaxCivic").value),
+          },
+        });
+      }
+      if (target.id === "streetRegistryRefresh")
+        return window.propertyWorker.refreshStreetRegistry();
+      if (target.id === "streetRegistryStart") {
+        const prossima = appState?.streetRegistry?.queue?.[0];
+        if (!prossima) throw new Error("Nessuna via in attesa nel registro");
+        /* Il registro lavora solo run reali: la conferma dice cosa sta per
+         * succedere davvero, compreso l'import automatico finale. */
+        if (!window.confirm(
+          `Il registro assegnerà ${prossima.canonical_name} a questo Worker e avvierà la run reale: `
+          + "tutte le varianti esatte senza civico, con import automatico nel gestionale al termine. Continuare?",
+        )) return COMMAND_CANCELLED;
+        return window.propertyWorker.startRegistryStreetRun({
           filters: {
             residentialOnly: $("streetResidentialOnly").checked,
             floorMode: $("streetFloorMode").value,

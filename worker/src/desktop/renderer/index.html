@@ -144,8 +144,23 @@
           <header>
             <div><p class="eyebrow">Nuova acquisizione</p><h2>Acquisisci una via completa</h2><p>Indica la via esatta: la ricerca su SISTER la imposta il worker.</p></div>
           </header>
+          <section id="streetRegistry" class="street-registry" aria-labelledby="streetRegistryTitle">
+            <div class="street-registry-head">
+              <div>
+                <p class="eyebrow" id="streetRegistryTitle">Registro vie di Bitonto</p>
+                <p id="streetRegistryNext" class="street-registry-next">Carico la coda…</p>
+                <p id="streetRegistryMeta" class="street-registry-meta"></p>
+              </div>
+              <div class="street-registry-actions">
+                <button id="streetRegistryStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>Lavora la prossima via</button>
+                <button id="streetRegistryRefresh" class="button ghost">Aggiorna la coda</button>
+              </div>
+            </div>
+            <ol id="streetRegistryQueue" class="street-registry-queue"></ol>
+            <p id="streetRegistryError" class="street-registry-error is-hidden" role="alert"></p>
+          </section>
           <div class="street-run-controls">
-            <label>Via esatta già presente nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
+            <label>Oppure indica tu la via, esatta come nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
             <button id="streetRunStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span id="streetRunStartLabel">Avvia dry-run</span></button>
             <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
             <button id="streetRunAbandon" class="button danger is-hidden">Interrompi</button>
@@ -301,7 +316,7 @@
         </section>
 
         <section id="jobs" class="jobs-card run-keepsakes">
-          <header><div><p class="eyebrow">Acquisizioni conservate</p><h2>Pronte da importare</h2><p>Al massimo tre: apri i dati per controllarli, poi avvia l'import quando vuoi. Finché sono qui, nel gestionale non è finito niente.</p></div><span id="jobCount" class="count">0</span></header>
+          <header><div><p class="eyebrow">Acquisizioni conservate</p><h2>Pronte da importare</h2><p>Apri i dati per controllarli, poi avvia l'import quando vuoi. Finché sono qui, nel gestionale non è finito niente.</p></div><span id="jobCount" class="count">0</span></header>
           <div class="ledger"><div class="ledger-head"><span></span><span>Ricerca</span><span>Immobili</span><span>Proprietari</span><span>Stato</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div></div>
         </section>
 
