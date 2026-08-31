@@ -1,9 +1,10 @@
-import { Banknote, Building2, Layers3, MapPin, Ruler, type LucideIcon } from "lucide-react";
+import { ArrowUpDown, Banknote, Building2, Layers3, MapPin, Ruler, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PropertyTypeMark } from "@/components/matching/visual-language";
 import { formatCurrency, formatNumber } from "@/lib/formatting";
+import { requestRequiresElevator } from "@/lib/matching/elevator";
 
 /**
  * La grammatica delle schede.
@@ -52,6 +53,12 @@ type RequestLike = Readonly<{
     | readonly Readonly<{
         preference_level: string;
         zone?: Readonly<{ name?: string | null }> | null;
+      }>[]
+    | null;
+  request_feature_preferences?:
+    | readonly Readonly<{
+        preference_level: string;
+        feature?: Readonly<{ key?: string | null }> | null;
       }>[]
     | null;
 }>;
@@ -111,6 +118,11 @@ export function RequestFacts({
       {locali != null ? (
         <FactPill icon={Layers3} label="Locali">
           {formatNumber(locali)} locali
+        </FactPill>
+      ) : null}
+      {requestRequiresElevator(request) ? (
+        <FactPill icon={ArrowUpDown} label="Ascensore">
+          ascensore obbligatorio
         </FactPill>
       ) : null}
       {posizione ? (

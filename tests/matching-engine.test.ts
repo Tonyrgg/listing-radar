@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { calculateMatch } from "@/lib/matching/engine";
 import { estimateCommercialSqm, sqmCoherenceWarnings } from "@/lib/matching/scoring";
-import { elevatorIsRelevant, readBooleanFeature } from "@/lib/matching/elevator";
+import {
+  elevatorIsRelevant,
+  propertyHasElevator,
+  readBooleanFeature,
+  requestRequiresElevator,
+} from "@/lib/matching/elevator";
 import type { PortfolioProperty, PropertyRequest } from "@/lib/matching/types";
 import type { GeoJsonGeometry } from "@/lib/map/types";
 
@@ -300,6 +305,40 @@ describe("rilevanza dell'ascensore", () => {
 
   it("non decide quando il piano non e' noto", () => {
     expect(elevatorIsRelevant({ ...property, floor: null })).toBeNull();
+  });
+});
+
+describe("etichette dell'ascensore nelle schede", () => {
+  it("segnala la richiesta che lo pretende", () => {
+    expect(requestRequiresElevator({
+      request_feature_preferences: [{ preference_level: "required", feature: { key: "elevator" } }],
+    })).toBe(true);
+  });
+
+  it("non lo segnala quando e' solo preferito o riguarda un'altra dotazione", () => {
+    expect(requestRequiresElevator({
+      request_feature_preferences: [{ preference_level: "preferred", feature: { key: "elevator" } }],
+    })).toBe(false);
+    expect(requestRequiresElevator({
+      request_feature_preferences: [{ preference_level: "required", feature: { key: "balcony" } }],
+    })).toBe(false);
+    expect(requestRequiresElevator({})).toBe(false);
+  });
+
+  it("segnala l'incarico che ha l'ascensore", () => {
+    expect(propertyHasElevator({
+      property_feature_values: [{ value: true, feature: { key: "elevator" } }],
+    })).toBe(true);
+  });
+
+  it("non lo segnala quando manca, e' a no, o la lista non e' stata caricata", () => {
+    expect(propertyHasElevator({
+      property_feature_values: [{ value: false, feature: { key: "elevator" } }],
+    })).toBe(false);
+    expect(propertyHasElevator({
+      property_feature_values: [{ value: true, feature: { key: "balcony" } }],
+    })).toBe(false);
+    expect(propertyHasElevator({})).toBe(false);
   });
 });
 
