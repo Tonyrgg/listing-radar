@@ -2,6 +2,7 @@ import { AlertTriangle, Check } from "lucide-react";
 
 import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
+import { propertyHasElevator } from "@/lib/matching/elevator";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty, RequestPropertyMatch } from "@/lib/matching/types";
 
@@ -45,7 +46,15 @@ function prezzo(property: PortfolioProperty) {
 export function PropertyMatchRow({
   match,
   property,
-}: Readonly<{ match: RequestPropertyMatch; property: PortfolioProperty }>) {
+}: Readonly<{
+  match: RequestPropertyMatch;
+  property: PortfolioProperty & {
+    property_feature_values?: readonly {
+      value: unknown;
+      feature?: { key?: string | null } | null;
+    }[] | null;
+  };
+}>) {
   const verdetto = VERDETTO[match.classification] ?? VERDETTO.weak;
   const foto = property.image_urls?.[0];
   const dove = property.zone?.name ?? property.municipality ?? null;
@@ -80,6 +89,7 @@ export function PropertyMatchRow({
           {superficie != null ? <span>{formatNumber(superficie)} mq</span> : null}
           {property.rooms != null ? <span>{formatNumber(property.rooms)} locali</span> : null}
           {dove ? <span>{dove}</span> : null}
+          {propertyHasElevator(property) ? <span>con ascensore</span> : null}
         </p>
 
         {/* Cosa torna e cosa no: segni, non etichette. */}

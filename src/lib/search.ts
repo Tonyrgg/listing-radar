@@ -39,7 +39,7 @@ async function nostreCase(modello: string, limite: number): Promise<PortfolioPro
   try {
     const { data, error } = await getSupabaseServiceClient()
       .from("portfolio_properties")
-      .select("*, zone:internal_zones(id,name)")
+      .select("*, zone:internal_zones(id,name), property_feature_values(value, feature:feature_definitions(key,label))")
       .or(`address.ilike.${modello},title.ilike.${modello},municipality.ilike.${modello}`)
       .limit(limite);
 

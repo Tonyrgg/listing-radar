@@ -29,12 +29,16 @@ export async function listRequests(): Promise<Array<PropertyRequest & {
     preference_level: string;
     zone: { id: string; name: string } | null;
   }>;
+  request_feature_preferences?: Array<{
+    preference_level: string;
+    feature: { key: string; label: string } | null;
+  }>;
 }>> {
   if (!configured()) return [];
   try {
     const { data, error } = await getSupabaseServiceClient()
       .from("property_requests")
-      .select("*, clients(id,full_name,phone,email,raw_payload), request_zones(preference_level, zone:internal_zones(id,name))")
+      .select("*, clients(id,full_name,phone,email,raw_payload), request_zones(preference_level, zone:internal_zones(id,name)), request_feature_preferences(preference_level, feature:feature_definitions(key,label))")
       .order("created_at", { ascending: false });
     if (error) return [];
     return (data ?? []) as Array<PropertyRequest & {
@@ -42,6 +46,10 @@ export async function listRequests(): Promise<Array<PropertyRequest & {
       request_zones?: Array<{
         preference_level: string;
         zone: { id: string; name: string } | null;
+      }>;
+      request_feature_preferences?: Array<{
+        preference_level: string;
+        feature: { key: string; label: string } | null;
       }>;
     }>;
   } catch {
@@ -90,15 +98,31 @@ export async function listZones(): Promise<InternalZone[]> {
   }
 }
 export const listFeatures = () => safeList<FeatureDefinition>("feature_definitions", "sort_order", true);
+
+/**
+ * Un match a punteggio zero e' stato escluso da un filtro duro — contratto,
+ * tipologia o ascensore obbligatorio — oppure azzerato dai conflitti. In
+ * nessuno dei due casi e' una proposta da mostrare all'operatore, quindi non
+ * entra nelle liste di lavoro.
+ *
+ * Le righe restano in tabella e le statistiche continuano a contarle: servono a
+ * sapere quanto lavoro il motore ha scartato, e a spiegare un'assenza quando
+ * qualcuno chiede perche' un immobile non compare.
+ */
+export const EXCLUDED_MATCH_SCORE = 0;
+
 export async function listMatches(options: {
   limit?: number;
   classification?: string;
   minimum?: number;
   requestIds?: string[];
+  /** Include anche i match esclusi, per diagnosticare un'assenza. */
+  includeExcluded?: boolean;
 } = {}): Promise<RequestPropertyMatch[]> {
   if (!configured()) return [];
   try {
     let query = getSupabaseServiceClient().from("request_property_matches").select("*");
+    if (!options.includeExcluded) query = query.gt("score", EXCLUDED_MATCH_SCORE);
     if (options.classification) query = query.eq("classification", options.classification);
     if (options.minimum) query = query.gte("score", options.minimum);
     if (options.requestIds) {
@@ -193,7 +217,7 @@ export async function getRequest(id: string) {
     supabase.from("property_requests").select("*, clients(*)").eq("id", id).maybeSingle(),
     supabase.from("request_zones").select("*, zone:internal_zones(*)").eq("request_id", id),
     supabase.from("request_feature_preferences").select("*, feature:feature_definitions(*)").eq("request_id", id),
-    supabase.from("request_property_matches").select("*, property:portfolio_properties(*)").eq("request_id", id).order("score", { ascending: false }),
+    supabase.from("request_property_matches").select("*, property:portfolio_properties(*)").eq("request_id", id).gt("score", EXCLUDED_MATCH_SCORE).order("score", { ascending: false }),
     supabase.from("matching_activity_logs").select("*").eq("entity_type", "request").eq("entity_id", id).order("created_at", { ascending: false }).limit(30),
   ]);
   return request ? { request, zones: zones ?? [], features: features ?? [], matches: matches ?? [], logs: logs ?? [] } : null;
@@ -205,7 +229,7 @@ export async function getProperty(id: string) {
   const [{ data: property }, { data: features }, { data: matches }] = await Promise.all([
     supabase.from("portfolio_properties").select("*, zone:internal_zones(*)").eq("id", id).maybeSingle(),
     supabase.from("property_feature_values").select("*, feature:feature_definitions(*)").eq("property_id", id),
-    supabase.from("request_property_matches").select("*, request:property_requests(*, clients(*))").eq("property_id", id).order("score", { ascending: false }),
+    supabase.from("request_property_matches").select("*, request:property_requests(*, clients(*))").eq("property_id", id).gt("score", EXCLUDED_MATCH_SCORE).order("score", { ascending: false }),
   ]);
   return property ? { property, features: features ?? [], matches: matches ?? [] } : null;
 }

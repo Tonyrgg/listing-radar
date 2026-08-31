@@ -66,6 +66,34 @@ export function elevatorIsRelevant(property: MatchingContext["property"]): boole
   return property.floor !== 0;
 }
 
+/**
+ * Le due letture che servono alle schede per mostrare l'ascensore fra le
+ * etichette. Lavorano sulle righe come arrivano dalle liste, che portano la
+ * chiave della caratteristica e non l'identificativo.
+ */
+export function requestRequiresElevator(request: {
+  request_feature_preferences?: readonly {
+    preference_level: string;
+    feature?: { key?: string | null } | null;
+  }[] | null;
+}) {
+  return (request.request_feature_preferences ?? []).some(
+    (item) => item.feature?.key === ELEVATOR_FEATURE_KEY && item.preference_level === "required",
+  );
+}
+
+export function propertyHasElevator(property: {
+  property_feature_values?: readonly {
+    value: unknown;
+    feature?: { key?: string | null } | null;
+  }[] | null;
+}) {
+  const stored = (property.property_feature_values ?? []).find(
+    (item) => item.feature?.key === ELEVATOR_FEATURE_KEY,
+  );
+  return stored ? readBooleanFeature(stored.value) === true : false;
+}
+
 export function evaluateElevatorRequirement(context: MatchingContext): ElevatorVerdict {
   const preference = (context.requestFeatures ?? []).find(
     (item) => item.feature?.key === ELEVATOR_FEATURE_KEY && item.preference_level === "required",
