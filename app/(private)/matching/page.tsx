@@ -153,15 +153,26 @@ export default async function ChiCercaCosaPage({
    * cioe' da dove far partire la ricerca di nuovi immobili. Il conteggio arriva
    * dal database perche' qui una risposta approssimata varrebbe meno di nessuna
    * risposta: manderebbe a cercare case per clienti gia' serviti. */
-  const scoperte = soloScoperte && copertura
+  /* Le richieste ordinate dalla piu' povera alla piu' servita.
+   *
+   * Le completamente scoperte sono quattro, e quattro nomi non bastano a
+   * decidere cosa cercare: fra chi non ha niente e chi e' servito ci sono i
+   * clienti con una casa sola, scoperti quasi quanto gli altri. A parita' di
+   * case proponibili viene prima chi ha il punteggio migliore piu' basso: e' la
+   * richiesta da cui il portafoglio e' piu' lontano. */
+  const perCopertura = soloScoperte && copertura
     ? richiestePerContratto
-      .map((request) => ({ request, coperta: copertura.get(request.id) }))
-      // Scoperta non e' «nessuna riga in tabella»: e' nessuna casa che valga la
-      // pena mostrare. Quasi ogni richiesta ha qualcosa che la sfiora, e
-      // contare quelle avrebbe dato zero scoperte sempre.
-      .filter(({ coperta }) => !(coperta?.relevantCount ?? 0))
-      .sort((a, b) => (b.coperta?.bestScore ?? 0) - (a.coperta?.bestScore ?? 0))
+      .map((request) => ({
+        request,
+        coperta: copertura.get(request.id) ?? {
+          bestScore: 0, excellentCount: 0, proposableCount: 0, nearCount: 0,
+        },
+      }))
+      .sort((a, b) =>
+        a.coperta.proposableCount - b.coperta.proposableCount
+        || a.coperta.bestScore - b.coperta.bestScore)
     : [];
+  const senzaNiente = perCopertura.filter(({ coperta }) => !coperta.proposableCount).length;
   const conteggioNonRiuscito = soloScoperte && !copertura;
 
   const richiestaPerId = new Map(
@@ -209,7 +220,7 @@ export default async function ChiCercaCosaPage({
       .includes(cerca);
   });
 
-  const scoperteFiltrate = scoperte.filter(({ request }) => {
+  const scoperteFiltrate = perCopertura.filter(({ request }) => {
     if (!cerca) return true;
     return [request.clients?.full_name, request.title, request.municipality]
       .filter(Boolean)
@@ -268,7 +279,7 @@ export default async function ChiCercaCosaPage({
       <AutoSubmitFiltersForm>
         <FilterBar
           summary={soloScoperte
-            ? `${formatNumber(scoperteFiltrate.length)} clienti senza nemmeno una casa`
+            ? `${formatNumber(senzaNiente)} clienti senza nemmeno una casa, poi i meno serviti`
             : `${formatNumber(filtrati.length)} clienti con abbinamenti`}
           active={Boolean(cerca || contratto || modo)}
           resetHref="/matching"
@@ -290,7 +301,7 @@ export default async function ChiCercaCosaPage({
           <Scelta name="solo" defaultValue={modo}>
             <option value="">Tutte le case che ci vanno vicino</option>
             <option value="buone">Solo quelle che vanno bene</option>
-            <option value="scoperte">Richieste senza abbinamenti</option>
+            <option value="scoperte">Richieste meno coperte</option>
           </Scelta>
         </Campo>
 
@@ -315,7 +326,8 @@ export default async function ChiCercaCosaPage({
           <ProgressiveList className="space-y-5" initialCount={8} step={8} noun="clienti">
             {scoperteFiltrate.map(({ request, coperta }) => {
               const cliente = request.clients?.full_name ?? "Cliente da collegare";
-              const migliore = Math.round(coperta?.bestScore ?? 0);
+              const migliore = Math.round(coperta.bestScore);
+              const proponibili = coperta.proposableCount;
               return (
                 <Card key={request.id}>
                   <RecordCardHeader
@@ -324,7 +336,13 @@ export default async function ChiCercaCosaPage({
                     factsLabel="Criteri della richiesta"
                     facts={<RequestFacts request={request} />}
                     subtitle={request.title ? cleanRequestTitle(request.title) : null}
-                    chips={<Chip tone="warn">Nessuna casa</Chip>}
+                    chips={
+                      <Chip tone={proponibili ? "warn" : "danger"}>
+                        {proponibili
+                          ? `${proponibili} ${proponibili === 1 ? "casa" : "case"} da proporre`
+                          : "Nessuna casa"}
+                      </Chip>
+                    }
                     action={
                       <Link
                         href={`/requests/${request.id}`}
@@ -337,10 +355,17 @@ export default async function ChiCercaCosaPage({
                   />
                   <CardBody>
                     <Meta>
-                      {migliore > 0
-                        ? `Nessuna delle ${immobiliLiberi.length} case in portafoglio arriva a una proposta: la più vicina si ferma al ${migliore}%.`
-                        : `Nessuna delle ${immobiliLiberi.length} case in portafoglio è compatibile con questi criteri.`}
-                      {" "}È una casa da cercare, non un abbinamento da migliorare.
+                      {proponibili === 0
+                        ? (migliore > 0
+                          ? `Nessuna delle ${immobiliLiberi.length} case in portafoglio arriva a una proposta: la più vicina si ferma al ${migliore}%. È una casa da cercare, non un abbinamento da migliorare.`
+                          : `Nessuna delle ${immobiliLiberi.length} case in portafoglio è compatibile con questi criteri.`)
+                        : `${proponibili === 1 ? "Una sola casa" : `Solo ${proponibili} case`} su ${immobiliLiberi.length} da proporre: se il cliente dice di no, non resta molto.`}
+                      {coperta.excellentCount > 0
+                        ? ` ${coperta.excellentCount} ${coperta.excellentCount === 1 ? "arriva" : "arrivano"} al 90%.`
+                        : ""}
+                      {coperta.nearCount > 0
+                        ? ` Altre ${coperta.nearCount} si fermano poco sotto la soglia: forse basta rivedere i criteri.`
+                        : ""}
                     </Meta>
                   </CardBody>
                 </Card>
@@ -351,8 +376,8 @@ export default async function ChiCercaCosaPage({
           <Card>
             <CardBody>
               <EmptyState
-                title="Ogni richiesta ha almeno una casa"
-                description="Nessun cliente resta scoperto con questi filtri: per tutti c'è qualcosa da proporre."
+                title="Nessuna richiesta da mostrare"
+                description="Con questi filtri non resta nessun cliente in elenco."
                 action={
                   <Link href="/matching" className={buttonClass("secondary", { compact: true })}>
                     Torna agli abbinamenti

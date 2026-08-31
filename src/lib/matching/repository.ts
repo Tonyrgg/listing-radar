@@ -102,7 +102,7 @@ export const listFeatures = () => safeList<FeatureDefinition>("feature_definitio
 /**
  * Sotto questo punteggio un abbinamento non e' una proposta.
  *
- * Non e' una soglia tecnica ma una decisione commerciale: sotto il settanta per
+ * Non e' una soglia tecnica ma una decisione commerciale: sotto l'ottanta per
  * cento la casa non si porta al cliente, quindi non deve nemmeno occupargli lo
  * schermo. Sopra questa soglia stanno gli abbinamenti che si mostrano; sotto
  * ci sono sia gli esclusi dai filtri duri — contratto, tipologia, ascensore
@@ -114,7 +114,7 @@ export const listFeatures = () => safeList<FeatureDefinition>("feature_definitio
  * funzione `matching_request_coverage`, che decide quali richieste sono
  * scoperte: se cambia qui, va cambiata anche li'.
  */
-export const MIN_PROPOSABLE_SCORE = 70;
+export const MIN_PROPOSABLE_SCORE = 80;
 
 export async function listMatches(options: {
   limit?: number;
@@ -213,14 +213,22 @@ export async function countCompatibleMatchesByRequest(): Promise<Map<string, num
   return conteggi;
 }
 
-/** Quanto e' coperta una richiesta: il meglio che il portafoglio sa offrirle. */
+/**
+ * Quanto e' coperta una richiesta: il meglio che il portafoglio sa offrirle.
+ *
+ * Gli scaglioni servono a distinguere chi e' scoperto da chi e' povero. Fra il
+ * cliente senza niente e quello servito ci sono quelli con una casa sola, che
+ * hanno bisogno quanto i primi e prima non si vedevano da nessuna parte.
+ */
 export type RequestCoverage = {
   /** Il punteggio dell'abbinamento migliore, per distinguere le urgenze. */
   bestScore: number;
-  /** Abbinamenti non esclusi da un filtro duro. */
+  /** Abbinamenti dal 90 in su: la casa giusta, non una che ci somiglia. */
+  excellentCount: number;
+  /** Abbinamenti che si possono portare al cliente. */
   proposableCount: number;
-  /** Abbinamenti che superano la soglia oltre la quale vale la pena mostrarli. */
-  relevantCount: number;
+  /** Abbinamenti fra 70 e 79: non si propongono, ma dicono quanto manca. */
+  nearCount: number;
 };
 
 /**
@@ -247,13 +255,15 @@ export async function getRequestCoverage(): Promise<Map<string, RequestCoverage>
     for (const riga of (data ?? []) as Array<{
       request_id: string;
       best_score: number | string | null;
+      excellent_count: number;
       proposable_count: number;
-      relevant_count: number;
+      near_count: number;
     }>) {
       copertura.set(riga.request_id, {
         bestScore: Number(riga.best_score ?? 0),
+        excellentCount: riga.excellent_count,
         proposableCount: riga.proposable_count,
-        relevantCount: riga.relevant_count,
+        nearCount: riga.near_count,
       });
     }
     return copertura;

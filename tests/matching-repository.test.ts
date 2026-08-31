@@ -112,9 +112,9 @@ describe("liste dei match", () => {
   it("chiede al database la copertura di ogni richiesta", async () => {
     rpcResponse = {
       data: [
-        { request_id: "r1", best_score: 91, proposable_count: 5, relevant_count: 3 },
-        // Ha abbinamenti, ma nessuno arriva a 70: e' scoperta.
-        { request_id: "r2", best_score: "68.4", proposable_count: 7, relevant_count: 0 },
+        { request_id: "r1", best_score: 91, excellent_count: 2, proposable_count: 5, near_count: 1 },
+        // Ha abbinamenti, ma nessuno arriva a 80: e' scoperta.
+        { request_id: "r2", best_score: "78.4", excellent_count: 0, proposable_count: 0, near_count: 7 },
       ],
       error: null,
     };
@@ -122,10 +122,14 @@ describe("liste dei match", () => {
     // La copertura va chiesta al database: ricavarla dalle righe scaricate,
     // che hanno un limite, farebbe sembrare scoperte le richieste tagliate.
     expect(rpcCalls).toEqual(["matching_request_coverage"]);
-    expect(copertura?.get("r1")).toEqual({ bestScore: 91, proposableCount: 5, relevantCount: 3 });
+    expect(copertura?.get("r1")).toEqual({
+      bestScore: 91, excellentCount: 2, proposableCount: 5, nearCount: 1,
+    });
     // Il punteggio arriva da una colonna numeric, quindi puo' essere stringa.
-    expect(copertura?.get("r2")?.bestScore).toBeCloseTo(68.4);
-    expect(copertura?.get("r2")?.relevantCount).toBe(0);
+    expect(copertura?.get("r2")?.bestScore).toBeCloseTo(78.4);
+    // Sfiorare la soglia non copre: sette case a 79 lasciano il cliente scoperto.
+    expect(copertura?.get("r2")?.proposableCount).toBe(0);
+    expect(copertura?.get("r2")?.nearCount).toBe(7);
     expect(copertura?.get("r3")).toBeUndefined();
   });
 
