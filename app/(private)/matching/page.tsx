@@ -137,7 +137,11 @@ export default async function ChiCercaCosaPage({
     ? richiesteAttive.filter((request) => request.contract_type === contratto)
     : richiesteAttive;
 
-  const matches = soloScoperte ? [] : await listMatches({
+  /* Gli abbinamenti si caricano sempre, anche quando la pagina elenca le
+   * richieste scoperte: il riquadro in alto li conta, e saltare la query per
+   * risparmiarla gli faceva dire «0 abbinamenti utili» — un numero mai
+   * calcolato, indistinguibile da un portafoglio che non abbina piu' niente. */
+  const matches = await listMatches({
     limit: 600,
     classification: soloBuone ? "compatible" : "",
     minimum: 0,
