@@ -1,0 +1,134 @@
+name: Property Data Worker Release
+
+# Build firmata dell'installer Windows.
+#
+# Il workflow parte SOLO a mano: non c'e' trigger su push o su tag, perche' una
+# release del worker e' una consegna operativa e non deve mai essere l'effetto
+# collaterale di un commit. Con `publish: false` (default) l'esecuzione si
+# ferma dopo la verifica della firma e lascia l'installer come artifact, senza
+# toccare GitHub Releases.
+#
+# Finche' il certificato non esiste, l'unica modalita' eseguibile e' `unsigned`,
+# che serve a provare la pipeline e si rifiuta di pubblicare.
+on:
+  workflow_dispatch:
+    inputs:
+      signing_mode:
+        description: "Modalita' di firma"
+        required: true
+        default: unsigned
+        type: choice
+        options: [unsigned, azure-trusted-signing, signtool-pfx]
+      publish:
+        description: "Pubblica la release GitHub (richiede una build firmata)"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: property-worker-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # signtool.exe e il modulo PowerShell TrustedSigning esistono solo su Windows.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # `npm ci` e non `npm install`: una release deve partire dalle versioni
+      # esatte del lockfile. Qui funziona, a differenza del workflow Linux,
+      # perche' il lockfile e' stato generato su Windows come questo runner.
+      - run: npm ci --no-audit --no-fund
+
+      - name: Test worker
+        run: npm test
+
+      # Una release non firmata non deve poter essere pubblicata per errore:
+      # e' esattamente lo stato che stiamo cercando di superare.
+      - name: Rifiuta la pubblicazione di una build non firmata
+        if: inputs.publish && inputs.signing_mode == 'unsigned'
+        run: |
+          echo "::error::publish=true richiede una modalita' di firma."
+          exit 1
+
+      - name: Build non firmata (prova della pipeline)
+        if: inputs.signing_mode == 'unsigned'
+        run: npm run desktop:build
+
+      - name: Build firmata
+        if: inputs.signing_mode != 'unsigned'
+        env:
+          WORKER_SIGNING_MODE: ${{ inputs.signing_mode }}
+          WORKER_SIGNING_REQUIRED: "true"
+          WORKER_SIGNING_PUBLISHER: ${{ secrets.WORKER_SIGNING_PUBLISHER }}
+          WORKER_SIGNING_ENDPOINT: ${{ secrets.WORKER_SIGNING_ENDPOINT }}
+          WORKER_SIGNING_ACCOUNT: ${{ secrets.WORKER_SIGNING_ACCOUNT }}
+          WORKER_SIGNING_CERT_PROFILE: ${{ secrets.WORKER_SIGNING_CERT_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run desktop:build:signed
+
+      - name: Individua gli artefatti
+        id: artifacts
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $installer = "release/Property Data Worker Setup $version.exe"
+          if (-not (Test-Path -LiteralPath $installer)) {
+            Write-Error "Installer non prodotto: $installer"
+            exit 1
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      # Il gate vero: se la firma manca, e' scaduta, non ha timestamp o il
+      # publisher non coincide, lo script esce diverso da zero e il job fallisce.
+      - name: Verifica firma
+        if: inputs.signing_mode != 'unsigned'
+        run: >
+          npm run desktop:verify-signature --
+          --require-windows
+          --publisher="${{ secrets.WORKER_SIGNING_PUBLISHER }}"
+          "${{ steps.artifacts.outputs.installer }}"
+          "release/win-unpacked/Property Data Worker.exe"
+
+      # Anche senza firma vogliamo sapere cosa e' stato prodotto: il controllo
+      # strutturale conferma che l'installer di oggi e' privo di firma.
+      - name: Ispeziona l'installer non firmato
+        if: inputs.signing_mode == 'unsigned'
+        continue-on-error: true
+        run: npm run desktop:verify-signature -- "${{ steps.artifacts.outputs.installer }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: property-data-worker-${{ steps.artifacts.outputs.version }}
+          path: worker/release/*.exe
+          retention-days: 7
+          if-no-files-found: error
+
+      # publish-update.mjs applica i propri controlli: worktree pulito, HEAD
+      # allineato al branch di default e asset completi prima di togliere la
+      # bozza. Qui non li duplichiamo.
+      - name: Pubblica la release GitHub
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run desktop:publish-update
+
+      - name: Verifica il canale di aggiornamento
+        if: inputs.publish
+        run: npm run desktop:verify-update

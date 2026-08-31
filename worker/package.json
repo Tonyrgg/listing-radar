@@ -17,6 +17,8 @@
     "desktop:dev": "npm run desktop:compile && electron .",
     "desktop:prepare-config": "node scripts/prepare-bundled-config.mjs",
     "desktop:build": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win nsis && node scripts/prune-local-releases.mjs",
+    "desktop:build:signed": "npm run desktop:prepare-config && npm run desktop:compile && tsx scripts/build-signed-installer.ts && node scripts/prune-local-releases.mjs",
+    "desktop:verify-signature": "tsx scripts/verify-installer-signature.ts",
     "desktop:publish-update": "node scripts/publish-update.mjs",
     "desktop:publish-update:legacy-bridge": "node scripts/publish-update-legacy-bridge.mjs",
     "desktop:verify-update": "node scripts/verify-update-channel.mjs",

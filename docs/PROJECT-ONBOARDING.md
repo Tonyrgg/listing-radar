@@ -522,6 +522,18 @@ La prima versione dotata dell'updater GitHub deve essere pubblicata anche una so
 
 Un HTTP 402/quota Supabase blocca l'avvio delle run che richiedono persistenza cloud prima di modificare il CRM, perché job e checkpoint non sarebbero persistibili. Non blocca i dry-run locali della via completa, il canale aggiornamenti GitHub o l'endpoint di download diretto.
 
+#### Firma digitale degli installer
+
+Gli installer pubblicati fino alla `0.29.0` **non sono firmati**: l'header PE non contiene alcuna tabella dei certificati, quindi Windows mostra "Editore sconosciuto" e gli antivirus aziendali li bloccano legittimamente. La configurazione electron-builder, il workflow `Property Data Worker Release` e la verifica automatica della firma sono già nel repository e attendono soltanto il certificato; la procedura completa è in `worker/CODE_SIGNING.md`.
+
+Vincoli da ricordare prima di intervenire su questa area:
+
+- electron-builder è bloccato alla `26.15.3`, dove le opzioni di firma vivono sotto `win.signtoolOptions` e `win.azureSignOptions`. Le vecchie chiavi piatte `win.certificateFile` e `win.publisherName` non esistono più e lo schema rifiuta le proprietà sconosciute;
+- senza `forceCodeSigning: true` una firma fallita non ferma la build: produce artefatti non firmati;
+- il default di electron-builder firma solo i `.exe`; DLL e moduli nativi richiedono `signExts`;
+- l'updater del worker è custom e verifica lo SHA-256 del manifest, non il Publisher: firmare non rompe l'aggiornamento e un worker non firmato può aggiornarsi a una versione firmata;
+- la firma cambia lo SHA-256 dell'installer, ma `publish-update.mjs` calcola hash e parti dopo la build, quindi già dal binario firmato. L'ordine attuale è corretto.
+
 Prima di pubblicare:
 
 - incrementare coerentemente la versione del worker;

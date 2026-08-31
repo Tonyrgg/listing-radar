@@ -72,6 +72,26 @@ Il comando verifica che binario e hash coincidano con la release GitHub ed è bl
 
 Stato operativo: il ponte della `0.16.0` è stato pubblicato e verificato il 29 agosto 2026. Non rieseguire il comando per questa o per le versioni successive.
 
+## Firma digitale dell'installer
+
+Gli installer pubblicati **non sono ancora firmati**: Windows mostra "Editore
+sconosciuto" e gli antivirus aziendali, Sophos compreso, li bloccano legittimamente.
+La configurazione di build, il workflow e la verifica della firma sono già pronti
+nel repository e attendono soltanto il certificato.
+
+La procedura completa, i secret richiesti e cosa comunicare all'IT aziendale sono
+in `worker/CODE_SIGNING.md`.
+
+Build firmata, solo da Windows e con le variabili di firma in ambiente:
+
+```powershell
+npm run desktop:build:signed
+npm run desktop:verify-signature -- --require-windows --publisher="CN=..." "release/Property Data Worker Setup 0.29.0.exe"
+```
+
+Senza variabili di firma `npm run desktop:build` continua a produrre l'installer
+non firmato per lo sviluppo locale.
+
 L'installer viene creato in `worker/release/`. Per un singolo eseguibile portabile, senza installazione:
 
 ```powershell
