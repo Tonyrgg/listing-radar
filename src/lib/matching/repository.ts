@@ -208,6 +208,39 @@ export async function countCompatibleMatchesByRequest(): Promise<Map<string, num
   return conteggi;
 }
 
+/**
+ * Quanti abbinamenti proponibili ha ogni richiesta.
+ *
+ * Il conteggio arriva dal database perche' l'elenco delle richieste scoperte
+ * dev'essere esatto: ricavarlo dalle righe gia' scaricate, che hanno un limite,
+ * farebbe sembrare scoperte le richieste rimaste fuori dal taglio.
+ *
+ * Ritorna `null`, e non una mappa vuota, quando il conteggio non riesce: una
+ * mappa vuota si leggerebbe come «nessuna richiesta ha abbinamenti», che e' la
+ * risposta sbagliata piu' credibile che questa funzione possa dare.
+ */
+export async function countProposableMatchesByRequest(): Promise<Map<string, number> | null> {
+  if (!configured()) return null;
+
+  try {
+    const { data, error } = await getSupabaseServiceClient().rpc(
+      "matching_proposable_counts",
+    );
+    if (error) return null;
+
+    const conteggi = new Map<string, number>();
+    for (const riga of (data ?? []) as Array<{
+      request_id: string;
+      proposable_count: number;
+    }>) {
+      conteggi.set(riga.request_id, riga.proposable_count);
+    }
+    return conteggi;
+  } catch {
+    return null;
+  }
+}
+
 export const listClients = () => safeList<Client>("clients", "full_name", true);
 
 export async function getRequest(id: string) {

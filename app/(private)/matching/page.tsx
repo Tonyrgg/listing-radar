@@ -25,6 +25,7 @@ import {
 import { formatNumber } from "@/lib/formatting";
 import { cleanRequestTitle } from "@/lib/matching/request-presentation";
 import {
+  countProposableMatchesByRequest,
   listMatches,
   listProperties,
   listRequests,
@@ -114,11 +115,15 @@ export default async function ChiCercaCosaPage({
       : param(query.contratto) === "sale"
         ? "sale"
         : "";
-  const soloBuone = param(query.solo) === "buone";
+  const modo = param(query.solo);
+  const soloBuone = modo === "buone";
+  const soloScoperte = modo === "scoperte";
 
-  const [requests, properties] = await Promise.all([
+  const [requests, properties, proponibili] = await Promise.all([
     listRequests(),
     listProperties(),
+    // Il conteggio serve solo a costruire l'elenco delle richieste scoperte.
+    soloScoperte ? countProposableMatchesByRequest() : Promise.resolve(null),
   ]);
 
   const richiesteAttive = requests.filter((request) =>
@@ -132,12 +137,22 @@ export default async function ChiCercaCosaPage({
     ? richiesteAttive.filter((request) => request.contract_type === contratto)
     : richiesteAttive;
 
-  const matches = await listMatches({
+  const matches = soloScoperte ? [] : await listMatches({
     limit: 600,
     classification: soloBuone ? "compatible" : "",
     minimum: 0,
     requestIds: richiestePerContratto.map((request) => request.id),
   });
+
+  /* Chi non ha nemmeno una casa da vedere. E' la domanda opposta a quella
+   * abituale: non «cosa propongo a questo cliente», ma «per chi non ho niente»,
+   * cioe' da dove far partire la ricerca di nuovi immobili. Il conteggio arriva
+   * dal database perche' qui una risposta approssimata varrebbe meno di nessuna
+   * risposta: manderebbe a cercare case per clienti gia' serviti. */
+  const scoperte = soloScoperte && proponibili
+    ? richiestePerContratto.filter((request) => !(proponibili.get(request.id) ?? 0))
+    : [];
+  const conteggioNonRiuscito = soloScoperte && !proponibili;
 
   const richiestaPerId = new Map(
     richiestePerContratto.map((item) => [item.id, item]),
@@ -178,6 +193,15 @@ export default async function ChiCercaCosaPage({
       request?.municipality,
       propertiesText,
     ]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("it")
+      .includes(cerca);
+  });
+
+  const scoperteFiltrate = scoperte.filter((request) => {
+    if (!cerca) return true;
+    return [request.clients?.full_name, request.title, request.municipality]
       .filter(Boolean)
       .join(" ")
       .toLocaleLowerCase("it")
@@ -233,8 +257,10 @@ export default async function ChiCercaCosaPage({
 
       <AutoSubmitFiltersForm>
         <FilterBar
-          summary={`${formatNumber(filtrati.length)} clienti con abbinamenti`}
-          active={Boolean(cerca || contratto || soloBuone)}
+          summary={soloScoperte
+            ? `${formatNumber(scoperteFiltrate.length)} clienti senza nemmeno una casa`
+            : `${formatNumber(filtrati.length)} clienti con abbinamenti`}
+          active={Boolean(cerca || contratto || modo)}
           resetHref="/matching"
         >
         <Ricerca
@@ -254,6 +280,7 @@ export default async function ChiCercaCosaPage({
           <Scelta name="solo" defaultValue={soloBuone ? "buone" : ""}>
             <option value="">Tutte le case che ci vanno vicino</option>
             <option value="buone">Solo quelle che vanno bene</option>
+            <option value="scoperte">Richieste senza abbinamenti</option>
           </Scelta>
         </Campo>
 
@@ -264,7 +291,65 @@ export default async function ChiCercaCosaPage({
         </FilterBar>
       </AutoSubmitFiltersForm>
 
-      {filtrati.length ? (
+      {soloScoperte ? (
+        conteggioNonRiuscito ? (
+          <Card>
+            <CardBody>
+              <EmptyState
+                title="Non riesco a contare gli abbinamenti"
+                description="Senza il conteggio non posso dire quali richieste siano scoperte, e un elenco incompleto qui manderebbe a cercare case per clienti già serviti. Riprova, oppure controlla che la migrazione del conteggio sia stata applicata."
+              />
+            </CardBody>
+          </Card>
+        ) : scoperteFiltrate.length ? (
+          <ProgressiveList className="space-y-5" initialCount={8} step={8} noun="clienti">
+            {scoperteFiltrate.map((request) => {
+              const cliente = request.clients?.full_name ?? "Cliente da collegare";
+              return (
+                <Card key={request.id}>
+                  <RecordCardHeader
+                    icon={UserRound}
+                    title={cliente}
+                    factsLabel="Criteri della richiesta"
+                    facts={<RequestFacts request={request} />}
+                    subtitle={request.title ? cleanRequestTitle(request.title) : null}
+                    chips={<Chip tone="warn">Nessuna casa</Chip>}
+                    action={
+                      <Link
+                        href={`/requests/${request.id}`}
+                        className={buttonClass("quiet", { compact: true })}
+                      >
+                        La richiesta
+                        <ArrowRight aria-hidden="true" className="size-4" />
+                      </Link>
+                    }
+                  />
+                  <CardBody>
+                    <Meta>
+                      Nessuna delle {immobiliLiberi.length} case in portafoglio risponde a questi
+                      criteri. È una casa da cercare, non un abbinamento da migliorare.
+                    </Meta>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </ProgressiveList>
+        ) : (
+          <Card>
+            <CardBody>
+              <EmptyState
+                title="Ogni richiesta ha almeno una casa"
+                description="Nessun cliente resta scoperto con questi filtri: per tutti c'è qualcosa da proporre."
+                action={
+                  <Link href="/matching" className={buttonClass("secondary", { compact: true })}>
+                    Torna agli abbinamenti
+                  </Link>
+                }
+              />
+            </CardBody>
+          </Card>
+        )
+      ) : filtrati.length ? (
         <ProgressiveList
           className="space-y-5"
           initialCount={6}
