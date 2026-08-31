@@ -25,7 +25,7 @@ import {
 import { formatNumber } from "@/lib/formatting";
 import { cleanRequestTitle } from "@/lib/matching/request-presentation";
 import {
-  countProposableMatchesByRequest,
+  getRequestCoverage,
   listMatches,
   listProperties,
   listRequests,
@@ -119,11 +119,11 @@ export default async function ChiCercaCosaPage({
   const soloBuone = modo === "buone";
   const soloScoperte = modo === "scoperte";
 
-  const [requests, properties, proponibili] = await Promise.all([
+  const [requests, properties, copertura] = await Promise.all([
     listRequests(),
     listProperties(),
-    // Il conteggio serve solo a costruire l'elenco delle richieste scoperte.
-    soloScoperte ? countProposableMatchesByRequest() : Promise.resolve(null),
+    // La copertura serve solo a costruire l'elenco delle richieste scoperte.
+    soloScoperte ? getRequestCoverage() : Promise.resolve(null),
   ]);
 
   const richiesteAttive = requests.filter((request) =>
@@ -153,10 +153,16 @@ export default async function ChiCercaCosaPage({
    * cioe' da dove far partire la ricerca di nuovi immobili. Il conteggio arriva
    * dal database perche' qui una risposta approssimata varrebbe meno di nessuna
    * risposta: manderebbe a cercare case per clienti gia' serviti. */
-  const scoperte = soloScoperte && proponibili
-    ? richiestePerContratto.filter((request) => !(proponibili.get(request.id) ?? 0))
+  const scoperte = soloScoperte && copertura
+    ? richiestePerContratto
+      .map((request) => ({ request, coperta: copertura.get(request.id) }))
+      // Scoperta non e' «nessuna riga in tabella»: e' nessuna casa che valga la
+      // pena mostrare. Quasi ogni richiesta ha qualcosa che la sfiora, e
+      // contare quelle avrebbe dato zero scoperte sempre.
+      .filter(({ coperta }) => !(coperta?.relevantCount ?? 0))
+      .sort((a, b) => (b.coperta?.bestScore ?? 0) - (a.coperta?.bestScore ?? 0))
     : [];
-  const conteggioNonRiuscito = soloScoperte && !proponibili;
+  const conteggioNonRiuscito = soloScoperte && !copertura;
 
   const richiestaPerId = new Map(
     richiestePerContratto.map((item) => [item.id, item]),
@@ -203,7 +209,7 @@ export default async function ChiCercaCosaPage({
       .includes(cerca);
   });
 
-  const scoperteFiltrate = scoperte.filter((request) => {
+  const scoperteFiltrate = scoperte.filter(({ request }) => {
     if (!cerca) return true;
     return [request.clients?.full_name, request.title, request.municipality]
       .filter(Boolean)
@@ -281,7 +287,7 @@ export default async function ChiCercaCosaPage({
         </Campo>
 
         <Campo label="Quali case mostrare" labelHidden className="min-w-56">
-          <Scelta name="solo" defaultValue={soloBuone ? "buone" : ""}>
+          <Scelta name="solo" defaultValue={modo}>
             <option value="">Tutte le case che ci vanno vicino</option>
             <option value="buone">Solo quelle che vanno bene</option>
             <option value="scoperte">Richieste senza abbinamenti</option>
@@ -307,8 +313,9 @@ export default async function ChiCercaCosaPage({
           </Card>
         ) : scoperteFiltrate.length ? (
           <ProgressiveList className="space-y-5" initialCount={8} step={8} noun="clienti">
-            {scoperteFiltrate.map((request) => {
+            {scoperteFiltrate.map(({ request, coperta }) => {
               const cliente = request.clients?.full_name ?? "Cliente da collegare";
+              const migliore = Math.round(coperta?.bestScore ?? 0);
               return (
                 <Card key={request.id}>
                   <RecordCardHeader
@@ -330,8 +337,10 @@ export default async function ChiCercaCosaPage({
                   />
                   <CardBody>
                     <Meta>
-                      Nessuna delle {immobiliLiberi.length} case in portafoglio risponde a questi
-                      criteri. È una casa da cercare, non un abbinamento da migliorare.
+                      {migliore > 0
+                        ? `Nessuna delle ${immobiliLiberi.length} case in portafoglio arriva a una proposta: la più vicina si ferma al ${migliore}%.`
+                        : `Nessuna delle ${immobiliLiberi.length} case in portafoglio è compatibile con questi criteri.`}
+                      {" "}È una casa da cercare, non un abbinamento da migliorare.
                     </Meta>
                   </CardBody>
                 </Card>

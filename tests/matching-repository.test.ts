@@ -43,7 +43,7 @@ vi.mock("@/lib/supabase/service", () => ({
 
 const {
   EXCLUDED_MATCH_SCORE,
-  countProposableMatchesByRequest,
+  getRequestCoverage,
   getProperty,
   getRequest,
   listMatches,
@@ -109,34 +109,36 @@ describe("liste dei match", () => {
     expect(query!.methods).toContainEqual(["limit", [50]]);
   });
 
-  it("chiede al database il conteggio degli abbinamenti proponibili", async () => {
+  it("chiede al database la copertura di ogni richiesta", async () => {
     rpcResponse = {
       data: [
-        { request_id: "r1", proposable_count: 3 },
-        { request_id: "r2", proposable_count: 1 },
+        { request_id: "r1", best_score: 91, proposable_count: 5, relevant_count: 3 },
+        // Ha abbinamenti, ma nessuno che valga una proposta: e' scoperta.
+        { request_id: "r2", best_score: "18.4", proposable_count: 7, relevant_count: 0 },
       ],
       error: null,
     };
-    const conteggi = await countProposableMatchesByRequest();
-    // Il conteggio va chiesto al database: ricavarlo dalle righe scaricate,
+    const copertura = await getRequestCoverage();
+    // La copertura va chiesta al database: ricavarla dalle righe scaricate,
     // che hanno un limite, farebbe sembrare scoperte le richieste tagliate.
-    expect(rpcCalls).toEqual(["matching_proposable_counts"]);
-    expect(conteggi?.get("r1")).toBe(3);
-    expect(conteggi?.get("r2")).toBe(1);
-    // Chi non compare non ha abbinamenti: e' l'elenco delle richieste scoperte.
-    expect(conteggi?.get("r3")).toBeUndefined();
+    expect(rpcCalls).toEqual(["matching_request_coverage"]);
+    expect(copertura?.get("r1")).toEqual({ bestScore: 91, proposableCount: 5, relevantCount: 3 });
+    // Il punteggio arriva da una colonna numeric, quindi puo' essere stringa.
+    expect(copertura?.get("r2")?.bestScore).toBeCloseTo(18.4);
+    expect(copertura?.get("r2")?.relevantCount).toBe(0);
+    expect(copertura?.get("r3")).toBeUndefined();
   });
 
-  it("restituisce null quando il database segnala un errore sul conteggio", async () => {
+  it("restituisce null quando il database segnala un errore sulla copertura", async () => {
     rpcResponse = { data: null, error: { message: "boom" } };
-    expect(await countProposableMatchesByRequest()).toBeNull();
+    expect(await getRequestCoverage()).toBeNull();
   });
 
-  it("restituisce null, non una mappa vuota, quando il conteggio non e' possibile", async () => {
+  it("restituisce null, non una mappa vuota, quando la copertura non e' leggibile", async () => {
     // Una mappa vuota si leggerebbe come «tutte le richieste sono scoperte»:
     // la risposta sbagliata piu' credibile che questa funzione possa dare.
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-    expect(await countProposableMatchesByRequest()).toBeNull();
+    expect(await getRequestCoverage()).toBeNull();
   });
 
   it("non applica filtri se Supabase non e' configurato", async () => {

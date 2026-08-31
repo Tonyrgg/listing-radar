@@ -208,8 +208,18 @@ export async function countCompatibleMatchesByRequest(): Promise<Map<string, num
   return conteggi;
 }
 
+/** Quanto e' coperta una richiesta: il meglio che il portafoglio sa offrirle. */
+export type RequestCoverage = {
+  /** Il punteggio dell'abbinamento migliore, per distinguere le urgenze. */
+  bestScore: number;
+  /** Abbinamenti non esclusi da un filtro duro. */
+  proposableCount: number;
+  /** Abbinamenti che superano la soglia oltre la quale vale la pena mostrarli. */
+  relevantCount: number;
+};
+
 /**
- * Quanti abbinamenti proponibili ha ogni richiesta.
+ * Quanto e' coperta ogni richiesta.
  *
  * Il conteggio arriva dal database perche' l'elenco delle richieste scoperte
  * dev'essere esatto: ricavarlo dalle righe gia' scaricate, che hanno un limite,
@@ -219,23 +229,29 @@ export async function countCompatibleMatchesByRequest(): Promise<Map<string, num
  * mappa vuota si leggerebbe come «nessuna richiesta ha abbinamenti», che e' la
  * risposta sbagliata piu' credibile che questa funzione possa dare.
  */
-export async function countProposableMatchesByRequest(): Promise<Map<string, number> | null> {
+export async function getRequestCoverage(): Promise<Map<string, RequestCoverage> | null> {
   if (!configured()) return null;
 
   try {
     const { data, error } = await getSupabaseServiceClient().rpc(
-      "matching_proposable_counts",
+      "matching_request_coverage",
     );
     if (error) return null;
 
-    const conteggi = new Map<string, number>();
+    const copertura = new Map<string, RequestCoverage>();
     for (const riga of (data ?? []) as Array<{
       request_id: string;
+      best_score: number | string | null;
       proposable_count: number;
+      relevant_count: number;
     }>) {
-      conteggi.set(riga.request_id, riga.proposable_count);
+      copertura.set(riga.request_id, {
+        bestScore: Number(riga.best_score ?? 0),
+        proposableCount: riga.proposable_count,
+        relevantCount: riga.relevant_count,
+      });
     }
-    return conteggi;
+    return copertura;
   } catch {
     return null;
   }
