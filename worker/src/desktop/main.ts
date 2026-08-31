@@ -13,6 +13,7 @@ import { REQUIRED_CONTACT_COLUMNS, verifyContactsFile } from "../adapters/excel/
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
+import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { normalizeTaxCode } from "../core/normalize.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
@@ -311,7 +312,7 @@ function flushActivityLog() {
 }
 
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
-  const entry = { at: new Date().toISOString(), tone, message } satisfies ActivityItem;
+  const entry = { at: new Date().toISOString(), tone, message: sanitizeSensitiveText(message) } satisfies ActivityItem;
   activity.unshift(entry);
   activity.splice(300);
   activityLogBuffer.push(`${JSON.stringify(entry)}\n`);
@@ -414,6 +415,7 @@ function sanitizedDetails(value: unknown): Record<string, unknown> {
   const blocked = /token|secret|password|authorization|service.?role|api.?key/i;
   const sanitize = (entry: unknown): unknown => {
     if (Array.isArray(entry)) return entry.map(sanitize);
+    if (typeof entry === "string") return sanitizeSensitiveText(entry);
     if (!entry || typeof entry !== "object") return entry;
     return Object.fromEntries(Object.entries(entry as Record<string, unknown>)
       .filter(([key]) => !blocked.test(key))
@@ -427,6 +429,7 @@ async function recordDiagnosticError(values: Omit<DiagnosticErrorItem, "id" | "a
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     at: new Date().toISOString(),
     ...values,
+    message: sanitizeSensitiveText(values.message),
     details: sanitizedDetails(values.details),
   });
   diagnosticErrors = diagnosticErrors.slice(0, 200);
@@ -1350,6 +1353,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
   await publishState();
 
   let networkImportJobId: string | null = null;
+  let jobToImport: string | null = null;
   const runPromise = connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
     activeNetworkBrowser = tabs.browser;
     try {
@@ -1382,6 +1386,8 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         );
       }
       let erroriSisterVisti = 0;
+      let erroriCrmVisti = 0;
+      let erroriSalvataggioVisti = 0;
       const jobId = (await liveRepository.createJob("automatic")).id;
       networkImportJobId = jobId;
       await liveRepository.setJobContext(jobId, {
@@ -1426,6 +1432,14 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
             erroriSisterVisti = checkpoint.skipped.sister_error;
             pushActivity(`Persona non letta da SISTER: ${checkpoint.lastError ?? "motivo non riportato"}`, "warning");
           }
+          if (checkpoint.skipped.crm_error > erroriCrmVisti) {
+            erroriCrmVisti = checkpoint.skipped.crm_error;
+            pushActivity(`Immobile escluso dal controllo CRM: ${checkpoint.lastError ?? "identità non verificabile"}`, "warning");
+          }
+          if (checkpoint.skipped.save_error > erroriSalvataggioVisti) {
+            erroriSalvataggioVisti = checkpoint.skipped.save_error;
+            pushActivity(`Immobile escluso dalla coda: ${checkpoint.lastError ?? "proprietari non salvati integralmente"}`, "warning");
+          }
           await persistNetworkRunCheckpoint(checkpoint);
           publishTransientUpdate({ networkRunCheckpoint });
         },
@@ -1436,10 +1450,11 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
         kind: "network" as const,
         collectedAt: new Date().toISOString(),
         activityMode: preferences.propertyActivityMode,
-        dryRun: preferences.dryRun,
+        dryRun: false,
         settings: result.settings,
         skipped: result.skipped,
         peopleVisited: result.visitedTaxCodes?.length ?? null,
+        completionReason: result.completionReason,
       };
       if (result.status === "completed" && graph.properties.length) {
         await liveRepository.markGraphNormalized(graph.properties, graph.people);
@@ -1450,11 +1465,25 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
           saved_at: new Date().toISOString(),
           last_completed_step: "acquisition_reviewed",
           current_step: "properties_processed",
-          error_message: null,
-          error_details: null,
+          error_message: result.completionReason === "target_reached"
+            ? null
+            : `Esplorazione conclusa prima dell'obiettivo: ${result.acceptedProperties}/${result.settings.targetProperties} immobili.`,
+          error_details: result.completionReason === "target_reached"
+            ? null
+            : { action: "network-exploration-partial", completionReason: result.completionReason, skipped: result.skipped },
           acquisition: provenienza,
         });
-        pushActivity(`Esplorazione conclusa: ${graph.properties.length} immobili verificati in coda. L'import non è partito.`, "success");
+        if (result.completionReason === "target_reached" && !preferences.keepAcquisition) {
+          jobToImport = jobId;
+          pushActivity(`Esplorazione conclusa: obiettivo raggiunto con ${graph.properties.length} immobili verificati. Avvio l'import automatico.`, "success");
+        } else if (result.completionReason === "target_reached") {
+          pushActivity(`Esplorazione conclusa: ${graph.properties.length} immobili verificati e conservati per l'import.`, "success");
+        } else {
+          pushActivity(
+            `Esplorazione conclusa prima dell'obiettivo: ${graph.properties.length}/${result.settings.targetProperties} immobili verificati. La coda resta salvata e non parte automaticamente.`,
+            "warning",
+          );
+        }
       } else if (result.status === "completed") {
         await liveRepository.updateJob(jobId, {
           status: "saved", saved_at: new Date().toISOString(), last_completed_step: "acquisition_reviewed", current_step: "properties_processed",
@@ -1490,6 +1519,24 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     networkRunProgress = null;
     refreshStoppingAll();
     await publishState();
+    if (jobToImport) {
+      try {
+        await repository(config).markImportStarted(jobToImport);
+        await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport });
+      } catch (error) {
+        const message = `Rete acquisita e salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
+        networkRunError = message;
+        pushActivity(message, "error");
+        await recordDiagnosticErrorSafely({
+          source: "worker",
+          status: "failed",
+          message,
+          jobId: jobToImport,
+          details: { operation: "network-run-import-start" },
+        });
+        await publishState();
+      }
+    }
   });
   networkRunPromise = runPromise;
   releaseOperationReservation("network");

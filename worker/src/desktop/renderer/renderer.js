@@ -2421,6 +2421,14 @@ document.addEventListener("click", async (event) => {
         return true;
       }
       if (target.id === "networkRunStart") {
+        const keepAcquisition = $("dryRunToggle").checked;
+        if (
+          !keepAcquisition &&
+          !window.confirm(
+            "La rete attraverserà nominativi, immobili e comproprietari fino all'obiettivo. Al termine importerà automaticamente solo gli immobili nuovi o verificati con identità completa; le schede già esistenti resteranno in sola lettura. Continuare?",
+          )
+        )
+          return COMMAND_CANCELLED;
         return window.propertyWorker.startNetworkRun({
           resume: false,
           settings: {

@@ -60,13 +60,14 @@ function paginaImmobiliDelSoggetto(quantiSingolare = false) {
       <table class="listaIsp4">
         <tr><th></th><th>Catasto</th><th>Titolarit&agrave;</th><th>Ubicazione</th><th>Foglio</th><th>Particella</th>
             <th>Sub</th><th>Classamento</th><th>Classe</th><th>Consistenza</th><th>Rendita</th><th>Partita</th><th>Altri Dati</th></tr>
-        <tr><td><input type="radio" name="visImmSel" value="1"></td><td>F</td><td>Proprieta' per 1/2</td>
+        <tr><td><input type="radio" name="visImmSel" value="1"></td><td>F</td><td>Proprieta' per 1/2 <table hidden><tr><td>cella annidata</td></tr></table></td>
             <td>BITONTO(BA) VIA MARSALA n. 34 Piano 3</td><td>49</td><td>350</td><td>64</td>
             <td>Cat.A/2</td><td>04</td><td>6 vani</td><td>Euro: 836,66</td><td></td><td></td></tr>
         <tr><td><input type="radio" name="visImmSel" value="2"></td><td>F</td><td>Proprieta' per 1/1</td>
             <td>BITONTO(BA) VIA ROMA n. 7 Piano T</td><td>12</td><td>99</td><td>3</td>
             <td>Cat.C/6</td><td>02</td><td>18 mq</td><td>Euro: 120,00</td><td></td><td></td></tr>
       </table>
+      <input type="submit" name="intestati" value="Intestati">
     </form></body>`;
 }
 
@@ -98,6 +99,19 @@ function sisterFinto(opzioni: { codiceFiscaleOmonimi?: string; nessunaCorrispond
     }
     if (url.startsWith("/immobili")) {
       response.end(paginaImmobiliDelSoggetto(opzioni.unSoloImmobile));
+      return;
+    }
+    if (url.startsWith("/intestati")) {
+      response.end(`<!doctype html><body>${MENU}
+        <form name="SceltaIntestatiForm"><table class="listaIsp4">
+          <tr><th></th><th>Nominativo o denominazione</th><th>Codice fiscale</th><th>Titolarita</th><th>Quota</th></tr>
+          <tr><td><input name="intestatoSelezionato"></td><td>RUTIGLIANO SAVERIO nato a BITONTO (BA) il 02/07/1975</td>
+            <td>RTGSVR75L02A893X</td><td>Proprieta'</td><td>1/2</td></tr>
+          <tr><td><input name="intestatoSelezionato"></td><td>BIANCHI ANNA nata a BITONTO (BA) il 01/02/1985</td>
+            <td>BNCNNA85B41A893K</td><td>Proprieta'</td><td>1/2</td></tr>
+        </table></form>
+        <form name="SceltaVisuraImmSoggForm" action="/immobili"><input name="indietro" type="submit" value="Indietro"></form>
+      </body>`);
       return;
     }
     /* La pagina di partenza. Il `RicercaPFForm` ridotto al solo «Indietro»
@@ -166,6 +180,20 @@ describe("ricerca Persona fisica, dal menu agli immobili", () => {
     });
     /* L'elenco di una persona non ha la zona censuaria. */
     expect(immobili[0]!.censusZone).toBeNull();
+  }, 30_000);
+
+  it("apre i comproprietari usando le colonne catastali dell'elenco per persona", async () => {
+    const finto = sisterFinto();
+    await conSister(finto, async (adapter) => {
+      const immobili = await adapter.searchPhysicalPersonByTaxCode("RTGSVR75L02A893X");
+      const proprietari = await adapter.extractOwners(immobili[0]!);
+
+      expect(proprietari.map((proprietario) => proprietario.taxCode)).toEqual([
+        "RTGSVR75L02A893X",
+        "BNCNNA85B41A893K",
+      ]);
+      expect(finto.visitati.some((url) => url.startsWith("/intestati") && url.includes("visImmSel=1"))).toBe(true);
+    });
   }, 30_000);
 
   /**

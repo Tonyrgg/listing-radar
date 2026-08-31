@@ -686,14 +686,30 @@ export class PropertyWorkerRunner {
           const owner = graphIndex.ownershipsByPropertyId.get(row.id)?.[0];
           const person = owner ? graphIndex.peopleById.get(owner.person_id) : undefined;
           if (job.mode === "assisted" && person) {
-            const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), property)}\nModifica prevista: ${row.crm_record_id ? "aggiornamento immobile" : "creazione immobile"}\nCampi: indirizzo e dati catastali SISTER`);
+            const decision = await this.prompts.confirmSave(`${personSummary(asPerson(person), property)}\nOperazione prevista: ${row.crm_record_id ? "riutilizzo in sola lettura dell'immobile esistente" : "creazione immobile"}`);
             if (decision === "skip") { await this.repository.updatePropertyProcessing(row.id, { processing_status: "skipped" }); continue; }
             if (decision === "review") throw new WorkerError("Immobile segnato da verificare", "needs_review", { propertyId: row.id });
             if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); processed += 1; continue; }
           }
-          await this.logPropertyChanges(job.id, row, property);
-          if (row.crm_record_id) await crm.updateProperty(row.crm_record_id, property);
-          else await this.repository.updatePropertyProcessing(row.id, { crm_record_id: await crm.createProperty(property) });
+          if (row.crm_record_id) {
+            const verified = await crm.verifyProperty(row.crm_record_id, property);
+            if (!verified.match) {
+              throw new WorkerError(
+                "L'immobile esistente non supera la verifica completa. Non verra' modificato.",
+                "needs_review",
+                { propertyId: row.id, crmPropertyId: row.crm_record_id, action: "legacy-existing-property-identity-mismatch" },
+                true,
+              );
+            }
+            row.raw_payload = {
+              ...(row.raw_payload ?? {}),
+              existing_property_reused: { crmPropertyId: row.crm_record_id, mode: "read_only", verifiedAt: new Date().toISOString() },
+            };
+            await this.repository.updatePropertyProcessing(row.id, { raw_payload: row.raw_payload });
+          } else {
+            await this.logPropertyChanges(job.id, row, property);
+            await this.repository.updatePropertyProcessing(row.id, { crm_record_id: await crm.createProperty(property) });
+          }
           await this.repository.updatePropertyProcessing(row.id, { processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
           processed += 1;
         }
@@ -963,8 +979,11 @@ export class PropertyWorkerRunner {
       } catch (error) {
         lastError = error;
         const workerError = asWorkerError(error);
+        const action = String(workerError.details.action ?? "");
+        const retryWouldBeUnsafe = ["paused", "needs_review", "data_incomplete", "session_expired"].includes(workerError.status)
+          || /save-uncertain|creation-submitted|save-submitted/i.test(action);
         if (
-          workerError.status === "paused"
+          retryWouldBeUnsafe
           || isRejectedTaxCodeError(workerError)
           || workerError.details.skipProperty === true
           || attempt === maximumAttempts
@@ -1666,6 +1685,7 @@ export class PropertyWorkerRunner {
       });
     }
     let propertyMatchedGlobally = false;
+    let propertyCreatedInThisRun = false;
     const linkedResult = await crm.findPropertyForPerson(
       primary.crm_record_id,
       property,
@@ -1761,16 +1781,28 @@ export class PropertyWorkerRunner {
       });
     }
     if (job.mode === "assisted") {
-      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nModifica prevista: ${row.crm_record_id ? "aggiornamento dell'immobile" : "creazione dell'immobile"}`);
+      const decision = await this.prompts.confirmSave(`${personSummary(asPerson(primary), property)}\nOperazione prevista: ${row.crm_record_id ? "riutilizzo in sola lettura dell'immobile esistente" : "creazione di un nuovo immobile"}`);
       if (decision === "skip") { await this.repository.updatePropertyProcessing(row.id, { processing_status: "skipped" }); return; }
       if (decision === "review") throw new WorkerError("Immobile segnato da verificare", "needs_review", { propertyId: row.id });
       if (decision === "manual") { await this.prompts.waitForManualEdit(); await this.repository.updatePropertyProcessing(row.id, { processing_status: "manual" }); return; }
     }
-    await this.logPropertyChanges(job.id, row, property);
     if (row.crm_record_id) {
-      await crm.updateProperty(row.crm_record_id, property);
+      /* Un record gia' presente e verificato e' autorevole. Il flusso
+       * automatico puo' riutilizzarlo e collegare i comproprietari, ma non
+       * riscrive mai indirizzo, tipo o dati catastali. */
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        existing_property_reused: {
+          crmPropertyId: row.crm_record_id,
+          mode: "read_only",
+          verifiedAt: new Date().toISOString(),
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, { raw_payload: row.raw_payload });
     } else {
+      await this.logPropertyChanges(job.id, row, property);
       row.crm_record_id = await crm.createProperty(property);
+      propertyCreatedInThisRun = true;
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         property_creation: {
@@ -1807,6 +1839,7 @@ export class PropertyWorkerRunner {
         identityVerified: true,
         linkedToVerifiedPerson: !propertyMatchedGlobally,
         existingPropertyFoundGlobally: propertyMatchedGlobally,
+        writeMode: propertyCreatedInThisRun ? "created" : "existing_read_only",
         dryRun: this.config.WORKER_DRY_RUN,
         crmPropertyId: row.crm_record_id,
         primaryPersonId: primary.id,

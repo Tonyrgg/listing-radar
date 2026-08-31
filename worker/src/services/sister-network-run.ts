@@ -12,7 +12,8 @@ import { runWithRetryTelemetry, type RetryTelemetry } from "../core/retry-teleme
 import { WorkerError } from "../core/errors.js";
 
 export type NetworkQueueNode = { taxCode: string; depth: number; discoveredFrom: string | null };
-export type NetworkSkipReason = "no_sister_properties" | "non_strategic_category" | "share_below_minimum" | "already_in_crm" | "without_owners" | "duplicate_in_run" | "sister_error" | "floor_out_of_range" | "owner_age_out_of_range" | "owner_count_out_of_range" | "civic_out_of_range";
+export type NetworkSkipReason = "no_sister_properties" | "non_strategic_category" | "share_below_minimum" | "already_in_crm" | "without_owners" | "duplicate_in_run" | "sister_error" | "crm_error" | "save_error" | "floor_out_of_range" | "owner_age_out_of_range" | "owner_count_out_of_range" | "civic_out_of_range";
+export type NetworkCompletionReason = "target_reached" | "exhausted" | "limit_reached";
 
 export type SisterNetworkRunCheckpoint = {
   version: 1;
@@ -23,10 +24,12 @@ export type SisterNetworkRunCheckpoint = {
   updatedAt: string;
   pending: NetworkQueueNode[];
   visitedTaxCodes: string[];
+  examinedPropertyKeys: string[];
   acceptedPropertyKeys: string[];
   acceptedProperties: number;
   existingProperties: number;
   skipped: Record<NetworkSkipReason, number>;
+  completionReason: NetworkCompletionReason | null;
   lastError: string | null;
 };
 
@@ -59,7 +62,7 @@ type Options = {
 };
 
 const skipReasons: NetworkSkipReason[] = [
-  "no_sister_properties", "non_strategic_category", "share_below_minimum", "already_in_crm", "without_owners", "duplicate_in_run", "sister_error",
+  "no_sister_properties", "non_strategic_category", "share_below_minimum", "already_in_crm", "without_owners", "duplicate_in_run", "sister_error", "crm_error", "save_error",
   "floor_out_of_range", "owner_age_out_of_range", "owner_count_out_of_range", "civic_out_of_range",
 ];
 
@@ -73,9 +76,19 @@ function createCheckpoint(jobId: string, settings: NetworkExplorationSettings, s
   return {
     version: 1, jobId, status: "running", settings, startedAt: now, updatedAt: now,
     pending: uniqueSeeds.map((taxCode) => ({ taxCode, depth: 0, discoveredFrom: null })),
-    visitedTaxCodes: [], acceptedPropertyKeys: [], acceptedProperties: 0, existingProperties: 0,
-    skipped: makeEmptySkips(), lastError: null,
+    visitedTaxCodes: [], examinedPropertyKeys: [], acceptedPropertyKeys: [], acceptedProperties: 0, existingProperties: 0,
+    skipped: makeEmptySkips(), completionReason: null, lastError: null,
   };
+}
+
+/** Errori che un secondo clic non puo' correggere non vanno ripetuti. */
+function isTransientPortalFailure(error: unknown) {
+  if (!(error instanceof WorkerError)) return true;
+  return !["session_expired", "needs_review", "data_incomplete", "paused"].includes(error.status);
+}
+
+function isSessionStoppingFailure(error: unknown) {
+  return error instanceof WorkerError && ["session_expired", "paused"].includes(error.status);
 }
 
 /**
@@ -92,7 +105,15 @@ export class SisterNetworkRun {
 
   async run(jobId: string, options: Options): Promise<SisterNetworkRunCheckpoint> {
     const settings = normalizeNetworkSettings(options.resume?.settings ?? options.settings);
-    let checkpoint = options.resume ?? createCheckpoint(jobId, settings, options.seeds);
+    const initial = options.resume ?? createCheckpoint(jobId, settings, options.seeds);
+    /* I checkpoint della 0.28 non avevano l'elenco degli immobili esaminati:
+     * gli accettati sono comunque gia' stati esaminati e costituiscono una
+     * base compatibile e sicura. */
+    let checkpoint: SisterNetworkRunCheckpoint = {
+      ...initial,
+      examinedPropertyKeys: [...new Set(initial.examinedPropertyKeys ?? initial.acceptedPropertyKeys ?? [])],
+      completionReason: initial.completionReason ?? null,
+    };
     if (checkpoint.jobId !== jobId) throw new Error("Il checkpoint rete appartiene a un'altra lavorazione.");
     if (!checkpoint.pending.length && !checkpoint.acceptedProperties) throw new Error("Non esistono codici fiscali CRM verificati da cui avviare l'esplorazione.");
     checkpoint = {
@@ -100,6 +121,7 @@ export class SisterNetworkRun {
       status: "running",
       settings,
       skipped: { ...makeEmptySkips(), ...checkpoint.skipped },
+      completionReason: null,
       lastError: null,
       updatedAt: new Date().toISOString(),
     };
@@ -126,11 +148,12 @@ export class SisterNetworkRun {
           () => this.sister.searchPhysicalPersonByTaxCode(node.taxCode),
           {
             operation: "Ricerca persona fisica SISTER", maximumAttempts: 3, delayMs: 3_000,
-            shouldRetry: (error) => !(error instanceof WorkerError && error.status === "session_expired"),
+            shouldRetry: isTransientPortalFailure,
             onTelemetry: options.onRetryTelemetry,
           },
         );
       } catch (error) {
+        if (isSessionStoppingFailure(error)) throw error;
         checkpoint.skipped.sister_error += 1;
         checkpoint.lastError = error instanceof Error ? error.message : String(error);
         checkpoint.updatedAt = new Date().toISOString();
@@ -147,7 +170,7 @@ export class SisterNetworkRun {
       for (const property of properties) {
         if (checkpoint.acceptedProperties >= settings.targetProperties || options.isCancelled?.()) break;
         const propertyKey = buildCadastralKey(property);
-        if (checkpoint.acceptedPropertyKeys.includes(propertyKey)) {
+        if (checkpoint.examinedPropertyKeys.includes(propertyKey)) {
           checkpoint.skipped.duplicate_in_run += 1;
           continue;
         }
@@ -158,15 +181,17 @@ export class SisterNetworkRun {
             () => this.sister.extractOwners(property),
             {
               operation: "Lettura comproprietari SISTER", maximumAttempts: 3, delayMs: 3_000,
-              shouldRetry: (error) => !(error instanceof WorkerError && error.status === "session_expired"),
+              shouldRetry: isTransientPortalFailure,
               onTelemetry: options.onRetryTelemetry,
             },
           );
         } catch (error) {
+          if (isSessionStoppingFailure(error)) throw error;
           checkpoint.skipped.sister_error += 1;
           checkpoint.lastError = error instanceof Error ? error.message : String(error);
           continue;
         }
+        checkpoint.examinedPropertyKeys.push(propertyKey);
         /* La rete si attraversa tutta; i filtri dicono solo cosa portare a
          * casa.
          *
@@ -195,25 +220,49 @@ export class SisterNetworkRun {
           continue;
         }
         await options.onProgress?.({ phase: "checking_crm", peopleVisited: checkpoint.visitedTaxCodes.length, peopleLimit: settings.maxPeople, acceptedProperties: checkpoint.acceptedProperties, targetProperties: settings.targetProperties, depth: node.depth });
-        const existing = await runWithRetryTelemetry(
-          () => this.crm.findPropertyByCadastralIdentity(property),
-          { operation: "Controllo immobile nel CRM", maximumAttempts: 3, delayMs: 3_000, onTelemetry: options.onRetryTelemetry },
-        );
+        let existing: Awaited<ReturnType<PlaywrightCrmAdapter["findPropertyByCadastralIdentity"]>>;
+        try {
+          existing = await runWithRetryTelemetry(
+            () => this.crm.findPropertyByCadastralIdentity(property),
+            { operation: "Controllo immobile nel CRM", maximumAttempts: 3, delayMs: 3_000, shouldRetry: isTransientPortalFailure, onTelemetry: options.onRetryTelemetry },
+          );
+        } catch (error) {
+          if (isSessionStoppingFailure(error)) throw error;
+          checkpoint.skipped.crm_error += 1;
+          checkpoint.lastError = error instanceof Error ? error.message : String(error);
+          checkpoint.updatedAt = new Date().toISOString();
+          await this.publish(checkpoint, options);
+          continue;
+        }
         const decision = decideNetworkProperty(property, owners, settings, Boolean(existing.match));
         if (!decision.eligible) {
           checkpoint.skipped[decision.reason] += 1;
           continue;
         }
         await options.onProgress?.({ phase: "saving_queue", peopleVisited: checkpoint.visitedTaxCodes.length, peopleLimit: settings.maxPeople, acceptedProperties: checkpoint.acceptedProperties, targetProperties: settings.targetProperties, depth: node.depth });
-        const [saved] = await this.repository.insertProperties(jobId, [{
-          ...property,
-          rawPayload: {
-            ...property.rawPayload,
-            network_exploration: { sourceTaxCode: node.taxCode, depth: node.depth, decision: decision.kind, crmPropertyId: existing.match?.id ?? null },
-          },
-        }]);
-        if (!saved) throw new Error("Immobile esplorato non salvato nella coda.");
-        for (const owner of owners) await this.repository.insertOwner(jobId, saved.id, owner);
+        let saved: Awaited<ReturnType<WorkerRepository["insertProperties"]>>[number] | undefined;
+        try {
+          [saved] = await this.repository.insertProperties(jobId, [{
+            ...property,
+            rawPayload: {
+              ...property.rawPayload,
+              network_exploration: { sourceTaxCode: node.taxCode, depth: node.depth, decision: decision.kind, crmPropertyId: existing.match?.id ?? null },
+            },
+          }]);
+          if (!saved) throw new Error("Immobile esplorato non salvato nella coda.");
+          for (const owner of owners) await this.repository.insertOwner(jobId, saved.id, owner);
+        } catch (error) {
+          /* Un immobile senza tutti i comproprietari non e' importabile. Se il
+           * salvataggio si interrompe a meta', si elimina solo quella riga e
+           * gli eventuali nominativi rimasti orfani; gli immobili gia'
+           * completati restano intatti. */
+          if (saved) await this.repository.removePropertyFromJob(jobId, saved.id);
+          checkpoint.skipped.save_error += 1;
+          checkpoint.lastError = error instanceof Error ? error.message : String(error);
+          checkpoint.updatedAt = new Date().toISOString();
+          await this.publish(checkpoint, options);
+          continue;
+        }
         checkpoint.acceptedPropertyKeys.push(propertyKey);
         checkpoint.acceptedProperties += 1;
         if (decision.kind === "existing_update") checkpoint.existingProperties += 1;
@@ -222,6 +271,12 @@ export class SisterNetworkRun {
       }
       checkpoint.updatedAt = new Date().toISOString();
       await this.publish(checkpoint, options);
+    }
+
+    if (options.isCancelled?.()) {
+      checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+      await this.publish(checkpoint, options);
+      return checkpoint;
     }
 
     if (checkpoint.pending.length
@@ -234,6 +289,11 @@ export class SisterNetworkRun {
     const altri = (await options.refillSeeds(gia))
       .map(normalizeTaxCode)
       .filter((taxCode) => /^[A-Z0-9]{16}$/.test(taxCode) && !gia.includes(taxCode));
+    if (options.isCancelled?.()) {
+      checkpoint = { ...checkpoint, status: "paused", updatedAt: new Date().toISOString() };
+      await this.publish(checkpoint, options);
+      return checkpoint;
+    }
     if (!altri.length) break;
     checkpoint.pending.push(...altri.map((taxCode) => ({ taxCode, depth: 0, discoveredFrom: null })));
     checkpoint.updatedAt = new Date().toISOString();
@@ -243,7 +303,12 @@ export class SisterNetworkRun {
     /* L'ultimo errore non si azzera: se qualcuno non e' stato letto, quel
      * messaggio e' l'unica traccia del perche' la run non ha trovato niente,
      * e cancellarlo lasciava un esito muto. */
-    checkpoint = { ...checkpoint, status: "completed", updatedAt: new Date().toISOString() };
+    const completionReason: NetworkCompletionReason = checkpoint.acceptedProperties >= settings.targetProperties
+      ? "target_reached"
+      : checkpoint.visitedTaxCodes.length >= settings.maxPeople
+        ? "limit_reached"
+        : "exhausted";
+    checkpoint = { ...checkpoint, status: "completed", completionReason, updatedAt: new Date().toISOString() };
     await this.publish(checkpoint, options);
     return checkpoint;
   }

@@ -63,7 +63,7 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
-  it("ritenta tre volte anche un errore che prima richiedeva revisione", async () => {
+  it("non ritenta un errore di identita' che richiede revisione", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const operation = vi.fn().mockRejectedValue(
       new WorkerError("Lookup non disponibile", "needs_review"),
@@ -79,9 +79,9 @@ describe("flusso identità nominativo e immobile", () => {
         operation,
       ),
     ).rejects.toMatchObject({
-      details: { automaticAttempts: 3, automaticRecoveryExhausted: true },
+      details: { automaticAttempts: 1, automaticRecoveryExhausted: false },
     });
-    expect(operation).toHaveBeenCalledTimes(3);
+    expect(operation).toHaveBeenCalledOnce();
   }, 8_000);
 
   it("rianalizza automaticamente senza perdere gli ID CRM gia verificati", async () => {
@@ -360,7 +360,7 @@ describe("flusso identità nominativo e immobile", () => {
     );
   });
 
-  it("aggiorna l'immobile trovato sotto il nominativo e non lo duplica", async () => {
+  it("riutilizza in sola lettura l'immobile trovato sotto il nominativo", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-1" };
@@ -375,11 +375,14 @@ describe("flusso identità nominativo e immobile", () => {
     await (runner as unknown as { ensureProperty: Function }).ensureProperty(job, property, primary, crm);
 
     expect(crm.findPropertyForPerson).toHaveBeenCalledOnce();
-    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-1", expect.any(Object));
+    expect(crm.updateProperty).not.toHaveBeenCalled();
     expect(crm.createProperty).not.toHaveBeenCalled();
+    expect(property.raw_payload?.existing_property_reused).toMatchObject({
+      crmPropertyId: "CRM-PROPERTY-1", mode: "read_only",
+    });
   });
 
-  it("aggiorna l'immobile trovato globalmente sotto un altro proprietario e non lo duplica", async () => {
+  it("riutilizza in sola lettura l'immobile trovato globalmente sotto un altro proprietario", async () => {
     const { runner } = runnerWithRepository();
     const property = propertyRow();
     const primary = { ...personRow(), crm_record_id: "CRM-PERSON-NOT-LINKED" };
@@ -397,7 +400,7 @@ describe("flusso identità nominativo e immobile", () => {
     expect(crm.findPropertyByCadastralIdentity).toHaveBeenCalledWith(expect.objectContaining({
       sheet: "50", parcel: "100", subaltern: "4",
     }));
-    expect(crm.updateProperty).toHaveBeenCalledWith("CRM-PROPERTY-OTHER-OWNER", expect.any(Object));
+    expect(crm.updateProperty).not.toHaveBeenCalled();
     expect(crm.createProperty).not.toHaveBeenCalled();
     expect(property.raw_payload?.property_search).toMatchObject({
       strategy: "global-cadastral",
@@ -512,7 +515,7 @@ describe("flusso identità nominativo e immobile", () => {
 
     expect(crm.findPerson).not.toHaveBeenCalled();
     expect(contacts.findByTaxCode).not.toHaveBeenCalled();
-    expect(crm.updateProperty).toHaveBeenCalledOnce();
+    expect(crm.updateProperty).not.toHaveBeenCalled();
     expect(crm.createPropertyActivity).toHaveBeenCalledOnce();
   });
 

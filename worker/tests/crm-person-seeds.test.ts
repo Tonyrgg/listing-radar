@@ -24,17 +24,20 @@ const ANAGRAFICHE = [
   { id: "001A00000000006AAA", nome: "BLU SOFIA", cf: "BLUSFO90H55A893N" },
 ];
 
-function paginaElenco(anagrafiche: typeof ANAGRAFICHE, pagina: number, ultima: number, conColonnaCf: boolean) {
+function paginaElenco(anagrafiche: typeof ANAGRAFICHE, pagina: number, ultima: number, conColonnaCf: boolean, vista: "Clienti" | "Clienti recenti") {
   const righe = anagrafiche.map((persona) => `
     <tr>
       <td><a title="${persona.nome}" target="_blank" href="/CRMImmobiliareLightning/s/account/${persona.id}/${persona.nome.toLowerCase().replace(/ /g, "-")}">${persona.nome}</a></td>
       <td>A1B2C3D4E5F6G7H8</td>
       ${conColonnaCf ? `<td>${persona.cf}</td>` : ""}
     </tr>`).join("");
+  const vistaQuery = vista === "Clienti" ? "view=clients&" : "";
   const avanti = pagina < ultima
-    ? `<button onclick="location.href='/CRMImmobiliareLightning/s/account/Account?p=${pagina + 1}'"><svg data-key="right"></svg></button>`
+    ? `<button onclick="location.href='/CRMImmobiliareLightning/s/account/Account?${vistaQuery}p=${pagina + 1}'"><svg data-key="right"></svg></button>`
     : `<button disabled><svg data-key="right"></svg></button>`;
   return `<!doctype html><body>
+    <button id="vista-attiva" onclick="document.querySelector('#menu-viste').hidden=false">${vista}</button>
+    <div id="menu-viste" hidden><button onclick="location.href='/CRMImmobiliareLightning/s/account/Account?view=clients'">Clienti</button></div>
     <table>
       <thead><tr><th>Nome</th><th>Riferimento</th>${conColonnaCf ? "<th>Codice fiscale</th>" : ""}</tr></thead>
       <tbody>${righe}</tbody>
@@ -43,9 +46,10 @@ function paginaElenco(anagrafiche: typeof ANAGRAFICHE, pagina: number, ultima: n
   </body>`;
 }
 
-function crmFinto(options: { conColonnaCf: boolean; perPagina?: number }) {
+function crmFinto(options: { conColonnaCf: boolean; perPagina?: number; parteDaRecenti?: boolean }) {
   const perPagina = options.perPagina ?? ANAGRAFICHE.length;
   const schedeAperte: string[] = [];
+  const visteRichieste: string[] = [];
   const server = createServer((request, response) => {
     response.setHeader("content-type", "text/html; charset=utf-8");
     const [percorso = "/", query] = (request.url ?? "/").split("?");
@@ -58,17 +62,23 @@ function crmFinto(options: { conColonnaCf: boolean; perPagina?: number }) {
       return;
     }
     if (percorso.includes("/s/account/Account")) {
-      const pagina = Number(new URLSearchParams(query ?? "").get("p") ?? "1");
-      const ultima = Math.ceil(ANAGRAFICHE.length / perPagina);
-      const fetta = ANAGRAFICHE.slice((pagina - 1) * perPagina, pagina * perPagina);
-      response.end(paginaElenco(fetta, pagina, ultima, options.conColonnaCf));
+      const params = new URLSearchParams(query ?? "");
+      const vista: "Clienti" | "Clienti recenti" = options.parteDaRecenti && params.get("view") !== "clients"
+        ? "Clienti recenti"
+        : "Clienti";
+      visteRichieste.push(vista);
+      const origine = vista === "Clienti recenti" ? ANAGRAFICHE.slice(0, 2) : ANAGRAFICHE;
+      const pagina = Number(params.get("p") ?? "1");
+      const ultima = Math.ceil(origine.length / perPagina);
+      const fetta = origine.slice((pagina - 1) * perPagina, pagina * perPagina);
+      response.end(paginaElenco(fetta, pagina, ultima, options.conColonnaCf, vista));
       return;
     }
     response.end(`<!doctype html><body>
       <a href="/CRMImmobiliareLightning/s/account/Account">Clienti</a>
     </body>`);
   });
-  return { server, schedeAperte };
+  return { server, schedeAperte, visteRichieste };
 }
 
 async function conCrm<T>(
@@ -173,6 +183,18 @@ describe("punti di partenza presi dall'elenco Clienti", () => {
     });
 
     expect(pagineViste).toEqual([1, 2, 3]);
+    expect(semi).toHaveLength(6);
+  }, 30_000);
+
+  it("passa da Clienti recenti alla vista Clienti completa prima del sorteggio", async () => {
+    const finto = crmFinto({ conColonnaCf: true, parteDaRecenti: true, perPagina: 3 });
+    const semi = await conCrm(finto, async (indirizzo, apri) => {
+      const page = await apri(`${indirizzo}/CRMImmobiliareLightning/s/account/Account`);
+      return collectCrmPersonSeeds(page, { wanted: 6 });
+    });
+
+    expect(finto.visteRichieste[0]).toBe("Clienti recenti");
+    expect(finto.visteRichieste).toContain("Clienti");
     expect(semi).toHaveLength(6);
   }, 30_000);
 

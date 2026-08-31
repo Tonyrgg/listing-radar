@@ -23,17 +23,15 @@ export function nextAutomaticRetryAttempt(rawPayload: Record<string, unknown> | 
 }
 
 /**
- * A property-bound failure is recoverable by restarting that property's flow,
- * irrespective of whether Tecnocloud classified it as a technical, data or
- * review error. User-requested stops, expired sessions and an unverified save
- * remain protected: retrying those can respectively ignore an operator choice,
- * hide a login requirement or duplicate a write.
+ * Si ripetono solo errori tecnici transitori. Errori di identita', dati
+ * incompleti, sessione o salvataggio incerto richiedono una verifica e non
+ * devono trasformarsi in altri clic automatici sul gestionale.
  */
 export function canAutomaticallyRecoverPropertyFailure(status: string, details: Record<string, unknown> | null | undefined) {
   const value = recordValue(details);
   if (value.cancelled === true || value.pauseRequested === true || value.stopAfterNextImport === true) return false;
-  if (status === "session_expired") return false;
-  return value.action !== "property-activity-save-uncertain";
+  if (["paused", "session_expired", "needs_review", "data_incomplete"].includes(status)) return false;
+  return !/save-uncertain|creation-submitted|save-submitted/i.test(String(value.action ?? ""));
 }
 
 export function buildAutomaticSkipImpact(

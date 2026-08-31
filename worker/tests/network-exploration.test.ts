@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { decideNetworkProperty, extractPropertyFloors, normalizeNetworkSettings, ownerAgeAt } from "../src/core/network-exploration.js";
 import { birthDateFromTaxCode } from "../src/core/normalize.js";
+import { WorkerError } from "../src/core/errors.js";
 import { SisterNetworkRun } from "../src/services/sister-network-run.js";
 
 const property = (category: string, address = "VIA TEST n. 1 Piano T") => ({ municipality: "BITONTO", sheet: "1", parcel: "2", subaltern: "3", address, censusZone: null, category, class: null, consistency: null, cadastralIncome: null, rawPayload: {} });
@@ -65,7 +66,7 @@ describe("rete proprietaria", () => {
   it("salva soltanto gli immobili che superano i filtri prima del limite", async () => {
     const saved: string[] = [];
     const run = new SisterNetworkRun({
-      searchPhysicalPersonByTaxCode: async () => [property("C/6"), property("A/3")],
+      searchPhysicalPersonByTaxCode: async () => [property("C/6"), { ...property("A/3"), parcel: "4" }],
       extractOwners: async () => [owner(100)],
     } as any, {
       findPropertyByCadastralIdentity: async () => ({ match: null }),
@@ -272,5 +273,102 @@ describe("attraversamento della rete", () => {
      * codice fiscale questo immobile sarebbe stato scartato. */
     expect(checkpoint.skipped.owner_age_out_of_range).toBe(0);
     expect(salvati).toEqual(["30"]);
+  });
+
+  it("legge una particella una volta sola anche se ricompare sotto un comproprietario", async () => {
+    let lettureProprietari = 0;
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => [immobile("60")],
+      extractOwners: async () => {
+        lettureProprietari += 1;
+        return [persona(GIOVANE), persona(ALTRO_GIOVANE)];
+      },
+    } as any, {
+      findPropertyByCadastralIdentity: async () => ({ match: null }),
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => properties.map((item) => ({ ...item, id: "property-60" })),
+      insertOwner: async () => ({ id: "person-1" }),
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { targetProperties: 10, maxDepth: 2, maxPeople: 5 },
+      seeds: [GIOVANE],
+    });
+
+    expect(checkpoint.visitedTaxCodes).toContain(ALTRO_GIOVANE);
+    expect(checkpoint.examinedPropertyKeys).toHaveLength(1);
+    expect(checkpoint.acceptedProperties).toBe(1);
+    expect(checkpoint.skipped.duplicate_in_run).toBeGreaterThan(0);
+    expect(lettureProprietari).toBe(1);
+  });
+
+  it("non ritenta errori SISTER deterministici che richiedono revisione", async () => {
+    let tentativi = 0;
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => {
+        tentativi += 1;
+        throw new WorkerError("Identita' non verificabile", "needs_review");
+      },
+    } as any, {} as any, {} as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { targetProperties: 1 },
+      seeds: [GIOVANE],
+    });
+
+    expect(tentativi).toBe(1);
+    expect(checkpoint.skipped.sister_error).toBe(1);
+    expect(checkpoint.completionReason).toBe("exhausted");
+  });
+
+  it("rimuove dalla coda un immobile se non riesce a salvare tutti i proprietari", async () => {
+    const rimossi: string[] = [];
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => [immobile("70")],
+      extractOwners: async () => [persona(GIOVANE), persona(ALTRO_GIOVANE)],
+    } as any, {
+      findPropertyByCadastralIdentity: async () => ({ match: null }),
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => properties.map((item) => ({ ...item, id: "property-70" })),
+      insertOwner: async () => { throw new Error("quota non salvata"); },
+      removePropertyFromJob: async (_jobId: string, propertyId: string) => { rimossi.push(propertyId); },
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { targetProperties: 1 },
+      seeds: [GIOVANE],
+    });
+
+    expect(rimossi).toEqual(["property-70"]);
+    expect(checkpoint.acceptedProperties).toBe(0);
+    expect(checkpoint.skipped.save_error).toBe(1);
+  });
+
+  it("isola un conflitto CRM e continua con l'immobile successivo", async () => {
+    const salvati: string[] = [];
+    const run = new SisterNetworkRun({
+      searchPhysicalPersonByTaxCode: async () => [immobile("80"), immobile("81")],
+      extractOwners: async () => [persona(GIOVANE)],
+    } as any, {
+      findPropertyByCadastralIdentity: async (item: { parcel: string }) => {
+        if (item.parcel === "80") throw new WorkerError("Terna presente ma discordante", "needs_review");
+        return { match: null };
+      },
+    } as any, {
+      insertProperties: async (_jobId: string, properties: any[]) => {
+        salvati.push(...properties.map((item) => item.parcel));
+        return properties.map((item) => ({ ...item, id: `property-${item.parcel}` }));
+      },
+      insertOwner: async () => ({ id: "person-1" }),
+    } as any);
+
+    const checkpoint = await run.run("job-1", {
+      settings: { targetProperties: 1 },
+      seeds: [GIOVANE],
+    });
+
+    expect(salvati).toEqual(["81"]);
+    expect(checkpoint.skipped.crm_error).toBe(1);
+    expect(checkpoint.completionReason).toBe("target_reached");
   });
 });

@@ -114,6 +114,67 @@ async function attendiPaginaSuccessiva(page: Page, firmaPrecedente: string) {
   throw new Error("La pagina successiva dell'elenco Clienti non ha terminato il caricamento");
 }
 
+const CONTROLLI_VISTA = 'button, [role="button"], [role="combobox"], [role="option"], [role="menuitem"], a';
+
+async function controlloVistaEsatto(page: Page, nome: string) {
+  const controlli = page.locator(CONTROLLI_VISTA).filter({ visible: true });
+  const indici = await controlli.evaluateAll((elementi, atteso) => elementi.flatMap((elemento, indice) => {
+    const testo = (((elemento as HTMLInputElement).value ?? "") || (elemento as HTMLElement).innerText || elemento.textContent || "")
+      .replace(/^[\s\u2022\u00b7]+/, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase("it-IT");
+    return testo === String(atteso).toLocaleLowerCase("it-IT") ? [indice] : [];
+  }), nome);
+  return indici.map((indice) => controlli.nth(indice));
+}
+
+/**
+ * La vista "Clienti recenti" contiene poche righe e non e' una sorgente
+ * casuale sufficiente. Quando e' attiva, apre il menu della lista e sceglie
+ * esplicitamente "Clienti"; non prosegue finche' il nuovo elenco non e'
+ * visibile e stabile.
+ */
+async function selezionaVistaClientiCompleta(page: Page) {
+  const recenti = await controlloVistaEsatto(page, "Clienti recenti");
+  if (!recenti.length) return;
+  if (recenti.length !== 1) {
+    throw new Error("Il gestionale mostra piu' controlli per la vista Clienti recenti; non posso scegliere in sicurezza.");
+  }
+
+  const firmaPrecedente = await firmaElenco(page).catch(() => "");
+  await recenti[0]!.click();
+  const scadenzaMenu = Date.now() + 10_000;
+  let scelta: import("playwright").Locator | null = null;
+  while (Date.now() < scadenzaMenu && !scelta) {
+    const clienti = await controlloVistaEsatto(page, "Clienti");
+    /* Il primo puo' essere il collegamento di navigazione; nel menu appena
+     * aperto la voce selezionabile e' l'ultimo controllo visibile esatto. */
+    scelta = clienti.at(-1) ?? null;
+    if (!scelta) await page.waitForTimeout(200);
+  }
+  if (!scelta) throw new Error("Nel menu delle viste non trovo la voce Clienti completa.");
+  await scelta.click();
+
+  const scadenza = Date.now() + 20_000;
+  let ultimaFirma = "";
+  let lettureStabili = 0;
+  while (Date.now() < scadenza) {
+    const [ancoraRecenti, clienti, firma] = await Promise.all([
+      controlloVistaEsatto(page, "Clienti recenti"),
+      controlloVistaEsatto(page, "Clienti"),
+      firmaElenco(page).catch(() => ""),
+    ]);
+    if (!ancoraRecenti.length && clienti.length && firma && (firma !== firmaPrecedente || Date.now() > scadenza - 18_000)) {
+      lettureStabili = firma === ultimaFirma ? lettureStabili + 1 : 0;
+      if (lettureStabili >= 2) return;
+      ultimaFirma = firma;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error("La vista Clienti completa non ha terminato il caricamento.");
+}
+
 /**
  * Porta la scheda del gestionale sull'elenco Clienti.
  *
@@ -121,7 +182,10 @@ async function attendiPaginaSuccessiva(page: Page, firmaPrecedente: string) {
  * senza motivo.
  */
 async function apriElencoClienti(page: Page, selectors: CrmSelectors) {
-  if (await page.locator(RIGHE_ELENCO).first().count()) return;
+  if (await page.locator(RIGHE_ELENCO).first().count()) {
+    await selezionaVistaClientiCompleta(page);
+    return;
+  }
   const voce = page.locator(selectors.personSearchPage).filter({ visible: true }).first();
   if (!(await voce.count())) {
     throw new Error(
@@ -140,6 +204,7 @@ async function apriElencoClienti(page: Page, selectors: CrmSelectors) {
     await page.goto(new URL(href, page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
   await page.locator(RIGHE_ELENCO).first().waitFor({ state: "visible", timeout: 30_000 });
+  await selezionaVistaClientiCompleta(page);
 }
 
 async function leggiPagina(page: Page): Promise<ElencoRiga[]> {

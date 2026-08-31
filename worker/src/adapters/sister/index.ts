@@ -100,7 +100,10 @@ async function columnIndexes(
 }
 
 async function cellText(row: Locator, index: number): Promise<string> {
-  return (await row.locator("td").nth(index).textContent())?.trim() ?? "";
+  /* Solo le celle della riga. Alcune pagine SISTER inseriscono tabelle di
+   * supporto dentro una cella: includerne i `td` annidati sposterebbe gli
+   * indici ricavati dalle intestazioni. */
+  return (await row.locator(":scope > td").nth(index).textContent())?.trim() ?? "";
 }
 
 async function clickAndWait(page: Page, locator: Locator) {
@@ -554,15 +557,32 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
 
   private async resolvePropertyRowIndex(property: CadastralProperty, preferredIndex: number): Promise<number> {
     const rows = this.page.locator(this.selectors.propertyRows);
+    /* La ricerca per indirizzo e quella per persona usano la stessa form ma
+     * dispongono le colonne in modo diverso. `extractProperties` legge gia'
+     * le intestazioni; il controllo identita' deve fare lo stesso. Usare qui
+     * i vecchi nth-child della ricerca per indirizzo faceva fallire ogni
+     * immobile trovato partendo da una persona, prima ancora di aprirne i
+     * comproprietari. */
+    const identityColumns = this.selectors.resultsTable
+      ? await columnIndexes(this.page.locator(this.selectors.resultsTable), {
+          sheet: ["Foglio"], parcel: ["Particella"], subaltern: ["Sub", "Subalterno"],
+        }, "identita' immobili")
+      : null;
     const expected = [property.sheet, property.parcel, property.subaltern].map((value) => value.trim());
     const matches = async (index: number) => {
       if (index < 0 || index >= await rows.count()) return false;
       const row = rows.nth(index);
-      const actual = await Promise.all([
-        text(row, this.selectors.sheet),
-        text(row, this.selectors.parcel),
-        text(row, this.selectors.subaltern),
-      ]);
+      const actual = identityColumns
+        ? await Promise.all([
+            cellText(row, identityColumns.sheet!),
+            cellText(row, identityColumns.parcel!),
+            cellText(row, identityColumns.subaltern!),
+          ])
+        : await Promise.all([
+            text(row, this.selectors.sheet),
+            text(row, this.selectors.parcel),
+            text(row, this.selectors.subaltern),
+          ]);
       return actual.every((value, position) => value.trim() === expected[position]);
     };
     if (await matches(preferredIndex)) return preferredIndex;

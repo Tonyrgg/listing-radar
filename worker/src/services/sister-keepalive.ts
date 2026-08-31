@@ -1,6 +1,6 @@
 import type { Page } from "playwright";
 
-import { logger } from "../logger.js";
+import { logger, sanitizeSensitiveText } from "../logger.js";
 
 const EXPIRED_PATTERN = /sessione\s+(?:e\s+)?scaduta|errorfiltrosessionescaduta|iampe\.agenziaentrate\.gov\.it\/sam\/ui\/login|name=["']?(?:username|password)/i;
 const AUTHENTICATED_PATTERN = /\/Visure\/SceltaLink\.do|Riepilogo\s+Visure|Area\s+riservata\s+SISTER/i;
@@ -57,7 +57,7 @@ export async function pingSisterSession(page: Page, configuredUrl?: string): Pro
     logger[ok ? "debug" : "warn"]({ status: result.status, sessionExpired }, result.message);
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = sanitizeSensitiveText(error instanceof Error ? error.message : String(error));
     logger.warn({ err: { name: "SisterKeepAliveError", message } }, "Keep-alive SISTER non riuscito");
     return { ok: false, sessionExpired: false, status: null, checkedAt, message: `Keep-alive SISTER non riuscito: ${message}` };
   } finally {

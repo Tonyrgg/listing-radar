@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("controlli desktop esplorazione rete", () => {
-  it("espone una coda senza import automatico e una pausa cooperativa", async () => {
+  it("conserva su richiesta oppure avvia l'import automatico, con pausa cooperativa", async () => {
     const [html, renderer, preload, main] = await Promise.all([
       readFile(path.join(root, "src/desktop/renderer/index.html"), "utf8"),
       readFile(path.join(root, "src/desktop/renderer/renderer.js"), "utf8"),
@@ -43,6 +43,10 @@ describe("controlli desktop esplorazione rete", () => {
     }
     expect(renderer).toContain("resume: false");
     expect(main).toContain('pushActivity("Nuova esplorazione rete proprietaria avviata"');
+    expect(main).toContain('result.completionReason === "target_reached" && !preferences.keepAcquisition');
+    expect(main).toContain('markImportStarted(jobToImport)');
+    expect(main).toContain('runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport })');
+    expect(renderer).toContain("le schede già esistenti resteranno in sola lettura");
     expect(preload).toContain("startNetworkRun");
     expect(main).toContain('ipcMain.handle("desktop:start-network-run"');
     expect(main).toContain("networkRunCancellationRequested = true");

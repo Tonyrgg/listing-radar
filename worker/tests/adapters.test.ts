@@ -138,7 +138,7 @@ describe("adattatori con fixture HTML", () => {
       const accountHtml = `
         <main>
           <article data-worker-crm="personPropertiesCard">
-            Immobili/Notizie/Incarichi (4)
+            Immobili/Notizie/Incarichi (5)
             <a data-worker-crm="personPropertyLinks" href="/CRMImmobiliareLightning/s/immobile/I-FIRST">IM - Via Roma 12</a>
             <a data-worker-crm="personPropertyLinks" href="/CRMImmobiliareLightning/s/immobile/I-SECOND">IM - Via Roma 12</a>
             <button data-worker-crm="personPropertiesViewAll"
@@ -147,10 +147,13 @@ describe("adattatori con fixture HTML", () => {
             </button>
           </article>
           <section role="dialog" data-worker-crm="personPropertiesModal" hidden>
-            <h2>Immobili/Notizie/Incarichi (4)</h2>
+            <h2>Immobili/Notizie/Incarichi (5)</h2>
             <table><tbody>
               <tr data-worker-crm="personPropertiesModalRows">
                 <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/notizia/NT-1">NT - Abitazione - Locazione</a></td>
+              </tr>
+              <tr data-worker-crm="personPropertiesModalRows">
+                <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-NEWS">NT - Via Roma 12 - Notizia</a></td>
               </tr>
               <tr data-worker-crm="personPropertiesModalRows">
                 <td><a data-worker-crm="personPropertiesModalName" href="/CRMImmobiliareLightning/s/immobile/I-WRONG">IM - Via Roma 12 - Abitazione</a></td>
@@ -282,6 +285,73 @@ describe("adattatori con fixture HTML", () => {
       expect(result.match).toMatchObject({
         id: "I-GLOBAL",
         data: { source: "crm-global-cadastral-search", matchedBy: "cadastral-global", identityVerified: true },
+      });
+    } finally { await browser.close(); }
+  });
+
+  it("non accetta la sola terna se indirizzo o Comune non coincidono", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://crm.test/**", (route) => route.fulfill({ contentType: "text/html", body: `
+        <main>
+          <div data-worker-crm="propertySheetValue">50</div>
+          <div data-worker-crm="propertyParcelValue">2455</div>
+          <div data-worker-crm="propertySubalternValue">9</div>
+          <div data-worker-crm="propertyAddressValue">Via Diversa 99, 70100 BARI (BA)</div>
+        </main>`,
+      }));
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/immobile/I-WRONG-ADDRESS");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.verifyProperty("I-WRONG-ADDRESS", {
+        municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9", address: "Via Roma 12",
+        censusZone: "U", category: "A/2", class: "3", consistency: "6 vani", cadastralIncome: null, rawPayload: {},
+      })).resolves.toEqual({ match: null });
+    } finally { await browser.close(); }
+  });
+
+  it("blocca la creazione se la ricerca globale trova la terna su una scheda discordante", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://crm.test/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.includes("/immobile/Immobile__c/Default")) {
+          await route.fulfill({ contentType: "text/html", body: `
+            <main>
+              <button data-worker-crm="propertyFiltersOpen">Filters</button>
+              <input data-worker-crm="propertySearchSheet" />
+              <input data-worker-crm="propertySearchParcel" />
+              <input data-worker-crm="propertySearchSubaltern" />
+              <button data-worker-crm="propertySearchSubmit">Applica</button>
+              <input data-worker-crm="propertyResultId" data-id="I-CONFLICT" />
+            </main>`,
+          });
+          return;
+        }
+        if (url.pathname.includes("/s/immobile/I-CONFLICT")) {
+          await route.fulfill({ contentType: "text/html", body: `
+            <main>
+              <div data-worker-crm="propertySheetValue">50</div>
+              <div data-worker-crm="propertyParcelValue">2455</div>
+              <div data-worker-crm="propertySubalternValue">9</div>
+              <div data-worker-crm="propertyAddressValue">Via Diversa 99, 70100 BARI (BA)</div>
+            </main>`,
+          });
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: "<main>partenza</main>" });
+      });
+      await page.goto("https://crm.test/CRMImmobiliareLightning/s/account/P-OTHER");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+
+      await expect(adapter.findPropertyByCadastralIdentity({
+        municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9", address: "Via Roma 12",
+        censusZone: "U", category: "A/2", class: "3", consistency: "6 vani", cadastralIncome: null, rawPayload: {},
+      })).rejects.toMatchObject({
+        status: "needs_review",
+        details: { action: "property-global-cadastral-identity-conflict", candidateIds: ["I-CONFLICT"] },
       });
     } finally { await browser.close(); }
   });

@@ -80,6 +80,15 @@ function hasSameCadastralIdentity(
     && expected.every((value, index) => value === actual[index]);
 }
 
+function hasSameMunicipality(rawAddress: string | null | undefined, municipality: string | null | undefined) {
+  const expected = normalizedUiText(municipality ?? "");
+  if (!expected) return false;
+  const address = normalizedUiText(rawAddress ?? "");
+  const expectedWords = expected.split(" ").filter(Boolean);
+  const addressWords = address.split(" ").filter(Boolean);
+  return expectedWords.length > 0 && expectedWords.every((word) => addressWords.includes(word));
+}
+
 function recordIdFromHref(href: string | null, entity: "account" | "immobile") {
   return href?.match(new RegExp(`/s/${entity}/([^/?#]+)`, "i"))?.[1] ?? "";
 }
@@ -638,14 +647,20 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await this.openProperty(id);
       const identity = await this.readPropertyIdentity();
       const cadastralMatch = hasSameCadastralIdentity(identity, property);
-      if (!cadastralMatch) return { match: null };
+      const addressMatches = samePropertyAddress(identity.rawAddress, property.address);
+      const municipalityMatches = hasSameMunicipality(identity.rawAddress, property.municipality);
+      /* La sola terna non basta: puo' esistere in Comuni diversi e, in caso
+       * di dati incoerenti, non autorizza mai a toccare una scheda gia'
+       * presente. */
+      if (!cadastralMatch || !addressMatches || !municipalityMatches) return { match: null };
       return {
         match: {
           id,
           data: {
             source: "crm-property-identity",
             identityVerified: true,
-            addressMatches: samePropertyAddress(identity.rawAddress, property.address),
+            addressMatches,
+            municipalityMatches,
             ...identity,
           },
         },
@@ -1569,6 +1584,12 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       for (const link of links) {
         const href = link.href;
         const isFixture = href.startsWith("#fixture-property");
+        const isConfirmedPropertyLink = isFixture
+          || (/\/s\/immobile\//i.test(href) && /^\s*IM\s*-/i.test(link.label));
+        /* La scheda raggruppa Immobili, Notizie e Incarichi. Solo le righe IM
+         * possono partecipare alla ricerca immobile; NT/IN non vengono
+         * nemmeno aperte. */
+        if (!isConfirmedPropertyLink) continue;
         const hrefPropertyId = link.id || (isFixture
           ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
           : recordIdFromHref(href, "immobile"));
@@ -1577,7 +1598,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
           await this.page.waitForTimeout(650);
         }
         const identity = await this.readPropertyIdentity();
-        if (samePropertyAddress(identity.rawAddress, property.address)) {
+        if (samePropertyAddress(identity.rawAddress, property.address)
+          && hasSameMunicipality(identity.rawAddress, property.municipality)) {
           addressMatches.push({
             id: hrefPropertyId || recordIdFromHref(this.page.url(), "immobile"),
             data: {
@@ -1634,9 +1656,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
       const matches: Array<{ id: string; data: Record<string, unknown> }> = [];
+      const identityConflicts: Array<{ id: string; address: string }> = [];
       for (const link of links) {
         const href = link.href;
         const isFixture = href.startsWith("#fixture-property");
+        const isConfirmedPropertyLink = isFixture
+          || (/\/s\/immobile\//i.test(href) && /^\s*IM\s*-/i.test(link.label));
+        if (!isConfirmedPropertyLink) continue;
         const hrefPropertyId = link.id || (isFixture
           ? (await this.page.locator(this.selectors.propertyResultId).first().textContent())?.trim() ?? ""
           : recordIdFromHref(href, "immobile"));
@@ -1648,7 +1674,8 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         const identity = await this.readPropertyIdentity();
         const cadastralMatch = hasSameCadastralIdentity(identity, property);
         const addressMatch = samePropertyAddress(identity.rawAddress, property.address);
-        if (cadastralMatch) {
+        const municipalityMatch = hasSameMunicipality(identity.rawAddress, property.municipality);
+        if (cadastralMatch && addressMatch && municipalityMatch) {
           const id = hrefPropertyId || recordIdFromHref(this.page.url(), "immobile");
           matches.push({
             id,
@@ -1657,11 +1684,26 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
               matchedBy: "cadastral",
               identityVerified: true,
               ...identity,
-              needsUpdate: !addressMatch,
+              addressVerified: true,
+              municipalityVerified: true,
+              needsUpdate: false,
               href,
             },
           });
+        } else if (cadastralMatch) {
+          identityConflicts.push({
+            id: hrefPropertyId || recordIdFromHref(this.page.url(), "immobile"),
+            address: identity.rawAddress,
+          });
         }
+      }
+      if (identityConflicts.length) {
+        throw new WorkerError(
+          "La terna catastale esiste sotto il nominativo, ma indirizzo o Comune non coincidono. Il worker non modifica e non crea alcun immobile.",
+          "needs_review",
+          { portal: "CRM", action: "person-property-identity-conflict", personId, property, conflicts: identityConflicts },
+          true,
+        );
       }
       if (matches.length > 1) throw new WorkerError("Il nominativo ha più immobili con gli stessi dati catastali. Seleziona manualmente quello corretto e premi “Riprendi”.", "needs_review", { portal: "CRM", personId, property, alternatives: matches }, true);
       if (!matches.length && !links.every(({ href }) => href.startsWith("#fixture-property"))) {
@@ -1732,7 +1774,41 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         );
       }
       await submit.click({ force: true });
-      await this.page.waitForTimeout(900);
+      /* Lightning aggiorna i risultati in modo asincrono. Il vecchio ritardo
+       * fisso di 900 ms poteva leggere zero righe mentre la tabella stava
+       * ancora caricando e autorizzare per errore la creazione di un
+       * duplicato. Aspettiamo che spinner e insieme degli ID siano stabili. */
+      const resultIds = this.visible(this.selectors.propertyResultId);
+      const deadline = Date.now() + 20_000;
+      const earliestStableAt = Date.now() + 1_500;
+      let previousSignature = "";
+      let stableReads = 0;
+      while (Date.now() < deadline) {
+        await this.checkSession();
+        const spinnerVisible = this.selectors.loadingSpinner
+          ? await this.visible(this.selectors.loadingSpinner).count() > 0
+          : false;
+        const signature = (await resultIds.evaluateAll((inputs) => inputs
+          .map((input) => input.getAttribute("data-id") ?? "")
+          .filter(Boolean)
+          .sort())).join("|");
+        if (!spinnerVisible && Date.now() >= earliestStableAt) {
+          stableReads = signature === previousSignature ? stableReads + 1 : 0;
+          if (stableReads >= 3) break;
+        } else {
+          stableReads = 0;
+        }
+        previousSignature = signature;
+        await this.page.waitForTimeout(250);
+      }
+      if (stableReads < 3) {
+        throw new WorkerError(
+          "La ricerca globale immobili non ha raggiunto uno stato stabile. Per sicurezza il worker non crea un nuovo immobile.",
+          "portal_error",
+          { portal: "CRM", action: "property-global-cadastral-results-not-stable" },
+          true,
+        );
+      }
       await this.checkSession();
 
       const ids = [...new Set(await this.visible(this.selectors.propertyResultId).evaluateAll((inputs) => inputs
@@ -1751,6 +1827,14 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             identityVerified: true,
           },
         });
+      }
+      if (ids.length && !matches.length) {
+        throw new WorkerError(
+          "La terna catastale esiste nel gestionale, ma la scheda non coincide per indirizzo, Comune o tipo record. Il worker non modifica e non crea alcun immobile.",
+          "needs_review",
+          { portal: "CRM", action: "property-global-cadastral-identity-conflict", property, candidateIds: ids },
+          true,
+        );
       }
       if (matches.length > 1) {
         throw new WorkerError(
