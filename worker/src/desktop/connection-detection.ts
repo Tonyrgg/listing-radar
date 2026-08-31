@@ -1,3 +1,5 @@
+import { matchesWorkerPortal } from "../core/browser-page-matching.js";
+
 export type BrowserPageDescriptor = {
   title?: string;
   url?: string;
@@ -26,16 +28,6 @@ export const EMPTY_BROWSER_CONNECTION_STABILITY: BrowserConnectionStability = {
 
 const LOGIN_PATTERN = /(login|signin|accesso|autenticazione|logout-success|sessione[_-]?scaduta)/i;
 
-function pageText(page: BrowserPageDescriptor) {
-  return `${page.title ?? ""} ${page.url ?? ""}`.toLocaleLowerCase("it");
-}
-
-function matchesPage(page: BrowserPageDescriptor, configuredMatch: string, fallbacks: RegExp[]) {
-  const text = pageText(page);
-  const configured = configuredMatch.trim().toLocaleLowerCase("it");
-  return Boolean(configured && text.includes(configured)) || fallbacks.some((pattern) => pattern.test(text));
-}
-
 function portalCheck(
   id: "sister" | "crm",
   label: string,
@@ -54,14 +46,8 @@ export function detectBrowserConnections(
   crmMatch: string,
 ): BrowserConnectionCheck[] {
   const visiblePages = pages.filter((page) => page.type === "page" || !page.type);
-  const sisterPage = visiblePages.find((page) => matchesPage(page, sisterMatch, [
-    /sister\d*\.agenziaentrate\.gov\.it/i,
-    /\bsister\b/i,
-  ]));
-  const crmPage = visiblePages.find((page) => matchesPage(page, crmMatch, [
-    /tecnocasa-group\.my\.site\.com\/crmimmobiliare/i,
-    /crmimmobiliarelightning/i,
-  ]));
+  const sisterPage = visiblePages.find((page) => matchesWorkerPortal(page, sisterMatch, "sister"));
+  const crmPage = visiblePages.find((page) => matchesWorkerPortal(page, crmMatch, "crm"));
   return [
     { id: "chrome", label: "Chrome", ok: true, detail: `${visiblePages.length} schede aperte`, state: "ready" },
     portalCheck("sister", "SISTER", sisterPage),

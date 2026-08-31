@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page } from "playwright";
 
+import { matchesWorkerPortal, type WorkerPortal } from "../core/browser-page-matching.js";
 import { WorkerError } from "../core/errors.js";
 
 export interface ChromeTabs {
@@ -64,9 +65,9 @@ async function describePage(page: Page) {
 function findMatchingPage(
   pages: Array<{ title: string; url: string; page: Page }>,
   match: string,
+  portal: WorkerPortal,
 ): Page | undefined {
-  const needle = match.toLocaleLowerCase("it");
-  return pages.find(({ title, url }) => `${title} ${url}`.toLocaleLowerCase("it").includes(needle))?.page;
+  return pages.find((page) => matchesWorkerPortal(page, match, portal))?.page;
 }
 
 export async function connectToChrome(
@@ -85,8 +86,8 @@ export async function connectToChrome(
     );
   }
   const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  const sisterPage = findMatchingPage(described, sisterMatch);
-  const crmPage = findMatchingPage(described, crmMatch);
+  const sisterPage = findMatchingPage(described, sisterMatch, "sister");
+  const crmPage = findMatchingPage(described, crmMatch, "crm");
   if (!sisterPage || !crmPage) {
     throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
       missing: [!sisterPage ? "SISTER" : null, !crmPage ? "CRM" : null].filter(Boolean),
