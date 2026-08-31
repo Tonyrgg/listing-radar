@@ -86,7 +86,7 @@ export function PortfolioRow({
           {property.floor != null ? (
             <span>{property.floor === 0 ? "piano terra" : `piano ${formatNumber(property.floor)}`}</span>
           ) : null}
-          {propertyHasElevator(property) ? <span>con ascensore</span> : null}
+          <span>{propertyHasElevator(property) ? "ascensore sì" : "ascensore no"}</span>
         </p>
       </div>
 

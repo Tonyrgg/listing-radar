@@ -120,11 +120,9 @@ export function RequestFacts({
           {formatNumber(locali)} locali
         </FactPill>
       ) : null}
-      {requestRequiresElevator(request) ? (
-        <FactPill icon={ArrowUpDown} label="Ascensore">
-          ascensore obbligatorio
-        </FactPill>
-      ) : null}
+      <FactPill icon={ArrowUpDown} label="Ascensore">
+        {requestRequiresElevator(request) ? "ascensore sì" : "ascensore no"}
+      </FactPill>
       {posizione ? (
         <FactPill icon={MapPin} label="Zone richieste">
           {posizione}

@@ -89,7 +89,7 @@ export function PropertyMatchRow({
           {superficie != null ? <span>{formatNumber(superficie)} mq</span> : null}
           {property.rooms != null ? <span>{formatNumber(property.rooms)} locali</span> : null}
           {dove ? <span>{dove}</span> : null}
-          {propertyHasElevator(property) ? <span>con ascensore</span> : null}
+          <span>{propertyHasElevator(property) ? "ascensore sì" : "ascensore no"}</span>
         </p>
 
         {/* Cosa torna e cosa no: segni, non etichette. */}
