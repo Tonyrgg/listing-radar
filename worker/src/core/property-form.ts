@@ -52,7 +52,7 @@ function floorValues(address: string | null): Pick<PropertyFormValues, "floor" |
 
 function fallbackStreetAndCivic(address: string | null) {
   const base = (address ?? "")
-    .replace(/\s+(?:SCALA|INTERNO|PIANO)\b.*$/i, "")
+    .replace(/\s+(?:EDIFICIO|SCALA|INTERNO|PIANO)\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
   const parsed = splitStreetAndFirstCivic(base);

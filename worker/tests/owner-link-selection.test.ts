@@ -23,10 +23,16 @@ describe("selezione comproprietario nella modale Tecnocloud", () => {
     ], "P-2", ["0803749851"], "Michele Pastoressa")).toMatchObject({ index: 0, selection: "single", note: null });
   });
 
-  it("non seleziona un omonimo quando esiste un telefono raccolto ma non coincide", () => {
+  it("usa l'identificativo CRM verificato anche quando il telefono visibile è vecchio", () => {
     expect(selectOwnerLookupCandidate([
       { personId: "P-2", text: "Mario Rossi · 333 111 1111" },
-    ], "P-2", ["3332222222"], "Mario Rossi")).toBeNull();
+    ], "P-2", ["3332222222"], "Mario Rossi")).toMatchObject({ index: 0, selection: "crm_id" });
+  });
+
+  it("riconosce il nominativo verificato anche se il CRM mostra prima il cognome", () => {
+    expect(selectOwnerLookupCandidate([
+      { personId: "P-2", text: "NANOCCHIO GAETANO · 3282855212" },
+    ], "P-2", ["3282855212"], "Gaetano Nanocchio")).toMatchObject({ index: 0, selection: "crm_id" });
   });
 
   it("non seleziona un record con identificativo giusto ma nome diverso", () => {

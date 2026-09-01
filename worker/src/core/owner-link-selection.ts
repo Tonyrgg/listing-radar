@@ -28,22 +28,23 @@ export function selectOwnerLookupCandidate(
 ): { index: number; selection: OwnerLinkResult["selection"]; note: string | null } | null {
   if (!candidates.length) return null;
   const expectedName = normalizedName(searchLabel);
+  const expectedWords = expectedName.split(" ").filter(Boolean);
   const matchingNameIndexes = candidates
-    .map((candidate, index) => normalizedName(candidate.text).includes(expectedName) ? index : -1)
+    .map((candidate, index) => {
+      const candidateName = normalizedName(candidate.text);
+      return expectedWords.length > 0 && expectedWords.every((word) => candidateName.includes(word)) ? index : -1;
+    })
     .filter((index) => index >= 0);
   if (!matchingNameIndexes.length) return null;
 
   const normalizedPhones = new Set(expectedPhones.map(normalizePhone).filter(Boolean));
   const verifiedIdIndexes = matchingNameIndexes.filter((index) => candidates[index]!.personId === expectedPersonId);
   const candidatePhones = (index: number) => optionPhones(candidates[index]!.text);
-  // The CRM id is definitive when it is exposed and the lookup does not show
-  // a conflicting phone. Tecnocloud often omits phones from these suggestions.
-  const compatibleVerifiedIdIndexes = verifiedIdIndexes.filter((index) => {
-    const visiblePhones = candidatePhones(index);
-    return !normalizedPhones.size || !visiblePhones.length || visiblePhones.some((phone) => normalizedPhones.has(phone));
-  });
-  if (compatibleVerifiedIdIndexes.length === 1) {
-    return { index: compatibleVerifiedIdIndexes[0]!, selection: "crm_id", note: null };
+  // The CRM id comes from the tax-code-verified person record and is
+  // definitive. Phones may be stale or duplicated and names can be rendered
+  // surname-first by the lookup.
+  if (verifiedIdIndexes.length) {
+    return { index: verifiedIdIndexes[0]!, selection: "crm_id", note: null };
   }
 
   if (normalizedPhones.size) {

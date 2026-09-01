@@ -207,7 +207,7 @@ export function parsePropertyAddress(value: string | null | undefined): ParsedPr
   const addressWithoutBracket = (bracketInternalMatch
     ? addressWithInternal.slice(0, bracketInternalMatch.index)
     : addressWithInternal).trim();
-  const detailStart = addressWithoutBracket.search(/\s+(?:SCALA|INTERNO|PIANO)\b/i);
+  const detailStart = addressWithoutBracket.search(/\s+(?:EDIFICIO|SCALA|INTERNO|PIANO)\b/i);
   const address = (detailStart >= 0 ? addressWithoutBracket.slice(0, detailStart) : addressWithoutBracket)
     .replace(/\s+N(?:\.|°)?\s*(?=\d)/gi, " ")
     .replace(/\s+/g, " ")

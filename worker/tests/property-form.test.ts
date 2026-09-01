@@ -57,6 +57,15 @@ describe("dati form immobile CRM", () => {
     }))).toMatchObject({ civicNumber: "195", civicLetter: "C" });
   });
 
+  it("non inserisce Edificio nel campo via", () => {
+    expect(propertyFormValues(property({
+      address: "VIALE GIOVANNI XXIII n. 195/B Edificio B Interno 6 Piano 1",
+      rawPayload: { long_run: true, searchContext: { street: "VIALE GIOVANNI XXIII", civicNumber: "195" } },
+    }))).toMatchObject({
+      street: "Viale Giovanni Xxiii", civicNumber: "195", civicLetter: "B", internal: "6",
+    });
+  });
+
   it("usa il punto per il senza civico e non include n. SC nel nome", () => {
     expect(propertyFormValues(property({
       address: "VIA MARSALA n. SC Piano T",

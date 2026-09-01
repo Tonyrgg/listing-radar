@@ -67,6 +67,16 @@ describe("confronto indirizzo immobile", () => {
       civic: "195C",
     });
   });
+  it("esclude Edificio dai dati identitari dell'indirizzo", () => {
+    expect(parsePropertyAddress("VIALE GIOVANNI XXIII n. 195/B Edificio B Interno 6 Piano 1")).toMatchObject({
+      address: "VIALE GIOVANNI XXIII 195/B",
+      internal: "6",
+    });
+    expect(samePropertyAddress(
+      "VIALE GIOVANNI XXIII n. 195/B Edificio B Interno 6 Piano 1",
+      "Viale Giovanni Xxiii 195B [6], 70032 BITONTO (BA)",
+    )).toBe(true);
+  });
   it("recupera solo il suffisso civico mancante con lo stesso numero base", () => {
     expect(samePropertyAddressWithMissingCivicSuffix(
       "Viale Giovanni Xxiii 195 [.], 70032 BITONTO (BA)",

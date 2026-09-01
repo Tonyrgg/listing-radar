@@ -1272,9 +1272,25 @@ export class PropertyWorkerRunner {
             throw new WorkerError("Immobile o proprietario principale non disponibili per collegare i comproprietari", "data_incomplete", { propertyId: property.id });
           }
           const notes: string[] = [];
-          const linkedOwnerIds = new Set(await crm.findLinkedOwnerIds(property.crm_record_id));
+          const propertySearchCheckpoint = isRecord(property.raw_payload?.property_search)
+            ? property.raw_payload.property_search
+            : {};
+          const verifiedLinkedOwnerCrmIds = Array.isArray(propertySearchCheckpoint.verifiedLinkedOwnerCrmIds)
+            ? propertySearchCheckpoint.verifiedLinkedOwnerCrmIds.filter((value): value is string => typeof value === "string" && Boolean(value))
+            : [];
+          const linkedOwnerIds = new Set([
+            ...(await crm.findLinkedOwnerIds(property.crm_record_id)),
+            ...verifiedLinkedOwnerCrmIds,
+            primary.person.crm_record_id,
+          ]);
           const existingLinksBeforeSync = [...linkedOwnerIds];
           const allOwners = [primary, ...coowners];
+          primary.ownership.crm_link_id ||= `primary-link-${primary.person.crm_record_id}`;
+          primary.ownership.processing_status = "verified_existing";
+          await this.repository.updateOwnership(primary.ownership.id, {
+            crm_link_id: primary.ownership.crm_link_id,
+            processing_status: primary.ownership.processing_status,
+          });
           const ownersToLink = coowners.filter((owner) =>
             owner.person.id !== primary.person.id
             && owner.person.crm_record_id !== primary.person.crm_record_id);
@@ -1720,31 +1736,54 @@ export class PropertyWorkerRunner {
     const checkedOwners = [...new Map([primary, ...owners]
       .filter((person): person is PersonRow & { crm_record_id: string } => Boolean(person.crm_record_id))
       .map((person) => [person.crm_record_id, person])).values()];
-    const linkedMatches: Array<{ person: PersonRow; match: NonNullable<PropertyMatchResult["match"]> }> = [];
-    for (const person of checkedOwners) {
-      const result = await crm.findPropertyForPerson(person.crm_record_id!, property);
-      if (result.match && !linkedMatches.some(({ match }) => match.id === result.match!.id)) {
-        linkedMatches.push({ person, match: result.match });
+    const submittedId = row.crm_record_id;
+    const directResult: PropertyMatchResult | null = submittedId
+      ? await crm.verifyProperty(submittedId, property)
+      : null;
+    if (submittedId && !directResult?.match) {
+      row.crm_record_id = null;
+      row.raw_payload = {
+        ...(row.raw_payload ?? {}),
+        stale_crm_property_id: submittedId,
+        property_sync: {
+          complete: false,
+          invalidatedAt: new Date().toISOString(),
+          invalidatedReason: "identity_not_verified",
+        },
+      };
+      await this.repository.updatePropertyProcessing(row.id, {
+        crm_record_id: null,
+        processing_status: "not_found",
+        raw_payload: row.raw_payload,
+      });
+    }
+    const linkedOwnerMatches: Array<{ person: PersonRow; match: NonNullable<PropertyMatchResult["match"]> }> = [];
+    if (!directResult?.match) {
+      for (const person of checkedOwners) {
+        const result = await crm.findPropertyForPerson(person.crm_record_id!, property);
+        if (result.match) linkedOwnerMatches.push({ person, match: result.match });
       }
     }
-    if (linkedMatches.length > 1) {
+    const distinctLinkedMatches = [...new Map(linkedOwnerMatches.map((entry) => [entry.match.id, entry])).values()];
+    if (distinctLinkedMatches.length > 1) {
       throw new WorkerError(
         "L'immobile risulta associato a più schede diverse tra i proprietari. Il worker non sceglie quale aggiornare.",
         "needs_review",
-        { action: "property-owner-matches-ambiguous", propertyId: row.id, matches: linkedMatches },
+        { action: "property-owner-matches-ambiguous", propertyId: row.id, matches: distinctLinkedMatches },
         true,
       );
     }
-    const linkedResult: PropertyMatchResult = { match: linkedMatches[0]?.match ?? null };
+    const linkedResult: PropertyMatchResult = { match: distinctLinkedMatches[0]?.match ?? null };
     // A property can legitimately be visible only under another co-owner.
     // Never create a record until the immutable cadastral triple has also
     // been searched in the whole CRM.
-    const globalResult = linkedResult.match ? null : await crm.findPropertyByCadastralIdentity(property);
-    const existingResult = linkedResult.match ? linkedResult : globalResult;
+    const globalResult = directResult?.match || linkedResult.match ? null : await crm.findPropertyByCadastralIdentity(property);
+    const existingResult = directResult?.match ? directResult : linkedResult.match ? linkedResult : globalResult;
     if (existingResult?.match) {
       const matchData = isRecord(existingResult.match.data) ? existingResult.match.data : {};
       propertyMatchedByAddress = matchData.matchedBy === "address" && matchData.needsUpdate === true;
-      const verifiedLinkedProperty = propertyMatchedByAddress
+      const foundBySubmittedId = Boolean(directResult?.match);
+      const verifiedLinkedProperty = foundBySubmittedId || propertyMatchedByAddress
         ? existingResult
         : await crm.verifyProperty(existingResult.match.id, property);
       if (!verifiedLinkedProperty.match || verifiedLinkedProperty.match.id !== existingResult.match.id) {
@@ -1762,56 +1801,46 @@ export class PropertyWorkerRunner {
         );
       }
       const foundThroughOwner = Boolean(linkedResult.match);
-      propertyMatchedGlobally = !foundThroughOwner;
+      if (foundBySubmittedId) {
+        const creationCheckpoint = row.raw_payload?.property_creation;
+        propertyCreatedInThisRun = isRecord(creationCheckpoint)
+          && creationCheckpoint.crmPropertyId === existingResult.match.id;
+      }
+      const previousPropertySearch = isRecord(row.raw_payload?.property_search)
+        ? row.raw_payload.property_search
+        : {};
+      const previouslyVerifiedLinkedOwnerCrmIds = Array.isArray(previousPropertySearch.verifiedLinkedOwnerCrmIds)
+        ? previousPropertySearch.verifiedLinkedOwnerCrmIds
+          .filter((value): value is string => typeof value === "string" && Boolean(value))
+        : [];
+      const verifiedLinkedOwnerCrmIds = [...new Set([
+        ...previouslyVerifiedLinkedOwnerCrmIds,
+        ...linkedOwnerMatches
+          .filter(({ match }) => match.id === existingResult.match!.id)
+          .map(({ person }) => person.crm_record_id!)
+          .filter(Boolean),
+      ])];
+      propertyMatchedGlobally = !foundThroughOwner && !foundBySubmittedId;
       row.crm_record_id = existingResult.match.id;
       row.raw_payload = {
         ...(row.raw_payload ?? {}),
         crm_match: verifiedLinkedProperty.match,
         checked_from_people: checkedOwners.map((person) => person.id),
         property_search: {
-          strategy: foundThroughOwner
-            ? propertyMatchedByAddress ? "owner-address" : "owner-cadastral"
-            : "global-cadastral",
+          strategy: foundBySubmittedId
+            ? "submitted-record-id"
+            : foundThroughOwner
+              ? propertyMatchedByAddress ? "owner-address" : "owner-cadastral"
+              : "global-cadastral",
           linkedToVerifiedPerson: foundThroughOwner,
+          verifiedLinkedOwnerCrmIds,
           searchedAt: new Date().toISOString(),
-          personCrmId: linkedMatches[0]?.person.crm_record_id ?? primary.crm_record_id,
+          personCrmId: linkedOwnerMatches[0]?.person.crm_record_id ?? primary.crm_record_id,
         },
       };
       await this.repository.updatePropertyProcessing(row.id, {
         crm_record_id: row.crm_record_id,
         processing_status: "matched",
-        raw_payload: row.raw_payload,
-      });
-    } else if (row.crm_record_id) {
-      const submittedId = row.crm_record_id;
-      const directVerification = await crm.verifyProperty(submittedId, property);
-      if (directVerification.match) {
-        throw new WorkerError(
-          "L'immobile salvato esiste, ma non compare ancora nella sezione Immobili/Notizie/Incarichi del nominativo verificato. Attendo e riprovo senza crearne un altro.",
-          "portal_error",
-          {
-            portal: "CRM",
-            action: "property-created-relation-pending",
-            propertyId: row.id,
-            crmPropertyId: submittedId,
-            crmPersonId: primary.crm_record_id,
-          },
-          true,
-        );
-      }
-      row.crm_record_id = null;
-      row.raw_payload = {
-        ...(row.raw_payload ?? {}),
-        stale_crm_property_id: submittedId,
-        property_sync: {
-          complete: false,
-          invalidatedAt: new Date().toISOString(),
-          invalidatedReason: "identity_not_verified",
-        },
-      };
-      await this.repository.updatePropertyProcessing(row.id, {
-        crm_record_id: null,
-        processing_status: "not_found",
         raw_payload: row.raw_payload,
       });
     } else {

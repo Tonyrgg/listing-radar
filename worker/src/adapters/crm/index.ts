@@ -2784,7 +2784,13 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         const nameConfirmed = expectedWords.length > 0 && expectedWords.every((word) => selectedText.includes(word));
         const lookupCommitted = await personField.getAttribute("readonly") !== null || await options.count() === 0;
         const formAdvanced = await this.visible(this.selectors.ownerRight).count() > 0;
-        if (nameConfirmed && lookupCommitted && formAdvanced) {
+        const selectedValueChanged = Boolean(selectedText)
+          && selectedText !== normalizedUiText(input.searchLabel);
+        const optionMarkedSelected = !lookupCommitted
+          && await selected.option.getAttribute("aria-selected", { timeout: 300 }).catch(() => null) === "true";
+        const exactCrmIdentitySelected = selectionResult.selection === "crm_id"
+          && (selectedValueChanged || optionMarkedSelected);
+        if (nameConfirmed && formAdvanced && (lookupCommitted || exactCrmIdentitySelected)) {
           return { ...selectionResult, candidateCount, selectedPersonLabel: selectedLabel, attempts: attempt };
         }
         await this.page.waitForTimeout(160);

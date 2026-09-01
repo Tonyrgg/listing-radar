@@ -312,10 +312,13 @@ worker risolve nuovamente la lista e riprova nello stesso dialogo fino a tre
 volte. Dopo che `Salva` ha chiuso la finestra, un ritardo di propagazione nel
 pannello `Soggetti collegati` non ferma l'immobile e non provoca un secondo
 inserimento; il collegamento resta annotato come inviato finché diventa visibile.
+Un nominativo sotto il quale la terna catastale è già stata verificata è già
+collegato: viene conservato nel checkpoint e non riapre `Soggetto correlato`.
 
-- il nome deve corrispondere sempre;
-- se esiste un telefono raccolto, deve corrispondere anche un telefono mostrato nel risultato;
-- l'ID CRM già verificato resta evidenza forte, ma non supera un nome o un telefono discordante;
+- l'ID CRM della scheda già verificata per codice fiscale è determinante;
+- nome e cognome possono comparire in qualunque ordine, ma entrambe le parole devono essere presenti;
+- un telefono vecchio o duplicato non annulla la corrispondenza dell'ID CRM;
+- dopo il click sull'ID esatto, una lista Lightning rimasta visibile non impedisce di completare diritto, ruolo e quota se il valore selezionato è confermato;
 - se non esistono telefoni e ci sono più omonimi, si può scegliere il primo solo come ultima risorsa, creando una nota auditabile;
 - se esiste un telefono raccolto ma nessun risultato lo mostra correttamente, fermarsi in `needs_review`.
 
@@ -387,6 +390,10 @@ l'aggiornamento, che deve sovrascrivere entrambi i campi. Se una scheda creata d
 flusso precedente ha già perso soltanto quel suffisso, può essere recuperata e
 corretta automaticamente esclusivamente con terna catastale, via, numero base
 e Comune coincidenti; lettere diverse restano un conflitto bloccante.
+Dettagli catastali come `Edificio`, `Scala`, `Interno` e `Piano` non fanno
+parte del nome strada. Per esempio `195/B Edificio B Interno 6` si confronta
+con il CRM come via + `195B` + interno `6`, mantenendo `Edificio B` soltanto
+nel dato SISTER originale.
 
 Prova live del 24 agosto 2026 su `VIA TOMMASO TRAETTA`:
 

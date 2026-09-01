@@ -198,14 +198,16 @@ Per ogni titolare il flusso operativo è:
 
 1. raccolta completa di immobili e proprietari da SISTER;
 2. riepilogo visuale con immobile a sinistra, proprietari e quote a destra;
-3. ricerca del nominativo tramite codice fiscale;
-4. in presenza di più schede verificate con lo stesso codice fiscale, selezione casuale di una scheda esistente con registrazione della scelta nell'audit;
-5. aggiornamento del nominativo selezionato senza creare un duplicato;
-6. verifica degli immobili collegati al nominativo, prima per dati catastali e poi per via e civico identici;
-7. aggiornamento dei dati catastali discordanti usando SISTER come fonte prioritaria;
-8. preparazione di una sola attività per immobile, aperta dalla scheda immobile, con stato **Da eseguire** e descrizione **Inserire attività** quando l’autocompilazione del contatto diretto è disattivata;
-9. matching dei recapiti Excel tramite codice fiscale e aggiunta dei recapiti mancanti;
-10. controllo finale dei soggetti collegati e delle quote di comproprietà.
+3. lettura dei recapiti Excel e verifica tramite codice fiscale di tutti i proprietari dell'immobile;
+4. aggiornamento dei nominativi selezionati senza creare duplicati;
+5. ripresa immediata dell'eventuale ID immobile già salvato, verificandone terna catastale e indirizzo senza ripetere le ricerche precedenti;
+6. in assenza di un ID salvato, ricerca dell'immobile sotto tutti i proprietari e poi globalmente;
+7. aggiornamento dei dati immobile usando SISTER come fonte prioritaria;
+8. riconoscimento dei nominativi che hanno già esposto l'immobile e collegamento soltanto dei comproprietari realmente mancanti;
+9. preparazione di una sola attività dalla scheda immobile verificata;
+10. checkpoint finale di immobile, soggetti collegati e quote di comproprietà.
+
+Nel lookup `Soggetto correlato` prevale l'ID CRM del nominativo già verificato per codice fiscale. L'ordine `Nome Cognome`/`Cognome Nome`, un telefono CRM non aggiornato o la tendina Lightning ancora visibile non fanno ripetere il collegamento quando l'identità selezionata è deterministica.
 
 Se il gestionale restituisce più schede verificate per lo stesso codice fiscale, il worker sceglie casualmente una delle schede esistenti, conserva candidati e identificativo scelto nel checkpoint e prosegue senza creare un nuovo nominativo. La scelta resta stabile quando il singolo immobile viene ripreso dopo un arresto.
 
