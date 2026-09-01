@@ -14,7 +14,20 @@ describe("StreetRegistryService", () => {
       p_worker_id: "desktop-1",
       p_zone_id: null,
       p_order_scope: "city",
-      p_lease_seconds: 900,
+      p_lease_seconds: 1800,
+    });
+  });
+
+  it("renews a long-running street lease without claiming another street", async () => {
+    const item = { work_item_id: "work-1", lease_expires_at: "2026-09-01T12:00:00Z" };
+    const rpc = vi.fn().mockResolvedValue({ data: item, error: null });
+    const service = new StreetRegistryService({ rpc } as unknown as SupabaseClient);
+
+    await expect(service.renew({ workItemId: "work-1", workerId: "desktop-1" })).resolves.toEqual(item);
+    expect(rpc).toHaveBeenCalledWith("renew_street_registry_work", {
+      p_work_item_id: "work-1",
+      p_worker_id: "desktop-1",
+      p_lease_seconds: 1800,
     });
   });
 

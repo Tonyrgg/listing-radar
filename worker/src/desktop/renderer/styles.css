@@ -3687,6 +3687,16 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   align-items: center;
 }
 
+.network-registry-scope {
+  display: grid;
+  gap: 2px;
+  min-width: min(20rem, 100%);
+  font-size: var(--lr-text-meta);
+  color: var(--lr-ink-3);
+}
+
+.network-registry-scope select { width: 100%; }
+
 .street-registry-queue {
   margin: var(--lr-space-3) 0 0;
   padding: 0;

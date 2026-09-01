@@ -48,6 +48,7 @@ import {
   streetRunRegistryOutcome,
   type StreetRegistryOutcome,
   type StreetRegistryQueueItem,
+  type StreetRegistryZoneOption,
 } from "../services/street-registry.js";
 import { describeSupabaseOperationalError } from "../services/supabase-errors.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
@@ -83,6 +84,8 @@ type Preferences = {
   autoRetryEnabled: boolean;
   /* Cosa scrivere nel diario del gestionale: vedi PropertyActivityMode. */
   propertyActivityMode: PropertyActivityMode;
+  /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
+  streetRegistryZoneId: string | null;
   encryptedEnvironment?: string;
 };
 
@@ -104,7 +107,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact" };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -200,6 +203,19 @@ let streetRegistryClaim: StreetRegistryQueueItem | null = null;
 let streetRegistryPreview: StreetRegistryQueueItem[] = [];
 let streetRegistryError: string | null = null;
 let streetRegistryLoading = false;
+let streetRegistryZones: StreetRegistryZoneOption[] = [];
+let streetRegistrySelectedZoneId: string | null = null;
+let streetRegistryLeaseTimer: ReturnType<typeof setTimeout> | null = null;
+let streetRegistryLastOutcome: StreetRegistryOutcome | null = null;
+type StreetRegistryNetworkProgress = {
+  startedAt: string;
+  processedStreets: number;
+  completedStreets: number;
+  recheckStreets: number;
+  failedStreets: number;
+  currentStreet: string | null;
+};
+let streetRegistryNetworkProgress: StreetRegistryNetworkProgress | null = null;
 
 let streetRunActive = false;
 let streetRunCancellationRequested = false;
@@ -578,6 +594,7 @@ async function loadPreferences() {
       pushActivity("Configurazione importata e protetta da Windows", "success");
     }
   }
+  streetRegistrySelectedZoneId = preferences.streetRegistryZoneId ?? null;
 }
 
 async function persistPreferences() {
@@ -706,10 +723,20 @@ function streetRegistryService(config = workerConfig()) {
 /* Le vie senza geometria non hanno rank e restano in fondo: si vedono
  * comunque, perche' nascondere meta' dell'inventario sarebbe peggio che
  * mostrarlo in un ordine imperfetto. */
-async function refreshStreetRegistryPreview(limit = 12) {
+async function refreshStreetRegistryPreview(limit = 12, zoneId = streetRegistrySelectedZoneId) {
   streetRegistryLoading = true;
   try {
-    streetRegistryPreview = await streetRegistryService().list({ status: "pending", limit });
+    const service = streetRegistryService();
+    const zones = streetRegistryZones.length ? streetRegistryZones : await service.zones();
+    const validZoneId = zoneId && zones.some((zone) => zone.id === zoneId) ? zoneId : null;
+    streetRegistrySelectedZoneId = validZoneId;
+    const [activeClaim, pending] = await Promise.all([
+      streetRegistryClaim ? Promise.resolve(streetRegistryClaim) : service.activeClaim(streetRegistryWorkerId()),
+      service.list({ status: "pending", zoneId: validZoneId ?? undefined, scope: validZoneId ? "zone" : "city", limit }),
+    ]);
+    streetRegistryClaim = activeClaim;
+    streetRegistryPreview = pending;
+    streetRegistryZones = zones;
     streetRegistryError = null;
   } catch (error) {
     streetRegistryPreview = [];
@@ -717,6 +744,35 @@ async function refreshStreetRegistryPreview(limit = 12) {
   } finally {
     streetRegistryLoading = false;
   }
+}
+
+function stopStreetRegistryLeaseHeartbeat() {
+  if (streetRegistryLeaseTimer) clearTimeout(streetRegistryLeaseTimer);
+  streetRegistryLeaseTimer = null;
+}
+
+function scheduleStreetRegistryLeaseHeartbeat(delayMs = 5 * 60_000) {
+  stopStreetRegistryLeaseHeartbeat();
+  if (!streetRegistryClaim) return;
+  streetRegistryLeaseTimer = setTimeout(async () => {
+    const claim = streetRegistryClaim;
+    if (!claim) return;
+    try {
+      streetRegistryClaim = await streetRegistryService().renew({
+        workItemId: claim.work_item_id,
+        workerId: streetRegistryWorkerId(),
+        leaseSeconds: 1800,
+      });
+      streetRegistryError = null;
+      scheduleStreetRegistryLeaseHeartbeat();
+    } catch (error) {
+      streetRegistryError = `Rinnovo della via ${claim.canonical_name} fallito: ${error instanceof Error ? error.message : String(error)}`;
+      pushActivity(streetRegistryError, "warning");
+      streetRegistryLeaseTimer = null;
+    }
+    await publishState();
+  }, delayMs);
+  streetRegistryLeaseTimer.unref?.();
 }
 
 function describeRegistryStreet(item: StreetRegistryQueueItem) {
@@ -734,7 +790,9 @@ async function closeStreetRegistryClaim(
 ) {
   const claim = streetRegistryClaim;
   if (!claim) return;
+  stopStreetRegistryLeaseHeartbeat();
   streetRegistryClaim = null;
+  streetRegistryLastOutcome = outcome;
   try {
     await streetRegistryService().complete({
       workItemId: claim.work_item_id,
@@ -747,6 +805,7 @@ async function closeStreetRegistryClaim(
     pushActivity(`Via ${claim.canonical_name} chiusa nel registro come ${outcome}`, outcome === "completed" ? "success" : "warning");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    streetRegistryLastOutcome = "to_recheck";
     streetRegistryError = `Chiusura della via nel registro non riuscita: ${message}`;
     pushActivity(`${streetRegistryError} Il lease scadra' da solo e la via tornera' in coda.`, "warning");
   }
@@ -1010,6 +1069,14 @@ async function stateSnapshot() {
       loading: streetRegistryLoading,
       lastError: streetRegistryError,
       workerId: streetRegistryWorkerId(),
+      zones: streetRegistryZones,
+      selectedZoneId: streetRegistrySelectedZoneId,
+      network: {
+        active: networkRunActive,
+        stopping: networkRunCancellationRequested,
+        progress: streetRegistryNetworkProgress,
+        lastError: networkRunError,
+      },
     },
     networkRun: {
       active: networkRunActive,
@@ -1229,7 +1296,13 @@ async function runMandateArchiveImport(resumeRunId?: string) {
   void runPromise;
 }
 
-async function runSisterStreet(input: { street: string; resume: boolean; dryRun: boolean; filters?: Partial<StreetPropertyFilters> }) {
+async function runSisterStreet(input: {
+  street: string;
+  resume: boolean;
+  dryRun: boolean;
+  filters?: Partial<StreetPropertyFilters>;
+  registryNetwork?: boolean;
+}) {
   const street = input.street.replace(/\s+/g, " ").trim();
   const filters = normalizeStreetPropertyFilters(input.filters);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
@@ -1238,7 +1311,8 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   const longRunMode = input.resume && resumeCheckpoint
     ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
     : (input.dryRun ? "dry_run" : "live");
-  reserveOperation("street");
+  const ownsOperationReservation = !input.registryNetwork;
+  if (ownsOperationReservation) reserveOperation("street");
   try {
     const checks = await healthChecks({ silent: true });
     if (longRunMode === "live") requireCloudAvailable(checks);
@@ -1246,7 +1320,7 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       await archiveStreetRunCheckpoint("Checkpoint precedente archiviato prima di una nuova run via");
     }
   } catch (error) {
-    releaseOperationReservation("street");
+    if (ownsOperationReservation) releaseOperationReservation("street");
     throw error;
   }
   streetRunActive = true;
@@ -1267,6 +1341,9 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
   const config = workerConfig({ dryRun: longRunMode === "dry_run" });
   let jobToImport: string | null = null;
   let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
+  let registryOutcome: StreetRegistryOutcome | null = null;
+  let registryResult: Record<string, unknown> | undefined;
+  let registryError: Record<string, unknown> | undefined;
   const runPromise = connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH).then(async (tabs) => {
     activeStreetBrowser = tabs.browser;
     try {
@@ -1364,39 +1441,45 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
           pushActivity(`${invalidLongRunProperties.size} immobili esclusi dalla long run per dati incompleti; continuo con gli elementi validi`, "warning");
         }
 
-        await liveRepository.markGraphNormalized(activeProperties, activePeople);
-        const totals = { total_properties: graph.properties.length, total_people: graph.people.length };
-        if (result.status === "completed" && activeProperties.length && activePeople.length) {
-          await liveRepository.updateJob(result.importJobId, {
-            ...totals,
-            status: "saved",
-            saved_at: new Date().toISOString(),
-            last_completed_step: "acquisition_reviewed",
-            current_step: "properties_processed",
-            error_message: null,
-            error_details: null,
-          });
-          jobToImport = result.importJobId;
+        if (result.status === "completed" && graph.properties.length === 0) {
+          await liveRepository.deleteJob(result.importJobId);
+          streetImportJobId = null;
           streetRunError = null;
         } else {
-          const message = result.status !== "completed"
-            ? "Run via sospesa: l'acquisizione resta salvata e riprendibile."
-            : "Run via acquisita, ma alcuni dati obbligatori richiedono una correzione prima dell'import.";
-          await liveRepository.updateJob(result.importJobId, {
-            ...totals,
-            status: result.status === "completed" ? "data_incomplete" : "paused",
-            saved_at: new Date().toISOString(),
-            last_completed_step: "owners_extracted",
-            current_step: "data_normalized",
-            error_message: message,
-            error_details: {
-              action: "long-run-acquisition-validation",
-              incompletePropertyIds: incompleteProperties.map((property) => property.id),
-              incompletePersonIds: incompletePeople.map((person) => person.id),
-              propertiesWithoutOwners: propertiesWithoutOwners.map((property) => property.id),
-            },
-          });
-          streetRunError = message;
+          await liveRepository.markGraphNormalized(activeProperties, activePeople);
+          const totals = { total_properties: graph.properties.length, total_people: graph.people.length };
+          if (result.status === "completed" && activeProperties.length && activePeople.length) {
+            await liveRepository.updateJob(result.importJobId, {
+              ...totals,
+              status: "saved",
+              saved_at: new Date().toISOString(),
+              last_completed_step: "acquisition_reviewed",
+              current_step: "properties_processed",
+              error_message: null,
+              error_details: null,
+            });
+            jobToImport = result.importJobId;
+            streetRunError = null;
+          } else {
+            const message = result.status !== "completed"
+              ? "Run via sospesa: l'acquisizione resta salvata e riprendibile."
+              : "Run via acquisita, ma alcuni dati obbligatori richiedono una correzione prima dell'import.";
+            await liveRepository.updateJob(result.importJobId, {
+              ...totals,
+              status: result.status === "completed" ? "data_incomplete" : "paused",
+              saved_at: new Date().toISOString(),
+              last_completed_step: "owners_extracted",
+              current_step: "data_normalized",
+              error_message: message,
+              error_details: {
+                action: "long-run-acquisition-validation",
+                incompletePropertyIds: incompleteProperties.map((property) => property.id),
+                incompletePersonIds: incompletePeople.map((person) => person.id),
+                propertiesWithoutOwners: propertiesWithoutOwners.map((property) => property.id),
+              },
+            });
+            streetRunError = message;
+          }
         }
       }
       pushActivity(
@@ -1407,19 +1490,14 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       );
       /* Una run sospesa non e' una via fallita: torna in coda come da
        * ricontrollare, cosi' la ripresa non consuma un tentativo per niente. */
-      await closeStreetRegistryClaim(
-        streetRunRegistryOutcome({ status: result.status, lastError: result.lastError, runError: streetRunError }),
-        {
-          jobId: result.importJobId ?? streetImportJobId,
-          result: {
-            status: result.status,
-            mode: longRunMode,
-            accepted_properties: result.totalAcceptedProperties,
-            owners_read: result.totalOwnersRead,
-          },
-          error: streetRunError ? { message: streetRunError } : undefined,
-        },
-      );
+      registryOutcome = streetRunRegistryOutcome({ status: result.status, lastError: result.lastError, runError: streetRunError });
+      registryResult = {
+        status: result.status,
+        mode: longRunMode,
+        accepted_properties: result.totalAcceptedProperties,
+        owners_read: result.totalOwnersRead,
+      };
+      registryError = streetRunError ? { message: streetRunError } : undefined;
       if (result.status === "completed" && !result.lastError && !streetRunError) {
         operationCompletion = {
           kind: "street",
@@ -1445,10 +1523,8 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       return;
     }
     streetRunError = error instanceof Error ? error.message : String(error);
-    await closeStreetRegistryClaim("failed", {
-      jobId: streetImportJobId,
-      error: { message: streetRunError },
-    });
+    registryOutcome = "failed";
+    registryError = { message: streetRunError };
     reportRunInterruption("street", "Acquisizione via interrotta");
     pushActivity(streetRunError, "error");
     await chiudiAcquisizioneInterrotta(streetImportJobId, streetRunError);
@@ -1463,12 +1539,6 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
     streetRunActive = false;
     streetRunCancellationRequested = false;
     streetRunProgress = null;
-    /* Rete di sicurezza: qualunque uscita non prevista sopra lascerebbe la via
-     * bloccata fino alla scadenza del lease. Qui torna in coda subito. */
-    await closeStreetRegistryClaim("to_recheck", {
-      jobId: streetImportJobId,
-      result: { status: "interrupted", mode: longRunMode },
-    });
     if (streetRunAbandonRequested) {
       await archiveStreetRunCheckpoint("Run via interrotta e abbandonata dall'operatore").catch((error) => {
         streetRunError = `Checkpoint non archiviato: ${error instanceof Error ? error.message : String(error)}`;
@@ -1485,11 +1555,23 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
       try {
         pushActivity("Acquisizione bulk completata: avvio l'import automatico degli immobili salvati", "success");
         await repository(config).markImportStarted(jobToImport);
-        await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport });
+        await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport, registryNetwork: input.registryNetwork });
+        const importPromise = activeRunPromise;
+        if (importPromise) await importPromise;
+        const importedJob = await repository(config).getJob(jobToImport);
+        if (importedJob.status !== "completed") {
+          registryOutcome = "to_recheck";
+          registryError = { message: importedJob.error_message ?? lastError ?? "Import CRM non completato" };
+        } else {
+          registryOutcome = "completed";
+          registryResult = { ...registryResult, import_status: "completed" };
+        }
       } catch (error) {
         operationCompletion = null;
         const message = `Acquisizione salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
         streetRunError = message;
+        registryOutcome = "to_recheck";
+        registryError = { message };
         pushActivity(message, "error");
         await recordDiagnosticErrorSafely({
           source: "worker",
@@ -1501,10 +1583,17 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
         await publishState();
       }
     }
+    /* La via e' completata solo dopo l'eventuale import CRM. Qualunque uscita
+     * non classificata torna da ricontrollare e non resta bloccata nel lease. */
+    await closeStreetRegistryClaim(registryOutcome ?? "to_recheck", {
+      jobId: streetImportJobId,
+      result: registryResult ?? { status: "interrupted", mode: longRunMode },
+      error: registryError,
+    });
     streetRunPromise = null;
   });
   streetRunPromise = runPromise;
-  releaseOperationReservation("street");
+  if (ownsOperationReservation) releaseOperationReservation("street");
   void runPromise;
 }
 
@@ -1519,16 +1608,20 @@ async function runSisterStreet(input: { street: string; resume: boolean; dryRun:
  * Solo run reali: una prova a vuoto consumerebbe un tentativo della coda
  * durevole senza portare a casa niente.
  */
-async function runNextStreetFromRegistry(input: { filters?: Partial<StreetPropertyFilters> } = {}) {
-  if (streetRegistryClaim) {
-    throw new Error(`C'è già una via presa in carico dal registro: ${streetRegistryClaim.canonical_name}`);
-  }
+async function runNextStreetFromRegistry(input: {
+  filters?: Partial<StreetPropertyFilters>;
+  registryNetwork?: boolean;
+  zoneId?: string | null;
+} = {}) {
   /* Il controllo del cloud viene prima della presa in carico: prenderla e poi
    * fallire brucerebbe un tentativo senza aver aperto neanche il browser. */
   requireCloudAvailable(await healthChecks({ silent: true }));
-  const claim = await streetRegistryService().claim({
+  const service = streetRegistryService();
+  const claim = await service.claim({
     workerId: streetRegistryWorkerId(),
-    scope: "city",
+    zoneId: input.zoneId ?? undefined,
+    scope: input.zoneId ? "zone" : "city",
+    leaseSeconds: 1800,
   });
   if (!claim) {
     streetRegistryError = null;
@@ -1541,13 +1634,55 @@ async function runNextStreetFromRegistry(input: { filters?: Partial<StreetProper
     return null;
   }
   streetRegistryClaim = claim;
+  streetRegistryLastOutcome = null;
+  scheduleStreetRegistryLeaseHeartbeat();
   pushActivity(`Presa in carico dal registro: ${describeRegistryStreet(claim)}`, "info");
+
+  const checkpointMatches = Boolean(
+    streetRunCheckpoint
+    && streetRunCheckpoint.mode === "live"
+    && streetRunCheckpoint.requestedStreet === claim.sister_search_name
+    && ["running", "paused", "failed"].includes(streetRunCheckpoint.status),
+  );
+
+  /* Se l'acquisizione della via era già finita e si era fermato soltanto
+   * l'import CRM, si riparte dal job collegato senza interrogare SISTER una
+   * seconda volta. Un checkpoint ancora aperto ha invece la precedenza. */
+  if (claim.last_job_id && !checkpointMatches) {
+    try {
+      const linkedJob = await repository().getJob(claim.last_job_id);
+      if (linkedJob.status === "completed") {
+        await closeStreetRegistryClaim("completed", {
+          jobId: linkedJob.id,
+          result: { status: "completed", resumed_from_job: true },
+        });
+        return claim;
+      }
+      pushActivity(`Riprendo l'import CRM già acquisito per ${claim.canonical_name}`, "info");
+      await runWorker({ mode: linkedJob.mode, dryRun: false, jobId: linkedJob.id, registryNetwork: input.registryNetwork });
+      const importPromise = activeRunPromise;
+      if (importPromise) await importPromise;
+      const completedJob = await repository().getJob(linkedJob.id);
+      await closeStreetRegistryClaim(completedJob.status === "completed" ? "completed" : "to_recheck", {
+        jobId: completedJob.id,
+        result: { status: completedJob.status, resumed_from_job: true },
+        error: completedJob.status === "completed" ? undefined : { message: completedJob.error_message ?? lastError ?? "Import CRM non completato" },
+      });
+      return claim;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await closeStreetRegistryClaim("to_recheck", { jobId: claim.last_job_id, error: { message } });
+      throw error;
+    }
+  }
+
   try {
     await runSisterStreet({
       street: claim.sister_search_name,
-      resume: false,
+      resume: checkpointMatches,
       dryRun: false,
       filters: input.filters,
+      registryNetwork: input.registryNetwork,
     });
   } catch (error) {
     /* La run non e' neanche partita: la via torna subito in coda invece di
@@ -1558,6 +1693,104 @@ async function runNextStreetFromRegistry(input: { filters?: Partial<StreetProper
     throw error;
   }
   return claim;
+}
+
+async function runStreetRegistryNetwork(input: { filters?: Partial<StreetPropertyFilters>; zoneId?: string | null } = {}) {
+  reserveOperation("network");
+  try {
+    requireCloudAvailable(await healthChecks({ silent: true }));
+  } catch (error) {
+    releaseOperationReservation("network");
+    throw error;
+  }
+
+  networkRunActive = true;
+  networkRunCancellationRequested = false;
+  networkRunError = null;
+  streetRegistryNetworkProgress = {
+    startedAt: new Date().toISOString(),
+    processedStreets: 0,
+    completedStreets: 0,
+    recheckStreets: 0,
+    failedStreets: 0,
+    currentStreet: streetRegistryClaim?.canonical_name ?? null,
+  };
+  operationCompletion = null;
+  streetRegistrySelectedZoneId = input.zoneId ?? null;
+  const selectedZone = streetRegistryZones.find((zone) => zone.id === streetRegistrySelectedZoneId);
+  pushActivity(
+    selectedZone
+      ? `Rete proprietari avviata in ${selectedZone.name}: procedo dal centro della zona verso l'esterno`
+      : "Rete proprietari avviata: procedo sulle vie dal centro città verso l'esterno",
+    "info",
+  );
+  await publishState();
+
+  const runPromise = (async () => {
+    while (!networkRunCancellationRequested) {
+      const claim = await runNextStreetFromRegistry({ filters: input.filters, registryNetwork: true, zoneId: input.zoneId });
+      if (!claim) break;
+      streetRegistryNetworkProgress = { ...streetRegistryNetworkProgress!, currentStreet: claim.canonical_name };
+      await publishState();
+
+      const pendingStreetRun = streetRunPromise;
+      if (pendingStreetRun) await pendingStreetRun;
+      const outcome = streetRegistryLastOutcome ?? "to_recheck";
+      streetRegistryNetworkProgress = {
+        ...streetRegistryNetworkProgress!,
+        processedStreets: streetRegistryNetworkProgress!.processedStreets + 1,
+        completedStreets: streetRegistryNetworkProgress!.completedStreets + (outcome === "completed" ? 1 : 0),
+        recheckStreets: streetRegistryNetworkProgress!.recheckStreets + (outcome === "to_recheck" ? 1 : 0),
+        failedStreets: streetRegistryNetworkProgress!.failedStreets + (outcome === "failed" ? 1 : 0),
+        currentStreet: null,
+      };
+      await publishState();
+
+      /* Un problema richiede attenzione umana. Continuare prenderebbe subito
+       * la stessa via da ricontrollare e consumerebbe tutti i tentativi. */
+      if (outcome !== "completed") {
+        networkRunError = `${claim.canonical_name} richiede un controllo prima di continuare la rete.`;
+        pushActivity(networkRunError, "warning");
+        break;
+      }
+    }
+
+    if (!networkRunCancellationRequested && !networkRunError) {
+      operationCompletion = {
+        kind: "network",
+        title: "Rete proprietari completata",
+        summary: streetRegistryNetworkProgress?.processedStreets
+          ? "Le vie disponibili sono state lavorate nell'ordine del registro."
+          : "Non risultano vie disponibili da lavorare.",
+        completedAt: new Date().toISOString(),
+        stats: [
+          { label: "Vie completate", value: streetRegistryNetworkProgress?.completedStreets ?? 0 },
+          { label: "Da ricontrollare", value: streetRegistryNetworkProgress?.recheckStreets ?? 0 },
+        ],
+      };
+    }
+  })().catch((error) => {
+    networkRunError = error instanceof Error ? error.message : String(error);
+    pushActivity(networkRunError, "error");
+    void recordDiagnosticErrorSafely({
+      source: "street-run",
+      status: "failed",
+      message: networkRunError,
+      jobId: activeJobId,
+      details: { operation: "street-registry-network" },
+    }, { publish: true });
+  }).finally(async () => {
+    stopStreetRegistryLeaseHeartbeat();
+    networkRunActive = false;
+    networkRunCancellationRequested = false;
+    networkRunPromise = null;
+    refreshStoppingAll();
+    await refreshStreetRegistryPreview().catch(() => undefined);
+    await publishState();
+  });
+  networkRunPromise = runPromise;
+  releaseOperationReservation("network");
+  void runPromise;
 }
 
 async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSettings> }) {
@@ -2269,12 +2502,13 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
   await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
 }
 
-async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string }) {
-  reserveOperation("worker");
+async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; registryNetwork?: boolean }) {
+  const ownsOperationReservation = !input.registryNetwork;
+  if (ownsOperationReservation) reserveOperation("worker");
   try {
     requireCloudAvailable(await healthChecks({ silent: true }));
   } catch (error) {
-    releaseOperationReservation("worker");
+    if (ownsOperationReservation) releaseOperationReservation("worker");
     throw error;
   }
   clearAutoRetry();
@@ -2295,7 +2529,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       }
     }
   } catch (error) {
-    releaseOperationReservation("worker");
+    if (ownsOperationReservation) releaseOperationReservation("worker");
     throw error;
   }
   active = true;
@@ -2375,7 +2609,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       await publishState();
     });
   activeRunPromise = runPromise;
-  releaseOperationReservation("worker");
+  if (ownsOperationReservation) releaseOperationReservation("worker");
   void runPromise;
 }
 
@@ -2706,8 +2940,10 @@ function registerIpc() {
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
-  ipcMain.handle("desktop:refresh-street-registry", async () => {
-    await refreshStreetRegistryPreview();
+  ipcMain.handle("desktop:refresh-street-registry", async (_event, values: { zoneId?: string | null } = {}) => {
+    await refreshStreetRegistryPreview(12, values?.zoneId ?? null);
+    preferences = { ...preferences, streetRegistryZoneId: streetRegistrySelectedZoneId };
+    await persistPreferences();
     await publishState();
     return !streetRegistryError;
   });
@@ -2715,19 +2951,14 @@ function registerIpc() {
     const claim = await runNextStreetFromRegistry({ filters: values?.filters });
     return claim ? { started: true, street: claim.canonical_name } : { started: false, street: null };
   });
-  ipcMain.handle("desktop:start-network-run", async (_event, values: { settings?: Partial<NetworkExplorationSettings>; resume?: boolean }) => {
-    await runSisterNetwork({ settings: values.settings ?? {} });
+  ipcMain.handle("desktop:start-network-run", async (_event, values: { filters?: Partial<StreetPropertyFilters>; zoneId?: string | null } = {}) => {
+    await runStreetRegistryNetwork({ filters: values?.filters, zoneId: values?.zoneId });
     return true;
   });
   ipcMain.handle("desktop:cancel-network-run", async () => {
     if (!networkRunActive) return false;
     networkRunCancellationRequested = true;
-    /* Una navigazione Playwright gia' avviata non osserva il flag finche' non
-     * termina. Disconnettere il client CDP la interrompe senza chiudere le
-     * schede Chrome dell'operatore; il runner riconosce il flag e salva la
-     * coda invece di contare un errore SISTER. */
-    await activeNetworkBrowser?.close().catch(() => undefined);
-    pushActivity("Pausa esplorazione rete richiesta: interrompo l'attesa corrente e salvo la coda", "warning");
+    pushActivity("Pausa Rete proprietari richiesta: termino la via corrente e non ne prendo un'altra", "warning");
     await publishState();
     return true;
   });
@@ -2982,6 +3213,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  stopStreetRegistryLeaseHeartbeat();
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
   if (browserCheckTimer) clearTimeout(browserCheckTimer);

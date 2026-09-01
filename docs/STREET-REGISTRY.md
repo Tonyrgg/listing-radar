@@ -1,6 +1,6 @@
 # Street Registry canonico di Bitonto
 
-Stato al 1 settembre 2026: migration 0006 e 0007, inventario ufficiale, centri, crosswalk OpenStreetMap e metriche applicati all'ambiente Supabase reale. A database ci sono 1.118 Codvia (1.089 attivi, 29 `needs_review`), 1.089 lavorazioni `owner_network` in stato `pending`, 1 centro città e 15 centri zona, 236 vie con geometria e rank, 266 associazioni di zona primarie. La scheda «Via completa» del Property Worker mostra la coda e prende in carico la prossima via da sola: presa in carico atomica con lease, chiusura dell'esito al termine della run. Data dell'audit iniziale: 31 agosto 2026.
+Stato al 1 settembre 2026: migration 0006, 0007 e 0008, inventario ufficiale, centri, crosswalk OpenStreetMap e metriche applicati all'ambiente Supabase reale. A database ci sono 1.118 Codvia (1.089 attivi, 29 `needs_review`), 1.089 lavorazioni `owner_network`, 1 centro città e 15 centri zona, 236 vie con geometria e rank, 266 associazioni di zona primarie. La modalità «Rete proprietari» del Property Worker usa esclusivamente questa coda: prende una via, completa acquisizione e import CRM, quindi passa automaticamente alla successiva. Data dell'audit iniziale: 31 agosto 2026.
 
 Le 853 vie senza geometria hanno `city_rank` nullo e finiscono in fondo alla coda, ordinate per `Codvia`: un ordine stabile ma non geografico. Sono in larga parte gli `ARCO`, `CORTE` e `VICO` del centro storico, che OpenStreetMap non mappa con il nome.
 
@@ -58,6 +58,7 @@ La migration `0006_bitonto_street_registry.sql` aggiunge:
 - `street_registry_worker_queue`: vista di lettura pronta per il Worker;
 - `claim_street_registry_work`: presa in carico atomica con lease e `SKIP LOCKED`;
 - `complete_street_registry_work`: completamento vincolato al Worker proprietario del lease.
+- `renew_street_registry_work`: rinnovo periodico del lease durante le run lunghe.
 
 Le corone hanno ampiezza 250 metri. La distanza è la minima distanza fra il centro e la linea della via, non la distanza dal solo centroide. Il rank è deterministico: distanza crescente e `Codvia` come ordine stabile.
 
@@ -136,17 +137,23 @@ La relazione è molti-a-molti, ma una sola zona può essere primaria per ogni vi
 
 ## Contratto Property Worker
 
-`worker/src/services/street-registry.ts` espone tre operazioni:
+`worker/src/services/street-registry.ts` espone cinque operazioni:
 
+- `zones`: elenca gli ambiti Listing Radar selezionabili;
 - `list`: anteprima ordinata per città o zona;
 - `claim`: prende atomicamente la prossima via e incrementa i tentativi;
+- `renew`: rinnova il lease della via durante acquisizioni e import lunghi;
 - `complete`: registra esito, risultato/errore e l'eventuale `property_worker_job_id`.
 
-Una lavorazione torna disponibile quando il lease scade, quando l'esito è `to_recheck` e finché `attempts` resta sotto `max_attempts`. Gli esiti `completed`, `skipped` e `failed` non vengono ripresi automaticamente: il ritorno in coda di una via fallita è una decisione manuale.
+Una lavorazione torna disponibile quando il lease scade, quando l'esito è `to_recheck` e finché `attempts` resta sotto `max_attempts`. Gli esiti `completed`, `skipped` e `failed` non vengono ripresi automaticamente: il ritorno in coda di una via fallita è una decisione manuale. La migration 0008 recupera il claim dello stesso desktop dopo un riavvio, rinnova il lease senza consumare tentativi e trasforma in `failed` le righe che hanno esaurito i tentativi.
 
-Nel desktop la presa in carico vive nella scheda «Via completa». Il pannello del registro mostra la prossima via e le dieci successive; il bottone prende in carico la prima e avvia su quella la run reale, con gli stessi filtri della run manuale. Le vie senza geometria restano in elenco, marcate come prive di posizione geografica, invece di sparire.
+Nel desktop la presa in carico vive nella scheda «Rete proprietari». Il pannello mostra la prossima via e le dieci successive. L'operatore può scegliere «Tutta Bitonto», con rank rispetto al centro città, oppure una singola zona Listing Radar, con rank rispetto al centro della zona. Avviata la rete, il Worker procede dal centro verso l'esterno nell'ambito scelto e usa gli stessi filtri per tutte le vie della sessione. «Pausa dopo questa via» termina in sicurezza acquisizione e import correnti senza prendere la via successiva. Le vie senza geometria restano in elenco, marcate come prive di posizione geografica, invece di sparire.
 
-Solo run reali: una prova a vuoto consumerebbe un tentativo della coda durevole senza portare a casa niente. La chiusura segue l'esito della run — completata, oppure da ricontrollare se la run è stata sospesa o ha lasciato un errore — e una uscita imprevista rimette comunque la via in coda invece di lasciarla bloccata fino alla scadenza del lease.
+Solo run reali: una prova a vuoto consumerebbe un tentativo della coda durevole senza portare a casa niente. Una via viene marcata `completed` soltanto dopo che l'eventuale import CRM ha raggiunto lo stato `completed`; una scansione realmente vuota è comunque una via validamente completata. Se la scansione, la validazione o l'import si fermano, la via diventa `to_recheck` e la sessione si arresta, evitando di consumare in sequenza tutti i tentativi. Se il job CRM era già stato acquisito, la ripresa usa quel job senza interrogare nuovamente SISTER.
+
+### Nota sulla vecchia migration 0003
+
+Lo Street Registry non è più la migration 0003: durante l'allineamento del repository è diventato `0006_bitonto_street_registry.sql`. L'errore sul vincolo `street_registry_centers_scope_check` era dovuto al tentativo di rieseguire uno schema già creato manualmente. La cronologia remota è stata riallineata alle migration 0003–0007 effettivamente presenti e 0008 è stata applicata normalmente; non bisogna rieseguire il vecchio SQL 0003.
 
 Il Worker usa la chiave di servizio già prevista per le sue operazioni server-side. Le RPC mutative non sono eseguibili da utenti `anon` o `authenticated`; le tabelle hanno RLS e sola lettura autenticata.
 

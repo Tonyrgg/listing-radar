@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type StreetRegistryScope = "city" | "zone";
 export type StreetRegistryWorkStatus = "pending" | "in_progress" | "completed" | "to_recheck" | "skipped" | "failed";
 export type StreetRegistryOutcome = Exclude<StreetRegistryWorkStatus, "pending" | "in_progress">;
+export type StreetRegistryZoneOption = { id: string; zone_number: number | null; name: string };
 
 export type StreetRegistryQueueItem = {
   work_item_id: string;
@@ -60,8 +61,19 @@ export function streetRunRegistryOutcome(input: {
 export class StreetRegistryService {
   constructor(private readonly client: SupabaseClient) {}
 
+  async zones(): Promise<StreetRegistryZoneOption[]> {
+    const response = await this.client.from("internal_zones")
+      .select("id,zone_number,name")
+      .eq("is_active", true)
+      .not("zone_number", "is", null)
+      .order("zone_number", { ascending: true });
+    if (response.error) throw new Error(`Lettura zone Street Registry fallita: ${response.error.message}`);
+    return (response.data ?? []) as StreetRegistryZoneOption[];
+  }
+
   async list(options: {
     zoneId?: string;
+    workerId?: string;
     scope?: StreetRegistryScope;
     status?: StreetRegistryWorkStatus;
     limit?: number;
@@ -70,6 +82,7 @@ export class StreetRegistryService {
     const limit = Math.max(1, Math.min(500, options.limit ?? 100));
     let query = this.client.from("street_registry_worker_queue").select("*");
     if (options.zoneId) query = query.eq("zone_id", options.zoneId);
+    if (options.workerId) query = query.eq("worker_id", options.workerId);
     if (options.status) query = query.eq("work_status", options.status);
     const result = await query
       .order(scope === "zone" ? "zone_rank" : "city_rank", { ascending: true, nullsFirst: false })
@@ -89,10 +102,30 @@ export class StreetRegistryService {
       p_worker_id: options.workerId,
       p_zone_id: options.zoneId ?? null,
       p_order_scope: options.scope ?? (options.zoneId ? "zone" : "city"),
-      p_lease_seconds: options.leaseSeconds ?? 900,
+      p_lease_seconds: options.leaseSeconds ?? 1800,
     });
     if (result.error) throw new Error(`Presa in carico via fallita: ${result.error.message}`);
     return (result.data ?? null) as StreetRegistryQueueItem | null;
+  }
+
+  async activeClaim(workerId: string): Promise<StreetRegistryQueueItem | null> {
+    const rows = await this.list({ workerId, status: "in_progress", limit: 1 });
+    return rows[0] ?? null;
+  }
+
+  async renew(options: {
+    workItemId: string;
+    workerId: string;
+    leaseSeconds?: number;
+  }): Promise<StreetRegistryQueueItem> {
+    const response = await this.client.rpc("renew_street_registry_work", {
+      p_work_item_id: options.workItemId,
+      p_worker_id: options.workerId,
+      p_lease_seconds: options.leaseSeconds ?? 1800,
+    });
+    if (response.error) throw new Error(`Rinnovo presa in carico via fallito: ${response.error.message}`);
+    if (!response.data) throw new Error("La lavorazione via non è stata restituita dopo il rinnovo");
+    return response.data as StreetRegistryQueueItem;
   }
 
   async complete(options: {

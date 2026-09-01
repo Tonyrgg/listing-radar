@@ -5,51 +5,48 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-describe("controlli desktop esplorazione rete", () => {
-  it("conserva su richiesta oppure avvia l'import automatico, con pausa cooperativa", async () => {
-    const [html, renderer, preload, main] = await Promise.all([
+describe("Rete proprietari basata sullo Street Registry", () => {
+  it("espone la coda delle vie e i filtri applicati all'intera sessione", async () => {
+    const [html, renderer] = await Promise.all([
       readFile(path.join(root, "src/desktop/renderer/index.html"), "utf8"),
       readFile(path.join(root, "src/desktop/renderer/renderer.js"), "utf8"),
-      readFile(path.join(root, "src/desktop/preload.cjs"), "utf8"),
-      readFile(path.join(root, "src/desktop/main.ts"), "utf8"),
     ]);
-    expect(html).toContain('id="networkRunStart"');
-    for (const id of ["networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge", "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic"]) {
+
+    expect(html).toContain("Lavora in sequenza le vie di Bitonto");
+    for (const id of [
+      "networkRegistryStart", "networkRegistryPause", "networkRegistryRefresh", "networkRegistryZone",
+      "networkRegistryNext", "networkRegistryQueue", "networkStreetFloorMode",
+      "networkStreetFloorValue", "networkStreetMinCivic", "networkStreetMaxCivic",
+      "networkStreetResidentialOnly",
+    ]) {
       expect(html).toContain(`id="${id}"`);
       expect(renderer).toContain(id);
     }
+    expect(renderer).toContain("continuerà con le vie successive");
+    expect(renderer).toContain("filters:");
     expect(renderer).toContain("startNetworkRun");
-    // I filtri sono bottoni che si aprono uno per volta: sei gruppi, sei
-    // pannelli, e per ognuno una spiegazione e un azzeramento suoi. Tutti
-    // aperti insieme era il modulo che faceva scorrere la scheda.
-    expect(html.match(/data-net-chip="/g)).toHaveLength(6);
-    expect(html.match(/data-net-panel="/g)).toHaveLength(6);
-    expect(html.match(/data-net-info="/g)).toHaveLength(6);
-    expect(html.match(/data-net-explain="/g)).toHaveLength(6);
-    expect(html.match(/data-net-clear="/g)).toHaveLength(6);
-    expect(html).not.toContain('class="network-advanced"');
-    expect(html).toContain('id="networkFilterReset"');
-    expect(renderer).toContain("networkFilterReset");
+    expect(renderer).toContain('zoneId: $("networkRegistryZone").value || null');
+    expect(renderer).toContain("item.zone_rank");
+  });
 
-    // Nessun campo dell'estensione parte valorizzato: il segnaposto dice il
-    // predefinito, e il vuoto deve arrivare al normalizzatore come "mancante".
-    for (const id of ["networkMaxDepth", "networkMaxPeople", "networkSeedCount", "networkMinShare"]) {
-      expect(html).not.toMatch(new RegExp(`id="${id}"[^>]*\svalue="`));
-      expect(renderer).toContain(`numeroOMancante($("${id}").value)`);
-    }
-    for (const obsolete of ["networkRunRestart", "Torna al checkpoint", "Rete esplorata", "Coda congelata"]) {
-      expect(html).not.toContain(obsolete);
-      expect(renderer).not.toContain(obsolete);
-    }
-    expect(renderer).toContain("resume: false");
-    expect(main).toContain('pushActivity("Nuova esplorazione rete proprietaria avviata"');
-    expect(main).toContain('result.completionReason === "target_reached" && !preferences.keepAcquisition');
-    expect(main).toContain('markImportStarted(jobToImport)');
-    expect(main).toContain('runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport })');
-    expect(renderer).toContain("le schede già esistenti resteranno in sola lettura");
+  it("prosegue su più vie, rinnova il lease e aspetta l'import CRM", async () => {
+    const [main, service, preload] = await Promise.all([
+      readFile(path.join(root, "src/desktop/main.ts"), "utf8"),
+      readFile(path.join(root, "src/services/street-registry.ts"), "utf8"),
+      readFile(path.join(root, "src/desktop/preload.cjs"), "utf8"),
+    ]);
+
+    expect(main).toContain("async function runStreetRegistryNetwork");
+    expect(main).toContain("while (!networkRunCancellationRequested)");
+    expect(main).toContain("if (pendingStreetRun) await pendingStreetRun");
+    expect(main).toContain("if (importPromise) await importPromise");
+    expect(main).toContain("completedJob.status === \"completed\"");
+    expect(main).toContain("scheduleStreetRegistryLeaseHeartbeat");
+    expect(service).toContain('this.client.rpc("renew_street_registry_work"');
     expect(preload).toContain("startNetworkRun");
     expect(main).toContain('ipcMain.handle("desktop:start-network-run"');
     expect(main).toContain("networkRunCancellationRequested = true");
-    expect(main).toContain("await activeNetworkBrowser?.close().catch(() => undefined)");
+    expect(main).toContain('scope: input.zoneId ? "zone" : "city"');
+    expect(service).toContain('this.client.from("internal_zones")');
   });
 });

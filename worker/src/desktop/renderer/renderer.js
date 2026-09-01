@@ -334,6 +334,9 @@ function commandIdentity(target) {
       streetRunStart: "Avvia acquisizione via completa",
       streetRegistryStart: "Lavora la prossima via del registro",
       streetRegistryRefresh: "Aggiorna la coda del registro",
+      networkRegistryStart: "Avvia Rete proprietari dalle vie",
+      networkRegistryPause: "Ferma Rete proprietari dopo la via corrente",
+      networkRegistryRefresh: "Aggiorna il registro vie",
       streetRunCancel: "Metti in pausa acquisizione via",
       streetRunAbandon: "Ferma e abbandona acquisizione via",
       networkRunStart: "Esplora rete proprietaria",
@@ -1102,7 +1105,7 @@ function activeBackgroundOperation() {
   return appState?.streetRun?.active
     ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
     : appState?.networkRun?.active
-      ? { label: "Rete proprietari", title: "Esplorazione della rete in corso", detail: "Attraverso proprietà e comproprietari, verificando ogni candidato prima di inserirlo nella coda.", action: "pause-network-run", actionLabel: "Metti in pausa" }
+      ? { label: "Rete proprietari", title: "Lavorazione delle vie in corso", detail: "Procedo dal centro verso l’esterno e completo ogni import CRM prima di passare alla via successiva.", action: "pause-network-run", actionLabel: "Pausa dopo questa via" }
       : appState?.requestArchive?.active
         ? { label: "Sincronizzazione", title: "Sto sincronizzando le richieste", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-request-sync", actionLabel: "Interrompi" }
         : appState?.mandateArchive?.active
@@ -1767,24 +1770,42 @@ function renderStreetRegistry() {
     claim = registry.claim ?? null,
     queue = Array.isArray(registry.queue) ? registry.queue : [],
     streetActive = Boolean(appState?.streetRun?.active),
-    start = $("streetRegistryStart"),
-    refresh = $("streetRegistryRefresh"),
-    next = $("streetRegistryNext"),
-    meta = $("streetRegistryMeta"),
-    list = $("streetRegistryQueue"),
-    errore = $("streetRegistryError");
+    network = registry.network ?? {},
+    start = $("networkRegistryStart"),
+    pause = $("networkRegistryPause"),
+    refresh = $("networkRegistryRefresh"),
+    zone = $("networkRegistryZone"),
+    next = $("networkRegistryNext"),
+    meta = $("networkRegistryMeta"),
+    list = $("networkRegistryQueue"),
+    errore = $("networkRegistryError");
+
+  const zones = Array.isArray(registry.zones) ? registry.zones : [],
+    selectedZoneId = registry.selectedZoneId ?? "",
+    zoneOptionsKey = zones.map((item) => `${item.id}:${item.zone_number}:${item.name}`).join("|");
+  if (zone.dataset.optionsKey !== zoneOptionsKey) {
+    zone.innerHTML = '<option value="">Tutta Bitonto · dal centro città</option>'
+      + zones.map((item) => `<option value="${esc(item.id)}">${item.zone_number == null ? "" : `${esc(String(item.zone_number))} · `}${esc(item.name)}</option>`).join("");
+    zone.dataset.optionsKey = zoneOptionsKey;
+  }
+  zone.value = selectedZoneId;
 
   start.disabled = streetActive
-    || Boolean(claim)
+    || Boolean(network.active)
     || Boolean(registry.loading)
     || Boolean(appState?.active)
     || Boolean(appState?.requestArchive?.active)
-    || Boolean(appState?.mandateArchive?.active)
-    || Boolean(appState?.networkRun?.active);
-  refresh.disabled = Boolean(registry.loading);
+    || Boolean(appState?.mandateArchive?.active);
+  start.classList.toggle("is-hidden", Boolean(network.active));
+  pause.classList.toggle("is-hidden", !network.active);
+  pause.disabled = Boolean(network.stopping);
+  refresh.disabled = Boolean(registry.loading) || Boolean(network.active);
+  zone.disabled = Boolean(registry.loading) || Boolean(network.active) || Boolean(claim);
 
   if (claim) {
-    next.textContent = `In lavorazione: ${claim.canonical_name}`;
+    next.textContent = network.active
+      ? `In lavorazione: ${claim.canonical_name}`
+      : `Da riprendere: ${claim.canonical_name}`;
     meta.textContent = descriviPosizioneVia(claim);
   } else if (registry.loading) {
     next.textContent = "Carico la coda…";
@@ -1798,9 +1819,11 @@ function renderStreetRegistry() {
   }
 
   list.innerHTML = queue.slice(0, 10).map((item) => {
-    const senzaRank = item.city_rank == null;
+    const zoneScope = Boolean(selectedZoneId),
+      rank = zoneScope ? item.zone_rank : item.city_rank,
+      senzaRank = rank == null;
     return `<li class="${senzaRank ? "is-unranked" : ""}">`
-      + `<span class="srq-rank">${senzaRank ? "—" : esc(String(item.city_rank))}</span>`
+      + `<span class="srq-rank">${senzaRank ? "—" : esc(String(rank))}</span>`
       + `<span class="srq-name">${esc(item.canonical_name)}</span>`
       + `<span class="srq-zone">${esc(senzaRank ? "senza posizione" : item.zone_name || "zona non assegnata")}</span>`
       + "</li>";
@@ -1812,6 +1835,11 @@ function renderStreetRegistry() {
 
 function descriviPosizioneVia(item) {
   if (!item) return "";
+  const zoneScope = Boolean(appState?.streetRegistry?.selectedZoneId);
+  if (zoneScope && item.zone_rank != null) {
+    const distanzaZona = item.zone_distance_m == null ? null : `${Math.round(Number(item.zone_distance_m))} m dal centro zona`;
+    return [`${item.zone_rank}ª nella zona`, distanzaZona, item.zone_name].filter(Boolean).join(" · ");
+  }
   if (item.city_rank == null) {
     return "Senza geometria: nessuna posizione dal centro, resta in fondo alla coda in ordine di Codvia.";
   }
@@ -1879,42 +1907,27 @@ function renderNetworkCounters(checkpoint, state) {
   counters.innerHTML = rows.map(([name, value, hint]) => `<div title="${esc(hint)}"><dt>${esc(name)}</dt><dd>${esc(value)}</dd></div>`).join("");
 }
 function renderNetworkRun() {
-  const state = appState?.networkRun ?? {}, checkpoint = state.checkpoint,
-    active = Boolean(state.active);
-  const start = $("networkRunStart"), cancel = $("networkRunCancel");
-  const ids = [
-    "networkTargetProperties", "networkMaxDepth", "networkMaxPeople", "networkSeedCount", "networkMinShare", "networkIncludeExisting", "networkResidentialOnly",
-    "networkFloorMode", "networkFloorValue", "networkMinOwnerAge", "networkMaxOwnerAge",
-    "networkMinOwnerCount", "networkMaxOwnerCount", "networkMinCivic", "networkMaxCivic",
-  ];
+  const registry = appState?.streetRegistry ?? {},
+    network = registry.network ?? {},
+    progress = network.progress ?? null,
+    active = Boolean(network.active),
+    ids = ["networkStreetFloorMode", "networkStreetFloorValue", "networkStreetMinCivic", "networkStreetMaxCivic", "networkStreetResidentialOnly"];
   ids.forEach((id) => { $(id).disabled = active; });
-  $("networkFloorValue").disabled = active || $("networkFloorMode").value === "any";
-  $("networkFilterReset").disabled = active;
-  start.disabled = Boolean(appState?.active) || Boolean(appState?.streetRun?.active) || Boolean(appState?.requestArchive?.active) || Boolean(appState?.mandateArchive?.active);
-  start.classList.toggle("is-hidden", active);
-  cancel.classList.toggle("is-hidden", !active);
-  cancel.disabled = Boolean(state.cancelling);
-  if (!active || !checkpoint) {
-    $("networkRunSummary").classList.add("is-hidden");
-    $("networkRunSummary").innerHTML = "";
-    $("networkRunProgress").classList.add("is-hidden");
+  $("networkStreetFloorValue").disabled = active || $("networkStreetFloorMode").value === "any";
+  const summary = $("networkRegistrySummary");
+  if (!active && !progress) {
+    summary.classList.add("is-hidden");
+    summary.innerHTML = "";
     return;
   }
-  $("networkRunSummary").classList.remove("is-hidden");
-  const settings = checkpoint.settings;
-  const range = (min, max, suffix = "") => min == null && max == null ? null : min != null && max != null ? `${min}-${max}${suffix}` : min != null ? `da ${min}${suffix}` : `fino a ${max}${suffix}`;
-  const floorLabels = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
-  const activeFilters = [
-    settings.floorMode && settings.floorMode !== "any" && settings.floorValue != null ? `${floorLabels[settings.floorMode]} ${settings.floorValue}` : null,
-    range(settings.minOwnerAge, settings.maxOwnerAge, " anni"),
-    range(settings.minOwnerCount, settings.maxOwnerCount, " proprietari"),
-    range(settings.minCivicNumber, settings.maxCivicNumber, " civico"),
-  ].filter(Boolean);
-  $("networkRunSummary").innerHTML = `<div class="street-run-current network-run-current"><div><small>Avanzamento corrente</small><strong>${checkpoint.visitedTaxCodes?.length ?? 0}/${checkpoint.settings.maxPeople}</strong><span>Ricerca SISTER e controllo CRM</span></div></div><p class="street-run-variants">${checkpoint.settings.residentialOnly ? "Solo abitazioni" : "Categorie A/ e C/"} · quota minima ${checkpoint.settings.minSharePercentage}% · ${checkpoint.settings.existingPropertyPolicy === "new_only" ? "solo immobili nuovi" : "include aggiornamenti esistenti"}${activeFilters.length ? `<br><b>Filtri:</b> ${esc(activeFilters.join(" · "))}` : ""}${state.lastError ? `<br><b>Errore della run corrente:</b> ${esc(state.lastError)}` : ""}</p>`;
-  const progress = state.progress;
-  const percent = checkpoint.settings.targetProperties ? Math.round(Math.min(100, ((progress?.acceptedProperties ?? checkpoint.acceptedProperties ?? 0) / checkpoint.settings.targetProperties) * 100)) : 0;
-  $("networkRunProgress").classList.remove("is-hidden");
-  $("networkRunProgress").querySelector("span").style.width = `${percent}%`;
+  summary.classList.remove("is-hidden");
+  const completed = progress?.completedStreets ?? 0,
+    processed = progress?.processedStreets ?? 0,
+    recheck = progress?.recheckStreets ?? 0,
+    failed = progress?.failedStreets ?? 0,
+    current = progress?.currentStreet ?? registry.claim?.canonical_name ?? null;
+  const error = network.lastError ?? registry.lastError;
+  summary.innerHTML = `<div class="street-run-current network-run-current"><div><small>Vie completate</small><strong>${completed}</strong><span>${current ? `Ora: ${esc(current)}` : active ? "Cerco la prossima via" : "Sessione terminata"}</span></div><dl><div><dt>Lavorate</dt><dd>${processed}</dd></div><div><dt>Da controllare</dt><dd>${recheck}</dd></div><div><dt>Fallite</dt><dd>${failed}</dd></div></dl></div>${error ? `<p class="street-run-variants"><b>Attenzione:</b> ${esc(error)}</p>` : ""}`;
 }
 function rigaDiario(x) {
   return `<div class="activity-item is-${x.tone}"><time>${fmtTime(x.at)}</time><i></i><p>${esc(x.message)}</p></div>`;
@@ -2557,6 +2570,29 @@ document.addEventListener("click", async (event) => {
       }
       if (target.id === "streetRunCancel")
         return window.propertyWorker.cancelStreetRun();
+      if (target.id === "networkRegistryRefresh")
+        return window.propertyWorker.refreshStreetRegistry({ zoneId: $("networkRegistryZone").value || null });
+      if (target.id === "networkRegistryStart") {
+        const claim = appState?.streetRegistry?.claim,
+          next = claim ?? appState?.streetRegistry?.queue?.[0];
+        if (!next) throw new Error("Nessuna via disponibile nel registro");
+        if (!window.confirm(
+          `${claim ? "Riprendere" : "Avviare"} Rete proprietari da ${next.canonical_name}? `
+          + "Il Worker continuerà con le vie successive, dal centro verso l’esterno, e importerà ogni via nel CRM prima di passare alla prossima.",
+        )) return COMMAND_CANCELLED;
+        return window.propertyWorker.startNetworkRun({
+          zoneId: $("networkRegistryZone").value || null,
+          filters: {
+            residentialOnly: $("networkStreetResidentialOnly").checked,
+            floorMode: $("networkStreetFloorMode").value,
+            floorValue: nullableNumber($("networkStreetFloorValue").value),
+            minCivicNumber: nullableNumber($("networkStreetMinCivic").value),
+            maxCivicNumber: nullableNumber($("networkStreetMaxCivic").value),
+          },
+        });
+      }
+      if (target.id === "networkRegistryPause")
+        return window.propertyWorker.cancelNetworkRun();
       if (target.id === "networkFilterReset") {
         for (const gruppo of Object.keys(FILTRI_RETE)) svuotaFiltroRete(gruppo);
         renderFiltriRete();
@@ -2922,6 +2958,14 @@ $("streetFloorMode").addEventListener("change", () => {
   $("streetFloorValue").disabled = $("streetFloorMode").value === "any";
   if ($("streetFloorMode").value !== "any") $("streetFloorValue").focus();
   else $("streetFloorValue").value = "";
+});
+$("networkStreetFloorMode").addEventListener("change", () => {
+  $("networkStreetFloorValue").disabled = $("networkStreetFloorMode").value === "any";
+  if ($("networkStreetFloorMode").value !== "any") $("networkStreetFloorValue").focus();
+  else $("networkStreetFloorValue").value = "";
+});
+$("networkRegistryZone").addEventListener("change", async () => {
+  await window.propertyWorker.refreshStreetRegistry({ zoneId: $("networkRegistryZone").value || null });
 });
 
 /* Il bottone si accende mentre scrivi, non al prossimo disegno della pagina:

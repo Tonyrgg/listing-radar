@@ -117,7 +117,7 @@
             <div class="run-carousel-nav" role="tablist" aria-label="Tipi di lavorazione">
               <button class="run-mode-tab is-selected" data-run-slide-target="civic" data-run-description="Una ricerca aperta su un solo civico, guidata oppure automatica." role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6M3 20h18"/></svg><b>Civico</b></button>
               <button class="run-mode-tab" data-run-slide-target="street" data-run-description="Acquisisce tutte le varianti esatte della via partendo dall’elenco SISTER." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l3-10h6l3 10M9 11h6"/></svg><b>Via completa</b></button>
-              <button class="run-mode-tab" data-run-slide-target="network" data-run-description="Parte dai codici fiscali già verificati nel CRM e attraversa i comproprietari." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="m8 11 8-4M8 13l8 4"/></svg><b>Rete proprietari</b></button>
+              <button class="run-mode-tab" data-run-slide-target="network" data-run-description="Lavora in sequenza le vie di Bitonto, dal centro verso l’esterno, e conserva l’avanzamento nel registro." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="m8 11 8-4M8 13l8 4"/></svg><b>Rete proprietari</b></button>
             </div>
             <p id="runModeDescription" class="run-mode-description">Una ricerca aperta su un solo civico, guidata oppure automatica.</p>
           </header>
@@ -144,7 +144,7 @@
           <header>
             <div><p class="eyebrow">Nuova acquisizione</p><h2>Acquisisci una via completa</h2><p>Indica la via esatta: la ricerca su SISTER la imposta il worker.</p></div>
           </header>
-          <section id="streetRegistry" class="street-registry" aria-labelledby="streetRegistryTitle">
+          <section id="streetRegistry" class="street-registry is-hidden" aria-hidden="true" aria-labelledby="streetRegistryTitle">
             <div class="street-registry-head">
               <div>
                 <p class="eyebrow" id="streetRegistryTitle">Registro vie di Bitonto</p>
@@ -194,7 +194,53 @@
         </section>
 
         <section id="networkRun" class="street-run-card network-run-card run-slide" data-run-slide="network">
-          <div class="network-run-controls">
+          <section class="street-registry network-registry" aria-labelledby="networkRegistryTitle">
+            <div class="street-registry-head">
+              <div>
+                <p class="eyebrow" id="networkRegistryTitle">Rete proprietari · Registro vie di Bitonto</p>
+                <p id="networkRegistryNext" class="street-registry-next">Carico la coda…</p>
+                <p id="networkRegistryMeta" class="street-registry-meta"></p>
+              </div>
+              <div class="street-registry-actions">
+                <label class="network-registry-scope">Ambito
+                  <select id="networkRegistryZone" aria-label="Ambito della Rete proprietari">
+                    <option value="">Tutta Bitonto · dal centro citt&agrave;</option>
+                  </select>
+                </label>
+                <button id="networkRegistryStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>Avvia la rete</button>
+                <button id="networkRegistryPause" class="button danger is-hidden">Pausa dopo questa via</button>
+                <button id="networkRegistryRefresh" class="button ghost">Aggiorna la coda</button>
+              </div>
+            </div>
+            <ol id="networkRegistryQueue" class="street-registry-queue"></ol>
+            <p id="networkRegistryError" class="street-registry-error is-hidden" role="alert"></p>
+          </section>
+          <fieldset class="street-run-filters network-street-filters">
+            <legend>Filtri della rete <small>Facoltativi: valgono per tutte le vie della sessione.</small></legend>
+            <div class="street-filter-grid">
+              <label>Piano
+                <span class="street-floor-fields">
+                  <select id="networkStreetFloorMode" aria-label="Come confrontare il piano nella Rete proprietari">
+                    <option value="any">Qualsiasi</option>
+                    <option value="exact">Solo</option>
+                    <option value="minimum">Da questo in su</option>
+                    <option value="maximum">Fino a questo</option>
+                  </select>
+                  <input id="networkStreetFloorValue" type="number" min="-10" max="100" placeholder="0" disabled />
+                </span>
+              </label>
+              <label>Civici
+                <span class="street-civic-fields">
+                  <input id="networkStreetMinCivic" type="number" min="0" max="999999" placeholder="da" />
+                  <span aria-hidden="true">&ndash;</span>
+                  <input id="networkStreetMaxCivic" type="number" min="0" max="999999" placeholder="a" />
+                </span>
+              </label>
+              <label class="safe-check street-residential-check"><input id="networkStreetResidentialOnly" type="checkbox" checked /><span><b>Solo abitazioni</b><small>Esclude box, cantine e categorie C/.</small></span></label>
+            </div>
+          </fieldset>
+          <div id="networkRegistrySummary" class="street-run-summary is-hidden" aria-live="polite"></div>
+          <div class="network-run-controls is-hidden" aria-hidden="true">
             <div class="net-goal">
               <label for="networkTargetProperties">Immobili da ottenere</label>
               <input id="networkTargetProperties" type="number" min="1" max="200" value="12" />
