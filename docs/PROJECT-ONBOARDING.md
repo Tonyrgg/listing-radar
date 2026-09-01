@@ -380,6 +380,12 @@ La strategia primaria è `bulk_exact_variants`:
 6. leggere i proprietari con paracadute per singola riga;
 7. salvare un checkpoint dopo ogni variante.
 
+I suffissi alfabetici dei civici sono parte dell'identità: `195/C` viene
+compilato nel CRM come `195C`, non troncato a `195`. Se una scheda creata dal
+flusso precedente ha già perso soltanto quel suffisso, può essere recuperata e
+corretta automaticamente esclusivamente con terna catastale, via, numero base
+e Comune coincidenti; lettere diverse restano un conflitto bloccante.
+
 Prova live del 24 agosto 2026 su `VIA TOMMASO TRAETTA`:
 
 - due varianti testuali esatte;

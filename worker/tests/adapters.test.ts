@@ -120,6 +120,13 @@ describe("adattatori con fixture HTML", () => {
         censusZone: null, category: "A/3", class: "2", consistency: "5 vani", cadastralIncome: 432.1, rawPayload: {},
       };
       expect((await adapter.findPropertyForPerson("P-42", property)).match?.id).toBe("I-42");
+      expect((await adapter.findPropertyForPerson("P-42", {
+        ...property,
+        address: "Via Roma n. 12/A",
+      })).match).toMatchObject({
+        id: "I-42",
+        data: { matchedBy: "cadastral", addressSuffixRecovered: true, needsUpdate: false },
+      });
       expect((await adapter.findLinkedPropertyByAddress("P-42", property)).match).toMatchObject({
         id: "I-42",
         data: { matchedBy: "address-for-person-selection", addressVerified: true },

@@ -143,8 +143,8 @@ export function extractFirstCivicNumber(value: string | null | undefined): strin
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return null;
   if (hasNoCivicNumber(normalized)) return ".";
-  const explicit = normalized.match(/\bN(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
-  if (explicit?.[1]) return explicit[1].toUpperCase();
+  const explicit = normalized.match(/\bN(?:\.|°|º)?\s*(\d+)(?:\s*\/\s*([A-Z])|([A-Z]))?/i);
+  if (explicit?.[1]) return `${explicit[1]}${explicit[2] ?? explicit[3] ?? ""}`.toUpperCase();
   const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);
   return fallback?.[2] ? `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() : null;
 }
@@ -240,6 +240,27 @@ export function samePropertyAddress(left: string | null | undefined, right: stri
   const rightIdentity = addressIdentity(right);
   if (!leftIdentity || !rightIdentity) return false;
   if (leftIdentity.street !== rightIdentity.street || leftIdentity.civic !== rightIdentity.civic) return false;
+  return !leftIdentity.internal || !rightIdentity.internal || leftIdentity.internal === rightIdentity.internal;
+}
+
+/**
+ * Recovery used only after the immutable cadastral triple has matched.
+ * CRM/Google can persist `195` after SISTER's `195/C`; different suffixes
+ * (`195A` vs `195B`) remain a hard conflict.
+ */
+export function samePropertyAddressWithMissingCivicSuffix(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  const leftIdentity = addressIdentity(left);
+  const rightIdentity = addressIdentity(right);
+  if (!leftIdentity || !rightIdentity || leftIdentity.street !== rightIdentity.street) return false;
+  const leftCivic = leftIdentity.civic.match(/^(\d+)([A-Z])?$/);
+  const rightCivic = rightIdentity.civic.match(/^(\d+)([A-Z])?$/);
+  if (!leftCivic || !rightCivic || leftCivic[1] !== rightCivic[1]) return false;
+  const leftSuffix = leftCivic[2] ?? "";
+  const rightSuffix = rightCivic[2] ?? "";
+  if (Boolean(leftSuffix) === Boolean(rightSuffix)) return false;
   return !leftIdentity.internal || !rightIdentity.internal || leftIdentity.internal === rightIdentity.internal;
 }
 

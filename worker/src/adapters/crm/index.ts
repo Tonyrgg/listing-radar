@@ -2,7 +2,7 @@ import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { selectOwnerLookupCandidate } from "../../core/owner-link-selection.js";
-import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, normalizePhone, parsePropertyAddress, samePropertyAddress, splitPersonName } from "../../core/normalize.js";
+import { addressIdentity, formatPersonName, formatShareForUi, genderFromTaxCode, normalizePhone, parsePropertyAddress, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, splitPersonName } from "../../core/normalize.js";
 import { propertyFormValues } from "../../core/property-form.js";
 import type {
   CrmActivityInput,
@@ -659,7 +659,11 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       await this.openProperty(id);
       const identity = await this.readPropertyIdentity();
       const cadastralMatch = hasSameCadastralIdentity(identity, property);
-      const addressMatches = samePropertyAddress(identity.rawAddress, property.address);
+      const strictAddressMatch = samePropertyAddress(identity.rawAddress, property.address);
+      const addressSuffixRecovered = cadastralMatch
+        && !strictAddressMatch
+        && samePropertyAddressWithMissingCivicSuffix(identity.rawAddress, property.address);
+      const addressMatches = strictAddressMatch || addressSuffixRecovered;
       const municipalityMatches = hasSameMunicipality(identity.rawAddress, property.municipality);
       /* La sola terna non basta: puo' esistere in Comuni diversi e, in caso
        * di dati incoerenti, non autorizza mai a toccare una scheda gia'
@@ -672,6 +676,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
             source: "crm-property-identity",
             identityVerified: true,
             addressMatches,
+            addressSuffixRecovered,
             municipalityMatches,
             ...identity,
           },
@@ -1686,7 +1691,11 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
         }
         const identity = await this.readPropertyIdentity();
         const cadastralMatch = hasSameCadastralIdentity(identity, property);
-        const addressMatch = samePropertyAddress(identity.rawAddress, property.address);
+        const strictAddressMatch = samePropertyAddress(identity.rawAddress, property.address);
+        const addressSuffixRecovered = cadastralMatch
+          && !strictAddressMatch
+          && samePropertyAddressWithMissingCivicSuffix(identity.rawAddress, property.address);
+        const addressMatch = strictAddressMatch || addressSuffixRecovered;
         const municipalityMatch = hasSameMunicipality(identity.rawAddress, property.municipality);
         if (cadastralMatch && addressMatch && municipalityMatch) {
           const id = hrefPropertyId || recordIdFromHref(this.page.url(), "immobile");
@@ -1698,6 +1707,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
               identityVerified: true,
               ...identity,
               addressVerified: true,
+              addressSuffixRecovered,
               municipalityVerified: true,
               needsUpdate: false,
               href,

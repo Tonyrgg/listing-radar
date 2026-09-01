@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, sameStreetAndCivic, selectSisterAddressForStreet, splitPersonName } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, sameStreetAndCivic, selectSisterAddressForStreet, splitPersonName } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -53,6 +53,21 @@ describe("confronto indirizzo immobile", () => {
   it("prende il primo civico da una riga SISTER con civici doppi", () => {
     expect(extractFirstCivicNumber("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toBe("59");
     expect(addressIdentity("VIA TOMMASO TRAETTA n. 59-65-67 Piano T-S1")).toMatchObject({ street: "VIA TOMMASO TRAETTA", civic: "59" });
+  });
+  it("conserva la lettera del civico SISTER dopo la barra", () => {
+    expect(extractFirstCivicNumber("VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2")).toBe("195C");
+    expect(addressIdentity("VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2")).toMatchObject({
+      street: "VIALE GIOVANNI XXIII",
+      civic: "195C",
+    });
+  });
+  it("recupera solo il suffisso civico mancante con lo stesso numero base", () => {
+    expect(samePropertyAddressWithMissingCivicSuffix(
+      "Viale Giovanni Xxiii 195 [.], 70032 BITONTO (BA)",
+      "VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2",
+    )).toBe(true);
+    expect(samePropertyAddressWithMissingCivicSuffix("Via Roma 195/A", "Via Roma 195/B")).toBe(false);
+    expect(samePropertyAddressWithMissingCivicSuffix("Via Roma 195", "Via Roma 197/C")).toBe(false);
   });
   it("riconosce il senza civico senza inventare un numero", () => {
     expect(extractFirstCivicNumber("VIA MARSALA n. SC Piano T")).toBe(".");

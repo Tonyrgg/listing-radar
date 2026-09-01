@@ -1870,7 +1870,7 @@ export class PropertyWorkerRunner {
     const identity = await crm.verifyProperty(row.crm_record_id, property);
     if (!identity.match) {
       throw new WorkerError(
-        "La scheda immobile finale non coincide con foglio, particella e subalterno SISTER. Il worker non aggiungerà l'attività.",
+        "La scheda immobile finale non coincide con terna catastale, indirizzo o Comune SISTER. Il worker non aggiungerà l'attività.",
         "needs_review",
         { propertyId: row.id, crmPropertyId: row.crm_record_id, action: "property-final-identity" },
         true,
