@@ -7,6 +7,7 @@ import { PlaywrightCrmAdapter } from "../src/adapters/crm/index.js";
 import { crmFixtureSelectors, crmSelectors } from "../src/adapters/crm/selectors.js";
 import { PlaywrightSisterAdapter } from "../src/adapters/sister/index.js";
 import { sisterFixtureSelectors, sisterSelectors } from "../src/adapters/sister/selectors.js";
+import type { NormalizedProperty } from "../src/types.js";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../src/fixtures/${name}`, import.meta.url));
 
@@ -1025,7 +1026,7 @@ describe("adattatori con fixture HTML", () => {
       const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
       await expect(adapter.createProperty({
         municipality: "BITONTO", sheet: "50", parcel: "2278", subaltern: "20",
-        address: "Via Borgo San Francesco 62", censusZone: null, category: "C/2",
+        address: "Via Borgo San Francesco 62/C", censusZone: null, category: "C/2",
         class: "4", consistency: "3 mq", cadastralIncome: null, rawPayload: {},
       })).resolves.toBe("P-99");
       expect(await page.locator("body").getAttribute("data-property-creation-origin")).toBe("person-card");
@@ -1035,6 +1036,7 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator("body").getAttribute("data-property-locality")).toBe("BITONTO");
       expect(await page.locator(crmFixtureSelectors.propertyAddress).inputValue()).toBe("Via Borgo San Francesco");
       expect(await page.locator(crmFixtureSelectors.propertyCivic).inputValue()).toBe("62");
+      expect(await page.locator(crmFixtureSelectors.propertyStaircase).inputValue()).toBe("C");
       expect(await page.locator(crmFixtureSelectors.propertyInternal).inputValue()).toBe(".");
       expect(await page.locator(crmFixtureSelectors.propertyMunicipality).locator("input").inputValue()).toBe("BITONTO");
       expect(await page.locator(crmFixtureSelectors.propertyCadastralSectionUrban).locator("input").inputValue()).toBe("BA");
@@ -1043,6 +1045,32 @@ describe("adattatori con fixture HTML", () => {
       expect(await page.locator(crmFixtureSelectors.propertyCadastralSubaltern).locator("input").inputValue()).toBe("20");
       expect(await page.locator(crmFixtureSelectors.propertyCadastralGroup).locator("xpath=..").locator('input[role="textbox"]').inputValue()).toBe("Gruppo C");
       expect(await page.locator(crmFixtureSelectors.propertyCadastralType).locator("xpath=..").locator('input[role="textbox"]').inputValue()).toContain("C02");
+    } finally { await browser.close(); }
+  });
+
+  it("sovrascrive numero civico e lettera separati durante l'aggiornamento", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const html = (await readFile(fixture("crm.html"), "utf8"))
+        .replace('<div data-worker-crm="propertyType"><label>Tipologia Immobile</label>', '<div class="flex" data-worker-crm="propertyType"><label><span>Tipologia Immobile</span></label>')
+        .replace('<button data-worker-crm="personSave"', '<button hidden data-worker-crm="personSave"')
+        .replace('<button data-worker-crm="propertySave">Salva immobile</button>', '<button data-worker-crm="propertySave">Salva</button>');
+      await page.setContent(html);
+      await page.locator(crmFixtureSelectors.propertyCivic).fill("195C");
+      await page.locator(crmFixtureSelectors.propertyStaircase).fill("A");
+      const adapter = new PlaywrightCrmAdapter(page, false, crmFixtureSelectors);
+      const existingPropertyEditor = adapter as unknown as {
+        syncExistingPropertyCoreDetails(property: NormalizedProperty): Promise<void>;
+      };
+      await existingPropertyEditor.syncExistingPropertyCoreDetails({
+        municipality: "BITONTO", sheet: "40", parcel: "1123", subaltern: "1",
+        address: "VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2",
+        censusZone: null, category: "A/3", class: "2", consistency: "5 vani",
+        cadastralIncome: null, rawPayload: { long_run: true, searchContext: { street: "VIALE GIOVANNI XXIII", civicNumber: "195" } },
+      });
+      expect(await page.locator(crmFixtureSelectors.propertyCivic).inputValue()).toBe("195");
+      expect(await page.locator(crmFixtureSelectors.propertyStaircase).inputValue()).toBe("C");
     } finally { await browser.close(); }
   });
 

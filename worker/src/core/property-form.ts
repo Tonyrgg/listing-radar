@@ -1,4 +1,4 @@
-import { extractFirstCivicNumber, formatPersonName, hasNoCivicNumber, splitStreetAndFirstCivic } from "./normalize.js";
+import { extractFirstCivicNumber, formatPersonName, hasNoCivicNumber, splitCivicNumberAndLetter, splitStreetAndFirstCivic } from "./normalize.js";
 import type { NormalizedProperty } from "../types.js";
 
 export type PropertyFloorChoice = "Alto" | "Medio" | "Basso" | "Terra" | "Seminterrato" | "Su più livelli";
@@ -10,8 +10,8 @@ export interface PropertyFormValues {
   floorNumber: string;
   street: string;
   civicNumber: string;
+  civicLetter: string;
   internal: string;
-  staircase: string;
   municipality: string;
   commercialSquareMeters: number | null;
 }
@@ -74,11 +74,11 @@ export function propertyFormValues(property: NormalizedProperty): PropertyFormVa
     ? fallback.street || (typeof searchContext.street === "string" ? searchContext.street.trim() : "")
     : typeof searchContext.street === "string" && searchContext.street.trim() ? searchContext.street.trim() : fallback.street;
   const street = formatPersonName(rawStreet);
-  const civicNumber = withoutCivic
+  const rawCivic = withoutCivic
     ? "."
-    : longRun
-    ? extractFirstCivicNumber(property.address) ?? fallback.civicNumber
-    : typeof searchContext.civicNumber === "string" && searchContext.civicNumber.trim() ? searchContext.civicNumber.trim() : fallback.civicNumber;
+    : extractFirstCivicNumber(property.address)
+      ?? (typeof searchContext.civicNumber === "string" && searchContext.civicNumber.trim() ? searchContext.civicNumber.trim() : fallback.civicNumber);
+  const civic = splitCivicNumberAndLetter(rawCivic);
   const type = category.startsWith("A/") ? "Appartamenti" : "Box / posti auto";
   const subtype = type === "Appartamenti"
     ? apartmentSubtype(property.consistency)
@@ -89,9 +89,9 @@ export function propertyFormValues(property: NormalizedProperty): PropertyFormVa
     subtype,
     ...floorValues(property.address),
     street,
-    civicNumber,
+    civicNumber: civic.number,
+    civicLetter: civic.letter,
     internal: addressDetail(property.address, "INTERNO") ?? ".",
-    staircase: addressDetail(property.address, "SCALA") ?? "",
     municipality: property.municipality,
     commercialSquareMeters: sqm,
   };

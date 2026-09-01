@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, sameStreetAndCivic, selectSisterAddressForStreet, splitPersonName } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, sameStreetAndCivic, selectSisterAddressForStreet, splitCivicNumberAndLetter, splitPersonName, splitStreetAndFirstCivic } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -56,6 +56,12 @@ describe("confronto indirizzo immobile", () => {
   });
   it("conserva la lettera del civico SISTER dopo la barra", () => {
     expect(extractFirstCivicNumber("VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2")).toBe("195C");
+    expect(splitCivicNumberAndLetter("195/C")).toEqual({ number: "195", letter: "C" });
+    expect(splitCivicNumberAndLetter("195C")).toEqual({ number: "195", letter: "C" });
+    expect(splitStreetAndFirstCivic("VIALE GIOVANNI XXIII n. 195/C")).toEqual({
+      street: "VIALE GIOVANNI XXIII",
+      civicNumber: "195C",
+    });
     expect(addressIdentity("VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2")).toMatchObject({
       street: "VIALE GIOVANNI XXIII",
       civic: "195C",

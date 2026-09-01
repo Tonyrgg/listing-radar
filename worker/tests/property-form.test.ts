@@ -4,7 +4,7 @@ import type { NormalizedProperty } from "../src/types.js";
 
 const property = (overrides: Partial<NormalizedProperty>): NormalizedProperty => ({
   municipality: "BITONTO", sheet: "50", parcel: "2455", subaltern: "9",
-  address: "VIA BORGO SAN FRANCESCO n. 62 Scala A Interno 1 Piano 1",
+  address: "VIA BORGO SAN FRANCESCO n. 62/C Scala A Interno 1 Piano 1",
   censusZone: null, category: "A/2", class: null, consistency: "6 vani",
   cadastralIncome: null, rawPayload: { searchContext: { street: "VIA BORGO SAN FRANCESCO", civicNumber: "62" } },
   ...overrides,
@@ -14,7 +14,7 @@ describe("dati form immobile CRM", () => {
   it("converte A/2, sei vani e piano 1", () => {
     expect(propertyFormValues(property({}))).toMatchObject({
       type: "Appartamenti", subtype: "4 locali", floor: "Basso", floorNumber: "1",
-      street: "Via Borgo San Francesco", civicNumber: "62", internal: "1", staircase: "A",
+      street: "Via Borgo San Francesco", civicNumber: "62", civicLetter: "C", internal: "1",
     });
   });
 
@@ -43,11 +43,18 @@ describe("dati form immobile CRM", () => {
     }))).toMatchObject({ street: "Via Tommaso Traetta", civicNumber: "59" });
   });
 
-  it("conserva la lettera del civico SISTER nelle long run", () => {
+  it("separa numero e lettera del civico SISTER nelle long run", () => {
     expect(propertyFormValues(property({
       address: "VIALE GIOVANNI XXIII n. 195/C Piano S1-T - 1-2",
       rawPayload: { long_run: true, searchContext: { street: "VIALE GIOVANNI XXIII", civicNumber: "195" } },
-    }))).toMatchObject({ street: "Viale Giovanni Xxiii", civicNumber: "195C" });
+    }))).toMatchObject({ street: "Viale Giovanni Xxiii", civicNumber: "195", civicLetter: "C" });
+  });
+
+  it("usa il civico completo SISTER anche quando la ricerca era per solo numero", () => {
+    expect(propertyFormValues(property({
+      address: "VIALE GIOVANNI XXIII n. 195/C Piano 1",
+      rawPayload: { searchContext: { street: "VIALE GIOVANNI XXIII", civicNumber: "195" } },
+    }))).toMatchObject({ civicNumber: "195", civicLetter: "C" });
   });
 
   it("usa il punto per il senza civico e non include n. SC nel nome", () => {

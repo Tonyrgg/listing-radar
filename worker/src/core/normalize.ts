@@ -149,6 +149,17 @@ export function extractFirstCivicNumber(value: string | null | undefined): strin
   return fallback?.[2] ? `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() : null;
 }
 
+/** Split the canonical civic identity into the two distinct CRM fields. */
+export function splitCivicNumberAndLetter(value: string | null | undefined): { number: string; letter: string } {
+  const normalized = String(value ?? "").replace(/\s+/g, "").toUpperCase();
+  if (!normalized) return { number: "", letter: "" };
+  if (normalized === ".") return { number: ".", letter: "" };
+  const match = normalized.match(/^(\d+)(?:\/)?([A-Z])?$/);
+  return match
+    ? { number: match[1]!, letter: match[2] ?? "" }
+    : { number: normalized, letter: "" };
+}
+
 /** A SISTER result can list several addresses; a street run keeps its own one. */
 export function selectSisterAddressForStreet(
   value: string | null | undefined,
@@ -176,8 +187,11 @@ export function splitStreetAndFirstCivic(value: string | null | undefined): { st
   if (!normalized) return { street: "", civicNumber: null };
   const noCivic = normalized.match(NO_CIVIC_AT_END_PATTERN);
   if (noCivic?.[1]) return { street: noCivic[1].trim(), civicNumber: "." };
-  const explicit = normalized.match(/^(.*?)\s+N(?:\.|°|º)?\s*(\d+[A-Z]?)/i);
-  if (explicit) return { street: explicit[1]!.trim(), civicNumber: explicit[2]!.toUpperCase() };
+  const explicit = normalized.match(/^(.*?)\s+N(?:\.|°|º)?\s*(\d+)(?:\s*\/\s*([A-Z])|([A-Z]))?/i);
+  if (explicit) return {
+    street: explicit[1]!.trim(),
+    civicNumber: `${explicit[2]}${explicit[3] ?? explicit[4] ?? ""}`.toUpperCase(),
+  };
   const fallback = normalized.match(/^(.*?\D)\s*(\d+)(?:\s*(?:\/\s*)?([A-Z]))?(?:\s*-\s*\d+[A-Z]?)*\s*$/i);
   return fallback
     ? { street: fallback[1]!.trim(), civicNumber: `${fallback[2]}${fallback[3] ?? ""}`.toUpperCase() }

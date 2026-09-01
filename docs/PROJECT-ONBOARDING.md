@@ -381,7 +381,9 @@ La strategia primaria è `bulk_exact_variants`:
 7. salvare un checkpoint dopo ogni variante.
 
 I suffissi alfabetici dei civici sono parte dell'identità: `195/C` viene
-compilato nel CRM come `195C`, non troncato a `195`. Se una scheda creata dal
+compilato nel CRM separando **Civico `195`** e **Lettera `C`**, non accorpato
+nel Civico e non troncato a `195`. La stessa regola vale durante
+l'aggiornamento, che deve sovrascrivere entrambi i campi. Se una scheda creata dal
 flusso precedente ha già perso soltanto quel suffisso, può essere recuperata e
 corretta automaticamente esclusivamente con terna catastale, via, numero base
 e Comune coincidenti; lettere diverse restano un conflitto bloccante.

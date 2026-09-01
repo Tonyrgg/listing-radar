@@ -2111,6 +2111,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       ["propertyMunicipality", "Comune", values.municipality],
       ["propertyPostalCode", "CAP", "*"],
     ];
+    if (values.civicLetter) required.push(["propertyStaircase", "Lettera", values.civicLetter]);
     for (const [key, label, expected] of required) {
       const component = await this.uniqueVisible(key, label, 8_000);
       const isInput = await component.evaluate((element) => element.matches("input"));
@@ -2137,7 +2138,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       ["propertyAddress", "Indirizzo", values.street],
       ["propertyCivic", "Civico", values.civicNumber],
       ["propertyInternal", "Interno", values.internal],
-      ["propertyStaircase", "Lettera", values.staircase],
+      ["propertyStaircase", "Lettera", values.civicLetter],
     ];
     for (const [key, label, value] of fields) {
       if (!value && ["propertyFloorNumber", "propertyStaircase"].includes(key)) continue;
@@ -2394,7 +2395,7 @@ export class PlaywrightCrmAdapter implements CrmAdapter {
       ["propertyAddress", "Indirizzo", values.street],
       ["propertyCivic", "Civico", values.civicNumber],
       ["propertyInternal", "Interno", values.internal],
-      ["propertyStaircase", "Lettera", values.staircase],
+      ["propertyStaircase", "Lettera", values.civicLetter],
     ];
     for (const [key, label, value] of fields) {
       this.require(key);
