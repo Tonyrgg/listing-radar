@@ -546,11 +546,22 @@ export class SisterStreetRun {
       try {
         await this.ensureAddressList(requestedStreet);
         const liveOptions = exactStreetVariants(requestedStreet, await readOptions(this.page.locator(ADDRESS_SELECT)));
-        const liveVariant = liveOptions.find((candidate) => candidate.key === variant.key)
+        /* Il testo visibile puo' comparire piu' volte e, dopo un ritorno o una
+         * ripreparazione, SISTER puo' anche riordinare le option. Il value
+         * completo e' l'identita' piu' forte della voce scelta: usarlo prima
+         * di key/sourceId evita di riaprire la prima omonimia al posto della
+         * seconda quando entrambe hanno la stessa etichetta. */
+        const liveVariant = liveOptions.find((candidate) => candidate.value === variant.value)
+          ?? liveOptions.find((candidate) => candidate.key === variant.key)
           ?? liveOptions.find((candidate) => candidate.sourceId === variant.sourceId);
         if (!liveVariant) throw new Error(`Variante SISTER ${variant.sourceId} non più disponibile`);
+        const resolvedVariant = {
+          ...variant,
+          value: liveVariant.value,
+          text: liveVariant.text,
+        };
         const result = await this.queryOnce(
-          liveVariant,
+          resolvedVariant,
           civicNumber,
           startedAt,
           variantIndex,
@@ -622,9 +633,11 @@ export class SisterStreetRun {
   ): Promise<SisterStreetQueryResult> {
     const form = this.page.locator(ADDRESS_FORM);
     await form.locator('select[name="indirizzoSel"]').selectOption(variant.value);
-    await form.locator('input[name="numCivicoDal"]').fill(civicNumber == null ? "" : String(civicNumber));
+    const civicFrom = civicNumber == null ? this.filters.minCivicNumber : civicNumber;
+    const civicUntil = civicNumber == null ? this.filters.maxCivicNumber : null;
+    await form.locator('input[name="numCivicoDal"]').fill(civicFrom == null ? "" : String(civicFrom));
     const civicTo = form.locator('input[name="numCivicoAl"]');
-    if (await civicTo.count() === 1) await civicTo.fill("");
+    if (await civicTo.count() === 1) await civicTo.fill(civicUntil == null ? "" : String(civicUntil));
     await this.options.onProgress?.({
       phase: "loading-results", variantIndex, variantTotal, variantSourceId: variant.sourceId,
       current: 0, total: 0, address: null,

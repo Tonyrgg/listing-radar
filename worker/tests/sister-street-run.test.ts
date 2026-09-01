@@ -255,6 +255,113 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
     }
   }, 20_000);
 
+  it("visita entrambe le voci uguali e ricompone i civici 165-225 anche se l'elenco cambia ordine", async () => {
+    const optionA = "812500#A#VIALE GIOVANNI XXIII";
+    const optionB = "812500#B#VIALE GIOVANNI XXIII";
+    const selectedQueries: Array<{ option: string; from: string; to: string }> = [];
+    let ownerRequests = 0;
+
+    const addressList = () => {
+      const options = selectedQueries.length
+        ? [[optionB, "VIALE GIOVANNI XXIII"], [optionA, "VIALE GIOVANNI XXIII"]]
+        : [[optionA, "VIALE GIOVANNI XXIII"], [optionB, "VIALE GIOVANNI XXIII"]];
+      return `<!doctype html><body>
+        <form name="SceltaIndirizzoForm" action="/select">
+          <select name="indirizzoSel">${options.map(([value, text]) => `<option value="${value}">${text}</option>`).join("")}</select>
+          <input name="numCivicoDal"><input name="numCivicoAl"><input name="ricerca" type="submit" value="Ricerca">
+        </form>
+      </body>`;
+    };
+    const results = (variant: "a" | "b") => {
+      const rows = variant === "a"
+        ? [
+            { parcel: "1640", civic: 164 },
+            { parcel: "1650", civic: 165 },
+          ]
+        : [
+            { parcel: "2250", civic: 225 },
+            { parcel: "2260", civic: 226 },
+          ];
+      return `<!doctype html><body>
+        <fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: VIALE GIOVANNI XXIII Numeri civici</fieldset>
+        <form name="SceltaVisuraImmSoggForm" action="/owners-${variant}">
+          <table class="listaIsp4">
+            <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
+            ${rows.map((row, index) => `<tr><td><input name="visImmSel" type="radio" value="${index + 1}"></td><td>50</td><td>${row.parcel}</td><td>1</td><td>VIALE GIOVANNI XXIII n. ${row.civic} PIANO 1</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>400,00</td></tr>`).join("")}
+          </table>
+          <input name="intestati" type="submit" value="Intestati">
+        </form>
+        <form name="SceltaIndirizzoForm" action="/addresses"><input type="submit" value="Indietro"></form>
+      </body>`;
+    };
+    const owners = (variant: "a" | "b") => `<!doctype html><body>
+      <form name="SceltaIntestatiForm"><table class="listaIsp4">
+        <tr><th></th><th>Nominativo o denominazione</th><th>Codice fiscale</th><th>Titolarita</th><th>Quota</th></tr>
+        <tr><td><input name="intestatoSelezionato"></td><td>ROSSI MARIO nato a BITONTO (BA) il 01/01/1970</td><td>RSSMRA70A01A893X</td><td>Proprieta'</td><td>1/1</td></tr>
+      </table></form>
+      <form name="SceltaVisuraImmSoggForm" action="/results-${variant}"><input name="indietro" type="submit" value="Indietro"></form>
+    </body>`;
+
+    const server = createServer((request, response) => {
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (url.pathname === "/select") {
+        const selected = url.searchParams.get("indirizzoSel") ?? "";
+        selectedQueries.push({
+          option: selected,
+          from: url.searchParams.get("numCivicoDal") ?? "",
+          to: url.searchParams.get("numCivicoAl") ?? "",
+        });
+        response.end(results(selected === optionA ? "a" : "b"));
+        return;
+      }
+      if (url.pathname === "/owners-a" || url.pathname === "/owners-b") {
+        ownerRequests += 1;
+        response.end(owners(url.pathname.endsWith("a") ? "a" : "b"));
+        return;
+      }
+      if (url.pathname === "/results-a" || url.pathname === "/results-b") {
+        response.end(results(url.pathname.endsWith("a") ? "a" : "b"));
+        return;
+      }
+      response.end(addressList());
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/addresses`);
+      const acquired: string[] = [];
+      const checkpoint = await new SisterStreetRun(page, {
+        filters: { minCivicNumber: 165, maxCivicNumber: 225 },
+        onPropertyAcquired: (_variant, property) => { acquired.push(property.parcel); },
+      }).run("VIALE GIOVANNI XXIII");
+
+      expect(selectedQueries).toEqual([
+        { option: optionA, from: "165", to: "225" },
+        { option: optionB, from: "165", to: "225" },
+      ]);
+      expect(ownerRequests).toBe(2);
+      expect(acquired).toEqual(["1650", "2250"]);
+      expect(checkpoint).toMatchObject({
+        status: "completed",
+        currentVariantIndex: 2,
+        totalRawRecords: 4,
+        totalAcceptedProperties: 2,
+        totalSkippedPropertyRows: 2,
+      });
+      expect(checkpoint.results.map((result) => result.variantKey)).toEqual(["812500:1", "812500:2"]);
+      expect(checkpoint.results.map((result) => result.filterSkips)).toEqual([
+        { civic_out_of_range: 1 },
+        { civic_out_of_range: 1 },
+      ]);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }, 30_000);
+
   it("riprova tre volte lo stesso record e poi continua senza bloccare la via", async () => {
     let ownerRequests = 0;
     const server = createServer((request, response) => {

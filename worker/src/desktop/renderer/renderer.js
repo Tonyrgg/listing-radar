@@ -1758,7 +1758,7 @@ function renderStreetRun() {
         ? `civici ${checkpoint.filters.minCivicNumber ?? "inizio"}–${checkpoint.filters.maxCivicNumber ?? "fine"}` : null,
     ].filter(Boolean).join(" · ");
   $("streetRunSummary").innerHTML =
-    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione bulk senza civico in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Escluse dai filtri</dt><dd>${filterSkips}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")}${activeFilters ? ` · ${esc(activeFilters)}` : ""} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
+    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione di ogni variante in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Escluse dai filtri</dt><dd>${filterSkips}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")}${activeFilters ? ` · ${esc(activeFilters)}` : ""} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
   const progress = $("streetRunProgress");
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
@@ -2530,7 +2530,7 @@ document.addEventListener("click", async (event) => {
         if (
           !dryRun &&
           !window.confirm(
-            "La run reale interrogherà tutte le varianti esatte senza civico; per ogni riga ricaverà il primo civico da Indirizzo e, al termine, importerà automaticamente immobili, proprietari e attività nel gestionale. Continuare?",
+            "La run reale interrogherà tutte le varianti esatte, applicando a ciascuna gli eventuali limiti civici; per ogni riga ricontrollerà il primo civico da Indirizzo e, al termine, importerà automaticamente immobili, proprietari e attività nel gestionale. Continuare?",
           )
         )
           return COMMAND_CANCELLED;
@@ -2556,7 +2556,7 @@ document.addEventListener("click", async (event) => {
          * succedere davvero, compreso l'import automatico finale. */
         if (!window.confirm(
           `Il registro assegnerà ${prossima.canonical_name} a questo Worker e avvierà la run reale: `
-          + "tutte le varianti esatte senza civico, con import automatico nel gestionale al termine. Continuare?",
+          + "tutte le varianti esatte con gli eventuali limiti civici applicati a ciascuna, con import automatico nel gestionale al termine. Continuare?",
         )) return COMMAND_CANCELLED;
         return window.propertyWorker.startRegistryStreetRun({
           filters: {

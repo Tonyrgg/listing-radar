@@ -372,8 +372,10 @@ La strategia primaria è `bulk_exact_variants`:
 1. normalizzare la stringa inserita;
 2. selezionare tutte e sole le opzioni con testo esattamente uguale;
 3. escludere traverse, vie private, contrade e nomi simili;
-4. per ogni identificativo esatto lasciare vuoti `numCivicoDal` e `numCivicoAl`;
-5. acquisire l'intero elenco immobili restituito;
+4. per ogni identificativo esatto applicare lo stesso eventuale intervallo a
+   `numCivicoDal` e `numCivicoAl`; senza filtro i due campi restano vuoti;
+5. acquisire l'intero elenco immobili restituito da ciascuna variante e
+   ricontrollare localmente il civico, senza dipendere dall'ordine SISTER;
 6. leggere i proprietari con paracadute per singola riga;
 7. salvare un checkpoint dopo ogni variante.
 

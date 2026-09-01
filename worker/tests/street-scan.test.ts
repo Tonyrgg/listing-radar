@@ -36,6 +36,20 @@ describe("scansione via SISTER", () => {
     expect(new Set(variants.map((variant) => variant.key)).size).toBe(2);
   });
 
+  it("distingue due voci uguali anche quando condividono il primo identificativo SISTER", () => {
+    const variants = exactStreetVariants("VIALE GIOVANNI XXIII", [
+      { text: "VIALE GIOVANNI XXIII", value: "812500#A#VIALE GIOVANNI XXIII" },
+      { text: "VIALE GIOVANNI XXIII", value: "812500#B#VIALE GIOVANNI XXIII" },
+    ]);
+
+    expect(variants).toHaveLength(2);
+    expect(variants.map((variant) => variant.value)).toEqual([
+      "812500#A#VIALE GIOVANNI XXIII",
+      "812500#B#VIALE GIOVANNI XXIII",
+    ]);
+    expect(variants.map((variant) => variant.key)).toEqual(["812500:1", "812500:2"]);
+  });
+
   it("non interpreta un errore come civico vuoto", () => {
     let counters: Record<string, number> = { "542250:1": 49, "557509:1": 49 };
     counters = updateVerifiedEmptyCounters(counters, "542250:1", "failed");
