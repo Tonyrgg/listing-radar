@@ -6,6 +6,7 @@ import {
   clientSchema, featureDefinitionSchema,
   portfolioPropertySchema, propertyRequestSchema, zoneSchema,
 } from "@/lib/matching/schemas";
+import { ELEVATOR_FEATURE_KEY } from "@/lib/matching/elevator";
 import { estimateCommercialSqm } from "@/lib/matching/scoring";
 import { suggestedZonePreferencesForRequest, zoneContainingPoint } from "@/lib/map/geometry";
 import {
@@ -109,6 +110,41 @@ export async function savePropertyAction(input: unknown) {
   if (property.mandate_status === "active") await recalculateMatchesForProperty(data.id);
   refreshAll();
   return { id: data.id };
+}
+
+/**
+ * L'ascensore di un immobile, registrato una risposta alla volta.
+ *
+ * Il portafoglio arriva dal gestionale, che l'ascensore non lo dice: nessuna
+ * scheda lo aveva, e con la regola dell'ascensore un dato mancante vale «no».
+ * Finche' resta vuoto, chi ha chiesto l'ascensore non vede niente e chi ce
+ * l'ha non lo puo' proporre. Questa e' l'azione che riempie quel vuoto.
+ *
+ * «Non lo so» cancella la riga invece di scrivere un no: una risposta che non
+ * abbiamo non va registrata come una risposta che abbiamo dato. Per il motore
+ * il risultato non cambia — assente vale «no» — ma a schermo la scheda torna a
+ * dire «ascensore non rilevato», che e' la verita' e si vede che manca.
+ */
+export async function setPropertyElevatorAction(propertyId: string, value: boolean | null) {
+  await requireUser();
+  const supabase = requireMatchingDatabase();
+  const { data: feature, error: featureError } = await supabase
+    .from("feature_definitions").select("id").eq("key", ELEVATOR_FEATURE_KEY).maybeSingle();
+  if (featureError) throw new Error(featureError.message);
+  if (!feature) throw new Error("La caratteristica «Ascensore» non esiste: applica il seed delle caratteristiche.");
+
+  const { error } = value === null
+    ? await supabase.from("property_feature_values").delete()
+      .eq("property_id", propertyId).eq("feature_definition_id", feature.id)
+    : await supabase.from("property_feature_values")
+      .upsert({ property_id: propertyId, feature_definition_id: feature.id, value }, { onConflict: "property_id,feature_definition_id" });
+  if (error) throw new Error(error.message);
+
+  await logMatchingActivity("property", propertyId, "updated", { elevator: value });
+  await recalculateMatchesForProperty(propertyId);
+  revalidatePath("/portfolio/ascensori");
+  refreshAll();
+  return { value };
 }
 
 export async function saveZoneAction(input: unknown) {

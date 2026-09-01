@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { PropertyTypeMark } from "@/components/matching/visual-language";
 import { formatCurrency, formatNumber } from "@/lib/formatting";
-import { requestRequiresElevator } from "@/lib/matching/elevator";
+import { requestElevatorLabel } from "@/lib/matching/elevator";
 
 /**
  * La grammatica delle schede.
@@ -92,6 +92,9 @@ export function RequestFacts({
   const superficie = request.internal_sqm_ideal ?? request.internal_sqm_min;
   const locali = request.rooms_ideal ?? request.rooms_min;
   const posizione = requestZoneNames(request).join(" · ") || request.municipality;
+  /* L'ascensore si stampa solo quando la richiesta lo dichiara: se nessuno
+   * ha compilato quella casella, la scheda non inventa una risposta. */
+  const ascensore = requestElevatorLabel(request);
 
   return (
     <>
@@ -120,9 +123,11 @@ export function RequestFacts({
           {formatNumber(locali)} locali
         </FactPill>
       ) : null}
-      <FactPill icon={ArrowUpDown} label="Ascensore">
-        {requestRequiresElevator(request) ? "ascensore sì" : "ascensore no"}
-      </FactPill>
+      {ascensore ? (
+        <FactPill icon={ArrowUpDown} label="Ascensore">
+          {ascensore}
+        </FactPill>
+      ) : null}
       {posizione ? (
         <FactPill icon={MapPin} label="Zone richieste">
           {posizione}

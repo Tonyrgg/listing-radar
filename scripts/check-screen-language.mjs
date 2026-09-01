@@ -33,6 +33,7 @@ const ROTTE = [
   "/matching/overview",
   "/requests",
   "/portfolio",
+  "/portfolio/ascensori",
   "/zones",
   "/map",
   "/matching-settings",

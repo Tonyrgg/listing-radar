@@ -71,27 +71,86 @@ export function elevatorIsRelevant(property: MatchingContext["property"]): boole
  * etichette. Lavorano sulle righe come arrivano dalle liste, che portano la
  * chiave della caratteristica e non l'identificativo.
  */
-export function requestRequiresElevator(request: {
+type RequestWithPreferences = {
   request_feature_preferences?: readonly {
     preference_level: string;
     feature?: { key?: string | null } | null;
   }[] | null;
-}) {
-  return (request.request_feature_preferences ?? []).some(
-    (item) => item.feature?.key === ELEVATOR_FEATURE_KEY && item.preference_level === "required",
-  );
-}
+};
 
-export function propertyHasElevator(property: {
+type PropertyWithFeatureValues = {
   property_feature_values?: readonly {
     value: unknown;
     feature?: { key?: string | null } | null;
   }[] | null;
-}) {
+};
+
+/**
+ * Cosa dice la richiesta sull'ascensore. «Non dichiarato» non e' una risposta
+ * del cliente: e' una casella che nessuno ha compilato, e va detta come tale.
+ */
+export type RequestElevatorStance = "required" | "preferred" | "avoid" | "undeclared";
+
+export function requestElevatorStance(request: RequestWithPreferences): RequestElevatorStance {
+  const preference = (request.request_feature_preferences ?? []).find(
+    (item) => item.feature?.key === ELEVATOR_FEATURE_KEY,
+  );
+  switch (preference?.preference_level) {
+    case "required": return "required";
+    case "preferred": return "preferred";
+    case "avoid": return "avoid";
+    default: return "undeclared";
+  }
+}
+
+export function requestRequiresElevator(request: RequestWithPreferences) {
+  return requestElevatorStance(request) === "required";
+}
+
+/**
+ * L'etichetta di una richiesta dice cosa chiede il cliente, non cosa ha la
+ * casa. «Ascensore no» diceva la seconda cosa al posto della prima: si leggeva
+ * come un dato accertato mentre spesso era solo una casella mai compilata.
+ * Quando non e' dichiarato non si stampa niente: una pastiglia in meno e' piu'
+ * onesta di una pastiglia che afferma il falso.
+ */
+export function requestElevatorLabel(request: RequestWithPreferences): string | null {
+  switch (requestElevatorStance(request)) {
+    case "required": return "ascensore indispensabile";
+    case "preferred": return "ascensore gradito";
+    case "avoid": return "ascensore da evitare";
+    case "undeclared": return null;
+  }
+}
+
+/**
+ * Cosa sappiamo dell'ascensore di un immobile. Il motore tratta «non rilevato»
+ * come un no — una scheda nasce con l'ascensore a «no» — ma a schermo le due
+ * cose restano distinte: chi legge deve sapere se quel no e' stato verificato
+ * o solo ereditato dal default, perche' e' l'unica differenza che gli dice se
+ * c'e' una scheda da correggere.
+ */
+export type PropertyElevatorState = "present" | "absent" | "undeclared";
+
+export function propertyElevatorState(property: PropertyWithFeatureValues): PropertyElevatorState {
   const stored = (property.property_feature_values ?? []).find(
     (item) => item.feature?.key === ELEVATOR_FEATURE_KEY,
   );
-  return stored ? readBooleanFeature(stored.value) === true : false;
+  if (!stored) return "undeclared";
+  const value = readBooleanFeature(stored.value);
+  return value === true ? "present" : value === false ? "absent" : "undeclared";
+}
+
+export function propertyHasElevator(property: PropertyWithFeatureValues) {
+  return propertyElevatorState(property) === "present";
+}
+
+export function propertyElevatorLabel(property: PropertyWithFeatureValues): string {
+  switch (propertyElevatorState(property)) {
+    case "present": return "con ascensore";
+    case "absent": return "senza ascensore";
+    case "undeclared": return "ascensore non rilevato";
+  }
 }
 
 export function evaluateElevatorRequirement(context: MatchingContext): ElevatorVerdict {

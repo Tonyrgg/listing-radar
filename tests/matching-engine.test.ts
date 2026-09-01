@@ -3,8 +3,10 @@ import { calculateMatch } from "@/lib/matching/engine";
 import { estimateCommercialSqm, sqmCoherenceWarnings } from "@/lib/matching/scoring";
 import {
   elevatorIsRelevant,
+  propertyElevatorLabel,
   propertyHasElevator,
   readBooleanFeature,
+  requestElevatorLabel,
   requestRequiresElevator,
 } from "@/lib/matching/elevator";
 import {
@@ -343,6 +345,44 @@ describe("etichette dell'ascensore nelle schede", () => {
       property_feature_values: [{ value: true, feature: { key: "balcony" } }],
     })).toBe(false);
     expect(propertyHasElevator({})).toBe(false);
+  });
+
+  it("dice cosa chiede la richiesta, non cosa ha la casa", () => {
+    expect(requestElevatorLabel({
+      request_feature_preferences: [{ preference_level: "required", feature: { key: "elevator" } }],
+    })).toBe("ascensore indispensabile");
+    expect(requestElevatorLabel({
+      request_feature_preferences: [{ preference_level: "preferred", feature: { key: "elevator" } }],
+    })).toBe("ascensore gradito");
+    expect(requestElevatorLabel({
+      request_feature_preferences: [{ preference_level: "avoid", feature: { key: "elevator" } }],
+    })).toBe("ascensore da evitare");
+  });
+
+  it("non stampa niente quando la richiesta non dichiara l'ascensore", () => {
+    // Era il caso Marinelli al contrario: una casella mai compilata veniva
+    // stampata come «ascensore no», cioe' come una risposta del cliente.
+    expect(requestElevatorLabel({})).toBeNull();
+    expect(requestElevatorLabel({ request_feature_preferences: [] })).toBeNull();
+    expect(requestElevatorLabel({
+      request_feature_preferences: [{ preference_level: "indifferent", feature: { key: "elevator" } }],
+    })).toBeNull();
+    expect(requestElevatorLabel({
+      request_feature_preferences: [{ preference_level: "required", feature: { key: "balcony" } }],
+    })).toBeNull();
+  });
+
+  it("sull'immobile distingue l'assenza accertata dal dato mai rilevato", () => {
+    expect(propertyElevatorLabel({
+      property_feature_values: [{ value: true, feature: { key: "elevator" } }],
+    })).toBe("con ascensore");
+    expect(propertyElevatorLabel({
+      property_feature_values: [{ value: false, feature: { key: "elevator" } }],
+    })).toBe("senza ascensore");
+    expect(propertyElevatorLabel({})).toBe("ascensore non rilevato");
+    expect(propertyElevatorLabel({
+      property_feature_values: [{ value: "boh", feature: { key: "elevator" } }],
+    })).toBe("ascensore non rilevato");
   });
 });
 

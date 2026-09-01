@@ -12,6 +12,7 @@ import {
   type PropertyLocationResolution,
   type PropertyLocationZone,
 } from "./property-location.js";
+import { crmRequestFeatureRequirements, type RequestFeatureRequirement } from "./request-feature-requirements.js";
 import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
 import { isSupabaseProjectRestricted } from "./supabase-errors.js";
 
@@ -305,7 +306,43 @@ export class WorkerRepository {
       })));
       if (zoneInsertError) throw new Error(`Salvataggio zone della richiesta fallito: ${zoneInsertError.message}`);
     }
+    await this.applyRequestFeatureRequirements(requestId, crmRequestFeatureRequirements(detail));
     return requestId;
+  }
+
+  /**
+   * Porta nell'archivio le dotazioni che il CRM dichiara, senza toccare quelle
+   * gia' decise da una persona: se una preferenza per quella caratteristica
+   * esiste gia', resta com'e'. L'import aggiunge cio' che manca, non riscrive
+   * cio' che qualcuno ha scelto.
+   */
+  async applyRequestFeatureRequirements(
+    requestId: string,
+    requirements: RequestFeatureRequirement[],
+  ): Promise<number> {
+    if (!requirements.length) return 0;
+    const [{ data: features, error: featureError }, { data: existing, error: existingError }] = await Promise.all([
+      this.client.from("feature_definitions").select("id,key").in("key", requirements.map((item) => item.feature_key)),
+      this.client.from("request_feature_preferences").select("feature_definition_id").eq("request_id", requestId),
+    ]);
+    if (featureError) throw new Error(`Lettura caratteristiche fallita: ${featureError.message}`);
+    if (existingError) throw new Error(`Lettura preferenze della richiesta fallita: ${existingError.message}`);
+    const idByKey = new Map((features ?? []).map((feature) => [String(feature.key), String(feature.id)]));
+    const alreadyDecided = new Set((existing ?? []).map((row) => String(row.feature_definition_id)));
+    const rows = requirements
+      .map((item) => ({ requirement: item, feature_definition_id: idByKey.get(item.feature_key) }))
+      .filter((item): item is { requirement: RequestFeatureRequirement; feature_definition_id: string } =>
+        Boolean(item.feature_definition_id) && !alreadyDecided.has(item.feature_definition_id!))
+      .map((item) => ({
+        request_id: requestId,
+        feature_definition_id: item.feature_definition_id,
+        preference_level: item.requirement.preference_level,
+        desired_value: item.requirement.desired_value,
+      }));
+    if (!rows.length) return 0;
+    const { error } = await this.client.from("request_feature_preferences").insert(rows);
+    if (error) throw new Error(`Salvataggio caratteristiche della richiesta fallito: ${error.message}`);
+    return rows.length;
   }
 
   private async listRequestInferenceZones(): Promise<RequestInferenceZone[]> {

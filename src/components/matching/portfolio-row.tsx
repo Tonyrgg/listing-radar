@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { DatoAssente } from "@/components/ui/atoms";
 import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
-import { propertyHasElevator } from "@/lib/matching/elevator";
+import { propertyElevatorLabel } from "@/lib/matching/elevator";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty } from "@/lib/matching/types";
 
@@ -86,7 +86,7 @@ export function PortfolioRow({
           {property.floor != null ? (
             <span>{property.floor === 0 ? "piano terra" : `piano ${formatNumber(property.floor)}`}</span>
           ) : null}
-          <span>{propertyHasElevator(property) ? "ascensore sì" : "ascensore no"}</span>
+          <span>{propertyElevatorLabel(property)}</span>
         </p>
       </div>
 

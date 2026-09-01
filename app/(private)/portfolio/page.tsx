@@ -16,6 +16,7 @@ import { FactPill, RecordCardHeader } from "@/components/matching/record-card";
 import { MatchingSectionHeader } from "@/components/matching/section-header";
 import { ProgressiveList } from "@/components/progressive-list";
 import {
+  ButtonLink,
   Campo,
   Card,
   Chip,
@@ -27,6 +28,7 @@ import {
   buttonClass,
 } from "@/components/ui/primitives";
 import { formatNumber } from "@/lib/formatting";
+import { elevatorIsRelevant, propertyElevatorState } from "@/lib/matching/elevator";
 import { propertyConditionLabel } from "@/lib/matching/property-presentation";
 import {
   listFeatures,
@@ -119,6 +121,13 @@ export default async function PortafoglioPage({
   const proponibili = properties.filter(
     (item) => item.mandate_status === "active",
   ).length;
+  /* L'ascensore non arriva dal gestionale: finche' non lo rileviamo noi, per il
+   * motore quella casa non ce l'ha e sparisce da chi lo pretende. */
+  const ascensoriDaRilevare = properties.filter(
+    (item) => item.mandate_status === "active"
+      && elevatorIsRelevant(item) !== false
+      && propertyElevatorState(item) === "undeclared",
+  ).length;
   const filtriAttivi = Boolean(
     cerca || contratto || tipo || zonaId || incarico,
   );
@@ -130,7 +139,20 @@ export default async function PortafoglioPage({
         eyebrow="Commerciale"
         title="Le case che abbiamo noi"
         description={`${formatNumber(properties.length)} immobili in portafoglio, di cui ${formatNumber(proponibili)} li possiamo proporre a un cliente adesso.`}
-        actions={<PropertyEditor zones={zones} features={features} />}
+        actions={(
+          <>
+            <ButtonLink
+              href="/portfolio/ascensori"
+              compact
+              variant={ascensoriDaRilevare ? "secondary" : "quiet"}
+            >
+              {ascensoriDaRilevare
+                ? `Ascensore da rilevare su ${formatNumber(ascensoriDaRilevare)}`
+                : "Ascensore rilevato ovunque"}
+            </ButtonLink>
+            <PropertyEditor zones={zones} features={features} />
+          </>
+        )}
       />
 
       <AutoSubmitFiltersForm>

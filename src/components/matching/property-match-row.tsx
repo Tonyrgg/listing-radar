@@ -2,7 +2,7 @@ import { AlertTriangle, Check } from "lucide-react";
 
 import { RowAction, RowLink, Stripe, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatNumber, formatShouty } from "@/lib/formatting";
-import { propertyHasElevator } from "@/lib/matching/elevator";
+import { propertyElevatorLabel } from "@/lib/matching/elevator";
 import { cleanPropertyTitle } from "@/lib/matching/request-presentation";
 import type { PortfolioProperty, RequestPropertyMatch } from "@/lib/matching/types";
 
@@ -89,7 +89,7 @@ export function PropertyMatchRow({
           {superficie != null ? <span>{formatNumber(superficie)} mq</span> : null}
           {property.rooms != null ? <span>{formatNumber(property.rooms)} locali</span> : null}
           {dove ? <span>{dove}</span> : null}
-          <span>{propertyHasElevator(property) ? "ascensore sì" : "ascensore no"}</span>
+          <span>{propertyElevatorLabel(property)}</span>
         </p>
 
         {/* Cosa torna e cosa no: segni, non etichette. */}
