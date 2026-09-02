@@ -330,6 +330,7 @@ function commandIdentity(target) {
       chromeButton: "Apri Chrome di lavoro",
       chooseExcelButton: "Scegli file Excel",
       openOperationLogButton: "Apri registro operativo",
+      importV2DiagnosticsButton: "Esegui diagnostica Import V2 in sola lettura",
       startButton: "Avvia lavorazione",
       streetRunStart: "Avvia acquisizione via completa",
       streetRegistryStart: "Lavora la prossima via del registro",
@@ -2517,6 +2518,12 @@ document.addEventListener("click", async (event) => {
         if (!filePath)
           throw new Error("Percorso del registro operativo non disponibile");
         return window.propertyWorker.revealFile(filePath);
+      }
+      if (target.id === "importV2DiagnosticsButton") {
+        const result = await window.propertyWorker.runImportV2Diagnostics();
+        toast(`Diagnostica completata: ${result.snapshots} viste analizzate`);
+        await window.propertyWorker.revealFile(result.path);
+        return result;
       }
       if (target.id === "startButton")
         return window.propertyWorker.startJob({

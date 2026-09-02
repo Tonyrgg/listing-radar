@@ -70,6 +70,12 @@ function findMatchingPage(
   return pages.find((page) => matchesWorkerPortal(page, match, portal))?.page;
 }
 
+export interface CrmChromeTab {
+  browser: Browser;
+  pages: Array<{ title: string; url: string; page: Page }>;
+  crmPage: Page;
+}
+
 export async function connectToChrome(
   cdpUrl: string,
   sisterMatch: string,
@@ -95,6 +101,34 @@ export async function connectToChrome(
     });
   }
   return { browser, pages: described, sisterPage, crmPage };
+}
+
+/** Connects to the worker-owned Chrome when a CRM-only maintenance task does not need SISTER. */
+export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Promise<CrmChromeTab> {
+  let browser: Browser;
+  try {
+    browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
+  } catch (error) {
+    throw new WorkerError(
+      `Chrome non raggiungibile su ${cdpUrl}. Avvialo con --remote-debugging-port=9222.`,
+      "session_expired",
+      { cause: error instanceof Error ? error.message : String(error) },
+    );
+  }
+  const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+  let crmPage = findMatchingPage(pages, crmMatch, "crm");
+  crmPage ??= pages.find(({ title, url }) =>
+    /Universal Identity|Accedi/i.test(title) || /ui\.tecnocasa\.com\/login/i.test(url))?.page;
+  if (!crmPage) {
+    const context = browser.contexts()[0];
+    if (!context) throw new WorkerError("Nessun profilo Chrome disponibile", "session_expired");
+    crmPage = await context.newPage();
+    await crmPage.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/", {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+  }
+  return { browser, pages, crmPage };
 }
 
 async function connectToCrmArchiveChrome(

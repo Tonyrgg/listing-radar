@@ -28,6 +28,8 @@ import {
 } from "./property-activities.js";
 import { buildPropertyWorkPlan } from "./property-workflow.js";
 import { indexJobGraph } from "./job-graph.js";
+import { ImportV2Coordinator } from "../import-v2/coordinator.js";
+import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 
 function asProperty(row: PropertyRow): CadastralProperty {
   return {
@@ -209,6 +211,7 @@ export class PropertyWorkerRunner {
     keepAlive.start();
     const sister = new PlaywrightSisterAdapter(tabs.sisterPage);
     const crm = new PlaywrightCrmAdapter(tabs.crmPage, this.config.WORKER_DRY_RUN);
+    const crmV2 = new TecnocloudUiV2Port(tabs.crmPage, this.config.WORKER_DRY_RUN);
     const contacts = new ExcelContactsAdapter(this.config.CONTACTS_EXCEL_PATH);
     await contacts.load();
     let job = input.jobId
@@ -247,7 +250,7 @@ export class PropertyWorkerRunner {
          * togliere. */
         const stepStartedAt = Date.now();
         try {
-          const output = await this.executeStep(step, job, sister, crm, contacts);
+          const output = await this.executeStep(step, job, sister, crm, crmV2, contacts);
           this.throwIfCancellationRequested(job.id);
           const next = state.complete(step);
           await this.repository.completeStep(job.id, stepId, step, next, output);
@@ -305,6 +308,7 @@ export class PropertyWorkerRunner {
     job: JobRow,
     sister: PlaywrightSisterAdapter,
     crm: PlaywrightCrmAdapter,
+    crmV2: TecnocloudUiV2Port,
     contacts: ExcelContactsAdapter,
   ): Promise<Record<string, unknown>> {
     switch (step) {
@@ -393,7 +397,8 @@ export class PropertyWorkerRunner {
             continue;
           }
           const sourceRow = Number(property.raw_payload?.sourceOrder ?? property.raw_payload?.rowIndex);
-          if (!owners.length && Number.isInteger(sourceRow) && sister.hasIgnoredBusinessOnRow(sourceRow)) {
+          const businessSubjectsPresent = Number.isInteger(sourceRow) && sister.hasIgnoredBusinessOnRow(sourceRow);
+          if (!owners.length && businessSubjectsPresent) {
             await this.markAcquisitionPropertyExcluded(property, "acquisition_skipped", "Riga esclusa: presenti soltanto intestatari aziendali");
             ignoredBusinessProperties.push(property.cadastral_key);
             skippedRows.push({ propertyId: property.id, cadastralKey: property.cadastral_key, reason: "Presenti soltanto intestatari aziendali", source: "parachute" });
@@ -417,7 +422,12 @@ export class PropertyWorkerRunner {
           }
           property.raw_payload = {
             ...(property.raw_payload ?? {}),
-            acquisition: { status: "owners_acquired", attempts: extractionAttempts, acquiredAt: new Date().toISOString() },
+            acquisition: {
+              status: "owners_acquired",
+              attempts: extractionAttempts,
+              acquiredAt: new Date().toISOString(),
+              businessSubjectsPresent,
+            },
           };
           await this.repository.updatePropertyProcessing(property.id, { raw_payload: property.raw_payload, processing_status: "extracted" });
         }
@@ -498,8 +508,67 @@ export class PropertyWorkerRunner {
         }
         return { confirmed: decision === "proceed", savedForLater: decision === "save", propertyCount: review.properties.length, ownerCount: graph.people.length };
       }
-      case "properties_processed":
-        return this.processPropertiesInOrder(job, crm, contacts);
+      case "properties_processed": {
+        const before = await this.repository.loadGraph(job.id);
+        for (const person of before.people) {
+          const match = contacts.findByTaxCode(person.tax_code ?? "");
+          await this.repository.updateContacts(person.id, match, person.raw_payload);
+        }
+        const graph = await this.repository.loadGraph(job.id);
+        const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
+        const activityTasks = buildPropertyActivityTasks(graph);
+        const mode = this.propertyActivityMode();
+        const coordinator = new ImportV2Coordinator(this.repository, crmV2, { maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS });
+        const result = await coordinator.runJob(job, (property, owners) => {
+          const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), mode);
+          return definition
+            ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
+            : { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" };
+        });
+        for (const outcome of result.completed) {
+          await this.repository.updatePropertyProcessing(outcome.propertyId, {
+            crm_record_id: outcome.crmPropertyId,
+            processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced",
+            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "completed", itemId: outcome.itemId, completedAt: new Date().toISOString() } },
+          });
+          for (const person of outcome.syncedPeople) {
+            await this.repository.updatePersonProcessing(person.sourcePersonId, { crm_record_id: person.crmPersonId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
+          }
+          for (const ownership of graph.ownerships.filter((item) => item.property_id === outcome.propertyId)) {
+            await this.repository.updateOwnership(ownership.id, { processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "linked" });
+          }
+        }
+        for (const outcome of result.quarantined) {
+          await this.repository.updatePropertyProcessing(outcome.propertyId, {
+            crm_record_id: outcome.crmPropertyId,
+            processing_status: "skipped",
+            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "quarantined", itemId: outcome.itemId, failure: outcome.failure } },
+          });
+          for (const person of outcome.syncedPeople) {
+            await this.repository.updatePersonProcessing(person.sourcePersonId, { crm_record_id: person.crmPersonId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
+          }
+          for (const ownership of graph.ownerships.filter((item) => item.property_id === outcome.propertyId)) {
+            await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" });
+          }
+        }
+        const after = await this.repository.loadGraph(job.id);
+        for (const person of after.people.filter((candidate) => !["synced", "dry_run", "manual", "skipped"].includes(candidate.processing_status))) {
+          const links = after.ownerships.filter((ownership) => ownership.person_id === person.id);
+          if (links.length && links.every((ownership) => ownership.processing_status === "skipped")) {
+            await this.repository.updatePersonProcessing(person.id, { processing_status: "skipped" });
+          }
+        }
+        await this.repository.updateJob(job.id, { processed_properties: result.completed.length + result.quarantined.length });
+        if (result.paused) {
+          throw new WorkerError(
+            result.paused.failure?.message ?? "Import V2 in pausa",
+            result.paused.failure?.kind === "global_session" ? "session_expired" : "portal_error",
+            { importV2: true, failure: result.paused.failure },
+            true,
+          );
+        }
+        return { version: 2, completed: result.completed.length, quarantined: result.quarantined.length };
+      }
       case "person_searched": {
         const graph = await this.repository.loadGraph(job.id);
         for (const row of graph.people) {

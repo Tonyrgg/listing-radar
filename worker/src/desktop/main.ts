@@ -42,6 +42,7 @@ import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
 import { collectCrmPersonSeeds } from "../adapters/crm/people.js";
+import { runTecnocloudV2ReadOnlyDiagnostic } from "../import-v2/diagnostics.js";
 import { WorkerRepository } from "../services/repository.js";
 import {
   StreetRegistryService,
@@ -93,7 +94,7 @@ type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"
 type DiagnosticErrorItem = {
   id: string;
   at: string;
-  source: "worker" | "street-run" | "request-archive" | "mandate-archive" | "desktop-ui";
+  source: "worker" | "street-run" | "request-archive" | "mandate-archive" | "desktop-ui" | "import-v2-diagnostics";
   status: string;
   message: string;
   jobId: string | null;
@@ -290,7 +291,7 @@ const completedSummaryCache = new Map<string, {
 }>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
-let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | null = null;
+let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "import-v2-diagnostics" | null = null;
 
 type ConnectionCheck = BrowserConnectionCheck | {
   id: string;
@@ -444,6 +445,10 @@ function diagnosticErrorsPath() {
 
 function operationLogPath() {
   return path.join(app.getPath("userData"), "worker-operations.ndjson");
+}
+
+function importV2DiagnosticPath() {
+  return path.join(app.getPath("userData"), "tecnocloud-import-v2-diagnostic.json");
 }
 
 async function loadDiagnosticErrors() {
@@ -2811,6 +2816,42 @@ function findChromeExecutable() {
   return candidates.find((candidate) => candidate && path.isAbsolute(candidate) && existsSync(candidate));
 }
 
+async function runImportV2Diagnostics() {
+  reserveOperation("import-v2-diagnostics");
+  let tabs: Awaited<ReturnType<typeof connectToChrome>> | null = null;
+  try {
+    pushActivity("Diagnostica Import V2 avviata in sola lettura");
+    const config = workerConfig();
+    tabs = await connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH);
+    const report = await runTecnocloudV2ReadOnlyDiagnostic(tabs.crmPage);
+    const target = importV2DiagnosticPath();
+    const temporary = `${target}.tmp`;
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(temporary, JSON.stringify(report, null, 2), "utf8");
+    await rename(temporary, target);
+    pushActivity(
+      `Diagnostica Import V2 completata: ${report.snapshots.length} viste e ${report.network.length} contratti di rete`,
+      "success",
+    );
+    return { path: target, snapshots: report.snapshots.length, networkContracts: report.network.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    pushActivity(`Diagnostica Import V2 non completata: ${message}`, "error");
+    await recordDiagnosticErrorSafely({
+      source: "import-v2-diagnostics",
+      status: "failed",
+      message,
+      jobId: null,
+      details: { readOnly: true },
+    }, { publish: false });
+    throw error;
+  } finally {
+    await tabs?.browser.close().catch(() => undefined);
+    releaseOperationReservation("import-v2-diagnostics");
+    await publishState();
+  }
+}
+
 async function createWindow() {
   const preloadPath = app.isPackaged
     ? path.join(process.resourcesPath, "preload.cjs")
@@ -2955,6 +2996,7 @@ function registerIpc() {
     await runStreetRegistryNetwork({ filters: values?.filters, zoneId: values?.zoneId });
     return true;
   });
+  ipcMain.handle("desktop:run-import-v2-diagnostics", () => runImportV2Diagnostics());
   ipcMain.handle("desktop:cancel-network-run", async () => {
     if (!networkRunActive) return false;
     networkRunCancellationRequested = true;

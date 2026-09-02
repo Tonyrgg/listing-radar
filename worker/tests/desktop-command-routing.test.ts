@@ -24,6 +24,7 @@ describe("instradamento comandi desktop", () => {
     const routedIds = [
       "chooseExcelButton",
       "openOperationLogButton",
+      "importV2DiagnosticsButton",
       "startButton",
       "streetRunStart",
       "streetRunCancel",
@@ -75,6 +76,9 @@ describe("instradamento comandi desktop", () => {
     expect(main).toContain("Comando fallito:");
     expect(main).toContain("worker-operations.ndjson");
     expect(preload).toContain('reanalyzeProperty: (values) => ipcRenderer.invoke("desktop:reanalyze-property", values)');
+    expect(preload).toContain('runImportV2Diagnostics: () => ipcRenderer.invoke("desktop:run-import-v2-diagnostics")');
+    expect(main).toContain('ipcMain.handle("desktop:run-import-v2-diagnostics"');
+    expect(main).toContain('reserveOperation("import-v2-diagnostics")');
     expect(main).toContain('ipcMain.handle("desktop:reanalyze-property"');
     expect(main).toContain("reanalysisSource: \"operator\"");
   });

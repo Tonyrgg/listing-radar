@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   recordUiAction: (values) => ipcRenderer.invoke("desktop:record-ui-action", values),
   runChecks: () => ipcRenderer.invoke("desktop:run-checks"),
   openChrome: () => ipcRenderer.invoke("desktop:open-chrome"),
+  runImportV2Diagnostics: () => ipcRenderer.invoke("desktop:run-import-v2-diagnostics"),
   chooseExcel: () => ipcRenderer.invoke("desktop:choose-excel"),
   chooseEnvironment: () => ipcRenderer.invoke("desktop:choose-environment"),
   savePreferences: (values) => ipcRenderer.invoke("desktop:save-preferences", values),
