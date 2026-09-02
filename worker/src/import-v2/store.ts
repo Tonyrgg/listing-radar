@@ -72,7 +72,13 @@ export class SupabaseImportV2Store implements ImportV2Store {
           details: { previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
         });
       }
-      return checkpointFromRow(row);
+      const checkpoint = checkpointFromRow(row);
+      /* Una ripresa esplicita è un nuovo tentativo operativo: conserva tutti
+       * i checkpoint già verificati, ma non eredita il budget esaurito dalla
+       * versione precedente del worker. */
+      return ["quarantined", "paused"].includes(row.status)
+        ? { ...checkpoint, attempts: 0, nextAttemptAt: null, lastError: null }
+        : checkpoint;
     }
     const created = await this.client.from("property_worker_import_v2_items")
       .insert(payload).select("*").single();

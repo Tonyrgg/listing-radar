@@ -30,6 +30,28 @@ import { buildPropertyWorkPlan } from "./property-workflow.js";
 import { indexJobGraph } from "./job-graph.js";
 import { ImportV2Coordinator } from "../import-v2/coordinator.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
+import type { ImportV2BatchResult } from "../import-v2/queue.js";
+
+export function assertImportV2BatchComplete(result: ImportV2BatchResult): void {
+  if (!result.quarantined.length) return;
+  const first = result.quarantined[0]!;
+  throw new WorkerError(
+    `Import V2 non completato: ${result.completed.length} immobili importati, ${result.quarantined.length} non importati. ${first.failure?.message ?? "Verifica non conclusa"}`,
+    "needs_review",
+    {
+      importV2: true,
+      propertyId: first.propertyId,
+      completed: result.completed.length,
+      quarantined: result.quarantined.length,
+      failures: result.quarantined.map((outcome) => ({
+        propertyId: outcome.propertyId,
+        stage: outcome.stage,
+        failure: outcome.failure,
+      })),
+    },
+    true,
+  );
+}
 
 function asProperty(row: PropertyRow): CadastralProperty {
   return {
@@ -541,24 +563,24 @@ export class PropertyWorkerRunner {
         for (const outcome of result.quarantined) {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
             crm_record_id: outcome.crmPropertyId,
-            processing_status: "skipped",
+            processing_status: "quarantined",
             raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "quarantined", itemId: outcome.itemId, failure: outcome.failure } },
           });
           for (const person of outcome.syncedPeople) {
             await this.repository.updatePersonProcessing(person.sourcePersonId, { crm_record_id: person.crmPersonId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
           }
           for (const ownership of graph.ownerships.filter((item) => item.property_id === outcome.propertyId)) {
-            await this.repository.updateOwnership(ownership.id, { processing_status: "skipped" });
+            await this.repository.updateOwnership(ownership.id, { processing_status: "quarantined" });
           }
         }
         const after = await this.repository.loadGraph(job.id);
-        for (const person of after.people.filter((candidate) => !["synced", "dry_run", "manual", "skipped"].includes(candidate.processing_status))) {
+        for (const person of after.people.filter((candidate) => !["synced", "dry_run", "manual", "quarantined"].includes(candidate.processing_status))) {
           const links = after.ownerships.filter((ownership) => ownership.person_id === person.id);
-          if (links.length && links.every((ownership) => ownership.processing_status === "skipped")) {
-            await this.repository.updatePersonProcessing(person.id, { processing_status: "skipped" });
+          if (links.length && links.every((ownership) => ownership.processing_status === "quarantined")) {
+            await this.repository.updatePersonProcessing(person.id, { processing_status: "quarantined" });
           }
         }
-        await this.repository.updateJob(job.id, { processed_properties: result.completed.length + result.quarantined.length });
+        await this.repository.updateJob(job.id, { processed_properties: result.completed.length });
         if (result.paused) {
           throw new WorkerError(
             result.paused.failure?.message ?? "Import V2 in pausa",
@@ -567,6 +589,7 @@ export class PropertyWorkerRunner {
             true,
           );
         }
+        assertImportV2BatchComplete(result);
         return { version: 2, completed: result.completed.length, quarantined: result.quarantined.length };
       }
       case "person_searched": {
@@ -979,7 +1002,14 @@ export class PropertyWorkerRunner {
       }
       case "verified": {
         const graph = await this.repository.loadGraph(job.id);
-        const pending = [...graph.properties, ...graph.people, ...graph.ownerships].filter((item) => ["pending", "extracted", "normalized", "not_found", "matched"].includes(item.processing_status));
+        const activePropertyIds = new Set(graph.properties.filter((property) => !isAcquisitionExcluded(property)).map((property) => property.id));
+        const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
+        const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
+        const pending = [
+          ...graph.properties.filter((property) => activePropertyIds.has(property.id) && !["synced", "dry_run"].includes(property.processing_status)),
+          ...graph.people.filter((person) => activePersonIds.has(person.id) && !["synced", "dry_run"].includes(person.processing_status)),
+          ...activeOwnerships.filter((ownership) => !["linked", "dry_run"].includes(ownership.processing_status)),
+        ];
         if (pending.length) throw new WorkerError("Verifica finale: elementi non completati", "needs_review", { ids: pending.map((item) => item.id) });
         return { verified: true, properties: graph.properties.length, people: graph.people.length };
       }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chromium } from "playwright";
 
-import { lookupCommitConfirmed, ownershipSyncConfirmed } from "../src/import-v2/tecnocloud-ui-port.js";
+import { chooseLookupRecordCandidate, lookupCommitConfirmed, ownershipSyncConfirmed } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
@@ -40,6 +40,68 @@ describe("Tecnocloud UI V2", () => {
       hasSelectionClass: true,
       dependentFieldsVisible: true,
     })).toBe(true);
+  });
+
+  it("ignora la riga sintetica di ricerca e sceglie il record CRM di città e provincia", () => {
+    expect(chooseLookupRecordCandidate([
+      { index: 0, recordId: "", text: "BITONTO" },
+      { index: 1, recordId: "a0Q3Y00000ecOpjUAE", text: "BITONTOBITONTO - BA" },
+      { index: 2, recordId: "a0Q3Y00000ecOpkUAE", text: "BITONTOBITONTO - XX" },
+    ], "BITONTO", "BA")).toEqual({
+      index: 1,
+      recordId: "a0Q3Y00000ecOpjUAE",
+      text: "BITONTOBITONTO - BA",
+    });
+    expect(chooseLookupRecordCandidate([
+      { index: 0, recordId: "", text: "BITONTO" },
+    ], "BITONTO", "BA")).toBeNull();
+  });
+
+  it("aspetta il vero record del luogo di nascita prima di cliccare", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <c-lookup>
+            <label>Luogo Di Nascita</label>
+            <div class="slds-combobox_container">
+              <input placeholder="Cerca">
+              <ul id="results"></ul>
+            </div>
+          </c-lookup>
+          <script>
+            const input = document.querySelector('input');
+            const results = document.querySelector('#results');
+            let timer;
+            input.addEventListener('input', () => {
+              clearTimeout(timer);
+              results.innerHTML = '<li role="option">' + input.value + '</li>';
+              timer = setTimeout(() => {
+                results.insertAdjacentHTML('beforeend', '<li role="option" data-item-id="a0Q3Y00000ecOpjUAE">BITONTO<span>BITONTO - BA</span></li>');
+              }, 650);
+            });
+            results.addEventListener('click', (event) => {
+              const option = event.target.closest('[data-item-id]');
+              if (!option) return;
+              input.value = 'BITONTO';
+              input.readOnly = true;
+              document.querySelector('.slds-combobox_container').classList.add('slds-has-selection');
+              document.body.dataset.selectedId = option.dataset.itemId;
+              results.innerHTML = '';
+            });
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/new");
+      const port = new TecnocloudUiV2Port(page);
+      await (port as unknown as { fillBirthPlace(value: string, province: string | null): Promise<void> })
+        .fillBirthPlace("BITONTO", "BA");
+      expect(await page.locator("body").getAttribute("data-selected-id")).toBe("a0Q3Y00000ecOpjUAE");
+      expect(await page.locator("input").getAttribute("readonly")).not.toBeNull();
+    } finally {
+      await browser.close();
+    }
   });
 
   it("non salva un comproprietario finché ruolo e quota non sono comparsi", () => {

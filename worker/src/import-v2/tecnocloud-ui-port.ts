@@ -75,6 +75,32 @@ export function lookupCommitConfirmed(evidence: LookupCommitEvidence): boolean {
     && evidence.hasSelectionClass;
 }
 
+export type LookupRecordCandidate = {
+  index: number;
+  recordId: string;
+  text: string;
+};
+
+/**
+ * Lightning mette subito nel menu una riga che ripete il testo cercato. Non è
+ * un record e cliccarla lascia il lookup in stato testuale. Le sole opzioni
+ * valide hanno invece un vero identificativo Salesforce; città e provincia
+ * devono poi individuare un solo record.
+ */
+export function chooseLookupRecordCandidate(
+  candidates: LookupRecordCandidate[],
+  expected: string,
+  province: string | null = null,
+): LookupRecordCandidate | null {
+  const place = normalized(expected);
+  const provinceToken = normalized(province);
+  const matchingPlace = candidates.filter((candidate) => candidate.recordId && normalized(candidate.text).includes(place));
+  const matchingProvince = provinceToken
+    ? matchingPlace.filter((candidate) => normalized(candidate.text).split(/[^A-Z0-9]+/).includes(provinceToken))
+    : matchingPlace;
+  return matchingProvince.length === 1 ? matchingProvince[0]! : null;
+}
+
 /** A submitted relationship is not real until the property card exposes it. */
 export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): boolean {
   const managed = actual.filter(isManagedCrmOwnership);
@@ -288,47 +314,80 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await options.nth(index).click();
   }
 
-  private async fillBirthPlace(value: string): Promise<void> {
-    const component = await this.one(this.page.locator('c-lookup:has(label:text-is("Luogo Di Nascita"))').filter({ visible: true }), "Lookup luogo di nascita");
-    const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Luogo di nascita");
-    const alreadyCommitted = lookupCommitConfirmed({
-      value: await lookup.inputValue(), expected: value,
+  private async lookupRecordCandidates(options: Locator): Promise<LookupRecordCandidate[]> {
+    return options.evaluateAll((elements) => elements.map((element, index) => {
+      const nodes = [element, ...Array.from(element.querySelectorAll("[data-item-id], [data-recordid], [data-id], a[href]"))];
+      const values = nodes.flatMap((node) => [
+        node.getAttribute("data-item-id"),
+        node.getAttribute("data-recordid"),
+        node.getAttribute("data-id"),
+        node.getAttribute("href")?.match(/\/s\/(?:account|comune|municipality)\/([^/?#]+)/i)?.[1] ?? null,
+      ]).filter((value): value is string => Boolean(value));
+      const recordId = values.find((value) => /^[A-Z0-9]{15}(?:[A-Z0-9]{3})?$/i.test(value)) ?? "";
+      return { index, recordId, text: (element.textContent ?? "").replace(/\s+/g, " ").trim() };
+    }));
+  }
+
+  private async fillLookupRecord(
+    component: Locator,
+    input: Locator,
+    value: string,
+    province: string | null,
+    label: string,
+    removeLabel: string,
+  ): Promise<void> {
+    const committed = async () => lookupCommitConfirmed({
+      value: await input.inputValue(), expected: value,
       visibleOptionCount: 0, optionMarkedSelected: false,
-      readonly: await lookup.getAttribute("readonly") !== null,
+      readonly: await input.getAttribute("readonly") !== null,
       hasSelectionClass: await component.locator(".slds-combobox_container.slds-has-selection").count() === 1,
       dependentFieldsVisible: true,
     });
-    if (alreadyCommitted) return;
-    if (await lookup.getAttribute("readonly") !== null) {
-      const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), "Rimuovi luogo di nascita");
+    if (await committed()) return;
+    if (await input.getAttribute("readonly") !== null) {
+      const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), removeLabel);
       await remove.click();
+      await input.waitFor({ state: "visible", timeout: 5_000 });
     }
-    await lookup.fill("");
-    await lookup.pressSequentially(value, { delay: 40 });
-    const options = component.locator('[role="option"]').filter({ visible: true });
-    await options.first().waitFor({ state: "visible", timeout: 8_000 });
-    const texts = await options.allTextContents();
-    const index = texts.findIndex((candidate) => !/NUOVO RECORD|CERCA /i.test(candidate)
-      && (normalized(candidate) === normalized(value)
-        || normalized(candidate).startsWith(`${normalized(value)} `)));
-    if (index < 0) throw new ImportV2Error("Luogo di nascita non disponibile nel gestionale", "unsupported_case");
-    const selected = options.nth(index);
-    await selected.click({ force: true });
-    let confirmed = false;
-    for (let check = 0; check < 25 && !confirmed; check += 1) {
-      const optionMarkedSelected = await component.locator('[role="option"][aria-selected="true"]').filter({ visible: true }).count() > 0;
-      confirmed = lookupCommitConfirmed({
-        value: await lookup.inputValue(), expected: value,
-        visibleOptionCount: await options.count(), optionMarkedSelected,
-        readonly: await lookup.getAttribute("readonly") !== null,
-        hasSelectionClass: await component.locator(".slds-combobox_container.slds-has-selection").count() === 1,
-        dependentFieldsVisible: true,
-      });
-      if (!confirmed) await this.page.waitForTimeout(160);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await input.fill("");
+      await input.pressSequentially(value, { delay: 55 });
+      const options = component.locator('[role="option"]').filter({ visible: true });
+      let selected: LookupRecordCandidate | null = null;
+      let previousSignature = "";
+      let stableReads = 0;
+      for (let wait = 0; wait < 50 && stableReads < 2; wait += 1) {
+        await this.page.waitForTimeout(200);
+        const candidates = await this.lookupRecordCandidates(options);
+        const candidate = chooseLookupRecordCandidate(candidates, value, province);
+        const signature = JSON.stringify(candidates.map((item) => [item.recordId, normalized(item.text)]));
+        if (candidate && signature === previousSignature) stableReads += 1;
+        else stableReads = 0;
+        previousSignature = signature;
+        selected = candidate;
+      }
+      if (!selected || stableReads < 2) continue;
+
+      const freshCandidates = await this.lookupRecordCandidates(options);
+      const fresh = chooseLookupRecordCandidate(freshCandidates, value, province);
+      if (!fresh || fresh.recordId !== selected.recordId) continue;
+      await options.nth(fresh.index).click();
+      for (let check = 0; check < 50; check += 1) {
+        if (await committed()) return;
+        await this.page.waitForTimeout(160);
+      }
     }
-    if (!confirmed) {
-      throw new ImportV2Error("Luogo di nascita digitato ma non selezionato dal lookup", "transient_portal", { retryable: true });
-    }
+    throw new ImportV2Error(`${label} digitato ma il record del menu non è stato selezionato`, "transient_portal", {
+      retryable: true,
+      details: { expectedPlace: value, expectedProvince: province },
+    });
+  }
+
+  private async fillBirthPlace(value: string, province: string | null): Promise<void> {
+    const component = await this.one(this.page.locator('c-lookup:has(label:text-is("Luogo Di Nascita"))').filter({ visible: true }), "Lookup luogo di nascita");
+    const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Luogo di nascita");
+    await this.fillLookupRecord(component, lookup, value, province, "Luogo di nascita", "Rimuovi luogo di nascita");
   }
 
   private async fillPersonFields(desired: PersonWriteModel, editing: boolean): Promise<void> {
@@ -352,7 +411,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await input.fill(uiDate(desired.birthDate));
     }
     if (desired.birthPlace) {
-      await this.fillBirthPlace(desired.birthPlace);
+      await this.fillBirthPlace(desired.birthPlace, desired.birthProvince);
       const birthPlace = this.page.locator('c-lookup:has(label:text-is("Luogo Di Nascita")) input[placeholder="Cerca"]').filter({ visible: true });
       const retained = normalized(await birthPlace.inputValue()).startsWith(normalized(desired.birthPlace));
       if (!retained) {
@@ -684,44 +743,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
   }
 
-  private async fillMunicipality(value: string): Promise<void> {
+  private async fillMunicipality(value: string, province: string | null): Promise<void> {
     const component = await this.one(this.page.locator('c-lookup:has(label:has-text("Comune"))').filter({ visible: true }), "Lookup Comune");
     const input = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Comune");
-    const alreadyCommitted = lookupCommitConfirmed({
-      value: await input.inputValue(), expected: value,
-      visibleOptionCount: 0, optionMarkedSelected: false,
-      readonly: await input.getAttribute("readonly") !== null,
-      hasSelectionClass: await component.locator(".slds-combobox_container.slds-has-selection").count() === 1,
-      dependentFieldsVisible: true,
-    });
-    if (alreadyCommitted) return;
-    if (await input.getAttribute("readonly") !== null) {
-      const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), "Rimuovi Comune");
-      await remove.click();
-    }
-    await input.fill("");
-    await input.pressSequentially(value, { delay: 45 });
-    const options = component.locator('[role="option"]').filter({ visible: true });
-    await options.first().waitFor({ state: "visible", timeout: 8_000 });
-    const labels = await options.allTextContents();
-    const indexes = labels.map((label, index) => !/NUOVO RECORD|CERCA /i.test(label)
-      && normalized(label).startsWith(normalized(value)) ? index : -1).filter((index) => index >= 0);
-    if (indexes.length !== 1) throw new ImportV2Error("Comune non selezionabile in modo univoco", "verification_failed", { retryable: true });
-    await options.nth(indexes[0]!).click({ force: true });
-    let committed = false;
-    for (let check = 0; check < 25 && !committed; check += 1) {
-      committed = lookupCommitConfirmed({
-        value: await input.inputValue(), expected: value,
-        visibleOptionCount: await options.count(), optionMarkedSelected: false,
-        readonly: await input.getAttribute("readonly") !== null,
-        hasSelectionClass: await component.locator(".slds-combobox_container.slds-has-selection").count() === 1,
-        dependentFieldsVisible: true,
-      });
-      if (!committed) await this.page.waitForTimeout(160);
-    }
-    if (!committed) {
-      throw new ImportV2Error("Comune digitato ma non selezionato dal lookup", "transient_portal", { retryable: true });
-    }
+    await this.fillLookupRecord(component, input, value, province, "Comune", "Rimuovi Comune");
   }
 
   private async fillPropertyCore(plan: ImportV2Plan): Promise<void> {
@@ -734,7 +759,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.fillVisibleInput("Civico", draft.civic, true);
     await this.fillVisibleInput("Interno", draft.internal, true);
     await this.fillVisibleInput("Lettera", draft.letter);
-    await this.fillMunicipality(plan.source.municipality);
+    const province = plan.source.fullAddress.match(/\(([A-Z]{2})\)\s*$/i)?.[1] ?? null;
+    await this.fillMunicipality(plan.source.municipality, province);
     const postal = plan.source.fullAddress.match(/,\s*(\d{5})\b/)?.[1] ?? "";
     const postalComponent = this.page.locator('c-picklist:has(label:has-text("CAP"))').filter({ visible: true });
     if (postal && await postalComponent.count() === 1) await this.pick(postalComponent, postal, "CAP");

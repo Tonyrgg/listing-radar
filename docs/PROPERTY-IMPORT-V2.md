@@ -61,6 +61,10 @@ already committed lookup is retained; a different selection is removed through
 the component action before a replacement is typed. This rule applies to birth
 place, municipality, primary owner and co-owner lookups.
 
+Birth-place and municipality searches additionally ignore Lightning's immediate
+search-term row, wait for the real Salesforce record identifier, stabilize the
+result list and require a unique city/province match before clicking.
+
 All navigation on the single Tecnocloud tab is serialized. Searches for two
 owners, related-property pairing and the global cadastral guard never run in
 parallel against the same page. An exact-CF result may be reused only inside
@@ -92,6 +96,10 @@ recovery.
   continues.
 - Login expiry or a portal-wide outage pauses the batch.
 - Every quarantine retains stage, reason, evidence and audit events.
+- A batch containing even one quarantined property is incomplete: quarantined
+  items never increase the completed counter and the desktop must not show the
+  successful-import state. An explicit resume keeps verified checkpoints but
+  receives a fresh bounded retry budget.
 
 ## HTTP and UI
 
