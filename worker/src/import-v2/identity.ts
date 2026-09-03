@@ -141,19 +141,49 @@ function canonicalIncome(value: number | string | null | undefined): number | nu
   return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
 }
 
+/**
+ * Schede gia' presenti nel gestionale portano il numero di particella ora in
+ * "Catasto Particella" ora in "Catasto Denom Particella". Confrontare i due
+ * campi separatamente faceva sembrare diversa la stessa particella, quindi la
+ * particella si riconosce da uno qualunque dei due valori.
+ */
+function parcelTokens(value: CadastralIdentity): string[] {
+  return [canonicalCadastralToken(value.parcel), canonicalCadastralToken(value.parcelDenomination)].filter(Boolean);
+}
+
 export function sameCadastralIdentity(left: CadastralIdentity | null, right: CadastralIdentity | null): boolean {
   if (!left || !right) return false;
   const tokenMatches = (expected: unknown, actual: unknown) => {
     const source = canonicalCadastralToken(expected);
     return !source || source === canonicalCadastralToken(actual);
   };
+  const expectedParcels = parcelTokens(left);
+  const actualParcels = parcelTokens(right);
   const expectedIncome = canonicalIncome(left.income);
   return tokenMatches(left.urbanSection, right.urbanSection)
     && tokenMatches(left.sheet, right.sheet)
-    && tokenMatches(left.parcel, right.parcel)
-    && tokenMatches(left.parcelDenomination, right.parcelDenomination)
+    && (!expectedParcels.length || expectedParcels.some((token) => actualParcels.includes(token)))
     && tokenMatches(left.subaltern, right.subaltern)
     && (expectedIncome == null || expectedIncome === canonicalIncome(right.income));
+}
+
+/**
+ * In un condominio molte unita' condividono civico, foglio e particella: solo
+ * il subalterno le separa. Quando entrambe le schede portano quelle tre
+ * coordinate e il subalterno differisce, il candidato e' un'altra unita' dello
+ * stesso stabile, non una versione incerta di questa.
+ */
+function otherUnitInSameBuilding(left: CadastralIdentity | null, right: CadastralIdentity | null): boolean {
+  if (!left || !right) return false;
+  const sheet = canonicalCadastralToken(left.sheet);
+  const subaltern = canonicalCadastralToken(left.subaltern);
+  const candidateSheet = canonicalCadastralToken(right.sheet);
+  const candidateSubaltern = canonicalCadastralToken(right.subaltern);
+  if (!sheet || !subaltern || !candidateSheet || !candidateSubaltern || sheet !== candidateSheet) return false;
+  const parcels = parcelTokens(left);
+  const candidateParcels = parcelTokens(right);
+  if (!parcels.length || !candidateParcels.some((token) => parcels.includes(token))) return false;
+  return subaltern !== candidateSubaltern;
 }
 
 export function choosePropertyCandidate(source: SourceProperty, candidates: CrmPropertySummary[]):
@@ -168,11 +198,20 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
       details: { candidateIds: exact.map((candidate) => candidate.id) },
     });
   }
-  if (addressMatches.length === 1) return { kind: "address_update", candidate: addressMatches[0]! };
-  if (addressMatches.length > 1) {
-    throw new ImportV2Error("Più immobili condividono l'indirizzo e non sono distinguibili con interno e catasto", "ambiguous_identity", {
-      details: { candidateIds: addressMatches.map((candidate) => candidate.id) },
-    });
+  /* Le altre unita' dello stesso stabile condividono indirizzo, foglio e
+   * particella: solo il subalterno le separa. Se ogni candidato dell'indirizzo
+   * e' una di quelle, il subalterno ha gia' sciolto l'ambiguita' e la scelta
+   * passa al catasto. Basta un candidato che potrebbe ancora essere questa
+   * unita' perche' valga la decisione di prima. */
+  const everyCandidateIsAnotherUnit = addressMatches.length > 0
+    && addressMatches.every((candidate) => otherUnitInSameBuilding(source.cadastral, candidate.cadastral));
+  if (!everyCandidateIsAnotherUnit) {
+    if (addressMatches.length === 1) return { kind: "address_update", candidate: addressMatches[0]! };
+    if (addressMatches.length > 1) {
+      throw new ImportV2Error("Più immobili condividono l'indirizzo e non sono distinguibili con interno e catasto", "ambiguous_identity", {
+        details: { candidateIds: addressMatches.map((candidate) => candidate.id) },
+      });
+    }
   }
   const cadastralOnly = unique.filter((candidate) => sameCadastralIdentity(source.cadastral, candidate.cadastral));
   if (cadastralOnly.length === 1) return { kind: "cadastral_update", candidate: cadastralOnly[0]! };

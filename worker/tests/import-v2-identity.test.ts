@@ -150,6 +150,43 @@ describe("Import V2 identity", () => {
     ])).toThrow(/Più immobili condividono l'indirizzo/);
   });
 
+  // Via Re Manfredi 21: quattordici unita' allo stesso civico, foglio 40 e
+  // particella 213, distinte solo dal subalterno. Le due schede gia' nel
+  // gestionale portano la particella in "Denom Particella".
+  const buildingUnit = (subaltern: string) => source({
+    fullAddress: "VIA RE MANFREDI n. 21 Piano 2",
+    cadastral: { urbanSection: null, sheet: "40", parcel: "213", parcelDenomination: null, subaltern, income: null },
+  });
+  const crmUnit = (id: string, subaltern: string, owner: string, income: number) => ({
+    id,
+    displayName: `Immobile IM - Via Re Manfredi 21 [.] - ${owner}`,
+    fullAddress: "Via Re Manfredi 21 [.], 70032 BITONTO (BA)",
+    cadastral: { urbanSection: "BA", sheet: "40", parcel: "", parcelDenomination: "213", subaltern, income },
+  });
+
+  it("riconosce la stessa unita' quando il gestionale tiene la particella fra le denominazioni", () => {
+    const result = choosePropertyCandidate(buildingUnit("51"), [
+      crmUnit("lorusso", "51", "Lorusso", 477.72),
+      crmUnit("boccapianola", "52", "Boccapianola", 772.1),
+    ]);
+    expect(result).toMatchObject({ kind: "exact", candidate: { id: "lorusso" } });
+  });
+
+  it("crea l'unita' mancante invece di fermarsi sulle altre unita' dello stesso stabile", () => {
+    const result = choosePropertyCandidate(buildingUnit("47"), [
+      crmUnit("lorusso", "51", "Lorusso", 477.72),
+      crmUnit("boccapianola", "52", "Boccapianola", 772.1),
+    ]);
+    expect(result).toMatchObject({ kind: "create", candidate: null });
+  });
+
+  it("resta in ambiguita' se una scheda dello stesso indirizzo non espone il subalterno", () => {
+    expect(() => choosePropertyCandidate(buildingUnit("47"), [
+      crmUnit("lorusso", "51", "Lorusso", 477.72),
+      { ...crmUnit("senza-catasto", "", "Ignoto", 0), cadastral: null },
+    ])).toThrow(/Più immobili condividono l'indirizzo/);
+  });
+
   it("rifiuta il piano prima delle scritture se un intestatario non ha CF", () => {
     expect(() => buildPlan(source({ owners: [{ ...source().owners[0]!, taxCode: "" }] })))
       .toThrow(/codice fiscale utilizzabile/);
