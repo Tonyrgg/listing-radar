@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { importV2Sources } from "../src/import-v2/source.js";
+import { inspectAcquisitionQueue } from "../src/services/acquisition-queue.js";
+import { buildPlan } from "../src/import-v2/identity.js";
+import { ImportV2Engine } from "../src/import-v2/engine.js";
+import type { TecnocloudV2Port } from "../src/import-v2/ports.js";
+import { WorkflowMemoryStore } from "./helpers/import-v2-workflow-fixture.js";
 import type { PersonRow, PropertyRow } from "../src/services/repository.js";
 
 const property: PropertyRow = {
@@ -18,11 +23,65 @@ const person: PersonRow = {
 };
 
 describe("Import V2 acquisition bridge", () => {
-  it.each(["acquisition_skipped", "acquisition_failed"])("rispetta lo stato %s anche senza metadati nel payload", status => {
+  it.each(["acquisition_skipped", "acquisition_failed", "skipped"])("rispetta lo stato %s anche senza metadati nel payload", status => {
     expect(importV2Sources({ id: "job-id" }, {
       properties: [{ ...property, processing_status: status, raw_payload: null }],
       people: [person], ownerships: [],
     }, () => ({ enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }))).toEqual([]);
+  });
+
+  const activity = () => ({ enabled: false, description: null, contactMode: "Contatto diretto", status: "Da eseguire" } as const);
+  const acquired = () => ({ properties: [structuredClone(property)], people: [structuredClone(person)],
+    ownerships: [{ id: "link", property_id: property.id, person_id: person.id, share_percentage: 50 as number | null, right_type: "Proprietà" }] });
+
+  it("valida le quote di ciascun immobile anche quando il nominativo è condiviso e la sua quota globale manca", () => {
+    const graph = acquired();
+    graph.people[0]!.share_percentage = null;
+    graph.properties.push({ ...property, id: "second-property", parcel: "99" });
+    graph.ownerships.push({ ...graph.ownerships[0]!, id: "second-link", property_id: "second-property", share_percentage: 25 });
+    expect(inspectAcquisitionQueue(graph).invalidProperties.size).toBe(0);
+    expect(importV2Sources({ id: "job-id" }, graph, activity).map(source => buildPlan(source).source.owners[0]!.sharePercentage)).toEqual([50, 25]);
+  });
+
+  it.each([null, 0, -1, 101, NaN, Infinity])("non usa la quota globale per nascondere una quota del collegamento non valida (%s)", share => {
+    const graph = acquired();
+    graph.ownerships[0]!.share_percentage = share;
+    const queue = inspectAcquisitionQueue(graph);
+    expect(queue.invalidProperties.has(property.id)).toBe(true);
+    expect(queue.invalidOwnerships.map(link => link.id)).toEqual(["link"]);
+    expect(() => buildPlan(importV2Sources({ id: "job-id" }, graph, activity)[0]!)).toThrow(/Quota/);
+  });
+
+  it("accantona tutto l'immobile prima di qualsiasi accesso CRM se manca anche un solo comproprietario", async () => {
+    const graph = acquired();
+    graph.ownerships.push({ ...graph.ownerships[0]!, id: "orphan", person_id: "missing-person" });
+    const store = new WorkflowMemoryStore();
+    const crm = new Proxy({} as TecnocloudV2Port, { get() { throw new Error("Il CRM non deve essere consultato con una coda incompleta"); } });
+    const [source] = importV2Sources({ id: "job-id" }, graph, activity);
+    expect(inspectAcquisitionQueue(graph).missingPersonIds).toEqual(["missing-person"]);
+    expect(await new ImportV2Engine(crm, store).run(source!)).toMatchObject({ state: "quarantined", stage: "queued", failure: { kind: "invalid_source" } });
+    expect(store.checkpoints.size).toBe(0);
+  });
+
+  it("segnala catasto vuoto, nominativo incompleto e collegamenti tra job diversi", () => {
+    const graph = acquired();
+    graph.properties[0]!.subaltern = "  ";
+    expect(inspectAcquisitionQueue(graph).incompleteProperties).toHaveLength(1);
+    graph.properties[0]!.subaltern = "34";
+    graph.people[0]!.tax_code = null;
+    expect(inspectAcquisitionQueue(graph).incompletePeople).toHaveLength(1);
+    graph.people[0]!.tax_code = person.tax_code;
+    graph.people[0]!.job_id = "other-job";
+    expect([...inspectAcquisitionQueue(graph).invalidProperties.values()]).toEqual(["Nominativo collegato appartenente a un'altra acquisizione"]);
+  });
+
+  it("prepara la coda senza modificare i dati acquisiti o aggiungere metadati ai piani validi", () => {
+    const graph = acquired();
+    const original = structuredClone(graph);
+    const [source] = importV2Sources({ id: "job-id" }, graph, activity);
+    expect(source).not.toHaveProperty("acquisitionError");
+    buildPlan(source!);
+    expect(graph).toEqual(original);
   });
   it("usa il diritto e la quota specifici del collegamento, non quelli globali della persona", () => {
     const [source] = importV2Sources({ id: "job-id" }, {

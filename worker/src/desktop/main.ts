@@ -16,7 +16,7 @@ import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
-import { normalizeTaxCode } from "../core/normalize.js";
+import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome } from "../services/chrome.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
@@ -1416,34 +1416,16 @@ async function runSisterStreet(input: {
       if (["completed", "paused"].includes(result.status)) clearRetryMonitor();
       if (liveRepository && result.importJobId) {
         const graph = await liveRepository.loadGraph(result.importJobId);
-        let activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
-        let activePropertyIds = new Set(activeProperties.map((property) => property.id));
-        let activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-        let activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-        let activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
-        const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
-        const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
-        const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
-        const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
-        const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
-        const invalidLongRunProperties = new Map<string, string>();
-        for (const property of incompleteProperties) invalidLongRunProperties.set(property.id, "Dati catastali obbligatori mancanti");
-        for (const property of propertiesWithoutOwners) invalidLongRunProperties.set(property.id, "Nessun proprietario interpretabile");
-        for (const ownership of activeOwnerships) {
-          if (incompletePersonIds.has(ownership.person_id)) {
-            invalidLongRunProperties.set(ownership.property_id, "Dati obbligatori del proprietario mancanti");
-          }
-        }
+        const queue = inspectAcquisitionQueue(graph);
+        let { activeProperties, activePeople } = queue;
+        const { incompleteProperties, incompletePeople, propertiesWithoutOwners, invalidOwnerships, missingPersonIds,
+          invalidProperties: invalidLongRunProperties } = queue;
         for (const [propertyId, reason] of invalidLongRunProperties) {
           await markCaseSkipped(result.importJobId, propertyId, { source: "automatic", reason, attempts: 0, status: "acquisition_skipped" }, liveRepository);
         }
         if (invalidLongRunProperties.size) {
           const refreshedGraph = await liveRepository.loadGraph(result.importJobId);
-          activeProperties = refreshedGraph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
-          activePropertyIds = new Set(activeProperties.map((property) => property.id));
-          activeOwnerships = refreshedGraph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-          activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-          activePeople = refreshedGraph.people.filter((person) => activePersonIds.has(person.id));
+          ({ activeProperties, activePeople } = inspectAcquisitionQueue(refreshedGraph));
           pushActivity(`${invalidLongRunProperties.size} immobili esclusi dalla long run per dati incompleti; continuo con gli elementi validi`, "warning");
         }
 
@@ -1482,6 +1464,7 @@ async function runSisterStreet(input: {
                 incompletePropertyIds: incompleteProperties.map((property) => property.id),
                 incompletePersonIds: incompletePeople.map((person) => person.id),
                 propertiesWithoutOwners: propertiesWithoutOwners.map((property) => property.id),
+                invalidOwnershipIds: invalidOwnerships.map(ownership => ownership.id), missingPersonIds,
               },
             });
             streetRunError = message;
@@ -2141,32 +2124,15 @@ async function markCaseSkipped(
 async function repairLongRunJobForImport(jobId: string) {
   const repo = repository();
   const graph = await repo.loadGraph(jobId);
-  let activeProperties = graph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
-  let activePropertyIds = new Set(activeProperties.map((property) => property.id));
-  let activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-  let activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-  let activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
-  const incompleteProperties = activeProperties.filter((property) => !property.sheet || !property.parcel || !property.subaltern);
-  const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
-  const incompletePersonIds = new Set(incompletePeople.map((person) => person.id));
-  const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
-  const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
-  const invalidProperties = new Map<string, string>();
-  for (const property of incompleteProperties) invalidProperties.set(property.id, "Dati catastali obbligatori mancanti");
-  for (const property of propertiesWithoutOwners) invalidProperties.set(property.id, "Nessun proprietario interpretabile");
-  for (const ownership of activeOwnerships) {
-    if (incompletePersonIds.has(ownership.person_id)) invalidProperties.set(ownership.property_id, "Dati obbligatori del proprietario mancanti");
-  }
+  const queue = inspectAcquisitionQueue(graph);
+  let { activeProperties, activePeople } = queue;
+  const { invalidProperties } = queue;
   for (const [propertyId, reason] of invalidProperties) {
     await markCaseSkipped(jobId, propertyId, { source: "automatic", reason, attempts: 0, status: "acquisition_skipped" }, repo);
   }
   if (invalidProperties.size) {
     const refreshedGraph = await repo.loadGraph(jobId);
-    activeProperties = refreshedGraph.properties.filter((property) => !["acquisition_failed", "acquisition_skipped", "skipped"].includes(property.processing_status));
-    activePropertyIds = new Set(activeProperties.map((property) => property.id));
-    activeOwnerships = refreshedGraph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-    activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-    activePeople = refreshedGraph.people.filter((person) => activePersonIds.has(person.id));
+    ({ activeProperties, activePeople } = inspectAcquisitionQueue(refreshedGraph));
   }
   await repo.markGraphNormalized(activeProperties, activePeople);
   if (!(activeProperties.length && activePeople.length)) return false;

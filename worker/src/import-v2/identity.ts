@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { ImportV2Error } from "./errors.js";
 import type { CadastralIdentity, CrmPropertySummary, ImportV2Plan, SourceProperty } from "./model.js";
 import { isManagedOwnershipRight } from "./ownership-policy.js";
+import { isValidOwnershipShare } from "../services/acquisition-queue.js";
 
 const DIACRITICS = /[\u0300-\u036f]/g;
 
@@ -184,8 +185,12 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
 }
 
 export function buildPlan(source: SourceProperty): ImportV2Plan {
+  if (source.acquisitionError) throw new ImportV2Error(source.acquisitionError, "invalid_source");
   if (!source.sourcePropertyId || !source.jobId || !source.fullAddress.trim()) {
     throw new ImportV2Error("Immobile privo degli identificatori obbligatori", "invalid_source");
+  }
+  if (![source.municipality, source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern].every(value => value?.trim())) {
+    throw new ImportV2Error("Immobile privo dei dati catastali obbligatori", "invalid_source");
   }
   if (!source.owners.length) throw new ImportV2Error("Immobile senza intestatari SISTER", "invalid_source");
   const leakedBusinessOwners = source.owners.filter((owner) => /^\d{11}$/.test(canonicalTaxCode(owner.taxCode)));
@@ -213,6 +218,12 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
   if (invalidOwners.length) {
     throw new ImportV2Error("Uno o più intestatari non hanno un codice fiscale utilizzabile", "invalid_source", {
       details: { sourcePersonIds: invalidOwners.map((owner) => owner.sourcePersonId) },
+    });
+  }
+  const invalidShares = normalizedOwners.filter(owner => !isValidOwnershipShare(owner.sharePercentage));
+  if (invalidShares.length) {
+    throw new ImportV2Error("Quota del collegamento proprietario-immobile non interpretabile", "invalid_source", {
+      details: { sourcePersonIds: invalidShares.map(owner => owner.sourcePersonId) },
     });
   }
   const duplicateTaxCodes = normalizedOwners

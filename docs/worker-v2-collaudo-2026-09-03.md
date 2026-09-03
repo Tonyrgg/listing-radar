@@ -2,7 +2,7 @@
 
 ## Stato e limiti
 
-Collaudo automatico locale completato sulla **0.33.5**: 465 test superati,
+Collaudo automatico locale completato sulla **0.33.6**: 490 test superati,
 zero falliti e zero saltati. **Accettazione live non completata.**
 Il collegamento al Chrome dell'utente non è disponibile in questa sessione;
 non sono state eseguite nuove scritture su Tecnocloud o Supabase reali.
@@ -11,8 +11,31 @@ o della persistenza Supabase.
 
 La modalità Rete proprietari attuale esegue vie successive dal registro;
 non invoca il precedente esploratore basato sui CF dei comproprietari.
-Via completa e Rete proprietari condividono acquisizione e import V2,
-ma la seconda richiede anche il collaudo della sequenza delle vie.
+Civico singolo, Via completa e Rete proprietari condividono il contratto
+della coda e l'import V2. Rete proprietari richiede anche il collaudo della
+sequenza delle vie.
+
+## Coda comune — aggiornamento 0.33.6
+
+- Estratto `services/acquisition-queue.ts`: stessi controlli per civico,
+  finalizzazione delle vie, ripresa delle acquisizioni salvate e import V2.
+- Corretta la validazione delle quote: si legge il collegamento a ciascun
+  immobile, non la quota globale del nominativo. Un CF può appartenere a
+  più immobili con quote differenti.
+- La lettura dal repository non nasconde più i collegamenti a nominativi
+  mancanti. Il caso incompleto viene segnalato e non può diventare una
+  comproprietà parziale importata come completa.
+- Prima dell'accesso CRM, il motore rifiuta catasto incompleto e quote
+  mancanti, non numeriche, nulle, negative o superiori al 100%.
+- Aggiunto il civico singolo al percorso integrato: esegue gli step reali
+  `properties_extracted`, `owners_extracted` e `data_normalized` del runner.
+- Confronto diretto dei piani prodotti dai tre percorsi sugli stessi dati
+  SISTER, inclusa l'impronta usata dai checkpoint di ripresa.
+
+Le regole di revisione dell'acquisizione restano quelle esistenti: il
+civico segnala dati incompleti prima della revisione, mentre le long run
+registrano l'esclusione del caso e preparano le altre righe valide.
+Il controllo di completezza e il motore che importano le righe sono comuni.
 
 ## Difetti riprodotti e correzioni
 
@@ -35,6 +58,10 @@ variante di pagina fosse presente sul PC di lavoro dell'utente.
 
 | Percorso o rischio | Prova |
 | --- | --- |
+| Civico singolo dai risultati SISTER fino alla rilettura CRM | Step reali del runner, parser SISTER, coda e motore V2; persistenza sostituita dalla fixture |
+| Contratto comune alle tre modalità | Stessi dati SISTER → stesso piano e stessa impronta, senza un parametro modalità nell'importer |
+| Quota per immobile | Nominativo condiviso con quota globale assente e quote diverse sui collegamenti; quota globale valida che non deve nascondere un collegamento invalido |
+| Comproprietario mancante | Lettura del collegamento dal repository anche senza nominativi; accantonamento prima di qualsiasi accesso CRM |
 | Via completa dall'elenco SISTER fino alla rilettura CRM | `import-v2-workflows.test.ts`: parser e adapter di produzione su HTML locale, conversione del grafo e motore V2 con UI adapter di produzione |
 | Rete proprietari su due vie | Stesso percorso, orchestrato dalla funzione di sequenza usata dal desktop |
 | CF assente → nominativo nuovo | Compilazione, salvataggio e ricerca successiva della scheda |
@@ -54,26 +81,30 @@ I casi con più comproprietari sono verificati separatamente dai test del
 motore e dell'adapter. La persistenza del grafo/checkpoint integrato è in
 memoria; claim atomico, lease e aggiornamento delle righe Supabase non sono
 provati da questa fixture. La preparazione automatica di SISTER è coperta
-separatamente: il test integrato parte dall'Elenco indirizzi.
+separatamente: le vie partono dall'Elenco indirizzi; il civico esercita gli
+step di acquisizione sui risultati della ricerca del civico 10.
 
 ## Esecuzioni finali
 
 - `npm --prefix worker run build`: superato.
 - `npm --prefix worker run desktop:compile`: superato.
-- `npm --prefix worker test -- --maxWorkers=3`: 465/465 superati.
-- Report JSON locale: `.runtime/worker-v0.33.5-tests-final.json`.
+- `npm --prefix worker test -- --maxWorkers=3`: 490/490 superati.
+- Report JSON locale: `.runtime/worker-v0.33.6-tests-final.json`.
+- Prove mirate iniziali sulla coda: 75/75 superate.
 
-La prima esecuzione completa aveva 463 successi e un timeout in un test
+Durante la precedente 0.33.5, la prima esecuzione completa aveva 463 successi e un timeout in un test
 dell'adapter precedente, con budget totale di 5 secondi e attesa intenzionale
 di 3 secondi per il merge. Il problema si riproduceva anche isolando quel test.
 Il suo budget è stato portato a 10 secondi per includere avvio browser,
 compilazione campi e chiusura, senza cambiare le asserzioni o l'adapter.
-La suite completa è stata quindi rieseguita sulla versione finale.
+La suite completa era stata quindi rieseguita sulla versione finale 0.33.5
+(465/465); sulla 0.33.6 è passata alla prima esecuzione completa.
 
 ## Accettazione live ancora da eseguire
 
 1. Collegare il Chrome di lavoro e accedere manualmente a SISTER/Tecnocloud.
-2. Su Via Guidone, osservare l'esatto stato di ricerca quando un CF manca;
+2. Su Via Guidone, provare prima un civico singolo e poi Via completa.
+   Osservare l'esatto stato di ricerca quando un CF manca;
    verificare creazione, rilettura anagrafica e prosecuzione dell'immobile.
 3. Verificare una scheda esistente, il merge verde dello screenshot,
    i filtri residenziali, due comproprietari e le quote finali.

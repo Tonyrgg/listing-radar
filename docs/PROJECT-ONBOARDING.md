@@ -273,6 +273,21 @@ Ogni operazione mutante deve essere idempotente o verificata prima di essere rip
 
 ### Ordine per immobile
 
+**Civico singolo, Via completa e Rete proprietari alimentano la stessa coda.**
+La modalità determina come si acquisisce da SISTER; non entra nel piano o
+nel motore Import V2. `services/acquisition-queue.ts` definisce il contratto
+persistito (immobili, nominativi, collegamenti) e i controlli comuni usati
+da normalizzazione, finalizzazione delle vie, ripresa delle acquisizioni
+salvate e conversione `importV2Sources`.
+La quota autorevole è quella del collegamento proprietario-immobile:
+la stessa persona può avere quote diverse su immobili diversi. Una quota
+mancante/non valida, un collegamento a un nominativo assente o di un altro
+job e dati catastali incompleti impediscono l'import del caso. La lettura
+del grafo conserva anche i collegamenti privi di nominativo nel job,
+affinché non risultino falsamente complete delle comproprietà parziali.
+L'importer controlla il caso prima di qualsiasi ricerca o scrittura CRM;
+i piani validi conservano formato e ordine, compatibili con i checkpoint.
+
 Per ogni immobile:
 
 1. caricare i recapiti di tutti i proprietari;

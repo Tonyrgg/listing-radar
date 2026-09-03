@@ -3,6 +3,10 @@ import type { ImportV2Checkpoint, ImportV2Failure, ImportV2Plan, SourceProperty 
 import type { ImportV2Store } from "../../src/import-v2/ports.js";
 import type { AcquiredGraph } from "../../src/import-v2/source.js";
 import type { CadastralOwner, CadastralProperty } from "../../src/types.js";
+import { PlaywrightSisterAdapter } from "../../src/adapters/sister/index.js";
+import { PropertyWorkerRunner } from "../../src/services/runner.js";
+import type { WorkerConfig } from "../../src/config.js";
+import type { PromptController } from "../../src/services/prompts.js";
 
 export const crmOrigin = "https://tecnocasa-group.my.site.com";
 const root = "/CRMImmobiliareLightning/s";
@@ -172,7 +176,10 @@ export class WorkflowMemoryStore implements ImportV2Store {
   async loadOrCreate(plan: ImportV2Plan) {
     const key = plan.source.sourcePropertyId;
     const current = this.checkpoints.get(key);
-    if (current) return structuredClone(current);
+    if (current) {
+      if (current.plan?.fingerprint !== plan.fingerprint) throw new Error("Il piano acquisito è cambiato rispetto al checkpoint");
+      return structuredClone(current);
+    }
     const checkpoint: ImportV2Checkpoint = { itemId: key, jobId: plan.source.jobId, propertyId: key,
       stage: "queued", plan, people: [], syncedPeople: [], propertyResolution: null, crmPropertyId: null,
       attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: new Date().toISOString() };
@@ -193,16 +200,49 @@ export function addAcquired(graph: AcquiredGraph, jobId: string, property: Cadas
     census_zone: property.censusZone, category: property.category, class: property.class, consistency: property.consistency,
     cadastral_income: property.cadastralIncome, raw_payload: property.rawPayload, processing_status: "normalized", crm_record_id: null });
   for (const [index, owner] of owners.entries()) {
-    const ownerId = `${id}-${index}`;
-    graph.people.push({ id: ownerId, job_id: jobId, full_name: owner.fullName, tax_code: owner.taxCode, birth_place: owner.birthPlace,
+    addAcquiredOwner(graph, jobId, id, owner, index);
+  }
+}
+
+function addAcquiredOwner(graph: AcquiredGraph, jobId: string, id: string, owner: CadastralOwner, index: number) {
+    const existing = graph.people.find(person => person.job_id === jobId && person.tax_code === owner.taxCode);
+    const ownerId = existing?.id ?? `${id}-${index}`;
+    if (!existing) graph.people.push({ id: ownerId, job_id: jobId, full_name: owner.fullName, tax_code: owner.taxCode, birth_place: owner.birthPlace,
       birth_province: owner.birthProvince, birth_date: owner.birthDate, right_type: owner.rightType, share_original: owner.shareOriginal,
       share_numerator: owner.shareNumerator, share_denominator: owner.shareDenominator, share_percentage: owner.sharePercentage,
       mobiles: ["3331111111"], landlines: [], emails: ["mario@example.it"], raw_payload: owner.rawPayload, processing_status: "normalized", crm_record_id: null });
     graph.ownerships.push({ id: `${id}-link-${index}`, property_id: id, person_id: ownerId, share_percentage: owner.sharePercentage, right_type: owner.rightType });
-  }
 }
 
-export async function installSisterFixture(page: Page, street: string, parcel: string) {
+/** Real single-civic runner steps and SISTER adapter; only persistence/prompts are replaced. */
+export async function acquireCivicFixture(page: Page, graph: AcquiredGraph, jobId: string) {
+  const sister = new PlaywrightSisterAdapter(page);
+  const context = await sister.extractSearchContext();
+  if (context.civicNumber !== "10") throw new Error("Il collaudo deve usare la ricerca del civico 10");
+  const runner = new PropertyWorkerRunner({
+    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "fixture-only-key",
+  } as WorkerConfig, { keepAlive: false, prompts: {} as PromptController });
+  const repository = {
+    loadGraph: async () => graph,
+    insertProperties: async (_id: string, properties: CadastralProperty[]) => {
+      for (const property of properties) addAcquired(graph, jobId, property, []);
+      return graph.properties;
+    },
+    insertOwner: async (_id: string, propertyId: string, owner: CadastralOwner) =>
+      addAcquiredOwner(graph, jobId, propertyId, owner, graph.ownerships.filter(link => link.property_id === propertyId).length),
+    updatePropertyProcessing: async (id: string, values: object) => Object.assign(graph.properties.find(property => property.id === id)!, values),
+    updateJob: async () => {},
+    markGraphNormalized: async () => {},
+  };
+  Object.defineProperty(runner, "repository", { value: repository });
+  const job = { id: jobId, mode: "automatic", municipality: context.municipality, street: context.street, civic_number: context.civicNumber };
+  const execute = (runner as unknown as { executeStep: (step: string, job: object, sister: PlaywrightSisterAdapter) => Promise<unknown> }).executeStep.bind(runner);
+  await execute("properties_extracted", job, sister);
+  await execute("owners_extracted", job, sister);
+  await execute("data_normalized", job, sister);
+}
+
+export async function installSisterFixture(page: Page, street: string, parcel: string, civic = "") {
   await page.route("**/*", async route => {
     const pathname = new URL(route.request().url()).pathname;
     let html: string;
@@ -210,7 +250,7 @@ export async function installSisterFixture(page: Page, street: string, parcel: s
       <tr><th></th><th>Nominativo o denominazione</th><th>Codice fiscale</th><th>Titolarita</th><th>Quota</th></tr>
       <tr><td><input name="intestatoSelezionato"></td><td>ROSSI MARIO nato a BITONTO (BA) il 01/01/1980</td><td>RSSMRA80A01A893P</td><td>Proprieta'</td><td>1/1</td></tr>
       </table></form><form name="SceltaVisuraImmSoggForm" action="/results"><input name="indietro" type="submit" value="Indietro"></form>`;
-    else if (pathname === "/results") html = `<fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: ${street} Numeri civici</fieldset>
+    else if (pathname === "/results") html = `<fieldset><legend>Dati della ricerca</legend>Comune: BITONTO Codice: A893 Indirizzo: ${street} Numeri civici ${civic ? `dal nr. ${civic} al nr. ${civic}` : ""}</fieldset>
       <form name="SceltaVisuraImmSoggForm" action="/owners"><table class="listaIsp4">
       <tr><th></th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Indirizzo</th><th>Zona cens</th><th>Categoria</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
       <tr><td><input name="visImmSel" type="radio" value="1"></td><td>38</td><td>${parcel}</td><td>17</td><td>${street} n. 10</td><td>U</td><td>A03</td><td>2</td><td>5 vani</td><td>400,00</td></tr>

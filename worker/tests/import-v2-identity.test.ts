@@ -42,6 +42,17 @@ const source = (overrides: Partial<SourceProperty> = {}): SourceProperty => ({
 });
 
 describe("Import V2 identity", () => {
+  it.each([null, 0, -1, 101, NaN])("rifiuta una quota %s anche per sorgenti che non passano dal database", share => {
+    const input = source();
+    input.owners[0]!.sharePercentage = share;
+    expect(() => buildPlan(input)).toThrow(/Quota/);
+  });
+
+  it.each(["sheet", "parcel", "subaltern"] as const)("rifiuta un piano senza %s prima di cercare o creare nel CRM", key => {
+    const input = source();
+    input.cadastral[key] = " ";
+    expect(() => buildPlan(input)).toThrow(/catastali/);
+  });
   it("estrae dal nome CRM solo l'indirizzo e conserva l'interno tra quadre", () => {
     expect(propertyNameToAddress("IM - Via Publio Virgilio Marone 2 [25] - Abbadessa"))
       .toBe("Via Publio Virgilio Marone 2 [25]");

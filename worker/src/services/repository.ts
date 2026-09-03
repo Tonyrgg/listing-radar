@@ -918,12 +918,11 @@ export class WorkerRepository {
     });
     const peopleRows = people.data as PersonRow[];
     let ownershipRows: Array<Record<string, unknown>> = [];
-    if (propertyRows.length && peopleRows.length) {
+    if (propertyRows.length) {
       const ownerships = await this.client
         .from("property_worker_ownerships")
         .select("*")
-        .in("property_id", propertyRows.map((row) => row.id))
-        .in("person_id", peopleRows.map((row) => row.id));
+        .in("property_id", propertyRows.map((row) => row.id));
       if (ownerships.error) throw new Error("Impossibile ricostruire le comproprietà del job persistito");
       ownershipRows = ownerships.data as Array<Record<string, unknown>>;
     }

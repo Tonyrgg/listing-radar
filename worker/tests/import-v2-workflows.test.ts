@@ -6,10 +6,49 @@ import { ImportV2Engine } from "../src/import-v2/engine.js";
 import { runImportV2Batch } from "../src/import-v2/queue.js";
 import { importV2Sources, type AcquiredGraph } from "../src/import-v2/source.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
-import { addAcquired, installSisterFixture, WorkflowMemoryStore, WorkflowUiFixture } from "./helpers/import-v2-workflow-fixture.js";
+import { buildPlan } from "../src/import-v2/identity.js";
+import { acquireCivicFixture, addAcquired, installSisterFixture, WorkflowMemoryStore, WorkflowUiFixture } from "./helpers/import-v2-workflow-fixture.js";
 
 describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
-  it.each(["via completa", "rete proprietari"])("%s: CF assente, creazione, merge verde, immobile esistente e ripresa", async mode => {
+  it("le tre modalità producono lo stesso piano di import per gli stessi dati SISTER", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const plans = [] as ReturnType<typeof buildPlan>[];
+      for (const mode of ["civico singolo", "via completa", "rete proprietari"]) {
+        const page = await browser.newPage();
+        try {
+          await installSisterFixture(page, "VIA GUIDONE", "215", mode === "civico singolo" ? "10" : "");
+          const graph: AcquiredGraph = { properties: [], people: [], ownerships: [] };
+          const acquireStreet = async () => {
+            await new SisterStreetRun(page, {
+              onPropertyAcquired: (_variant, property, owners) => addAcquired(graph, "same-job", property, owners),
+            }).run("VIA GUIDONE");
+          };
+          if (mode === "civico singolo") {
+            await page.getByRole("button", { name: "Ricerca", exact: true }).click();
+            await acquireCivicFixture(page, graph, "same-job");
+          } else if (mode === "via completa") await acquireStreet();
+          else {
+            let claimed = false;
+            expect(await runStreetRegistrySequence({
+              isCancelled: () => false,
+              next: async () => { if (claimed) return null; claimed = true; return { street: "VIA GUIDONE" }; },
+              onClaim: acquireStreet, waitForStreet: async () => {}, outcome: () => "completed", onFinished: async () => {},
+            })).toBe("exhausted");
+          }
+          const sources = importV2Sources({ id: "same-job" }, graph, () => ({
+            enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito",
+          }));
+          expect(sources).toHaveLength(1);
+          plans.push(buildPlan(sources[0]!));
+        } finally { await page.close(); }
+      }
+      expect(plans[0]).toEqual(plans[1]);
+      expect(plans[1]).toEqual(plans[2]);
+    } finally { await browser.close(); }
+  }, 25_000);
+
+  it.each(["civico singolo", "via completa", "rete proprietari"])("%s: CF assente, creazione, merge verde, immobile esistente e ripresa", async mode => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const crmPage = await browser.newPage();
@@ -22,14 +61,19 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
       const runStreet = async (street: string, parcel: string) => {
         const sisterPage = await browser.newPage();
         try {
-          await installSisterFixture(sisterPage, street, parcel);
+          await installSisterFixture(sisterPage, street, parcel, mode === "civico singolo" ? "10" : "");
           const jobId = `job-${parcel}`;
           const graph: AcquiredGraph = { properties: [], people: [], ownerships: [] };
-          const checkpoint = await new SisterStreetRun(sisterPage, {
-            acquireOwners: true, strategy: "bulk_exact_variants", mode: "live", importJobId: jobId,
-            onPropertyAcquired: (_variant, property, owners) => addAcquired(graph, jobId, property, owners),
-          }).run(street);
-          expect(checkpoint).toMatchObject({ status: "completed", totalAcceptedProperties: 1, totalOwnersRead: 1 });
+          if (mode === "civico singolo") {
+            await sisterPage.getByRole("button", { name: "Ricerca", exact: true }).click();
+            await acquireCivicFixture(sisterPage, graph, jobId);
+          } else {
+            const checkpoint = await new SisterStreetRun(sisterPage, {
+              acquireOwners: true, strategy: "bulk_exact_variants", mode: "live", importJobId: jobId,
+              onPropertyAcquired: (_variant, property, owners) => addAcquired(graph, jobId, property, owners),
+            }).run(street);
+            expect(checkpoint).toMatchObject({ status: "completed", totalAcceptedProperties: 1, totalOwnersRead: 1 });
+          }
           const currentSources = importV2Sources({ id: jobId }, graph, () => ({
             enabled: true, description: "Contatto proprietari", contactMode: "Contatto diretto", status: "Eseguito",
           }));
@@ -47,7 +91,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
           imported.push(street);
         } finally { await sisterPage.close(); }
       };
-      if (mode === "via completa") {
+      if (mode !== "rete proprietari") {
         await runStreet("VIA GUIDONE", "215");
         await runStreet("VIA SECONDA", "216");
       } else {

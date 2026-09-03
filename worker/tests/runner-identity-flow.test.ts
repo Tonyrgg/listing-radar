@@ -63,6 +63,23 @@ function runnerWithRepository() {
 }
 
 describe("flusso identità nominativo e immobile", () => {
+  it.each([25, null])("la normalizzazione del civico controlla la quota del collegamento (%s), non quella globale", async share => {
+    const { runner, repository } = runnerWithRepository();
+    const graph = {
+      properties: [propertyRow()], people: [{ ...personRow(), share_percentage: share === null ? 100 : null }],
+      ownerships: [{ id: "link", property_id: "property-row", person_id: "person-row", share_percentage: share }],
+    };
+    const markGraphNormalized = vi.fn();
+    Object.assign(repository, { loadGraph: async () => graph, markGraphNormalized });
+    const normalized = (runner as unknown as { executeStep: Function }).executeStep("data_normalized", job);
+    if (share === null) {
+      await expect(normalized).rejects.toMatchObject({ status: "data_incomplete", details: { invalidOwnershipIds: ["link"] } });
+      expect(markGraphNormalized).not.toHaveBeenCalled();
+    } else {
+      await expect(normalized).resolves.toMatchObject({ properties: 1, people: 1 });
+      expect(markGraphNormalized).toHaveBeenCalledWith(graph.properties, graph.people);
+    }
+  });
   it("non ritenta un errore di identita' che richiede revisione", async () => {
     const runner = new PropertyWorkerRunner(config, { keepAlive: false });
     const operation = vi.fn().mockRejectedValue(

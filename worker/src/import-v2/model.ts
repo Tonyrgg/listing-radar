@@ -60,6 +60,8 @@ export type SourceProperty = {
     status: "Da eseguire" | "Eseguito";
   };
   owners: SourceOwner[];
+  /** Invalid persisted relationships must quarantine the whole property before any CRM write. */
+  acquisitionError?: string;
   /** Set only for explicitly authorised production test records. */
   cadastralNotes?: string | null;
 };

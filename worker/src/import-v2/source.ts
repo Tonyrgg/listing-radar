@@ -1,29 +1,11 @@
 import type { JobRow, PersonRow, PropertyRow } from "../services/repository.js";
 import type { SourceProperty } from "./model.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-export type AcquiredGraph = {
-  properties: PropertyRow[];
-  people: PersonRow[];
-  ownerships: Array<{
-    id: string;
-    property_id: string;
-    person_id: string;
-    share_percentage: number | null;
-    right_type?: string | null;
-  }>;
-};
+import { inspectAcquisitionQueue, type AcquiredGraph } from "../services/acquisition-queue.js";
+export type { AcquiredGraph } from "../services/acquisition-queue.js";
 
 export type ActivitySource = SourceProperty["activity"];
 export type ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: Set<number> };
-
-function isImportableAcquisition(property: PropertyRow): boolean {
-  if (["acquisition_skipped", "acquisition_failed"].includes(property.processing_status)) return false;
-  const acquisition = property.raw_payload?.acquisition;
-  if (!acquisition || typeof acquisition !== "object") return true;
-  const status = String((acquisition as Record<string, unknown>).status ?? "");
-  return !["acquisition_skipped", "acquisition_failed"].includes(status);
-}
 
 function optionalString(value: unknown): string | null {
   const result = typeof value === "string" ? value.trim() : "";
@@ -47,9 +29,10 @@ export function importV2Sources(
   activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
   evidence: ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: new Set() },
 ): SourceProperty[] {
-  const people = new Map(graph.people.map((person) => [person.id, person]));
-  return graph.properties.filter(isImportableAcquisition).map((property) => {
-    const links = graph.ownerships.filter((ownership) => ownership.property_id === property.id);
+  const queue = inspectAcquisitionQueue(graph);
+  const people = queue.index.peopleById;
+  return queue.activeProperties.map((property) => {
+    const links = queue.index.ownershipsByPropertyId.get(property.id) ?? [];
     const owners = links.flatMap((ownership) => {
       const person = people.get(ownership.person_id);
       if (!person) return [];
@@ -70,6 +53,7 @@ export function importV2Sources(
     });
     return {
       sourcePropertyId: property.id,
+      ...(queue.invalidProperties.has(property.id) ? { acquisitionError: queue.invalidProperties.get(property.id)! } : {}),
       jobId: job.id,
       municipality: property.municipality,
       fullAddress: property.address ?? "",

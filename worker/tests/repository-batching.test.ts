@@ -3,6 +3,28 @@ import { describe, expect, it } from "vitest";
 import { WorkerRepository, type PersonRow, type PropertyRow } from "../src/services/repository.js";
 
 describe("persistenza alleggerita del grafo worker", () => {
+  it.each([true, false])("carica anche i collegamenti a nominativi mancanti per rilevare acquisizioni parziali (altri nominativi: %s)", hasPeople => {
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      property_worker_properties: [{ id: "property", raw_payload: null }],
+      property_worker_people: hasPeople ? [{ id: "known-person" }] : [],
+      property_worker_ownerships: [
+        { id: "valid", property_id: "property", person_id: "known-person" },
+        { id: "orphan", property_id: "property", person_id: "missing-person" },
+      ],
+    };
+    const client = { from: (table: string) => {
+      let data = rows[table]!;
+      const query = {
+        select: () => query, eq: () => query, order: () => query,
+        in: (column: string, ids: string[]) => { data = data.filter(row => ids.includes(String(row[column]))); return query; },
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
+      };
+      return query;
+    } };
+    const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
+    Object.defineProperty(repository, "client", { value: client });
+    return expect(repository.loadGraph("job")).resolves.toMatchObject({ ownerships: rows.property_worker_ownerships });
+  });
   it("considera riuscita anche la cancellazione di un job già assente", async () => {
     const selectedColumns: string[] = [];
     const client = {

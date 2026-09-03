@@ -28,6 +28,7 @@ import {
 } from "./property-activities.js";
 import { buildPropertyWorkPlan } from "./property-workflow.js";
 import { indexJobGraph } from "./job-graph.js";
+import { inspectAcquisitionQueue, isAcquisitionExcluded } from "./acquisition-queue.js";
 import { ImportV2Coordinator } from "../import-v2/coordinator.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
@@ -138,10 +139,6 @@ function asWorkerError(error: unknown): WorkerError {
 function hasRejectedTaxCodeCheckpoint(person: PersonRow): boolean {
   return isRecord(person.raw_payload?.tax_code_rejection)
     && person.raw_payload.tax_code_rejection.action === "person-tax-code-invalid";
-}
-
-function isAcquisitionExcluded(property: PropertyRow): boolean {
-  return ["acquisition_skipped", "acquisition_failed"].includes(property.processing_status);
 }
 
 const AUTOMATIC_OPERATION_ATTEMPTS = 3;
@@ -466,20 +463,14 @@ export class PropertyWorkerRunner {
       }
       case "data_normalized": {
         const graph = await this.repository.loadGraph(job.id);
-        const activeProperties = graph.properties.filter((property) => !isAcquisitionExcluded(property));
-        const activePropertyIds = new Set(activeProperties.map((property) => property.id));
-        const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
-        const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
-        const activePeople = graph.people.filter((person) => activePersonIds.has(person.id));
-        const propertyIdsWithOwners = new Set(activeOwnerships.map((ownership) => ownership.property_id));
-        const incompleteProperties = activeProperties.filter((item) => !item.sheet || !item.parcel || !item.subaltern);
-        const incompletePeople = activePeople.filter((person) => !normalizeTaxCode(person.tax_code) || person.share_percentage == null);
-        const propertiesWithoutOwners = activeProperties.filter((property) => !propertyIdsWithOwners.has(property.id));
-        const nothingToImport = !activeProperties.length && !activePeople.length;
-        if ((!nothingToImport && !activePeople.length) || incompleteProperties.length || incompletePeople.length || propertiesWithoutOwners.length) {
+        const { activeProperties, activePeople, incompleteProperties, incompletePeople, propertiesWithoutOwners,
+          invalidProperties, invalidOwnerships, missingPersonIds, nothingToImport } = inspectAcquisitionQueue(graph);
+        if (invalidProperties.size) {
           throw new WorkerError("Dati obbligatori mancanti o quota non interpretabile", "data_incomplete", {
             propertyIds: incompleteProperties.map((item) => item.id), personIds: incompletePeople.map((item) => item.id),
             propertiesWithoutOwners: propertiesWithoutOwners.map((item) => item.id), noOwnersFound: !graph.people.length,
+            invalidProperties: Object.fromEntries(invalidProperties),
+            invalidOwnershipIds: invalidOwnerships.map(item => item.id), missingPersonIds,
           });
         }
         await this.repository.markGraphNormalized(activeProperties, activePeople);
