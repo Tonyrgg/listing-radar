@@ -97,6 +97,13 @@ describe("Import V2 identity", () => {
     expect(result).toMatchObject({ kind: "exact", candidate: { id: "right" } });
   });
 
+  it("riconosce lo stesso indirizzo senza civico anche con i placeholder aggiunti dal CRM", () => {
+    expect(sameAddress(
+      "VIALE ITALIA n. NC Piano T",
+      "VIALE ITALIA n. NC . [.], 70032 BITONTO (BA)",
+    )).toBe(true);
+  });
+
   it("riusa l'indirizzo unico e richiede l'aggiornamento catastale", () => {
     const result = choosePropertyCandidate(source(), [{
       id: "address-only",
@@ -105,6 +112,23 @@ describe("Import V2 identity", () => {
       cadastral: { ...source().cadastral, parcel: "999" },
     }]);
     expect(result).toMatchObject({ kind: "address_update", candidate: { id: "address-only" } });
+  });
+
+  it("riusa il catasto univoco e aggiorna l'indirizzo dalla fonte SISTER", () => {
+    const result = choosePropertyCandidate(source(), [{
+      id: "cadastral-only",
+      displayName: "IM - Vecchio indirizzo 99",
+      fullAddress: "Vecchio indirizzo 99, 70032 BITONTO (BA)",
+      cadastral: source().cadastral,
+    }]);
+    expect(result).toMatchObject({ kind: "cadastral_update", candidate: { id: "cadastral-only" } });
+  });
+
+  it("non sceglie arbitrariamente fra più immobili con lo stesso catasto", () => {
+    expect(() => choosePropertyCandidate(source(), [
+      { id: "cadastral-a", displayName: "IM - Vecchio indirizzo 1", fullAddress: null, cadastral: source().cadastral },
+      { id: "cadastral-b", displayName: "IM - Vecchio indirizzo 2", fullAddress: null, cadastral: source().cadastral },
+    ])).toThrow(/Più immobili condividono lo stesso catasto/);
   });
 
   it("non sceglie arbitrariamente fra immobili indistinguibili", () => {

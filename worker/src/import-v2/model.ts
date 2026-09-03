@@ -112,7 +112,7 @@ export type SyncedPerson = {
 
 export type PropertyResolution =
   | { kind: "create"; propertyId: null; evidence: Record<string, unknown> }
-  | { kind: "exact" | "address_update"; propertyId: string; evidence: Record<string, unknown> };
+  | { kind: "exact" | "address_update" | "cadastral_update"; propertyId: string; evidence: Record<string, unknown> };
 
 export type ImportV2Plan = {
   version: 2;

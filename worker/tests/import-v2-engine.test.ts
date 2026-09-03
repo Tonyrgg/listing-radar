@@ -274,6 +274,45 @@ describe("Import V2 engine", () => {
     expect(crm.people.get("dup-a")?.phones).toEqual(expect.arrayContaining(["0801111111", "3339999999", "3331111111"]));
   });
 
+  it("non ricrea il nominativo se l'indice globale è vuoto subito dopo un salvataggio verificato", async () => {
+    class DelayedSearchIndexCrm extends FakeCrm {
+      hiddenAfterSave = new Set<string>();
+
+      override async createPerson(desired: Omit<CrmPersonSnapshot, "id">) {
+        const saved = await super.createPerson(desired);
+        this.hiddenAfterSave.add(saved.taxCode);
+        return saved;
+      }
+
+      override async searchPeopleByExactTaxCode(taxCode: string) {
+        if (this.hiddenAfterSave.delete(taxCode)) {
+          this.searches.push(taxCode);
+          return [];
+        }
+        return super.searchPeopleByExactTaxCode(taxCode);
+      }
+    }
+    const crm = new DelayedSearchIndexCrm();
+    const outcome = await new ImportV2Engine(crm, new MemoryStore()).run(property());
+
+    expect(outcome.state).toBe("completed");
+    expect(crm.nextPerson).toBe(3);
+    expect(crm.people).toHaveLength(2);
+  });
+
+  it("verifica il nome cliente anche quando Tecnocloud mostra nome e cognome in ordine inverso", async () => {
+    class DisplayOrderCrm extends FakeCrm {
+      override async createPerson(desired: Omit<CrmPersonSnapshot, "id">) {
+        const saved = await super.createPerson(desired);
+        saved.fullName = saved.fullName.split(/\s+/).reverse().join(" ");
+        this.people.set(saved.id, structuredClone(saved));
+        return saved;
+      }
+    }
+    const outcome = await new ImportV2Engine(new DisplayOrderCrm(), new MemoryStore()).run(property());
+    expect(outcome.state).toBe("completed");
+  });
+
   it("aggiorna il catasto dell'immobile quando coincide soltanto l'indirizzo", async () => {
     const crm = new FakeCrm();
     crm.people.set("existing-owner", {

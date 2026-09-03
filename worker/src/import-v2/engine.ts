@@ -61,11 +61,23 @@ function sameNullableText(left: string | null, right: string | null): boolean {
   return String(left ?? "").trim().toLocaleUpperCase("it-IT") === String(right ?? "").trim().toLocaleUpperCase("it-IT");
 }
 
+function samePersonName(left: string | null, right: string | null): boolean {
+  const tokens = (value: string | null) => String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("it-IT")
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+    .sort()
+    .join("|");
+  return tokens(left) === tokens(right);
+}
+
 function assertPerson(source: SourceOwner, actual: CrmPersonSnapshot, expectedPhones: string[], expectedEmails: string[]): void {
   if (canonicalTaxCode(actual.taxCode) !== source.taxCode) {
     throw new ImportV2Error("Il nominativo riletto non ha il codice fiscale atteso", "verification_failed", { retryable: true });
   }
-  if (source.fullName.trim() && !sameNullableText(actual.fullName, source.fullName)) {
+  if (source.fullName.trim() && !samePersonName(actual.fullName, source.fullName)) {
     throw new ImportV2Error("Il nominativo riletto non ha nome e cognome attesi", "verification_failed", { retryable: true });
   }
   for (const [field, expected, actualValue] of [
@@ -270,13 +282,18 @@ export class ImportV2Engine {
       }
       const after = (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
         .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode);
-      if (after.length !== 1) {
-        throw new ImportV2Error("Dopo il salvataggio il codice fiscale non identifica un solo nominativo", "verification_failed", {
+      if (after.length > 1) {
+        throw new ImportV2Error("Dopo il salvataggio il codice fiscale identifica ancora più nominativi", "verification_failed", {
           retryable: true,
           details: { taxCode: owner.taxCode, candidateIds: after.map((candidate) => candidate.id) },
         });
       }
-      saved = after[0]!;
+      /* La ricerca globale Salesforce può restituire zero risultati nei
+       * secondi immediatamente successivi a create/overwrite/merge. La scheda
+       * restituita dal salvataggio è già stata aperta tramite ID e riletta dal
+       * port: zero è quindi ritardo d'indicizzazione, non autorizzazione a
+       * creare un secondo nominativo. Più di uno resta invece un errore. */
+      if (after.length === 1) saved = after[0]!;
       assertPerson(owner, saved, desired.phones, desired.emails);
       synced.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, crmPersonId: saved.id, mergePerformed });
     }

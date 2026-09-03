@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { chromium } from "playwright";
+import { chromium, type Locator } from "playwright";
 
-import { chooseLookupRecordCandidate, lookupCommitConfirmed, ownershipSyncConfirmed } from "../src/import-v2/tecnocloud-ui-port.js";
+import { chooseLookupRecordCandidate, lookupCommitConfirmed, ownershipSyncConfirmed, propertyAddressFilterTerms } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
 describe("Tecnocloud UI V2", () => {
+  it("cerca prima la via completa e poi il nome distintivo", () => {
+    expect(propertyAddressFilterTerms("Via Zuavo")).toEqual(["Via Zuavo", "Zuavo"]);
+  });
+
   it("non scambia il testo digitato per una selezione del lookup", () => {
     expect(lookupCommitConfirmed({
       value: "BITONTO",
@@ -104,6 +108,83 @@ describe("Tecnocloud UI V2", () => {
     }
   });
 
+  it("aspetta che un picklist completi le opzioni prima di dichiarare assente il valore", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body><c-input-field>
+          <input role="textbox" value="Telefonata">
+          <div id="options"></div>
+          <script>
+            const input = document.querySelector('input');
+            input.addEventListener('click', () => {
+              document.querySelector('#options').innerHTML = '<div role="option">Telefonata</div>';
+              setTimeout(() => document.querySelector('#options').insertAdjacentHTML('beforeend', '<div role="option">Contatto diretto</div>'), 650);
+            });
+            document.querySelector('#options').addEventListener('click', event => {
+              const option = event.target.closest('[role=option]');
+              if (option) input.value = option.textContent.trim();
+            });
+          </script>
+        </c-input-field></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const port = new TecnocloudUiV2Port(page);
+      await (port as unknown as { pick(component: Locator, expected: string, label: string): Promise<void> })
+        .pick(page.locator("c-input-field"), "Contatto diretto", "Modalità contatto");
+      expect(await page.locator("input").inputValue()).toBe("Contatto diretto");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("nel merge clicca ogni radio master anche se il controllo nativo misura un pixel", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname.includes("/s/account/001RD00000ywHCnYAM")) {
+          await route.fulfill({ contentType: "text/html", body: "<!doctype html><body>Scheda nominativo</body>" });
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <section role="dialog"><h2>Nominativo</h2><p>Merge dei campi</p></section>
+          <div id="merge-fields">
+            <span><input style="width:1px;height:1px" type="radio" name="FirstName" value="master" checked></span>
+            <span><input style="width:1px;height:1px" type="radio" name="FirstName" value="slave"></span>
+            <span><input style="width:1px;height:1px" type="radio" name="LastName" value="master"></span>
+            <span><input style="width:1px;height:1px" type="radio" name="LastName" value="slave" checked></span>
+          </div>
+          <p id="ready" hidden>Tutti i campi sono stati riconciliati</p>
+          <button id="save" disabled>Salva</button>
+          <script>
+            const clicked = new Set();
+            const masters = [...document.querySelectorAll('input[value="master"]')];
+            for (const input of masters) input.addEventListener('click', () => {
+              clicked.add(input.name);
+              if (clicked.size === masters.length) {
+                document.querySelector('#ready').hidden = false;
+                document.querySelector('#save').disabled = false;
+              }
+            });
+            document.querySelector('#save').addEventListener('click', () => {
+              location.href = '/CRMImmobiliareLightning/s/account/001RD00000ywHCnYAM/merge-test?left=' + clicked.size;
+            });
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/Account");
+      const port = new TecnocloudUiV2Port(page);
+      const personId = await (port as unknown as { resolveVisibleMerge(): Promise<string> }).resolveVisibleMerge();
+      expect(personId).toBe("001RD00000ywHCnYAM");
+      expect(page.url()).toContain("left=2");
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("non salva un comproprietario finché ruolo e quota non sono comparsi", () => {
     expect(lookupCommitConfirmed({
       value: "Mario Rossi",
@@ -155,6 +236,7 @@ describe("Tecnocloud UI V2", () => {
           ${field("Catasto Foglio", "38")}${field("Catasto Particella", "215")}${field("Catasto Subalterno", "17")}
           <div class="flex"><div><label><span>Proprietario Predefinito</span></label></div><a href="/CRMImmobiliareLightning/s/account/owner-primary">Primo Test</a></div>
           ${field("Quota Proprietario", "50")}
+          <article>Potenziale acquisizione 0 Informatori 0 Soggetti collegati 1</article>
           <article><h2>Soggetti collegati (1)</h2><ul><li data-id="ownership-linked"><a href="/CRMImmobiliareLightning/s/account/owner-linked">Secondo Test</a><span>Ruolo: Comproprietario Quota: 50 Diritto: Proprieta'</span></li></ul></article>
         </body>` });
       });
@@ -215,6 +297,53 @@ describe("Tecnocloud UI V2", () => {
     }
   });
 
+  it("non interpreta come zero risultati una ricerca CF ancora in caricamento", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith("/s/account/Account")) {
+          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+            <input title="Search..." onkeydown="if(event.key==='Enter') location.href='/CRMImmobiliareLightning/s/global-search/results'">
+          </body>` });
+          return;
+        }
+        if (path.includes("/s/global-search/")) {
+          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+            <h1>Risultati di ricerca</h1><section>Clienti</section>
+            <script>setTimeout(() => document.querySelector('section').insertAdjacentHTML('beforeend', '<a data-refid="recordId" data-recordid="person-delayed" href="/CRMImmobiliareLightning/s/account/person-delayed">Nominativo</a>'), 700)</script>
+          </body>` });
+          return;
+        }
+        if (path.includes("/s/account/person-delayed")) {
+          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body><main></main><script>
+            setTimeout(() => {
+              document.querySelector('main').innerHTML = [
+                ['Codice Fiscale', 'TESTCF0000000000'], ['Nome cliente', 'Nome Collaudo'],
+                ['Data Di Nascita', '07/06/49'], ['Luogo Di Nascita', 'BITONTO (BA)']
+              ].map(([label, value]) => '<div><div><label>' + label + '</label></div><div class="slds-form-element__static"><span class="slds-grow">' + value + '</span></div></div>').join('');
+            }, 600);
+          </script></body>` });
+          return;
+        }
+        await route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const matches = await new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode("TESTCF0000000000");
+      expect(matches).toEqual([expect.objectContaining({
+        id: "person-delayed",
+        taxCode: "TESTCF0000000000",
+        fullName: "Nome Collaudo",
+        birthDate: "1949-06-07",
+        birthPlace: "BITONTO",
+        birthProvince: "BA",
+      })]);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("recupera chiudendo le finestre residue senza ricaricare la home", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -232,6 +361,171 @@ describe("Tecnocloud UI V2", () => {
       expect(page.url()).toBe(url);
       expect(await page.locator('[role="dialog"]:visible').count()).toBe(0);
       expect(visits).toBe(1);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("conferma l'attività solo dopo il salvataggio reale e distingue il popup successivo", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <div>Indirizzo Completo Immobile</div>
+          <article id="activity"><h2>Attivita e appuntamenti (0)</h2><button id="new">Nuovo</button></article>
+          <section id="form" role="dialog" hidden>
+            <h2>Attivita e appuntamenti</h2>
+            <c-input-field><label>Cliente</label><input value="Maria Collaudo"></c-input-field>
+            <c-input-field><label>Correlato a</label><input value="IM - VIA TEST 10"></c-input-field>
+            <c-input-field><label>Modalità Contatto</label><input role="textbox" value="Telefonata" data-pick="contact"></c-input-field>
+            <c-input-field><label>Stato</label><input role="textbox" value="Da eseguire" data-pick="status"></c-input-field>
+            <c-input-field><label>Descrizione</label><textarea></textarea></c-input-field>
+            <button id="save">Salva</button>
+          </section>
+          <section id="follow-up" role="dialog" hidden>
+            <h2>Attivita e appuntamenti</h2><p>Vuoi pianificare un'altra attivit&agrave;/appuntamento?</p>
+            <button onclick="this.closest('[role=dialog]').hidden=true">Annulla</button>
+          </section>
+          <div id="options"></div>
+          <script>
+            const form = document.querySelector('#form');
+            document.querySelector('#new').onclick = () => form.hidden = false;
+            document.querySelectorAll('[data-pick]').forEach(input => input.onclick = () => {
+              const values = input.dataset.pick === 'contact' ? ['Telefonata', 'Contatto diretto'] : ['Da eseguire', 'Eseguito'];
+              document.querySelector('#options').innerHTML = values.map(value => '<div role="option" data-target="' + input.dataset.pick + '">' + value + '</div>').join('');
+            });
+            document.querySelector('#options').onclick = event => {
+              const option = event.target.closest('[role=option]');
+              if (!option) return;
+              document.querySelector('[data-pick="' + option.dataset.target + '"]').value = option.textContent.trim();
+              document.querySelector('#options').innerHTML = '';
+            };
+            document.querySelector('#save').onclick = () => {
+              const description = form.querySelector('textarea').value;
+              document.querySelector('#activity').innerHTML = '<h2>Attivita e appuntamenti (1+)</h2><div>Ricerca - Eseguito</div><div>Descrizione ' + description + '</div>';
+              form.hidden = true;
+              document.querySelector('#follow-up').hidden = false;
+            };
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-activity");
+      const plan = {
+        version: 2, fingerprint: "activity-fixture",
+        source: {
+          sourcePropertyId: "source-1", jobId: "job-1", municipality: "BITONTO",
+          fullAddress: "VIA TEST n. 10, 70032 BITONTO (BA)",
+          cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+          category: "A/2", propertyClass: "3", consistency: "6 vani",
+          activity: { enabled: true, description: "Non sa nulla", contactMode: "Contatto diretto", status: "Eseguito" }, owners: [],
+        },
+      } satisfies ImportV2Plan;
+      const result = await new TecnocloudUiV2Port(page).ensureActivity("property-activity", plan);
+      expect(result.outcome).toBe("created");
+      expect(await page.locator('#activity').innerText()).toContain("Non sa nulla");
+      expect(await page.locator('[role="dialog"]:visible').count()).toBe(0);
+    } finally {
+      await browser.close();
+    }
+  }, 20_000);
+
+  it("scorre il pannello filtri fino ai campi catastali prima di compilarli", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1_200, height: 500 } });
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <input id="view" placeholder="--- Seleziona ---" value="• Immobili residenziali">
+          <button title="Filters">Filters</button>
+          <style>lightning-input{display:block;height:32px} lightning-input input{display:block;width:200px;height:30px}</style>
+          <div id="drawer" hidden style="position:fixed;right:0;top:50px;width:360px;height:260px;overflow:auto">
+            <lightning-input c-queryviewerfilters_queryviewerfilters data-index="1"><input></lightning-input>
+            <div style="height:400px"></div>
+            <lightning-input c-queryviewerfilters_queryviewerfilters data-index="9"><input></lightning-input>
+            <div style="height:500px"></div>
+            <lightning-input c-queryviewerfilters_queryviewerfilters data-index="26"><input></lightning-input>
+            <div style="height:120px"></div>
+            <lightning-input c-queryviewerfilters_queryviewerfilters data-index="27"><input></lightning-input>
+            <div style="height:300px"></div>
+            <lightning-input c-queryviewerfilters_queryviewerfilters data-index="31"><input></lightning-input>
+            <button id="apply">Applica</button>
+          </div>
+          <script>
+            window.searches = [];
+            setTimeout(() => document.querySelector('[title=Filters]').addEventListener('click', () => {
+              document.querySelector('#drawer').hidden = false;
+            }), 700);
+            document.querySelector('#apply').addEventListener('click', () => {
+              window.searches.push(['9','26','27','31'].map(index => document.querySelector('lightning-input[data-index="'+index+'"] input').value).join('|'));
+            });
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const plan: ImportV2Plan = {
+        version: 2,
+        fingerprint: "cadastral-filter-fixture",
+        source: {
+          sourcePropertyId: "source-1", jobId: "job-1", municipality: "BITONTO",
+          fullAddress: "VIA FRANCIA n. 10 Piano T, 70032 BITONTO (BA)",
+          cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+          category: "A/2", propertyClass: "3", consistency: "6 vani",
+          activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }, owners: [],
+        },
+      };
+      await new TecnocloudUiV2Port(page).findPropertiesByCadastralIdentity(plan);
+      const value = (index: number) => page.locator(`lightning-input[data-index="${index}"] input`).inputValue();
+      expect(await Promise.all([value(9), value(26), value(27), value(31)])).toEqual(["FRANCIA", "", "", ""]);
+      expect(await page.evaluate(() => (window as unknown as { searches: string[] }).searches)).toEqual([
+        "|38|215|17",
+        "VIA FRANCIA|||",
+        "FRANCIA|||",
+      ]);
+    } finally {
+      await browser.close();
+    }
+  }, 20_000);
+
+  it("riconosce il posizionamento dal confronto indirizzo e conferma tutti i valori inseriti", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body><main></main><script>
+          setTimeout(() => document.querySelector('main').innerHTML = \`
+          <section role="dialog">
+            <h2>Immobile</h2>
+            <input style="width:1px;height:1px" type="radio" name="street" id="street_current-1" value="VIA FRANCIA" checked>
+            <input style="width:1px;height:1px" type="radio" name="street" id="street_google-1" value="Via Francia">
+            <input style="width:1px;height:1px" type="radio" name="streetN" id="streetN_current-1" value="10">
+            <input style="width:1px;height:1px" type="radio" name="streetN" id="streetN_google-1" value="10" checked>
+            <input style="width:1px;height:1px" type="radio" name="CAP" id="CAP_current-1" value="70032">
+            <input style="width:1px;height:1px" type="radio" name="CAP" id="CAP_google-1" value="70032" checked>
+            <c-picklist><label>LOCALITÀ</label><input role="textbox"><div role="option" onclick="this.parentElement.querySelector('input').value=this.textContent">CENTRO BITONTO</div></c-picklist>
+            <button onclick="this.closest('[role=dialog]').hidden=true">Salva</button>
+          </section>
+          \`, 650);
+        </script></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const port = new TecnocloudUiV2Port(page);
+      const plan = {
+        version: 2, fingerprint: "positioning-fixture",
+        source: {
+          sourcePropertyId: "source-1", jobId: "job-1", municipality: "BITONTO",
+          fullAddress: "VIA FRANCIA n. 10, 70032 BITONTO (BA)",
+          cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+          category: "A/2", propertyClass: "3", consistency: "6 vani",
+          activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }, owners: [],
+        },
+      } satisfies ImportV2Plan;
+      await (port as unknown as { finishPropertyPositioning(plan: ImportV2Plan): Promise<void> }).finishPropertyPositioning(plan);
+      expect(await page.locator('#street_current-1').isChecked()).toBe(true);
+      expect(await page.locator('#streetN_current-1').isChecked()).toBe(true);
+      expect(await page.locator('#CAP_current-1').isChecked()).toBe(true);
+      expect(await page.locator('c-picklist input').inputValue()).toBe("CENTRO BITONTO");
+      expect(await page.locator('[role=dialog]').isHidden()).toBe(true);
     } finally {
       await browser.close();
     }

@@ -96,14 +96,16 @@ export function addressIdentity(value: unknown): AddressIdentity | null {
   raw = raw.replace(/,\s*\d{5}\s+.+?\s*\([A-Z]{2}\)\s*$/i, "").trim();
   raw = raw.replace(/\s+PIANO\s+.+$/i, "").trim();
   const internalMatch = raw.match(/\[\s*([^\]]+?)\s*\]\s*$/) ?? raw.match(/\bINTERNO\s+([A-Z0-9/-]+)\b/i);
-  const internal = internalMatch?.[1] ? plainWords(internalMatch[1]) : null;
+  const internalToken = internalMatch?.[1] ? plainWords(internalMatch[1]) : "";
+  const internal = internalToken && !["NC", "SNC"].includes(internalToken) ? internalToken : null;
   raw = raw.replace(/\[\s*[^\]]+?\s*\]\s*$/, "").replace(/\bINTERNO\s+[A-Z0-9/-]+\b/i, "").trim();
   const normalized = plainWords(raw).replace(/\bN(?:UMERO)?\s+(?=\d)/, "");
   const civicMatch = normalized.match(/^(.*?\D)\s+(\d+(?:\s*\/\s*[A-Z]|[A-Z])?)$/i);
-  if (!civicMatch?.[1] || !civicMatch[2]) return null;
+  const missingCivicMatch = normalized.match(/^(.*?)\s+(?:N\s+)?(?:S\s*N\s*C|SNC|NC)$/i);
+  if ((!civicMatch?.[1] || !civicMatch[2]) && !missingCivicMatch?.[1]) return null;
   return {
-    street: civicMatch[1].trim(),
-    civic: civicMatch[2].replace(/[\s/]/g, "").toUpperCase(),
+    street: (civicMatch?.[1] ?? missingCivicMatch?.[1] ?? "").trim(),
+    civic: civicMatch?.[2] ? civicMatch[2].replace(/[\s/]/g, "").toUpperCase() : "NC",
     internal,
     location,
   };
@@ -144,7 +146,7 @@ export function sameCadastralIdentity(left: CadastralIdentity | null, right: Cad
 
 export function choosePropertyCandidate(source: SourceProperty, candidates: CrmPropertySummary[]):
   | { kind: "create"; candidate: null }
-  | { kind: "exact" | "address_update"; candidate: CrmPropertySummary } {
+  | { kind: "exact" | "address_update" | "cadastral_update"; candidate: CrmPropertySummary } {
   const unique = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
   const addressMatches = unique.filter((candidate) => sameAddress(source.fullAddress, candidate.fullAddress ?? candidate.displayName));
   const exact = addressMatches.filter((candidate) => sameCadastralIdentity(source.cadastral, candidate.cadastral));
@@ -161,8 +163,9 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
     });
   }
   const cadastralOnly = unique.filter((candidate) => sameCadastralIdentity(source.cadastral, candidate.cadastral));
-  if (cadastralOnly.length) {
-    throw new ImportV2Error("Il catasto coincide ma l'indirizzo è diverso", "ambiguous_identity", {
+  if (cadastralOnly.length === 1) return { kind: "cadastral_update", candidate: cadastralOnly[0]! };
+  if (cadastralOnly.length > 1) {
+    throw new ImportV2Error("Più immobili condividono lo stesso catasto e non sono distinguibili", "ambiguous_identity", {
       details: { candidateIds: cadastralOnly.map((candidate) => candidate.id) },
     });
   }
