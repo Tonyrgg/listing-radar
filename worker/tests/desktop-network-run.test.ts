@@ -37,7 +37,7 @@ describe("Rete proprietari basata sullo Street Registry", () => {
     ]);
 
     expect(main).toContain("async function runStreetRegistryNetwork");
-    expect(main).toContain("while (!networkRunCancellationRequested)");
+    expect(main).toContain("await runStreetRegistrySequence");
     expect(main).toContain("if (pendingStreetRun) await pendingStreetRun");
     expect(main).toContain("if (importPromise) await importPromise");
     expect(main).toContain("completedJob.status === \"completed\"");

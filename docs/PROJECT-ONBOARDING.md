@@ -321,6 +321,17 @@ e applica foglio, particella e subalterno. Un contenitore vuoto o un pannello
 traslato fuori schermo non valgono come pannello aperto; i campi catastali
 possono montarsi dopo l'apertura e vengono attesi prima della compilazione.
 
+La ricerca CF deve distinguere un'assenza confermata dal caricamento o da un
+errore. Il contatore Clienti viene letto nei componenti visibili anche quando
+il testo è contiguo (`Clienti0 risultati`), tra parentesi o in shadow root;
+un messaggio globale di assenza deve riferirsi al CF cercato. Le ricerche CF
+e immobili aspettano richieste pendenti e indicatori di caricamento. Una
+pagina vuota non prova l'assenza dell'immobile. Errori di rete, messaggi di
+errore o risultati non confermati mettono in pausa il batch corrente, senza
+creare schede sulla base di un'assenza presunta né accantonare tutta la via.
+Gli stati `acquisition_skipped` e `acquisition_failed` sono esclusi dal ponte
+V2 anche se manca il corrispondente metadato nel payload storico.
+
 ### Quote
 
 Le frazioni SISTER vengono conservate nel dato originale e convertite in percentuale. Nel campo Tecnocloud la quota usa al massimo due decimali e il separatore italiano, per esempio:
@@ -437,7 +448,24 @@ La scansione civico per civico e la regola dei 50 civici vuoti restano come stra
 - Una variante fallita non viene interpretata come vuota e mette in pausa la run sulla stessa variante.
 - Una run reale incompleta resta salvata e correggibile; non avvia l'import.
 
-### Esplorazione della rete proprietaria
+### Rete proprietari attuale: sequenza delle vie
+
+Il comando desktop `desktop:start-network-run` avvia
+`runStreetRegistryNetwork`: prende la prossima via dal registro geografico,
+esegue la stessa acquisizione di «Via completa» e ne attende l'import V2.
+La via successiva viene presa soltanto dopo l'esito CRM confermato. Una
+pausa richiesta conclude la via corrente; un errore o un esito da
+ricontrollare arresta la sequenza. Il controllo della sequenza è condiviso
+con i test comportamentali in `street-registry-sequence.ts`.
+
+Il [collaudo del 3 settembre 2026](worker-v2-collaudo-2026-09-03.md)
+distingue prove automatiche locali e verifiche ancora necessarie sui portali.
+
+### Esplorazione storica tramite comproprietari
+
+Il servizio `SisterNetworkRun` e la funzione desktop `runSisterNetwork`
+rimangono nel sorgente ma non sono il percorso collegato al comando desktop
+attuale. La descrizione seguente riguarda quel percorso storico.
 
 La modalità «Segui una rete di proprietari» parte da codici fiscali verificati nel CRM, interroga SISTER e attraversa i comproprietari fino al limite impostato. I punti di partenza sono le persone che una acquisizione precedente ha già portato nel gestionale; quando non bastano a coprire «Da quanti clienti partire», il resto viene sorteggiato fra i Clienti del gestionale leggendo l'elenco anagrafiche. Il sorteggio è voluto: due esplorazioni di seguito non devono ripartire dalle stesse persone e ribattere la stessa porzione di rete. L'elenco Clienti non mostra il codice fiscale in nessuna colonna e le sue righe non hanno gli attributi dei risultati di ricerca: il collegamento al cliente vive in una shadow root annidata nella riga, e il codice fiscale si legge aprendo la scheda. La ricerca Persona fisica su SISTER viene raggiunta dalla voce di menu `SceltaLink.do?lista=PF` presa com'è scritta, così l'ufficio selezionato resta quello: prima si tornava indietro alla cieca e da una pagina qualsiasi l'esplorazione si fermava. Il modulo si riconosce dal campo `cod_fisc_pf` e non dal nome, perché `RicercaPFForm` compare anche altrove ridotto al solo pulsante «Indietro». Dopo la ricerca SISTER interpone l'`Elenco Omonimi`: si seleziona la prima riga e si preme «Immobili», mai «Visura per Soggetto» che è il documento a pagamento, e prima si verifica che il codice fiscale cercato compaia nella tabella per non esplorare gli immobili di un'altra persona. L'elenco immobili di un soggetto ha colonne proprie — `Ubicazione` al posto di `Indirizzo`, `Classamento` al posto di `Categoria`, nessuna zona censuaria — categoria scritta `Cat.A/2` e rendita `Euro: …`; il comune si legge dal riquadro `Soggetto selezionato`, dove è etichettato `Immobile nel comune di`. Un codice fiscale viene riconosciuto solo se ne ha la forma completa, omocodia inclusa, così un identificativo interno del gestionale non può essere scambiato per tale. Costruisce una coda senza avviare l'import. Prima del controllo CRM applica filtri facoltativi su:
 

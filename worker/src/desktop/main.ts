@@ -52,6 +52,7 @@ import {
   type StreetRegistryZoneOption,
 } from "../services/street-registry.js";
 import { describeSupabaseOperationalError } from "../services/supabase-errors.js";
+import { runStreetRegistrySequence } from "../services/street-registry-sequence.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
 import type { WorkerMode } from "../types.js";
@@ -1732,33 +1733,37 @@ async function runStreetRegistryNetwork(input: { filters?: Partial<StreetPropert
   await publishState();
 
   const runPromise = (async () => {
-    while (!networkRunCancellationRequested) {
-      const claim = await runNextStreetFromRegistry({ filters: input.filters, registryNetwork: true, zoneId: input.zoneId });
-      if (!claim) break;
-      streetRegistryNetworkProgress = { ...streetRegistryNetworkProgress!, currentStreet: claim.canonical_name };
-      await publishState();
+    await runStreetRegistrySequence({
+      isCancelled: () => networkRunCancellationRequested,
+      next: () => runNextStreetFromRegistry({ filters: input.filters, registryNetwork: true, zoneId: input.zoneId }),
+      onClaim: async (claim) => {
+        streetRegistryNetworkProgress = { ...streetRegistryNetworkProgress!, currentStreet: claim.canonical_name };
+        await publishState();
+      },
+      waitForStreet: async () => {
+        const pendingStreetRun = streetRunPromise;
+        if (pendingStreetRun) await pendingStreetRun;
+      },
+      outcome: () => streetRegistryLastOutcome,
+      onFinished: async (claim, outcome) => {
+        streetRegistryNetworkProgress = {
+          ...streetRegistryNetworkProgress!,
+          processedStreets: streetRegistryNetworkProgress!.processedStreets + 1,
+          completedStreets: streetRegistryNetworkProgress!.completedStreets + (outcome === "completed" ? 1 : 0),
+          recheckStreets: streetRegistryNetworkProgress!.recheckStreets + (outcome === "to_recheck" ? 1 : 0),
+          failedStreets: streetRegistryNetworkProgress!.failedStreets + (outcome === "failed" ? 1 : 0),
+          currentStreet: null,
+        };
+        await publishState();
 
-      const pendingStreetRun = streetRunPromise;
-      if (pendingStreetRun) await pendingStreetRun;
-      const outcome = streetRegistryLastOutcome ?? "to_recheck";
-      streetRegistryNetworkProgress = {
-        ...streetRegistryNetworkProgress!,
-        processedStreets: streetRegistryNetworkProgress!.processedStreets + 1,
-        completedStreets: streetRegistryNetworkProgress!.completedStreets + (outcome === "completed" ? 1 : 0),
-        recheckStreets: streetRegistryNetworkProgress!.recheckStreets + (outcome === "to_recheck" ? 1 : 0),
-        failedStreets: streetRegistryNetworkProgress!.failedStreets + (outcome === "failed" ? 1 : 0),
-        currentStreet: null,
-      };
-      await publishState();
-
-      /* Un problema richiede attenzione umana. Continuare prenderebbe subito
-       * la stessa via da ricontrollare e consumerebbe tutti i tentativi. */
-      if (outcome !== "completed") {
-        networkRunError = `${claim.canonical_name} richiede un controllo prima di continuare la rete.`;
-        pushActivity(networkRunError, "warning");
-        break;
-      }
-    }
+        /* Un problema richiede attenzione umana. Continuare prenderebbe subito
+         * la stessa via da ricontrollare e consumerebbe tutti i tentativi. */
+        if (outcome !== "completed") {
+          networkRunError = `${claim.canonical_name} richiede un controllo prima di continuare la rete.`;
+          pushActivity(networkRunError, "warning");
+        }
+      },
+    });
 
     if (!networkRunCancellationRequested && !networkRunError) {
       operationCompletion = {

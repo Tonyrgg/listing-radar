@@ -643,7 +643,9 @@ describe("adattatori con fixture HTML", () => {
         details: { workspaceReady: false },
       });
     } finally { await browser.close(); }
-  });
+    // This path deliberately waits 12 x 250 ms for a deferred merge; browser
+    // startup, field entry and teardown need their own budget beyond that wait.
+  }, 10_000);
 
   it("riconosce la striscia verde reale e preme l'unico Salva della finestra merge", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

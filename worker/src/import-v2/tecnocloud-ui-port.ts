@@ -293,43 +293,108 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (virtual) return [structuredClone(virtual)];
       const cached = this.personSearchCache.get(expected);
       if (cached) return structuredClone(cached);
-      await this.navigate(ACCOUNT_LIST);
-      const search = await this.one(this.page.locator('input[title="Search..."]').filter({ visible: true }), "Barra di ricerca nominativi");
-      await search.fill(expected);
-      await search.press("Enter");
-      await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
-      await this.page.getByText("Risultati di ricerca", { exact: false }).first().waitFor({ state: "visible", timeout: 20_000 });
-      const links = this.page.locator('a[data-refid="recordId"][data-recordid][href*="/s/account/"]').filter({ visible: true });
-      let unique: Array<{ id: string; href: string }> = [];
-      let signature = "";
-      let stable = 0;
-      let confirmedEmpty = false;
-      for (let wait = 0; wait < 60 && stable < 3; wait += 1) {
-        const records = await links.evaluateAll((elements) => elements.flatMap((element) => {
-          const href = element.getAttribute("href") ?? "";
-          const id = element.getAttribute("data-recordid") ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
-          return id ? [{ id, href }] : [];
-        }));
-        unique = [...new Map(records.map((record) => [record.id, record])).values()];
-        const body = normalized(await this.page.locator("body").innerText().catch(() => ""));
-        confirmedEmpty = /CLIENTI\s+0\s+RISULTAT/.test(body);
-        const currentSignature = unique.length ? JSON.stringify(unique.map((record) => record.id)) : confirmedEmpty ? "empty" : "loading";
-        stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
-        signature = currentSignature;
-        if (stable < 3) await this.page.waitForTimeout(200);
-      }
-      if (!unique.length && !confirmedEmpty) {
-        throw new ImportV2Error("Risultati della ricerca CF non stabilizzati", "transient_portal", { retryable: true });
-      }
-      const matches: CrmPersonSnapshot[] = [];
-      for (const record of unique) {
-        await this.page.goto(new URL(record.href, this.page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
-        const snapshot = await this.readCurrentPerson(record.id, expected);
-        if (canonicalTaxCode(snapshot.taxCode) === expected) matches.push(snapshot);
-      }
-      this.personSearchCache.set(expected, structuredClone(matches));
-      return structuredClone(matches);
+      let requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]> | null = null;
+      try {
+        await this.navigate(ACCOUNT_LIST);
+        const search = await this.one(this.page.locator('input[title="Search..."]').filter({ visible: true }), "Barra di ricerca nominativi");
+        await search.fill(expected);
+        if (canonicalTaxCode(await search.inputValue()) !== expected) {
+          throw new ImportV2Error("Il CF non è rimasto nella barra di ricerca", "global_portal", { global: true });
+        }
+        // Account-list requests can be aborted by the search navigation.
+        // Observe only requests started with the submitted search.
+        requests = this.watchSearchRequests();
+        await search.press("Enter");
+        await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
+        const links = this.page.locator('a[data-refid="recordId"][data-recordid][href*="/s/account/"]').filter({ visible: true });
+        let unique: Array<{ id: string; href: string }> = [];
+        let signature = "";
+        let stable = 0;
+        let confirmedEmpty = false;
+        for (let wait = 0; wait < 60 && stable < 3; wait += 1) {
+          await this.assertSession();
+          await this.assertSearchHealthy(requests.failed());
+          const records = await links.evaluateAll((elements) => elements.flatMap((element) => {
+            const href = element.getAttribute("href") ?? "";
+            const id = element.getAttribute("data-recordid") ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
+            return id ? [{ id, href }] : [];
+          }));
+          unique = [...new Map(records.map((record) => [record.id, record])).values()];
+          // Read the result components themselves: body.innerText can join
+          // Clienti and 0 without whitespace, or omit nested shadow-root text.
+          const emptyClients = this.page.getByText(/Clienti\s*[:(]?\s*0\s*\)?\s*risultat[io]\b/i).filter({ visible: true });
+          const emptyMessages = this.page.getByText(/^(?:Nessun risultato|Non (?:sono stati trovati|è stato trovato|e stato trovato) risultat[io])/i).filter({ visible: true });
+          const queryEmpty = (await emptyMessages.allTextContents()).some(message =>
+            normalized(message).includes(expected) && !/\bIMMOBILI\b|\bRICHIESTE\b|\bATTIVITA\b/.test(normalized(message)));
+          const ready = await this.page.getByText("Risultati di ricerca", { exact: false }).filter({ visible: true }).count() > 0;
+          confirmedEmpty = (ready && await emptyClients.count() > 0) || queryEmpty;
+          const busy = requests.pending() || await this.searchIsBusy();
+          const currentSignature = busy ? "loading" : unique.length ? JSON.stringify(unique.map((record) => record.id).sort()) : confirmedEmpty ? "empty" : "loading";
+          stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
+          signature = currentSignature;
+          if (stable < 3) await this.page.waitForTimeout(200);
+        }
+        if (stable < 3 || (!unique.length && !confirmedEmpty)) {
+          throw new ImportV2Error("La ricerca CF non ha confermato né un nominativo né l'assenza di risultati. Import in pausa sulla ricerca corrente.", "global_portal", { global: true });
+        }
+        const matches: CrmPersonSnapshot[] = [];
+        for (const record of unique) {
+          await this.page.goto(new URL(record.href, this.page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+          const snapshot = await this.readCurrentPerson(record.id, expected);
+          if (!canonicalTaxCode(snapshot.taxCode)) {
+            throw new ImportV2Error("Il risultato della ricerca non espone un CF verificabile", "global_portal", { global: true });
+          }
+          if (canonicalTaxCode(snapshot.taxCode) === expected) matches.push(snapshot);
+        }
+        this.personSearchCache.set(expected, structuredClone(matches));
+        return structuredClone(matches);
+      } catch (error) {
+        if (error instanceof ImportV2Error) throw error;
+        await this.assertSession();
+        throw new ImportV2Error("Ricerca CF non completata: import in pausa, nessun nominativo creato senza verifica.", "global_portal", {
+          global: true,
+        });
+      } finally { requests?.stop(); }
     });
+  }
+
+  private watchSearchRequests() {
+    const pending = new Set<Request>();
+    const origin = new URL(this.page.url()).origin;
+    let failed = false;
+    const started = (request: Request) => {
+      if (["xhr", "fetch"].includes(request.resourceType()) && new URL(request.url()).origin === origin) pending.add(request);
+    };
+    const finished = (request: Request) => { pending.delete(request); };
+    const failure = (request: Request) => { if (pending.has(request)) failed = true; finished(request); };
+    const response = (response: import("playwright").Response) => {
+      if (pending.has(response.request()) && response.status() >= 400) failed = true;
+    };
+    this.page.on("request", started);
+    this.page.on("requestfinished", finished);
+    this.page.on("requestfailed", failure);
+    this.page.on("response", response);
+    return {
+      pending: () => pending.size > 0,
+      failed: () => failed,
+      stop: () => {
+        this.page.off("request", started);
+        this.page.off("requestfinished", finished);
+        this.page.off("requestfailed", failure);
+        this.page.off("response", response);
+      },
+    };
+  }
+
+  private async searchIsBusy(): Promise<boolean> {
+    return await this.page.locator('lightning-spinner:visible, .slds-spinner:visible, [role="progressbar"]:visible, [aria-busy="true"]:visible').count() > 0;
+  }
+
+  private async assertSearchHealthy(requestFailed: boolean): Promise<void> {
+    const alerts = await this.page.locator('[role="alert"]:visible, .slds-notify_toast.slds-theme_error:visible').allTextContents();
+    if (requestFailed || alerts.some(text => /errore|error|riprova|impossibile|non disponibile/i.test(text))) {
+      throw new ImportV2Error("Tecnocloud non ha completato la ricerca: import in pausa senza creare duplicati o saltare nominativi.", "global_portal", { global: true });
+    }
   }
 
   private invalidatePersonSearch(taxCode: string): void {
@@ -875,18 +940,23 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           throw new ImportV2Error(`${label} non confermato`, "transient_portal", { retryable: true });
         }
       };
-      const collectResults = async (): Promise<string[]> => {
+      const collectResults = async (requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]>): Promise<string[]> => {
         const ids = this.page.locator('lightning-input[c-queryviewer_queryviewer][data-id]').filter({ visible: true });
         await this.page.waitForTimeout(1_250);
         let prior = "";
         let stable = 0;
         for (let attempt = 0; attempt < 60 && stable < 4; attempt += 1) {
-          const signature = (await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean).sort())).join("|");
-          stable = signature === prior ? stable + 1 : 0;
+          await this.assertSession();
+          await this.assertSearchHealthy(requests.failed());
+          const records = (await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean).sort())).join("|");
+          const empty = await this.page.getByText(/^(?:Nessun risultat[io](?: trovato)?|Nessun (?:record|elemento)(?: da visualizzare)?|Non (?:sono presenti|ci sono) (?:record|elementi)|0 (?:record|risultati|elementi))\s*[.!]?$/i).filter({ visible: true }).count() > 0;
+          const busy = requests.pending() || await this.searchIsBusy();
+          const signature = busy ? "loading" : records || (empty ? "empty" : "loading");
+          stable = signature !== "loading" && signature === prior ? stable + 1 : 0;
           prior = signature;
           if (stable < 4) await this.page.waitForTimeout(250);
         }
-        if (stable < 4) throw new ImportV2Error("Risultati immobili non stabilizzati", "transient_portal", { retryable: true });
+        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: import in pausa prima di creare o aggiornare schede.", "global_portal", { global: true });
         return [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
       };
       const search = async (address: string, sheet: string, parcel: string, subaltern: string): Promise<string[]> => {
@@ -896,8 +966,11 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await fillFilter(27, parcel, "Filtro particella");
         await fillFilter(31, subaltern, "Filtro subalterno");
         const apply = this.page.locator("button").filter({ hasText: /^\s*Applica\s*$/, visible: true });
-        await (await this.one(apply, "Applica filtri")).click({ force: true });
-        return collectResults();
+        const requests = this.watchSearchRequests();
+        try {
+          await (await this.one(apply, "Applica filtri")).click({ force: true });
+          return await collectResults(requests);
+        } finally { requests.stop(); }
       };
 
       const found = new Set(await search("", plan.source.cadastral.sheet, plan.source.cadastral.parcel, plan.source.cadastral.subaltern));

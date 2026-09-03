@@ -18,6 +18,7 @@ export type ActivitySource = SourceProperty["activity"];
 export type ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: Set<number> };
 
 function isImportableAcquisition(property: PropertyRow): boolean {
+  if (["acquisition_skipped", "acquisition_failed"].includes(property.processing_status)) return false;
   const acquisition = property.raw_payload?.acquisition;
   if (!acquisition || typeof acquisition !== "object") return true;
   const status = String((acquisition as Record<string, unknown>).status ?? "");

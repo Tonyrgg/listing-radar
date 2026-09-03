@@ -536,12 +536,14 @@ describe("Tecnocloud UI V2", () => {
             <lightning-input c-queryviewerfilters_queryviewerfilters data-index="31"><input></lightning-input>
             <button id="apply">Applica</button>
           </div>
+          <p id="empty" hidden>Nessun risultato</p>
           <script>
             window.searches = [];
             setTimeout(() => document.querySelector('[title=Filters]').addEventListener('click', () => {
               document.querySelector('#drawer').hidden = false;
             }), 700);
             document.querySelector('#apply').addEventListener('click', () => {
+              document.querySelector('#empty').hidden = false;
               window.searches.push(['9','26','27','31'].map(index => document.querySelector('lightning-input[data-index="'+index+'"] input').value).join('|'));
             });
           </script>

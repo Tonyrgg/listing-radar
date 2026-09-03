@@ -18,6 +18,12 @@ const person: PersonRow = {
 };
 
 describe("Import V2 acquisition bridge", () => {
+  it.each(["acquisition_skipped", "acquisition_failed"])("rispetta lo stato %s anche senza metadati nel payload", status => {
+    expect(importV2Sources({ id: "job-id" }, {
+      properties: [{ ...property, processing_status: status, raw_payload: null }],
+      people: [person], ownerships: [],
+    }, () => ({ enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }))).toEqual([]);
+  });
   it("usa il diritto e la quota specifici del collegamento, non quelli globali della persona", () => {
     const [source] = importV2Sources({ id: "job-id" }, {
       properties: [property],
