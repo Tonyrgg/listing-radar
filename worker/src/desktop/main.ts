@@ -86,6 +86,9 @@ type Preferences = {
   autoRetryEnabled: boolean;
   /* Cosa scrivere nel diario del gestionale: vedi PropertyActivityMode. */
   propertyActivityMode: PropertyActivityMode;
+  /* Con false l'import collega il solo intestatario con la quota piu' alta.
+   * I comproprietari gia' collegati nel gestionale restano dove sono. */
+  importCoOwners: boolean;
   /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
   streetRegistryZoneId: string | null;
   encryptedEnvironment?: string;
@@ -109,7 +112,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", streetRegistryZoneId: null };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -578,7 +581,9 @@ function migratePreferences(stored: Partial<Preferences> & { autoFillDirectConta
   const { autoFillDirectContact, ...rest } = stored;
   const mode = rest.propertyActivityMode
     ?? (autoFillDirectContact === false ? "plain" : "direct_contact");
-  return { ...defaultPreferences, ...rest, propertyActivityMode: mode };
+  /* Una preferenza assente vale come attiva: chi aggiorna il worker continua
+   * a importare i comproprietari come prima. */
+  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false };
 }
 
 async function loadPreferences() {
@@ -2527,6 +2532,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
+    importCoOwners: () => preferences.importCoOwners,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;

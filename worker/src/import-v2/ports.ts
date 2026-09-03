@@ -13,6 +13,15 @@ import type {
   SyncedPerson,
 } from "./public-types.js";
 
+export type OwnershipSyncOptions = {
+  /**
+   * Lascia dov'e' ogni comproprietario gestito che non compare fra i desiderati
+   * invece di scollegarlo. Serve quando l'import lavora sul solo intestatario
+   * principale: escludere i comproprietari non deve cancellarli.
+   */
+  keepUnlistedManagedOwners?: boolean;
+};
+
 export type MergeRequest = {
   taxCode: string;
   canonicalPersonId: string;
@@ -41,7 +50,7 @@ export interface TecnocloudV2Port {
   createProperty(plan: ImportV2Plan, primaryPersonId: string): Promise<CrmPropertySnapshot>;
   updateProperty(propertyId: string, plan: ImportV2Plan): Promise<CrmPropertySnapshot>;
   /** Replaces private full/bare ownerships; corporate and usufruct links survive untouched. */
-  replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]): Promise<CrmOwnershipSnapshotResult>;
+  replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options?: OwnershipSyncOptions): Promise<CrmOwnershipSnapshotResult>;
   readProperty(propertyId: string): Promise<CrmPropertySnapshot>;
   ensureActivity(propertyId: string, plan: ImportV2Plan): Promise<{ activityId: string | null; outcome: "created" | "existing" | "disabled" }>;
   recover(stage: ImportV2Checkpoint["stage"], error: unknown): Promise<void>;

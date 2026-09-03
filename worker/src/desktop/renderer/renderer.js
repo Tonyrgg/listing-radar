@@ -2304,6 +2304,7 @@ function render() {
       ? "Procede da solo e si ferma solo quando non può scegliere in sicurezza."
       : "Ti chiede conferma prima dei salvataggi.";
   $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
+  $("coOwnersToggle").checked = appState.preferences?.importCoOwners !== false;
   $("versionLabel").textContent = `v${appState.version}`;
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
@@ -2952,6 +2953,20 @@ $("dryRunToggle").addEventListener("change", async (event) => {
   } catch (error) {
     toggle.checked = !toggle.checked;
     renderStreetRun();
+    toast(error?.message ?? String(error));
+  }
+});
+$("coOwnersToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.savePreferences({ importCoOwners: toggle.checked });
+    toast(
+      toggle.checked
+        ? "Import dei comproprietari attivo"
+        : "Import fermo all'intestatario con la quota più alta",
+    );
+  } catch (error) {
+    toggle.checked = !toggle.checked;
     toast(error?.message ?? String(error));
   }
 });

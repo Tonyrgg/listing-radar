@@ -44,6 +44,12 @@ export type ImportV2EngineOptions = {
   maxTransientAttempts: number;
   now?: () => Date;
   isInterruptionRequested?: () => boolean;
+  /**
+   * Con i comproprietari esclusi l'import si ferma all'intestatario con la
+   * quota piu' alta: gli altri non vengono creati ne' collegati, e i
+   * collegamenti gia' presenti nel gestionale restano dove sono.
+   */
+  includeCoOwners?: boolean | (() => boolean);
 };
 
 function unique<T>(values: T[]): T[] {
@@ -99,9 +105,19 @@ function sharesEqual(left: number | null, right: number | null): boolean {
   return Math.abs(left - right) < 0.01;
 }
 
-function assertOwnerships(property: CrmPropertySnapshot, desired: OwnershipWrite[]): void {
+function assertOwnerships(
+  property: CrmPropertySnapshot,
+  desired: OwnershipWrite[],
+  allowUnlistedManaged = false,
+): void {
   const managedOwners = property.owners.filter(isManagedCrmOwnership);
-  if (managedOwners.length !== desired.length) {
+  /* Con i comproprietari esclusi la scheda puo' portare collegamenti gestiti
+   * che questo import non ha toccato: conta che ci siano tutti quelli attesi,
+   * non che non ce ne siano altri. */
+  const countMismatch = allowUnlistedManaged
+    ? managedOwners.length < desired.length
+    : managedOwners.length !== desired.length;
+  if (countMismatch) {
     throw new ImportV2Error("Il numero di intestatari riletto non coincide con SISTER", "verification_failed", {
       retryable: true,
       details: { expected: desired.length, actual: managedOwners.length, ignoredOutOfScope: property.owners.length - managedOwners.length },
@@ -122,6 +138,7 @@ export class ImportV2Engine {
   private readonly maxTransientAttempts: number;
   private readonly now: () => Date;
   private readonly isInterruptionRequested: () => boolean;
+  private readonly includeCoOwners: () => boolean;
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -131,6 +148,13 @@ export class ImportV2Engine {
     this.maxTransientAttempts = Math.max(1, options.maxTransientAttempts ?? 3);
     this.now = options.now ?? (() => new Date());
     this.isInterruptionRequested = options.isInterruptionRequested ?? (() => false);
+    const includeCoOwners = options.includeCoOwners ?? true;
+    this.includeCoOwners = typeof includeCoOwners === "function" ? includeCoOwners : () => includeCoOwners;
+  }
+
+  /** Gli intestatari che questo import deve creare, collegare e verificare. */
+  private ownersInScope(owners: SourceOwner[]): SourceOwner[] {
+    return this.includeCoOwners() ? owners : [this.primaryOwner(owners)];
   }
 
   private throwIfInterruptionRequested(): void {
@@ -197,9 +221,9 @@ export class ImportV2Engine {
       case "queued":
         return { ...checkpoint, stage: NEXT_STAGE.queued };
       case "planned":
-        return { ...checkpoint, people: await this.resolvePeople(plan.source.owners), stage: NEXT_STAGE.planned };
+        return { ...checkpoint, people: await this.resolvePeople(this.ownersInScope(plan.source.owners)), stage: NEXT_STAGE.planned };
       case "people_resolved":
-        return { ...checkpoint, syncedPeople: await this.syncPeople(plan.source.owners, checkpoint), stage: NEXT_STAGE.people_resolved };
+        return { ...checkpoint, syncedPeople: await this.syncPeople(this.ownersInScope(plan.source.owners), checkpoint), stage: NEXT_STAGE.people_resolved };
       case "people_synced": {
         const { choice, linkedCount, cadastralCount } = await this.resolveProperty(plan, checkpoint.syncedPeople);
         return {
@@ -226,15 +250,18 @@ export class ImportV2Engine {
           }
         }
         const saved = resolution.kind === "create"
-          ? await this.crm.createProperty(plan, this.primaryPersonId(plan.source.owners, checkpoint.syncedPeople))
+          ? await this.crm.createProperty(plan, this.primaryPersonId(this.ownersInScope(plan.source.owners), checkpoint.syncedPeople))
           : await this.crm.updateProperty(resolution.propertyId, plan);
         return { ...checkpoint, crmPropertyId: saved.id, stage: NEXT_STAGE.property_resolved };
       }
       case "property_synced": {
         const propertyId = this.requirePropertyId(checkpoint);
-        await this.verifyPeopleBeforeOwnership(plan.source.owners, checkpoint.syncedPeople);
+        const owners = this.ownersInScope(plan.source.owners);
+        await this.verifyPeopleBeforeOwnership(owners, checkpoint.syncedPeople);
         this.throwIfInterruptionRequested();
-        await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(plan.source.owners, checkpoint.syncedPeople));
+        await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
+          keepUnlistedManagedOwners: !this.includeCoOwners(),
+        });
         return { ...checkpoint, stage: NEXT_STAGE.property_synced };
       }
       case "ownerships_synced": {
@@ -243,7 +270,7 @@ export class ImportV2Engine {
           || !sameCadastralIdentity(plan.source.cadastral, property.cadastral)) {
           throw new ImportV2Error("La rilettura dell'immobile non coincide con indirizzo e catasto SISTER", "verification_failed", { retryable: true });
         }
-        assertOwnerships(property, this.desiredOwnerships(plan.source.owners, checkpoint.syncedPeople));
+        assertOwnerships(property, this.desiredOwnerships(this.ownersInScope(plan.source.owners), checkpoint.syncedPeople), !this.includeCoOwners());
         return { ...checkpoint, stage: NEXT_STAGE.ownerships_synced };
       }
       case "verified":

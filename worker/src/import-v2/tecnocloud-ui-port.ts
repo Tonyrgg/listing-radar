@@ -1,7 +1,7 @@
 import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
-import { canonicalTaxCode, sameAddress, sameCadastralIdentity } from "./identity.js";
+import { canonicalTaxCode, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
   CadastralIdentity,
@@ -13,7 +13,7 @@ import type {
   ImportV2Plan,
   PersonWriteModel,
 } from "./public-types.js";
-import type { CrmOwnershipSnapshotResult, MergeRequest, OwnershipWrite, TecnocloudV2Port } from "./ports.js";
+import type { CrmOwnershipSnapshotResult, MergeRequest, OwnershipSyncOptions, OwnershipWrite, TecnocloudV2Port } from "./ports.js";
 
 const CRM_ROOT = "/CRMImmobiliareLightning/s";
 const ACCOUNT_LIST = `${CRM_ROOT}/account/Account`;
@@ -174,6 +174,23 @@ function propertyDraft(plan: ImportV2Plan) {
     floor = Number(floorToken) <= 2 ? "Basso" : Number(floorToken) <= 4 ? "Medio" : "Alto";
   }
   return { street, civic, letter, internal, floor, floorNumber, type, subtype };
+}
+
+/**
+ * SISTER consegna gli intestatari come "Cognome Nome", mentre la ricerca del
+ * gestionale propone i record per "Nome Cognome" e con l'ordine opposto puo'
+ * non restituire niente. Il codice fiscale separa i due pezzi in modo
+ * verificabile: quando non ci riesce resta il solo ordine di partenza.
+ */
+export function personLookupTerms(fullName: string, taxCode: string): string[] {
+  const terms = [fullName.replace(/\s+/g, " ").trim()];
+  try {
+    const { firstName, lastName } = splitSourcePersonName(terms[0]!, taxCode);
+    terms.push(`${firstName} ${lastName}`.replace(/\s+/g, " ").trim());
+  } catch {
+    /* Nome non separabile: si cerca soltanto con l'ordine della fonte. */
+  }
+  return [...new Set(terms.filter(Boolean))];
 }
 
 export class TecnocloudUiV2Port implements TecnocloudV2Port {
@@ -627,12 +644,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     component: Locator,
     input: Locator,
     personId: string,
-    searchValue: string,
+    searchTerms: string[],
     dependentFields: Locator,
     minimumDependentFields: number,
     label: string,
   ): Promise<void> {
+    const terms = searchTerms.filter(Boolean);
+    if (!terms.length) throw new ImportV2Error(`${label}: nessun testo di ricerca utilizzabile`, "invalid_source");
+    let termIndex = 0;
+    let everProposed = false;
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      const searchValue = terms[Math.min(termIndex, terms.length - 1)]!;
       if (await input.getAttribute("readonly") !== null) {
         const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), `Rimuovi ${label}`);
         await remove.click();
@@ -658,7 +680,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           optionIndex = indexes.length === 1 ? indexes[0]! : null;
         }
         await this.assertSearchHealthy(requests.failed());
-        if (optionIndex == null || stableOptions < 2) continue;
+        if (optionIndex == null || stableOptions < 2) {
+          /* Con questo ordine il gestionale non ha proposto il record: il
+           * tentativo successivo prova l'ordine opposto invece di ripetere
+           * la stessa ricerca. */
+          if (termIndex < terms.length - 1) termIndex += 1;
+          continue;
+        }
+        everProposed = true;
 
         const candidates = await this.lookupRecordCandidates(options);
         const freshIndexes = candidates.flatMap((candidate) => candidate.recordId === personId ? [candidate.index] : []);
@@ -684,7 +713,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         requests.stop();
       }
     }
-    throw new ImportV2Error(`${label}: il record CRM esatto è visibile ma la selezione non viene confermata`, "transient_portal", { retryable: true });
+    throw new ImportV2Error(
+      everProposed
+        ? `${label}: il record CRM esatto è visibile ma la selezione non viene confermata`
+        : `${label}: la ricerca del gestionale non propone il record atteso`,
+      "transient_portal",
+      { retryable: true, details: { searchTerms: terms } },
+    );
   }
 
   private async fillBirthPlace(value: string, province: string | null): Promise<void> {
@@ -1654,7 +1689,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await component.waitFor({ state: "visible", timeout: 10_000 });
     const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Proprietario principale");
     if (current?.personId !== desired.personId) {
-      await this.fillPersonLookup(component, lookup, desired.personId, desired.fullName, component, 1, "Proprietario principale");
+      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), component, 1, "Proprietario principale");
     }
     const quota = await this.one(this.page.getByLabel("Quota Proprietario", { exact: true }).filter({ visible: true }), "Quota proprietario");
     await quota.fill(formatDecimal(desired.sharePercentage));
@@ -1724,7 +1759,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const component = await this.one(dialog.locator('c-lookup:has(label:text-is("Cliente"))').filter({ visible: true }), "Lookup Cliente comproprietario");
       const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Cliente comproprietario");
       const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
-      await this.fillPersonLookup(component, lookup, desired.personId, desired.fullName, dependent, 2, "Cliente comproprietario");
+      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), dependent, 2, "Cliente comproprietario");
     }
     const role = dialog.locator('c-picklist:has(label:text-is("Ruolo"))').filter({ visible: true });
     await this.pick(role, desired.role, "Ruolo");
@@ -1781,17 +1816,22 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return left == null || right == null ? left == null && right == null : Math.abs(left - right) < 0.01;
   }
 
-  async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]): Promise<CrmOwnershipSnapshotResult> {
+  async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}): Promise<CrmOwnershipSnapshotResult> {
     return this.action("Sincronizzazione soggetti collegati", async () => {
       if (this.dryRun) {
         const property = await this.readProperty(propertyId);
         const protectedOwners = property.owners.filter((owner) => !isManagedCrmOwnership(owner));
         const managedBefore = property.owners.filter(isManagedCrmOwnership);
-        const removedPersonIds = managedBefore.filter((owner) => !desired.some((candidate) => candidate.personId === owner.personId)).map((owner) => owner.personId);
-        property.owners = [...protectedOwners, ...desired.map((owner, index) => ({
-          linkId: `dry-link-${index}`, personId: owner.personId, taxCode: owner.taxCode,
-          sharePercentage: owner.sharePercentage, rightType: null, role: owner.role,
-        }))];
+        const unlisted = managedBefore.filter((owner) => !desired.some((candidate) => candidate.personId === owner.personId));
+        const removedPersonIds = options.keepUnlistedManagedOwners ? [] : unlisted.map((owner) => owner.personId);
+        property.owners = [
+          ...protectedOwners,
+          ...(options.keepUnlistedManagedOwners ? unlisted : []),
+          ...desired.map((owner, index) => ({
+            linkId: `dry-link-${index}`, personId: owner.personId, taxCode: owner.taxCode,
+            sharePercentage: owner.sharePercentage, rightType: null, role: owner.role,
+          })),
+        ];
         this.virtualProperties.set(propertyId, property);
         return { propertyId, owners: structuredClone(property.owners), removedPersonIds };
       }
@@ -1815,10 +1855,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const desiredLinked = desired.filter((owner) => owner.role !== "Proprietario Principale");
       const managed = afterPrimary.filter((owner) => isManagedCrmOwnership(owner) && owner.role !== "Proprietario Principale");
       const removedPersonIds: string[] = [];
-      for (const existing of managed) {
-        if (!desiredLinked.some((candidate) => candidate.personId === existing.personId)) {
-          await this.deleteOwnership(propertyId, existing.personId);
-          removedPersonIds.push(existing.personId);
+      /* Escludere i comproprietari da questo import significa non aggiungerli,
+       * non toglierli: chi e' gia' collegato resta collegato. */
+      if (!options.keepUnlistedManagedOwners) {
+        for (const existing of managed) {
+          if (!desiredLinked.some((candidate) => candidate.personId === existing.personId)) {
+            await this.deleteOwnership(propertyId, existing.personId);
+            removedPersonIds.push(existing.personId);
+          }
         }
       }
       for (const owner of desiredLinked) {

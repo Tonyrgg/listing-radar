@@ -172,6 +172,8 @@ export interface RunnerOptions {
   isPauseRequested?: (jobId: string) => boolean;
   isStopAfterNextImportRequested?: (jobId: string) => boolean;
   propertyActivityMode?: PropertyActivityMode | (() => PropertyActivityMode);
+  /** Con false l'import si ferma all'intestatario con la quota piu' alta. */
+  importCoOwners?: boolean | (() => boolean);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -185,6 +187,7 @@ export class PropertyWorkerRunner {
   private readonly isPauseRequested: (jobId: string) => boolean;
   private readonly isStopAfterNextImportRequested: (jobId: string) => boolean;
   private readonly propertyActivityMode: () => PropertyActivityMode;
+  private readonly importCoOwners: () => boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -199,6 +202,8 @@ export class PropertyWorkerRunner {
     this.propertyActivityMode = typeof activityMode === "function"
       ? activityMode
       : () => activityMode ?? "direct_contact";
+    const importCoOwners = options.importCoOwners ?? true;
+    this.importCoOwners = typeof importCoOwners === "function" ? importCoOwners : () => importCoOwners;
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
@@ -540,6 +545,7 @@ export class PropertyWorkerRunner {
         const coordinator = new ImportV2Coordinator(this.repository, crmV2, {
           maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS,
           isInterruptionRequested: () => this.isCancellationRequested(job.id) || this.isPauseRequested(job.id),
+          includeCoOwners: () => this.importCoOwners(),
         });
         const result = await coordinator.runJob(job, (property, owners) => {
           const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), mode);

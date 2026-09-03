@@ -14,6 +14,7 @@ import type {
   CrmOwnershipSnapshotResult,
   ImportV2Store,
   MergeRequest,
+  OwnershipSyncOptions,
   OwnershipWrite,
   TecnocloudV2Port,
 } from "../src/import-v2/ports.js";
@@ -101,6 +102,7 @@ class FakeCrm implements TecnocloudV2Port {
   activities: string[] = [];
   recoveries = 0;
   replaceCalls = 0;
+  lastOwnershipOptions: OwnershipSyncOptions = {};
   replaceFailures = 0;
   sessionFailure: ImportV2Error | null = null;
   nextPerson = 1;
@@ -173,8 +175,9 @@ class FakeCrm implements TecnocloudV2Port {
     return structuredClone(saved);
   }
 
-  async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]): Promise<CrmOwnershipSnapshotResult> {
+  async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}): Promise<CrmOwnershipSnapshotResult> {
     this.replaceCalls += 1;
+    this.lastOwnershipOptions = options;
     if (this.replaceFailures > 0) {
       this.replaceFailures -= 1;
       throw new ImportV2Error("dialog delayed", "transient_portal", { retryable: true });
@@ -183,15 +186,20 @@ class FakeCrm implements TecnocloudV2Port {
     if (!current) throw new Error("missing property");
     const protectedOwners = current.owners.filter((owner) => !isManagedCrmOwnership(owner));
     const managedOwners = current.owners.filter(isManagedCrmOwnership);
-    const removedPersonIds = managedOwners.filter((owner) => !desired.some((item) => item.personId === owner.personId)).map((owner) => owner.personId);
-    current.owners = [...protectedOwners, ...desired.map((owner, index) => ({
-      linkId: `link-${index}`,
-      personId: owner.personId,
-      taxCode: owner.taxCode,
-      sharePercentage: owner.sharePercentage,
-      rightType: "Proprietà",
-      role: owner.role,
-    }))];
+    const unlisted = managedOwners.filter((owner) => !desired.some((item) => item.personId === owner.personId));
+    const removedPersonIds = options.keepUnlistedManagedOwners ? [] : unlisted.map((owner) => owner.personId);
+    current.owners = [
+      ...protectedOwners,
+      ...(options.keepUnlistedManagedOwners ? unlisted : []),
+      ...desired.map((owner, index) => ({
+        linkId: `link-${index}`,
+        personId: owner.personId,
+        taxCode: owner.taxCode,
+        sharePercentage: owner.sharePercentage,
+        rightType: "Proprietà",
+        role: owner.role,
+      })),
+    ];
     return { propertyId, owners: structuredClone(current.owners), removedPersonIds };
   }
 
@@ -469,6 +477,43 @@ describe("Import V2 engine", () => {
     expect(result.quarantined.map((item) => item.itemId)).toEqual(["item-property-1"]);
     expect(result.completed.map((item) => item.itemId)).toEqual(["item-property-2"]);
     expect(result.paused).toBeNull();
+  });
+
+  it("collega tutti gli intestatari quando i comproprietari sono inclusi", async () => {
+    const crm = new FakeCrm();
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), { includeCoOwners: true }).run(property());
+
+    expect(outcome.state).toBe("completed");
+    const owners = (await crm.readProperty(outcome.crmPropertyId!)).owners;
+    expect(owners.map((owner) => owner.role).sort()).toEqual(["Comproprietario", "Proprietario Principale"]);
+    expect(crm.lastOwnershipOptions.keepUnlistedManagedOwners).toBeFalsy();
+  });
+
+  it("si ferma all'intestatario con la quota piu' alta quando i comproprietari sono esclusi", async () => {
+    const crm = new FakeCrm();
+    const source = property();
+    source.owners[0]!.sharePercentage = 70;
+    source.owners[1]!.sharePercentage = 30;
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), { includeCoOwners: false }).run(source);
+
+    expect(outcome.state).toBe("completed");
+    expect(outcome.syncedPeople.map((person) => person.sourcePersonId)).toEqual(["property-1-mario"]);
+    const owners = (await crm.readProperty(outcome.crmPropertyId!)).owners;
+    expect(owners.map((owner) => owner.role)).toEqual(["Proprietario Principale"]);
+    expect(crm.lastOwnershipOptions.keepUnlistedManagedOwners).toBe(true);
+  });
+
+  it("non scollega un comproprietario gia' presente quando i comproprietari sono esclusi", async () => {
+    const crm = new FakeCrm();
+    const included = await new ImportV2Engine(crm, new MemoryStore()).run(property());
+    const propertyId = included.crmPropertyId!;
+    expect((await crm.readProperty(propertyId)).owners).toHaveLength(2);
+
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), { includeCoOwners: false }).run(property());
+
+    expect(outcome.state).toBe("completed");
+    const owners = (await crm.readProperty(propertyId)).owners;
+    expect(owners.map((owner) => owner.role).sort()).toEqual(["Comproprietario", "Proprietario Principale"]);
   });
 
   it("mette in pausa l'intera coda soltanto per un errore globale di sessione", async () => {

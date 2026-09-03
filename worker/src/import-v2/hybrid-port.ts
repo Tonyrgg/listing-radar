@@ -2,6 +2,7 @@ import type { ImportV2Checkpoint, ImportV2Plan, PersonWriteModel } from "./publi
 import type {
   CrmOwnershipSnapshotResult,
   MergeRequest,
+  OwnershipSyncOptions,
   OwnershipWrite,
   TecnocloudV2Port,
 } from "./ports.js";
@@ -74,8 +75,8 @@ export class HybridTecnocloudV2Port implements TecnocloudV2Port {
     return this.write("update_property", () => this.http.updateProperty(propertyId, plan), () => this.ui.updateProperty(propertyId, plan));
   }
 
-  replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]): Promise<CrmOwnershipSnapshotResult> {
-    return this.write("replace_ownerships", () => this.http.replaceManagedOwnerships(propertyId, desired), () => this.ui.replaceManagedOwnerships(propertyId, desired));
+  replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options?: OwnershipSyncOptions): Promise<CrmOwnershipSnapshotResult> {
+    return this.write("replace_ownerships", () => this.http.replaceManagedOwnerships(propertyId, desired, options), () => this.ui.replaceManagedOwnerships(propertyId, desired, options));
   }
 
   readProperty(propertyId: string) {
