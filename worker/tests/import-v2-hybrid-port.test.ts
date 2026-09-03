@@ -9,6 +9,9 @@ function port(label: string): TecnocloudV2Port {
     searchPeopleByExactTaxCode: vi.fn(async () => [{
       id: label, taxCode: "RSSMRA80A01A893P", fullName: label, birthDate: null, birthPlace: null, birthProvince: null, phones: [], emails: [],
     }]),
+    readPerson: vi.fn(async (id, expectedTaxCode) => ({
+      id, taxCode: expectedTaxCode ?? "RSSMRA80A01A893P", fullName: label, birthDate: null, birthPlace: null, birthProvince: null, phones: [], emails: [],
+    })),
     createPerson: vi.fn(async (desired) => ({ id: label, ...desired })),
     overwritePerson: vi.fn(async (id, desired) => ({ id, ...desired })),
     mergePeople: vi.fn(async (request) => ({ id: request.canonicalPersonId, ...request.desired })),

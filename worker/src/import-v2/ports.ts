@@ -32,6 +32,7 @@ export type OwnershipWrite = {
 export interface TecnocloudV2Port {
   assertSession(): Promise<void>;
   searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]>;
+  readPerson(personId: string, expectedTaxCode?: string | null): Promise<CrmPersonSnapshot>;
   createPerson(desired: PersonWriteModel): Promise<CrmPersonSnapshot>;
   overwritePerson(personId: string, desired: PersonWriteModel): Promise<CrmPersonSnapshot>;
   mergePeople(request: MergeRequest): Promise<CrmPersonSnapshot>;

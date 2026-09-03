@@ -1,4 +1,8 @@
 import { connectToCrmChrome } from "../src/services/chrome.js";
+import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
+
+const birthPlace = process.argv[2]?.trim() || "BITONTO";
+const birthProvince = process.argv[3]?.trim() || "BA";
 
 const tabs = await connectToCrmChrome(
   process.env.CHROME_CDP_URL ?? "http://127.0.0.1:9222",
@@ -38,26 +42,17 @@ try {
   })));
   const birthComponent = page.locator('c-lookup:has(label:text-is("Luogo Di Nascita"))').filter({ visible: true });
   const birthInput = birthComponent.locator('input[placeholder="Cerca"]').filter({ visible: true });
-  await birthInput.fill("");
-  await birthInput.pressSequentially("BITONTO", { delay: 40 });
+  const port = new TecnocloudUiV2Port(page);
+  await (port as unknown as { fillBirthPlace(value: string, province: string | null): Promise<void> })
+    .fillBirthPlace(birthPlace, birthProvince);
   const birthOptions = birthComponent.locator('[role="option"]').filter({ visible: true });
-  await birthOptions.first().waitFor({ state: "visible", timeout: 8_000 });
-  const optionDetails = await birthOptions.evaluateAll((elements) => elements.map((element) => ({
-    tag: element.tagName.toLowerCase(),
-    text: (element.textContent ?? "").replace(/\s+/g, " ").trim(),
-    attributes: Array.from(element.attributes).map((attribute) => attribute.name).sort(),
-    childTags: Array.from(element.children).map((child) => child.tagName.toLowerCase()),
-  })));
-  const birthOptionIndex = optionDetails.findIndex((option) => /BITONTO\s*-\s*BA/i.test(option.text));
-  if (birthOptionIndex < 0) throw new Error("Opzione anagrafica BITONTO - BA non trovata");
-  await birthOptions.nth(birthOptionIndex).click({ force: true });
   const birthSelection = {
     value: await birthInput.inputValue(),
     readonly: await birthInput.getAttribute("readonly") !== null,
     hasSelectionClass: await birthComponent.locator(".slds-combobox_container.slds-has-selection").count() === 1,
     optionCountAfterClick: await birthOptions.count(),
   };
-  process.stdout.write(JSON.stringify({ route: new URL(page.url()).pathname, labels: [...new Set(labels)].sort(), controls, saveButtons: await save.count(), birthOptions: optionDetails, birthSelection }));
+  process.stdout.write(JSON.stringify({ route: new URL(page.url()).pathname, labels: [...new Set(labels)].sort(), controls, saveButtons: await save.count(), expectedBirthPlace: birthPlace, expectedBirthProvince: birthProvince, birthSelection }));
 } finally {
   const cancel = page.getByRole("button", { name: "Annulla", exact: true }).filter({ visible: true });
   if (await cancel.count() === 1) await cancel.click().catch(() => undefined);

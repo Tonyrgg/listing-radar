@@ -1,4 +1,4 @@
-import type { Locator, Page, Request } from "playwright";
+import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
 import { canonicalTaxCode, sameAddress, sameCadastralIdentity } from "./identity.js";
@@ -107,11 +107,31 @@ export function chooseLookupRecordCandidate(
 ): LookupRecordCandidate | null {
   const place = normalized(expected);
   const provinceToken = normalized(province);
-  const matchingPlace = candidates.filter((candidate) => candidate.recordId && normalized(candidate.text).includes(place));
-  const matchingProvince = provinceToken
-    ? matchingPlace.filter((candidate) => normalized(candidate.text).split(/[^A-Z0-9]+/).includes(provinceToken))
-    : matchingPlace;
-  return matchingProvince.length === 1 ? matchingProvince[0]! : null;
+  const matches = candidates.filter((candidate) => {
+    if (!candidate.recordId) return false;
+    let candidateText = normalized(candidate.text);
+    if (provinceToken) {
+      const provincePattern = provinceToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = candidateText.match(new RegExp(`(?:^|[^A-Z0-9])${provincePattern}$`));
+      if (!match) return false;
+      candidateText = candidateText.slice(0, match.index).trim();
+    } else {
+      // Property plans can omit the province while the CRM option still
+      // appends it. Strip only a distinct final two-letter province token.
+      const displayedProvince = candidateText.match(/(?:^|[^A-Z0-9])[A-Z]{2}$/);
+      if (displayedProvince) candidateText = candidateText.slice(0, displayedProvince.index).trim();
+    }
+    const compactCandidate = candidateText.replace(/[^A-Z0-9]/g, "");
+    const compactPlace = place.replace(/[^A-Z0-9]/g, "");
+    /*
+     * Lightning often repeats the name in the option's two visual levels
+     * (`TORINOTORINO - TO` or `TORINO TORINO - TO`). Match only the exact
+     * place, optionally repeated, never a substring such as CAMAGNA DI TORINO.
+     */
+    return compactCandidate === compactPlace
+      || compactCandidate === `${compactPlace}${compactPlace}`;
+  });
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 /** A submitted relationship is not real until the property card exposes it. */
@@ -166,7 +186,26 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
    * può trasformare una vecchia lettura in un'istruzione di scrittura. */
   private readonly personSearchCache = new Map<string, CrmPersonSnapshot[]>();
 
-  constructor(private readonly page: Page, private readonly dryRun = false) {}
+  constructor(
+    private readonly page: Page,
+    private readonly dryRun = false,
+    private readonly options: { isInterruptionRequested?: () => boolean } = {},
+  ) {}
+
+  private throwIfInterruptionRequested(): void {
+    if (this.options.isInterruptionRequested?.()) {
+      throw new ImportV2Error("Import V2 messo in pausa dall'operatore", "operator_pause", {
+        global: true,
+        details: { pauseRequested: true },
+      });
+    }
+  }
+
+  private async pauseAwareWait(milliseconds: number, interruptible = true): Promise<void> {
+    if (interruptible) this.throwIfInterruptionRequested();
+    await this.page.waitForTimeout(milliseconds);
+    if (interruptible) this.throwIfInterruptionRequested();
+  }
 
   async assertSession(): Promise<void> {
     const url = this.page.url();
@@ -182,6 +221,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async action<T>(label: string, operation: () => Promise<T>): Promise<T> {
     try {
+      this.throwIfInterruptionRequested();
       await this.assertSession();
       return await operation();
     } catch (error) {
@@ -203,7 +243,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   private async one(locator: Locator, label: string, timeout = 15_000): Promise<Locator> {
-    await locator.first().waitFor({ state: "visible", timeout });
+    const deadline = Date.now() + timeout;
+    while (!(await locator.first().isVisible().catch(() => false))) {
+      if (Date.now() >= deadline) {
+        throw new ImportV2Error(`${label} non disponibile entro ${timeout} ms`, "transient_portal", { retryable: true });
+      }
+      await this.pauseAwareWait(160);
+    }
     const count = await locator.count();
     if (count !== 1) {
       throw new ImportV2Error(`${label} non univoco (${count})`, "transient_portal", { retryable: true });
@@ -251,21 +297,31 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async readCurrentPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
     await this.openPerson(personId);
-    let taxCode = "";
-    for (let check = 0; check < 50; check += 1) {
-      taxCode = await this.detailValue("Codice Fiscale");
-      if (taxCode && (!expectedTaxCode || canonicalTaxCode(taxCode) === canonicalTaxCode(expectedTaxCode))) break;
-      await this.page.waitForTimeout(200);
+    let core: [string, string, string, string, string, string, string, string] = ["", "", "", "", "", "", "", ""];
+    let signature = "";
+    let stable = 0;
+    for (let check = 0; check < 75 && stable < 3; check += 1) {
+      core = await Promise.all([
+        this.detailValue("Codice Fiscale"),
+        this.detailValue("Nome"),
+        this.detailValue("Cognome"),
+        this.detailValue("Nome completo"),
+        this.detailValue("Nome cliente"),
+        this.detailValue("Data Di Nascita"),
+        this.detailValue("Luogo Di Nascita"),
+        this.detailValue("Provincia Di Nascita"),
+      ]) as typeof core;
+      const [currentTaxCode, currentFirstName, currentLastName, currentFullName, currentClientName] = core;
+      const ready = Boolean(currentTaxCode)
+        && (!expectedTaxCode || canonicalTaxCode(currentTaxCode) === canonicalTaxCode(expectedTaxCode))
+        && Boolean((currentFirstName && currentLastName) || currentFullName || currentClientName)
+        && !(await this.searchIsBusy());
+      const currentSignature = JSON.stringify(core.map(normalized));
+      stable = ready && currentSignature === signature ? stable + 1 : 0;
+      signature = currentSignature;
+      if (stable < 3) await this.pauseAwareWait(200);
     }
-    const [firstName, lastName, fullNameField, clientNameField, birthDate, birthPlaceRaw, birthProvinceRaw] = await Promise.all([
-      this.detailValue("Nome"),
-      this.detailValue("Cognome"),
-      this.detailValue("Nome completo"),
-      this.detailValue("Nome cliente"),
-      this.detailValue("Data Di Nascita"),
-      this.detailValue("Luogo Di Nascita"),
-      this.detailValue("Provincia Di Nascita"),
-    ]);
+    const [taxCode, firstName, lastName, fullNameField, clientNameField, birthDate, birthPlaceRaw, birthProvinceRaw] = core;
     const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"];
     const emailLabels = ["Email", "Email Secondaria"];
     const phones = (await Promise.all(phoneLabels.map((label) => this.detailValue(label)))).filter(Boolean);
@@ -286,6 +342,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     };
   }
 
+  async readPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
+    return this.action("Rilettura nominativo verificato", () => this.readCurrentPerson(personId, expectedTaxCode));
+  }
+
   async searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]> {
     return this.action("Ricerca nominativo per codice fiscale", async () => {
       const expected = canonicalTaxCode(taxCode);
@@ -297,15 +357,39 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       try {
         await this.navigate(ACCOUNT_LIST);
         const search = await this.one(this.page.locator('input[title="Search..."]').filter({ visible: true }), "Barra di ricerca nominativi");
-        await search.fill(expected);
-        if (canonicalTaxCode(await search.inputValue()) !== expected) {
-          throw new ImportV2Error("Il CF non è rimasto nella barra di ricerca", "global_portal", { global: true });
+        await search.fill("");
+        // The Lightning global-search component does not reliably update its
+        // internal query from Playwright's atomic fill event. Real key events
+        // are required, and its debounced lookup must settle before Enter.
+        const typingRequests = this.watchSearchRequests();
+        let typingStable = 0;
+        try {
+          await search.pressSequentially(expected, { delay: 55 });
+          for (let wait = 0; wait < 60 && typingStable < 3; wait += 1) {
+            await this.assertSession();
+            await this.assertSearchHealthy(typingRequests.failed());
+            const ready = canonicalTaxCode(await search.inputValue()) === expected
+              && !typingRequests.pending()
+              && !(await this.searchIsBusy());
+            typingStable = ready ? typingStable + 1 : 0;
+            if (typingStable < 3) await this.pauseAwareWait(200);
+          }
+        } finally {
+          typingRequests.stop();
         }
-        // Account-list requests can be aborted by the search navigation.
-        // Observe only requests started with the submitted search.
+        if (typingStable < 3) {
+          throw new ImportV2Error("Il CF non è rimasto stabile nella barra di ricerca", "global_portal", { global: true });
+        }
+        // Type-ahead requests have settled. Observe only requests started by
+        // the submitted search so navigation does not turn an abort into an
+        // apparent portal failure.
         requests = this.watchSearchRequests();
         await search.press("Enter");
         await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
+        const submittedTerm = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "").trim();
+        if (canonicalTaxCode(submittedTerm) !== expected) {
+          throw new ImportV2Error("La ricerca CF è partita senza il codice fiscale confermato. Import in pausa senza creare duplicati.", "global_portal", { global: true });
+        }
         const links = this.page.locator('a[data-refid="recordId"][data-recordid][href*="/s/account/"]').filter({ visible: true });
         let unique: Array<{ id: string; href: string }> = [];
         let signature = "";
@@ -332,7 +416,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const currentSignature = busy ? "loading" : unique.length ? JSON.stringify(unique.map((record) => record.id).sort()) : confirmedEmpty ? "empty" : "loading";
           stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
           signature = currentSignature;
-          if (stable < 3) await this.page.waitForTimeout(200);
+          if (stable < 3) await this.pauseAwareWait(200);
         }
         if (stable < 3 || (!unique.length && !confirmedEmpty)) {
           throw new ImportV2Error("La ricerca CF non ha confermato né un nominativo né l'assenza di risultati. Import in pausa sulla ricerca corrente.", "global_portal", { global: true });
@@ -366,7 +450,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (["xhr", "fetch"].includes(request.resourceType()) && new URL(request.url()).origin === origin) pending.add(request);
     };
     const finished = (request: Request) => { pending.delete(request); };
-    const failure = (request: Request) => { if (pending.has(request)) failed = true; finished(request); };
+    const failure = (request: Request) => {
+      const reason = request.failure()?.errorText ?? "";
+      // Lightning cancels superseded type-ahead calls and in-flight reads
+      // during navigation. Those aborts are expected; a real network failure
+      // remains fatal and the missing result is still caught by the stable
+      // evidence checks below.
+      if (pending.has(request) && !/ERR_ABORTED|NS_BINDING_ABORTED|ABORTED_BY_CLIENT/i.test(reason)) failed = true;
+      finished(request);
+    };
     const response = (response: import("playwright").Response) => {
       if (pending.has(response.request()) && response.status() >= 400) failed = true;
     };
@@ -394,6 +486,40 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const alerts = await this.page.locator('[role="alert"]:visible, .slds-notify_toast.slds-theme_error:visible').allTextContents();
     if (requestFailed || alerts.some(text => /errore|error|riprova|impossibile|non disponibile/i.test(text))) {
       throw new ImportV2Error("Tecnocloud non ha completato la ricerca: import in pausa senza creare duplicati o saltare nominativi.", "global_portal", { global: true });
+    }
+  }
+
+  private async waitForCloudStable(
+    requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]>,
+    label: string,
+    maximumReads = 80,
+  ): Promise<void> {
+    let stable = 0;
+    for (let read = 0; read < maximumReads && stable < 4; read += 1) {
+      await this.assertSession();
+      if (requests.failed()) {
+        throw new ImportV2Error(`${label}: una richiesta Cloud non è stata completata`, "global_portal", { global: true });
+      }
+      const settled = !requests.pending() && !(await this.searchIsBusy());
+      stable = settled ? stable + 1 : 0;
+      if (stable < 4) await this.pauseAwareWait(250, false);
+    }
+    if (stable < 4) {
+      throw new ImportV2Error(`${label}: Tecnocloud non ha concluso le richieste Cloud`, "global_portal", { global: true });
+    }
+  }
+
+  private async waitForLookupEditable(component: Locator, input: Locator, label: string): Promise<void> {
+    let stable = 0;
+    for (let check = 0; check < 50 && stable < 2; check += 1) {
+      const editable = await input.getAttribute("readonly") === null
+        && await component.locator(".slds-combobox_container.slds-has-selection").count() === 0
+        && !(await this.searchIsBusy());
+      stable = editable ? stable + 1 : 0;
+      if (stable < 2) await this.pauseAwareWait(160);
+    }
+    if (stable < 2) {
+      throw new ImportV2Error(`${label}: il lookup non è tornato modificabile`, "transient_portal", { retryable: true });
     }
   }
 
@@ -448,41 +574,117 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (await input.getAttribute("readonly") !== null) {
       const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), removeLabel);
       await remove.click();
-      await input.waitFor({ state: "visible", timeout: 5_000 });
+      await this.waitForLookupEditable(component, input, label);
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await input.fill("");
-      await input.pressSequentially(value, { delay: 55 });
-      const options = component.locator('[role="option"]').filter({ visible: true });
-      let selected: LookupRecordCandidate | null = null;
-      let previousSignature = "";
-      let stableReads = 0;
-      for (let wait = 0; wait < 50 && stableReads < 2; wait += 1) {
-        await this.page.waitForTimeout(200);
-        const candidates = await this.lookupRecordCandidates(options);
-        const candidate = chooseLookupRecordCandidate(candidates, value, province);
-        const signature = JSON.stringify(candidates.map((item) => [item.recordId, normalized(item.text)]));
-        if (candidate && signature === previousSignature) stableReads += 1;
-        else stableReads = 0;
-        previousSignature = signature;
-        selected = candidate;
-      }
-      if (!selected || stableReads < 2) continue;
+      const requests = this.watchSearchRequests();
+      try {
+        await input.fill("");
+        await input.pressSequentially(value, { delay: 55 });
+        const options = component.locator('[role="option"]').filter({ visible: true });
+        let selected: LookupRecordCandidate | null = null;
+        let previousSignature = "";
+        let stableReads = 0;
+        for (let wait = 0; wait < 50 && stableReads < 2; wait += 1) {
+          await this.pauseAwareWait(200);
+          const candidates = await this.lookupRecordCandidates(options);
+          const candidate = chooseLookupRecordCandidate(candidates, value, province);
+          const signature = JSON.stringify(candidates.map((item) => [item.recordId, normalized(item.text)]));
+          const busy = requests.pending() || await this.searchIsBusy();
+          if (candidate && !busy && signature === previousSignature) stableReads += 1;
+          else stableReads = 0;
+          previousSignature = signature;
+          selected = candidate;
+        }
+        await this.assertSearchHealthy(requests.failed());
+        if (!selected || stableReads < 2) continue;
 
-      const freshCandidates = await this.lookupRecordCandidates(options);
-      const fresh = chooseLookupRecordCandidate(freshCandidates, value, province);
-      if (!fresh || fresh.recordId !== selected.recordId) continue;
-      await options.nth(fresh.index).click();
-      for (let check = 0; check < 50; check += 1) {
-        if (await committed()) return;
-        await this.page.waitForTimeout(160);
+        const freshCandidates = await this.lookupRecordCandidates(options);
+        const fresh = chooseLookupRecordCandidate(freshCandidates, value, province);
+        if (!fresh || fresh.recordId !== selected.recordId) continue;
+        await options.nth(fresh.index).click();
+        let stableCommitReads = 0;
+        for (let check = 0; check < 50 && stableCommitReads < 2; check += 1) {
+          const selectionCommitted = await committed();
+          const busy = requests.pending() || await this.searchIsBusy();
+          stableCommitReads = selectionCommitted && !busy ? stableCommitReads + 1 : 0;
+          if (stableCommitReads < 2) await this.pauseAwareWait(160);
+        }
+        await this.assertSearchHealthy(requests.failed());
+        if (stableCommitReads >= 2) return;
+      } finally {
+        requests.stop();
       }
     }
     throw new ImportV2Error(`${label} digitato ma il record del menu non è stato selezionato`, "transient_portal", {
       retryable: true,
       details: { expectedPlace: value, expectedProvince: province },
     });
+  }
+
+  private async fillPersonLookup(
+    component: Locator,
+    input: Locator,
+    personId: string,
+    searchValue: string,
+    dependentFields: Locator,
+    minimumDependentFields: number,
+    label: string,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await input.getAttribute("readonly") !== null) {
+        const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), `Rimuovi ${label}`);
+        await remove.click();
+        await this.waitForLookupEditable(component, input, label);
+      }
+
+      const requests = this.watchSearchRequests();
+      try {
+        await input.fill("");
+        await input.pressSequentially(searchValue, { delay: 75 });
+        const options = component.locator('[role="option"]').filter({ visible: true });
+        let optionIndex: number | null = null;
+        let signature = "";
+        let stableOptions = 0;
+        for (let wait = 0; wait < 50 && stableOptions < 2; wait += 1) {
+          await this.pauseAwareWait(200);
+          const candidates = await this.lookupRecordCandidates(options);
+          const indexes = candidates.flatMap((candidate) => candidate.recordId === personId ? [candidate.index] : []);
+          const currentSignature = JSON.stringify(candidates.map((candidate) => [candidate.recordId, normalized(candidate.text)]));
+          const ready = indexes.length === 1 && !requests.pending() && !(await this.searchIsBusy());
+          stableOptions = ready && currentSignature === signature ? stableOptions + 1 : 0;
+          signature = currentSignature;
+          optionIndex = indexes.length === 1 ? indexes[0]! : null;
+        }
+        await this.assertSearchHealthy(requests.failed());
+        if (optionIndex == null || stableOptions < 2) continue;
+
+        const candidates = await this.lookupRecordCandidates(options);
+        const freshIndexes = candidates.flatMap((candidate) => candidate.recordId === personId ? [candidate.index] : []);
+        if (freshIndexes.length !== 1 || freshIndexes[0] !== optionIndex) continue;
+        // Click the option itself by the stable candidate index. In the live
+        // component the Salesforce id can live on the option or on a nested
+        // node, so a :has(...) locator is not an identity-safe target.
+        await options.nth(optionIndex).click({ force: true });
+
+        let stableCommit = 0;
+        for (let check = 0; check < 60 && stableCommit < 2; check += 1) {
+          const committed = await input.getAttribute("readonly") !== null
+            && await component.locator(".slds-combobox_container.slds-has-selection").count() === 1
+            && await dependentFields.count() >= minimumDependentFields
+            && !requests.pending()
+            && !(await this.searchIsBusy());
+          stableCommit = committed ? stableCommit + 1 : 0;
+          if (stableCommit < 2) await this.pauseAwareWait(160);
+        }
+        await this.assertSearchHealthy(requests.failed());
+        if (stableCommit >= 2) return;
+      } finally {
+        requests.stop();
+      }
+    }
+    throw new ImportV2Error(`${label}: il record CRM esatto è visibile ma la selezione non viene confermata`, "transient_portal", { retryable: true });
   }
 
   private async fillBirthPlace(value: string, province: string | null): Promise<void> {
@@ -584,7 +786,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       // a reconciliation the CRM already confirms as complete.
       if (await ready.count() && !(await blocked.count())) return this.saveReadyMerge(dialog);
       if (wait === 75) throw new ImportV2Error("Campi o conferma della riconciliazione non disponibili", "verification_failed", { retryable: true });
-      await this.page.waitForTimeout(200);
+      await this.pauseAwareWait(200);
     }
     let signature = "";
     let stable = 0;
@@ -595,7 +797,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       stable = current.length > 0 && currentSignature === signature ? stable + 1 : 0;
       signature = currentSignature;
       names = current;
-      if (stable < 3) await this.page.waitForTimeout(200);
+      if (stable < 3) await this.pauseAwareWait(200);
     }
     const rightNames = await rightOptions.evaluateAll((elements) => elements.map((element) => element.getAttribute("name") ?? ""));
     if (stable < 3 || !names.length || names.some((name) => !name) || new Set(names).size !== names.length
@@ -631,12 +833,18 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       save = await scopedSave.count() === 1 ? scopedSave : await globalSave.count() === 1 ? globalSave : null;
       if (await ready.count() && !(await blocked.count()) && save && await save.isEnabled()) break;
       if (wait === 74) throw new ImportV2Error("Tecnocloud non ha autorizzato il salvataggio della riconciliazione", "verification_failed", { retryable: true });
-      await this.page.waitForTimeout(200);
+      await this.pauseAwareWait(200);
     }
     if (!save) throw new ImportV2Error("Salva della riconciliazione non univoco", "verification_failed");
-    await save.click();
-    await dialog.waitFor({ state: "hidden", timeout: 20_000 });
-    return this.waitForPersonRecord();
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      await dialog.waitFor({ state: "hidden", timeout: 20_000 });
+      await this.waitForCloudStable(saveRequests, "Salvataggio riconciliazione nominativo");
+      return this.waitForPersonRecord();
+    } finally {
+      saveRequests.stop();
+    }
   }
 
   private async savePersonForm(): Promise<{ personId: string; merged: boolean }> {
@@ -667,7 +875,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           settledSince ||= Date.now();
           if (Date.now() - settledSince >= 1_500) { result = "saved"; break; }
         } else settledSince = 0;
-        await this.page.waitForTimeout(200);
+        await this.pauseAwareWait(200, false);
       }
       if (!result) throw new ImportV2Error("Esito del salvataggio nominativo non confermato", "verification_failed", { retryable: true });
     } catch (error) {
@@ -874,14 +1082,37 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await this.navigate(PROPERTY_SEARCH);
         const view = this.page.locator('input[placeholder="--- Seleziona ---"]').filter({ visible: true }).first();
         await view.waitFor({ state: "visible", timeout: 20_000 });
-        if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
-          await view.click({ force: true });
+        // The input is visible before Lightning hydrates its selected value.
+        // Clicking in that short window is ignored and no options ever open.
+        let viewStable = 0;
+        let viewValue = "";
+        for (let wait = 0; wait < 60 && viewStable < 3; wait += 1) {
+          const current = await view.inputValue();
+          const ready = Boolean(current.trim()) && !(await this.searchIsBusy());
+          viewStable = ready && current === viewValue ? viewStable + 1 : 0;
+          viewValue = current;
+          if (viewStable < 3) await this.pauseAwareWait(200);
+        }
+        if (viewStable < 3) {
+          throw new ImportV2Error("La vista immobili non ha terminato il caricamento", "transient_portal", { retryable: true });
+        }
+        if (!normalized(viewValue).includes("IMMOBILI RESIDENZIALI")) {
           const options = this.page.locator('[role="option"]').filter({ visible: true });
           const residential = options.filter({ hasText: /^\s*•?\s*Immobili residenziali\s*$/i });
+          let selectedView: Locator | null = null;
+          for (let attempt = 0; attempt < 3 && !selectedView; attempt += 1) {
+            await view.click({ force: true });
+            selectedView = await residential.first().waitFor({ state: "visible", timeout: 5_000 })
+              .then(() => residential.first())
+              .catch(() => null);
+          }
+          if (!selectedView) {
+            throw new ImportV2Error("Vista Immobili residenziali non disponibile", "transient_portal", { retryable: true });
+          }
           // The currently selected option can appear before the requested one.
-          await (await this.one(residential, "Vista Immobili residenziali", 8_000)).click({ force: true });
+          await selectedView.click({ force: true });
           for (let wait = 0; wait < 40 && !normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI"); wait += 1) {
-            await this.page.waitForTimeout(200);
+            await this.pauseAwareWait(200);
           }
           if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
             throw new ImportV2Error("Vista Immobili residenziali non confermata", "transient_portal", { retryable: true });
@@ -910,7 +1141,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
           await open.click({ force: true });
           // Give the same opening time to finish before clicking a toggle again.
-          for (let wait = 0; wait < 15 && !(await drawerIsOpen()); wait += 1) await this.page.waitForTimeout(200);
+          for (let wait = 0; wait < 15 && !(await drawerIsOpen()); wait += 1) await this.pauseAwareWait(200);
         }
         if (!(await drawerIsOpen())) {
           throw new ImportV2Error("Il pannello dei filtri immobili non si è aperto", "transient_portal", { retryable: true });
@@ -942,7 +1173,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       };
       const collectResults = async (requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]>): Promise<string[]> => {
         const ids = this.page.locator('lightning-input[c-queryviewer_queryviewer][data-id]').filter({ visible: true });
-        await this.page.waitForTimeout(1_250);
+        await this.pauseAwareWait(1_250);
         let prior = "";
         let stable = 0;
         for (let attempt = 0; attempt < 60 && stable < 4; attempt += 1) {
@@ -954,7 +1185,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const signature = busy ? "loading" : records || (empty ? "empty" : "loading");
           stable = signature !== "loading" && signature === prior ? stable + 1 : 0;
           prior = signature;
-          if (stable < 4) await this.page.waitForTimeout(250);
+          if (stable < 4) await this.pauseAwareWait(250);
         }
         if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: import in pausa prima di creare o aggiornare schede.", "global_portal", { global: true });
         return [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
@@ -1011,7 +1242,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       for (let wait = 0; wait < 12 && index < 0; wait += 1) {
         lastTexts = await options.allTextContents();
         index = lastTexts.findIndex((text) => normalized(text) === normalized(expected));
-        if (index < 0) await this.page.waitForTimeout(150);
+        if (index < 0) await this.pauseAwareWait(150);
       }
       if (index < 0) await input.press("Escape").catch(() => undefined);
     }
@@ -1024,7 +1255,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
     await expectedOptions.click({ force: true });
     for (let attempt = 0; attempt < 20 && normalized(await input.inputValue()) !== normalized(expected); attempt += 1) {
-      await this.page.waitForTimeout(150);
+      await this.pauseAwareWait(150);
     }
     if (normalized(await input.inputValue()) !== normalized(expected)) {
       throw new ImportV2Error(`${label} non confermato`, "transient_portal", { retryable: true });
@@ -1113,8 +1344,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.openInlineGroup(expected[mismatch.findIndex(Boolean)]![0]);
     for (const [label, value] of expected) await this.fillVisibleInput(label, value, true);
     const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva catasto");
-    await save.click();
-    await save.waitFor({ state: "hidden", timeout: 15_000 });
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      await save.waitFor({ state: "hidden", timeout: 15_000 });
+      await this.waitForCloudStable(saveRequests, "Salvataggio dati catastali");
+    } finally {
+      saveRequests.stop();
+    }
     await this.assertSession();
   }
 
@@ -1130,7 +1367,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (recordIdFromUrl(this.page.url(), "immobile")) return;
       structuralStep = await streetCurrent.count() > 0;
       if (structuralStep || await dialog.filter({ hasText: /posizion|Google|Stesso valore/i }).count()) break;
-      await this.page.waitForTimeout(250);
+      await this.pauseAwareWait(250);
     }
     if (!structuralStep && !(await dialog.filter({ hasText: /posizion|Google|Stesso valore/i }).count())) {
       throw new ImportV2Error("Il passaggio di posizionamento immobile non è comparso", "transient_portal", { retryable: true });
@@ -1192,7 +1429,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         for (let attempt = 0; attempt < 20; attempt += 1) {
           localityValue = (await trigger.inputValue().catch(() => trigger.innerText().catch(() => ""))).trim();
           if (localityValue && normalized(localityValue).includes(normalized(selected))) break;
-          await this.page.waitForTimeout(150);
+          await this.pauseAwareWait(150);
         }
       }
     }
@@ -1202,8 +1439,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const save = this.page.locator("button").filter({ hasText: /^\s*Salva\s*$/, visible: true });
     await save.first().waitFor({ state: "visible", timeout: 12_000 });
     if (await save.count() !== 1) throw new ImportV2Error("Posizionamento immobile non salvabile", "transient_portal", { retryable: true });
-    await save.click();
-    await dialog.waitFor({ state: "hidden", timeout: 12_000 });
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      await dialog.waitFor({ state: "hidden", timeout: 12_000 });
+      await this.waitForCloudStable(saveRequests, "Salvataggio posizionamento immobile");
+    } finally {
+      saveRequests.stop();
+    }
   }
 
   async createProperty(plan: ImportV2Plan, primaryPersonId: string): Promise<CrmPropertySnapshot> {
@@ -1257,8 +1500,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           await this.page.locator('c-picklist:has(label:text-is("Tipologia Immobile"))').filter({ visible: true }).waitFor({ state: "visible", timeout: 10_000 });
           await this.fillPropertyCore(plan);
           const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva dati immobile");
-          await save.click();
-          await save.waitFor({ state: "hidden", timeout: 15_000 });
+          const saveRequests = this.watchSearchRequests();
+          try {
+            await save.click();
+            await save.waitFor({ state: "hidden", timeout: 15_000 });
+            await this.waitForCloudStable(saveRequests, "Salvataggio dati immobile");
+          } finally {
+            saveRequests.stop();
+          }
           await this.finishPropertyPositioning(plan);
         }
       }
@@ -1333,24 +1582,42 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (exact.length !== 1) {
       throw new ImportV2Error("Proprietario principale non univoco", "verification_failed", { retryable: true });
     }
-    const row = exact[0]!.locator("xpath=../..");
-    const link = row.locator('a[href*="/s/account/"]').filter({ visible: true });
-    if (await link.count() !== 1) {
+    // The link is populated independently from its label. Find it in the
+    // nearest ancestor that owns an account link and require the same unique
+    // CRM id over multiple settled reads before following it.
+    const links = exact[0]!.locator('xpath=ancestor::*[.//a[contains(@href, "/s/account/")]][1]//a[contains(@href, "/s/account/")]').filter({ visible: true });
+    let selected: { personId: string; href: string } | null = null;
+    let signature = "";
+    let stable = 0;
+    for (let check = 0; check < 75 && stable < 3; check += 1) {
+      const records = await links.evaluateAll((nodes) => nodes.flatMap((node) => {
+        const href = node.getAttribute("href") ?? "";
+        const personId = node.getAttribute("data-recordid")
+          ?? node.getAttribute("data-id")
+          ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1]
+          ?? "";
+        return personId ? [{ personId, href }] : [];
+      }));
+      const unique = [...new Map(records.map((record) => [record.personId, record])).values()];
+      const currentSignature = JSON.stringify(unique.map((record) => record.personId).sort());
+      const ready = unique.length === 1 && !(await this.searchIsBusy());
+      stable = ready && currentSignature === signature ? stable + 1 : 0;
+      signature = currentSignature;
+      selected = unique.length === 1 ? unique[0]! : null;
+      if (stable < 3) await this.pauseAwareWait(200);
+    }
+    if (!selected || stable < 3) {
       throw new ImportV2Error("Scheda del proprietario principale non verificabile", "verification_failed", { retryable: true });
     }
-    const href = await link.getAttribute("href") ?? "";
-    const personId = await link.getAttribute("data-recordid")
-      ?? await link.getAttribute("data-id")
-      ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1]
-      ?? "";
-    if (!personId) {
-      throw new ImportV2Error("Identificativo del proprietario principale assente", "verification_failed", { retryable: true });
+    let sharePercentage: number | null = null;
+    for (let check = 0; check < 50 && sharePercentage == null; check += 1) {
+      sharePercentage = decimalValue(await this.detailValue("Quota Proprietario"));
+      if (sharePercentage == null) await this.pauseAwareWait(200);
     }
-    const sharePercentage = decimalValue(await this.detailValue("Quota Proprietario"));
-    const person = await this.readCurrentPerson(personId);
+    const person = await this.readCurrentPerson(selected.personId);
     return {
-      linkId: `primary-${personId}`,
-      personId,
+      linkId: `primary-${selected.personId}`,
+      personId: selected.personId,
       taxCode: person.taxCode || null,
       sharePercentage,
       rightType: null,
@@ -1387,39 +1654,21 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await component.waitFor({ state: "visible", timeout: 10_000 });
     const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Proprietario principale");
     if (current?.personId !== desired.personId) {
-      if (await lookup.getAttribute("readonly") !== null) {
-        const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), "Rimuovi proprietario principale");
-        await remove.click();
-      }
-      await lookup.fill("");
-      await lookup.pressSequentially(desired.fullName, { delay: 75 });
-      const options = component.locator('[role="option"]').filter({ visible: true });
-      await options.first().waitFor({ state: "visible", timeout: 8_000 });
-      const exact = options.filter({ has: this.page.locator(`[data-item-id="${desired.personId}"], [data-recordid="${desired.personId}"], [data-id="${desired.personId}"]`) });
-      if (await exact.count() !== 1) {
-        throw new ImportV2Error("Proprietario principale non selezionabile tramite identificativo CRM", "verification_failed", { retryable: true });
-      }
-      await exact.click({ force: true });
-      const committed = lookupCommitConfirmed({
-        value: await lookup.inputValue(),
-        expected: desired.fullName,
-        visibleOptionCount: await options.count(),
-        optionMarkedSelected: false,
-        readonly: await lookup.getAttribute("readonly") !== null,
-        hasSelectionClass: await component.locator(".slds-combobox_container.slds-has-selection").count() === 1,
-        dependentFieldsVisible: true,
-      });
-      if (!committed) {
-        throw new ImportV2Error("Proprietario principale digitato ma non selezionato", "transient_portal", { retryable: true });
-      }
+      await this.fillPersonLookup(component, lookup, desired.personId, desired.fullName, component, 1, "Proprietario principale");
     }
     const quota = await this.one(this.page.getByLabel("Quota Proprietario", { exact: true }).filter({ visible: true }), "Quota proprietario");
     await quota.fill(formatDecimal(desired.sharePercentage));
     const internal = this.page.getByLabel("Interno", { exact: true }).filter({ visible: true });
     if (await internal.count() === 1 && !(await internal.inputValue()).trim()) await internal.fill(".");
     const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva proprietario principale");
-    await save.click();
-    await save.waitFor({ state: "hidden", timeout: 15_000 });
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      await save.waitFor({ state: "hidden", timeout: 15_000 });
+      await this.waitForCloudStable(saveRequests, "Salvataggio proprietario principale");
+    } finally {
+      saveRequests.stop();
+    }
     const verified = await this.readPrimaryOwnership(propertyId);
     if (!verified || verified.personId !== desired.personId || !this.sameShare(verified.sharePercentage, desired.sharePercentage)) {
       throw new ImportV2Error("Proprietario principale o quota non confermati dalla scheda immobile", "verification_failed", { retryable: true });
@@ -1459,59 +1708,23 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   private async deleteOwnership(propertyId: string, personId: string): Promise<void> {
     await this.relationshipAction(propertyId, personId, "Elimina");
     const dialog = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /elimin/i }), "Conferma eliminazione", 8_000);
-    await (await this.one(dialog.getByRole("button", { name: "Elimina", exact: true }).filter({ visible: true }), "Elimina soggetto")).click();
-    await dialog.waitFor({ state: "hidden", timeout: 12_000 });
+    const remove = await this.one(dialog.getByRole("button", { name: "Elimina", exact: true }).filter({ visible: true }), "Elimina soggetto");
+    const deleteRequests = this.watchSearchRequests();
+    try {
+      await remove.click();
+      await dialog.waitFor({ state: "hidden", timeout: 12_000 });
+      await this.waitForCloudStable(deleteRequests, "Eliminazione comproprietario");
+    } finally {
+      deleteRequests.stop();
+    }
   }
 
   private async fillOwnershipForm(dialog: Locator, desired: OwnershipWrite, selectPerson: boolean): Promise<void> {
     if (selectPerson) {
-      const lookup = await this.one(dialog.locator('c-lookup:has(label:text-is("Cliente")) input[placeholder="Cerca"]').filter({ visible: true }), "Cliente comproprietario");
-      let committed = false;
-      for (let attempt = 0; attempt < 3 && !committed; attempt += 1) {
-        if (await lookup.getAttribute("readonly") !== null) {
-          const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
-          committed = lookupCommitConfirmed({
-            value: await lookup.inputValue(), expected: desired.fullName,
-            visibleOptionCount: 0, optionMarkedSelected: false,
-            readonly: true,
-            hasSelectionClass: await dialog.locator('c-lookup:has(label:text-is("Cliente")) .slds-combobox_container.slds-has-selection').count() === 1,
-            dependentFieldsVisible: await dependent.count() >= 2,
-          });
-          if (committed) break;
-          const remove = dialog.locator('c-lookup:has(label:text-is("Cliente")) button[title="Remove selected option"]').filter({ visible: true });
-          if (await remove.count() === 1) await remove.click();
-        }
-        await lookup.fill("");
-        await lookup.pressSequentially(desired.fullName, { delay: 75 });
-        const options = dialog.locator('c-lookup:has(label:text-is("Cliente")) [role="option"]').filter({ visible: true });
-        await options.first().waitFor({ state: "visible", timeout: 7_000 });
-        let signature = "";
-        let stable = 0;
-        for (let wait = 0; wait < 12 && stable < 2; wait += 1) {
-          await this.page.waitForTimeout(200);
-          const current = JSON.stringify(await options.allTextContents());
-          stable = current === signature ? stable + 1 : 0;
-          signature = current;
-        }
-        const exact = options.filter({ has: this.page.locator(`[data-item-id="${desired.personId}"], [data-recordid="${desired.personId}"], [data-id="${desired.personId}"]`) });
-        if (await exact.count() !== 1) continue;
-        await exact.click({ force: true });
-        for (let check = 0; check < 25 && !committed; check += 1) {
-          const marked = dialog.locator('c-lookup:has(label:text-is("Cliente")) [role="option"][aria-selected="true"]').filter({ visible: true });
-          const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
-          committed = lookupCommitConfirmed({
-            value: await lookup.inputValue(), expected: desired.fullName,
-            visibleOptionCount: await options.count(), optionMarkedSelected: await marked.count() > 0,
-            readonly: await lookup.getAttribute("readonly") !== null,
-            hasSelectionClass: await dialog.locator('c-lookup:has(label:text-is("Cliente")) .slds-combobox_container.slds-has-selection').count() === 1,
-            dependentFieldsVisible: await dependent.count() >= 2,
-          });
-          if (!committed) await this.page.waitForTimeout(160);
-        }
-      }
-      if (!committed) {
-        throw new ImportV2Error("Il comproprietario è visibile ma il lookup non ne conferma la selezione", "transient_portal", { retryable: true });
-      }
+      const component = await this.one(dialog.locator('c-lookup:has(label:text-is("Cliente"))').filter({ visible: true }), "Lookup Cliente comproprietario");
+      const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Cliente comproprietario");
+      const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
+      await this.fillPersonLookup(component, lookup, desired.personId, desired.fullName, dependent, 2, "Cliente comproprietario");
     }
     const role = dialog.locator('c-picklist:has(label:text-is("Ruolo"))').filter({ visible: true });
     await this.pick(role, desired.role, "Ruolo");
@@ -1530,16 +1743,22 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const dialog = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetto correlato/i }), "Soggetto correlato", 15_000);
     await this.fillOwnershipForm(dialog, desired, true);
     const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva soggetto collegato");
-    await save.click();
-    const duplicate = dialog.getByText(/già.*proprietario|proprietario pri(?:n)?cipale/i).filter({ visible: true });
-    const outcome = await Promise.race([
-      dialog.waitFor({ state: "hidden", timeout: 15_000 }).then(() => "saved" as const),
-      duplicate.first().waitFor({ state: "visible", timeout: 15_000 }).then(() => "existing" as const),
-    ]);
-    if (outcome === "existing") {
-      const cancel = dialog.getByRole("button", { name: "Annulla", exact: true }).filter({ visible: true });
-      if (await cancel.count() === 1) await cancel.click();
-      await dialog.waitFor({ state: "hidden", timeout: 8_000 });
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      const duplicate = dialog.getByText(/già.*proprietario|proprietario pri(?:n)?cipale/i).filter({ visible: true });
+      const outcome = await Promise.race([
+        dialog.waitFor({ state: "hidden", timeout: 15_000 }).then(() => "saved" as const),
+        duplicate.first().waitFor({ state: "visible", timeout: 15_000 }).then(() => "existing" as const),
+      ]);
+      if (outcome === "existing") {
+        const cancel = dialog.getByRole("button", { name: "Annulla", exact: true }).filter({ visible: true });
+        if (await cancel.count() === 1) await cancel.click();
+        await dialog.waitFor({ state: "hidden", timeout: 8_000 });
+      }
+      await this.waitForCloudStable(saveRequests, "Salvataggio comproprietario");
+    } finally {
+      saveRequests.stop();
     }
   }
 
@@ -1548,8 +1767,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const dialog = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetto correlato/i }), "Modifica soggetto correlato", 10_000);
     await this.fillOwnershipForm(dialog, desired, false);
     const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva soggetto collegato");
-    await save.click();
-    await dialog.waitFor({ state: "hidden", timeout: 15_000 });
+    const saveRequests = this.watchSearchRequests();
+    try {
+      await save.click();
+      await dialog.waitFor({ state: "hidden", timeout: 15_000 });
+      await this.waitForCloudStable(saveRequests, "Aggiornamento comproprietario");
+    } finally {
+      saveRequests.stop();
+    }
   }
 
   private sameShare(left: number | null, right: number | null): boolean {
@@ -1606,7 +1831,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       let owners = await this.readOwnerships(propertyId);
       if (!ownershipSyncConfirmed(owners, desired)) {
-        await this.page.waitForTimeout(1_200);
+        await this.pauseAwareWait(1_200);
         await this.page.reload({ waitUntil: "domcontentloaded" });
         owners = await this.readOwnerships(propertyId);
       }
@@ -1638,6 +1863,38 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return this.one(this.page.locator("article:visible").filter({ hasText: /Attivit[aà] e appuntamenti/i }), "Attività e appuntamenti", 20_000);
   }
 
+  private async readActivityEvidence(propertyId: string, description: string): Promise<{ card: Locator; found: boolean }> {
+    const expected = normalized(description);
+    let responseMatched = false;
+    const responseTasks = new Set<Promise<void>>();
+    const inspect = (response: Response) => {
+      if (!["xhr", "fetch"].includes(response.request().resourceType())) return;
+      let task: Promise<void>;
+      task = response.text().then((body) => {
+        const decoded = body.replace(/\\u([0-9a-f]{4})/gi, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+        if (normalized(decoded).includes(expected)) responseMatched = true;
+      }).catch(() => undefined).finally(() => responseTasks.delete(task));
+      responseTasks.add(task);
+    };
+    this.page.on("response", inspect);
+    try {
+      // Always reload the record: completed activities can be absent from the
+      // visible card while still being present in Lightning's server payload.
+      await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      const card = await this.activityCard(propertyId);
+      let stable = 0;
+      for (let wait = 0; wait < 80 && stable < 4; wait += 1) {
+        const settled = responseTasks.size === 0 && !(await this.searchIsBusy());
+        stable = settled ? stable + 1 : 0;
+        if (stable < 4) await this.pauseAwareWait(250);
+      }
+      await Promise.all(responseTasks);
+      return { card, found: responseMatched || normalized(await card.innerText()).includes(expected) };
+    } finally {
+      this.page.off("response", inspect);
+    }
+  }
+
   private async waitForActivityFormToSettle(dialog: Locator): Promise<void> {
     const fields = [
       dialog.locator('c-input-field:has-text("Cliente") input').filter({ visible: true }),
@@ -1651,13 +1908,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     for (let attempt = 0; attempt < 40 && stable < 4; attempt += 1) {
       if ((await Promise.all(fields.map((field) => field.count()))).some((count) => count !== 1)) {
         stable = 0;
-        await this.page.waitForTimeout(250);
+        await this.pauseAwareWait(250);
         continue;
       }
       const signature = JSON.stringify(await Promise.all(fields.map((field) => field.inputValue())));
       stable = signature === prior ? stable + 1 : 0;
       prior = signature;
-      if (stable < 4) await this.page.waitForTimeout(250);
+      if (stable < 4) await this.pauseAwareWait(250);
     }
     if (stable < 4) {
       throw new ImportV2Error("Il modulo attività non si è stabilizzato", "transient_portal", { retryable: true });
@@ -1669,12 +1926,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (this.dryRun) return { activityId: null, outcome: "existing" };
     return this.action("Attività immobile", async () => {
       await this.page.bringToFront();
-      const card = await this.activityCard(propertyId);
-      const cardText = normalized(await card.innerText());
       const description = plan.source.activity.description?.trim() || "Inserire attività";
-      if (cardText.includes(normalized(description)) || this.submittedActivities.has(propertyId)) {
+      const before = await this.readActivityEvidence(propertyId, description);
+      if (before.found || this.submittedActivities.has(propertyId)) {
         return { activityId: null, outcome: "existing" };
       }
+      const card = before.card;
       const create = await this.one(card.getByRole("button", { name: "Nuovo", exact: true }).filter({ visible: true }), "Nuova attività");
       await create.click();
       const dialog = await this.one(this.page.locator('[role="dialog"]:visible'), "Attività", 20_000);
@@ -1683,13 +1940,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await descriptionField.fill(description);
       const related = await this.one(dialog.locator('c-input-field:has-text("Correlato a") input').filter({ visible: true }), "Correlato a");
       let relatedValue = (await related.inputValue()).trim();
-      for (let wait = 0; !relatedValue && wait < 10; wait += 1) { await this.page.waitForTimeout(250); relatedValue = (await related.inputValue()).trim(); }
+      for (let wait = 0; !relatedValue && wait < 10; wait += 1) { await this.pauseAwareWait(250); relatedValue = (await related.inputValue()).trim(); }
       if (!/^IM\s*-/i.test(relatedValue)) {
         throw new ImportV2Error("L’attività non è correlata all’immobile aperto", "transient_portal", { retryable: true });
       }
       const client = await this.one(dialog.locator('c-input-field:has-text("Cliente") input').filter({ visible: true }), "Cliente attività");
       let clientValue = (await client.inputValue()).trim();
-      for (let wait = 0; !clientValue && wait < 10; wait += 1) { await this.page.waitForTimeout(250); clientValue = (await client.inputValue()).trim(); }
+      for (let wait = 0; !clientValue && wait < 10; wait += 1) { await this.pauseAwareWait(250); clientValue = (await client.inputValue()).trim(); }
       if (!clientValue) throw new ImportV2Error("Cliente obbligatorio dell’attività non valorizzato", "transient_portal", { retryable: true });
       await this.pick(dialog.locator('c-input-field:has-text("Modalit"):has-text("Contatto")').filter({ visible: true }), plan.source.activity.contactMode, "Modalità contatto");
       await this.pick(dialog.locator('c-input-field:has-text("Stato")').filter({ visible: true }), plan.source.activity.status, "Stato attività");
@@ -1697,8 +1954,24 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         throw new ImportV2Error("Descrizione attività non confermata", "transient_portal", { retryable: true });
       }
       const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva attività");
-      await save.click();
-      await descriptionField.waitFor({ state: "hidden", timeout: 15_000 });
+      const saveRequests = this.watchSearchRequests();
+      try {
+        await save.click();
+        await descriptionField.waitFor({ state: "hidden", timeout: 15_000 });
+        let saveStable = 0;
+        for (let wait = 0; wait < 80 && saveStable < 4; wait += 1) {
+          await this.assertSession();
+          await this.assertSearchHealthy(saveRequests.failed());
+          const settled = !saveRequests.pending() && !(await this.searchIsBusy());
+          saveStable = settled ? saveStable + 1 : 0;
+          if (saveStable < 4) await this.pauseAwareWait(250, false);
+        }
+        if (saveStable < 4) {
+          throw new ImportV2Error("Il salvataggio dell’attività non ha terminato le richieste Cloud", "global_portal", { global: true });
+        }
+      } finally {
+        saveRequests.stop();
+      }
       const followUp = this.page.locator('[role="dialog"]:visible').filter({ hasText: /Vuoi pianificare un'altra attività\/appuntamento/i });
       if (await followUp.count()) {
         const cancel = followUp.getByRole("button", { name: "Annulla", exact: true }).filter({ visible: true });
@@ -1707,17 +1980,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           await followUp.waitFor({ state: "hidden", timeout: 10_000 });
         }
       }
-      // The original locator survives Lightning's card re-render. Reopening
-      // the same property here added a full navigation without strengthening
-      // the verification and could race the freshly rendered card.
-      const savedCard = card;
-      for (let wait = 0; wait < 20 && !normalized(await savedCard.innerText()).includes(normalized(description)); wait += 1) {
-        await this.page.waitForTimeout(250);
-      }
-      if (!normalized(await savedCard.innerText()).includes(normalized(description))) {
-        throw new ImportV2Error("L’attività salvata non è verificabile nella scheda immobile", "transient_portal", { retryable: true });
-      }
       this.submittedActivities.add(propertyId);
+      const after = await this.readActivityEvidence(propertyId, description);
+      if (!after.found) {
+        // The save was submitted, therefore a blind retry could duplicate it.
+        throw new ImportV2Error("L’attività salvata non è ancora verificabile nel Cloud. Import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
+      }
       return { activityId: null, outcome: "created" };
     });
   }

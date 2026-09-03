@@ -224,6 +224,7 @@ async function navigateReadOnly(page: Page, pathname: string): Promise<void> {
 
 async function runSyntheticListSearch(page: Page): Promise<void> {
   const candidates = page.locator('input[type="text"][role="combobox"]').filter({ visible: true });
+  await candidates.first().waitFor({ state: "visible", timeout: 15_000 });
   const count = await candidates.count();
   if (count !== 1) throw new Error(`Ricerca elenco non identificabile in modo univoco (${count} campi)`);
   const response = page.waitForResponse(

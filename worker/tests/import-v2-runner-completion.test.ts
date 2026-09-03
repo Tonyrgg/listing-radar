@@ -58,6 +58,30 @@ function quarantinedResult(): ImportV2BatchResult {
   };
 }
 
+function pausedByOperatorResult(): ImportV2BatchResult {
+  return {
+    completed: [],
+    quarantined: [],
+    paused: {
+      itemId: "item-1",
+      propertyId: "property-1",
+      crmPropertyId: null,
+      syncedPeople: [],
+      state: "paused",
+      stage: "people_resolved",
+      failure: {
+        message: "Import V2 messo in pausa dall'operatore",
+        kind: "operator_pause",
+        stage: "people_resolved",
+        retryable: false,
+        global: true,
+        details: { pauseRequested: true },
+        occurredAt: "2026-09-03T19:30:00.000Z",
+      },
+    },
+  };
+}
+
 describe("esito finale Import V2", () => {
   it("non dichiara riuscito un batch che ha accantonato l'immobile", () => {
     const result = quarantinedResult();
@@ -114,5 +138,22 @@ describe("esito finale Import V2", () => {
       expect.objectContaining({ processing_status: "quarantined" }),
     );
     expect(repository.updateJob).toHaveBeenCalledWith("job-1", { processed_properties: 0 });
+  });
+
+  it("propaga la pausa operatore al runner senza convertirla in errore portale", async () => {
+    coordinatorRunJob.mockResolvedValueOnce(pausedByOperatorResult());
+    const repository = {
+      client: {},
+      loadGraph: vi.fn().mockResolvedValue({ properties: [], people: [], ownerships: [] }),
+      updateContacts: vi.fn(), updatePropertyProcessing: vi.fn(), updatePersonProcessing: vi.fn(),
+      updateOwnership: vi.fn(), updateJob: vi.fn(),
+    };
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    Object.defineProperty(runner, "repository", { value: repository });
+
+    await expect((runner as unknown as { executeStep: Function }).executeStep(
+      "properties_processed",
+      { id: "job-1", mode: "automatic" }, {}, {}, {}, { findByTaxCode: vi.fn() },
+    )).rejects.toMatchObject({ status: "paused", details: { pauseRequested: true, importV2: true } });
   });
 });

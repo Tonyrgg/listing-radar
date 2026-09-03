@@ -43,6 +43,7 @@ const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
 export type ImportV2EngineOptions = {
   maxTransientAttempts: number;
   now?: () => Date;
+  isInterruptionRequested?: () => boolean;
 };
 
 function unique<T>(values: T[]): T[] {
@@ -120,6 +121,7 @@ function assertOwnerships(property: CrmPropertySnapshot, desired: OwnershipWrite
 export class ImportV2Engine {
   private readonly maxTransientAttempts: number;
   private readonly now: () => Date;
+  private readonly isInterruptionRequested: () => boolean;
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -128,6 +130,16 @@ export class ImportV2Engine {
   ) {
     this.maxTransientAttempts = Math.max(1, options.maxTransientAttempts ?? 3);
     this.now = options.now ?? (() => new Date());
+    this.isInterruptionRequested = options.isInterruptionRequested ?? (() => false);
+  }
+
+  private throwIfInterruptionRequested(): void {
+    if (this.isInterruptionRequested()) {
+      throw new ImportV2Error("Import V2 messo in pausa dall'operatore", "operator_pause", {
+        global: true,
+        details: { pauseRequested: true },
+      });
+    }
   }
 
   async run(source: SourceProperty): Promise<ImportV2Outcome> {
@@ -143,6 +155,7 @@ export class ImportV2Engine {
     let checkpoint = await this.store.loadOrCreate(plan);
     while (checkpoint.stage !== "completed") {
       try {
+        this.throwIfInterruptionRequested();
         await this.crm.assertSession();
         checkpoint = await this.executeStage(checkpoint);
         checkpoint.attempts = 0;
@@ -157,10 +170,14 @@ export class ImportV2Engine {
         checkpoint.lastError = failure;
         checkpoint.updatedAt = this.now().toISOString();
         if (failure.global) {
+          if (failure.kind === "operator_pause") {
+            await this.crm.recover(checkpoint.stage, error).catch(() => undefined);
+          }
           await this.store.pause(checkpoint, failure);
           return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "paused", stage: checkpoint.stage, failure };
         }
         if (failure.retryable && checkpoint.attempts < this.maxTransientAttempts) {
+          this.throwIfInterruptionRequested();
           await this.store.save(checkpoint);
           await this.store.recordEvent(checkpoint, "retry_scheduled", { attempt: checkpoint.attempts, failure });
           await this.crm.recover(checkpoint.stage, error);
@@ -215,6 +232,8 @@ export class ImportV2Engine {
       }
       case "property_synced": {
         const propertyId = this.requirePropertyId(checkpoint);
+        await this.verifyPeopleBeforeOwnership(plan.source.owners, checkpoint.syncedPeople);
+        this.throwIfInterruptionRequested();
         await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(plan.source.owners, checkpoint.syncedPeople));
         return { ...checkpoint, stage: NEXT_STAGE.property_synced };
       }
@@ -240,6 +259,7 @@ export class ImportV2Engine {
   private async resolvePeople(owners: SourceOwner[]): Promise<PersonResolution[]> {
     const resolutions: PersonResolution[] = [];
     for (const owner of owners) {
+      this.throwIfInterruptionRequested();
       const matches = (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
         .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode);
       resolutions.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, matches });
@@ -250,6 +270,7 @@ export class ImportV2Engine {
   private async syncPeople(owners: SourceOwner[], checkpoint: ImportV2Checkpoint): Promise<SyncedPerson[]> {
     const synced: SyncedPerson[] = [...checkpoint.syncedPeople];
     for (const owner of owners) {
+      this.throwIfInterruptionRequested();
       if (synced.some((person) => person.sourcePersonId === owner.sourcePersonId && person.taxCode === owner.taxCode)) continue;
       const checkpointResolution = checkpoint.people.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId);
       if (!checkpointResolution) throw new ImportV2Error("Risoluzione nominativo mancante", "invalid_source");
@@ -315,6 +336,23 @@ export class ImportV2Engine {
     });
   }
 
+  private async verifyPeopleBeforeOwnership(owners: SourceOwner[], synced: SyncedPerson[]): Promise<void> {
+    for (const owner of owners) {
+      this.throwIfInterruptionRequested();
+      const person = synced.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId && candidate.taxCode === owner.taxCode);
+      if (!person) throw new ImportV2Error("Nominativo sincronizzato mancante", "invalid_source");
+      const snapshot = await this.crm.readPerson(person.crmPersonId, owner.taxCode);
+      if (snapshot.id !== person.crmPersonId
+        || canonicalTaxCode(snapshot.taxCode) !== owner.taxCode
+        || (owner.fullName.trim() && !samePersonName(snapshot.fullName, owner.fullName))) {
+        throw new ImportV2Error("Il comproprietario non è verificato tramite ID, codice fiscale, nome e cognome", "verification_failed", {
+          retryable: true,
+          details: { sourcePersonId: owner.sourcePersonId, crmPersonId: person.crmPersonId },
+        });
+      }
+    }
+  }
+
   private primaryOwner(owners: SourceOwner[]): SourceOwner {
     const indexed = owners.map((owner, index) => ({ owner, index }));
     indexed.sort((left, right) => {
@@ -347,6 +385,7 @@ export class ImportV2Engine {
       linkedCount: 0,
       cadastralCount: cadastral.length,
     };
+    this.throwIfInterruptionRequested();
     const linked = await this.crm.listAllPropertiesForPeople(personIds, plan);
     return {
       choice: choosePropertyCandidate(plan.source, [...linked, ...cadastral]),

@@ -12,7 +12,10 @@ async function searchFixture(page: Page, result: string, accountSuffix = "") {
     const body = pathname.endsWith("/account/Account")
       ? `<input title="Search..." onkeydown="if(event.key==='Enter') location.href='${root}/global-search/${cf}'">${accountSuffix}`
       : pathname.includes("/global-search/") ? result
-      : `<div><div><label>Codice Fiscale</label></div><div class="slds-form-element__static">${cf}</div></div>`;
+      // A person page always renders a name next to the tax code: the port
+      // waits for both before trusting the record as fully rendered.
+      : [["Codice Fiscale", cf], ["Nome cliente", "Nome Collaudo"]]
+        .map(([label, value]) => `<div><div><label>${label}</label></div><div class="slds-form-element__static">${value}</div></div>`).join("");
     await route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html><meta charset="utf-8"><body>${body}</body>` });
   });
   await page.goto(`${origin}${root}/`);

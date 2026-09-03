@@ -2,12 +2,13 @@
 
 ## Stato e limiti
 
-Collaudo automatico locale completato sulla **0.33.6**: 490 test superati,
-zero falliti e zero saltati. **Accettazione live non completata.**
-Il collegamento al Chrome dell'utente non è disponibile in questa sessione;
-non sono state eseguite nuove scritture su Tecnocloud o Supabase reali.
-Non attribuire alle fixture una verifica delle sessioni, dei selettori live
-o della persistenza Supabase.
+Collaudo automatico locale completato sulla **0.33.7**: 501 test superati,
+zero falliti e zero saltati. **Accettazione live parziale.**
+Il Chrome di lavoro sulla porta CDP `9222` è stato collegato:
+la diagnostica Tecnocloud in sola lettura e il lookup controllato del luogo di
+nascita sono stati provati sul portale reale. Non sono state eseguite nuove
+scritture su Tecnocloud o Supabase reali. Le fixture non provano comunque la
+persistenza Supabase o i salvataggi live ancora elencati in fondo al documento.
 
 La modalità Rete proprietari attuale esegue vie successive dal registro;
 non invoca il precedente esploratore basato sui CF dei comproprietari.
@@ -49,6 +50,14 @@ Il controllo di completezza e il motore che importano le righe sono comuni.
   senza conferma del portale. Ora serve un esito visibile e non in caricamento.
 - Righe già escluse dall'acquisizione potevano rientrare se solo lo stato
   della riga riportava l'esclusione. Ora viene rispettato anche quello.
+- Lookup comuni: `TORINO` coincideva anche con Camagna di Torino, Mombello di
+  Torino e gli altri risultati che contengono la parola. Ora nome e provincia
+  devono identificare un solo record esatto; la riga sintetica di ricerca resta
+  esclusa. Prima del click e dopo la selezione si attendono richieste Cloud,
+  indicatori di caricamento e stabilità della conferma del lookup.
+- Diagnostica live: il campo di ricerca elenco veniva contato subito dopo la
+  navigazione e poteva risultare assente durante il montaggio asincrono. Ora
+  viene atteso esplicitamente prima del controllo di univocità.
 
 Prima della correzione, cinque delle sei nuove prove sulla ricerca CF
 fallivano. I casi di prova sono artificiali e non identificano da soli quale
@@ -88,9 +97,21 @@ step di acquisizione sui risultati della ricerca del civico 10.
 
 - `npm --prefix worker run build`: superato.
 - `npm --prefix worker run desktop:compile`: superato.
-- `npm --prefix worker test -- --maxWorkers=3`: 490/490 superati.
+- `npm --prefix worker test -- --maxWorkers=3`: 492/492 superati sulla 0.33.6.
+- `npm --prefix worker test`: 501/501 superati sulla 0.33.7.
 - Report JSON locale: `.runtime/worker-v0.33.6-tests-final.json`.
 - Prove mirate iniziali sulla coda: 75/75 superate.
+
+## Verifiche live incrementali del 3 settembre 2026
+
+- Collegamento effettuato al Chrome dedicato del worker su
+  `http://127.0.0.1:9222`, non al profilo Chrome personale.
+- Lookup luogo di nascita eseguito nel form reale con `TORINO` / `TO`: valore
+  finale `TORINO`, campo `readonly`, contenitore `slds-has-selection` e menu
+  risultati chiuso. Il form è stato annullato senza premere Salva.
+- `npm --prefix worker run import-v2:diagnose`: 5 snapshot UI sanitizzati e
+  20 contratti di rete raccolti; nessun valore anagrafico, header o cookie
+  acquisito e nessuna scrittura eseguita.
 
 Durante la precedente 0.33.5, la prima esecuzione completa aveva 463 successi e un timeout in un test
 dell'adapter precedente, con budget totale di 5 secondi e attesa intenzionale
@@ -102,15 +123,14 @@ La suite completa era stata quindi rieseguita sulla versione finale 0.33.5
 
 ## Accettazione live ancora da eseguire
 
-1. Collegare il Chrome di lavoro e accedere manualmente a SISTER/Tecnocloud.
-2. Su Via Guidone, provare prima un civico singolo e poi Via completa.
+1. Su Via Guidone, provare prima un civico singolo e poi Via completa.
    Osservare l'esatto stato di ricerca quando un CF manca;
    verificare creazione, rilettura anagrafica e prosecuzione dell'immobile.
-3. Verificare una scheda esistente, il merge verde dello screenshot,
+2. Verificare una scheda esistente, il merge verde dello screenshot,
    i filtri residenziali, due comproprietari e le quote finali.
-4. Riprendere una lavorazione interrotta e verificare assenza di duplicati
+3. Riprendere una lavorazione interrotta e verificare assenza di duplicati
    e stato finale del job nel database.
-5. Eseguire Rete proprietari su un campione operativo concordato: la seconda
+4. Eseguire Rete proprietari su un campione operativo concordato: la seconda
    via deve partire solo dopo il completamento dell'import della prima.
    Provare pausa/ripresa e controllo del lease su un solo worker attivo.
 

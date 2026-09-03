@@ -142,6 +142,7 @@ export type ImportV2FailureKind =
   | "invalid_source"
   | "ambiguous_identity"
   | "transient_portal"
+  | "operator_pause"
   | "global_session"
   | "global_portal"
   | "verification_failed"

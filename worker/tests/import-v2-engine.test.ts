@@ -100,6 +100,7 @@ class FakeCrm implements TecnocloudV2Port {
   merges: MergeRequest[] = [];
   activities: string[] = [];
   recoveries = 0;
+  replaceCalls = 0;
   replaceFailures = 0;
   sessionFailure: ImportV2Error | null = null;
   nextPerson = 1;
@@ -112,6 +113,12 @@ class FakeCrm implements TecnocloudV2Port {
   async searchPeopleByExactTaxCode(taxCode: string) {
     this.searches.push(taxCode);
     return [...this.people.values()].filter((person) => person.taxCode === taxCode).map((person) => structuredClone(person));
+  }
+
+  async readPerson(personId: string, expectedTaxCode: string | null = null) {
+    const person = this.people.get(personId);
+    if (!person || (expectedTaxCode && person.taxCode !== expectedTaxCode)) throw new Error("missing person");
+    return structuredClone(person);
   }
 
   async createPerson(desired: Omit<CrmPersonSnapshot, "id">) {
@@ -167,6 +174,7 @@ class FakeCrm implements TecnocloudV2Port {
   }
 
   async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]): Promise<CrmOwnershipSnapshotResult> {
+    this.replaceCalls += 1;
     if (this.replaceFailures > 0) {
       this.replaceFailures -= 1;
       throw new ImportV2Error("dialog delayed", "transient_portal", { retryable: true });
@@ -276,6 +284,44 @@ describe("Import V2 engine", () => {
     expect(savedProperty.owners).toHaveLength(2);
     expect(savedProperty.owners.map((owner) => owner.sharePercentage)).toEqual([50, 50]);
     expect(crm.activities).toEqual([savedProperty.id]);
+  });
+
+  it("non apre il dialog comproprietari finche ogni nominativo non e rileggibile per ID, CF e nome", async () => {
+    class UnverifiedPersonCrm extends FakeCrm {
+      override async readPerson(personId: string, expectedTaxCode: string | null = null) {
+        const snapshot = await super.readPerson(personId, expectedTaxCode);
+        if (snapshot.taxCode === "VRDLCU82B02A893X") snapshot.fullName = "Persona Diversa";
+        return snapshot;
+      }
+    }
+    const crm = new UnverifiedPersonCrm();
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), { maxTransientAttempts: 1 }).run(property());
+
+    expect(outcome.state).toBe("quarantined");
+    expect(outcome.failure?.kind).toBe("verification_failed");
+    expect(crm.replaceCalls).toBe(0);
+    expect([...crm.properties.values()][0]?.owners).toEqual([]);
+  });
+
+  it("onora la pausa tra due nominativi senza avviare altri accessi CRM", async () => {
+    let pauseRequested = false;
+    class PauseAfterFirstSearchCrm extends FakeCrm {
+      override async searchPeopleByExactTaxCode(taxCode: string) {
+        const result = await super.searchPeopleByExactTaxCode(taxCode);
+        pauseRequested = true;
+        return result;
+      }
+    }
+    const crm = new PauseAfterFirstSearchCrm();
+    const store = new MemoryStore();
+    const outcome = await new ImportV2Engine(crm, store, { isInterruptionRequested: () => pauseRequested }).run(property());
+
+    expect(outcome.state).toBe("paused");
+    expect(outcome.failure?.kind).toBe("operator_pause");
+    expect(crm.searches).toEqual(["RSSMRA80A01A893P"]);
+    expect(crm.people).toHaveLength(0);
+    expect(crm.properties).toHaveLength(0);
+    expect(store.paused).toHaveLength(1);
   });
 
   it("non sovrappone navigazioni sullo stesso tab Tecnocloud", async () => {

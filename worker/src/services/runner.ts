@@ -230,7 +230,12 @@ export class PropertyWorkerRunner {
     keepAlive.start();
     const sister = new PlaywrightSisterAdapter(tabs.sisterPage);
     const crm = new PlaywrightCrmAdapter(tabs.crmPage, this.config.WORKER_DRY_RUN);
-    const crmV2 = new TecnocloudUiV2Port(tabs.crmPage, this.config.WORKER_DRY_RUN);
+    let importV2JobId: string | null = null;
+    const importV2InterruptionRequested = () => Boolean(importV2JobId
+      && (this.isCancellationRequested(importV2JobId) || this.isPauseRequested(importV2JobId)));
+    const crmV2 = new TecnocloudUiV2Port(tabs.crmPage, this.config.WORKER_DRY_RUN, {
+      isInterruptionRequested: importV2InterruptionRequested,
+    });
     const contacts = new ExcelContactsAdapter(this.config.CONTACTS_EXCEL_PATH);
     await contacts.load();
     let job = input.jobId
@@ -238,6 +243,7 @@ export class PropertyWorkerRunner {
       : input.createNew
         ? await this.repository.createJob(mode)
         : (await this.repository.findReadyJob(mode)) ?? await this.repository.createJob(mode);
+    importV2JobId = job.id;
     const usesLegacyGlobalPropertySearch = Boolean(
       input.jobId
       && job.current_step === "property_searched"
@@ -531,7 +537,10 @@ export class PropertyWorkerRunner {
         const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
         const activityTasks = buildPropertyActivityTasks(graph);
         const mode = this.propertyActivityMode();
-        const coordinator = new ImportV2Coordinator(this.repository, crmV2, { maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS });
+        const coordinator = new ImportV2Coordinator(this.repository, crmV2, {
+          maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS,
+          isInterruptionRequested: () => this.isCancellationRequested(job.id) || this.isPauseRequested(job.id),
+        });
         const result = await coordinator.runJob(job, (property, owners) => {
           const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), mode);
           return definition
@@ -573,10 +582,12 @@ export class PropertyWorkerRunner {
         }
         await this.repository.updateJob(job.id, { processed_properties: result.completed.length });
         if (result.paused) {
+          const operatorPause = result.paused.failure?.kind === "operator_pause"
+            || result.paused.failure?.details.pauseRequested === true;
           throw new WorkerError(
             result.paused.failure?.message ?? "Import V2 in pausa",
-            result.paused.failure?.kind === "global_session" ? "session_expired" : "portal_error",
-            { importV2: true, failure: result.paused.failure },
+            operatorPause ? "paused" : result.paused.failure?.kind === "global_session" ? "session_expired" : "portal_error",
+            { importV2: true, failure: result.paused.failure, ...(operatorPause ? { pauseRequested: true } : {}) },
             true,
           );
         }

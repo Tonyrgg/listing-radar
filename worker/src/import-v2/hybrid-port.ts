@@ -8,6 +8,7 @@ import type {
 
 export type TecnocloudOperation =
   | "search_people"
+  | "read_person"
   | "create_person"
   | "overwrite_person"
   | "merge_people"
@@ -39,6 +40,10 @@ export class HybridTecnocloudV2Port implements TecnocloudV2Port {
 
   searchPeopleByExactTaxCode(taxCode: string) {
     return this.read("search_people", () => this.http.searchPeopleByExactTaxCode(taxCode), () => this.ui.searchPeopleByExactTaxCode(taxCode));
+  }
+
+  readPerson(personId: string, expectedTaxCode?: string | null) {
+    return this.read("read_person", () => this.http.readPerson(personId, expectedTaxCode), () => this.ui.readPerson(personId, expectedTaxCode));
   }
 
   createPerson(desired: PersonWriteModel) {
