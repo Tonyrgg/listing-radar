@@ -1,11 +1,19 @@
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import { matchesWorkerPortal, type WorkerPortal } from "../core/browser-page-matching.js";
 import { WorkerError } from "../core/errors.js";
 
+export interface DescribedPage {
+  title: string;
+  url: string;
+  page: Page;
+  /** False when Playwright cannot act on the tab, however healthy it looks in Chrome. */
+  driveable: boolean;
+}
+
 export interface ChromeTabs {
   browser: Browser;
-  pages: Array<{ title: string; url: string; page: Page }>;
+  pages: DescribedPage[];
   sisterPage: Page;
   crmPage: Page;
 }
@@ -54,20 +62,54 @@ export async function pageTitleWithin(
   }
 }
 
-async function describePage(page: Page) {
+/**
+ * Chrome keeps a tab's identity at browser level, so it stays readable even
+ * when Playwright's own view of that tab is unusable. `driveable` says
+ * whether Playwright can act on the page at all: a tab whose main frame id
+ * no longer matches its target id answers no execution context, so every
+ * Playwright call on it waits forever.
+ */
+async function targetIdentity(page: Page): Promise<{ title: string; url: string; driveable: boolean } | null> {
+  let session: Awaited<ReturnType<BrowserContext["newCDPSession"]>> | null = null;
+  try {
+    session = await page.context().newCDPSession(page);
+    const [target, tree] = await Promise.all([
+      session.send("Target.getTargetInfo"),
+      session.send("Page.getFrameTree"),
+    ]);
+    return {
+      title: target.targetInfo.title ?? "",
+      url: tree.frameTree.frame.url || target.targetInfo.url || "",
+      driveable: target.targetInfo.targetId === tree.frameTree.frame.id,
+    };
+  } catch {
+    return null;
+  } finally {
+    await session?.detach().catch(() => undefined);
+  }
+}
+
+async function describePage(page: Page): Promise<DescribedPage> {
   /* Una scheda occupata puo' non rispondere a `document.title` per quasi un
    * minuto. L'URL e' gia' disponibile senza round-trip ed e' sufficiente per
    * riconoscere SISTER e gestionale; il titolo resta un aiuto, mai un freno
    * all'avvio della run. */
-  return { title: await pageTitleWithin(page), url: page.url(), page };
+  const url = page.url();
+  if (url) return { title: await pageTitleWithin(page), url, page, driveable: true };
+  /* URL vuoto significa che il modello interno di Playwright per questa
+   * scheda e' vuoto, non che la scheda non esista: il browser la conosce
+   * ancora. Chiederlo a lui evita di scambiare una scheda aperta ma non
+   * pilotabile per una scheda mai aperta, e non paga l'attesa del titolo. */
+  const identity = await targetIdentity(page);
+  return { title: identity?.title ?? "", url: identity?.url ?? "", page, driveable: identity?.driveable ?? false };
 }
 
 function findMatchingPage(
-  pages: Array<{ title: string; url: string; page: Page }>,
+  pages: DescribedPage[],
   match: string,
   portal: WorkerPortal,
-): Page | undefined {
-  return pages.find((page) => matchesWorkerPortal(page, match, portal))?.page;
+): DescribedPage | undefined {
+  return pages.find((page) => matchesWorkerPortal(page, match, portal));
 }
 
 export interface CrmChromeTab {
@@ -92,15 +134,34 @@ export async function connectToChrome(
     );
   }
   const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  const sisterPage = findMatchingPage(described, sisterMatch, "sister");
-  const crmPage = findMatchingPage(described, crmMatch, "crm");
-  if (!sisterPage || !crmPage) {
+  const sisterTab = findMatchingPage(described, sisterMatch, "sister");
+  const crmTab = findMatchingPage(described, crmMatch, "crm");
+  const openTabs = described.map(({ title, url }) => ({ title, url }));
+  if (!sisterTab || !crmTab) {
     throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
-      missing: [!sisterPage ? "SISTER" : null, !crmPage ? "CRM" : null].filter(Boolean),
-      openTabs: described.map(({ title, url }) => ({ title, url })),
+      missing: [!sisterTab ? "SISTER" : null, !crmTab ? "CRM" : null].filter(Boolean),
+      openTabs,
     });
   }
-  return { browser, pages: described, sisterPage, crmPage };
+  /* Una scheda riconosciuta ma non pilotabile non torna utilizzabile ne'
+   * aspettando ne' ricaricandola: solo riaprirla le restituisce un target
+   * sano. Fermarsi qui con il motivo esatto evita una run che parte e resta
+   * appesa alla prima azione sul portale. */
+  const notDriveable = [
+    !sisterTab.driveable ? "SISTER" : null,
+    !crmTab.driveable ? "gestionale" : null,
+  ].filter((label): label is string => label !== null);
+  if (notDriveable.length) {
+    const [subject, verb] = notDriveable.length > 1
+      ? [`le schede ${notDriveable.join(" e ")}`, "sono aperte ma non pilotabili. Chiudile, riaprile"]
+      : [`la scheda ${notDriveable[0]}`, "è aperta ma non pilotabile. Chiudila, riaprila"];
+    throw new WorkerError(
+      `Chrome non espone all'automazione ${subject}: ${verb} e riavvia.`,
+      "needs_review",
+      { notDriveable, openTabs },
+    );
+  }
+  return { browser, pages: described, sisterPage: sisterTab.page, crmPage: crmTab.page };
 }
 
 /** Connects to the worker-owned Chrome when a CRM-only maintenance task does not need SISTER. */
@@ -116,7 +177,7 @@ export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Prom
     );
   }
   const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  let crmPage = findMatchingPage(pages, crmMatch, "crm");
+  let crmPage = findMatchingPage(pages, crmMatch, "crm")?.page;
   crmPage ??= pages.find(({ title, url }) =>
     /Universal Identity|Accedi/i.test(title) || /ui\.tecnocasa\.com\/login/i.test(url))?.page;
   if (!crmPage) {
