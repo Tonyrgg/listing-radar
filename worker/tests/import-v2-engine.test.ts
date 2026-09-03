@@ -203,6 +203,57 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("non riscrive un nominativo già verificato se il comproprietario successivo richiede un retry", async () => {
+    class RetrySecondCrm extends FakeCrm {
+      writes: string[] = [];
+      failSecond = true;
+      override async createPerson(desired: Omit<CrmPersonSnapshot, "id">) {
+        this.writes.push(desired.taxCode);
+        if (desired.taxCode === "VRDLCU82B02A893X" && this.failSecond) {
+          this.failSecond = false;
+          throw new ImportV2Error("Risposta in ritardo", "transient_portal", { retryable: true });
+        }
+        return super.createPerson(desired);
+      }
+      override async overwritePerson(id: string, desired: Omit<CrmPersonSnapshot, "id">) {
+        this.writes.push(desired.taxCode);
+        return super.overwritePerson(id, desired);
+      }
+    }
+    const crm = new RetrySecondCrm();
+    expect((await new ImportV2Engine(crm, new MemoryStore()).run(property())).state).toBe("completed");
+    expect(crm.writes.filter((taxCode) => taxCode === "RSSMRA80A01A893P")).toHaveLength(1);
+    expect(crm.writes.filter((taxCode) => taxCode === "VRDLCU82B02A893X")).toHaveLength(2);
+  });
+
+  it("passa alla scrittura quando la ricerca catastale trova l'immobile esatto senza riaprire i nominativi", async () => {
+    class ExactCrm extends FakeCrm {
+      override async listAllPropertiesForPeople(): Promise<CrmPropertySnapshot[]> {
+        throw new Error("Non deve ripercorrere gli immobili dei nominativi dopo il match catastale esatto");
+      }
+    }
+    const crm = new ExactCrm();
+    crm.properties.set("existing", {
+      id: "existing", displayName: "IM - Arco Angarano 10 - Centro", fullAddress: property().fullAddress,
+      cadastral: property().cadastral, owners: [],
+    });
+    const outcome = await new ImportV2Engine(crm, new MemoryStore()).run(property());
+    expect(outcome).toMatchObject({ state: "completed", crmPropertyId: "existing" });
+    expect(crm.properties).toHaveLength(1);
+  });
+
+  it.each(["rossi mario", "ROSSI MARIO", "mArIo RoSsI"])("verifica i nominativi senza distinzione di maiuscole: %s", async (fullName) => {
+    class CaseCrm extends FakeCrm {
+      override async createPerson(desired: Omit<CrmPersonSnapshot, "id">) {
+        const saved = await super.createPerson(desired);
+        if (saved.taxCode === "RSSMRA80A01A893P") saved.fullName = fullName;
+        this.people.set(saved.id, structuredClone(saved));
+        return saved;
+      }
+    }
+    expect((await new ImportV2Engine(new CaseCrm(), new MemoryStore()).run(property())).state).toBe("completed");
+  });
+
   it("accantona un immobile con azienda prima di qualunque accesso CRM", async () => {
     const crm = new FakeCrm();
     const outcome = await new ImportV2Engine(crm, new MemoryStore()).run({ ...property(), hasBusinessOwners: true });

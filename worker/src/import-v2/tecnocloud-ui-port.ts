@@ -1,7 +1,7 @@
-import type { Locator, Page } from "playwright";
+import type { Locator, Page, Request } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
-import { canonicalTaxCode, sameAddress } from "./identity.js";
+import { canonicalTaxCode, sameAddress, sameCadastralIdentity } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
   CadastralIdentity,
@@ -486,9 +486,24 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return this.page.locator('[role="dialog"]:visible').filter({ hasText: /Merge dei campi|Riconcilia/i }).last();
   }
 
+  private async visibleMergeDialog(): Promise<Locator | null> {
+    const named = this.mergeDialog();
+    if (await named.count()) return named;
+    // On Lightning the dialog wrapper may expose only "Nominativo" while
+    // the merge fields live in separate component roots.
+    const master = this.page.locator('input[type="radio"][value="master"]').filter({ visible: true });
+    const slave = this.page.locator('input[type="radio"][value="slave"]').filter({ visible: true });
+    if (!(await master.count()) || !(await slave.count())) return null;
+    const dialogs = this.page.locator('[role="dialog"]:visible');
+    if (await dialogs.count() === 1) return dialogs;
+    const person = dialogs.filter({ hasText: /Nominativo/i });
+    if (await person.count() === 1) return person;
+    throw new ImportV2Error("Finestra di riconciliazione non univoca", "verification_failed");
+  }
+
   private async resolveVisibleMerge(): Promise<string> {
-    const dialog = this.mergeDialog();
-    await dialog.waitFor({ state: "visible", timeout: 15_000 });
+    const dialog = await this.visibleMergeDialog();
+    if (!dialog) throw new ImportV2Error("Finestra di riconciliazione non disponibile", "verification_failed");
     /* I campi del merge vivono in shadow root separati dal <section
      * role=dialog>; inoltre i radio nativi misurano 1x1 px e il vecchio
      * riconoscimento geometrico li scartava. `master` è il contratto semantico
@@ -512,8 +527,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       || rightNames.length !== names.length || rightNames.some((name) => !names.includes(name))) {
       throw new ImportV2Error("Campi sinistri del merge non stabilizzati o non univoci", "verification_failed", { retryable: true });
     }
-    for (let index = 0; index < names.length; index += 1) {
-      await leftOptions.nth(index).click({ force: true });
+    for (const name of names) {
+      // Resolve again by field name: each click may rerender/reorder the grid.
+      const indexes = await leftOptions.evaluateAll((elements, expected) => elements.flatMap((element, index) =>
+        element.getAttribute("name") === expected ? [index] : []), name);
+      if (indexes.length !== 1) throw new ImportV2Error("Campo della riconciliazione non univoco", "verification_failed");
+      await leftOptions.nth(indexes[0]!).click({ force: true });
     }
     const selectedNames = await leftOptions.evaluateAll((elements) => elements.flatMap((element) => {
       const input = element as HTMLInputElement;
@@ -523,11 +542,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       throw new ImportV2Error("Non tutte le opzioni sinistre del merge risultano selezionate", "verification_failed", { retryable: true });
     }
     const blocked = this.page.getByText(/Non si può procedere|Non è possibile procedere/i).filter({ visible: true });
-    if (await blocked.count()) throw new ImportV2Error("Tecnocloud non consente il merge dopo la selezione sinistra", "verification_failed", { retryable: true });
     const ready = this.page.getByText(/Tutti i campi sono stati riconciliati/i).filter({ visible: true });
-    await ready.first().waitFor({ state: "visible", timeout: 15_000 });
-    const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva merge");
-    if (!(await save.isEnabled())) throw new ImportV2Error("Salva merge ancora disabilitato", "verification_failed", { retryable: true });
+    const scopedSave = dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
+    const save = await scopedSave.count() === 1 ? scopedSave
+      : await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva merge");
+    for (let wait = 0; wait < 75; wait += 1) {
+      if (await ready.count() && !(await blocked.count()) && await save.isEnabled()) break;
+      if (wait === 74) throw new ImportV2Error("Tecnocloud non ha autorizzato il salvataggio della riconciliazione", "verification_failed", { retryable: true });
+      await this.page.waitForTimeout(200);
+    }
     await save.click();
     await dialog.waitFor({ state: "hidden", timeout: 20_000 });
     return this.waitForPersonRecord();
@@ -536,15 +559,34 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   private async savePersonForm(): Promise<{ personId: string; merged: boolean }> {
     const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva nominativo");
     const taxCodeField = this.page.getByLabel("Codice Fiscale", { exact: true }).filter({ visible: true });
-    await save.click();
-    let result: "merge" | "saved";
+    const pendingRequests = new Set<Request>();
+    const origin = new URL(this.page.url()).origin;
+    const started = (request: Request) => {
+      if (["xhr", "fetch"].includes(request.resourceType()) && new URL(request.url()).origin === origin) pendingRequests.add(request);
+    };
+    const finished = (request: Request) => { pendingRequests.delete(request); };
+    this.page.on("request", started);
+    this.page.on("requestfinished", finished);
+    this.page.on("requestfailed", finished);
+    let result: "merge" | "saved" | null = null;
     try {
-      result = await Promise.race([
-        this.mergeDialog().waitFor({ state: "visible", timeout: 25_000 }).then(() => "merge" as const),
-        taxCodeField.waitFor({ state: "hidden", timeout: 25_000 })
-          .then(() => this.waitForPersonRecord())
-          .then(() => "saved" as const),
-      ]);
+      await save.click();
+      let settledSince = 0;
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        if (await this.visibleMergeDialog()) { result = "merge"; break; }
+        const pending = pendingRequests.size > 0 || await taxCodeField.count() > 0
+          || await this.page.locator('[role="dialog"]:visible, lightning-spinner:visible, [role="progressbar"]:visible').count() > 0;
+        const onRecord = Boolean(recordIdFromUrl(this.page.url(), "account"));
+        // The URL of an edited account is already a record before saving.
+        // Wait for a stable detail view, giving the deferred merge time to mount.
+        if (!pending && onRecord && await this.detailValue("Codice Fiscale")) {
+          settledSince ||= Date.now();
+          if (Date.now() - settledSince >= 1_500) { result = "saved"; break; }
+        } else settledSince = 0;
+        await this.page.waitForTimeout(200);
+      }
+      if (!result) throw new ImportV2Error("Esito del salvataggio nominativo non confermato", "verification_failed", { retryable: true });
     } catch (error) {
       const messages = (await this.page.locator('.slds-form-element__help:visible, [role="alert"]:visible').allTextContents())
         .map((message) => message.replace(/\s+/g, " ").trim())
@@ -562,6 +604,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         });
       }
       throw error;
+    } finally {
+      this.page.off("request", started);
+      this.page.off("requestfinished", finished);
+      this.page.off("requestfailed", finished);
     }
     if (result === "merge") return { personId: await this.resolveVisibleMerge(), merged: true };
     return { personId: await this.waitForPersonRecord(), merged: false };
@@ -674,9 +720,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async readPropertySummary(propertyId: string, displayName = ""): Promise<CrmPropertySummary> {
     await this.openProperty(propertyId);
+    // The header mounts before the cadastral detail block. Reading it at that
+    // point used to turn a matching record into a snapshot with empty fields.
+    await this.page.locator("label").filter({ hasText: /^\s*Catasto Foglio\s*$/i }).filter({ visible: true })
+      .first().waitFor({ state: "visible", timeout: 15_000 });
     const addressField = this.page.locator('li.slds-page-header__detail-block:has(.slds-text-title:has-text("Indirizzo Completo Immobile")) c-output-field').filter({ visible: true });
-    const fullAddress = await addressField.first().innerText().catch(() => this.detailValue("Indirizzo Completo Immobile"));
-    const heading = displayName || (await this.page.locator("h1:visible, h2:visible").first().innerText().catch(() => ""));
+    const fullAddress = await addressField.count() ? await addressField.first().innerText() : await this.detailValue("Indirizzo Completo Immobile");
+    const headingField = this.page.locator("h1:visible, h2:visible").first();
+    // A Lightning card need not expose an h1/h2. Optional decoration must not
+    // spend the default 30-second locator timeout on every matching record.
+    const heading = displayName || (await headingField.count() ? await headingField.innerText() : fullAddress);
     return { id: propertyId, displayName: heading.replace(/\s+/g, " ").trim(), fullAddress: fullAddress || null, cadastral: await this.readCadastralIdentity() };
   }
 
@@ -734,24 +787,27 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   async findPropertiesByCadastralIdentity(plan: ImportV2Plan): Promise<CrmPropertySummary[]> {
     return this.action("Ricerca catastale globale", async () => {
-      await this.navigate(PROPERTY_SEARCH);
-      const view = this.page.locator('input[placeholder="--- Seleziona ---"]').filter({ visible: true }).first();
-      await view.waitFor({ state: "visible", timeout: 20_000 });
-      if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
-        await view.click({ force: true });
-        const options = this.page.locator('[role="option"]').filter({ visible: true });
-        await options.first().waitFor({ state: "visible", timeout: 8_000 });
-        const labels = await options.allTextContents();
-        const residential = labels.findIndex((label) => normalized(label).replace(/^•\s*/, "") === "IMMOBILI RESIDENZIALI");
-        if (residential < 0) throw new ImportV2Error("Vista Immobili residenziali non disponibile", "transient_portal", { retryable: true });
-        await options.nth(residential).click({ force: true });
-        for (let wait = 0; wait < 40 && !normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI"); wait += 1) {
-          await this.page.waitForTimeout(200);
-        }
+      const openSearchView = async () => {
+        await this.navigate(PROPERTY_SEARCH);
+        const view = this.page.locator('input[placeholder="--- Seleziona ---"]').filter({ visible: true }).first();
+        await view.waitFor({ state: "visible", timeout: 20_000 });
         if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
-          throw new ImportV2Error("Vista Immobili residenziali non confermata", "transient_portal", { retryable: true });
+          await view.click({ force: true });
+          const options = this.page.locator('[role="option"]').filter({ visible: true });
+          await options.first().waitFor({ state: "visible", timeout: 8_000 });
+          const labels = await options.allTextContents();
+          const residential = labels.findIndex((label) => normalized(label).replace(/^•\s*/, "") === "IMMOBILI RESIDENZIALI");
+          if (residential < 0) throw new ImportV2Error("Vista Immobili residenziali non disponibile", "transient_portal", { retryable: true });
+          await options.nth(residential).click({ force: true });
+          for (let wait = 0; wait < 40 && !normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI"); wait += 1) {
+            await this.page.waitForTimeout(200);
+          }
+          if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
+            throw new ImportV2Error("Vista Immobili residenziali non confermata", "transient_portal", { retryable: true });
+          }
         }
-      }
+      };
+      await openSearchView();
 
       const filterHost = (index: number) => this.page.locator(`lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="${index}"]`);
       const drawerIsOpen = async () => await filterHost(1).filter({ visible: true }).count() === 1;
@@ -816,14 +872,21 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       };
 
       const found = new Set(await search("", plan.source.cadastral.sheet, plan.source.cadastral.parcel, plan.source.cadastral.subaltern));
+      const summaries: CrmPropertySummary[] = [];
+      for (const id of found) summaries.push(await this.readPropertySummary(id));
+      // Inspect all cadastral candidates so duplicates remain detectable, but
+      // stop widening to the whole street once an exact record is available.
+      if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+        && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
+      if (found.size) await openSearchView();
       const addressTerms = propertyAddressFilterTerms(propertyDraft(plan).street);
       for (const term of addressTerms) {
         const matches = await search(term, "", "", "");
         for (const id of matches) found.add(id);
         if (matches.length) break;
       }
-      const summaries: CrmPropertySummary[] = [];
-      for (const id of found) summaries.push(await this.readPropertySummary(id));
+      const readIds = new Set(summaries.map((candidate) => candidate.id));
+      for (const id of found) if (!readIds.has(id)) summaries.push(await this.readPropertySummary(id));
       return summaries;
     });
   }

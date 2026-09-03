@@ -278,13 +278,20 @@ Per ogni immobile:
 1. caricare i recapiti di tutti i proprietari;
 2. cercare ogni anagrafica esclusivamente per codice fiscale; se esiste,
    sovrascrivere i dati anagrafici SISTER conservando e integrando i recapiti;
-   se non esiste, crearla;
+   se non esiste, crearla. In Import V2 il confronto di nome e cognome usa
+   parole minuscole, indipendentemente dall'ordine di visualizzazione; i
+   valori scritti hanno le iniziali maiuscole, anche per nomi composti e
+   cognomi con apostrofo. Ogni nominativo verificato ha un checkpoint prima
+   di passare al successivo, così un retry non ripete le scritture concluse;
 3. scegliere il proprietario principale con quota maggiore;
 4. in caso di quota pari conservare l'ordine SISTER;
-5. cercare l'immobile sotto tutti i proprietari verificati, usando il pairing
-   del nome nella lista completa prima di aprire le schede; indirizzo e terna
-   catastale identificano il record, mentre il solo indirizzo autorizza
-   l'aggiornamento dei dati catastali;
+5. in Import V2 cercare prima per terna catastale e leggere tutti i riscontri,
+   attendendo il caricamento dei dettagli catastali. Un riscontro univoco
+   con indirizzo e catasto coincidenti passa direttamente all'aggiornamento;
+   in sua assenza estendere la ricerca alla via e alle liste complete degli
+   immobili dei proprietari verificati, usando il pairing dell'indirizzo
+   prima di aprire le schede. I riscontri duplicati restano bloccanti;
+   il solo indirizzo univoco autorizza l'aggiornamento dei dati catastali;
 6. collegare e verificare tutti gli altri come `Comproprietario`;
 7. creare, se configurata, una sola attività dalla scheda immobile;
 8. salvare checkpoint e audit;
@@ -294,6 +301,14 @@ Notizie e incarichi presenti nella sezione aggregata non partecipano al
 matching e non vengono aperti o modificati. Nei merge anagrafici si scelgono
 i valori dell'importer nella colonna sinistra; i soli campi telefono possono
 conservare valori CRM aggiuntivi per non perdere numeri distinti.
+
+Import V2 riconosce il merge anche quando Lightning mostra solo «Nominativo»
+nel contenitore e rende i radio `master`/`slave` in componenti separati.
+La scomparsa del modulo e l'URL della scheda già aperta non bastano a
+confermare un salvataggio: il worker attende la riconciliazione o una vista
+dettaglio stabile senza finestre o indicatori di caricamento. Nel merge
+seleziona i campi per nome, attende insieme messaggio verde e Salva abilitato,
+quindi invia una sola conferma e verifica la chiusura della finestra.
 
 ### Quote
 

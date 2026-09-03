@@ -6,6 +6,91 @@ import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
 describe("Tecnocloud UI V2", () => {
+  it.each([1, 2])("rilegge tutti i %s riscontri catastali e attende i dettagli senza cercare tutta la via", async (count) => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const searches: string[] = [];
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (/\/immobile\/record-/.test(pathname)) return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <li class="slds-page-header__detail-block"><span class="slds-text-title">Indirizzo Completo Immobile</span><c-output-field>Via Guidone 10, 70032 BITONTO (BA)</c-output-field></li>
+          <script>setTimeout(() => {
+            const fields = [['Catasto Foglio', '38'], ['Catasto Particella', '215'], ['Catasto Subalterno', '17']];
+            for (const [label, value] of fields) document.body.insertAdjacentHTML('beforeend', '<div><div><label>' + label + '</label></div><div class="slds-form-element__static">' + value + '</div></div>');
+          }, 650);</script></body>` });
+        if (pathname === '/applied') {
+          searches.push(new URL(route.request().url()).searchParams.get('values') ?? '');
+          return route.fulfill({ body: 'ok' });
+        }
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <input placeholder="--- Seleziona ---" value="Immobili residenziali">
+          ${[1, 9, 26, 27, 31].map(index => '<lightning-input c-queryviewerfilters_queryviewerfilters data-index="' + index + '"><input></lightning-input>').join('')}
+          <button id="apply">Applica</button><div id="results"></div>
+          <script>document.querySelector('#apply').onclick = () => {
+            const values = [9,26,27,31].map(index => document.querySelector('[data-index="' + index + '"] input').value).join('|');
+            fetch('/applied?values=' + encodeURIComponent(values));
+            document.querySelector('#results').innerHTML = Array.from({length: ${count}}, (_, i) => '<lightning-input c-queryviewer_queryviewer data-id="record-' + i + '"><input type="checkbox"></lightning-input>').join('');
+          };</script></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const plan: ImportV2Plan = { version: 2, fingerprint: "exact", source: {
+        sourcePropertyId: "p", jobId: "j", municipality: "BITONTO", fullAddress: "VIA GUIDONE n. 10 Piano T, 70032 BITONTO (BA)",
+        cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+        category: "A/2", propertyClass: "3", consistency: "6 vani", owners: [],
+        activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" },
+      } };
+      const found = await new TecnocloudUiV2Port(page).findPropertiesByCadastralIdentity(plan);
+      expect(found.map(item => item.id)).toEqual(Array.from({ length: count }, (_, i) => `record-${i}`));
+      expect(found.every(item => item.cadastral?.sheet === "38" && item.cadastral.parcel === "215" && item.cadastral.subaltern === "17")).toBe(true);
+      expect(searches).toEqual(["|38|215|17"]);
+    } finally { await browser.close(); }
+  }, 20_000);
+
+  it.each([650, 2_200])("attende la riconciliazione dopo %s ms anche se il modulo scompare sulla scheda già aperta", async (delay) => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        if (new URL(route.request().url()).pathname === "/merge-check") {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return route.fulfill({ body: "ok" });
+        }
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+        <div><div><label>Codice Fiscale</label></div><div class="slds-form-element__static">RSSMRA80A01A893P</div></div>
+        <section role="dialog" id="form"><label>Codice Fiscale<input value="RSSMRA80A01A893P"></label><button id="submit">Salva</button></section>
+        <script>
+          document.querySelector('#submit').onclick = () => {
+            document.querySelector('#form').remove();
+            fetch('/merge-check').then(() => {
+              document.body.insertAdjacentHTML('beforeend', '<section role="dialog" id="merge"><h2>Nominativo</h2></section><div id="fields"><input type="radio" name="FirstName" value="master" checked><input type="radio" name="FirstName" value="slave"><input type="radio" name="LastName" value="master"><input type="radio" name="LastName" value="slave" checked><p id="blocked">Non si può procedere al salvataggio</p><p id="ready" hidden>Tutti i campi sono stati riconciliati</p><button id="confirm" disabled>Salva</button></div>');
+              const clicked = new Set();
+              document.querySelectorAll('input[value="master"]').forEach(input => input.onclick = () => {
+                clicked.add(input.name);
+                if (clicked.size === 2) setTimeout(() => {
+                  document.querySelector('#blocked').remove();
+                  document.querySelector('#ready').hidden = false;
+                  setTimeout(() => document.querySelector('#confirm').disabled = false, 350);
+                }, 350);
+              });
+              document.querySelector('#confirm').onclick = () => {
+                document.body.dataset.merged = 'yes';
+                document.querySelector('#merge').remove();
+                document.querySelector('#fields').remove();
+              };
+            });
+          };
+        </script></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/001RD00000ywHCnYAM");
+      const port = new TecnocloudUiV2Port(page);
+      expect(await (port as unknown as { savePersonForm(): Promise<{ personId: string; merged: boolean }> }).savePersonForm())
+        .toEqual({ personId: "001RD00000ywHCnYAM", merged: true });
+      expect(await page.locator('body').getAttribute('data-merged')).toBe('yes');
+      expect(await page.locator('[role="dialog"]').count()).toBe(0);
+    } finally { await browser.close(); }
+  }, 20_000);
+
   it("cerca prima la via completa e poi il nome distintivo", () => {
     expect(propertyAddressFilterTerms("Via Zuavo")).toEqual(["Via Zuavo", "Zuavo"]);
   });

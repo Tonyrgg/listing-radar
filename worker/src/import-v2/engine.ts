@@ -4,8 +4,10 @@ import {
   buildPlan,
   canonicalEmail,
   canonicalPhone,
+  canonicalPersonName,
   canonicalTaxCode,
   choosePropertyCandidate,
+  formatPersonName,
   sameAddress,
   sameCadastralIdentity,
 } from "./identity.js";
@@ -62,15 +64,7 @@ function sameNullableText(left: string | null, right: string | null): boolean {
 }
 
 function samePersonName(left: string | null, right: string | null): boolean {
-  const tokens = (value: string | null) => String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleUpperCase("it-IT")
-    .split(/[^A-Z0-9]+/)
-    .filter(Boolean)
-    .sort()
-    .join("|");
-  return tokens(left) === tokens(right);
+  return canonicalPersonName(left) === canonicalPersonName(right);
 }
 
 function assertPerson(source: SourceOwner, actual: CrmPersonSnapshot, expectedPhones: string[], expectedEmails: string[]): void {
@@ -188,7 +182,7 @@ export class ImportV2Engine {
       case "planned":
         return { ...checkpoint, people: await this.resolvePeople(plan.source.owners), stage: NEXT_STAGE.planned };
       case "people_resolved":
-        return { ...checkpoint, syncedPeople: await this.syncPeople(plan.source.owners, checkpoint.people), stage: NEXT_STAGE.people_resolved };
+        return { ...checkpoint, syncedPeople: await this.syncPeople(plan.source.owners, checkpoint), stage: NEXT_STAGE.people_resolved };
       case "people_synced": {
         const { choice, linkedCount, cadastralCount } = await this.resolveProperty(plan, checkpoint.syncedPeople);
         return {
@@ -253,10 +247,11 @@ export class ImportV2Engine {
     return resolutions;
   }
 
-  private async syncPeople(owners: SourceOwner[], resolutions: PersonResolution[]): Promise<SyncedPerson[]> {
-    const synced: SyncedPerson[] = [];
+  private async syncPeople(owners: SourceOwner[], checkpoint: ImportV2Checkpoint): Promise<SyncedPerson[]> {
+    const synced: SyncedPerson[] = [...checkpoint.syncedPeople];
     for (const owner of owners) {
-      const checkpointResolution = resolutions.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId);
+      if (synced.some((person) => person.sourcePersonId === owner.sourcePersonId && person.taxCode === owner.taxCode)) continue;
+      const checkpointResolution = checkpoint.people.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId);
       if (!checkpointResolution) throw new ImportV2Error("Risoluzione nominativo mancante", "invalid_source");
       // The stored resolution is evidence, not an instruction. A merge/create
       // may have succeeded immediately before a crash, so identity is reread.
@@ -296,6 +291,11 @@ export class ImportV2Engine {
       if (after.length === 1) saved = after[0]!;
       assertPerson(owner, saved, desired.phones, desired.emails);
       synced.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, crmPersonId: saved.id, mergePerformed });
+      // Preserve each verified person before moving to the next. A later
+      // owner's transient error must not replay successful writes/merges.
+      checkpoint.syncedPeople = [...synced];
+      checkpoint.updatedAt = this.now().toISOString();
+      await this.store.save(checkpoint);
     }
     return synced;
   }
@@ -308,7 +308,7 @@ export class ImportV2Engine {
       return {
         personId: person.crmPersonId,
         taxCode: owner.taxCode,
-        fullName: owner.fullName,
+        fullName: formatPersonName(owner.fullName),
         sharePercentage: owner.sharePercentage,
         role: owner.sourcePersonId === primarySourcePersonId ? "Proprietario Principale" : "Comproprietario",
       };
@@ -337,8 +337,17 @@ export class ImportV2Engine {
     const personIds = people.map((person) => person.crmPersonId);
     // Both operations navigate the same Tecnocloud tab; overlapping them is a
     // race between two unrelated pages and was the source of random stalls.
-    const linked = await this.crm.listAllPropertiesForPeople(personIds, plan);
     const cadastral = await this.crm.findPropertiesByCadastralIdentity(plan);
+    const exact = cadastral.filter((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+      && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral));
+    // The global search already covers all owners, including former owners.
+    // Only an exact, unambiguous identity can avoid the linked-list fallback.
+    if (exact.length) return {
+      choice: choosePropertyCandidate(plan.source, cadastral),
+      linkedCount: 0,
+      cadastralCount: cadastral.length,
+    };
+    const linked = await this.crm.listAllPropertiesForPeople(personIds, plan);
     return {
       choice: choosePropertyCandidate(plan.source, [...linked, ...cadastral]),
       linkedCount: linked.length,

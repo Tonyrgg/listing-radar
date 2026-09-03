@@ -1,4 +1,4 @@
-import { canonicalEmail, canonicalPhone, splitSourcePersonName } from "./identity.js";
+import { canonicalEmail, canonicalPhone, formatPersonName, splitSourcePersonName } from "./identity.js";
 import type { CrmPersonSnapshot, SourceOwner } from "./model.js";
 
 function unique<T>(values: T[]): T[] {
@@ -28,7 +28,7 @@ export function personWriteModel(source: SourceOwner, existing: CrmPersonSnapsho
   const existingPhones = (existing?.phones ?? []).map(canonicalPhone).filter(Boolean);
   const sourceEmails = source.contacts.emails.map(canonicalEmail).filter(Boolean);
   const existingEmails = (existing?.emails ?? []).map(canonicalEmail).filter(Boolean);
-  const fullName = source.fullName.trim() || existing?.fullName || "";
+  const fullName = formatPersonName(source.fullName.trim() || existing?.fullName || "");
   const name = splitSourcePersonName(fullName, source.taxCode);
   return {
     taxCode: source.taxCode,

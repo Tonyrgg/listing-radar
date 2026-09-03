@@ -26,6 +26,17 @@ export function canonicalEmail(value: unknown): string {
   return String(value ?? "").trim().toLocaleLowerCase("it-IT");
 }
 
+/** Comparison never changes the spelling sent to the CRM. */
+export function canonicalPersonName(value: unknown): string {
+  return String(value ?? "").normalize("NFD").replace(DIACRITICS, "")
+    .toLocaleLowerCase("it-IT").split(/[^a-z0-9]+/).filter(Boolean).sort().join("|");
+}
+
+export function formatPersonName(value: string): string {
+  return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("it-IT")
+    .replace(/(^|[\s'’\-])(\p{L})/gu, (_match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase("it-IT")}`);
+}
+
 function fiscalNameCode(value: string, firstName: boolean): string {
   const letters = value.normalize("NFD").replace(DIACRITICS, "").toUpperCase().replace(/[^A-Z]/g, "");
   const consonants = letters.replace(/[AEIOU]/g, "");

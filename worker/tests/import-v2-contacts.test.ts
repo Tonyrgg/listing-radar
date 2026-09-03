@@ -45,9 +45,20 @@ describe("Import V2 contact and overwrite policy", () => {
       fullName: "ROSSI MARIO",
     }, null);
     expect({ firstName: desired.firstName, lastName: desired.lastName }).toEqual({
-      firstName: "MARIO",
-      lastName: "ROSSI",
+      firstName: "Mario",
+      lastName: "Rossi",
     });
+    expect(desired.fullName).toBe("Rossi Mario");
+  });
+
+  it.each(["DE LUCA MARIA ANNA", "de luca maria anna", "De LuCa mArIa AnNa"])("scrive le iniziali maiuscole per %s", (fullName) => {
+    expect(personWriteModel({ ...owner, taxCode: "DLCMNN80A41A893P", fullName }, null))
+      .toMatchObject({ firstName: "Maria Anna", lastName: "De Luca", fullName: "De Luca Maria Anna" });
+  });
+
+  it("conserva apostrofi e accenti nei nomi", () => {
+    expect(personWriteModel({ ...owner, taxCode: "DNGNCL80A01A893P", fullName: "D'ANGELO NICOLÒ" }, null))
+      .toMatchObject({ firstName: "Nicolò", lastName: "D'Angelo" });
   });
 
   it("conserva tutti i telefoni normalizzati senza duplicati", () => {
