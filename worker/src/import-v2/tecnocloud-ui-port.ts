@@ -493,7 +493,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     // the merge fields live in separate component roots.
     const master = this.page.locator('input[type="radio"][value="master"]').filter({ visible: true });
     const slave = this.page.locator('input[type="radio"][value="slave"]').filter({ visible: true });
-    if (!(await master.count()) || !(await slave.count())) return null;
+    const ready = this.page.getByText(/Tutti i campi sono stati riconciliati/i).filter({ visible: true });
+    if ((!(await master.count()) || !(await slave.count())) && !(await ready.count())) return null;
     const dialogs = this.page.locator('[role="dialog"]:visible');
     if (await dialogs.count() === 1) return dialogs;
     const person = dialogs.filter({ hasText: /Nominativo/i });
@@ -510,7 +511,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
      * della colonna sinistra osservato sul portale reale. */
     const leftOptions = this.page.locator('input[type="radio"][value="master"]').filter({ visible: true });
     const rightOptions = this.page.locator('input[type="radio"][value="slave"]').filter({ visible: true });
-    await leftOptions.first().waitFor({ state: "visible", timeout: 15_000 });
+    const ready = this.page.getByText(/Tutti i campi sono stati riconciliati/i).filter({ visible: true });
+    const blocked = this.page.getByText(/Non si può procedere|Non è possibile procedere/i).filter({ visible: true });
+    for (let wait = 0; !(await leftOptions.count()); wait += 1) {
+      // The green reconciliation can open with both accordions collapsed.
+      // Hidden/nonexistent radio controls are not a prerequisite to saving
+      // a reconciliation the CRM already confirms as complete.
+      if (await ready.count() && !(await blocked.count())) return this.saveReadyMerge(dialog);
+      if (wait === 75) throw new ImportV2Error("Campi o conferma della riconciliazione non disponibili", "verification_failed", { retryable: true });
+      await this.page.waitForTimeout(200);
+    }
     let signature = "";
     let stable = 0;
     let names: string[] = [];
@@ -541,16 +551,24 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (selectedNames.length !== names.length || names.some((name) => !selectedNames.includes(name))) {
       throw new ImportV2Error("Non tutte le opzioni sinistre del merge risultano selezionate", "verification_failed", { retryable: true });
     }
+    return this.saveReadyMerge(dialog);
+  }
+
+  private async saveReadyMerge(dialog: Locator): Promise<string> {
     const blocked = this.page.getByText(/Non si può procedere|Non è possibile procedere/i).filter({ visible: true });
     const ready = this.page.getByText(/Tutti i campi sono stati riconciliati/i).filter({ visible: true });
     const scopedSave = dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
-    const save = await scopedSave.count() === 1 ? scopedSave
-      : await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva merge");
+    const globalSave = this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true });
+    let save: Locator | null = null;
     for (let wait = 0; wait < 75; wait += 1) {
-      if (await ready.count() && !(await blocked.count()) && await save.isEnabled()) break;
+      // Prefer the modal's button: the underlying edit form can still expose
+      // its own visible Salva. Never choose one by document order.
+      save = await scopedSave.count() === 1 ? scopedSave : await globalSave.count() === 1 ? globalSave : null;
+      if (await ready.count() && !(await blocked.count()) && save && await save.isEnabled()) break;
       if (wait === 74) throw new ImportV2Error("Tecnocloud non ha autorizzato il salvataggio della riconciliazione", "verification_failed", { retryable: true });
       await this.page.waitForTimeout(200);
     }
+    if (!save) throw new ImportV2Error("Salva della riconciliazione non univoco", "verification_failed");
     await save.click();
     await dialog.waitFor({ state: "hidden", timeout: 20_000 });
     return this.waitForPersonRecord();
@@ -794,11 +812,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
           await view.click({ force: true });
           const options = this.page.locator('[role="option"]').filter({ visible: true });
-          await options.first().waitFor({ state: "visible", timeout: 8_000 });
-          const labels = await options.allTextContents();
-          const residential = labels.findIndex((label) => normalized(label).replace(/^•\s*/, "") === "IMMOBILI RESIDENZIALI");
-          if (residential < 0) throw new ImportV2Error("Vista Immobili residenziali non disponibile", "transient_portal", { retryable: true });
-          await options.nth(residential).click({ force: true });
+          const residential = options.filter({ hasText: /^\s*•?\s*Immobili residenziali\s*$/i });
+          // The currently selected option can appear before the requested one.
+          await (await this.one(residential, "Vista Immobili residenziali", 8_000)).click({ force: true });
           for (let wait = 0; wait < 40 && !normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI"); wait += 1) {
             await this.page.waitForTimeout(200);
           }
@@ -810,15 +826,28 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await openSearchView();
 
       const filterHost = (index: number) => this.page.locator(`lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="${index}"]`);
-      const drawerIsOpen = async () => await filterHost(1).filter({ visible: true }).count() === 1;
+      const drawerIsOpen = async () => {
+        const trigger = this.page.locator('button[title="Filters"]').filter({ visible: true });
+        if (await trigger.count() === 1 && await trigger.getAttribute("aria-expanded") === "false") return false;
+        // A custom-element host can remain visible while its input is hidden,
+        // and a translated drawer is "visible" to Playwright outside the
+        // viewport. Check the real address field, not the first host shell.
+        const address = filterHost(9).locator("input").filter({ visible: true });
+        if (await address.count() !== 1) return false;
+        return address.evaluate((input) => {
+          const rect = input.getBoundingClientRect();
+          return rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth;
+        });
+      };
       const openDrawer = async () => {
         if (await drawerIsOpen()) return;
         const open = await this.one(this.page.locator('button[title="Filters"]').filter({ visible: true }), "Filtri immobili", 12_000);
-        for (let attempt = 0; attempt < 12 && !(await drawerIsOpen()); attempt += 1) {
+        for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
           await open.click({ force: true });
-          await this.page.waitForTimeout(750);
+          // Give the same opening time to finish before clicking a toggle again.
+          for (let wait = 0; wait < 15 && !(await drawerIsOpen()); wait += 1) await this.page.waitForTimeout(200);
         }
-        if (!(await drawerIsOpen()) || !(await filterHost(26).count())) {
+        if (!(await drawerIsOpen())) {
           throw new ImportV2Error("Il pannello dei filtri immobili non si è aperto", "transient_portal", { retryable: true });
         }
       };

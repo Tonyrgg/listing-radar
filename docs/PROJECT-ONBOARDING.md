@@ -309,6 +309,17 @@ confermare un salvataggio: il worker attende la riconciliazione o una vista
 dettaglio stabile senza finestre o indicatori di caricamento. Nel merge
 seleziona i campi per nome, attende insieme messaggio verde e Salva abilitato,
 quindi invia una sola conferma e verifica la chiusura della finestra.
+Se le sezioni «Cliente» e «Recapiti ed Indirizzi» sono chiuse e il CRM mostra
+già la conferma verde, non attende radio nascosti o non montati: salva la
+riconciliazione con il pulsante della finestra, distinto dal Salva del modulo
+sottostante. La rilettura dei dati anagrafici resta obbligatoria.
+
+La ricerca globale non considera mai l'ingresso in «Immobili residenziali»
+una prova dell'esistenza dell'immobile. Attende l'opzione esatta nel menu,
+riconosce l'apertura dei filtri dal campo indirizzo effettivamente visibile
+e applica foglio, particella e subalterno. Un contenitore vuoto o un pannello
+traslato fuori schermo non valgono come pannello aperto; i campi catastali
+possono montarsi dopo l'apertura e vengono attesi prima della compilazione.
 
 ### Quote
 
