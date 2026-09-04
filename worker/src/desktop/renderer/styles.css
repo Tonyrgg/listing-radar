@@ -2930,9 +2930,12 @@ body[data-fase="lavora"] #settings { display: none !important; }
 .activity-mode-control {
   display: flex;
   flex: 1 1 0;
+  /* I pulsanti non si stringono: senza andare a capo rubavano al testo tutta
+   * la larghezza e lo riducevano a una parola per riga. */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--lr-space-4);
+  gap: var(--lr-space-3) var(--lr-space-4);
   min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--lr-line-quiet);
@@ -2941,6 +2944,9 @@ body[data-fase="lavora"] #settings { display: none !important; }
 
 .activity-mode-copy {
   display: flex;
+  /* Base bassa: il testo sta in linea con l'interruttore anche in una scheda
+   * stretta, e va a capo solo davanti ai tre pulsanti dell'attività. */
+  flex: 1 1 120px;
   min-width: 0;
   flex-direction: column;
   gap: 2px;
@@ -2963,27 +2969,37 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .activity-mode-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* La modalità di prova è una regola della run: stesso vestito dell'attività. */
-#dryRunControl { cursor: pointer; }
+/* La modalità di prova è una regola della run: stesso vestito dell'attività.
+ * L'interruttore dei comproprietari è della stessa famiglia. */
+#dryRunControl,
+#coOwnersControl,
+#safeAddressControl { cursor: pointer; }
 
-#dryRunControl input[type="checkbox"] { flex: none; }
+#dryRunControl input[type="checkbox"],
+#coOwnersControl input[type="checkbox"],
+#safeAddressControl input[type="checkbox"] { flex: none; }
 
-#dryRunControl:has(input:disabled) {
+#dryRunControl:has(input:disabled),
+#coOwnersControl:has(input:disabled),
+#safeAddressControl:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-/* Le regole della run stanno su una riga sola; il comando di arresto le segue
- * senza spezzarla in due blocchi centrati. */
+/* Le regole della run stanno su una griglia: le schede prendono colonne uguali
+ * e vanno a capo insieme, invece di lasciarne una schiacciata accanto alle
+ * altre quando non entrano tutte in una riga. Il comando di arresto occupa
+ * sempre la riga intera sotto di loro. */
 .run-controls {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   align-items: stretch;
 }
 
-.run-controls > .activity-mode-control { flex: 1 1 320px; }
+.run-controls > .activity-mode-control { min-width: 0; }
 
 .run-stop-control {
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   justify-content: flex-start;
 }
 

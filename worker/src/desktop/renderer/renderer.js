@@ -2305,6 +2305,7 @@ function render() {
       : "Ti chiede conferma prima dei salvataggi.";
   $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
   $("coOwnersToggle").checked = appState.preferences?.importCoOwners !== false;
+  $("safeAddressToggle").checked = appState.preferences?.safeAddressCheck !== false;
   $("versionLabel").textContent = `v${appState.version}`;
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
@@ -2964,6 +2965,20 @@ $("coOwnersToggle").addEventListener("change", async (event) => {
       toggle.checked
         ? "Import dei comproprietari attivo"
         : "Import fermo all'intestatario con la quota più alta",
+    );
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    toast(error?.message ?? String(error));
+  }
+});
+$("safeAddressToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.savePreferences({ safeAddressCheck: toggle.checked });
+    toast(
+      toggle.checked
+        ? "Controllo sicuro attivo: cerca anche per indirizzo"
+        : "Controllo sicuro spento: solo verifiche catastali",
     );
   } catch (error) {
     toggle.checked = !toggle.checked;

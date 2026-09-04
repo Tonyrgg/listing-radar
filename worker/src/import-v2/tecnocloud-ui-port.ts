@@ -1,7 +1,7 @@
 import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
-import { canonicalTaxCode, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
+import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
   CadastralIdentity,
@@ -194,6 +194,8 @@ export function personLookupTerms(fullName: string, taxCode: string): string[] {
 }
 
 export class TecnocloudUiV2Port implements TecnocloudV2Port {
+  /** Etichetta del filtro immobili -> posizione nel pannello, letta una volta. */
+  private filterIndexes: Map<string, number> | null = null;
   private readonly submittedActivities = new Set<string>();
   private readonly virtualPeople = new Map<string, CrmPersonSnapshot>();
   private readonly virtualProperties = new Map<string, CrmPropertySnapshot>();
@@ -206,8 +208,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   constructor(
     private readonly page: Page,
     private readonly dryRun = false,
-    private readonly options: { isInterruptionRequested?: () => boolean } = {},
+    private readonly options: {
+      isInterruptionRequested?: () => boolean;
+      /** Con false la ricerca si ferma al catasto e non passa dall'indirizzo. */
+      safeAddressCheck?: boolean | (() => boolean);
+    } = {},
   ) {}
+
+  private safeAddressCheckEnabled(): boolean {
+    const value = this.options.safeAddressCheck ?? true;
+    return typeof value === "function" ? value() : value;
+  }
 
   private throwIfInterruptionRequested(): void {
     if (this.options.isInterruptionRequested?.()) {
@@ -1157,6 +1168,27 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await openSearchView();
 
       const filterHost = (index: number) => this.page.locator(`lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="${index}"]`);
+      /* I campi del pannello si raggiungono per posizione, ma la posizione
+       * cambia se Tecnocloud ne aggiunge uno. L'etichetta non sta sul campo
+       * (`variant="label-hidden"`) bensi' nel contenitore che lo avvolge:
+       * leggerla la' rende la mappa indipendente dall'ordine, e i numeri
+       * verificati restano come ripiego se la lettura non riesce. */
+      const resolveFilterIndex = async (label: string, fallback: number): Promise<number> => {
+        if (!this.filterIndexes?.size) {
+          const pairs = await this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index]')
+            .evaluateAll((elements) => elements.flatMap((element) => {
+              const index = Number(element.getAttribute("data-index"));
+              const container = element.parentElement?.parentElement?.parentElement;
+              const name = (container?.textContent ?? "").replace(/\s+/g, " ").replace(/\s*:\s*$/, "").trim();
+              return Number.isFinite(index) && name ? [[name, index] as [string, number]] : [];
+            }))
+            .catch(() => [] as Array<[string, number]>);
+          /* Una lettura a vuoto non va conservata: al giro dopo il pannello
+           * potrebbe essere montato e la mappa diventare leggibile. */
+          if (pairs.length) this.filterIndexes = new Map(pairs.map(([name, index]) => [normalized(name), index]));
+        }
+        return this.filterIndexes?.get(normalized(label)) ?? fallback;
+      };
       const drawerIsOpen = async () => {
         const trigger = this.page.locator('button[title="Filters"]').filter({ visible: true });
         if (await trigger.count() === 1 && await trigger.getAttribute("aria-expanded") === "false") return false;
@@ -1182,8 +1214,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           throw new ImportV2Error("Il pannello dei filtri immobili non si è aperto", "transient_portal", { retryable: true });
         }
       };
-      const fillFilter = async (index: number, value: string, label: string) => {
+      const fillFilter = async (index: number, value: string, label: string, optional = false) => {
         const candidates = filterHost(index);
+        /* Civico e interno restringono la ricerca ma non tutte le viste li
+         * espongono: se il campo non c'e' si cerca piu' largo, come prima,
+         * invece di fermare l'import. Una ricerca piu' larga restituisce piu'
+         * candidati, mai meno, quindi non puo' far concludere un'assenza. */
+        if (optional && !(await candidates.count())) return;
         await candidates.first().waitFor({ state: "attached", timeout: 12_000 });
         const count = await candidates.count();
         if (count !== 1) {
@@ -1225,12 +1262,23 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: import in pausa prima di creare o aggiornare schede.", "global_portal", { global: true });
         return [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
       };
-      const search = async (address: string, sheet: string, parcel: string, subaltern: string): Promise<string[]> => {
+      type SearchFilters = {
+        address?: string; civic?: string; internal?: string;
+        sheet?: string; parcel?: string; parcelDenomination?: string; subaltern?: string;
+      };
+      const search = async (filters: SearchFilters): Promise<string[]> => {
         await openDrawer();
-        await fillFilter(9, address, "Filtro indirizzo");
-        await fillFilter(26, sheet, "Filtro foglio");
-        await fillFilter(27, parcel, "Filtro particella");
-        await fillFilter(31, subaltern, "Filtro subalterno");
+        for (const [label, fallback, value, optional] of [
+          ["Indirizzo", 9, filters.address, false],
+          ["Civico", 10, filters.civic, true],
+          ["Interno", 12, filters.internal, true],
+          ["Catasto Foglio", 26, filters.sheet, false],
+          ["Catasto Particella", 27, filters.parcel, false],
+          ["Catasto Denom Particella", 28, filters.parcelDenomination, true],
+          ["Catasto Subalterno", 31, filters.subaltern, false],
+        ] as Array<[string, number, string | undefined, boolean]>) {
+          await fillFilter(await resolveFilterIndex(label, fallback), value ?? "", `Filtro ${label.toLocaleLowerCase("it")}`, optional);
+        }
         const apply = this.page.locator("button").filter({ hasText: /^\s*Applica\s*$/, visible: true });
         const requests = this.watchSearchRequests();
         try {
@@ -1239,17 +1287,45 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         } finally { requests.stop(); }
       };
 
-      const found = new Set(await search("", plan.source.cadastral.sheet, plan.source.cadastral.parcel, plan.source.cadastral.subaltern));
+      /* La particella vive ora in "Catasto Particella" ora in "Catasto Denom
+       * Particella": schede vecchie tengono il numero nel secondo campo e il
+       * primo vuoto. Due verifiche distinte con lo stesso numero coprono
+       * entrambe le forme senza dover indovinare quale sia la buona. */
+      const { sheet, parcel, subaltern } = plan.source.cadastral;
+      /* La seconda verifica ha senso solo dove la vista espone quel campo:
+       * senza, cercherebbe per foglio e subalterno soltanto, cioe' piu' largo
+       * di quanto serva. Il campo esiste nel DOM solo a pannello aperto, e
+       * "Applica" puo' richiuderlo: si guarda adesso, non dopo la ricerca. */
+      await openDrawer();
+      const hasDenominationFilter = await filterHost(await resolveFilterIndex("Catasto Denom Particella", 28)).count() > 0;
+      const found = new Set<string>();
+      for (const id of await search({ sheet, parcel, subaltern })) found.add(id);
+      if (hasDenominationFilter) {
+        for (const id of await search({ sheet, parcelDenomination: parcel, subaltern })) found.add(id);
+      }
       const summaries: CrmPropertySummary[] = [];
       for (const id of found) summaries.push(await this.readPropertySummary(id));
       // Inspect all cadastral candidates so duplicates remain detectable, but
       // stop widening to the whole street once an exact record is available.
       if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
+      /* Senza controllo sicuro ci si ferma al catasto: se non ha trovato
+       * niente, l'immobile non c'e' e si procede a crearlo. */
+      if (!this.safeAddressCheckEnabled()) return summaries;
       if (found.size) await openSearchView();
-      const addressTerms = propertyAddressFilterTerms(propertyDraft(plan).street);
+      /* Cercare la sola via restituiva ogni immobile della via e ne apriva la
+       * scheda uno per uno, anche quelli di un altro civico che `sameAddress`
+       * avrebbe comunque scartato: un costo che cresceva a ogni immobile
+       * importato, perche' ognuno entrava nei risultati del successivo.
+       * Civico e interno restringono la ricerca a cio' che puo' davvero essere
+       * questo immobile. Il segnaposto "." non e' un valore: la' si torna alla
+       * ricerca per sola via. */
+      const draft = propertyDraft(plan);
+      const civic = draft.civic && draft.civic !== "." ? draft.civic : "";
+      const internal = draft.internal && draft.internal !== "." ? draft.internal : "";
+      const addressTerms = propertyAddressFilterTerms(draft.street);
       for (const term of addressTerms) {
-        const matches = await search(term, "", "", "");
+        const matches = await search({ address: term, civic, internal });
         for (const id of matches) found.add(id);
         if (matches.length) break;
       }
@@ -1327,7 +1403,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.pick(this.page.locator('c-picklist:has(label:text-is("Sottotipologia Immobile"))').filter({ visible: true }), draft.subtype, "Sottotipologia Immobile");
     if (draft.floor) await this.pick(this.page.locator('c-picklist:has(label:text-is("Piano Immobile"))').filter({ visible: true }), draft.floor, "Piano Immobile");
     await this.fillVisibleInput("Numero Piano", draft.floorNumber);
-    await this.fillVisibleInput("Indirizzo", draft.street, true);
+    await this.fillVisibleInput("Indirizzo", formatStreetName(draft.street), true);
     await this.fillVisibleInput("Civico", draft.civic, true);
     await this.fillVisibleInput("Interno", draft.internal, true);
     await this.fillVisibleInput("Lettera", draft.letter);

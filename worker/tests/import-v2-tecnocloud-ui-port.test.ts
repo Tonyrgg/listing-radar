@@ -64,6 +64,89 @@ describe("Tecnocloud UI V2", () => {
     } finally { await browser.close(); }
   }, 20_000);
 
+  it("restringe la ricerca per via con civico e interno invece di aprire tutta la via", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const searches: string[] = [];
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (pathname === "/applied") {
+          searches.push(new URL(route.request().url()).searchParams.get("values") ?? "");
+          return route.fulfill({ body: "ok" });
+        }
+        // Il pannello reale tiene l'etichetta nel contenitore, non sul campo.
+        const filter = (index: number, label: string) =>
+          `<div>${label} :<div class="slds-col"><div class="slds-form-element__control"><lightning-input c-queryviewerfilters_queryviewerfilters data-index="${index}"><input></lightning-input></div></div></div>`;
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <input placeholder="--- Seleziona ---" value="Immobili residenziali">
+          ${filter(9, "Indirizzo")}${filter(10, "Civico")}${filter(12, "Interno")}
+          ${filter(26, "Catasto Foglio")}${filter(27, "Catasto Particella")}${filter(28, "Catasto Denom Particella")}${filter(31, "Catasto Subalterno")}
+          <button id="apply">Applica</button><div id="results"></div>
+          <script>document.querySelector('#apply').onclick = () => {
+            const value = (index) => document.querySelector('[data-index="' + index + '"] input').value;
+            const values = [9,10,12,26,27,28,31].map(value).join('|');
+            fetch('/applied?values=' + encodeURIComponent(values));
+            // Nessun riscontro: qui conta solo con quali filtri si cerca.
+            document.querySelector('#results').innerHTML = '<div>Nessun risultato</div>';
+          };</script></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const plan: ImportV2Plan = { version: 2, fingerprint: "wide", source: {
+        sourcePropertyId: "p", jobId: "j", municipality: "BITONTO", fullAddress: "VIALE GIOVANNI XXIII n. 195 Interno 5 Piano 2, 70032 BITONTO (BA)",
+        cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+        category: "A/2", propertyClass: "3", consistency: "6 vani", owners: [],
+        activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" },
+      } };
+      await new TecnocloudUiV2Port(page).findPropertiesByCadastralIdentity(plan);
+
+      // Due verifiche catastali distinte: la particella nell'uno e nell'altro campo.
+      expect(searches[0]).toBe("|||38|215||17");
+      expect(searches[1]).toBe("|||38||215|17");
+      // Poi il controllo per indirizzo, che porta con sé civico e interno.
+      expect(searches.slice(2).length).toBeGreaterThan(0);
+      for (const applied of searches.slice(2)) expect(applied).toMatch(/^[^|]+\|195\|5\|\|\|\|$/);
+    } finally { await browser.close(); }
+  }, 60_000);
+
+  it("senza controllo sicuro si ferma alle due verifiche catastali", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const searches: string[] = [];
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (pathname === "/applied") {
+          searches.push(new URL(route.request().url()).searchParams.get("values") ?? "");
+          return route.fulfill({ body: "ok" });
+        }
+        const filter = (index: number, label: string) =>
+          `<div>${label} :<div class="slds-col"><div class="slds-form-element__control"><lightning-input c-queryviewerfilters_queryviewerfilters data-index="${index}"><input></lightning-input></div></div></div>`;
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <input placeholder="--- Seleziona ---" value="Immobili residenziali">
+          ${filter(9, "Indirizzo")}${filter(10, "Civico")}${filter(12, "Interno")}
+          ${filter(26, "Catasto Foglio")}${filter(27, "Catasto Particella")}${filter(28, "Catasto Denom Particella")}${filter(31, "Catasto Subalterno")}
+          <button id="apply">Applica</button><div id="results"></div>
+          <script>document.querySelector('#apply').onclick = () => {
+            const value = (index) => document.querySelector('[data-index="' + index + '"] input').value;
+            fetch('/applied?values=' + encodeURIComponent([9,10,12,26,27,28,31].map(value).join('|')));
+            document.querySelector('#results').innerHTML = '<div>Nessun risultato</div>';
+          };</script></body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const plan: ImportV2Plan = { version: 2, fingerprint: "veloce", source: {
+        sourcePropertyId: "p", jobId: "j", municipality: "BITONTO", fullAddress: "VIALE GIOVANNI XXIII n. 195 Interno 5 Piano 2, 70032 BITONTO (BA)",
+        cadastral: { urbanSection: null, sheet: "38", parcel: "215", parcelDenomination: null, subaltern: "17", income: null },
+        category: "A/2", propertyClass: "3", consistency: "6 vani", owners: [],
+        activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" },
+      } };
+      const port = new TecnocloudUiV2Port(page, false, { safeAddressCheck: false });
+      await expect(port.findPropertiesByCadastralIdentity(plan)).resolves.toEqual([]);
+
+      expect(searches).toEqual(["|||38|215||17", "|||38||215|17"]);
+    } finally { await browser.close(); }
+  }, 45_000);
+
   it("attende che la vista immobili sia idratata prima di usarla", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

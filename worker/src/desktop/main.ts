@@ -89,6 +89,9 @@ type Preferences = {
   /* Con false l'import collega il solo intestatario con la quota piu' alta.
    * I comproprietari gia' collegati nel gestionale restano dove sono. */
   importCoOwners: boolean;
+  /* Con false la ricerca dell'immobile si ferma alle due verifiche catastali
+   * e non passa dal controllo per indirizzo. */
+  safeAddressCheck: boolean;
   /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
   streetRegistryZoneId: string | null;
   encryptedEnvironment?: string;
@@ -112,7 +115,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, streetRegistryZoneId: null };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, safeAddressCheck: true, streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -583,7 +586,7 @@ function migratePreferences(stored: Partial<Preferences> & { autoFillDirectConta
     ?? (autoFillDirectContact === false ? "plain" : "direct_contact");
   /* Una preferenza assente vale come attiva: chi aggiorna il worker continua
    * a importare i comproprietari come prima. */
-  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false };
+  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false, safeAddressCheck: rest.safeAddressCheck !== false };
 }
 
 async function loadPreferences() {
@@ -2533,6 +2536,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
     importCoOwners: () => preferences.importCoOwners,
+    safeAddressCheck: () => preferences.safeAddressCheck,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;

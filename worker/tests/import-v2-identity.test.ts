@@ -4,6 +4,7 @@ import {
   addressIdentity,
   buildPlan,
   choosePropertyCandidate,
+  formatStreetName,
   propertyNameToAddress,
   sameAddress,
   sameCadastralIdentity,
@@ -185,6 +186,17 @@ describe("Import V2 identity", () => {
       crmUnit("lorusso", "51", "Lorusso", 477.72),
       { ...crmUnit("senza-catasto", "", "Ignoto", 0), cadastral: null },
     ])).toThrow(/Più immobili condividono l'indirizzo/);
+  });
+
+  it("scrive le vie con la sola iniziale maiuscola, non come le manda SISTER", () => {
+    expect(formatStreetName("VIA RE MANFREDI")).toBe("Via Re Manfredi");
+    expect(formatStreetName("VIALE GIOVANNI XXIII")).toBe("Viale Giovanni Xxiii");
+    expect(formatStreetName("VICO SANT'ANNA")).toBe("Vico Sant'Anna");
+    expect(formatStreetName("  via   marsala  ")).toBe("Via Marsala");
+  });
+
+  it("non cambia il riconoscimento dell'indirizzo, che confronta a maiuscole normalizzate", () => {
+    expect(sameAddress("VIA MARSALA n. 4 Piano T", "Via Marsala 4 [.], 70032 BITONTO (BA)")).toBe(true);
   });
 
   it("rifiuta il piano prima delle scritture se un intestatario non ha CF", () => {

@@ -33,9 +33,21 @@ export function canonicalPersonName(value: unknown): string {
     .toLocaleLowerCase("it-IT").split(/[^a-z0-9]+/).filter(Boolean).sort().join("|");
 }
 
-export function formatPersonName(value: string): string {
+function capitalizeWords(value: string): string {
   return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("it-IT")
     .replace(/(^|[\s'’\-])(\p{L})/gu, (_match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase("it-IT")}`);
+}
+
+export function formatPersonName(value: string): string {
+  return capitalizeWords(value);
+}
+
+/**
+ * SISTER consegna le vie tutte in maiuscolo, ma nel gestionale si scrivono con
+ * la sola iniziale, come le schede gia' presenti.
+ */
+export function formatStreetName(value: string): string {
+  return capitalizeWords(value);
 }
 
 function fiscalNameCode(value: string, firstName: boolean): string {

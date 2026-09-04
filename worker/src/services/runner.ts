@@ -174,6 +174,8 @@ export interface RunnerOptions {
   propertyActivityMode?: PropertyActivityMode | (() => PropertyActivityMode);
   /** Con false l'import si ferma all'intestatario con la quota piu' alta. */
   importCoOwners?: boolean | (() => boolean);
+  /** Con false la ricerca dell'immobile si ferma al catasto. */
+  safeAddressCheck?: boolean | (() => boolean);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -188,6 +190,7 @@ export class PropertyWorkerRunner {
   private readonly isStopAfterNextImportRequested: (jobId: string) => boolean;
   private readonly propertyActivityMode: () => PropertyActivityMode;
   private readonly importCoOwners: () => boolean;
+  private readonly safeAddressCheck: () => boolean;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -204,6 +207,8 @@ export class PropertyWorkerRunner {
       : () => activityMode ?? "direct_contact";
     const importCoOwners = options.importCoOwners ?? true;
     this.importCoOwners = typeof importCoOwners === "function" ? importCoOwners : () => importCoOwners;
+    const safeAddressCheck = options.safeAddressCheck ?? true;
+    this.safeAddressCheck = typeof safeAddressCheck === "function" ? safeAddressCheck : () => safeAddressCheck;
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
@@ -240,6 +245,7 @@ export class PropertyWorkerRunner {
       && (this.isCancellationRequested(importV2JobId) || this.isPauseRequested(importV2JobId)));
     const crmV2 = new TecnocloudUiV2Port(tabs.crmPage, this.config.WORKER_DRY_RUN, {
       isInterruptionRequested: importV2InterruptionRequested,
+      safeAddressCheck: () => this.safeAddressCheck(),
     });
     const contacts = new ExcelContactsAdapter(this.config.CONTACTS_EXCEL_PATH);
     await contacts.load();
