@@ -716,6 +716,49 @@ describe("Tecnocloud UI V2", () => {
     }
   });
 
+  it("non riapre la scheda di un intestatario gia' letto a ogni rilettura dei collegamenti", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const aperture: Record<string, number> = { "owner-primary": 0, "owner-linked": 0 };
+      const field = (label: string, value: string) => `<div><div><label>${label}</label></div><div class="slds-form-element__static"><span class="slds-grow">${value}</span></div></div>`;
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        for (const id of ["owner-primary", "owner-linked"]) {
+          if (path.includes(`/s/account/${id}`)) {
+            aperture[id] = (aperture[id] ?? 0) + 1;
+            const numero = id === "owner-primary" ? "1" : "2";
+            return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>${field("Codice Fiscale", `TESTCF000000000${numero}`)}${field("Nome", "TIZIO")}${field("Cognome", "TEST")}</body>` });
+          }
+        }
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <h1>IM - Via Francia 10</h1>
+          <li class="slds-page-header__detail-block"><div class="slds-text-title">Indirizzo Completo Immobile</div><c-output-field>Via Francia 10, 70032 BITONTO (BA)</c-output-field></li>
+          ${field("Catasto Foglio", "38")}${field("Catasto Particella", "215")}${field("Catasto Subalterno", "17")}
+          <div class="flex"><div><label><span>Proprietario Predefinito</span></label></div><a href="/CRMImmobiliareLightning/s/account/owner-primary">Primo Test</a></div>
+          ${field("Quota Proprietario", "50")}
+          <article>Potenziale acquisizione 0 Informatori 0 Soggetti collegati 1</article>
+          <article><h2>Soggetti collegati (1)</h2><ul><li data-id="ownership-linked"><a href="/CRMImmobiliareLightning/s/account/owner-linked">Secondo Test</a><span>Ruolo: Comproprietario Quota: 50 Diritto: Proprieta'</span></li></ul></article>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const primo = await port.readProperty("property-1");
+      const secondo = await port.readProperty("property-1");
+
+      // Stessa risposta della lettura completa, ma le schede si aprono una volta sola.
+      for (const property of [primo, secondo]) {
+        expect(property.owners).toEqual([
+          expect.objectContaining({ personId: "owner-primary", taxCode: "TESTCF0000000001", role: "Proprietario Principale" }),
+          expect.objectContaining({ personId: "owner-linked", taxCode: "TESTCF0000000002", role: "Comproprietario" }),
+        ]);
+      }
+      expect(aperture).toEqual({ "owner-primary": 1, "owner-linked": 1 });
+    } finally {
+      await browser.close();
+    }
+  }, 30_000);
+
   it("riusa nella stessa esecuzione una ricerca CF appena verificata", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
