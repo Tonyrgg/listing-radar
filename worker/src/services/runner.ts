@@ -32,6 +32,21 @@ import { inspectAcquisitionQueue, isAcquisitionExcluded } from "./acquisition-qu
 import { ImportV2Coordinator } from "../import-v2/coordinator.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
+import type { ImportV2Stage } from "../import-v2/model.js";
+
+/** Cosa sta facendo il worker adesso, detto all'operatore. */
+const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
+  queued: "Preparo l'immobile",
+  planned: "Cerco i nominativi nel gestionale",
+  people_resolved: "Creo o aggiorno i nominativi",
+  people_synced: "Cerco l'immobile nel gestionale",
+  property_resolved: "Creo o aggiorno l'immobile",
+  property_synced: "Collego proprietari e quote",
+  ownerships_synced: "Verifico immobile e intestatari",
+  verified: "Scrivo l'attività",
+  activity_synced: "Chiudo l'immobile",
+  completed: "Immobile completato",
+};
 
 export function assertImportV2BatchComplete(result: ImportV2BatchResult): void {
   if (!result.quarantined.length) return;
@@ -558,6 +573,13 @@ export class PropertyWorkerRunner {
           return definition
             ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
             : { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" };
+        }, (progress) => {
+          /* Durante l'import la barra restava a zero: l'avanzamento lo
+           * conosceva solo il motore. Ora ogni passaggio di stadio arriva
+           * all'interfaccia sullo stesso canale gia' usato dall'acquisizione. */
+          const property = propertyById.get(progress.propertyId);
+          if (!property) return;
+          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, IMPORT_V2_STAGE_MESSAGES[progress.stage]);
         });
         for (const outcome of result.completed) {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {

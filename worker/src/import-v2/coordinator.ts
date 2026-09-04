@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ImportV2Engine, type ImportV2EngineOptions } from "./engine.js";
-import type { ImportV2BatchResult } from "./queue.js";
+import type { ImportV2BatchResult, ImportV2Progress } from "./queue.js";
 import { runImportV2Batch } from "./queue.js";
 import {
   importV2Sources,
@@ -29,6 +29,7 @@ export class ImportV2Coordinator {
   async runJob(
     job: Pick<JobRow, "id">,
     activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
+    onProgress?: (progress: ImportV2Progress) => void,
   ): Promise<ImportV2BatchResult> {
     const [graph, evidence] = await Promise.all([
       this.repository.loadGraph(job.id),
@@ -36,6 +37,6 @@ export class ImportV2Coordinator {
     ]);
     const sources = importV2Sources(job, graph, activityFor, evidence);
     const engine = new ImportV2Engine(this.crm, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
-    return runImportV2Batch(engine, sources);
+    return runImportV2Batch(engine, sources, onProgress);
   }
 }

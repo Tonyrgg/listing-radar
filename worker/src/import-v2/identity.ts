@@ -123,6 +123,12 @@ export function addressIdentity(value: unknown): AddressIdentity | null {
   const internalToken = internalMatch?.[1] ? plainWords(internalMatch[1]) : "";
   const internal = internalToken && !["NC", "SNC"].includes(internalToken) ? internalToken : null;
   raw = raw.replace(/\[\s*[^\]]+?\s*\]\s*$/, "").replace(/\bINTERNO\s+[A-Z0-9/-]+\b/i, "").trim();
+  /* Scala ed edificio non entrano nell'indirizzo scritto nel gestionale, che
+   * si ferma al civico: chi confronta deve toglierli come li toglie chi
+   * scrive. Senza, "Scala 6" diventava il civico e "Scala A" non lasciava
+   * civico alcuno, e la verifica finale rifiutava un immobile appena creato
+   * con l'indirizzo giusto. */
+  raw = raw.replace(/\s+(?:EDIFICIO|SCALA)\b.*$/i, "").trim();
   const normalized = plainWords(raw).replace(/\bN(?:UMERO)?\s+(?=\d)/, "");
   const civicMatch = normalized.match(/^(.*?\D)\s+(\d+(?:\s*\/\s*[A-Z]|[A-Z])?)$/i);
   const missingCivicMatch = normalized.match(/^(.*?)\s+(?:N\s+)?(?:S\s*N\s*C|SNC|NC)$/i);

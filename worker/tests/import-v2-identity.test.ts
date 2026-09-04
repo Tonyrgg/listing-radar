@@ -199,6 +199,30 @@ describe("Import V2 identity", () => {
     expect(sameAddress("VIA MARSALA n. 4 Piano T", "Via Marsala 4 [.], 70032 BITONTO (BA)")).toBe(true);
   });
 
+  // Chi scrive l'indirizzo nel gestionale si ferma al civico e toglie scala ed
+  // edificio: chi confronta deve fare lo stesso, o rifiuta un immobile appena
+  // creato con l'indirizzo giusto.
+  it("toglie la scala dall'indirizzo come fa chi lo scrive", () => {
+    expect(addressIdentity("VIALE GIOVANNI XXIII n. 195 Scala A Interno 10 Piano 3"))
+      .toEqual({ street: "VIALE GIOVANNI XXIII", civic: "195", internal: "10", location: null });
+  });
+
+  it("non scambia il numero di scala per il civico", () => {
+    expect(addressIdentity("VIALE GIOVANNI XXIII n. 225 Scala 6 Interno 4 Piano 2"))
+      .toEqual({ street: "VIALE GIOVANNI XXIII", civic: "225", internal: "4", location: null });
+  });
+
+  it("riconosce nel gestionale l'immobile con scala appena scritto da SISTER", () => {
+    expect(sameAddress(
+      "VIALE GIOVANNI XXIII n. 195 Scala A Interno 10 Piano 3",
+      "Viale Giovanni Xxiii 195 [10], 70032 BITONTO (BA)",
+    )).toBe(true);
+    expect(sameAddress(
+      "VIALE GIOVANNI XXIII n. 225 Scala 6 Interno 4 Piano 2",
+      "Viale Giovanni Xxiii 225 [4], 70032 BITONTO (BA)",
+    )).toBe(true);
+  });
+
   it("rifiuta il piano prima delle scritture se un intestatario non ha CF", () => {
     expect(() => buildPlan(source({ owners: [{ ...source().owners[0]!, taxCode: "" }] })))
       .toThrow(/codice fiscale utilizzabile/);

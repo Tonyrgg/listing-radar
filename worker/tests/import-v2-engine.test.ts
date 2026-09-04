@@ -516,6 +516,29 @@ describe("Import V2 engine", () => {
     expect(owners.map((owner) => owner.role).sort()).toEqual(["Comproprietario", "Proprietario Principale"]);
   });
 
+  it("racconta l'avanzamento di ogni immobile mentre la coda procede", async () => {
+    const crm = new FakeCrm();
+    const avanzamento: Array<{ propertyId: string; index: number; total: number; stage: string }> = [];
+    const result = await runImportV2Batch(
+      new ImportV2Engine(crm, new MemoryStore()),
+      [property(), property("property-2")],
+      (progress) => avanzamento.push({ ...progress }),
+    );
+
+    expect(result.completed).toHaveLength(2);
+    expect(avanzamento.every((step) => step.total === 2)).toBe(true);
+    // Ogni immobile percorre gli stadi in ordine e chiude con "completed",
+    // che e' cio' che fa avanzare la barra.
+    const primo = avanzamento.filter((step) => step.propertyId === "property-1");
+    expect(primo.every((step) => step.index === 1)).toBe(true);
+    expect(primo.map((step) => step.stage)).toEqual([
+      "queued", "planned", "people_resolved", "people_synced", "property_resolved",
+      "property_synced", "ownerships_synced", "verified", "activity_synced", "completed",
+    ]);
+    expect(avanzamento.filter((step) => step.propertyId === "property-2").at(-1))
+      .toMatchObject({ index: 2, stage: "completed" });
+  });
+
   it("mette in pausa l'intera coda soltanto per un errore globale di sessione", async () => {
     const crm = new FakeCrm();
     crm.sessionFailure = new ImportV2Error("session expired", "global_session", { global: true, retryable: true });
