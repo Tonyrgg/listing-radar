@@ -579,7 +579,7 @@ export class PropertyWorkerRunner {
           const property = propertyById.get(progress.propertyId);
           if (!property) return;
           this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, IMPORT_V2_STAGE_MESSAGES[progress.stage]);
-        });
+        }, () => this.isStopAfterNextImportRequested(job.id));
         for (const outcome of result.completed) {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
             crm_record_id: outcome.crmPropertyId,

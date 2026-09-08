@@ -19,6 +19,7 @@ export async function runImportV2Batch(
   engine: ImportV2Engine,
   properties: Array<SourceProperty | (() => SourceProperty)>,
   onProgress?: (progress: ImportV2Progress) => void,
+  shouldPauseAfterItem: () => boolean = () => false,
 ): Promise<ImportV2BatchResult> {
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
@@ -31,6 +32,22 @@ export async function runImportV2Batch(
     else if (outcome.state === "quarantined") result.quarantined.push(outcome);
     else {
       result.paused = outcome;
+      break;
+    }
+    if (shouldPauseAfterItem()) {
+      result.paused = {
+        ...outcome,
+        state: "paused",
+        failure: {
+          kind: "operator_pause",
+          message: "Run messa in pausa dopo l'immobile corrente; checkpoint conservato",
+          retryable: false,
+          global: true,
+          stage: outcome.stage,
+          details: { pauseRequested: true, stopAfterNextImport: true },
+          occurredAt: new Date().toISOString(),
+        },
+      };
       break;
     }
   }

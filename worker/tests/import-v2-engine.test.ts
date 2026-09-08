@@ -575,4 +575,23 @@ describe("Import V2 engine", () => {
     expect(result.paused?.itemId).toBe("item-property-1");
     expect(result.completed).toHaveLength(0);
   });
+
+  it("ferma la coda dopo l'immobile corrente conservando il completato", async () => {
+    const crm = new FakeCrm();
+    const result = await runImportV2Batch(
+      new ImportV2Engine(crm, new MemoryStore()),
+      [property(), property("property-2")],
+      undefined,
+      () => true,
+    );
+
+    expect(result.completed.map((item) => item.propertyId)).toEqual(["property-1"]);
+    expect(result.paused).toMatchObject({
+      propertyId: "property-1",
+      state: "paused",
+      stage: "completed",
+      failure: { kind: "operator_pause", details: { pauseRequested: true, stopAfterNextImport: true } },
+    });
+    expect(crm.properties).toHaveLength(1);
+  });
 });

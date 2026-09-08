@@ -40,6 +40,7 @@ describe("controlli di arresto desktop", () => {
     expect(main).toContain("if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode");
     expect(main).toMatch(/activeRunPromise = null;\s+activityModeOverride = null;/);
     expect(runner).toContain("this.propertyActivityMode()");
+    expect(runner).toContain("this.isStopAfterNextImportRequested(job.id)");
     expect(renderer).toContain("Riprendi dal punto salvato");
     expect(renderer).toContain("Metti in pausa e conserva");
     expect(main).toContain('status: "acquisition_skipped"');

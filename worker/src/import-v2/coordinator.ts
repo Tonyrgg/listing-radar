@@ -30,6 +30,7 @@ export class ImportV2Coordinator {
     job: Pick<JobRow, "id">,
     activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
     onProgress?: (progress: ImportV2Progress) => void,
+    shouldPauseAfterItem?: () => boolean,
   ): Promise<ImportV2BatchResult> {
     const [graph, evidence] = await Promise.all([
       this.repository.loadGraph(job.id),
@@ -37,6 +38,6 @@ export class ImportV2Coordinator {
     ]);
     const sources = importV2SourceFactories(job, graph, activityFor, evidence);
     const engine = new ImportV2Engine(this.crm, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
-    return runImportV2Batch(engine, sources, onProgress);
+    return runImportV2Batch(engine, sources, onProgress, shouldPauseAfterItem);
   }
 }
