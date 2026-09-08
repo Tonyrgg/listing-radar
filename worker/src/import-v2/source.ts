@@ -29,9 +29,23 @@ export function importV2Sources(
   activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
   evidence: ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: new Set() },
 ): SourceProperty[] {
+  return importV2SourceFactories(job, graph, activityFor, evidence).map((build) => build());
+}
+
+/**
+ * Keeps activity selection live until each property actually starts. This is
+ * important for long imports: changing Autocompila/Generica/Nessuna applies
+ * to the next untouched property without altering an in-flight checkpoint.
+ */
+export function importV2SourceFactories(
+  job: Pick<JobRow, "id">,
+  graph: AcquiredGraph,
+  activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
+  evidence: ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: new Set() },
+): Array<() => SourceProperty> {
   const queue = inspectAcquisitionQueue(graph);
   const people = queue.index.peopleById;
-  return queue.activeProperties.map((property) => {
+  return queue.activeProperties.map((property) => () => {
     const links = queue.index.ownershipsByPropertyId.get(property.id) ?? [];
     const owners = links.flatMap((ownership) => {
       const person = people.get(ownership.person_id);

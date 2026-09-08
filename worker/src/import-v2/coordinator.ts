@@ -4,7 +4,7 @@ import { ImportV2Engine, type ImportV2EngineOptions } from "./engine.js";
 import type { ImportV2BatchResult, ImportV2Progress } from "./queue.js";
 import { runImportV2Batch } from "./queue.js";
 import {
-  importV2Sources,
+  importV2SourceFactories,
   loadImportV2AcquisitionEvidence,
   type AcquiredGraph,
   type ActivitySource,
@@ -35,7 +35,7 @@ export class ImportV2Coordinator {
       this.repository.loadGraph(job.id),
       loadImportV2AcquisitionEvidence(this.repository.client, job.id),
     ]);
-    const sources = importV2Sources(job, graph, activityFor, evidence);
+    const sources = importV2SourceFactories(job, graph, activityFor, evidence);
     const engine = new ImportV2Engine(this.crm, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
     return runImportV2Batch(engine, sources, onProgress);
   }

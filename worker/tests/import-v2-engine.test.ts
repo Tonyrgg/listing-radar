@@ -455,12 +455,20 @@ describe("Import V2 engine", () => {
   });
 
   it("recupera il blocco intermittente del dialog comproprietari", async () => {
-    const crm = new FakeCrm();
+    class CountReadsCrm extends FakeCrm {
+      personReads: string[] = [];
+      override async readPerson(personId: string, expectedTaxCode: string | null = null) {
+        this.personReads.push(personId);
+        return super.readPerson(personId, expectedTaxCode);
+      }
+    }
+    const crm = new CountReadsCrm();
     crm.replaceFailures = 2;
     const outcome = await new ImportV2Engine(crm, new MemoryStore(), { maxTransientAttempts: 3 }).run(property());
 
     expect(outcome.state).toBe("completed");
     expect(crm.recoveries).toBe(2);
+    expect(crm.personReads).toHaveLength(2);
     expect([...crm.properties.values()][0]?.owners).toHaveLength(2);
   });
 

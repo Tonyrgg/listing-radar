@@ -65,6 +65,15 @@ function formatDecimal(value: number | null): string {
   return new Intl.NumberFormat("it-IT", { useGrouping: false, maximumFractionDigits: 2 }).format(value);
 }
 
+export function propertySubtype(categoryValue: string, consistencyValue: string | null): string {
+  const category = categoryValue.toUpperCase().replace(/\s+/g, "").replace(/^([AC])(\d)/, "$1/$2");
+  if (!category.startsWith("A/")) return category === "C/6" ? "Posto auto" : "Box";
+  const rooms = Number(consistencyValue?.replace(",", ".").match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
+  const localCount = Math.max(2, Math.ceil(rooms - 2));
+  if (rooms <= 3) return "Monolocale";
+  return localCount > 6 ? "Multilocale" : `${localCount} locali`;
+}
+
 export type LookupCommitEvidence = {
   value: string;
   expected: string;
@@ -147,6 +156,20 @@ export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: 
   });
 }
 
+export function protectedUnknownOwnerships(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): CrmOwnershipSnapshot[] {
+  const desiredPersonIds = new Set(desired.map((owner) => owner.personId));
+  return actual.filter((owner) => isPrivateFiscalCode(owner.taxCode)
+    && !isManagedCrmOwnership(owner)
+    && !/^usufrutt/.test(normalizedOwnershipRight(owner.rightType))
+    && !desiredPersonIds.has(owner.personId));
+}
+
+export function editableLinkedOwnerships(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): CrmOwnershipSnapshot[] {
+  const desiredPersonIds = new Set(desired.map((owner) => owner.personId));
+  return actual.filter((owner) => owner.role !== "Proprietario Principale"
+    && (isManagedCrmOwnership(owner) || desiredPersonIds.has(owner.personId)));
+}
+
 function propertyDraft(plan: ImportV2Plan) {
   const raw = plan.source.fullAddress.replace(/,\s*\d{5}\s+.+?\s*\([A-Z]{2}\)\s*$/i, "").trim();
   const internal = raw.match(/\[\s*([^\]]+)\s*\]\s*$/)?.[1]
@@ -159,11 +182,8 @@ function propertyDraft(plan: ImportV2Plan) {
   const civic = match?.[2] ?? ".";
   const letter = match?.[3]?.toUpperCase() ?? "";
   const category = plan.source.category.toUpperCase().replace(/\s+/g, "").replace(/^([AC])(\d)/, "$1/$2");
-  const rooms = Number(plan.source.consistency?.replace(",", ".").match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
   const type = category.startsWith("A/") ? "Appartamenti" : "Box / posti auto";
-  const subtype = type === "Appartamenti"
-    ? rooms <= 3 ? "Monolocale" : rooms >= 9 ? "Multilocale" : `${Math.max(2, Math.ceil(rooms - 2))} locali`
-    : category === "C/6" ? "Posto auto" : "Box";
+  const subtype = propertySubtype(category, plan.source.consistency);
   let floor = "";
   let floorNumber = "";
   if (floorToken.includes("-")) floor = "Su più livelli";
@@ -1651,8 +1671,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const saveRequests = this.watchSearchRequests();
           try {
             await save.click();
-            await save.waitFor({ state: "hidden", timeout: 15_000 });
             await this.waitForCloudStable(saveRequests, "Salvataggio dati immobile");
+            try {
+              await save.waitFor({ state: "hidden", timeout: 4_000 });
+            } catch {
+              // Lightning can commit the Cloud request yet leave the inline
+              // editor mounted. Reopen the exact record and let the final
+              // address/cadastral reread decide whether the save succeeded.
+              await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+            }
           } finally {
             saveRequests.stop();
           }
@@ -1951,12 +1978,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         return { propertyId, owners: structuredClone(property.owners), removedPersonIds };
       }
       const before = await this.readOwnerships(propertyId);
-      const unknownPrivate = before.filter((owner) => isPrivateFiscalCode(owner.taxCode)
-        && !isManagedCrmOwnership(owner)
-        && !/^usufrutt/.test(normalizedOwnershipRight(owner.rightType)));
+      const unknownPrivate = protectedUnknownOwnerships(before, desired);
       if (unknownPrivate.length) {
         throw new ImportV2Error("Uno o più soggetti privati non espongono ruolo o diritto verificabili", "verification_failed", {
-          retryable: true,
+          // Unrelated links are protected. Retrying cannot change this
+          // deterministic condition, so quarantine once instead of looping.
+          retryable: false,
           details: { personIds: unknownPrivate.map((owner) => owner.personId) },
         });
       }
@@ -1971,7 +1998,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const primaryChanged = await this.syncPrimaryOwnership(propertyId, desiredPrimary[0]!, currentPrimary);
       const afterPrimary = primaryChanged ? await this.readOwnerships(propertyId) : before;
       const desiredLinked = desired.filter((owner) => owner.role !== "Proprietario Principale");
-      const managed = afterPrimary.filter((owner) => isManagedCrmOwnership(owner) && owner.role !== "Proprietario Principale");
+      const managed = editableLinkedOwnerships(afterPrimary, desired);
       const removedPersonIds: string[] = [];
       /* Escludere i comproprietari da questo import significa non aggiungerli,
        * non toglierli: chi e' gia' collegato resta collegato. */
@@ -1994,7 +2021,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       let owners = await this.readOwnerships(propertyId);
       if (!ownershipSyncConfirmed(owners, desired)) {
         await this.pauseAwareWait(1_200);
-        await this.page.reload({ waitUntil: "domcontentloaded" });
+        // Save already waited for the Cloud requests. Let Lightning publish
+        // the component state and reread it in place, without a full reload.
         owners = await this.readOwnerships(propertyId);
       }
       if (!ownershipSyncConfirmed(owners, desired)) {

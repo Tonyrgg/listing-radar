@@ -17,12 +17,13 @@ export type ImportV2Progress = {
 /** A bad property is isolated; a session/portal-wide failure pauses the batch. */
 export async function runImportV2Batch(
   engine: ImportV2Engine,
-  properties: SourceProperty[],
+  properties: Array<SourceProperty | (() => SourceProperty)>,
   onProgress?: (progress: ImportV2Progress) => void,
 ): Promise<ImportV2BatchResult> {
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
-  for (const [position, property] of properties.entries()) {
+  for (const [position, source] of properties.entries()) {
+    const property = typeof source === "function" ? source() : source;
     const outcome = await engine.run(property, (stage) => onProgress?.({
       propertyId: property.sourcePropertyId, index: position + 1, total, stage,
     }));

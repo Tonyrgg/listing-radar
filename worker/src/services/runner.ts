@@ -562,14 +562,13 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
         const activityTasks = buildPropertyActivityTasks(graph);
-        const mode = this.propertyActivityMode();
         const coordinator = new ImportV2Coordinator(this.repository, crmV2, {
           maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS,
           isInterruptionRequested: () => this.isCancellationRequested(job.id) || this.isPauseRequested(job.id),
           includeCoOwners: () => this.importCoOwners(),
         });
         const result = await coordinator.runJob(job, (property, owners) => {
-          const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), mode);
+          const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), this.propertyActivityMode());
           return definition
             ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
             : { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" };

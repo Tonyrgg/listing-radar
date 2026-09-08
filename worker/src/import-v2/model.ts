@@ -130,6 +130,8 @@ export type ImportV2Checkpoint = {
   plan: ImportV2Plan | null;
   people: PersonResolution[];
   syncedPeople: SyncedPerson[];
+  /** CRM people already reread and verified before ownership writes. */
+  ownershipVerifiedPersonIds?: string[];
   propertyResolution: PropertyResolution | null;
   crmPropertyId: string | null;
   attempts: number;

@@ -56,7 +56,11 @@ await page.addInitScript(({ initialState, details }) => {
       { id: "excel", ok: true, detail: "File Excel pronto" },
       { id: "supabase", ok: true, detail: "Connesso" },
     ],
-    openChrome: async () => called("openChrome"), chooseExcel: async () => { called("chooseExcel"); return null; }, savePreferences: async () => called("savePreferences"),
+    openChrome: async () => called("openChrome"), chooseExcel: async () => { called("chooseExcel"); return null; }, savePreferences: async (values) => {
+      called("savePreferences");
+      state = { ...state, preferences: { ...state.preferences, ...values } };
+      return state.preferences;
+    },
     startJob: async () => called("startJob"), resumeJob: async () => called("resumeJob"), pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
     startStreetRun: async () => called("startStreetRun"), cancelStreetRun: async () => called("cancelStreetRun"),
     abandonStreetRun: async () => called("abandonStreetRun"), stopAll: async () => called("stopAll"),
@@ -164,6 +168,11 @@ const runSlideHeightSpread = Math.max(...Object.values(runSlideHeights)) - Math.
 const networkPreparationOverflow = await page.locator('[data-run-slide="network"]').evaluate((element) => element.scrollHeight > element.clientHeight + 1);
 await page.locator('[data-run-slide-target="civic"]').click();
 await page.locator('[data-mode="automatic"]').click();
+const activityModeSelections = [];
+for (const mode of ["plain", "none", "direct_contact"]) {
+  await page.locator(`[data-activity-mode="${mode}"]`).click();
+  activityModeSelections.push(await page.locator(`[data-activity-mode="${mode}"]`).getAttribute("aria-checked"));
+}
 await page.locator("#chromeButton").evaluate((button) => button.click());
 await page.locator("#startButton").click();
 await page.locator('[data-run-slide-target="street"]').click();
@@ -240,7 +249,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -248,6 +257,7 @@ const failures = [
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
+  ...(activityModeSelections.some((selected) => selected !== "true") ? ["Le tre modalità attività non confermano la selezione salvata"] : []),
   ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),
   ...(!secondaryActionsLocked ? ["Le azioni secondarie non vengono bloccate durante una run"] : []),
   ...(streetRunProgressVisible !== 1 ? ["Avanzamento interno long mode non visibile"] : []),
@@ -260,7 +270,8 @@ const failures = [
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
   ...(!cloudRestrictionVisible || !runDisabledDuringRestriction || !updaterEnabledDuringRestriction
     ? ["Stato HTTP 402 non separa correttamente blocco run e aggiornamenti"] : []),
-  ...(["savePreferences", "openChrome", "startJob", "startStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(["openChrome", "startJob", "startStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
+  ...(workerCalls.savePreferences !== 4 ? [`Le preferenze modalità/avvio non sono state salvate quattro volte: ${workerCalls.savePreferences ?? 0}`] : []),
   ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),

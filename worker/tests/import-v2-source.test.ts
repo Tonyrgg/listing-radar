@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { importV2Sources } from "../src/import-v2/source.js";
+import { importV2SourceFactories, importV2Sources } from "../src/import-v2/source.js";
 import { inspectAcquisitionQueue } from "../src/services/acquisition-queue.js";
 import { buildPlan } from "../src/import-v2/identity.js";
 import { ImportV2Engine } from "../src/import-v2/engine.js";
@@ -82,6 +82,37 @@ describe("Import V2 acquisition bridge", () => {
     expect(source).not.toHaveProperty("acquisitionError");
     buildPlan(source!);
     expect(graph).toEqual(original);
+  });
+
+  it("legge la modalita attivita quando inizia ciascun immobile", () => {
+    const graph = acquired();
+    graph.properties.push({ ...property, id: "second-property", parcel: "99" });
+    graph.ownerships.push({ ...graph.ownerships[0]!, id: "second-link", property_id: "second-property" });
+    let enabled = true;
+    const factories = importV2SourceFactories({ id: "job-id" }, graph, () => ({
+      enabled,
+      description: enabled ? "Contatto proprietari" : null,
+      contactMode: "Contatto diretto",
+      status: "Eseguito",
+    }));
+
+    expect(factories[0]!().activity.enabled).toBe(true);
+    enabled = false;
+    expect(factories[1]!().activity.enabled).toBe(false);
+  });
+
+  it("la scelta attivita non invalida il checkpoint di identita", () => {
+    const [source] = importV2Sources({ id: "job-id" }, acquired(), activity);
+    const enabled = buildPlan({
+      ...source!,
+      activity: { enabled: true, description: "Contatto proprietari", contactMode: "Contatto diretto", status: "Eseguito" },
+    });
+    const disabled = buildPlan({
+      ...source!,
+      activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" },
+    });
+
+    expect(enabled.fingerprint).toBe(disabled.fingerprint);
   });
   it("usa il diritto e la quota specifici del collegamento, non quelli globali della persona", () => {
     const [source] = importV2Sources({ id: "job-id" }, {

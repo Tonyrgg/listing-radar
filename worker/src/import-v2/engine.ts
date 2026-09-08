@@ -263,7 +263,16 @@ export class ImportV2Engine {
       case "property_synced": {
         const propertyId = this.requirePropertyId(checkpoint);
         const owners = this.ownersInScope(plan.source.owners);
-        await this.verifyPeopleBeforeOwnership(owners, checkpoint.syncedPeople);
+        const expectedPersonIds = checkpoint.syncedPeople.map((person) => person.crmPersonId).sort();
+        const verifiedPersonIds = [...(checkpoint.ownershipVerifiedPersonIds ?? [])].sort();
+        if (JSON.stringify(verifiedPersonIds) !== JSON.stringify(expectedPersonIds)) {
+          await this.verifyPeopleBeforeOwnership(owners, checkpoint.syncedPeople);
+          checkpoint.ownershipVerifiedPersonIds = expectedPersonIds;
+          checkpoint.updatedAt = this.now().toISOString();
+          // A relationship retry resumes here instead of reopening every
+          // person record that was already verified successfully.
+          await this.store.save(checkpoint);
+        }
         this.throwIfInterruptionRequested();
         await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
           keepUnlistedManagedOwners: !this.includeCoOwners(),
@@ -329,20 +338,24 @@ export class ImportV2Engine {
         });
         mergePerformed = true;
       }
-      const after = (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
-        .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode);
-      if (after.length > 1) {
+      /* Create and overwrite already return a direct-by-ID reread of the
+       * saved record. Repeating the global search here only reopens the
+       * account list and the same person. A merge is different: it must also
+       * prove that no duplicate with the same CF remains. */
+      const after = mergePerformed
+        ? (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
+          .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode)
+        : [];
+      if (mergePerformed && after.length > 1) {
         throw new ImportV2Error("Dopo il salvataggio il codice fiscale identifica ancora più nominativi", "verification_failed", {
           retryable: true,
           details: { taxCode: owner.taxCode, candidateIds: after.map((candidate) => candidate.id) },
         });
       }
-      /* La ricerca globale Salesforce può restituire zero risultati nei
-       * secondi immediatamente successivi a create/overwrite/merge. La scheda
-       * restituita dal salvataggio è già stata aperta tramite ID e riletta dal
-       * port: zero è quindi ritardo d'indicizzazione, non autorizzazione a
-       * creare un secondo nominativo. Più di uno resta invece un errore. */
-      if (after.length === 1) saved = after[0]!;
+      /* Dopo il merge l'indice globale può restituire zero per alcuni
+       * secondi. La scheda restituita è già stata riletta direttamente per ID;
+       * più di un risultato resta invece un errore deterministico. */
+      if (mergePerformed && after.length === 1) saved = after[0]!;
       assertPerson(owner, saved, desired.phones, desired.emails);
       synced.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, crmPersonId: saved.id, mergePerformed });
       // Preserve each verified person before moving to the next. A later

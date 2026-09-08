@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ImportV2Error } from "./errors.js";
+import { buildPlan } from "./identity.js";
 import type {
   ImportV2Checkpoint,
   ImportV2Failure,
@@ -33,6 +34,7 @@ function checkpointFromRow(row: ImportV2ItemRow): ImportV2Checkpoint {
     plan: row.plan,
     people: row.checkpoint?.people ?? [],
     syncedPeople: row.checkpoint?.syncedPeople ?? [],
+    ownershipVerifiedPersonIds: row.checkpoint?.ownershipVerifiedPersonIds ?? [],
     propertyResolution: row.checkpoint?.propertyResolution ?? null,
     crmPropertyId: row.checkpoint?.crmPropertyId ?? null,
     attempts: row.attempts,
@@ -45,6 +47,7 @@ function checkpointPayload(checkpoint: ImportV2Checkpoint) {
   return {
     people: checkpoint.people,
     syncedPeople: checkpoint.syncedPeople,
+    ownershipVerifiedPersonIds: checkpoint.ownershipVerifiedPersonIds ?? [],
     propertyResolution: checkpoint.propertyResolution,
     crmPropertyId: checkpoint.crmPropertyId,
   };
@@ -68,9 +71,20 @@ export class SupabaseImportV2Store implements ImportV2Store {
     if (existing.data) {
       const row = existing.data as ImportV2ItemRow;
       if (row.plan_fingerprint !== plan.fingerprint) {
-        throw new ImportV2Error("L'acquisizione è cambiata dopo l'inizio dell'import", "invalid_source", {
-          details: { previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
-        });
+        // Releases up to 0.33.13 included the mutable activity choice in the
+        // fingerprint. Recompute the stored source with the current identity
+        // rules before declaring that acquisition evidence changed.
+        const compatibleLegacyFingerprint = row.plan
+          && buildPlan(row.plan.source).fingerprint === plan.fingerprint;
+        if (!compatibleLegacyFingerprint) {
+          throw new ImportV2Error("L'acquisizione è cambiata dopo l'inizio dell'import", "invalid_source", {
+            details: { previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
+          });
+        }
+        const migrated = await this.client.from("property_worker_import_v2_items")
+          .update({ plan_fingerprint: plan.fingerprint })
+          .eq("id", row.id);
+        if (migrated.error) throw new Error(`Migrazione fingerprint Import V2 fallita: ${migrated.error.message}`);
       }
       const checkpoint = checkpointFromRow(row);
       /* Una ripresa esplicita è un nuovo tentativo operativo: conserva tutti

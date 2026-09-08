@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chromium, type Locator } from "playwright";
 
-import { chooseLookupRecordCandidate, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms } from "../src/import-v2/tecnocloud-ui-port.js";
+import { chooseLookupRecordCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
@@ -19,6 +19,18 @@ describe("Ricerca nominativo nel lookup", () => {
   it("cerca con il solo ordine della fonte quando il nome non e' separabile", () => {
     expect(personLookupTerms("Coviello Caterina", "non-un-codice")).toEqual(["Coviello Caterina"]);
     expect(personLookupTerms("Coviello", "CVLCRN36E57A893C")).toEqual(["Coviello"]);
+  });
+});
+
+describe("Mappatura sottotipologia immobile", () => {
+  it.each([
+    ["A/2", "3 vani", "Monolocale"],
+    ["A/2", "8 vani", "6 locali"],
+    ["A/2", "8,5 vani", "Multilocale"],
+    ["A/2", "10 vani", "Multilocale"],
+    ["C/6", "20 mq", "Posto auto"],
+  ])("mappa %s con consistenza %s su %s", (category, consistency, expected) => {
+    expect(propertySubtype(category, consistency)).toBe(expected);
   });
 });
 
@@ -678,6 +690,19 @@ describe("Tecnocloud UI V2", () => {
       { linkId: "link-1", personId: "owner-1", taxCode: desired[0]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Proprietario Principale" },
       { linkId: "link-2", personId: "owner-2", taxCode: desired[1]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Comproprietario" },
     ], desired)).toBe(true);
+  });
+
+  it("normalizza un collegamento SISTER senza ruolo ma protegge gli sconosciuti", () => {
+    const desired = [
+      { personId: "owner-sister", taxCode: "TESTCF0000000001", fullName: "PRIMO TEST", sharePercentage: 50, role: "Comproprietario" as const },
+    ];
+    const actual = [
+      { linkId: "known", personId: "owner-sister", taxCode: "TESTCF0000000001", sharePercentage: null, rightType: null, role: null },
+      { linkId: "unknown", personId: "owner-other", taxCode: "TESTCF0000000002", sharePercentage: null, rightType: null, role: null },
+    ];
+
+    expect(editableLinkedOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-sister"]);
+    expect(protectedUnknownOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-other"]);
   });
 
   it("rilegge proprietario principale e comproprietario dai due blocchi distinti di Tecnocloud", async () => {

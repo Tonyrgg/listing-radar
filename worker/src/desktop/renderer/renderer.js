@@ -338,14 +338,14 @@ function commandIdentity(target) {
       networkRegistryStart: "Avvia Rete proprietari dalle vie",
       networkRegistryPause: "Ferma Rete proprietari dopo la via corrente",
       networkRegistryRefresh: "Aggiorna il registro vie",
-      streetRunCancel: "Metti in pausa acquisizione via",
+      streetRunCancel: "Metti in pausa e conserva acquisizione via",
       streetRunAbandon: "Ferma e abbandona acquisizione via",
       networkRunStart: "Esplora rete proprietaria",
-      networkRunCancel: "Metti in pausa esplorazione rete",
+      networkRunCancel: "Metti in pausa e conserva esplorazione rete",
       networkFilterReset: "Azzera i filtri della coda",
       "import-dialog-confirm": "Avvia l'import dell'acquisizione",
       "import-dialog-close": "Chiudi la finestra dell'import",
-      stopAfterNextImportButton: "Ferma dopo il prossimo import",
+      stopAfterNextImportButton: "Pausa dopo questo immobile",
       stopAllButton: "Ferma tutte le operazioni",
       requestArchiveStart: "Sincronizza archivio richieste",
       requestArchiveCancel: "Interrompi sincronizzazione richieste",
@@ -611,10 +611,10 @@ function renderRunControls() {
   button.disabled = Boolean(appState?.stoppingAll);
   button.setAttribute("aria-pressed", String(scheduled));
   button.textContent = scheduled
-    ? "Annulla stop programmato"
-    : "Ferma dopo il prossimo import";
+    ? "Annulla pausa programmata"
+    : "Pausa dopo questo immobile";
   $("stopAfterNextImportStatus").textContent = scheduled
-    ? "Il prossimo import verrà concluso, poi la run verrà messa in pausa con il resto salvato."
+    ? "Concludo l'immobile corrente, salvo il checkpoint e metto in pausa il resto della run."
     : canScheduleStop
       ? "Puoi richiedere la pausa in qualsiasi momento durante la run."
       : "Disponibile appena parte una run.";
@@ -879,7 +879,7 @@ function renderActivityMode() {
     button.classList.toggle("is-selected", selected);
     button.setAttribute("aria-checked", String(selected));
   });
-  $("autoFillDirectContactHelp").textContent = ACTIVITY_MODE_HELP[mode];
+  $("autoFillDirectContactHelp").textContent = `${ACTIVITY_MODE_HELP[mode]} ${appState?.active ? "La scelta vale dal prossimo immobile non ancora iniziato." : "La scelta viene salvata per la prossima lavorazione."}`;
 }
 function renderChecks() {
   const wanted = [
@@ -1104,9 +1104,9 @@ function promptButtons(prompt) {
 }
 function activeBackgroundOperation() {
   return appState?.streetRun?.active
-    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa" }
+    ? { label: "Long run via", title: "Acquisizione della via in corso", detail: "Leggo varianti, immobili e proprietari. L’avanzamento viene salvato continuamente.", action: "pause-street-run", actionLabel: "Metti in pausa e conserva" }
     : appState?.networkRun?.active
-      ? { label: "Rete proprietari", title: "Lavorazione delle vie in corso", detail: "Procedo dal centro verso l’esterno e completo ogni import CRM prima di passare alla via successiva.", action: "pause-network-run", actionLabel: "Pausa dopo questa via" }
+      ? { label: "Rete proprietari", title: "Lavorazione delle vie in corso", detail: "Procedo dal centro verso l’esterno e completo ogni import CRM prima di passare alla via successiva.", action: "pause-network-run", actionLabel: "Pausa dopo questa via e conserva" }
       : appState?.requestArchive?.active
         ? { label: "Sincronizzazione", title: "Sto sincronizzando le richieste", detail: "La pagina necessaria viene aperta automaticamente. I risultati già completati restano salvati.", action: "cancel-request-sync", actionLabel: "Interrompi" }
         : appState?.mandateArchive?.active
@@ -1196,7 +1196,7 @@ function renderAction() {
         ? `<span class="property-position">${isAcquisition ? "Riga" : "Immobile"} ${progress.index} di ${progress.total}</span><h2>${esc(progress.address ?? "Immobile senza indirizzo")}</h2><p><b>${esc(progress.message)}</b></p>`
         : `<h2>${esc(current.label)}</h2><p>${esc(current.doing)}</p>`;
     panel.className = pausePending ? "now-card is-warning" : "now-card";
-    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${pausePending ? "Pausa acquisita" : "Sto lavorando adesso"}</div>${propertyContext}<div class="now-actions"><button class="button secondary" data-action="pause" ${pausePending ? "disabled" : ""}>${pausePending ? "Arresto al punto sicuro…" : "Metti in pausa"}</button>${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>${progress ? (isAcquisition ? "Paracadute acquisizione" : "Ordine per questo immobile") : "Cosa succede dopo"}</h3>${pausePending ? "<p>La richiesta è stata ricevuta. Concludo soltanto l’azione atomica già iniziata, senza lasciare un salvataggio a metà.</p>" : progress ? (isAcquisition ? "<p>Ogni riga è isolata. Puoi saltare quella corrente senza perdere le precedenti né fermare le successive.</p>" : "<ol><li>Recapiti di tutti i proprietari</li><li>Anagrafiche verificate</li><li>Immobile collegato</li><li>Attività dall’immobile</li><li>Comproprietari e quote</li></ol>") : `<p>${esc(current.next)}</p>`}<p><b>Non devi fare nulla</b> finché non compare una richiesta.</p></div></div>`;
+    panel.innerHTML = `<div class="now-grid"><div class="now-main"><div class="now-label"><span></span>${pausePending ? "Pausa acquisita" : "Sto lavorando adesso"}</div>${propertyContext}<div class="now-actions"><button class="button secondary" data-action="pause" ${pausePending ? "disabled" : ""}>${pausePending ? "Salvo il checkpoint e mi fermo…" : "Metti in pausa e conserva"}</button>${cancelButton(appState.activeJobId)}</div></div><div class="now-side"><h3>${progress ? (isAcquisition ? "Paracadute acquisizione" : "Ordine per questo immobile") : "Cosa succede dopo"}</h3>${pausePending ? "<p>La richiesta è stata ricevuta. Concludo soltanto l’azione atomica già iniziata e salvo il punto esatto da cui ripartire.</p>" : progress ? (isAcquisition ? "<p>Ogni riga è isolata. Puoi saltare quella corrente senza perdere le precedenti né fermare le successive.</p>" : "<ol><li>Recapiti di tutti i proprietari</li><li>Anagrafiche verificate</li><li>Immobile collegato</li><li>Attività dall’immobile</li><li>Comproprietari e quote</li></ol>") : `<p>${esc(current.next)}</p>`}<p><b>Non devi fare nulla</b> finché non compare una richiesta.</p></div></div>`;
     return;
   }
   panel.className = "now-card is-hidden";
@@ -1260,7 +1260,7 @@ function renderJobs() {
             fattori = riassuntoAcquisizione(job.acquisition),
             imported = job.status === "completed",
             inProgress = Boolean(job.import_started_at) && !imported;
-          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span class="ledger-mark"></span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(job.total_properties ?? 0)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${imported ? "Importazione completata" : inProgress ? `Iniziata · ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per l'import"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Continua" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : ""}"><span class="ledger-mark"></span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(job.total_properties ?? 0)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${imported ? "Importazione completata" : inProgress ? `In pausa · riparte da ${esc(guide(job.last_completed_step ?? "acquisition_reviewed").label)}` : "Pronta per l'import"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi dal punto salvato" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
@@ -1275,6 +1275,7 @@ function markImportActivity() {
 
 async function openImportDialog(jobId) {
   const job = (appState?.jobs ?? []).find((riga) => riga.id === jobId);
+  const inProgress = Boolean(job?.import_started_at) && job?.status !== "completed";
   importJobId = jobId;
   /* Il modo con cui i dati sono stati raccolti e' il default: se allora le
    * attivita' erano autocompilate, importarle mute sarebbe una sorpresa. */
@@ -1282,6 +1283,15 @@ async function openImportDialog(jobId) {
     ?? appState?.preferences?.propertyActivityMode
     ?? "direct_contact";
   markImportActivity();
+  $("importDialogWarning").textContent = inProgress
+    ? "Riparto dal checkpoint: i passaggi già completati non verranno ripetuti."
+    : "L'import scrive davvero nel gestionale.";
+  document.querySelector('[data-import-dialog="confirm"]').textContent = inProgress
+    ? "Riprendi dal punto salvato"
+    : "Importa adesso";
+  $("importActivityHelp").textContent = inProgress
+    ? "La scelta vale per gli immobili non ancora iniziati; quello in checkpoint conserva la propria impostazione."
+    : "Come alla raccolta, ma puoi cambiarla adesso: vale solo per questo import.";
 
   const luogo = [job?.municipality, job?.street, job?.civic_number].filter(Boolean).join(" · ");
   const tipo = ACQUISIZIONE_TIPO[job?.acquisition?.kind] ?? null;
@@ -2497,7 +2507,13 @@ document.addEventListener("click", async (event) => {
       }
       if (target.dataset.activityMode) {
         renderActivityModeOptimistic(target.dataset.activityMode);
-        return window.propertyWorker.savePreferences({ propertyActivityMode: target.dataset.activityMode });
+        const saved = await window.propertyWorker.savePreferences({ propertyActivityMode: target.dataset.activityMode });
+        if (saved?.propertyActivityMode && ACTIVITY_MODE_HELP[saved.propertyActivityMode]) {
+          if (appState?.preferences) appState.preferences.propertyActivityMode = saved.propertyActivityMode;
+          renderActivityMode();
+        }
+        toast(appState?.active ? "Modalità salvata: vale dal prossimo immobile" : "Modalità attività salvata");
+        return saved;
       }
       if (target.dataset.mode) {
         selectedMode = target.dataset.mode;

@@ -7,11 +7,13 @@ const source = (...parts: string[]) => path.resolve(process.cwd(), "src", ...par
 
 describe("controlli di arresto desktop", () => {
   it("espone arresto globale e abbandono recuperabile del checkpoint", async () => {
-    const [main, preload, html, chrome] = await Promise.all([
+    const [main, preload, html, chrome, runner, renderer] = await Promise.all([
       readFile(source("desktop", "main.ts"), "utf8"),
       readFile(source("desktop", "preload.cjs"), "utf8"),
       readFile(source("desktop", "renderer", "index.html"), "utf8"),
       readFile(source("services", "chrome.ts"), "utf8"),
+      readFile(source("services", "runner.ts"), "utf8"),
+      readFile(source("desktop", "renderer", "renderer.js"), "utf8"),
     ]);
 
     expect(html).toContain('id="stopAllButton"');
@@ -25,6 +27,7 @@ describe("controlli di arresto desktop", () => {
     expect(html).toContain('data-activity-mode="direct_contact"');
     expect(html).toContain('data-activity-mode="plain"');
     expect(html).toContain('data-activity-mode="none"');
+    expect(html).toContain("Pausa dopo questo immobile");
     expect(html).toContain('id="streetRunAbandon"');
     expect(preload).toContain('stopAll: () => ipcRenderer.invoke("desktop:stop-all")');
     expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
@@ -34,6 +37,11 @@ describe("controlli di arresto desktop", () => {
      * legge quando serve. L'override vale per il singolo import scelto
      * dalla finestra, e ricade sempre sulla preferenza. */
     expect(main).toContain("propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode");
+    expect(main).toContain("if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode");
+    expect(main).toMatch(/activeRunPromise = null;\s+activityModeOverride = null;/);
+    expect(runner).toContain("this.propertyActivityMode()");
+    expect(renderer).toContain("Riprendi dal punto salvato");
+    expect(renderer).toContain("Metti in pausa e conserva");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");
     expect(main).toContain("repairLongRunJobForImport");

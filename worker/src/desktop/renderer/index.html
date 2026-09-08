@@ -121,7 +121,7 @@
             </div>
           </div>
           <div class="run-stop-control">
-            <button id="stopAfterNextImportButton" class="button secondary is-hidden" type="button" aria-pressed="false">Ferma dopo il prossimo import</button>
+            <button id="stopAfterNextImportButton" class="button secondary is-hidden" type="button" aria-pressed="false">Pausa dopo questo immobile</button>
             <small id="stopAfterNextImportStatus">Disponibile appena parte una run.</small>
           </div>
         </section>
@@ -176,7 +176,7 @@
           <div class="street-run-controls">
             <label>Oppure indica tu la via, esatta come nell'elenco SISTER<input id="streetRunInput" type="text" autocomplete="off" placeholder="es. via borgo san francesco" /></label>
             <button id="streetRunStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span id="streetRunStartLabel">Avvia dry-run</span></button>
-            <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa</button>
+            <button id="streetRunCancel" class="button danger is-hidden">Metti in pausa e conserva</button>
             <button id="streetRunAbandon" class="button danger is-hidden">Interrompi</button>
           </div>
           <fieldset class="street-run-filters">
@@ -366,7 +366,7 @@
             </div>
             <div class="network-run-actions">
               <button id="networkRunStart" class="button primary"><svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><span>Esplora e prepara coda</span></button>
-              <button id="networkRunCancel" class="button danger is-hidden">Metti in pausa</button>
+              <button id="networkRunCancel" class="button danger is-hidden">Metti in pausa e conserva</button>
             </div>
           </div>
           <div id="networkRunSummary" class="street-run-summary is-hidden" aria-live="polite"></div>

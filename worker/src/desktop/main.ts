@@ -2590,6 +2590,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       activePrompts = null;
       activeRunner = null;
       activeRunPromise = null;
+      activityModeOverride = null;
       stopAfterNextImportRequested = false;
       refreshStoppingAll();
       await publishState();
@@ -2911,6 +2912,9 @@ function registerIpc() {
        * niente comunque: i due flag non possono divergere. */
       dryRun: values.keepAcquisition != null ? keep : (values.dryRun ?? preferences.dryRun),
     };
+    // A top-bar activity choice made during an imported batch replaces the
+    // dialog's run-local default for the next untouched properties.
+    if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode;
     await persistPreferences();
     await publishState();
     return preferences;
@@ -3026,15 +3030,12 @@ function registerIpc() {
     const job = await repo.getJob(jobId);
     if (job.saved_at) await repo.markImportStarted(jobId);
     activityModeOverride = chosen;
-    try {
-      /* Un import dall'archivio e' sempre vero: e' il gesto per cui
-       * l'acquisizione era stata conservata. Se qui passasse la preferenza,
-       * con «Acquisisci e conserva» acceso girerebbe in simulazione e non
-       * scriverebbe niente, dicendo di aver importato. */
-      await runWorker({ mode: job.mode, dryRun: false, jobId });
-    } finally {
-      activityModeOverride = null;
-    }
+    /* Un import dall'archivio e' sempre vero: e' il gesto per cui
+     * l'acquisizione era stata conservata. Se qui passasse la preferenza,
+     * con «Acquisisci e conserva» acceso girerebbe in simulazione e non
+     * scriverebbe niente, dicendo di aver importato. L'override viene
+     * rilasciato dalla finally della run, non subito dopo averla pianificata. */
+    await runWorker({ mode: job.mode, dryRun: false, jobId });
     return true;
   });
   ipcMain.handle("desktop:set-auto-retry-enabled", async (_event, enabled: boolean) => {
