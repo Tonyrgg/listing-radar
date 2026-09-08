@@ -29,8 +29,12 @@ export function canonicalEmail(value: unknown): string {
 
 /** Comparison never changes the spelling sent to the CRM. */
 export function canonicalPersonName(value: unknown): string {
-  return String(value ?? "").normalize("NFD").replace(DIACRITICS, "")
-    .toLocaleLowerCase("it-IT").split(/[^a-z0-9]+/).filter(Boolean).sort().join("|");
+  const words = String(value ?? "").normalize("NFD").replace(DIACRITICS, "")
+    .toLocaleLowerCase("it-IT").split(/[^a-z0-9]+/).filter(Boolean);
+  // Tecnocloud sometimes prefixes the display label with a courtesy title.
+  // It is presentation metadata, not part of the identity proven by the CF.
+  if (["sig", "signor", "signore", "signora", "dott", "dottore", "dottoressa"].includes(words[0] ?? "")) words.shift();
+  return words.sort().join("|");
 }
 
 function capitalizeWords(value: string): string {

@@ -418,6 +418,26 @@ describe("Import V2 engine", () => {
     expect(outcome.state).toBe("completed");
   });
 
+  it("ignora il titolo di cortesia aggiunto da Tecnocloud al nome verificato", async () => {
+    class CourtesyTitleCrm extends FakeCrm {
+      override async mergePeople(request: MergeRequest) {
+        const saved = await super.mergePeople(request);
+        saved.fullName = `Sig. ${saved.fullName}`;
+        this.people.set(saved.id, structuredClone(saved));
+        return saved;
+      }
+    }
+    const crm = new CourtesyTitleCrm();
+    for (const id of ["dup-a", "dup-b"]) {
+      crm.people.set(id, {
+        id, taxCode: "RSSMRA80A01A893P", fullName: "Mario Rossi", birthDate: "1980-01-01",
+        birthPlace: "Bitonto", birthProvince: "BA", phones: [], emails: [],
+      });
+    }
+
+    expect((await new ImportV2Engine(crm, new MemoryStore()).run(property())).state).toBe("completed");
+  });
+
   it("aggiorna il catasto dell'immobile quando coincide soltanto l'indirizzo", async () => {
     const crm = new FakeCrm();
     crm.people.set("existing-owner", {
