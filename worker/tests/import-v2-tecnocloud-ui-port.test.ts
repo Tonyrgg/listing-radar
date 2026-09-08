@@ -35,6 +35,39 @@ describe("Mappatura sottotipologia immobile", () => {
 });
 
 describe("Tecnocloud UI V2", () => {
+  it("svuota la quota precedente prima di inserire e verificare quella nuova", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent('<input id="quota" value="100">');
+      const port = new TecnocloudUiV2Port(page);
+      await (port as unknown as {
+        replaceInputValue(input: Locator, value: string, label: string): Promise<void>;
+      }).replaceInputValue(page.locator("#quota"), "33,33", "Quota comproprietario");
+      expect(await page.locator("#quota").inputValue()).toBe("33,33");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("riconosce l'id esatto del comproprietario anche nel data-value interno", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<ul>
+        <li role="option" data-value='{"recordId":"001000000000001AAA"}'>Mario Rossi 3331111111</li>
+        <li role="option" data-value='{"recordId":"001000000000002"}'>Mario Rossi 0801111111</li>
+      </ul>`);
+      const port = new TecnocloudUiV2Port(page);
+      const candidates = await (port as unknown as {
+        lookupRecordCandidates(options: Locator, expectedRecordId: string): Promise<Array<{ recordId: string }>>;
+      }).lookupRecordCandidates(page.locator('[role="option"]'), "001000000000002AAA");
+      expect(candidates.map((candidate) => candidate.recordId)).toEqual(["", "001000000000002AAA"]);
+    } finally {
+      await browser.close();
+    }
+  });
+
   it.each([1, 2])("rilegge tutti i %s riscontri catastali e attende i dettagli senza cercare tutta la via", async (count) => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

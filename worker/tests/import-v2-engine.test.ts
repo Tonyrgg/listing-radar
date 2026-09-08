@@ -418,11 +418,11 @@ describe("Import V2 engine", () => {
     expect(outcome.state).toBe("completed");
   });
 
-  it("ignora il titolo di cortesia aggiunto da Tecnocloud al nome verificato", async () => {
+  it.each(["Sig.", "Sig.ra", "Dott.ssa"])("ignora il titolo di cortesia %s aggiunto da Tecnocloud al nome verificato", async (title) => {
     class CourtesyTitleCrm extends FakeCrm {
       override async mergePeople(request: MergeRequest) {
         const saved = await super.mergePeople(request);
-        saved.fullName = `Sig. ${saved.fullName}`;
+        saved.fullName = `${title} ${saved.fullName}`;
         this.people.set(saved.id, structuredClone(saved));
         return saved;
       }

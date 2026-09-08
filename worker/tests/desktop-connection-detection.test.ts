@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_BROWSER_CONNECTION_STABILITY,
   detectBrowserConnections,
+  markSisterNotRequired,
   stabilizeBrowserConnections,
   unreachableBrowserConnections,
 } from "../src/desktop/connection-detection.js";
@@ -36,7 +37,7 @@ describe("rilevamento tempestivo dei collegamenti desktop", () => {
   it("usa polling rapido separato e ricontrolla subito dopo l'apertura di Chrome", () => {
     const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
 
-    expect(main).toContain("scheduleBrowserChecks(ready ? 10_000 : 2_000)");
+    expect(main).toContain("scheduleBrowserChecks(ready && !confirmingFailure ? 10_000 : 2_000)");
     expect(main).toContain("scheduleBrowserChecks(250)");
     expect(main).toContain("Promise.all([");
   });
@@ -51,14 +52,28 @@ describe("rilevamento tempestivo dei collegamenti desktop", () => {
     expect(firstFailure.confirmed.every((check) => check.ok)).toBe(true);
     expect(firstFailure.pendingFailureCount).toBe(1);
 
-    const confirmedFailure = stabilizeBrowserConnections(firstFailure, unreachableBrowserConnections("altro dettaglio"));
+    const secondFailure = stabilizeBrowserConnections(firstFailure, unreachableBrowserConnections("altro dettaglio"));
+    expect(secondFailure.confirmed.every((check) => check.ok)).toBe(true);
+    const confirmedFailure = stabilizeBrowserConnections(secondFailure, unreachableBrowserConnections("ancora offline"));
     expect(confirmedFailure.confirmed.find((check) => check.id === "chrome")).toMatchObject({ ok: false, state: "unreachable" });
   });
 
+  it("non segnala SISTER dopo il passaggio alla sola importazione CRM", () => {
+    const checks = markSisterNotRequired(detectBrowserConnections([
+      { type: "page", title: "Logout", url: "https://sister3.agenziaentrate.gov.it/logout-success" },
+      { type: "page", title: "Gestionale", url: "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/home" },
+    ], "sister", "crmimmobiliarelightning"));
+    expect(checks.find((check) => check.id === "sister")).toMatchObject({
+      ok: true,
+      state: "ready",
+      detail: "Non necessaria durante l'import CRM",
+    });
+  });
+
   it("accetta immediatamente il recupero dopo un errore confermato", () => {
-    const failed = stabilizeBrowserConnections(
-      stabilizeBrowserConnections(EMPTY_BROWSER_CONNECTION_STABILITY, unreachableBrowserConnections("offline")),
-      unreachableBrowserConnections("offline"),
+    const failed = [1, 2, 3].reduce(
+      (state) => stabilizeBrowserConnections(state, unreachableBrowserConnections("offline")),
+      EMPTY_BROWSER_CONNECTION_STABILITY,
     );
     const ready = detectBrowserConnections([
       { type: "page", title: "SISTER", url: "https://sister3.agenziaentrate.gov.it/Visure/SceltaLink.do" },
@@ -70,6 +85,7 @@ describe("rilevamento tempestivo dei collegamenti desktop", () => {
   it("non lascia che un errore transitorio del keep-alive sovrascriva una scheda SISTER pronta", () => {
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
     expect(renderer).toContain('keep?.ok || keep?.sessionExpired');
+    expect(renderer).toContain('id === "sister" && !sisterNotRequired && keepIsNewer');
     expect(renderer).not.toContain('![' + '"waiting", "disabled"' + '].includes(keep?.statusLabel)');
   });
 });

@@ -22,6 +22,7 @@ import { connectToChrome } from "../services/chrome.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
+import { stepRequiresSister } from "../core/sister-requirement.js";
 import {
   SisterStreetRun,
   type SisterStreetRunCheckpoint,
@@ -59,6 +60,7 @@ import type { WorkerMode } from "../types.js";
 import {
   EMPTY_BROWSER_CONNECTION_STABILITY,
   detectBrowserConnections,
+  markSisterNotRequired,
   stabilizeBrowserConnections,
   unreachableBrowserConnections,
   type BrowserConnectionCheck,
@@ -2408,6 +2410,19 @@ function scheduleDesktopKeepAlive(delayMs?: number) {
 async function runDesktopKeepAlive() {
   try {
     const config = workerConfig();
+    if (activeJobId && !stepRequiresSister(currentStep)) {
+      sisterKeepAlive = {
+        ...sisterKeepAlive,
+        ok: false,
+        sessionExpired: false,
+        status: null,
+        statusLabel: "disabled",
+        message: "Non necessaria durante l'import CRM",
+        checkedAt: new Date().toISOString(),
+      };
+      publishTransientUpdate({ sisterKeepAlive });
+      return;
+    }
     const tabs = await connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH);
     try {
       updateKeepAliveState(await pingSisterSession(tabs.sisterPage, config.SISTER_KEEPALIVE_URL));
@@ -2685,11 +2700,12 @@ async function readBrowserConnections(config: WorkerConfig): Promise<BrowserConn
       "Controllo Chrome",
     );
     if (!response.ok) throw new Error(`Chrome ha risposto HTTP ${response.status}`);
-    return detectBrowserConnections(
+    const checks = detectBrowserConnections(
       await response.json() as Array<{ title?: string; url?: string; type?: string }>,
       config.SISTER_TAB_MATCH,
       config.CRM_TAB_MATCH,
     );
+    return activeJobId && !stepRequiresSister(currentStep) ? markSisterNotRequired(checks) : checks;
   } catch (error) {
     return unreachableBrowserConnections(error instanceof Error ? error.message : String(error));
   }
@@ -2784,7 +2800,8 @@ function scheduleBrowserChecks(delayMs = 500) {
   browserCheckTimer = setTimeout(async () => {
     const checks = await refreshBrowserConnections().catch(() => []);
     const ready = checks.length === 3 && checks.every((check) => check.ok);
-    scheduleBrowserChecks(ready ? 10_000 : 2_000);
+    const confirmingFailure = browserConnectionStability.pendingFailureSignature !== null;
+    scheduleBrowserChecks(ready && !confirmingFailure ? 10_000 : 2_000);
   }, delayMs);
   browserCheckTimer.unref?.();
 }

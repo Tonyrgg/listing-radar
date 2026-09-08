@@ -894,12 +894,15 @@ function renderChecks() {
     .map(([id, label]) => {
       const keep = appState?.sisterKeepAlive,
         browserResult = checks.find((x) => x.id === id),
-        keepIsNewer = Date.parse(keep?.checkedAt ?? "") > Date.parse(appState?.connections?.checkedAt ?? "");
+        keepIsNewer = Date.parse(keep?.checkedAt ?? "") > Date.parse(appState?.connections?.checkedAt ?? ""),
+        sisterNotRequired = id === "sister"
+          && Boolean(appState?.activeJobId)
+          && !["ready", "sister_results_acquired", "properties_extracted", "owners_extracted"].includes(appState?.currentStep);
       // Un timeout isolato del keep-alive non significa che la scheda sia
       // chiusa: il controllo CDP resta autorevole. Sostituiscilo soltanto con
       // un successo o con una sessione esplicitamente scaduta.
       const keepResult =
-        id === "sister" && keepIsNewer && (keep?.ok || keep?.sessionExpired)
+        id === "sister" && !sisterNotRequired && keepIsNewer && (keep?.ok || keep?.sessionExpired)
           ? {
               ok: keep.ok,
               state: keep.ok ? "ready" : keep.sessionExpired ? "login" : "unreachable",

@@ -43,6 +43,7 @@ export class WorkflowUiFixture {
     const p = this.person ?? {};
     return `<section role="dialog" id="form">
       ${["Nome", "Cognome", "Codice Fiscale", "Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono", "Email", "Email Secondaria"].map(label => field(label, p[label])).join("")}
+      <c-picklist><label>Telefono Preferito</label><input role="textbox" data-field="Telefono Preferito" value="${escaped(p["Telefono Preferito"] ?? "")}"><div role="option" onclick="this.previousElementSibling.value=''">-- Nessuno --</div></c-picklist>
       <c-input-date-time><label>Data Di Nascita</label><input data-field="Data Di Nascita" value="${p["Data Di Nascita"] ?? ""}"></c-input-date-time>
       ${lookup("Luogo Di Nascita")}<button onclick="savePerson()">Salva</button></section>
       <script>${lookupScript}

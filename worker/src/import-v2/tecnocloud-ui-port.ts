@@ -1,6 +1,7 @@
 import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
+import { assignPhonesToFields, PHONE_FIELD_LABELS } from "./contacts.js";
 import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
@@ -623,18 +624,72 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await options.nth(index).click();
   }
 
-  private async lookupRecordCandidates(options: Locator): Promise<LookupRecordCandidate[]> {
-    return options.evaluateAll((elements) => elements.map((element, index) => {
+  private async replaceInputValue(input: Locator, value: string, label: string): Promise<void> {
+    await input.click();
+    await input.press("Control+A");
+    await input.press("Backspace");
+    if (await input.inputValue()) await input.fill("");
+    if (await input.inputValue()) {
+      throw new ImportV2Error(`${label}: il valore precedente non e' stato eliminato`, "transient_portal", { retryable: true });
+    }
+    if (value) await input.fill(value);
+    if (normalized(await input.inputValue()) !== normalized(value)) {
+      throw new ImportV2Error(`${label}: il nuovo valore non e' rimasto nel campo`, "transient_portal", { retryable: true });
+    }
+  }
+
+  private async clearPreferredPhone(): Promise<void> {
+    const component = this.page.locator('c-picklist:has(label:text-is("Telefono Preferito"))').filter({ visible: true });
+    if (await component.count() === 0) return;
+    const exact = await this.one(component, "Telefono preferito");
+    const input = exact.locator('input[role="textbox"]').filter({ visible: true });
+    const button = exact.locator('button[role="combobox"]').filter({ visible: true });
+    const trigger = await input.count() === 1 ? input : button;
+    const current = await input.count() === 1
+      ? await input.inputValue()
+      : await button.first().innerText().catch(() => "");
+    if (!current.trim() || /nessun|seleziona/i.test(current)) return;
+    await (await this.one(trigger, "Telefono preferito")).click();
+    const options = this.page.locator('[role="option"]').filter({ visible: true });
+    await options.first().waitFor({ state: "visible", timeout: 8_000 });
+    const labels = await options.allTextContents();
+    const emptyIndex = labels.findIndex((candidate) => !normalized(candidate) || /NESSUN|SELEZIONA|VUOT/.test(normalized(candidate)));
+    if (emptyIndex < 0) {
+      throw new ImportV2Error("Telefono preferito: opzione vuota non disponibile", "unsupported_case");
+    }
+    await options.nth(emptyIndex).click();
+    const retained = await input.count() === 1
+      ? await input.inputValue()
+      : await button.first().innerText().catch(() => "");
+    if (retained.trim() && !/nessun|seleziona/i.test(retained)) {
+      throw new ImportV2Error("Telefono preferito non azzerato", "transient_portal", { retryable: true });
+    }
+  }
+
+  private async lookupRecordCandidates(options: Locator, expectedRecordId: string | null = null): Promise<LookupRecordCandidate[]> {
+    return options.evaluateAll((elements, expectedId) => elements.map((element, index) => {
       const nodes = [element, ...Array.from(element.querySelectorAll("[data-item-id], [data-recordid], [data-id], a[href]"))];
-      const values = nodes.flatMap((node) => [
+      const knownValues = nodes.flatMap((node) => [
         node.getAttribute("data-item-id"),
         node.getAttribute("data-recordid"),
         node.getAttribute("data-id"),
         node.getAttribute("href")?.match(/\/s\/(?:account|comune|municipality)\/([^/?#]+)/i)?.[1] ?? null,
       ]).filter((value): value is string => Boolean(value));
-      const recordId = values.find((value) => /^[A-Z0-9]{15}(?:[A-Z0-9]{3})?$/i.test(value)) ?? "";
+      /* I lookup Cliente live usano anche attributi interni come data-value,
+       * mentre quelli geografici usano data-item-id. Per una persona abbiamo
+       * gia' l'id Salesforce verificato: cercarlo in qualunque attributo
+       * dell'opzione e' piu' sicuro che scegliere fra omonimi per testo. */
+      const allAttributeValues = [element, ...Array.from(element.querySelectorAll("*"))]
+        .flatMap((node) => Array.from(node.attributes).map((attribute) => attribute.value));
+      const idsInAttributes = [...knownValues, ...allAttributeValues]
+        .flatMap((value) => value.match(/\b[A-Z0-9]{15}(?:[A-Z0-9]{3})?\b/gi) ?? []);
+      /* Salesforce alterna liberamente la forma case-sensitive a 15 caratteri
+       * e quella con checksum a 18. I primi 15 identificano lo stesso record. */
+      const exactExpected = expectedId && idsInAttributes.find((value) =>
+        value.slice(0, 15) === expectedId.slice(0, 15));
+      const recordId = exactExpected ? expectedId! : knownValues.find((value) => /^[A-Z0-9]{15}(?:[A-Z0-9]{3})?$/i.test(value)) ?? "";
       return { index, recordId, text: (element.textContent ?? "").replace(/\s+/g, " ").trim() };
-    }));
+    }), expectedRecordId);
   }
 
   private async fillLookupRecord(
@@ -736,8 +791,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         let stableOptions = 0;
         for (let wait = 0; wait < 50 && stableOptions < 2; wait += 1) {
           await this.pauseAwareWait(200);
-          const candidates = await this.lookupRecordCandidates(options);
-          const indexes = candidates.flatMap((candidate) => candidate.recordId === personId ? [candidate.index] : []);
+          const candidates = await this.lookupRecordCandidates(options, personId);
+          const indexes = candidates.flatMap((candidate) => candidate.recordId.slice(0, 15) === personId.slice(0, 15) ? [candidate.index] : []);
           const currentSignature = JSON.stringify(candidates.map((candidate) => [candidate.recordId, normalized(candidate.text)]));
           const ready = indexes.length === 1 && !requests.pending() && !(await this.searchIsBusy());
           stableOptions = ready && currentSignature === signature ? stableOptions + 1 : 0;
@@ -754,8 +809,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
         everProposed = true;
 
-        const candidates = await this.lookupRecordCandidates(options);
-        const freshIndexes = candidates.flatMap((candidate) => candidate.recordId === personId ? [candidate.index] : []);
+        const candidates = await this.lookupRecordCandidates(options, personId);
+        const freshIndexes = candidates.flatMap((candidate) => candidate.recordId.slice(0, 15) === personId.slice(0, 15) ? [candidate.index] : []);
         if (freshIndexes.length !== 1 || freshIndexes[0] !== optionIndex) continue;
         // Click the option itself by the stable candidate index. In the live
         // component the Salesforce id can live on the option or on a nested
@@ -822,17 +877,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
     }
 
-    const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"];
-    if (desired.phones.length > phoneLabels.length) {
+    const phoneAssignment = assignPhonesToFields(desired.phones);
+    if (phoneAssignment.overflow.length) {
       throw new ImportV2Error("Più numeri disponibili dei campi telefono Tecnocloud", "unsupported_case", {
-        details: { phoneCount: desired.phones.length, capacity: phoneLabels.length },
+        details: { phoneCount: desired.phones.length, overflow: phoneAssignment.overflow },
       });
     }
-    for (const [index, label] of phoneLabels.entries()) {
+    for (const label of PHONE_FIELD_LABELS) {
       const field = this.page.getByLabel(label, { exact: true }).filter({ visible: true });
-      if (await field.count() === 1) await field.fill(desired.phones[index] ?? "");
-      else if (desired.phones[index]) throw new ImportV2Error(`Campo ${label} non disponibile`, "transient_portal", { retryable: true });
+      const value = phoneAssignment.values[label];
+      if (await field.count() === 1) await this.replaceInputValue(field, value, label);
+      else if (value) throw new ImportV2Error(`Campo ${label} non disponibile`, "transient_portal", { retryable: true });
     }
+    await this.clearPreferredPhone();
     const emailLabels = ["Email", "Email Secondaria"];
     for (const [index, label] of emailLabels.entries()) {
       const field = this.page.getByLabel(label, { exact: true }).filter({ visible: true });
@@ -1833,7 +1890,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), component, 1, "Proprietario principale");
     }
     const quota = await this.one(this.page.getByLabel("Quota Proprietario", { exact: true }).filter({ visible: true }), "Quota proprietario");
-    await quota.fill(formatDecimal(desired.sharePercentage));
+    await this.replaceInputValue(quota, formatDecimal(desired.sharePercentage), "Quota proprietario");
     const internal = this.page.getByLabel("Interno", { exact: true }).filter({ visible: true });
     if (await internal.count() === 1 && !(await internal.inputValue()).trim()) await internal.fill(".");
     const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva proprietario principale");
@@ -1907,10 +1964,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.pick(role, desired.role, "Ruolo");
     const quota = await this.one(dialog.getByLabel("Quota", { exact: true }).filter({ visible: true }), "Quota");
     const expectedShare = formatDecimal(desired.sharePercentage);
-    await quota.fill(expectedShare);
-    if (normalized(await quota.inputValue()) !== normalized(expectedShare)) {
-      throw new ImportV2Error("Quota comproprietario non confermata", "transient_portal", { retryable: true });
-    }
+    await this.replaceInputValue(quota, expectedShare, "Quota comproprietario");
   }
 
   private async addOwnership(propertyId: string, desired: OwnershipWrite): Promise<void> {

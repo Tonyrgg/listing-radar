@@ -44,6 +44,21 @@ try {
       options,
     };
   }));
+  const visibleOptions = await page.locator('[role="option"]:visible').evaluateAll((elements) => elements.map((element) => ({
+    self: {
+      itemId: element.getAttribute("data-item-id"),
+      recordId: element.getAttribute("data-recordid"),
+      id: element.getAttribute("data-id"),
+      href: element.getAttribute("href"),
+    },
+    descendants: Array.from(element.querySelectorAll("[data-item-id], [data-recordid], [data-id], a[href]")).map((node) => ({
+      tag: node.tagName.toLowerCase(),
+      itemId: node.getAttribute("data-item-id"),
+      recordId: node.getAttribute("data-recordid"),
+      id: node.getAttribute("data-id"),
+      href: node.getAttribute("href")?.replace(/\b[A-Z0-9]{15}(?:[A-Z0-9]{3})?\b/gi, "[ID]") ?? null,
+    })),
+  })));
   await page.screenshot({ path: screenshotPath, fullPage: false });
   process.stdout.write(JSON.stringify({
     route: mask(decodeURIComponent(new URL(page.url()).pathname)),
@@ -54,6 +69,7 @@ try {
     alerts: alerts.map(mask).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean),
     controls,
     lookups,
+    visibleOptions,
     busy: await page.locator('lightning-spinner:visible, .slds-spinner:visible, [role="progressbar"]:visible, [aria-busy="true"]:visible').count(),
     screenshotPath,
   }, null, 2));

@@ -10,12 +10,19 @@ const [job, graph, importItemsResult] = await Promise.all([
   repository.getJob(jobId),
   repository.loadGraph(jobId),
   repository.client.from("property_worker_import_v2_items")
-    .select("stage,status,updated_at,last_error")
+    .select("stage,status,updated_at,last_error,plan,checkpoint")
     .eq("job_id", jobId)
     .order("updated_at", { ascending: false }),
 ]);
 if (importItemsResult.error) throw new Error(`Lettura checkpoint Import V2 fallita: ${importItemsResult.error.message}`);
 const importItems = importItemsResult.data ?? [];
+const latestFailedItem = importItems.find((item) => item.last_error);
+const latestFailureContext = latestFailedItem ? {
+  sourceNames: ((latestFailedItem.plan as { source?: { owners?: Array<{ fullName?: unknown }> } } | null)?.source?.owners ?? [])
+    .map((owner) => String(owner.fullName ?? "")).filter(Boolean),
+  resolvedNames: ((latestFailedItem.checkpoint as { people?: Array<{ matches?: Array<{ fullName?: unknown }> }> } | null)?.people ?? [])
+    .flatMap((person) => person.matches ?? []).map((person) => String(person.fullName ?? "")).filter(Boolean),
+} : null;
 const importErrors = Object.values(importItems.reduce<Record<string, { kind: string; stage: string; message: string; count: number }>>((groups, item) => {
   const failure = item.last_error as { kind?: unknown; stage?: unknown; message?: unknown } | null;
   if (!failure?.message) return groups;
@@ -69,6 +76,7 @@ process.stdout.write(JSON.stringify({
     stages: counts(importItems.map((item) => String(item.stage))),
     latestUpdate: importItems[0]?.updated_at ?? null,
     latestError: importItems.find((item) => item.last_error)?.last_error ?? null,
+    latestFailureContext,
     errors: importErrors.sort((left, right) => right.count - left.count),
   },
 }, null, 2));

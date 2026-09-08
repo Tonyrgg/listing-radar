@@ -1,13 +1,14 @@
 import { WorkerError } from "../core/errors.js";
 import { buildCadastralKey, extractFirstCivicNumber, normalizeTaxCode, splitPersonName } from "../core/normalize.js";
 import { WorkflowStateMachine } from "../core/state-machine.js";
+import { stepRequiresSister } from "../core/sister-requirement.js";
 import { logger } from "../logger.js";
 import type { AcquisitionReview, CadastralProperty, ErrorStatus, NormalizedPerson, PropertyMatchResult, WorkflowStep, WorkerMode } from "../types.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import type { WorkerConfig } from "../config.js";
-import { connectToChrome } from "./chrome.js";
+import { connectToChrome, connectToCrmChrome } from "./chrome.js";
 import { WorkerPrompts, type PromptController } from "./prompts.js";
 import { type JobRow, type PersonRow, type PropertyRow, WorkerRepository } from "./repository.js";
 import { captureDiagnosticScreenshot, pruneDiagnosticScreenshots } from "./screenshots.js";
@@ -243,17 +244,23 @@ export class PropertyWorkerRunner {
   async run(input: { mode?: WorkerMode; jobId?: string; createNew?: boolean }) {
     const mode = input.mode ?? this.config.WORKER_MODE;
     await pruneDiagnosticScreenshots(this.config.ERROR_SCREENSHOT_DIR, this.config.ERROR_SCREENSHOT_RETENTION_DAYS);
-    const tabs = await connectToChrome(this.config.CHROME_CDP_URL, this.config.SISTER_TAB_MATCH, this.config.CRM_TAB_MATCH);
+    const resumedJob = input.jobId ? await this.repository.getJob(input.jobId) : null;
+    const resumedState = resumedJob ? WorkflowStateMachine.resume(resumedJob.last_completed_step) : null;
+    const fullTabs = resumedState && !stepRequiresSister(resumedState.current)
+      ? null
+      : await connectToChrome(this.config.CHROME_CDP_URL, this.config.SISTER_TAB_MATCH, this.config.CRM_TAB_MATCH);
+    const tabs = fullTabs ?? await connectToCrmChrome(this.config.CHROME_CDP_URL, this.config.CRM_TAB_MATCH);
     this.interruptActiveBrowser = () => tabs.browser.close().catch(() => undefined);
-    const keepAlive = new SisterKeepAliveScheduler(tabs.sisterPage, {
+    const sisterPage = fullTabs?.sisterPage ?? null;
+    const keepAlive = sisterPage ? new SisterKeepAliveScheduler(sisterPage, {
       enabled: this.manageKeepAlive && this.config.SISTER_KEEPALIVE_ENABLED,
       minSeconds: this.config.SISTER_KEEPALIVE_MIN_SECONDS,
       maxSeconds: this.config.SISTER_KEEPALIVE_MAX_SECONDS,
       url: this.config.SISTER_KEEPALIVE_URL,
       onResult: (result) => this.onEvent({ type: "sister-keepalive", result }),
-    });
-    keepAlive.start();
-    const sister = new PlaywrightSisterAdapter(tabs.sisterPage);
+    }) : null;
+    keepAlive?.start();
+    const sister = sisterPage ? new PlaywrightSisterAdapter(sisterPage) : null;
     const crm = new PlaywrightCrmAdapter(tabs.crmPage, this.config.WORKER_DRY_RUN);
     let importV2JobId: string | null = null;
     const importV2InterruptionRequested = () => Boolean(importV2JobId
@@ -265,7 +272,7 @@ export class PropertyWorkerRunner {
     const contacts = new ExcelContactsAdapter(this.config.CONTACTS_EXCEL_PATH);
     await contacts.load();
     let job = input.jobId
-      ? await this.repository.getJob(input.jobId)
+      ? resumedJob!
       : input.createNew
         ? await this.repository.createJob(mode)
         : (await this.repository.findReadyJob(mode)) ?? await this.repository.createJob(mode);
@@ -335,7 +342,7 @@ export class PropertyWorkerRunner {
           }
           let screenshotPath: string | null = null;
           if (workerError.captureScreenshot) {
-            const page = workerError.details.portal === "SISTER" ? tabs.sisterPage : tabs.crmPage;
+            const page = workerError.details.portal === "SISTER" && sisterPage ? sisterPage : tabs.crmPage;
             screenshotPath = await captureDiagnosticScreenshot(page, this.config.ERROR_SCREENSHOT_DIR, job.id, workerError.status).catch(() => null);
           }
           await this.repository.failStep(job.id, stepId, workerError.status, workerError.message, workerError.details, screenshotPath);
@@ -348,7 +355,7 @@ export class PropertyWorkerRunner {
       return job.id;
     } finally {
       this.interruptActiveBrowser = null;
-      keepAlive.stop();
+      keepAlive?.stop();
       this.prompts.close();
       await tabs.browser.close().catch(() => undefined);
     }
@@ -357,7 +364,7 @@ export class PropertyWorkerRunner {
   private async executeStep(
     step: WorkflowStep,
     job: JobRow,
-    sister: PlaywrightSisterAdapter,
+    sister: PlaywrightSisterAdapter | null,
     crm: PlaywrightCrmAdapter,
     crmV2: TecnocloudUiV2Port,
     contacts: ExcelContactsAdapter,
@@ -366,6 +373,7 @@ export class PropertyWorkerRunner {
       case "ready":
         return { ready: true };
       case "sister_results_acquired": {
+        if (!sister) throw new WorkerError("SISTER e' necessario soltanto per acquisire i dati catastali", "needs_review", { portal: "SISTER" }, true);
         await this.prompts.waitForAcquisition();
         if (!(await sister.detectPage())) throw new WorkerError("Pagina risultati SISTER non riconosciuta", "portal_error", { portal: "SISTER" }, true);
         if (!(await crm.detectPage())) throw new WorkerError("Pagina gestionale non riconosciuta", "portal_error", { portal: "CRM" }, true);
@@ -374,6 +382,7 @@ export class PropertyWorkerRunner {
         return { context };
       }
       case "properties_extracted": {
+        if (!sister) throw new WorkerError("SISTER e' necessario soltanto per acquisire i dati catastali", "needs_review", { portal: "SISTER" }, true);
         const extracted = await sister.extractProperties();
         if (!extracted.length) throw new WorkerError("Nessun immobile A/ o C/ trovato", "data_incomplete", { portal: "SISTER" });
         const properties = await this.repository.insertProperties(job.id, extracted);
@@ -385,6 +394,7 @@ export class PropertyWorkerRunner {
         };
       }
       case "owners_extracted": {
+        if (!sister) throw new WorkerError("SISTER e' necessario soltanto per acquisire i dati catastali", "needs_review", { portal: "SISTER" }, true);
         const graph = await this.repository.loadGraph(job.id);
         const ignoredBusinessProperties: string[] = [];
         const skippedRows: Array<{ propertyId: string; cadastralKey: string; reason: string; source: "manual" | "parachute" }> = [];

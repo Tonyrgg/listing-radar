@@ -18,6 +18,36 @@ export type PersonWriteModel = {
   privateNotes: string | null;
 };
 
+export const PHONE_FIELD_LABELS = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
+export type PhoneFieldLabel = (typeof PHONE_FIELD_LABELS)[number];
+
+export type PhoneFieldAssignment = {
+  values: Record<PhoneFieldLabel, string>;
+  overflow: string[];
+};
+
+/**
+ * Tecnocloud distingue il cellulare dal fisso, quindi l'ordine della sorgente
+ * non puo' decidere il campo. Per la numerazione italiana il prefisso 3 e'
+ * mobile e lo 0 e' geografico; eventuali numeri speciali vanno soltanto nel
+ * campo neutro, mai spacciati per cellulari o fissi.
+ */
+export function assignPhonesToFields(phones: string[]): PhoneFieldAssignment {
+  const normalized = unique(phones.map(canonicalPhone).filter(Boolean));
+  const mobiles = normalized.filter((phone) => phone.startsWith("3"));
+  const landlines = normalized.filter((phone) => phone.startsWith("0"));
+  const neutral = normalized.filter((phone) => !phone.startsWith("3") && !phone.startsWith("0"));
+  const values: Record<PhoneFieldLabel, string> = {
+    Cellulare: mobiles.shift() ?? "",
+    "Telefono fisso": landlines.shift() ?? "",
+    "Telefono Ufficio": landlines.shift() ?? "",
+    "Altro telefono": "",
+  };
+  const remaining = [...mobiles, ...landlines, ...neutral];
+  values["Altro telefono"] = remaining.shift() ?? "";
+  return { values, overflow: remaining };
+}
+
 /**
  * SISTER wins for supplied personal data. Empty source values are deliberately
  * ignored. Phones are a lossless union. Tecnocloud exposes two email slots:

@@ -63,6 +63,12 @@ export function unreachableBrowserConnections(detail: string): BrowserConnection
   ];
 }
 
+export function markSisterNotRequired(checks: BrowserConnectionCheck[]): BrowserConnectionCheck[] {
+  return checks.map((check) => check.id === "sister"
+    ? { ...check, ok: true, state: "ready", detail: "Non necessaria durante l'import CRM" }
+    : check);
+}
+
 function failureSignature(checks: BrowserConnectionCheck[]) {
   return checks
     .filter((check) => !check.ok)
@@ -79,7 +85,7 @@ function failureSignature(checks: BrowserConnectionCheck[]) {
 export function stabilizeBrowserConnections(
   state: BrowserConnectionStability,
   candidate: BrowserConnectionCheck[],
-  confirmationSamples = 2,
+  confirmationSamples = 3,
 ): BrowserConnectionStability {
   const candidateReady = candidate.length === 3 && candidate.every((check) => check.ok);
   if (candidateReady) {

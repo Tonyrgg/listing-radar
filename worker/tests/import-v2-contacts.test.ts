@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { personWriteModel } from "../src/import-v2/contacts.js";
+import { assignPhonesToFields, personWriteModel } from "../src/import-v2/contacts.js";
 import type { CrmPersonSnapshot, SourceOwner } from "../src/import-v2/model.js";
 
 const owner: SourceOwner = {
@@ -72,5 +72,26 @@ describe("Import V2 contact and overwrite policy", () => {
 
   it("usa al massimo due email dando priorità a quelle importate", () => {
     expect(personWriteModel(owner, existing).emails).toEqual(["nuova@example.it", "prima@example.it"]);
+  });
+
+  it("assegna cellulari e fissi per prefisso, non per ordine di arrivo", () => {
+    expect(assignPhonesToFields(["0801111111", "+39 333 2223333", "0804445555"])).toEqual({
+      values: {
+        Cellulare: "3332223333",
+        "Telefono fisso": "0801111111",
+        "Telefono Ufficio": "0804445555",
+        "Altro telefono": "",
+      },
+      overflow: [],
+    });
+  });
+
+  it("non mette mai un secondo cellulare in un campo fisso", () => {
+    expect(assignPhonesToFields(["3331111111", "3492222222"]).values).toEqual({
+      Cellulare: "3331111111",
+      "Telefono fisso": "",
+      "Telefono Ufficio": "",
+      "Altro telefono": "3492222222",
+    });
   });
 });

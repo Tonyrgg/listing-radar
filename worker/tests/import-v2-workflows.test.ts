@@ -82,6 +82,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
             fixture.person.Nome = "MARIO";
             fixture.person.Cognome = "ROSSI";
             fixture.person["Telefono fisso"] = "0801111111";
+            fixture.person["Telefono Preferito"] = "Telefono Fisso";
           }
           // Desktop starts a fresh worker/port for each acquired street.
           const result = await runImportV2Batch(new ImportV2Engine(new TecnocloudUiV2Port(crmPage), store, { maxTransientAttempts: 1 }), currentSources);
@@ -111,7 +112,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
         })).toBe("exhausted");
       }
       expect(imported).toEqual(["VIA GUIDONE", "VIA SECONDA"]);
-      expect(fixture.person).toMatchObject({ Nome: "Mario", Cognome: "Rossi", Cellulare: "3331111111", "Telefono fisso": "0801111111", Email: "mario@example.it" });
+      expect(fixture.person).toMatchObject({ Nome: "Mario", Cognome: "Rossi", Cellulare: "3331111111", "Telefono fisso": "0801111111", "Telefono Preferito": "", Email: "mario@example.it" });
       expect(fixture.writes.filter(w => w === "person:create")).toHaveLength(1);
       expect(fixture.writes.filter(w => w === "person:update")).toHaveLength(1);
       expect(fixture.writes.filter(w => w === "property:create")).toHaveLength(1);

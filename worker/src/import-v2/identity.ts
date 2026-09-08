@@ -33,7 +33,12 @@ export function canonicalPersonName(value: unknown): string {
     .toLocaleLowerCase("it-IT").split(/[^a-z0-9]+/).filter(Boolean);
   // Tecnocloud sometimes prefixes the display label with a courtesy title.
   // It is presentation metadata, not part of the identity proven by the CF.
-  if (["sig", "signor", "signore", "signora", "dott", "dottore", "dottoressa"].includes(words[0] ?? "")) words.shift();
+  const title = words[0] ?? "";
+  if (["sig", "signor", "signore", "signora", "dott", "dottore", "dottoressa"].includes(title)) {
+    words.shift();
+    // Abbreviazioni puntate come Sig.ra e Dott.ssa vengono tokenizzate in due.
+    if (["sig", "dott"].includes(title) && ["ra", "re", "na", "ssa"].includes(words[0] ?? "")) words.shift();
+  }
   return words.sort().join("|");
 }
 

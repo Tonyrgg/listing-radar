@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.33.16",
+  "version": "0.33.17",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -35,6 +35,7 @@
     "import-v2:observe-job": "tsx scripts/observe-import-v2-job.ts",
     "import-v2:audit-activities": "tsx scripts/audit-import-v2-activities.ts",
     "import-v2:trace-navigation": "tsx scripts/trace-worker-navigation.ts",
+    "import-v2:observe-forms": "tsx scripts/observe-import-v2-forms.ts",
     "sister:street:dry-run": "tsx scripts/dry-run-sister-street.ts",
     "mandates:backfill-locations": "tsx scripts/backfill-property-locations.ts",
     "mandates:backfill-condition": "tsx scripts/backfill-property-condition.ts",
