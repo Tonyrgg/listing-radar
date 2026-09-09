@@ -19,9 +19,9 @@ const baseState = {
   portoni: { active: false, cancelling: false, progress: null, lastError: null, sheets: [{
     id: "portoni-demo", street: "Via Luigi Castellucci", municipality: "BITONTO", status: "draft",
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), generatedAt: null, documentPath: null,
-    rows: [{ id: "BITONTO|1|2|3", cadastralKey: "1/2/3", sisterNames: "Mario Rossi\nLucia Bianchi", actualNames: "",
+    rows: [{ id: "BITONTO|1|2|3", cadastralKey: "1/2/3", sisterNames: "Mario Rossi · Proprietà 1/2 · 12/03/1970\nLucia Bianchi · Proprietà 1/2 · 08/09/1972", actualNames: "",
       civicAndStair: "Civico 12 · Scala B", floorAndInternal: "Piano 2 · Interno 4", telephone: "3331234567",
-      outcome: "", visitedAt: "", notes: "", category: "A/3", ownership: "Mario Rossi: Proprietà 1/2\nLucia Bianchi: Proprietà 1/2" }],
+      outcome: "", visitedAt: "", notes: "", category: "A/3", ownership: "" }],
   }] },
   retryMonitor: null,
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
@@ -172,6 +172,10 @@ await page.locator('[data-scroll="portoni"]').click();
 await page.locator("#portoni").screenshot({ path: path.join(output, "portoni.png") });
 const portoniVisible = await page.locator("#portoniEditor:not(.is-hidden)").count();
 const portoniOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.locator("#portoniToggle").click();
+const portoniCollapsed = await page.locator("#portoniEditor.is-collapsed").count();
+await page.locator("#portoniToggle").click();
+const portoniFiltersVisible = await page.locator("#portoniFloorMode:visible").count();
 await page.locator('[data-scroll="operations"]').click();
 const runSlideHeights = {};
 for (const slide of ["civic", "street", "network"]) {
@@ -264,7 +268,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, portoniVisible, portoniOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -272,6 +276,7 @@ const failures = [
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
+  ...(portoniCollapsed !== 1 || portoniFiltersVisible !== 1 ? ["Accordion o filtri Portoni non funzionanti"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
   ...(activityModeSelections.some((selected) => selected !== "true") ? ["Le tre modalità attività non confermano la selezione salvata"] : []),
   ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),

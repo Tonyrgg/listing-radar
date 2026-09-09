@@ -31,6 +31,35 @@ export type PortoniSheet = {
 
 const clean = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
 
+function shortOwnerName(value: string): string {
+  return clean(value).replace(/\s+nato\/?a\s+a\s+.*$/i, "").trim();
+}
+
+function italianBirthDate(owner: CadastralOwner): string {
+  const sourceDate = clean(owner.birthDate)
+    || clean(owner.fullName).match(/\bil\s+(\d{2}\/\d{2}\/\d{4})\b/i)?.[1]
+    || "";
+  const iso = sourceDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : sourceDate;
+}
+
+function ownerLine(owner: CadastralOwner): string {
+  return [shortOwnerName(owner.fullName), [clean(owner.rightType), clean(owner.shareOriginal)].filter(Boolean).join(" "), italianBirthDate(owner)]
+    .filter(Boolean).join(" · ");
+}
+
+/** Compatta anche le schede 0.33.19, che separavano nome e diritto duplicando il nominativo. */
+export function portoniOwnerSummary(row: Pick<PortoniRow, "sisterNames" | "ownership">): string {
+  if (!row.ownership.trim()) return row.sisterNames.split("\n").map(clean).filter(Boolean).join("\n");
+  return row.ownership.split("\n").map((entry) => {
+    const separator = entry.lastIndexOf(":");
+    const nameSource = separator >= 0 ? entry.slice(0, separator) : entry;
+    const details = separator >= 0 ? clean(entry.slice(separator + 1)) : "";
+    const date = clean(nameSource).match(/\bil\s+(\d{2}\/\d{2}\/\d{4})\b/i)?.[1] ?? "";
+    return [shortOwnerName(nameSource), details, date].filter(Boolean).join(" · ");
+  }).filter(Boolean).join("\n");
+}
+
 function addressPart(address: string | null, pattern: RegExp): string {
   return clean(address).match(pattern)?.[1]?.trim() ?? "";
 }
@@ -60,17 +89,12 @@ export function buildPortoniRow(
   contactsFor: (taxCode: string) => ContactMatchResult,
 ): PortoniRow {
   const location = propertyLocation(property);
-  const names = owners.map((owner) => clean(owner.fullName)).filter(Boolean);
+  const names = owners.map(ownerLine).filter(Boolean);
   const phones = owners.flatMap((owner) => {
     if (!owner.taxCode) return [];
     const match = contactsFor(owner.taxCode);
     return [...match.mobiles, ...match.landlines, ...match.whatsapp, ...match.overflowPhones];
   });
-  const ownership = owners.map((owner) => {
-    const right = clean(owner.rightType);
-    const share = clean(owner.shareOriginal);
-    return [clean(owner.fullName), [right, share].filter(Boolean).join(" ")].filter(Boolean).join(": ");
-  }).filter(Boolean);
   return {
     id: `${property.municipality}|${property.sheet}|${property.parcel}|${property.subaltern}`,
     cadastralKey: `${property.sheet}/${property.parcel}/${property.subaltern}`,
@@ -83,7 +107,7 @@ export function buildPortoniRow(
     visitedAt: "",
     notes: "",
     category: clean(property.category),
-    ownership: ownership.join("\n"),
+    ownership: "",
   };
 }
 
@@ -104,19 +128,37 @@ const html = (value: unknown) => String(value ?? "").trim().replace(/[&<>"']/g, 
 }[character]!)).replace(/\n/g, "<br>");
 
 export function portoniDocumentHtml(sheet: PortoniSheet): string {
-  const rows = sortPortoniRows(sheet.rows).map((row) => `<tr>
-    <td>${html(row.sisterNames)}${row.ownership ? `<small>${html(row.ownership)}</small>` : ""}</td>
-    <td>${html(row.actualNames)}</td><td>${html(row.civicAndStair)}</td><td>${html(row.floorAndInternal)}</td>
-    <td>${html(row.telephone)}</td><td>${html(row.outcome.replaceAll("_", " "))}${row.visitedAt ? `<small>${html(row.visitedAt)}</small>` : ""}</td>
-    <td>${html(row.notes)}</td><td><small>${html(row.category)} · ${html(row.cadastralKey)}</small></td>
-  </tr>`).join("");
+  const pages: PortoniRow[][] = [];
+  let page: PortoniRow[] = [];
+  let units = 0;
+  for (const row of sortPortoniRows(sheet.rows)) {
+    const ownerLines = Math.max(1, portoniOwnerSummary(row).split("\n").length);
+    const noteLines = Math.max(1, Math.ceil(clean(row.notes).length / 42));
+    const rowUnits = Math.max(1, ownerLines * 0.7, noteLines * 0.65);
+    if (page.length && units + rowUnits > 42) {
+      pages.push(page);
+      page = [];
+      units = 0;
+    }
+    page.push(row);
+    units += rowUnits;
+  }
+  if (page.length || !pages.length) pages.push(page);
+  const content = pages.map((rows, pageIndex) => `<section class="print-page">
+    <header><div><p>LISTING RADAR · SCHEDA PORTONI</p><h1>${html(sheet.street)}</h1></div><p>Bitonto · ${html(new Date(sheet.updatedAt).toLocaleDateString("it-IT"))} · pagina ${pageIndex + 1}/${pages.length}</p></header>
+    <table><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Note</th></tr></thead><tbody>${rows.map((row) => `<tr>
+      <td>${html(portoniOwnerSummary(row))}</td><td>${html(row.actualNames)}</td><td>${html(row.civicAndStair)}</td>
+      <td>${html(row.floorAndInternal)}</td><td>${html(row.telephone)}</td><td>${html(row.notes)}</td>
+    </tr>`).join("")}</tbody></table>
+    <footer><b>Note aggiuntive</b><span></span><span></span><span></span></footer>
+  </section>`).join("");
   return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>
-    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font:10px Arial,sans-serif;color:#142f32;margin:0}
-    header{display:flex;justify-content:space-between;align-items:end;margin-bottom:8mm}h1{font-size:22px;margin:0}p{margin:3px 0;color:#526467}
-    table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th,td{border:1px solid #8da0a2;padding:6px;vertical-align:top;overflow-wrap:anywhere}
-    th{background:#e6efec;text-align:left;font-size:9px;text-transform:uppercase}td small{display:block;color:#526467;margin-top:4px;font-size:8px}
-    th:nth-child(1){width:18%}th:nth-child(2){width:15%}th:nth-child(3){width:11%}th:nth-child(4){width:10%}th:nth-child(5){width:12%}th:nth-child(6){width:10%}th:nth-child(7){width:16%}th:nth-child(8){width:8%}
-    tr{break-inside:avoid}
-  </style></head><body><header><div><p>LISTING RADAR · SCHEDA PORTONI</p><h1>${html(sheet.street)}</h1></div><p>Bitonto · ${html(new Date(sheet.updatedAt).toLocaleDateString("it-IT"))} · ${sheet.rows.length} immobili</p></header>
-  <table><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Esito e data</th><th>Note</th><th>Dati catastali</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    @page{size:A4 portrait;margin:6mm}*{box-sizing:border-box}body{font:9px/1.25 Arial,sans-serif;color:#142f32;margin:0}
+    .print-page{height:284mm;display:flex;flex-direction:column;break-after:page}.print-page:last-child{break-after:auto}
+    header{display:flex;justify-content:space-between;align-items:end;margin-bottom:3mm}h1{font-size:16px;margin:0}p{margin:2px 0;color:#526467}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #8da0a2;padding:3px 4px;vertical-align:top;overflow-wrap:anywhere}
+    th{background:#e6efec;text-align:left;font-size:8px;text-transform:uppercase}tr{break-inside:avoid}
+    th:nth-child(1){width:23%}th:nth-child(2){width:15%}th:nth-child(3){width:10%}th:nth-child(4){width:10%}th:nth-child(5){width:14%}th:nth-child(6){width:28%}
+    footer{margin-top:auto;padding-top:3mm;font-size:9px}footer b{display:block;margin-bottom:1mm;text-transform:uppercase}footer span{display:block;height:7mm;border-bottom:1px solid #8da0a2}
+  </style></head><body>${content}</body></html>`;
 }

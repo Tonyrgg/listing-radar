@@ -365,6 +365,7 @@ function commandIdentity(target) {
       portoniCancel: "Metti in pausa scheda Portoni",
       portoniSave: "Salva bozza Portoni",
       portoniGenerate: "Genera PDF Portoni",
+      portoniToggle: "Comprimi o espandi tabella Portoni",
     },
     navigation = {
       operations: "Apri sezione Lavora",
@@ -2335,6 +2336,8 @@ function renderPortoni() {
   $("portoniBadge").className = `status-pill ${state.active ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
   $("portoniBadge").innerHTML = `<span></span>${state.active ? "Acquisizione in corso" : "Pronto"}`;
   $("portoniStart").disabled = Boolean(state.active);
+  for (const id of ["portoniStreet", "portoniBlank", "portoniFloorMode", "portoniFloorValue", "portoniMinCivic", "portoniMaxCivic"])
+    $(id).disabled = Boolean(state.active) || (id === "portoniFloorValue" && $("portoniFloorMode").value === "any");
   $("portoniCancel").classList.toggle("is-hidden", !state.active);
   $("portoniError").classList.toggle("is-hidden", !state.lastError);
   $("portoniError").textContent = state.lastError ?? "";
@@ -2355,7 +2358,7 @@ function renderPortoni() {
   portoniRenderKey = key;
   $("portoniEditorTitle").textContent = `${sheet.street} · ${sheet.rows.length} immobili`;
   $("portoniRows").innerHTML = sheet.rows.map((row) => `<tr data-portoni-row="${esc(row.id)}">
-    <td><b>${esc(row.sisterNames).replaceAll("\n", "<br>")}</b><small>${esc(row.ownership).replaceAll("\n", "<br>")}</small></td>
+    <td><b>${esc(row.sisterNames).replaceAll("\n", "<br>")}</b></td>
     <td><textarea data-portoni-field="actualNames" aria-label="Nominativi effettivi">${esc(row.actualNames)}</textarea></td>
     <td><input data-portoni-field="civicAndStair" value="${esc(row.civicAndStair)}" aria-label="Civico e scala"></td>
     <td><input data-portoni-field="floorAndInternal" value="${esc(row.floorAndInternal)}" aria-label="Piano e interno"></td>
@@ -2363,7 +2366,6 @@ function renderPortoni() {
     <td><select data-portoni-field="outcome" aria-label="Esito"><option value="">—</option>${[["assente","Assente"],["parlato","Parlato"],["interessato","Interessato"],["non_interessato","Non interessato"]].map(([value,label]) => `<option value="${value}" ${row.outcome === value ? "selected" : ""}>${label}</option>`).join("")}</select></td>
     <td><input type="date" data-portoni-field="visitedAt" value="${esc(row.visitedAt)}" aria-label="Data visita"></td>
     <td><textarea data-portoni-field="notes" aria-label="Note">${esc(row.notes)}</textarea></td>
-    <td><small>${esc(row.category)}<br>${esc(row.cadastralKey)}</small></td>
   </tr>`).join("");
 }
 
@@ -2541,9 +2543,24 @@ document.addEventListener("click", async (event) => {
         return true;
       }
       if (target.dataset.portoniFile) return window.propertyWorker.revealFile(target.dataset.portoniFile);
-      if (target.id === "portoniStart") return window.propertyWorker.startPortoni({ street: $("portoniStreet").value });
+      if (target.id === "portoniStart") return window.propertyWorker.startPortoni({
+        street: $("portoniStreet").value,
+        filters: {
+          residentialOnly: true,
+          floorMode: $("portoniFloorMode").value,
+          floorValue: nullableNumber($("portoniFloorValue").value),
+          minCivicNumber: nullableNumber($("portoniMinCivic").value),
+          maxCivicNumber: nullableNumber($("portoniMaxCivic").value),
+        },
+      });
       if (target.id === "portoniBlank") return window.propertyWorker.createBlankPortoni({ street: $("portoniStreet").value });
       if (target.id === "portoniCancel") return window.propertyWorker.cancelPortoni();
+      if (target.id === "portoniToggle") {
+        const collapsed = $("portoniEditor").classList.toggle("is-collapsed");
+        target.setAttribute("aria-expanded", String(!collapsed));
+        target.setAttribute("aria-label", collapsed ? "Espandi tabella" : "Comprimi tabella");
+        return true;
+      }
       if (target.id === "portoniSave" || target.id === "portoniGenerate") {
         const sheet = portoniSheet();
         if (!sheet) throw new Error("Nessuna scheda Portoni selezionata");
@@ -3081,6 +3098,11 @@ $("networkFloorMode").addEventListener("change", () => {
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
   else $("networkFloorValue").value = "";
   renderFiltriRete();
+});
+$("portoniFloorMode").addEventListener("change", () => {
+  $("portoniFloorValue").disabled = $("portoniFloorMode").value === "any";
+  if ($("portoniFloorMode").value !== "any") $("portoniFloorValue").focus();
+  else $("portoniFloorValue").value = "";
 });
 $("streetFloorMode").addEventListener("change", () => {
   $("streetFloorValue").disabled = $("streetFloorMode").value === "any";

@@ -2258,12 +2258,22 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
 .portoni-launcher label { display: grid; gap: 6px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
 .portoni-launcher input, .portoni-table :is(input, select, textarea) { min-height: var(--lr-control-height); width: 100%; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); background: var(--lr-raised); padding: 8px; }
 .portoni-actions { display: flex; gap: 8px; }
-.portoni-table-wrap { overflow: auto; margin-top: 18px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); }
-.portoni-table { width: 100%; min-width: 1420px; border-collapse: collapse; table-layout: fixed; font-size: var(--lr-text-meta); }
+.portoni-table-wrap { overflow: hidden; margin-top: 18px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); }
+.portoni-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--lr-text-meta); }
 .portoni-table th, .portoni-table td { padding: 8px; border-bottom: 1px solid var(--lr-line-quiet); border-right: 1px solid var(--lr-line-quiet); vertical-align: top; text-align: left; }
 .portoni-table th { position: sticky; top: 0; z-index: 1; background: var(--lr-raised); color: var(--lr-ink-2); font-size: var(--lr-text-label); text-transform: uppercase; }
 .portoni-table textarea { min-height: 72px; resize: vertical; }
 .portoni-table td small { display: block; margin-top: 5px; }
+.portoni-table th:nth-child(1) { width: 19%; }
+.portoni-table th:nth-child(2) { width: 16%; }
+.portoni-table th:nth-child(3), .portoni-table th:nth-child(4) { width: 10%; }
+.portoni-table th:nth-child(5) { width: 13%; }
+.portoni-table th:nth-child(6), .portoni-table th:nth-child(7) { width: 10%; }
+.portoni-table th:nth-child(8) { width: 12%; }
+.portoni-toggle { transition: transform 180ms ease-out; }
+.portoni-card.is-collapsed .portoni-toggle { transform: rotate(180deg); }
+.portoni-card.is-collapsed #portoniEditorBody { display: none; }
+.portoni-filters { margin-top: 14px; }
 .portoni-history { display: grid; gap: 8px; margin-top: 16px; }
 .portoni-history-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--lr-line-quiet); border-radius: var(--lr-radius-control); }
 .portoni-history-row.is-selected { border-color: var(--lr-accent); }
@@ -3784,4 +3794,23 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
   margin: var(--lr-space-2) 0 0;
   color: var(--lr-danger);
   font-size: var(--lr-text-meta);
+}
+
+/* Portoni è una superficie di lavoro tabellare: usa il monitor intero e
+ * distribuisce le colonne, senza introdurre una seconda barra orizzontale. */
+body[data-worker-view="portoni"] .workspace {
+  width: calc(100% - 24px);
+  max-width: 1800px;
+}
+
+body[data-worker-view="portoni"] .portoni-table :is(input, select, textarea) {
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px;
+}
+
+@media (max-width: 1180px) {
+  body[data-worker-view="portoni"] .portoni-table { font-size: var(--lr-text-label); }
+  body[data-worker-view="portoni"] .portoni-table th,
+  body[data-worker-view="portoni"] .portoni-table td { padding: 5px; }
 }

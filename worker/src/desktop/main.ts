@@ -20,7 +20,7 @@ import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecov
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
-import { buildPortoniRow, portoniDocumentHtml, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
+import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
@@ -474,7 +474,10 @@ function portoniDocumentsDirectory() {
 async function loadPortoniHistory() {
   try {
     const loaded = JSON.parse(await readFile(portoniHistoryPath(), "utf8"));
-    portoniSheets = Array.isArray(loaded) ? loaded.slice(0, 100) : [];
+    portoniSheets = Array.isArray(loaded) ? (loaded.slice(0, 100) as PortoniSheet[]).map((sheet) => ({
+      ...sheet,
+      rows: sheet.rows.map((row) => ({ ...row, sisterNames: portoniOwnerSummary(row), ownership: "" })),
+    })) : [];
   } catch {
     portoniSheets = [];
   }
@@ -1644,8 +1647,9 @@ async function runSisterStreet(input: {
   void runPromise;
 }
 
-async function runPortoni(streetInput: string) {
-  const street = streetInput.replace(/\s+/g, " ").trim();
+async function runPortoni(input: { street: string; filters?: Partial<StreetPropertyFilters> }) {
+  const street = input.street.replace(/\s+/g, " ").trim();
+  const filters = normalizeStreetPropertyFilters({ ...input.filters, residentialOnly: true });
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   reserveOperation("portoni");
   let config: WorkerConfig;
@@ -1688,7 +1692,7 @@ async function runPortoni(streetInput: string) {
     try {
       const scanner = new SisterStreetRun(tabs.sisterPage, {
         strategy: "bulk_exact_variants", mode: "dry_run", acquireOwners: true, includeAllOwners: true, prepareSearchAutomatically: true,
-        filters: { residentialOnly: true, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null },
+        filters,
         isCancelled: () => portoniCancellationRequested,
         onProgress: async (progress) => {
           portoniProgress = progress;
@@ -1774,7 +1778,7 @@ async function generatePortoniDocument(raw: unknown) {
   const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
   try {
     await printWindow.loadFile(htmlPath);
-    const pdf = await printWindow.webContents.printToPDF({ printBackground: true, landscape: true, pageSize: "A4" });
+    const pdf = await printWindow.webContents.printToPDF({ printBackground: true, landscape: false, pageSize: "A4" });
     await writeFile(pdfPath, pdf);
   } finally {
     printWindow.destroy();
@@ -3192,7 +3196,9 @@ function registerIpc() {
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
-  ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string }) => ({ id: await runPortoni(String(values?.street ?? "")) }));
+  ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string; filters?: Partial<StreetPropertyFilters> }) => ({
+    id: await runPortoni({ street: String(values?.street ?? ""), filters: values?.filters }),
+  }));
   ipcMain.handle("desktop:create-blank-portoni", (_event, values: { street?: string }) => createBlankPortoni(String(values?.street ?? "")));
   ipcMain.handle("desktop:cancel-portoni", async () => {
     if (!portoniActive) return false;

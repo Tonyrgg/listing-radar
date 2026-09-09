@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPortoniRow, portoniDocumentHtml, sortPortoniRows } from "../src/services/portoni.js";
+import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows } from "../src/services/portoni.js";
 
 const property = (address: string, subaltern = "1") => ({
   municipality: "BITONTO", sheet: "10", parcel: "20", subaltern, address,
@@ -15,7 +15,8 @@ describe("portoni", () => {
     }));
     expect(row.civicAndStair).toBe("Civico 12 · Scala B");
     expect(row.floorAndInternal).toBe("Piano 2 · Interno 4");
-    expect(row.sisterNames).toBe("Mario Rossi");
+    expect(row.sisterNames).toBe("Mario Rossi · Proprieta 1/1");
+    expect(row.ownership).toBe("");
     expect(row.telephone).toBe("3331234567\n080123456");
   });
 
@@ -29,5 +30,28 @@ describe("portoni", () => {
     const output = portoniDocumentHtml({ id: "x", street: "Via X", municipality: "BITONTO", status: "draft", createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", generatedAt: null, documentPath: null, rows: [row] });
     expect(output).toContain("&lt;script&gt;");
     expect(output).not.toContain("<script>alert");
+    expect(output).toContain("size:A4 portrait");
+    expect(output).toContain("Note aggiuntive");
+    expect(output).not.toContain("Esito e data");
+    expect(output).not.toContain("Dati catastali");
+  });
+
+  it("compatta le vecchie righe senza ripetere il nominativo", () => {
+    expect(portoniOwnerSummary({
+      sisterNames: "MINENNA GIUSEPPE",
+      ownership: "MINENNA GIUSEPPE: Proprieta 1/1",
+    })).toBe("MINENNA GIUSEPPE · Proprieta 1/1");
+    expect(portoniOwnerSummary({
+      sisterNames: "MARRONE GRAZIA nato/a a BITONTO (BA) il 24/07/1949",
+      ownership: "MARRONE GRAZIA nato/a a BITONTO (BA) il 24/07/1949: Proprieta 1000/1000",
+    })).toBe("MARRONE GRAZIA · Proprieta 1000/1000 · 24/07/1949");
+  });
+
+  it("suddivide 138 righe compatte in poche pagine con note finali su ciascuna", () => {
+    const base = buildPortoniRow(property("VIA X N. 1"), [owner], () => ({ taxCode: "", matchedRows: 0, mobiles: [], landlines: [], emails: [], whatsapp: [], overflowPhones: [], notes: [] }));
+    const rows = Array.from({ length: 138 }, (_, index) => ({ ...base, id: String(index), cadastralKey: `1/1/${index}`, civicAndStair: `Civico ${index + 1}` }));
+    const output = portoniDocumentHtml({ id: "x", street: "Via X", municipality: "BITONTO", status: "draft", createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", generatedAt: null, documentPath: null, rows });
+    expect(output.match(/class="print-page"/g)).toHaveLength(4);
+    expect(output.match(/Note aggiuntive/g)).toHaveLength(4);
   });
 });
