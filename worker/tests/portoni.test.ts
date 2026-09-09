@@ -1,3 +1,4 @@
+import { chromium } from "playwright";
 import { describe, expect, it } from "vitest";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows } from "../src/services/portoni.js";
 
@@ -47,11 +48,42 @@ describe("portoni", () => {
     })).toBe("MARRONE GRAZIA · Proprieta 1000/1000 · 24/07/1949");
   });
 
-  it("suddivide 138 righe compatte in poche pagine con note finali su ciascuna", () => {
+  it("crea prima pagine vuote e le riempie misurando le righe renderizzate", async () => {
     const base = buildPortoniRow(property("VIA X N. 1"), [owner], () => ({ taxCode: "", matchedRows: 0, mobiles: [], landlines: [], emails: [], whatsapp: [], overflowPhones: [], notes: [] }));
-    const rows = Array.from({ length: 138 }, (_, index) => ({ ...base, id: String(index), cadastralKey: `1/1/${index}`, civicAndStair: `Civico ${index + 1}` }));
+    const rows = Array.from({ length: 138 }, (_, index) => ({
+      ...base,
+      id: String(index),
+      cadastralKey: `1/1/${index}`,
+      civicAndStair: `Civico ${index + 1}`,
+      sisterNames: Array.from({ length: index % 5 + 1 }, (__, ownerIndex) => `NOMINATIVO MOLTO LUNGO ${index}-${ownerIndex} · Proprieta 1/${index % 5 + 1} · 20/03/1980`).join("\n"),
+      telephone: index % 3 === 0 ? "3331234567\n080123456\n3397654321" : "3331234567",
+    }));
     const output = portoniDocumentHtml({ id: "x", street: "Via X", municipality: "BITONTO", status: "draft", createdAt: "2026-09-09T00:00:00Z", updatedAt: "2026-09-09T00:00:00Z", generatedAt: null, documentPath: null, rows });
-    expect(output.match(/class="print-page"/g)).toHaveLength(4);
-    expect(output.match(/Note aggiuntive/g)).toHaveLength(4);
+    expect(output.match(/data-portoni-source-row/g)).toHaveLength(138);
+    expect(output).toContain("addBlankPage");
+    expect(output).toContain("scrollHeight > current.zone.clientHeight");
+
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      await page.setContent(output, { waitUntil: "load" });
+      await page.waitForFunction(() => (window as typeof window & { __PORTONI_PDF_READY__?: boolean }).__PORTONI_PDF_READY__ === true);
+      const layout = await page.locator(".print-page").evaluateAll((pages) => pages.map((printedPage) => {
+        const zone = printedPage.querySelector(".table-zone")!;
+        const table = zone.querySelector("table")!;
+        const footer = printedPage.querySelector("footer")!;
+        return {
+          rows: printedPage.querySelectorAll("tbody tr").length,
+          fits: table.scrollHeight <= (zone as HTMLElement).clientHeight + 1,
+          separated: table.getBoundingClientRect().bottom <= footer.getBoundingClientRect().top,
+        };
+      }));
+      expect(layout.length).toBeGreaterThan(1);
+      expect(layout.every(({ rows: rowCount, fits, separated }) => rowCount > 0 && fits && separated)).toBe(true);
+      expect(layout.reduce((total, pageLayout) => total + pageLayout.rows, 0)).toBe(138);
+      expect(await page.locator("footer").count()).toBe(layout.length);
+    } finally {
+      await browser.close();
+    }
   });
 });

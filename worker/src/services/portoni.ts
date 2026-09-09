@@ -128,37 +128,60 @@ const html = (value: unknown) => String(value ?? "").trim().replace(/[&<>"']/g, 
 }[character]!)).replace(/\n/g, "<br>");
 
 export function portoniDocumentHtml(sheet: PortoniSheet): string {
-  const pages: PortoniRow[][] = [];
-  let page: PortoniRow[] = [];
-  let units = 0;
-  for (const row of sortPortoniRows(sheet.rows)) {
-    const ownerLines = Math.max(1, portoniOwnerSummary(row).split("\n").length);
-    const noteLines = Math.max(1, Math.ceil(clean(row.notes).length / 42));
-    const rowUnits = Math.max(1, ownerLines * 0.7, noteLines * 0.65);
-    if (page.length && units + rowUnits > 42) {
-      pages.push(page);
-      page = [];
-      units = 0;
-    }
-    page.push(row);
-    units += rowUnits;
-  }
-  if (page.length || !pages.length) pages.push(page);
-  const content = pages.map((rows, pageIndex) => `<section class="print-page">
-    <header><div><p>LISTING RADAR · SCHEDA PORTONI</p><h1>${html(sheet.street)}</h1></div><p>Bitonto · ${html(new Date(sheet.updatedAt).toLocaleDateString("it-IT"))} · pagina ${pageIndex + 1}/${pages.length}</p></header>
-    <table><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Note</th></tr></thead><tbody>${rows.map((row) => `<tr>
+  const rows = sortPortoniRows(sheet.rows).map((row) => `<tr data-portoni-source-row>
       <td>${html(portoniOwnerSummary(row))}</td><td>${html(row.actualNames)}</td><td>${html(row.civicAndStair)}</td>
       <td>${html(row.floorAndInternal)}</td><td>${html(row.telephone)}</td><td>${html(row.notes)}</td>
-    </tr>`).join("")}</tbody></table>
-    <footer><b>Note aggiuntive</b><span></span><span></span><span></span></footer>
-  </section>`).join("");
+    </tr>`).join("");
+  const updatedAt = html(new Date(sheet.updatedAt).toLocaleDateString("it-IT"));
   return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>
     @page{size:A4 portrait;margin:6mm}*{box-sizing:border-box}body{font:9px/1.25 Arial,sans-serif;color:#142f32;margin:0}
-    .print-page{height:284mm;display:flex;flex-direction:column;break-after:page}.print-page:last-child{break-after:auto}
+    .print-page{height:284mm;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;break-after:page}.print-page:last-child{break-after:auto}
     header{display:flex;justify-content:space-between;align-items:end;margin-bottom:3mm}h1{font-size:16px;margin:0}p{margin:2px 0;color:#526467}
+    .table-zone{min-height:0;overflow:hidden}
     table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #8da0a2;padding:3px 4px;vertical-align:top;overflow-wrap:anywhere}
     th{background:#e6efec;text-align:left;font-size:8px;text-transform:uppercase}tr{break-inside:avoid}
     th:nth-child(1){width:23%}th:nth-child(2){width:15%}th:nth-child(3){width:10%}th:nth-child(4){width:10%}th:nth-child(5){width:14%}th:nth-child(6){width:28%}
-    footer{margin-top:auto;padding-top:3mm;font-size:9px}footer b{display:block;margin-bottom:1mm;text-transform:uppercase}footer span{display:block;height:7mm;border-bottom:1px solid #8da0a2}
-  </style></head><body>${content}</body></html>`;
+    footer{padding-top:3mm;font-size:9px}footer b{display:block;margin-bottom:1mm;text-transform:uppercase}footer span{display:block;height:7mm;border-bottom:1px solid #8da0a2}
+  </style></head><body><main id="portoni-pages"></main>
+  <template id="portoni-page-template"><section class="print-page">
+    <header><div><p>LISTING RADAR · SCHEDA PORTONI</p><h1>${html(sheet.street)}</h1></div><p>Bitonto · ${updatedAt} · pagina <span data-page-number></span>/<span data-page-total></span></p></header>
+    <div class="table-zone"><table><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+    <footer><b>Note aggiuntive</b><span></span><span></span><span></span></footer>
+  </section></template>
+  <template id="portoni-row-source"><table><tbody>${rows}</tbody></table></template>
+  <script>
+    (async () => {
+      await document.fonts.ready;
+      const pagesRoot = document.getElementById("portoni-pages");
+      const pageTemplate = document.getElementById("portoni-page-template");
+      const rowSource = document.getElementById("portoni-row-source");
+      const sourceRows = Array.from(rowSource.content.querySelectorAll("tr"));
+      const addBlankPage = () => {
+        const page = pageTemplate.content.firstElementChild.cloneNode(true);
+        pagesRoot.append(page);
+        return {
+          page,
+          zone: page.querySelector(".table-zone"),
+          table: page.querySelector("table"),
+          body: page.querySelector("tbody"),
+        };
+      };
+      let current = addBlankPage();
+      for (const sourceRow of sourceRows) {
+        const row = sourceRow.cloneNode(true);
+        current.body.append(row);
+        if (current.table.scrollHeight > current.zone.clientHeight + 1 && current.body.children.length > 1) {
+          row.remove();
+          current = addBlankPage();
+          current.body.append(row);
+        }
+      }
+      const pages = Array.from(pagesRoot.querySelectorAll(".print-page"));
+      for (const [index, page] of pages.entries()) {
+        page.querySelector("[data-page-number]").textContent = String(index + 1);
+        page.querySelector("[data-page-total]").textContent = String(pages.length);
+      }
+      window.__PORTONI_PDF_READY__ = true;
+    })();
+  </script></body></html>`;
 }

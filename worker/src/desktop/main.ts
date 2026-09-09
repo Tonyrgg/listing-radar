@@ -1778,6 +1778,19 @@ async function generatePortoniDocument(raw: unknown) {
   const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
   try {
     await printWindow.loadFile(htmlPath);
+    await printWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+      if (window.__PORTONI_PDF_READY__ === true) return resolve(true);
+      const startedAt = Date.now();
+      const timer = setInterval(() => {
+        if (window.__PORTONI_PDF_READY__ === true) {
+          clearInterval(timer);
+          resolve(true);
+        } else if (Date.now() - startedAt > 15000) {
+          clearInterval(timer);
+          reject(new Error("Timeout durante la paginazione della scheda Portoni"));
+        }
+      }, 25);
+    })`);
     const pdf = await printWindow.webContents.printToPDF({ printBackground: true, landscape: false, pageSize: "A4" });
     await writeFile(pdfPath, pdf);
   } finally {
