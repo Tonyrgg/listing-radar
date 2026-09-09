@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chromium, type Locator } from "playwright";
 
-import { chooseLookupRecordCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships } from "../src/import-v2/tecnocloud-ui-port.js";
+import { chooseLookupRecordCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
@@ -35,6 +35,11 @@ describe("Mappatura sottotipologia immobile", () => {
 });
 
 describe("Tecnocloud UI V2", () => {
+  it("tratta gli ID Salesforce da 15 e 18 caratteri come lo stesso record", () => {
+    expect(sameCrmRecordId("001RD00000ywHCn", "001RD00000ywHCnYAM")).toBe(true);
+    expect(sameCrmRecordId("001RD00000ywHCnYAM", "001RD00000ywHCoYAM")).toBe(false);
+  });
+
   it("svuota la quota precedente prima di inserire e verificare quella nuova", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -87,7 +92,7 @@ describe("Tecnocloud UI V2", () => {
         }
         return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
           <input placeholder="--- Seleziona ---" value="Immobili residenziali">
-          ${[1, 9, 26, 27, 31].map(index => '<lightning-input c-queryviewerfilters_queryviewerfilters data-index="' + index + '"><input></lightning-input>').join('')}
+          ${[1, 9, 26, 27, 28, 31].map(index => '<lightning-input c-queryviewerfilters_queryviewerfilters data-index="' + index + '"><input></lightning-input>').join('')}
           <button id="apply">Applica</button><div id="results"></div>
           <script>document.querySelector('#apply').onclick = () => {
             const values = [9,26,27,31].map(index => document.querySelector('[data-index="' + index + '"] input').value).join('|');
@@ -723,6 +728,13 @@ describe("Tecnocloud UI V2", () => {
       { linkId: "link-1", personId: "owner-1", taxCode: desired[0]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Proprietario Principale" },
       { linkId: "link-2", personId: "owner-2", taxCode: desired[1]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Comproprietario" },
     ], desired)).toBe(true);
+    expect(ownershipSyncConfirmed([
+      { linkId: "link-1", personId: "001RD00000ywHCn", taxCode: desired[0]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Proprietario Principale" },
+      { linkId: "link-2", personId: "001RD00000ywHCp", taxCode: desired[1]!.taxCode, sharePercentage: 50, rightType: "Proprietà", role: "Comproprietario" },
+    ], [
+      { ...desired[0]!, personId: "001RD00000ywHCnYAM" },
+      { ...desired[1]!, personId: "001RD00000ywHCpYAM" },
+    ])).toBe(true);
   });
 
   it("normalizza un collegamento SISTER senza ruolo ma protegge gli sconosciuti", () => {
@@ -736,6 +748,27 @@ describe("Tecnocloud UI V2", () => {
 
     expect(editableLinkedOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-sister"]);
     expect(protectedUnknownOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-other"]);
+  });
+
+  it("ritrova la riga del soggetto collegato quando il DOM espone l'ID corto", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <div>Indirizzo Completo Immobile</div>
+          <article><h2>Soggetti collegati (1)</h2><table><tbody><tr id="owner-row">
+            <td><a href="/CRMImmobiliareLightning/s/account/001RD00000ywHCn">Secondo Test</a></td>
+          </tr></tbody></table></article>
+        </body>` }));
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const row = await (port as unknown as {
+        ownershipRow(propertyId: string, personId: string): Promise<Locator>;
+      }).ownershipRow("property-1", "001RD00000ywHCnYAM");
+      expect(await row.getAttribute("id")).toBe("owner-row");
+    } finally {
+      await browser.close();
+    }
   });
 
   it("rilegge proprietario principale e comproprietario dai due blocchi distinti di Tecnocloud", async () => {
@@ -855,7 +888,9 @@ describe("Tecnocloud UI V2", () => {
       const port = new TecnocloudUiV2Port(page);
       const first = await port.searchPeopleByExactTaxCode("TESTCF0000000000");
       const second = await port.searchPeopleByExactTaxCode("TESTCF0000000000");
+      const verified = await port.readPerson("person-cache", "TESTCF0000000000");
       expect(first).toEqual(second);
+      expect(verified).toEqual(first[0]);
       expect(listVisits).toBe(1);
       expect(personVisits).toBe(1);
     } finally {
@@ -1185,12 +1220,13 @@ describe("Tecnocloud UI V2", () => {
         visited.push(path);
         if (path.includes("/s/account/person-1")) {
           await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-            <article><h2>Immobili/Notizie/Incarichi (3)</h2><button onclick="document.querySelector('[role=dialog]').hidden=false">Visualizza tutto</button></article>
-            <div role="dialog" hidden><h2>Immobili/Notizie/Incarichi (3)</h2><table><tbody>
+            <article><h2>Immobili/Notizie/Incarichi (3)</h2><button onclick="document.querySelector('[role=dialog]').hidden=false; setTimeout(() => document.querySelector('#related-rows').innerHTML = document.querySelector('#delayed-rows').innerHTML, 700)">Visualizza tutto</button></article>
+            <template id="delayed-rows">
               <tr><td><a href="/CRMImmobiliareLightning/s/immobile/property-match">IM - Via Francia 10 [2] - Centro</a></td></tr>
               <tr><td><a href="/CRMImmobiliareLightning/s/notizia/news-1">NT - Via Francia 10 - Centro</a></td></tr>
               <tr><td><a href="/CRMImmobiliareLightning/s/immobile/property-other">IM - Via Altra 4 - Centro</a></td></tr>
-            </tbody></table><button aria-label="Chiudi" onclick="this.parentElement.hidden=true">Chiudi</button></div>
+            </template>
+            <div role="dialog" hidden><h2>Immobili/Notizie/Incarichi (3)</h2><table><tbody id="related-rows"></tbody></table><button aria-label="Chiudi" onclick="this.parentElement.hidden=true">Chiudi</button></div>
           </body>` });
           return;
         }

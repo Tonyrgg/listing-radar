@@ -38,6 +38,17 @@ function recordIdFromUrl(rawUrl: string, entity: "account" | "immobile"): string
   return value && normalized(value) !== normalized(entity === "account" ? "Account" : "Immobile__c") ? value : null;
 }
 
+/** Salesforce alterna lo stesso record fra ID case-sensitive da 15 caratteri
+ * e ID da 18 con checksum. Il prefisso da 15 e' l'identita' comune. */
+export function sameCrmRecordId(left: string | null | undefined, right: string | null | undefined): boolean {
+  if (!left || !right) return false;
+  return left.slice(0, 15) === right.slice(0, 15);
+}
+
+function crmRecordKey(value: string): string {
+  return value.slice(0, 15);
+}
+
 function uiDate(value: string): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
@@ -149,7 +160,7 @@ export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: 
   const managed = actual.filter(isManagedCrmOwnership);
   if (managed.length !== desired.length) return false;
   return desired.every((expected) => {
-    const found = managed.find((candidate) => candidate.personId === expected.personId);
+    const found = managed.find((candidate) => sameCrmRecordId(candidate.personId, expected.personId));
     if (!found || normalized(found.role) !== normalized(expected.role)) return false;
     return found.sharePercentage == null || expected.sharePercentage == null
       ? found.sharePercentage == null && expected.sharePercentage == null
@@ -158,17 +169,15 @@ export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: 
 }
 
 export function protectedUnknownOwnerships(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): CrmOwnershipSnapshot[] {
-  const desiredPersonIds = new Set(desired.map((owner) => owner.personId));
   return actual.filter((owner) => isPrivateFiscalCode(owner.taxCode)
     && !isManagedCrmOwnership(owner)
     && !/^usufrutt/.test(normalizedOwnershipRight(owner.rightType))
-    && !desiredPersonIds.has(owner.personId));
+    && !desired.some((candidate) => sameCrmRecordId(candidate.personId, owner.personId)));
 }
 
 export function editableLinkedOwnerships(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): CrmOwnershipSnapshot[] {
-  const desiredPersonIds = new Set(desired.map((owner) => owner.personId));
   return actual.filter((owner) => owner.role !== "Proprietario Principale"
-    && (isManagedCrmOwnership(owner) || desiredPersonIds.has(owner.personId)));
+    && (isManagedCrmOwnership(owner) || desired.some((candidate) => sameCrmRecordId(candidate.personId, owner.personId))));
 }
 
 function propertyDraft(plan: ImportV2Plan) {
@@ -225,6 +234,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
    * `readCurrentPerson`, che rinfresca la voce.
    */
   private readonly personTaxCodes = new Map<string, string>();
+  /** Snapshot completo appena riletto dalla scheda. Ha vita breve: evita che
+   * la verifica pre-collegamento riapra subito la stessa pagina, senza
+   * trasformare una lettura vecchia in evidenza permanente. */
+  private readonly verifiedPersonSnapshots = new Map<string, { snapshot: CrmPersonSnapshot; expiresAt: number }>();
   private readonly submittedActivities = new Set<string>();
   private readonly virtualPeople = new Map<string, CrmPersonSnapshot>();
   private readonly virtualProperties = new Map<string, CrmPropertySnapshot>();
@@ -326,7 +339,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   private async openPerson(personId: string): Promise<void> {
-    if (recordIdFromUrl(this.page.url(), "account") !== personId) {
+    if (!sameCrmRecordId(recordIdFromUrl(this.page.url(), "account"), personId)) {
       await this.page.goto(this.personUrl(personId), { waitUntil: "domcontentloaded", timeout: 30_000 });
     }
     await this.assertSession();
@@ -387,9 +400,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const birthPlace = birthPlaceRaw.replace(/\s*\([A-Z]{2}\)\s*$/i, "").trim() || null;
     /* Questa e' la lettura verificata: qualunque cosa dicesse la cache, ora
      * vale quello che c'e' scritto sulla scheda. */
-    if (taxCode) this.personTaxCodes.set(personId, taxCode);
-    else this.personTaxCodes.delete(personId);
-    return {
+    if (taxCode) this.personTaxCodes.set(crmRecordKey(personId), taxCode);
+    else this.personTaxCodes.delete(crmRecordKey(personId));
+    const snapshot: CrmPersonSnapshot = {
       id: personId,
       taxCode,
       firstName: firstName || null,
@@ -401,6 +414,11 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       phones,
       emails,
     };
+    if (taxCode) this.verifiedPersonSnapshots.set(crmRecordKey(personId), {
+      snapshot: structuredClone(snapshot),
+      expiresAt: Date.now() + 120_000,
+    });
+    return snapshot;
   }
 
   /**
@@ -410,7 +428,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
    * pagine. La stabilita' richiesta e' la stessa della lettura completa.
    */
   private async readPersonTaxCode(personId: string): Promise<string> {
-    const known = this.personTaxCodes.get(personId);
+    const key = crmRecordKey(personId);
+    const known = this.personTaxCodes.get(key);
     if (known) return known;
     await this.openPerson(personId);
     let value = "";
@@ -421,12 +440,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       value = current;
       if (stable < 3) await this.pauseAwareWait(200);
     }
-    if (value) this.personTaxCodes.set(personId, value);
+    if (value) this.personTaxCodes.set(key, value);
     return value;
   }
 
   async readPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
-    return this.action("Rilettura nominativo verificato", () => this.readCurrentPerson(personId, expectedTaxCode));
+    return this.action("Rilettura nominativo verificato", () => {
+      const cached = this.verifiedPersonSnapshots.get(crmRecordKey(personId));
+      if (cached && cached.expiresAt >= Date.now()
+        && (!expectedTaxCode || canonicalTaxCode(cached.snapshot.taxCode) === canonicalTaxCode(expectedTaxCode))) {
+        return Promise.resolve(structuredClone(cached.snapshot));
+      }
+      return this.readCurrentPerson(personId, expectedTaxCode);
+    });
   }
 
   async searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]> {
@@ -1102,6 +1128,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   async overwritePerson(personId: string, desired: PersonWriteModel): Promise<CrmPersonSnapshot> {
     return this.action("Aggiornamento nominativo", async () => {
       this.invalidatePersonSearch(desired.taxCode);
+      this.verifiedPersonSnapshots.delete(crmRecordKey(personId));
       if (this.dryRun) {
         const person: CrmPersonSnapshot = { id: personId, ...desired };
         this.virtualPeople.set(canonicalTaxCode(desired.taxCode), person);
@@ -1121,6 +1148,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       /* Un merge fonde due identita': i codici fiscali gia' letti possono
        * riferirsi a una scheda che non esiste piu'. */
       this.personTaxCodes.clear();
+      this.verifiedPersonSnapshots.clear();
       if (this.dryRun) {
         const person: CrmPersonSnapshot = { id: request.canonicalPersonId, ...request.desired };
         this.virtualPeople.set(canonicalTaxCode(request.taxCode), person);
@@ -1139,7 +1167,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   private async openProperty(propertyId: string): Promise<void> {
-    if (recordIdFromUrl(this.page.url(), "immobile") !== propertyId) {
+    if (!sameCrmRecordId(recordIdFromUrl(this.page.url(), "immobile"), propertyId)) {
       await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
     }
     await this.assertSession();
@@ -1203,6 +1231,23 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       );
     }
     const links = scope.locator('a[href*="/s/immobile/"]').filter({ visible: true });
+    /* Il titolo e il contatore della related list arrivano prima delle righe.
+     * Aspetta una lista realmente stabilizzata: una prima lettura vuota non e'
+     * prova che le righe IM non esistano. */
+    let signature = "";
+    let stable = 0;
+    for (let check = 0; check < 60 && stable < 3; check += 1) {
+      const current = (await links.evaluateAll((nodes) => nodes.map((node) => {
+        const href = node.getAttribute("href") ?? "";
+        const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+        return `${href}|${label}`;
+      }))).join("||");
+      const busy = await this.searchIsBusy();
+      const ready = declared === 0 || Boolean(current);
+      stable = ready && !busy && current === signature ? stable + 1 : 0;
+      signature = current;
+      if (stable < 3) await this.pauseAwareWait(200);
+    }
     const rows = await links.evaluateAll((nodes) => nodes.map((node) => {
       const href = node.getAttribute("href") ?? "";
       const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -1211,7 +1256,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }));
     const properties = rows.filter((row) => row.id && /^\s*IM\s*-/i.test(row.label));
     if (declared > 0 && !properties.length) {
-      throw new ImportV2Error("La scheda dichiara immobili ma non espone righe IM leggibili", "verification_failed", { retryable: true });
+      throw new ImportV2Error("La scheda dichiara immobili ma la related list non ha completato il caricamento delle righe IM", "transient_portal", { retryable: true });
     }
     const paired = properties.filter((row) => sameAddress(row.label, plan.source.fullAddress));
     // Pair first; if an unknown label format prevents pairing, inspect all IM
@@ -1414,13 +1459,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const hasDenominationFilter = await filterHost(await resolveFilterIndex("Catasto Denom Particella", 28)).count() > 0;
       const found = new Set<string>();
       for (const id of await search({ sheet, parcel, subaltern })) found.add(id);
-      if (hasDenominationFilter) {
-        for (const id of await search({ sheet, parcelDenomination: parcel, subaltern })) found.add(id);
-      }
       const summaries: CrmPropertySummary[] = [];
       for (const id of found) summaries.push(await this.readPropertySummary(id));
       // Inspect all cadastral candidates so duplicates remain detectable, but
-      // stop widening to the whole street once an exact record is available.
+      // stop every fallback once the ordinary parcel field has already given
+      // an exact result. In that case repeating the same query through
+      // "Denom Particella" only reloads the list and the same record.
+      if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+        && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
+      if (hasDenominationFilter) {
+        const previous = new Set(found);
+        for (const id of await search({ sheet, parcelDenomination: parcel, subaltern })) found.add(id);
+        for (const id of found) if (!previous.has(id)) summaries.push(await this.readPropertySummary(id));
+      }
       if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
       /* Senza controllo sicuro ci si ferma al catasto: se non ha trovato
@@ -1873,12 +1924,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       });
     }
     await this.openProperty(propertyId);
-    return primary ? [primary, ...result.filter((owner) => owner.personId !== primary.personId)] : result;
+    return primary ? [primary, ...result.filter((owner) => !sameCrmRecordId(owner.personId, primary.personId))] : result;
   }
 
   /** Restituisce true solo se la scheda e' stata davvero modificata. */
   private async syncPrimaryOwnership(propertyId: string, desired: OwnershipWrite, current: CrmOwnershipSnapshot | null): Promise<boolean> {
-    if (current?.personId === desired.personId && this.sameShare(current.sharePercentage, desired.sharePercentage)) return false;
+    if (sameCrmRecordId(current?.personId, desired.personId) && this.sameShare(current?.sharePercentage ?? null, desired.sharePercentage)) return false;
     await this.openProperty(propertyId);
     const row = this.page.locator('div.flex:has(label span:text-is("Proprietario Predefinito"))').filter({ visible: true });
     const edit = row.locator("button.inline-edit-trigger").filter({ visible: true });
@@ -1886,7 +1937,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const component = this.page.locator('c-lookup:has(label:text-is("Proprietario Predefinito"))').filter({ visible: true });
     await component.waitFor({ state: "visible", timeout: 10_000 });
     const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Proprietario principale");
-    if (current?.personId !== desired.personId) {
+    if (!sameCrmRecordId(current?.personId, desired.personId)) {
       await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), component, 1, "Proprietario principale");
     }
     const quota = await this.one(this.page.getByLabel("Quota Proprietario", { exact: true }).filter({ visible: true }), "Quota proprietario");
@@ -1903,7 +1954,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       saveRequests.stop();
     }
     const verified = await this.readPrimaryOwnership(propertyId);
-    if (!verified || verified.personId !== desired.personId || !this.sameShare(verified.sharePercentage, desired.sharePercentage)) {
+    if (!verified || !sameCrmRecordId(verified.personId, desired.personId) || !this.sameShare(verified.sharePercentage, desired.sharePercentage)) {
       throw new ImportV2Error("Proprietario principale o quota non confermati dalla scheda immobile", "verification_failed", { retryable: true });
     }
     return true;
@@ -1912,13 +1963,24 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   private async ownershipRow(propertyId: string, personId: string): Promise<Locator> {
     const card = await this.ownershipCard(propertyId);
     let scope = card;
-    let link = scope.locator(`a[href*="/s/account/${personId}"], a[data-recordid="${personId}"], a[data-id="${personId}"]`).filter({ visible: true });
+    const linksForPerson = (ownerScope: Locator) => ownerScope.locator('a[href*="/s/account/"]').filter({ visible: true });
+    const matchingLinks = async (ownerScope: Locator): Promise<Locator> => {
+      const links = linksForPerson(ownerScope);
+      const indexes = await links.evaluateAll((nodes, expected) => nodes.flatMap((node, index) => {
+        const href = node.getAttribute("href") ?? "";
+        const value = node.getAttribute("data-recordid") ?? node.getAttribute("data-id")
+          ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
+        return value.slice(0, 15) === String(expected).slice(0, 15) ? [index] : [];
+      }), personId);
+      return indexes.length === 1 ? links.nth(indexes[0]!) : ownerScope.locator("a.__worker-no-match__");
+    };
+    let link = await matchingLinks(scope);
     if (await link.count() !== 1) {
       const viewAll = card.getByText("Visualizza tutto", { exact: true }).filter({ visible: true });
       if (await viewAll.count() === 1) {
         await viewAll.click({ force: true });
         scope = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetti collegati/i }), "Elenco soggetti collegati", 12_000);
-        link = scope.locator(`a[href*="/s/account/${personId}"], a[data-recordid="${personId}"], a[data-id="${personId}"]`).filter({ visible: true });
+        link = await matchingLinks(scope);
       }
     }
     await link.first().waitFor({ state: "visible", timeout: 10_000 });
@@ -2018,7 +2080,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         const property = await this.readProperty(propertyId);
         const protectedOwners = property.owners.filter((owner) => !isManagedCrmOwnership(owner));
         const managedBefore = property.owners.filter(isManagedCrmOwnership);
-        const unlisted = managedBefore.filter((owner) => !desired.some((candidate) => candidate.personId === owner.personId));
+        const unlisted = managedBefore.filter((owner) => !desired.some((candidate) => sameCrmRecordId(candidate.personId, owner.personId)));
         const removedPersonIds = options.keepUnlistedManagedOwners ? [] : unlisted.map((owner) => owner.personId);
         property.owners = [
           ...protectedOwners,
@@ -2058,14 +2120,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
        * non toglierli: chi e' gia' collegato resta collegato. */
       if (!options.keepUnlistedManagedOwners) {
         for (const existing of managed) {
-          if (!desiredLinked.some((candidate) => candidate.personId === existing.personId)) {
+          if (!desiredLinked.some((candidate) => sameCrmRecordId(candidate.personId, existing.personId))) {
             await this.deleteOwnership(propertyId, existing.personId);
             removedPersonIds.push(existing.personId);
           }
         }
       }
       for (const owner of desiredLinked) {
-        const existing = managed.find((candidate) => candidate.personId === owner.personId);
+        const existing = managed.find((candidate) => sameCrmRecordId(candidate.personId, owner.personId));
         if (existing && (!this.sameShare(existing.sharePercentage, owner.sharePercentage) || normalized(existing.role) !== normalized(owner.role))) {
           await this.updateOwnership(propertyId, owner);
         } else if (!existing) {
