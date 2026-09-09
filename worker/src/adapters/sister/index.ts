@@ -30,6 +30,8 @@ const CONTESTO_PERSONA = 'fieldset:has(legend:text-is("Soggetto selezionato"))';
 export type SisterAdapterOptions = {
   ignoreOwnerNoMatch?: boolean;
   isCancelled?: () => boolean;
+  /** Per schede di ricognizione: conserva ogni intestatario SISTER, comprese società e diritti non proprietari. */
+  includeAllOwners?: boolean;
 };
 
 const PERSON_SEARCH_CONTROL_TIMEOUT_MS = 8_000;
@@ -668,6 +670,10 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   }
 
   private addOwner(owners: CadastralOwner[], owner: CadastralOwner, rowIndex: number) {
+    if (this.options.includeAllOwners) {
+      owners.push(owner);
+      return;
+    }
     const businessReason = businessOwnerReason(owner.fullName, owner.taxCode);
     if (businessReason) {
       const ignored = {

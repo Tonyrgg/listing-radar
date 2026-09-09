@@ -845,6 +845,11 @@ describe("adattatori con fixture HTML", () => {
       expect(await adapter.extractOwners(property!)).toEqual([]);
       expect(adapter.hasIgnoredBusinessOnRow(0)).toBe(true);
       expect(adapter.getIgnoredBusinesses()[0]).toMatchObject({ taxCode: "075******24", reason: "business-tax-code" });
+      const censusAdapter = new PlaywrightSisterAdapter(page, sisterFixtureSelectors, { includeAllOwners: true });
+      const [censusProperty] = await censusAdapter.extractProperties();
+      expect(await censusAdapter.extractOwners(censusProperty!)).toEqual([
+        expect.objectContaining({ fullName: "EDILE & IMMOBILIARE COCE S.R.L.", taxCode: "07504350724" }),
+      ]);
     } finally { await browser.close(); }
   });
 

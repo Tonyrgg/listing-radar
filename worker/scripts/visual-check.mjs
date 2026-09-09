@@ -16,6 +16,13 @@ const baseState = {
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
   configError: null, cloudError: null, jobs: [], completedImports: [], version: "0.5.0",
   streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
+  portoni: { active: false, cancelling: false, progress: null, lastError: null, sheets: [{
+    id: "portoni-demo", street: "Via Luigi Castellucci", municipality: "BITONTO", status: "draft",
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), generatedAt: null, documentPath: null,
+    rows: [{ id: "BITONTO|1|2|3", cadastralKey: "1/2/3", sisterNames: "Mario Rossi\nLucia Bianchi", actualNames: "",
+      civicAndStair: "Civico 12 · Scala B", floorAndInternal: "Piano 2 · Interno 4", telephone: "3331234567",
+      outcome: "", visitedAt: "", notes: "", category: "A/3", ownership: "Mario Rossi: Proprietà 1/2\nLucia Bianchi: Proprietà 1/2" }],
+  }] },
   retryMonitor: null,
   softwareUpdate: { status: "up_to_date", currentVersion: "0.6.0", availableVersion: null, percent: null, transferred: null, total: null, message: "Il programma è aggiornato", checkedAt: new Date().toISOString() },
 };
@@ -63,6 +70,9 @@ await page.addInitScript(({ initialState, details }) => {
     },
     startJob: async () => called("startJob"), resumeJob: async () => called("resumeJob"), pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
     startStreetRun: async () => called("startStreetRun"), cancelStreetRun: async () => called("cancelStreetRun"),
+    startPortoni: async () => called("startPortoni"), cancelPortoni: async () => called("cancelPortoni"),
+    createBlankPortoni: async () => called("createBlankPortoni"),
+    savePortoni: async () => called("savePortoni"), generatePortoni: async () => called("generatePortoni", "C:\\Dati\\portoni.pdf"),
     abandonStreetRun: async () => called("abandonStreetRun"), stopAll: async () => called("stopAll"),
     startRequestArchiveImport: async () => called("startRequestArchiveImport"), cancelRequestArchiveImport: async () => called("cancelRequestArchiveImport"),
     startMandateArchiveImport: async () => called("startMandateArchiveImport"), cancelMandateArchiveImport: async () => called("cancelMandateArchiveImport"),
@@ -158,6 +168,11 @@ await page.addInitScript(({ initialState, details }) => {
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.locator('[data-scroll="portoni"]').click();
+await page.locator("#portoni").screenshot({ path: path.join(output, "portoni.png") });
+const portoniVisible = await page.locator("#portoniEditor:not(.is-hidden)").count();
+const portoniOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+await page.locator('[data-scroll="operations"]').click();
 const runSlideHeights = {};
 for (const slide of ["civic", "street", "network"]) {
   await page.locator(`[data-run-slide-target="${slide}"]`).click();
@@ -249,13 +264,14 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, portoniVisible, portoniOverflow, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
-  ...([readyOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
+  ...([readyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
+  ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
   ...(activityModeSelections.some((selected) => selected !== "true") ? ["Le tre modalità attività non confermano la selezione salvata"] : []),
   ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),

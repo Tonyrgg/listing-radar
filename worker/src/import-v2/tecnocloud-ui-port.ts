@@ -252,15 +252,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     private readonly dryRun = false,
     private readonly options: {
       isInterruptionRequested?: () => boolean;
-      /** Con false la ricerca si ferma al catasto e non passa dall'indirizzo. */
-      safeAddressCheck?: boolean | (() => boolean);
     } = {},
   ) {}
-
-  private safeAddressCheckEnabled(): boolean {
-    const value = this.options.safeAddressCheck ?? true;
-    return typeof value === "function" ? value() : value;
-  }
 
   private throwIfInterruptionRequested(): void {
     if (this.options.isInterruptionRequested?.()) {
@@ -1474,9 +1467,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
-      /* Senza controllo sicuro ci si ferma al catasto: se non ha trovato
-       * niente, l'immobile non c'e' e si procede a crearlo. */
-      if (!this.safeAddressCheckEnabled()) return summaries;
+      /* Se il catasto non restituisce un'identità esatta, il riscontro per
+       * indirizzo resta sempre attivo: è una protezione anti-duplicato, non
+       * una modalità operativa disattivabile. */
       if (found.size) await openSearchView();
       /* Cercare la sola via restituiva ogni immobile della via e ne apriva la
        * scheda uno per uno, anche quelli di un altro civico che `sameAddress`

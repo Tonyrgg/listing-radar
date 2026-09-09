@@ -82,6 +82,7 @@ type StreetRunOptions = {
   maximumCivic?: number;
   maxQueryAttempts?: number;
   acquireOwners?: boolean;
+  includeAllOwners?: boolean;
   prepareSearchAutomatically?: boolean;
   strategy?: "bulk_exact_variants" | "civic_fallback";
   mode?: "dry_run" | "live";
@@ -136,7 +137,10 @@ export class SisterStreetRun {
   private readonly filters: StreetPropertyFilters;
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
-    this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, { ignoreOwnerNoMatch: true });
+    this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, {
+      ignoreOwnerNoMatch: true,
+      includeAllOwners: options.includeAllOwners === true,
+    });
     this.emptyWindow = options.emptyWindow ?? 50;
     this.startCivic = options.startCivic ?? 1;
     this.maximumCivic = options.maximumCivic ?? 5_000;

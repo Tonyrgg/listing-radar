@@ -2176,6 +2176,7 @@ details.section > .section-body {
 }
 
 #sync .request-archive-card,
+#portoni .portoni-card,
 #history .completed-imports-section,
 #history .jobs-card,
 #history .detail-card,
@@ -2209,12 +2210,14 @@ details.section > .section-body {
 #history #detailPanel { grid-column: 1 / -1; }
 
 body[data-worker-view="operations"] .workspace > details.section,
+body[data-worker-view="portoni"] .workspace > :not(#portoni),
 body[data-worker-view="sync"] .workspace > :not(#sync),
 body[data-worker-view="history"] .workspace > :not(#history),
 body[data-worker-view="settings"] .workspace > :not(#settings) {
   display: none !important;
 }
 
+body[data-worker-view="portoni"] #portoni,
 body[data-worker-view="sync"] #sync,
 body[data-worker-view="history"] #history,
 body[data-worker-view="settings"] #settings {
@@ -2226,6 +2229,7 @@ details.section[data-operation-locked] :is(button, input, select, textarea) {
   opacity: 0.5;
 }
 
+body[data-worker-view="portoni"] #portoni::before,
 body[data-worker-view="sync"] #sync::before,
 body[data-worker-view="history"] #history::before,
 body[data-worker-view="settings"] #settings::before {
@@ -2238,6 +2242,7 @@ body[data-worker-view="settings"] #settings::before {
   letter-spacing: var(--lr-tracking-title);
 }
 
+body[data-worker-view="portoni"] #portoni::before { content: "Schede Portoni"; }
 body[data-worker-view="sync"] #sync::before { content: "Sincronizza il gestionale"; }
 body[data-worker-view="history"] #history::before { content: "Cronologia dei lavori"; }
 body[data-worker-view="settings"] #settings::before { content: "Impostazioni e collegamenti"; }
@@ -2246,6 +2251,25 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
   #sync > .section-body,
   #history > .section-body { grid-template-columns: 1fr; }
 }
+
+.portoni-layout { display: grid; gap: 16px; }
+.portoni-card { padding: 20px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-container); background: var(--lr-surface); min-width: 0; }
+.portoni-launcher { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto auto; align-items: end; gap: 12px; margin-top: 20px; }
+.portoni-launcher label { display: grid; gap: 6px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+.portoni-launcher input, .portoni-table :is(input, select, textarea) { min-height: var(--lr-control-height); width: 100%; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); background: var(--lr-raised); padding: 8px; }
+.portoni-actions { display: flex; gap: 8px; }
+.portoni-table-wrap { overflow: auto; margin-top: 18px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); }
+.portoni-table { width: 100%; min-width: 1420px; border-collapse: collapse; table-layout: fixed; font-size: var(--lr-text-meta); }
+.portoni-table th, .portoni-table td { padding: 8px; border-bottom: 1px solid var(--lr-line-quiet); border-right: 1px solid var(--lr-line-quiet); vertical-align: top; text-align: left; }
+.portoni-table th { position: sticky; top: 0; z-index: 1; background: var(--lr-raised); color: var(--lr-ink-2); font-size: var(--lr-text-label); text-transform: uppercase; }
+.portoni-table textarea { min-height: 72px; resize: vertical; }
+.portoni-table td small { display: block; margin-top: 5px; }
+.portoni-history { display: grid; gap: 8px; margin-top: 16px; }
+.portoni-history-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--lr-line-quiet); border-radius: var(--lr-radius-control); }
+.portoni-history-row.is-selected { border-color: var(--lr-accent); }
+.portoni-history-row > button:first-child { border: 0; background: transparent; text-align: left; }
+.portoni-history-row b, .portoni-history-row small { display: block; }
+@media (max-width: 900px) { .portoni-launcher { grid-template-columns: 1fr; } }
 
 /* ========================================================================== */
 /* Worker 0.17 · launcher compatto: tre run, una sola misura                   */
@@ -2972,16 +2996,13 @@ body[data-fase="lavora"] #settings { display: none !important; }
 /* La modalità di prova è una regola della run: stesso vestito dell'attività.
  * L'interruttore dei comproprietari è della stessa famiglia. */
 #dryRunControl,
-#coOwnersControl,
-#safeAddressControl { cursor: pointer; }
+#coOwnersControl { cursor: pointer; }
 
 #dryRunControl input[type="checkbox"],
-#coOwnersControl input[type="checkbox"],
-#safeAddressControl input[type="checkbox"] { flex: none; }
+#coOwnersControl input[type="checkbox"] { flex: none; }
 
 #dryRunControl:has(input:disabled),
-#coOwnersControl:has(input:disabled),
-#safeAddressControl:has(input:disabled) {
+#coOwnersControl:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
 }

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
@@ -9,7 +10,7 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electro
 import dotenv from "dotenv";
 import { z } from "zod";
 
-import { REQUIRED_CONTACT_COLUMNS, verifyContactsFile } from "../adapters/excel/index.js";
+import { ExcelContactsAdapter, REQUIRED_CONTACT_COLUMNS, verifyContactsFile } from "../adapters/excel/index.js";
 import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { sisterSelectors } from "../adapters/sister/selectors.js";
@@ -18,7 +19,8 @@ import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
-import { connectToChrome } from "../services/chrome.js";
+import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
+import { buildPortoniRow, portoniDocumentHtml, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
@@ -91,9 +93,6 @@ type Preferences = {
   /* Con false l'import collega il solo intestatario con la quota piu' alta.
    * I comproprietari gia' collegati nel gestionale restano dove sono. */
   importCoOwners: boolean;
-  /* Con false la ricerca dell'immobile si ferma alle due verifiche catastali
-   * e non passa dal controllo per indirizzo. */
-  safeAddressCheck: boolean;
   /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
   streetRegistryZoneId: string | null;
   encryptedEnvironment?: string;
@@ -117,7 +116,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, safeAddressCheck: true, streetRegistryZoneId: null };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -162,6 +161,13 @@ const uiActionSchema = z.object({
   status: z.enum(["started", "completed", "failed", "cancelled"]),
   detail: z.string().trim().max(500).nullable().optional(),
 });
+const portoniOutcomeSchema = z.enum(["", "assente", "parlato", "interessato", "non_interessato"]);
+const portoniRowSchema = z.object({
+  id: z.string().min(1), cadastralKey: z.string().min(1), sisterNames: z.string(), actualNames: z.string(),
+  civicAndStair: z.string(), floorAndInternal: z.string(), telephone: z.string(), outcome: portoniOutcomeSchema,
+  visitedAt: z.string(), notes: z.string(), category: z.string(), ownership: z.string(),
+});
+const savePortoniSchema = z.object({ id: z.string().min(1), rows: z.array(portoniRowSchema) });
 
 let mainWindow: BrowserWindow | null = null;
 let preferences: Preferences = defaultPreferences;
@@ -235,6 +241,13 @@ let streetRunPromise: Promise<void> | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
+let portoniActive = false;
+let portoniCancellationRequested = false;
+let portoniError: string | null = null;
+let portoniProgress: SisterStreetRunProgress | null = null;
+let portoniSheets: PortoniSheet[] = [];
+let activePortoniBrowser: { close: () => Promise<void> } | null = null;
+let portoniPromise: Promise<void> | null = null;
 let networkRunActive = false;
 let networkRunCancellationRequested = false;
 let activeNetworkBrowser: { close: () => Promise<void> } | null = null;
@@ -300,7 +313,7 @@ const completedSummaryCache = new Map<string, {
 }>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
-let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "import-v2-diagnostics" | null = null;
+let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "portoni" | "import-v2-diagnostics" | null = null;
 
 type ConnectionCheck = BrowserConnectionCheck | {
   id: string;
@@ -332,12 +345,13 @@ function resetStaleOperationState() {
   if (mandateImportActive && !mandateImportPromise) mandateImportActive = false;
   if (streetRunActive && !streetRunPromise) streetRunActive = false;
   if (networkRunActive && !networkRunPromise) networkRunActive = false;
+  if (portoniActive && !portoniPromise) portoniActive = false;
   refreshStoppingAll();
 }
 
 function reserveOperation(kind: NonNullable<typeof operationReservation>) {
   resetStaleOperationState();
-  if (operationReservation || active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive) {
+  if (operationReservation || active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive) {
     throw new Error("Attendi la fine della lavorazione già in esecuzione");
   }
   operationReservation = kind;
@@ -384,6 +398,7 @@ function publishTransientUpdate(update: {
   requestImportProgress?: typeof requestImportProgress;
   mandateImportProgress?: typeof mandateImportProgress;
   networkRunProgress?: typeof networkRunProgress;
+  portoniProgress?: typeof portoniProgress;
   streetRunCheckpoint?: typeof streetRunCheckpoint;
   networkRunCheckpoint?: typeof networkRunCheckpoint;
   sisterKeepAlive?: typeof sisterKeepAlive;
@@ -446,6 +461,31 @@ function streetRunCheckpointPath() {
 
 function networkRunCheckpointPath() {
   return path.join(app.getPath("userData"), "sister-network-run.json");
+}
+
+function portoniHistoryPath() {
+  return path.join(app.getPath("userData"), "portoni", "history.json");
+}
+
+function portoniDocumentsDirectory() {
+  return path.join(app.getPath("userData"), "portoni", "documenti");
+}
+
+async function loadPortoniHistory() {
+  try {
+    const loaded = JSON.parse(await readFile(portoniHistoryPath(), "utf8"));
+    portoniSheets = Array.isArray(loaded) ? loaded.slice(0, 100) : [];
+  } catch {
+    portoniSheets = [];
+  }
+}
+
+async function persistPortoniHistory() {
+  const target = portoniHistoryPath();
+  const temporary = `${target}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(temporary, JSON.stringify(portoniSheets, null, 2), "utf8");
+  await rename(temporary, target);
 }
 
 function diagnosticErrorsPath() {
@@ -574,7 +614,7 @@ async function archiveStreetRunCheckpoint(reason: string) {
 }
 
 function refreshStoppingAll() {
-  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive) stoppingAll = false;
+  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive && !portoniActive) stoppingAll = false;
 }
 
 /**
@@ -582,13 +622,13 @@ function refreshStoppingAll() {
  * Adesso le modalità sono tre, e il vecchio valore va tradotto — chi aveva
  * spento l'interruttore voleva l'attività generica, non «nessuna attività».
  */
-function migratePreferences(stored: Partial<Preferences> & { autoFillDirectContact?: boolean }): Preferences {
-  const { autoFillDirectContact, ...rest } = stored;
+function migratePreferences(stored: Partial<Preferences> & { autoFillDirectContact?: boolean; safeAddressCheck?: boolean }): Preferences {
+  const { autoFillDirectContact, safeAddressCheck: _retiredSafeAddressCheck, ...rest } = stored;
   const mode = rest.propertyActivityMode
     ?? (autoFillDirectContact === false ? "plain" : "direct_contact");
   /* Una preferenza assente vale come attiva: chi aggiorna il worker continua
    * a importare i comproprietari come prima. */
-  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false, safeAddressCheck: rest.safeAddressCheck !== false };
+  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false };
 }
 
 async function loadPreferences() {
@@ -1016,7 +1056,7 @@ async function stateSnapshot() {
    * la plancia si disegna subito con quello che c'e' in casa, e le sezioni
    * che vengono dal cloud si riempiono da sole appena arrivano: la lettura
    * chiama `publishState()` quando ha finito. */
-  if (!snapshotRemoteLoadedAt || Date.now() - snapshotRemoteLoadedAt > 10_000) {
+  if (!portoniActive && (!snapshotRemoteLoadedAt || Date.now() - snapshotRemoteLoadedAt > 10_000)) {
     void refreshSnapshotRemoteData().then(() => publishState()).catch(() => undefined);
   }
   const {
@@ -1102,6 +1142,14 @@ async function stateSnapshot() {
       lastError: networkRunError,
       checkpointPath: networkRunCheckpointPath(),
     },
+    portoni: {
+      active: portoniActive,
+      cancelling: portoniCancellationRequested,
+      progress: portoniProgress,
+      lastError: portoniError,
+      sheets: portoniSheets,
+      historyPath: portoniHistoryPath(),
+    },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
   };
@@ -1125,7 +1173,7 @@ function initializeDesktopUpdater() {
     currentVersion: app.getVersion(),
     packaged: app.isPackaged,
     updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-    isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive,
+    isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive,
     quitApp: () => app.quit(),
     onState: (state) => {
       if (state.status !== previousStatus) {
@@ -1594,6 +1642,151 @@ async function runSisterStreet(input: {
   streetRunPromise = runPromise;
   if (ownsOperationReservation) releaseOperationReservation("street");
   void runPromise;
+}
+
+async function runPortoni(streetInput: string) {
+  const street = streetInput.replace(/\s+/g, " ").trim();
+  if (street.length < 4) throw new Error("Inserisci il nome completo della via");
+  reserveOperation("portoni");
+  let config: WorkerConfig;
+  try {
+    config = workerConfig();
+  } catch (error) {
+    releaseOperationReservation("portoni");
+    throw error;
+  }
+  if (!config.CONTACTS_EXCEL_PATH) {
+    releaseOperationReservation("portoni");
+    throw new Error("Seleziona prima il file Excel dei recapiti");
+  }
+  const now = new Date().toISOString();
+  const sheet: PortoniSheet = {
+    id: randomUUID(), street, municipality: "BITONTO", status: "draft", createdAt: now, updatedAt: now,
+    generatedAt: null, documentPath: null, rows: [],
+  };
+  portoniSheets.unshift(sheet);
+  try {
+    await persistPortoniHistory();
+  } catch (error) {
+    portoniSheets = portoniSheets.filter((candidate) => candidate.id !== sheet.id);
+    releaseOperationReservation("portoni");
+    throw error;
+  }
+  portoniActive = true;
+  portoniCancellationRequested = false;
+  portoniError = null;
+  portoniProgress = null;
+  pushActivity(`Scheda Portoni avviata per ${street}: uso SISTER e recapiti Excel, senza CRM`);
+  await publishState();
+
+  const promise = (async () => {
+    const contacts = new ExcelContactsAdapter(config.CONTACTS_EXCEL_PATH);
+    await contacts.load();
+    const tabs = await connectToSisterChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH);
+    activePortoniBrowser = tabs.browser;
+    const rows = new Map<string, PortoniRow>();
+    try {
+      const scanner = new SisterStreetRun(tabs.sisterPage, {
+        strategy: "bulk_exact_variants", mode: "dry_run", acquireOwners: true, includeAllOwners: true, prepareSearchAutomatically: true,
+        filters: { residentialOnly: true, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null },
+        isCancelled: () => portoniCancellationRequested,
+        onProgress: async (progress) => {
+          portoniProgress = progress;
+          publishTransientUpdate({ portoniProgress: progress });
+        },
+        onPropertyAcquired: (_variant, property, owners) => {
+          const row = buildPortoniRow(property, owners, (taxCode) => contacts.findByTaxCode(taxCode));
+          rows.set(row.id, row);
+        },
+      });
+      const result = await scanner.run(street);
+      sheet.rows = sortPortoniRows([...rows.values()]);
+      sheet.updatedAt = new Date().toISOString();
+      await persistPortoniHistory();
+      pushActivity(
+        result.status === "completed"
+          ? `Scheda Portoni pronta: ${sheet.rows.length} immobili di categoria A ordinati per civico`
+          : `Scheda Portoni sospesa e conservata con ${sheet.rows.length} immobili`,
+        result.status === "completed" ? "success" : "warning",
+      );
+    } finally {
+      await tabs.browser.close().catch(() => undefined);
+      activePortoniBrowser = null;
+    }
+  })().catch(async (error) => {
+    portoniError = error instanceof Error ? error.message : String(error);
+    sheet.updatedAt = new Date().toISOString();
+    await persistPortoniHistory().catch(() => undefined);
+    pushActivity(`Portoni non completato: ${portoniError}`, "error");
+  }).finally(async () => {
+    portoniActive = false;
+    portoniCancellationRequested = false;
+    portoniProgress = null;
+    portoniPromise = null;
+    releaseOperationReservation("portoni");
+    refreshStoppingAll();
+    await publishState();
+  });
+  portoniPromise = promise;
+  void promise;
+  return sheet.id;
+}
+
+async function createBlankPortoni(streetInput: string) {
+  const street = streetInput.replace(/\s+/g, " ").trim() || "Scheda Portoni";
+  const now = new Date().toISOString();
+  const rows: PortoniRow[] = Array.from({ length: 12 }, (_, index) => ({
+    id: `manuale-${randomUUID()}`, cadastralKey: `manuale-${index + 1}`, sisterNames: "", actualNames: "",
+    civicAndStair: "", floorAndInternal: "", telephone: "", outcome: "", visitedAt: "", notes: "", category: "", ownership: "",
+  }));
+  const sheet: PortoniSheet = {
+    id: randomUUID(), street, municipality: "BITONTO", status: "draft", createdAt: now, updatedAt: now,
+    generatedAt: null, documentPath: null, rows,
+  };
+  portoniSheets.unshift(sheet);
+  await persistPortoniHistory();
+  pushActivity(`Creata scheda Portoni vuota: ${street}`, "success");
+  await publishState();
+  return sheet;
+}
+
+async function savePortoniSheet(raw: unknown) {
+  const values = savePortoniSchema.parse(raw);
+  const sheet = portoniSheets.find((candidate) => candidate.id === values.id);
+  if (!sheet) throw new Error("Scheda Portoni non trovata");
+  sheet.rows = sortPortoniRows(values.rows);
+  sheet.updatedAt = new Date().toISOString();
+  await persistPortoniHistory();
+  await publishState();
+  return sheet;
+}
+
+async function generatePortoniDocument(raw: unknown) {
+  const sheet = await savePortoniSheet(raw);
+  const generatedAt = new Date();
+  const safeStreet = sheet.street.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "via";
+  const stamp = generatedAt.toISOString().replace(/[:.]/g, "-");
+  const directory = portoniDocumentsDirectory();
+  const htmlPath = path.join(directory, `.portoni-${sheet.id}.html`);
+  const pdfPath = path.join(directory, `Portoni-${safeStreet}-${stamp}.pdf`);
+  await mkdir(directory, { recursive: true });
+  await writeFile(htmlPath, portoniDocumentHtml(sheet), "utf8");
+  const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true } });
+  try {
+    await printWindow.loadFile(htmlPath);
+    const pdf = await printWindow.webContents.printToPDF({ printBackground: true, landscape: true, pageSize: "A4" });
+    await writeFile(pdfPath, pdf);
+  } finally {
+    printWindow.destroy();
+  }
+  sheet.status = "generated";
+  sheet.generatedAt = generatedAt.toISOString();
+  sheet.updatedAt = sheet.generatedAt;
+  sheet.documentPath = pdfPath;
+  await persistPortoniHistory();
+  pushActivity(`Documento Portoni generato: ${sheet.street}`, "success");
+  await publishState();
+  return pdfPath;
 }
 
 /**
@@ -2410,6 +2603,16 @@ function scheduleDesktopKeepAlive(delayMs?: number) {
 async function runDesktopKeepAlive() {
   try {
     const config = workerConfig();
+    if (streetRunActive || networkRunActive || portoniActive) {
+      sisterKeepAlive = {
+        ...sisterKeepAlive,
+        statusLabel: "disabled",
+        message: "Sessione SISTER già gestita dalla lavorazione in corso",
+        checkedAt: new Date().toISOString(),
+      };
+      publishTransientUpdate({ sisterKeepAlive });
+      return;
+    }
     if (activeJobId && !stepRequiresSister(currentStep)) {
       sisterKeepAlive = {
         ...sisterKeepAlive,
@@ -2551,7 +2754,6 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
     importCoOwners: () => preferences.importCoOwners,
-    safeAddressCheck: () => preferences.safeAddressCheck,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;
@@ -2633,7 +2835,7 @@ async function stopEverything() {
   clearAutoRetry();
   clearRetryMonitor();
   const actions: string[] = [];
-  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive;
+  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive;
   stoppingAll = hadActiveOperation;
 
   if (active && activeJobId) {
@@ -2663,6 +2865,10 @@ async function stopEverything() {
     networkRunCancellationRequested = true;
     actions.push("esplorazione rete arrestata");
   }
+  if (portoniActive) {
+    portoniCancellationRequested = true;
+    actions.push("scheda Portoni sospesa e conservata");
+  }
   if (!streetRunActive && streetRunCheckpoint && ["paused", "failed", "running"].includes(streetRunCheckpoint.status)) {
     await archiveStreetRunCheckpoint("Checkpoint via abbandonato da Ferma tutto");
     actions.push("checkpoint via archiviato");
@@ -2675,8 +2881,9 @@ async function stopEverything() {
     activeMandateImporter?.interrupt().catch(() => undefined),
     streetRunAbandonRequested ? activeStreetBrowser?.close().catch(() => undefined) : undefined,
     networkRunCancellationRequested ? activeNetworkBrowser?.close().catch(() => undefined) : undefined,
+    portoniCancellationRequested ? activePortoniBrowser?.close().catch(() => undefined) : undefined,
   ]);
-  const pendingOperations = [activeRunPromise, requestImportPromise, mandateImportPromise, streetRunPromise, networkRunPromise]
+  const pendingOperations = [activeRunPromise, requestImportPromise, mandateImportPromise, streetRunPromise, networkRunPromise, portoniPromise]
     .filter((promise): promise is Promise<void> => Boolean(promise));
   if (pendingOperations.length) {
     try {
@@ -2789,7 +2996,9 @@ function requireCloudAvailable(checks: ConnectionCheck[]) {
 function scheduleHealthChecks(delayMs = 2_000) {
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
   healthCheckTimer = setTimeout(async () => {
-    await healthChecks({ silent: true }).catch(() => undefined);
+    /* Portoni è intenzionalmente locale: durante la scansione non interroga
+     * né il gestionale né il cloud e non rilegge l'Excel già caricato. */
+    if (!portoniActive) await healthChecks({ silent: true }).catch(() => undefined);
     scheduleHealthChecks(30_000);
   }, delayMs);
   healthCheckTimer.unref?.();
@@ -2983,6 +3192,17 @@ function registerIpc() {
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
+  ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string }) => ({ id: await runPortoni(String(values?.street ?? "")) }));
+  ipcMain.handle("desktop:create-blank-portoni", (_event, values: { street?: string }) => createBlankPortoni(String(values?.street ?? "")));
+  ipcMain.handle("desktop:cancel-portoni", async () => {
+    if (!portoniActive) return false;
+    portoniCancellationRequested = true;
+    pushActivity("Pausa Portoni richiesta: conservo gli immobili già letti", "warning");
+    await publishState();
+    return true;
+  });
+  ipcMain.handle("desktop:save-portoni", (_event, values: unknown) => savePortoniSheet(values));
+  ipcMain.handle("desktop:generate-portoni", (_event, values: unknown) => generatePortoniDocument(values));
   ipcMain.handle("desktop:refresh-street-registry", async (_event, values: { zoneId?: string | null } = {}) => {
     await refreshStreetRegistryPreview(12, values?.zoneId ?? null);
     preferences = { ...preferences, streetRegistryZoneId: streetRegistrySelectedZoneId };
@@ -3241,6 +3461,7 @@ app.whenReady().then(async () => {
   await loadPreferences();
   await loadStreetRunCheckpoint();
   await loadNetworkRunCheckpoint();
+  await loadPortoniHistory();
   await loadDiagnosticErrors();
   registerIpc();
   await createWindow();

@@ -16,6 +16,7 @@
       </div>
       <nav class="top-nav" aria-label="Sezioni del worker">
         <button class="nav-item is-active" data-scroll="operations">Lavorazioni</button>
+        <button class="nav-item" data-scroll="portoni">Portoni</button>
         <button class="nav-item" data-scroll="sync">Sincronizza</button>
         <button class="nav-item" data-scroll="history">Cronologia <span id="historyNavHint"></span></button>
         <button class="nav-item" data-scroll="settings">Impostazioni</button>
@@ -101,13 +102,6 @@
               <small id="coOwnersHelp">Collega tutti gli intestatari letti da SISTER. Spento, l'import si ferma a quello con la quota più alta: i comproprietari già collegati nel gestionale restano dove sono.</small>
             </div>
             <input id="coOwnersToggle" type="checkbox" checked />
-          </label>
-          <label class="activity-mode-control" id="safeAddressControl">
-            <div class="activity-mode-copy">
-              <b>Controllo sicuro</b>
-              <small id="safeAddressHelp">Dopo le verifiche catastali cerca anche per indirizzo, civico e interno, così una scheda già presente non diventa un doppione. Spento è più rapido: senza riscontro catastale l'immobile viene creato.</small>
-            </div>
-            <input id="safeAddressToggle" type="checkbox" checked />
           </label>
           <div class="activity-mode-control" id="autoFillDirectContactControl">
             <div class="activity-mode-copy">
@@ -398,6 +392,26 @@
         </section>
 
         <!-- Da qui in giù: disponibile a richiesta, non sempre a schermo. -->
+        <details class="section" id="portoni">
+          <summary>Schede Portoni</summary>
+          <div class="section-body portoni-layout">
+            <section class="portoni-card">
+              <header><div><p class="eyebrow">Nuova scheda</p><h2>Acquisisci un portone</h2><p>Legge da SISTER tutti gli immobili di categoria A, li ordina per civico e abbina i soli recapiti presenti nel file Excel. Il gestionale non viene aperto.</p></div><span id="portoniBadge" class="status-pill is-idle"><span></span>Pronto</span></header>
+              <div class="portoni-launcher"><label>Via completa<input id="portoniStreet" type="text" autocomplete="off" placeholder="es. via luigi castellucci" /></label><button id="portoniBlank" class="button secondary">Crea scheda vuota</button><button id="portoniCancel" class="button danger is-hidden">Metti in pausa</button><button id="portoniStart" class="button primary">Acquisisci da SISTER</button></div>
+              <div id="portoniProgress" class="street-run-progress is-hidden"><span></span></div>
+              <p id="portoniError" class="street-registry-error is-hidden" role="alert"></p>
+            </section>
+            <section id="portoniEditor" class="portoni-card is-hidden">
+              <header><div><p class="eyebrow">Scheda modificabile</p><h2 id="portoniEditorTitle">Portoni</h2><p>Correggi i dati operativi. I valori SISTER e catastali restano visibili come riferimento.</p></div><div class="portoni-actions"><button id="portoniSave" class="button secondary">Salva bozza</button><button id="portoniGenerate" class="button primary">Genera PDF</button></div></header>
+              <div class="portoni-table-wrap"><table class="portoni-table"><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Esito</th><th>Data visita</th><th>Note</th><th>Dati</th></tr></thead><tbody id="portoniRows"></tbody></table></div>
+            </section>
+            <section class="portoni-card">
+              <header><div><p class="eyebrow">Archivio locale</p><h2>Cronologia Portoni</h2><p>Ogni scheda resta modificabile; ogni PDF generato è una fotografia pronta da stampare.</p></div><span id="portoniCount" class="count">0</span></header>
+              <div id="portoniHistory" class="portoni-history"><p class="empty-message">Le schede compariranno qui.</p></div>
+            </section>
+          </div>
+        </details>
+
         <details class="section" id="sync">
           <summary>Sincronizza richieste e incarichi dal gestionale</summary>
           <div class="section-body">

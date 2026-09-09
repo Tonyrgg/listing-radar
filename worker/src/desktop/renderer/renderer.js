@@ -157,7 +157,9 @@ let appState = null,
   propertyRemovalInFlight = false,
   uiCommandSequence = 0,
   latestUiCommand = null,
-  selectedRunSlide = "civic";
+  selectedRunSlide = "civic",
+  selectedPortoniId = null,
+  portoniRenderKey = null;
 let completedImportsRenderKey = null,
   jobsRenderKey = null,
   lastRunRenderKey = null,
@@ -253,11 +255,12 @@ function markActiveNav(id) {
   });
 }
 function lockSecondaryPageActions(locked) {
-  for (const id of ["sync", "history", "settings"]) {
+  for (const id of ["portoni", "sync", "history", "settings"]) {
     const section = $(id);
     if (!section) continue;
-    section.inert = locked;
-    section.toggleAttribute("data-operation-locked", locked);
+    const sectionLocked = locked && !(id === "portoni" && appState?.portoni?.active);
+    section.inert = sectionLocked;
+    section.toggleAttribute("data-operation-locked", sectionLocked);
   }
 }
 const RUN_SLIDES = ["civic", "street", "network"];
@@ -357,12 +360,18 @@ function commandIdentity(target) {
       softwareUpdateAction: "Gestisci aggiornamento",
       softwareUpdateCancel: "Interrompi download aggiornamento",
       updateButton: "Gestisci aggiornamento",
+      portoniStart: "Acquisisci scheda Portoni da SISTER",
+      portoniBlank: "Crea scheda Portoni vuota",
+      portoniCancel: "Metti in pausa scheda Portoni",
+      portoniSave: "Salva bozza Portoni",
+      portoniGenerate: "Genera PDF Portoni",
     },
     navigation = {
       operations: "Apri sezione Lavora",
       sync: "Apri sezione Sincronizza",
       history: "Apri sezione Cronologia",
       settings: "Apri sezione Impostazioni",
+      portoni: "Apri sezione Portoni",
     };
   const label =
     explicit[target.id] ??
@@ -2301,6 +2310,63 @@ function renderFiltriRete() {
   adeguaAltezzaCarosello();
 }
 
+function portoniSheet() {
+  const sheets = appState?.portoni?.sheets ?? [];
+  return sheets.find((sheet) => sheet.id === selectedPortoniId) ?? sheets[0] ?? null;
+}
+
+function portoniRowsFromEditor() {
+  const sheet = portoniSheet();
+  if (!sheet) return [];
+  return sheet.rows.map((row) => {
+    const updated = { ...row };
+    document.querySelectorAll(`[data-portoni-row="${CSS.escape(row.id)}"] [data-portoni-field]`).forEach((field) => {
+      updated[field.dataset.portoniField] = field.value;
+    });
+    return updated;
+  });
+}
+
+function renderPortoni() {
+  const state = appState?.portoni ?? { sheets: [] };
+  const sheets = state.sheets ?? [];
+  if (!selectedPortoniId || !sheets.some((sheet) => sheet.id === selectedPortoniId)) selectedPortoniId = sheets[0]?.id ?? null;
+  const sheet = portoniSheet();
+  $("portoniBadge").className = `status-pill ${state.active ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
+  $("portoniBadge").innerHTML = `<span></span>${state.active ? "Acquisizione in corso" : "Pronto"}`;
+  $("portoniStart").disabled = Boolean(state.active);
+  $("portoniCancel").classList.toggle("is-hidden", !state.active);
+  $("portoniError").classList.toggle("is-hidden", !state.lastError);
+  $("portoniError").textContent = state.lastError ?? "";
+  $("portoniProgress").classList.toggle("is-hidden", !state.active);
+  if (state.progress) {
+    const total = Math.max(1, Number(state.progress.total ?? 1));
+    $("portoniProgress").querySelector("span").style.width = `${Math.min(100, Math.round(Number(state.progress.current ?? 0) / total * 100))}%`;
+  }
+  $("portoniCount").textContent = String(sheets.length);
+  $("portoniHistory").innerHTML = sheets.length ? sheets.map((entry) => `<article class="portoni-history-row ${entry.id === selectedPortoniId ? "is-selected" : ""}">
+    <button type="button" data-portoni-open="${esc(entry.id)}"><b>${esc(entry.street)}</b><small>${entry.rows.length} immobili · ${fmtDate(entry.updatedAt)}</small></button>
+    ${entry.documentPath ? `<button type="button" class="button secondary" data-portoni-file="${esc(entry.documentPath)}">Apri PDF</button>` : `<span class="status-pill is-idle">Bozza</span>`}
+  </article>`).join("") : '<p class="empty-message">Le schede compariranno qui.</p>';
+  $("portoniEditor").classList.toggle("is-hidden", !sheet);
+  if (!sheet) return;
+  const key = `${sheet.id}:${sheet.updatedAt}:${sheet.rows.length}`;
+  if (portoniRenderKey === key) return;
+  portoniRenderKey = key;
+  $("portoniEditorTitle").textContent = `${sheet.street} · ${sheet.rows.length} immobili`;
+  $("portoniRows").innerHTML = sheet.rows.map((row) => `<tr data-portoni-row="${esc(row.id)}">
+    <td><b>${esc(row.sisterNames).replaceAll("\n", "<br>")}</b><small>${esc(row.ownership).replaceAll("\n", "<br>")}</small></td>
+    <td><textarea data-portoni-field="actualNames" aria-label="Nominativi effettivi">${esc(row.actualNames)}</textarea></td>
+    <td><input data-portoni-field="civicAndStair" value="${esc(row.civicAndStair)}" aria-label="Civico e scala"></td>
+    <td><input data-portoni-field="floorAndInternal" value="${esc(row.floorAndInternal)}" aria-label="Piano e interno"></td>
+    <td><textarea data-portoni-field="telephone" aria-label="Telefono">${esc(row.telephone)}</textarea></td>
+    <td><select data-portoni-field="outcome" aria-label="Esito"><option value="">—</option>${[["assente","Assente"],["parlato","Parlato"],["interessato","Interessato"],["non_interessato","Non interessato"]].map(([value,label]) => `<option value="${value}" ${row.outcome === value ? "selected" : ""}>${label}</option>`).join("")}</select></td>
+    <td><input type="date" data-portoni-field="visitedAt" value="${esc(row.visitedAt)}" aria-label="Data visita"></td>
+    <td><textarea data-portoni-field="notes" aria-label="Note">${esc(row.notes)}</textarea></td>
+    <td><small>${esc(row.category)}<br>${esc(row.cadastralKey)}</small></td>
+  </tr>`).join("");
+}
+
 function render() {
   if (!appState) return;
   selectedMode = appState.preferences?.mode ?? selectedMode;
@@ -2318,7 +2384,6 @@ function render() {
       : "Ti chiede conferma prima dei salvataggi.";
   $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
   $("coOwnersToggle").checked = appState.preferences?.importCoOwners !== false;
-  $("safeAddressToggle").checked = appState.preferences?.safeAddressCheck !== false;
   $("versionLabel").textContent = `v${appState.version}`;
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
@@ -2347,7 +2412,7 @@ function render() {
    * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
   const anyOperationActive = Boolean(
     appState.active || appState.streetRun?.active || appState.networkRun?.active ||
-    appState.requestArchive?.active || appState.mandateArchive?.active || appState.stoppingAll,
+    appState.requestArchive?.active || appState.mandateArchive?.active || appState.portoni?.active || appState.stoppingAll,
   );
   lockSecondaryPageActions(anyOperationActive);
   document.body.dataset.fase =
@@ -2402,6 +2467,7 @@ function render() {
   renderStreetRun();
   renderStreetRegistry();
   renderNetworkRun();
+  renderPortoni();
   renderFiltriRete();
   renderReview();
   renderSoftwareUpdate();
@@ -2467,6 +2533,26 @@ document.addEventListener("click", async (event) => {
   const command = commandIdentity(target);
   try {
     await executeButtonCommand(target, command, async () => {
+      if (target.dataset.portoniOpen) {
+        selectedPortoniId = target.dataset.portoniOpen;
+        portoniRenderKey = null;
+        renderPortoni();
+        $("portoniEditor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return true;
+      }
+      if (target.dataset.portoniFile) return window.propertyWorker.revealFile(target.dataset.portoniFile);
+      if (target.id === "portoniStart") return window.propertyWorker.startPortoni({ street: $("portoniStreet").value });
+      if (target.id === "portoniBlank") return window.propertyWorker.createBlankPortoni({ street: $("portoniStreet").value });
+      if (target.id === "portoniCancel") return window.propertyWorker.cancelPortoni();
+      if (target.id === "portoniSave" || target.id === "portoniGenerate") {
+        const sheet = portoniSheet();
+        if (!sheet) throw new Error("Nessuna scheda Portoni selezionata");
+        const payload = { id: sheet.id, rows: portoniRowsFromEditor() };
+        if (target.id === "portoniSave") return window.propertyWorker.savePortoni(payload);
+        const pdfPath = await window.propertyWorker.generatePortoni(payload);
+        await window.propertyWorker.revealFile(pdfPath);
+        return pdfPath;
+      }
       if (target.id === "stopAllButton") {
         if (
           !window.confirm(
@@ -2990,20 +3076,6 @@ $("coOwnersToggle").addEventListener("change", async (event) => {
     toast(error?.message ?? String(error));
   }
 });
-$("safeAddressToggle").addEventListener("change", async (event) => {
-  const toggle = event.currentTarget;
-  try {
-    await window.propertyWorker.savePreferences({ safeAddressCheck: toggle.checked });
-    toast(
-      toggle.checked
-        ? "Controllo sicuro attivo: cerca anche per indirizzo"
-        : "Controllo sicuro spento: solo verifiche catastali",
-    );
-  } catch (error) {
-    toggle.checked = !toggle.checked;
-    toast(error?.message ?? String(error));
-  }
-});
 $("networkFloorMode").addEventListener("change", () => {
   $("networkFloorValue").disabled = $("networkFloorMode").value === "any";
   if ($("networkFloorMode").value !== "any") $("networkFloorValue").focus();
@@ -3067,6 +3139,10 @@ window.propertyWorker.onTransientUpdate((update) => {
     renderNetworkRun();
     renderSteps();
     renderOperation = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "portoniProgress")) {
+    appState.portoni = { ...(appState.portoni ?? {}), progress: update.portoniProgress };
+    renderPortoni();
   }
   if (Object.prototype.hasOwnProperty.call(update, "streetRunCheckpoint")) {
     appState.streetRun = { ...(appState.streetRun ?? {}), checkpoint: update.streetRunCheckpoint };

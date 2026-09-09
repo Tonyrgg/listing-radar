@@ -118,6 +118,39 @@ export interface CrmChromeTab {
   crmPage: Page;
 }
 
+export interface SisterChromeTab {
+  browser: Browser;
+  pages: DescribedPage[];
+  sisterPage: Page;
+}
+
+/** Connects only to SISTER, for local tasks that must never depend on CRM. */
+export async function connectToSisterChrome(cdpUrl: string, sisterMatch: string): Promise<SisterChromeTab> {
+  let browser: Browser;
+  try {
+    browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
+  } catch (error) {
+    throw new WorkerError(
+      `Chrome non raggiungibile su ${cdpUrl}. Avvialo con --remote-debugging-port=9222.`,
+      "session_expired",
+      { cause: error instanceof Error ? error.message : String(error) },
+    );
+  }
+  const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+  const sisterTab = findMatchingPage(pages, sisterMatch, "sister");
+  if (!sisterTab) {
+    await browser.close().catch(() => undefined);
+    throw new WorkerError("Scheda SISTER non trovata nel Chrome di lavoro", "needs_review", {
+      missing: ["SISTER"], openTabs: pages.map(({ title, url }) => ({ title, url })),
+    });
+  }
+  if (!sisterTab.driveable) {
+    await browser.close().catch(() => undefined);
+    throw new WorkerError("La scheda SISTER è aperta ma non pilotabile. Chiudila, riaprila e riprova.", "needs_review");
+  }
+  return { browser, pages, sisterPage: sisterTab.page };
+}
+
 export async function connectToChrome(
   cdpUrl: string,
   sisterMatch: string,
