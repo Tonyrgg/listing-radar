@@ -507,6 +507,30 @@ describe("Import V2 engine", () => {
     expect(result.paused).toBeNull();
   });
 
+  it("riprova a fine coda gli immobili in attesa dell'indice lookup", async () => {
+    class DelayedLookupIndexCrm extends FakeCrm {
+      order: string[] = [];
+      unavailable = true;
+      override async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[]) {
+        this.order.push(propertyId);
+        if (propertyId === "crm-property-1" && this.unavailable) {
+          this.unavailable = false;
+          throw new ImportV2Error("record non ancora indicizzato", "transient_portal", {
+            retryable: false,
+            details: { lookupIndexPending: true },
+          });
+        }
+        return super.replaceManagedOwnerships(propertyId, desired);
+      }
+    }
+    const crm = new DelayedLookupIndexCrm();
+    const result = await runImportV2Batch(new ImportV2Engine(crm, new MemoryStore()), [property(), property("property-2")]);
+
+    expect(result.quarantined).toEqual([]);
+    expect(result.completed.map((item) => item.propertyId).sort()).toEqual(["property-1", "property-2"]);
+    expect(crm.order).toEqual(["crm-property-1", "crm-property-2", "crm-property-1"]);
+  });
+
   it("collega tutti gli intestatari quando i comproprietari sono inclusi", async () => {
     const crm = new FakeCrm();
     const outcome = await new ImportV2Engine(crm, new MemoryStore(), { includeCoOwners: true }).run(property());

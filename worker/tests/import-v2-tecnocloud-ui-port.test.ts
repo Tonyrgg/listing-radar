@@ -633,6 +633,40 @@ describe("Tecnocloud UI V2", () => {
     }
   }, 12_000);
 
+  it("clicca il nodo interno che porta l'id nel lookup Cliente live", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<c-lookup><label>Cliente</label><div class="slds-combobox_container">
+        <input placeholder="Cerca"><div id="results"></div>
+      </div></c-lookup>
+      <c-picklist><label>Ruolo</label></c-picklist><lightning-input><label>Quota</label></lightning-input>
+      <script>
+        const input = document.querySelector('input');
+        const container = document.querySelector('.slds-combobox_container');
+        const results = document.querySelector('#results');
+        input.addEventListener('input', () => {
+          results.innerHTML = '<div role="option" style="width:400px;height:40px"><span data-item-id="001RD00001C9aXuYAJ" style="display:block;width:1px;height:1px"></span></div>';
+          results.querySelector('[data-item-id]').onclick = (event) => {
+            input.value = 'Francesco Saracino';
+            input.readOnly = true;
+            container.classList.add('slds-has-selection');
+            document.body.dataset.clickedNode = event.currentTarget.dataset.itemId;
+            results.innerHTML = '';
+          };
+        });
+      </script>`);
+      const port = new TecnocloudUiV2Port(page);
+      const component = page.locator('c-lookup');
+      await (port as unknown as {
+        fillPersonLookup(component: Locator, input: Locator, personId: string, searchTerms: string[], dependentFields: Locator, minimumDependentFields: number, label: string): Promise<void>;
+      }).fillPersonLookup(component, component.locator('input'), "001RD00001C9aXuYAJ", ["Francesco Saracino"], page.locator('c-picklist, lightning-input'), 2, "Cliente comproprietario");
+      expect(await page.locator("body").getAttribute("data-clicked-node")).toBe("001RD00001C9aXuYAJ");
+    } finally {
+      await browser.close();
+    }
+  }, 12_000);
+
   it("cerca subito con nome e cognome nell'ordine usato dal gestionale", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {

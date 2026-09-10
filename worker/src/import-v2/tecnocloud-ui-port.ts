@@ -763,6 +763,29 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }), expectedRecordId);
   }
 
+  private async clickPersonLookupCandidate(option: Locator, expectedRecordId: string): Promise<void> {
+    /* Nel lookup Cliente live il data-item-id e' spesso sullo span interno,
+     * non sul div role=option. LWC puo' collegare il gestore proprio a quel
+     * nodo: cliccare il centro del contenitore non equivale sempre a scegliere
+     * il record. Se l'ID e' esposto, clicchiamo il nodo che lo porta. */
+    const descendants = option.locator("*");
+    const matchingIndexes = await descendants.evaluateAll((nodes, expected) => nodes.flatMap((node, index) => {
+      const values = Array.from(node.attributes).map((attribute) => attribute.value);
+      const matches = values.some((value) => (value.match(/\b[A-Z0-9]{15}(?:[A-Z0-9]{3})?\b/gi) ?? [])
+        .some((recordId) => recordId.slice(0, 15) === String(expected).slice(0, 15)));
+      return matches ? [index] : [];
+    }), expectedRecordId);
+    if (matchingIndexes.length === 1) {
+      await descendants.nth(matchingIndexes[0]!).click({ force: true });
+      return;
+    }
+    await option.click({ force: true });
+  }
+
+  private async lookupIsBusy(component: Locator): Promise<boolean> {
+    return await component.locator('lightning-spinner:visible, .slds-spinner:visible, [role="progressbar"]:visible, [aria-busy="true"]:visible').count() > 0;
+  }
+
   private async fillLookupRecord(
     component: Locator,
     input: Locator,
@@ -845,7 +868,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (!terms.length) throw new ImportV2Error(`${label}: nessun testo di ricerca utilizzabile`, "invalid_source");
     let termIndex = 0;
     let everProposed = false;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < terms.length; attempt += 1) {
       const searchValue = terms[Math.min(termIndex, terms.length - 1)]!;
       if (await input.getAttribute("readonly") !== null) {
         const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), `Rimuovi ${label}`);
@@ -861,7 +884,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         let optionIndex: number | null = null;
         let signature = "";
         let stableOptions = 0;
-        for (let wait = 0; wait < 50 && stableOptions < 2; wait += 1) {
+        let stableEmpty = 0;
+        for (let wait = 0; wait < 50 && stableOptions < 2 && stableEmpty < 3; wait += 1) {
           await this.pauseAwareWait(200);
           const candidates = await this.lookupRecordCandidates(options, personId);
           const selected = choosePersonLookupCandidate(candidates, personId, searchValue, expectedPhones, requests.recordSeen());
@@ -872,8 +896,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
            * e che il menu non stia ancora ricevendo risultati. */
           const exactDomMatch = selected !== null && sameCrmRecordId(selected.recordId, personId);
           const cloudFallbackSettled = !requests.pending() && !requests.inspecting();
-          const ready = selected !== null && (exactDomMatch || cloudFallbackSettled) && !(await this.searchIsBusy());
+          const ready = selected !== null && (exactDomMatch || cloudFallbackSettled) && !(await this.lookupIsBusy(component));
+          const confirmedEmpty = selected === null && candidates.length > 0 && cloudFallbackSettled && !(await this.lookupIsBusy(component));
           stableOptions = ready && currentSignature === signature ? stableOptions + 1 : 0;
+          stableEmpty = confirmedEmpty && currentSignature === signature ? stableEmpty + 1 : 0;
           signature = currentSignature;
           optionIndex = selected?.index ?? null;
         }
@@ -890,17 +916,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         const candidates = await this.lookupRecordCandidates(options, personId);
         const fresh = choosePersonLookupCandidate(candidates, personId, searchValue, expectedPhones, requests.recordSeen());
         if (!fresh || fresh.index !== optionIndex) continue;
-        // Click the option itself by the stable candidate index. In the live
-        // component the Salesforce id can live on the option or on a nested
-        // node, so a :has(...) locator is not an identity-safe target.
-        await options.nth(optionIndex).click({ force: true });
+        // Re-resolve the stable option, then click the exact nested ID node
+        // when Lightning exposes one.
+        await this.clickPersonLookupCandidate(options.nth(optionIndex), personId);
 
         let stableCommit = 0;
         for (let check = 0; check < 60 && stableCommit < 2; check += 1) {
           const committed = await input.getAttribute("readonly") !== null
             && await component.locator(".slds-combobox_container.slds-has-selection").count() === 1
             && await dependentFields.count() >= minimumDependentFields
-            && !(await this.searchIsBusy());
+            && !(await this.lookupIsBusy(component));
           stableCommit = committed ? stableCommit + 1 : 0;
           if (stableCommit < 2) await this.pauseAwareWait(160);
         }
@@ -913,9 +938,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     throw new ImportV2Error(
       everProposed
         ? `${label}: il record CRM esatto è visibile ma la selezione non viene confermata`
-        : `${label}: i risultati del gestionale non identificano in modo univoco il record atteso`,
+        : `${label}: il record verificato non è ancora disponibile nell'indice del lookup`,
       "transient_portal",
-      { retryable: true, details: { searchTerms: terms } },
+      { retryable: everProposed, details: { searchTerms: terms, lookupIndexPending: !everProposed } },
     );
   }
 

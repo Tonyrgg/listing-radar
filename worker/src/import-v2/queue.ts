@@ -23,12 +23,19 @@ export async function runImportV2Batch(
 ): Promise<ImportV2BatchResult> {
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
+  const deferred: Array<{ source: SourceProperty | (() => SourceProperty); position: number }> = [];
   for (const [position, source] of properties.entries()) {
     const property = typeof source === "function" ? source() : source;
     const outcome = await engine.run(property, (stage) => onProgress?.({
       propertyId: property.sourcePropertyId, index: position + 1, total, stage,
     }));
     if (outcome.state === "completed") result.completed.push(outcome);
+    else if (outcome.state === "quarantined" && outcome.failure?.details.lookupIndexPending === true) {
+      /* Salesforce indicizza i Clienti appena creati con ritardo. Continuare
+       * la coda dà tempo al Cloud senza bloccare il throughput; il checkpoint
+       * conserva persona e immobile già verificati per il secondo passaggio. */
+      deferred.push({ source, position });
+    }
     else if (outcome.state === "quarantined") result.quarantined.push(outcome);
     else {
       result.paused = outcome;
@@ -49,6 +56,17 @@ export async function runImportV2Batch(
         },
       };
       break;
+    }
+  }
+  if (!result.paused) {
+    for (const item of deferred) {
+      const property = typeof item.source === "function" ? item.source() : item.source;
+      const outcome = await engine.run(property, (stage) => onProgress?.({
+        propertyId: property.sourcePropertyId, index: item.position + 1, total, stage,
+      }));
+      if (outcome.state === "completed") result.completed.push(outcome);
+      else if (outcome.state === "quarantined") result.quarantined.push(outcome);
+      else { result.paused = outcome; break; }
     }
   }
   return result;

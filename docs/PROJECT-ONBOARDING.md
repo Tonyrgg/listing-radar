@@ -361,7 +361,9 @@ Il worker cerca subito in ordine `Nome Cognome`, quello usato dal gestionale; `C
 
 Il lookup Lightning può sostituire le opzioni mentre vengono cliccate: il
 worker risolve nuovamente la lista e riprova nello stesso dialogo fino a tre
-volte. Dopo che `Salva` ha chiuso la finestra, un ritardo di propagazione nel
+volte. Nei lookup Cliente l'ID può trovarsi su un nodo interno dell'opzione: il
+click viene inviato direttamente al nodo che porta l'ID, e lo stato occupato
+viene valutato nel solo lookup anziché sull'intera pagina. Dopo che `Salva` ha chiuso la finestra, un ritardo di propagazione nel
 pannello `Soggetti collegati` non ferma l'immobile e non provoca un secondo
 inserimento; il collegamento resta annotato come inviato finché diventa visibile.
 Un nominativo sotto il quale la terna catastale è già stata verificata è già
@@ -373,6 +375,7 @@ collegato: viene conservato nel checkpoint e non riapre `Soggetto correlato`.
 - un telefono vecchio o duplicato non annulla la corrispondenza dell'ID CRM;
 - dopo il click sull'ID esatto, una lista Lightning rimasta visibile non impedisce di completare diritto, ruolo e quota se il valore selezionato è confermato;
 - il primo risultato non viene mai scelto alla cieca: più omonimi non risolti o una risposta che non contiene l'ID atteso fermano l'inserimento in sicurezza.
+- un Cliente appena creato può non comparire subito nell'indice del lookup pur essendo già verificabile direttamente per ID e codice fiscale: l'immobile viene differito senza ripetere cicli identici, la coda prosegue e lo riprova automaticamente alla fine.
 
 ### Attività con e senza telefono
 
