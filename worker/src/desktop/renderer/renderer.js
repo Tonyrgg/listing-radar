@@ -472,7 +472,13 @@ function currentOperation() {
       percent: property.total ? (property.index / property.total) * 100 : null,
     };
   if (appState?.active && property)
-    return {
+    return property.workerCount > 1 ? {
+      status: "running",
+      title: `Importazione di ${fmtCount(property.total)} immobili · due finestre`,
+      detail: `${property.message} · Voce ${fmtCount(property.index)} · ${property.address ?? "Immobile senza indirizzo"}`,
+      position: `${fmtCount(property.completed ?? 0)}/${fmtCount(property.total)}`,
+      percent: property.total ? ((property.completed ?? 0) / property.total) * 100 : null,
+    } : {
       status: "running",
       title: `Importazione di ${fmtCount(property.total)} immobili`,
       detail: `Voce ${fmtCount(property.index)} di ${fmtCount(property.total)} · ${property.address ?? "Immobile senza indirizzo"} · ${property.message}`,
@@ -608,6 +614,7 @@ function renderCommandMonitor() {
     `${Math.max(0, Math.min(100, operation.percent ?? 0))}%`;
 }
 function renderRunControls() {
+  const parallelActive = Number(appState?.crmImportConcurrency ?? 1) > 1;
   const canScheduleStop =
     Boolean(appState?.active) ||
     Boolean(appState?.streetRun?.active) ||
@@ -622,9 +629,13 @@ function renderRunControls() {
   button.setAttribute("aria-pressed", String(scheduled));
   button.textContent = scheduled
     ? "Annulla pausa programmata"
-    : "Pausa dopo questo immobile";
+    : parallelActive
+      ? "Pausa dopo gli immobili in corso"
+      : "Pausa dopo questo immobile";
   $("stopAfterNextImportStatus").textContent = scheduled
-    ? "Concludo l'immobile corrente, salvo il checkpoint e metto in pausa il resto della run."
+    ? parallelActive
+      ? "Concludo gli immobili già in corso nelle due finestre, salvo i checkpoint e metto in pausa il resto della run."
+      : "Concludo l'immobile corrente, salvo il checkpoint e metto in pausa il resto della run."
     : canScheduleStop
       ? "Puoi richiedere la pausa in qualsiasi momento durante la run."
       : "Disponibile appena parte una run.";
@@ -2386,6 +2397,8 @@ function render() {
       : "Ti chiede conferma prima dei salvataggi.";
   $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
   $("coOwnersToggle").checked = appState.preferences?.importCoOwners !== false;
+  $("parallelCloudToggle").checked = appState.preferences?.parallelCrmWindows === true;
+  $("parallelCloudToggle").disabled = Boolean(appState.active && appState.currentStep === "properties_processed");
   $("versionLabel").textContent = `v${appState.version}`;
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
@@ -3088,6 +3101,16 @@ $("coOwnersToggle").addEventListener("change", async (event) => {
         ? "Import dei comproprietari attivo"
         : "Import fermo all'intestatario con la quota più alta",
     );
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    toast(error?.message ?? String(error));
+  }
+});
+$("parallelCloudToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.savePreferences({ parallelCrmWindows: toggle.checked });
+    toast(toggle.checked ? "Import su due finestre Cloud attivo" : "Import su una finestra Cloud");
   } catch (error) {
     toggle.checked = !toggle.checked;
     toast(error?.message ?? String(error));

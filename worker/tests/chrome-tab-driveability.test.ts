@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chromium } from "playwright";
 
-import { connectToChrome } from "../src/services/chrome.js";
+import { connectToChrome, createParallelCrmPage, CRM_WORKER_HOME_URL } from "../src/services/chrome.js";
 
 vi.mock("playwright", () => ({ chromium: { connectOverCDP: vi.fn() } }));
 
@@ -80,5 +80,41 @@ describe("schede Chrome pilotabili", () => {
       message: "Schede richieste non trovate in Chrome",
       details: { missing: ["SISTER"] },
     });
+  });
+
+  it("apre la seconda pagina nella stessa sessione del Chrome di lavoro", async () => {
+    const body = { waitFor: vi.fn().mockResolvedValue(undefined) };
+    const secondary = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      locator: vi.fn().mockReturnValue(body),
+      evaluate: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const context = { pages: () => [], newPage: vi.fn().mockResolvedValue(secondary) };
+    const primary = { context: () => context };
+
+    await expect(createParallelCrmPage(primary as never)).resolves.toBe(secondary);
+    expect(context.newPage).toHaveBeenCalledOnce();
+    expect(secondary.goto).toHaveBeenCalledWith(CRM_WORKER_HOME_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    expect(secondary.evaluate).toHaveBeenCalledOnce();
+  });
+
+  it("riusa una pagina parallela rimasta da una chiusura precedente", async () => {
+    const primary = {};
+    const reusable = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      locator: vi.fn().mockReturnValue({ waitFor: vi.fn().mockResolvedValue(undefined) }),
+      evaluate: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const context = { pages: () => [primary, reusable], newPage: vi.fn() };
+    Object.assign(primary, { context: () => context });
+
+    await expect(createParallelCrmPage(primary as never)).resolves.toBe(reusable);
+    expect(context.newPage).not.toHaveBeenCalled();
+    expect(reusable.goto).toHaveBeenCalledWith(CRM_WORKER_HOME_URL, expect.any(Object));
   });
 });

@@ -28,6 +28,20 @@ export type MandateArchiveChrome = RequestArchiveChrome;
 
 export const CRM_REQUEST_ARCHIVE_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/query?Id=a0Q3Y00000ecMlzUAE";
 export const CRM_MANDATE_ARCHIVE_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/query?Id=a0Q3Y00000echeFUAQ";
+export const CRM_WORKER_HOME_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/";
+const PARALLEL_CRM_WINDOW_NAME = "listing-radar-parallel-crm";
+
+async function isMarkedParallelCrmPage(page: Page): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      page.evaluate((name) => window.name === name, PARALLEL_CRM_WINDOW_NAME).catch(() => false),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 500); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 async function resolveCdpEndpoint(cdpUrl: string): Promise<string> {
   if (/^wss?:\/\//i.test(cdpUrl)) return cdpUrl;
@@ -217,12 +231,36 @@ export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Prom
     const context = browser.contexts()[0];
     if (!context) throw new WorkerError("Nessun profilo Chrome disponibile", "session_expired");
     crmPage = await context.newPage();
-    await crmPage.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/", {
+    await crmPage.goto(CRM_WORKER_HOME_URL, {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
   }
   return { browser, pages, crmPage };
+}
+
+/** Apre una pagina aggiuntiva nella stessa sessione autenticata del Chrome di lavoro. */
+export async function createParallelCrmPage(primaryPage: Page): Promise<Page> {
+  const context = primaryPage.context();
+  const reusable = (await Promise.all(context.pages().filter((candidate) => candidate !== primaryPage).map(async (candidate) => ({
+    candidate,
+    marked: await isMarkedParallelCrmPage(candidate),
+  })))).find(({ marked }) => marked)?.candidate;
+  const page = reusable ?? await context.newPage();
+  try {
+    await page.goto(CRM_WORKER_HOME_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.locator("body").waitFor({ state: "visible", timeout: 10_000 });
+    await page.evaluate((name) => { window.name = name; }, PARALLEL_CRM_WINDOW_NAME);
+    return page;
+  } catch (error) {
+    await page.close().catch(() => undefined);
+    throw new WorkerError(
+      "La seconda finestra Cloud non si e' aperta correttamente",
+      "needs_review",
+      { cause: error instanceof Error ? error.message : String(error) },
+      true,
+    );
+  }
 }
 
 async function connectToCrmArchiveChrome(

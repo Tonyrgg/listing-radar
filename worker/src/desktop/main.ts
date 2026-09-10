@@ -93,6 +93,8 @@ type Preferences = {
   /* Con false l'import collega il solo intestatario con la quota piu' alta.
    * I comproprietari gia' collegati nel gestionale restano dove sono. */
   importCoOwners: boolean;
+  /* Opt-in: una seconda pagina Cloud lavora una coda indipendente. */
+  parallelCrmWindows: boolean;
   /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
   streetRegistryZoneId: string | null;
   encryptedEnvironment?: string;
@@ -116,7 +118,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, streetRegistryZoneId: null };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, parallelCrmWindows: false, streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -181,7 +183,8 @@ let pausingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
 let activityModeOverride: PropertyActivityMode | null = null;
 let currentStep: string | null = null;
-let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string } | null = null;
+let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string; workerIndex?: number; workerCount?: number; completed?: number } | null = null;
+let crmImportConcurrency = 1;
 let lastError: string | null = null;
 let skippingPropertyId: string | null = null;
 let autoRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -631,7 +634,13 @@ function migratePreferences(stored: Partial<Preferences> & { autoFillDirectConta
     ?? (autoFillDirectContact === false ? "plain" : "direct_contact");
   /* Una preferenza assente vale come attiva: chi aggiorna il worker continua
    * a importare i comproprietari come prima. */
-  return { ...defaultPreferences, ...rest, propertyActivityMode: mode, importCoOwners: rest.importCoOwners !== false };
+  return {
+    ...defaultPreferences,
+    ...rest,
+    propertyActivityMode: mode,
+    importCoOwners: rest.importCoOwners !== false,
+    parallelCrmWindows: rest.parallelCrmWindows === true,
+  };
 }
 
 async function loadPreferences() {
@@ -1075,6 +1084,7 @@ async function stateSnapshot() {
     skippingPropertyId,
     currentStep,
     propertyProgress,
+    crmImportConcurrency,
     autoRetry: autoRetryAt && autoRetryJobId
       ? { jobId: autoRetryJobId, dueAt: autoRetryAt, attempt: autoRetryAttemptNumber, maximumAttempts: 3 }
       : null,
@@ -2522,10 +2532,17 @@ function handleRunnerEvent(event: RunnerEvent) {
     updateKeepAliveState(event.result);
     return;
   } else if (event.type === "property-progress") {
-    propertyProgress = { propertyId: event.propertyId, index: event.index, total: event.total, address: event.address, stage: event.stage, message: event.message };
+    propertyProgress = {
+      propertyId: event.propertyId, index: event.index, total: event.total, address: event.address,
+      stage: event.stage, message: event.message, workerIndex: event.workerIndex,
+      workerCount: event.workerCount, completed: event.completed,
+    };
     const activityItem = pushActivity(`Immobile ${event.index}/${event.total}: ${event.message}`);
     publishTransientUpdate({ propertyProgress, activityItem });
     return;
+  } else if (event.type === "import-concurrency") {
+    crmImportConcurrency = event.active;
+    pushActivity(event.message, event.active === event.requested ? "success" : "warning");
   } else if (event.details.cancelled === true && cancellingJobId === event.jobId) {
     clearRetryMonitor();
     pushActivity("Arresto del processo completato", "warning");
@@ -2758,6 +2775,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   lastError = null;
   currentStep = null;
   propertyProgress = null;
+  crmImportConcurrency = 1;
   activeJobId = input.jobId ?? null;
   preferences = { ...preferences, mode: input.mode, dryRun: forceLiveImport ? false : input.dryRun };
   await persistPreferences();
@@ -2771,6 +2789,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
     importCoOwners: () => preferences.importCoOwners,
+    crmConcurrency: () => preferences.parallelCrmWindows ? 2 : 1,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;
@@ -2825,6 +2844,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       activeRunner = null;
       activeRunPromise = null;
       activityModeOverride = null;
+      crmImportConcurrency = 1;
       stopAfterNextImportRequested = false;
       refreshStoppingAll();
       await publishState();
@@ -3348,6 +3368,7 @@ function registerIpc() {
       activeJobId = null;
       currentStep = null;
       propertyProgress = null;
+      crmImportConcurrency = 1;
       lastError = null;
       prompt = null;
     }

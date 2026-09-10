@@ -18,6 +18,7 @@ describe("controlli di arresto desktop", () => {
 
     expect(html).toContain('id="stopAllButton"');
     expect(html).toContain('id="runControls"');
+    expect(html).toContain('id="parallelCloudToggle"');
     expect(html).toContain('id="stopAfterNextImportButton"');
     expect(html).not.toContain('id="stopAfterNextImportToggle"');
     /* L'autocompila non e piu un interruttore: sono tre modalita, e la terza
@@ -37,6 +38,8 @@ describe("controlli di arresto desktop", () => {
      * legge quando serve. L'override vale per il singolo import scelto
      * dalla finestra, e ricade sempre sulla preferenza. */
     expect(main).toContain("propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode");
+    expect(main).toContain("crmConcurrency: () => preferences.parallelCrmWindows ? 2 : 1");
+    expect(renderer).toContain("parallelCrmWindows: toggle.checked");
     expect(main).toContain("if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode");
     expect(main).toMatch(/activeRunPromise = null;\s+activityModeOverride = null;/);
     expect(runner).toContain("this.propertyActivityMode()");
@@ -67,7 +70,8 @@ describe("controlli di arresto desktop", () => {
       expect(importer).toContain('status: cancelled ? "cancelled" : "failed"');
     }
     expect(runner).toContain("async interrupt()");
-    expect(runner).toContain("this.interruptActiveBrowser = () => tabs.browser.close()");
+    expect(runner).toContain("await Promise.all(secondaryCrmPages.map");
+    expect(runner).toContain("await tabs.browser.close().catch");
   });
 
   it("offre un nuovo avvio senza obbligare la ripresa degli archivi parziali", async () => {

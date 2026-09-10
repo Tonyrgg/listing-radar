@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ImportV2Engine, type ImportV2EngineOptions } from "./engine.js";
 import type { ImportV2BatchResult, ImportV2Progress } from "./queue.js";
-import { runImportV2Batch } from "./queue.js";
+import { runImportV2Batch, runImportV2ParallelBatch } from "./queue.js";
 import {
   importV2SourceFactories,
   loadImportV2AcquisitionEvidence,
@@ -22,7 +22,7 @@ export type ImportV2RepositoryBridge = {
 export class ImportV2Coordinator {
   constructor(
     private readonly repository: ImportV2RepositoryBridge,
-    private readonly crm: TecnocloudV2Port,
+    private readonly crm: TecnocloudV2Port | TecnocloudV2Port[],
     private readonly engineOptions: Partial<ImportV2EngineOptions> = {},
   ) {}
 
@@ -37,7 +37,23 @@ export class ImportV2Coordinator {
       loadImportV2AcquisitionEvidence(this.repository.client, job.id),
     ]);
     const sources = importV2SourceFactories(job, graph, activityFor, evidence);
-    const engine = new ImportV2Engine(this.crm, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
-    return runImportV2Batch(engine, sources, onProgress, shouldPauseAfterItem);
+    const crmPorts = Array.isArray(this.crm) ? this.crm : [this.crm];
+    if (crmPorts.length === 1) {
+      const engine = new ImportV2Engine(crmPorts[0]!, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
+      return runImportV2Batch(engine, sources, onProgress, shouldPauseAfterItem);
+    }
+    let parallelPauseRequested = false;
+    const upstreamInterruption = this.engineOptions.isInterruptionRequested;
+    const engines = crmPorts.map((crm) => new ImportV2Engine(crm, new SupabaseImportV2Store(this.repository.client), {
+      ...this.engineOptions,
+      isInterruptionRequested: () => parallelPauseRequested || Boolean(upstreamInterruption?.()),
+    }));
+    return runImportV2ParallelBatch(
+      engines,
+      sources,
+      onProgress,
+      shouldPauseAfterItem,
+      () => { parallelPauseRequested = true; },
+    );
   }
 }

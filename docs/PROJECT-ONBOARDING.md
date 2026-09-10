@@ -474,6 +474,25 @@ A; disattivando esplicitamente il controllo vengono acquisite e inserite nella
 scheda stampabile anche le categorie C. I filtri per piano e intervallo civici
 si applicano nello stesso passaggio, prima di aprire gli intestatari.
 
+### Import Cloud su due pagine
+
+«Due finestre Cloud» e' una preferenza esplicita e disattivata per default:
+il percorso storico a pagina singola continua a chiamare direttamente
+`runImportV2Batch`. Quando e' attiva, la seconda pagina viene aperta nella
+stessa sessione del Chrome di lavoro soltanto all'inizio di
+`properties_processed`, dopo che SISTER non serve piu', e viene chiusa al
+termine o durante un'interruzione.
+
+La coda viene divisa per componenti connesse: due immobili che condividono un
+codice fiscale, anche transitivamente, restano sempre sulla stessa pagina. La
+stessa protezione vale per una terna catastale duplicata. Questo impedisce
+creazioni o sovrascritture concorrenti dello stesso Cliente e doppi interventi
+sullo stesso immobile. I checkpoint restano uno per immobile; una pausa o un
+errore globale ferma nuove fasi su entrambe le pagine, lasciando terminare
+soltanto l'azione atomica gia' partita. Se la seconda pagina non puo' essere
+aperta o autenticata, la run prosegue automaticamente sul percorso storico a
+pagina singola.
+
 ### Rete proprietari attuale: sequenza delle vie
 
 Il comando desktop `desktop:start-network-run` avvia

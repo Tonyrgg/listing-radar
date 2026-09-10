@@ -3006,13 +3006,16 @@ body[data-fase="lavora"] #settings { display: none !important; }
 /* La modalità di prova è una regola della run: stesso vestito dell'attività.
  * L'interruttore dei comproprietari è della stessa famiglia. */
 #dryRunControl,
-#coOwnersControl { cursor: pointer; }
+#coOwnersControl,
+#parallelCloudControl { cursor: pointer; }
 
 #dryRunControl input[type="checkbox"],
-#coOwnersControl input[type="checkbox"] { flex: none; }
+#coOwnersControl input[type="checkbox"],
+#parallelCloudControl input[type="checkbox"] { flex: none; }
 
 #dryRunControl:has(input:disabled),
-#coOwnersControl:has(input:disabled) {
+#coOwnersControl:has(input:disabled),
+#parallelCloudControl:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
 }

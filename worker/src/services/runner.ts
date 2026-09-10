@@ -8,7 +8,7 @@ import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import type { WorkerConfig } from "../config.js";
-import { connectToChrome, connectToCrmChrome } from "./chrome.js";
+import { connectToChrome, connectToCrmChrome, createParallelCrmPage } from "./chrome.js";
 import { WorkerPrompts, type PromptController } from "./prompts.js";
 import { type JobRow, type PersonRow, type PropertyRow, WorkerRepository } from "./repository.js";
 import { captureDiagnosticScreenshot, pruneDiagnosticScreenshots } from "./screenshots.js";
@@ -174,7 +174,8 @@ export type RunnerEvent =
   | { type: "job-ready"; job: JobRow; dryRun: boolean }
   | { type: "step-started"; jobId: string; step: WorkflowStep }
   | { type: "step-completed"; jobId: string; step: WorkflowStep; next: WorkflowStep; output: Record<string, unknown> }
-  | { type: "property-progress"; jobId: string; propertyId: string; index: number; total: number; address: string | null; stage: string; message: string }
+  | { type: "property-progress"; jobId: string; propertyId: string; index: number; total: number; address: string | null; stage: string; message: string; workerIndex?: number; workerCount?: number; completed?: number }
+  | { type: "import-concurrency"; jobId: string; requested: number; active: number; message: string }
   | { type: "sister-keepalive"; result: SisterKeepAliveResult }
   | { type: "job-completed"; jobId: string }
   | { type: "job-archived"; jobId: string }
@@ -190,6 +191,8 @@ export interface RunnerOptions {
   propertyActivityMode?: PropertyActivityMode | (() => PropertyActivityMode);
   /** Con false l'import si ferma all'intestatario con la quota piu' alta. */
   importCoOwners?: boolean | (() => boolean);
+  /** Numero di pagine Cloud indipendenti; il percorso storico resta 1. */
+  crmConcurrency?: number | (() => number);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
 }
 
@@ -204,6 +207,7 @@ export class PropertyWorkerRunner {
   private readonly isStopAfterNextImportRequested: (jobId: string) => boolean;
   private readonly propertyActivityMode: () => PropertyActivityMode;
   private readonly importCoOwners: () => boolean;
+  private readonly crmConcurrency: () => number;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
@@ -220,6 +224,10 @@ export class PropertyWorkerRunner {
       : () => activityMode ?? "direct_contact";
     const importCoOwners = options.importCoOwners ?? true;
     this.importCoOwners = typeof importCoOwners === "function" ? importCoOwners : () => importCoOwners;
+    const crmConcurrency = options.crmConcurrency ?? 1;
+    this.crmConcurrency = typeof crmConcurrency === "function"
+      ? () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency()) || 1))
+      : () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency) || 1));
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
   }
 
@@ -245,7 +253,6 @@ export class PropertyWorkerRunner {
       ? null
       : await connectToChrome(this.config.CHROME_CDP_URL, this.config.SISTER_TAB_MATCH, this.config.CRM_TAB_MATCH);
     const tabs = fullTabs ?? await connectToCrmChrome(this.config.CHROME_CDP_URL, this.config.CRM_TAB_MATCH);
-    this.interruptActiveBrowser = () => tabs.browser.close().catch(() => undefined);
     const sisterPage = fullTabs?.sisterPage ?? null;
     const keepAlive = sisterPage ? new SisterKeepAliveScheduler(sisterPage, {
       enabled: this.manageKeepAlive && this.config.SISTER_KEEPALIVE_ENABLED,
@@ -263,6 +270,12 @@ export class PropertyWorkerRunner {
     const crmV2 = new TecnocloudUiV2Port(tabs.crmPage, this.config.WORKER_DRY_RUN, {
       isInterruptionRequested: importV2InterruptionRequested,
     });
+    const crmV2Ports: TecnocloudUiV2Port[] = [crmV2];
+    const secondaryCrmPages: Array<Awaited<ReturnType<typeof createParallelCrmPage>>> = [];
+    this.interruptActiveBrowser = async () => {
+      await Promise.all(secondaryCrmPages.map((page) => page.close().catch(() => undefined)));
+      await tabs.browser.close().catch(() => undefined);
+    };
     const contacts = new ExcelContactsAdapter(this.config.CONTACTS_EXCEL_PATH);
     await contacts.load();
     let job = input.jobId
@@ -295,6 +308,31 @@ export class PropertyWorkerRunner {
         job = await this.repository.getJob(job.id);
         if (job.status === "paused") throw new WorkerError("Job messo in pausa", "paused");
         const step = state.current;
+        if (step === "properties_processed" && crmV2Ports.length === 1 && this.crmConcurrency() === 2) {
+          try {
+            const secondPage = await createParallelCrmPage(tabs.crmPage);
+            const secondPort = new TecnocloudUiV2Port(secondPage, this.config.WORKER_DRY_RUN, {
+              isInterruptionRequested: importV2InterruptionRequested,
+            });
+            try {
+              await secondPort.assertSession();
+            } catch (error) {
+              await secondPage.close().catch(() => undefined);
+              throw error;
+            }
+            secondaryCrmPages.push(secondPage);
+            crmV2Ports.push(secondPort);
+            this.onEvent({
+              type: "import-concurrency", jobId: job.id, requested: 2, active: 2,
+              message: "Import accelerato avviato su due finestre Cloud",
+            });
+          } catch (error) {
+            this.onEvent({
+              type: "import-concurrency", jobId: job.id, requested: 2, active: 1,
+              message: `Seconda finestra non disponibile: continuo in sicurezza su una finestra (${error instanceof Error ? error.message : String(error)})`,
+            });
+          }
+        }
         this.onEvent({ type: "step-started", jobId: job.id, step });
         const stepId = await this.repository.beginStep(job.id, step);
         /* Quanto e' durato ogni passaggio: senza questo numero non si sa dove
@@ -302,7 +340,7 @@ export class PropertyWorkerRunner {
          * togliere. */
         const stepStartedAt = Date.now();
         try {
-          const output = await this.executeStep(step, job, sister, crm, crmV2, contacts);
+          const output = await this.executeStep(step, job, sister, crm, crmV2Ports, contacts);
           this.throwIfCancellationRequested(job.id);
           const next = state.complete(step);
           await this.repository.completeStep(job.id, stepId, step, next, output);
@@ -351,6 +389,7 @@ export class PropertyWorkerRunner {
       this.interruptActiveBrowser = null;
       keepAlive?.stop();
       this.prompts.close();
+      await Promise.all(secondaryCrmPages.map((page) => page.close().catch(() => undefined)));
       await tabs.browser.close().catch(() => undefined);
     }
   }
@@ -360,7 +399,7 @@ export class PropertyWorkerRunner {
     job: JobRow,
     sister: PlaywrightSisterAdapter | null,
     crm: PlaywrightCrmAdapter,
-    crmV2: TecnocloudUiV2Port,
+    crmV2Ports: TecnocloudUiV2Port[],
     contacts: ExcelContactsAdapter,
   ): Promise<Record<string, unknown>> {
     switch (step) {
@@ -566,7 +605,7 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
         const activityTasks = buildPropertyActivityTasks(graph);
-        const coordinator = new ImportV2Coordinator(this.repository, crmV2, {
+        const coordinator = new ImportV2Coordinator(this.repository, crmV2Ports, {
           maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS,
           isInterruptionRequested: () => this.isCancellationRequested(job.id) || this.isPauseRequested(job.id),
           includeCoOwners: () => this.importCoOwners(),
@@ -582,7 +621,14 @@ export class PropertyWorkerRunner {
            * all'interfaccia sullo stesso canale gia' usato dall'acquisizione. */
           const property = propertyById.get(progress.propertyId);
           if (!property) return;
-          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, IMPORT_V2_STAGE_MESSAGES[progress.stage]);
+          const lane = progress.workerCount && progress.workerCount > 1
+            ? `Finestra ${progress.workerIndex}/${progress.workerCount} · `
+            : "";
+          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, `${lane}${IMPORT_V2_STAGE_MESSAGES[progress.stage]}`, {
+            workerIndex: progress.workerIndex,
+            workerCount: progress.workerCount,
+            completed: progress.completed,
+          });
         }, () => this.isStopAfterNextImportRequested(job.id));
         for (const outcome of result.completed) {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
@@ -1057,8 +1103,19 @@ export class PropertyWorkerRunner {
     }
   }
 
-  private emitPropertyProgress(job: JobRow, property: PropertyRow, index: number, total: number, stage: string, message: string) {
-    this.onEvent({ type: "property-progress", jobId: job.id, propertyId: property.id, index, total, address: property.address, stage, message });
+  private emitPropertyProgress(
+    job: JobRow,
+    property: PropertyRow,
+    index: number,
+    total: number,
+    stage: string,
+    message: string,
+    parallel: { workerIndex?: number; workerCount?: number; completed?: number } = {},
+  ) {
+    this.onEvent({
+      type: "property-progress", jobId: job.id, propertyId: property.id, index, total,
+      address: property.address, stage, message, ...parallel,
+    });
   }
 
   private async markAcquisitionPropertyExcluded(
