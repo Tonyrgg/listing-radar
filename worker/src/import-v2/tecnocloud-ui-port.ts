@@ -247,18 +247,20 @@ function propertyDraft(plan: ImportV2Plan) {
 
 /**
  * SISTER consegna gli intestatari come "Cognome Nome", mentre la ricerca del
- * gestionale propone i record per "Nome Cognome" e con l'ordine opposto puo'
- * non restituire niente. Il codice fiscale separa i due pezzi in modo
- * verificabile: quando non ci riesce resta il solo ordine di partenza.
+ * gestionale propone i record per "Nome Cognome". Il codice fiscale separa i
+ * due pezzi in modo verificabile: si prova subito l'ordine del gestionale e si
+ * conserva quello SISTER soltanto come recupero.
  */
 export function personLookupTerms(fullName: string, taxCode: string): string[] {
-  const terms = [fullName.replace(/\s+/g, " ").trim()];
+  const sourceOrder = fullName.replace(/\s+/g, " ").trim();
+  const terms: string[] = [];
   try {
-    const { firstName, lastName } = splitSourcePersonName(terms[0]!, taxCode);
+    const { firstName, lastName } = splitSourcePersonName(sourceOrder, taxCode);
     terms.push(`${firstName} ${lastName}`.replace(/\s+/g, " ").trim());
   } catch {
-    /* Nome non separabile: si cerca soltanto con l'ordine della fonte. */
+    /* Nome non separabile: resta utilizzabile soltanto l'ordine della fonte. */
   }
+  terms.push(sourceOrder);
   return [...new Set(terms.filter(Boolean))];
 }
 
@@ -864,7 +866,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const candidates = await this.lookupRecordCandidates(options, personId);
           const selected = choosePersonLookupCandidate(candidates, personId, searchValue, expectedPhones, requests.recordSeen());
           const currentSignature = JSON.stringify(candidates.map((candidate) => [candidate.recordId, normalized(candidate.text)]));
-          const ready = selected !== null && !requests.pending() && !requests.inspecting() && !(await this.searchIsBusy());
+          /* Un ID CRM esatto nel DOM e' gia' una risposta deterministica. Non
+           * aspettare XHR Lightning estranei o persistenti; per il fallback
+           * senza ID, invece, attendere che la risposta sia stata ispezionata
+           * e che il menu non stia ancora ricevendo risultati. */
+          const exactDomMatch = selected !== null && sameCrmRecordId(selected.recordId, personId);
+          const cloudFallbackSettled = !requests.pending() && !requests.inspecting();
+          const ready = selected !== null && (exactDomMatch || cloudFallbackSettled) && !(await this.searchIsBusy());
           stableOptions = ready && currentSignature === signature ? stableOptions + 1 : 0;
           signature = currentSignature;
           optionIndex = selected?.index ?? null;
@@ -892,8 +900,6 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const committed = await input.getAttribute("readonly") !== null
             && await component.locator(".slds-combobox_container.slds-has-selection").count() === 1
             && await dependentFields.count() >= minimumDependentFields
-            && !requests.pending()
-            && !requests.inspecting()
             && !(await this.searchIsBusy());
           stableCommit = committed ? stableCommit + 1 : 0;
           if (stableCommit < 2) await this.pauseAwareWait(160);

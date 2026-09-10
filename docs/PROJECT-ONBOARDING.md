@@ -357,7 +357,7 @@ Le frazioni SISTER vengono conservate nel dato originale e convertite in percent
 
 ### Scelta del comproprietario
 
-La digitazione di nome e cognome è intenzionalmente lenta. Il worker attende che la lista risultati sia stabile prima di selezionare.
+Il worker cerca subito in ordine `Nome Cognome`, quello usato dal gestionale; `Cognome Nome` resta soltanto un recupero. Attende che la lista risultati sia stabile prima di selezionare, ma un ID CRM esatto già presente nel menu non resta bloccato da richieste Lightning estranee o persistenti.
 
 Il lookup Lightning può sostituire le opzioni mentre vengono cliccate: il
 worker risolve nuovamente la lista e riprova nello stesso dialogo fino a tre

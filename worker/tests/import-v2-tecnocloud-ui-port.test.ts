@@ -8,12 +8,12 @@ import type { ImportV2Plan } from "../src/import-v2/model.js";
 describe("Ricerca nominativo nel lookup", () => {
   it("affianca all'ordine SISTER quello che il gestionale usa per proporre i record", () => {
     expect(personLookupTerms("Coviello Caterina", "CVLCRN36E57A893C"))
-      .toEqual(["Coviello Caterina", "Caterina Coviello"]);
+      .toEqual(["Caterina Coviello", "Coviello Caterina"]);
   });
 
   it("separa anche i cognomi composti usando il codice fiscale", () => {
     expect(personLookupTerms("De Ruvo Vito Antonio", "DRVVNT58L15A893Q"))
-      .toEqual(["De Ruvo Vito Antonio", "Vito Antonio De Ruvo"]);
+      .toEqual(["Vito Antonio De Ruvo", "De Ruvo Vito Antonio"]);
   });
 
   it("cerca con il solo ordine della fonte quando il nome non e' separabile", () => {
@@ -589,7 +589,51 @@ describe("Tecnocloud UI V2", () => {
     }
   }, 15_000);
 
-  it("riprova con nome e cognome quando l'ordine della fonte non propone nulla", async () => {
+  it("non lascia un ID esatto bloccato da una richiesta Lightning persistente", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (pathname === "/slow-lightning") return await new Promise<void>(() => undefined);
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <c-lookup><label>Cliente</label><div class="slds-combobox_container">
+            <input placeholder="Cerca"><ul id="results"></ul>
+          </div></c-lookup>
+          <c-picklist><label>Ruolo</label></c-picklist><lightning-input><label>Quota</label></lightning-input>
+          <script>
+            const input = document.querySelector('input');
+            const container = document.querySelector('.slds-combobox_container');
+            const results = document.querySelector('#results');
+            input.addEventListener('input', () => {
+              fetch('/slow-lightning').catch(() => {});
+              results.innerHTML = '<li role="option">' + input.value + '</li><li role="option" data-item-id="001RD00001C9aXuYAJ">SARACINO FRANCESCO</li>';
+            });
+            results.onclick = (event) => {
+              const option = event.target.closest('[data-item-id]');
+              if (!option) return;
+              input.value = 'Francesco Saracino';
+              input.readOnly = true;
+              container.classList.add('slds-has-selection');
+              document.body.dataset.selected = option.dataset.itemId;
+              results.innerHTML = '';
+            };
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const component = page.locator('c-lookup');
+      await (port as unknown as {
+        fillPersonLookup(component: Locator, input: Locator, personId: string, searchTerms: string[], dependentFields: Locator, minimumDependentFields: number, label: string): Promise<void>;
+      }).fillPersonLookup(component, component.locator('input'), "001RD00001C9aXuYAJ", ["Francesco Saracino"], page.locator('c-picklist, lightning-input'), 2, "Cliente comproprietario");
+      expect(await page.locator("body").getAttribute("data-selected")).toBe("001RD00001C9aXuYAJ");
+    } finally {
+      await browser.close();
+    }
+  }, 12_000);
+
+  it("cerca subito con nome e cognome nell'ordine usato dal gestionale", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
