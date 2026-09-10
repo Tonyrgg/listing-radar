@@ -2,6 +2,7 @@ import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
 import { assignPhonesToFields, PHONE_FIELD_LABELS } from "./contacts.js";
+import { normalizePhone } from "../core/normalize.js";
 import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
@@ -114,6 +115,44 @@ export type LookupRecordCandidate = {
   recordId: string;
   text: string;
 };
+
+function phonesInLookupText(value: string): string[] {
+  return (value.match(/(?:\+|00)?\d[\d\s()./-]{6,}\d/g) ?? []).map(normalizePhone).filter(Boolean);
+}
+
+/**
+ * Some Lightning account lookups omit the Salesforce id from the option DOM.
+ * In that case the response that populated the menu must contain the already
+ * verified id, and the visible menu must still identify one person only.
+ */
+export function choosePersonLookupCandidate(
+  candidates: LookupRecordCandidate[],
+  expectedRecordId: string,
+  searchValue: string,
+  expectedPhones: string[] = [],
+  cloudRecordSeen = false,
+): LookupRecordCandidate | null {
+  const exact = candidates.filter((candidate) => sameCrmRecordId(candidate.recordId, expectedRecordId));
+  if (exact.length === 1) return exact[0]!;
+  if (exact.length > 1 || !cloudRecordSeen) return null;
+
+  const search = normalized(searchValue);
+  const nameTokens = [...new Set(search.split(" ").filter((token) => token.length > 1))];
+  const records = candidates.filter((candidate) => {
+    if (candidate.recordId) return false;
+    const text = normalized(candidate.text);
+    if (!text || /^(?:CERCA|MOSTRA TUTTI|CREA|NUOVO)(?:\s|$)/.test(text)) return false;
+    // The first row is often only the typed search echoed by Lightning.
+    if (candidate.index === 0 && candidates.length > 1 && text === search) return false;
+    return nameTokens.length > 0 && nameTokens.every((token) => text.includes(token));
+  });
+  if (records.length === 1) return records[0]!;
+
+  const phones = new Set(expectedPhones.map(normalizePhone).filter(Boolean));
+  if (!phones.size) return null;
+  const byPhone = records.filter((candidate) => phonesInLookupText(candidate.text).some((phone) => phones.has(phone)));
+  return byPhone.length === 1 ? byPhone[0]! : null;
+}
 
 /**
  * Lightning mette subito nel menu una riga che ripete il testo cercato. Non è
@@ -544,10 +583,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     });
   }
 
-  private watchSearchRequests() {
+  private watchSearchRequests(expectedRecordId: string | null = null) {
     const pending = new Set<Request>();
+    const inspections = new Set<Promise<void>>();
     const origin = new URL(this.page.url()).origin;
     let failed = false;
+    let recordSeen = false;
     const started = (request: Request) => {
       if (["xhr", "fetch"].includes(request.resourceType()) && new URL(request.url()).origin === origin) pending.add(request);
     };
@@ -563,6 +604,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     };
     const response = (response: import("playwright").Response) => {
       if (pending.has(response.request()) && response.status() >= 400) failed = true;
+      if (!expectedRecordId || !pending.has(response.request()) || response.status() >= 400) return;
+      const inspection = response.text()
+        .then((body) => { if (body.includes(expectedRecordId.slice(0, 15))) recordSeen = true; })
+        .catch(() => undefined)
+        .then(() => undefined);
+      inspections.add(inspection);
+      void inspection.finally(() => inspections.delete(inspection));
     };
     this.page.on("request", started);
     this.page.on("requestfinished", finished);
@@ -570,7 +618,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     this.page.on("response", response);
     return {
       pending: () => pending.size > 0,
+      inspecting: () => inspections.size > 0,
       failed: () => failed,
+      recordSeen: () => recordSeen,
       stop: () => {
         this.page.off("request", started);
         this.page.off("requestfinished", finished);
@@ -602,7 +652,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (requests.failed()) {
         throw new ImportV2Error(`${label}: una richiesta Cloud non è stata completata`, "global_portal", { global: true });
       }
-      const settled = !requests.pending() && !(await this.searchIsBusy());
+      const settled = !requests.pending() && !requests.inspecting() && !(await this.searchIsBusy());
       stable = settled ? stable + 1 : 0;
       if (stable < 4) await this.pauseAwareWait(250, false);
     }
@@ -787,6 +837,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     dependentFields: Locator,
     minimumDependentFields: number,
     label: string,
+    expectedPhones: string[] = [],
   ): Promise<void> {
     const terms = searchTerms.filter(Boolean);
     if (!terms.length) throw new ImportV2Error(`${label}: nessun testo di ricerca utilizzabile`, "invalid_source");
@@ -800,7 +851,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await this.waitForLookupEditable(component, input, label);
       }
 
-      const requests = this.watchSearchRequests();
+      const requests = this.watchSearchRequests(personId);
       try {
         await input.fill("");
         await input.pressSequentially(searchValue, { delay: 75 });
@@ -811,12 +862,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         for (let wait = 0; wait < 50 && stableOptions < 2; wait += 1) {
           await this.pauseAwareWait(200);
           const candidates = await this.lookupRecordCandidates(options, personId);
-          const indexes = candidates.flatMap((candidate) => candidate.recordId.slice(0, 15) === personId.slice(0, 15) ? [candidate.index] : []);
+          const selected = choosePersonLookupCandidate(candidates, personId, searchValue, expectedPhones, requests.recordSeen());
           const currentSignature = JSON.stringify(candidates.map((candidate) => [candidate.recordId, normalized(candidate.text)]));
-          const ready = indexes.length === 1 && !requests.pending() && !(await this.searchIsBusy());
+          const ready = selected !== null && !requests.pending() && !requests.inspecting() && !(await this.searchIsBusy());
           stableOptions = ready && currentSignature === signature ? stableOptions + 1 : 0;
           signature = currentSignature;
-          optionIndex = indexes.length === 1 ? indexes[0]! : null;
+          optionIndex = selected?.index ?? null;
         }
         await this.assertSearchHealthy(requests.failed());
         if (optionIndex == null || stableOptions < 2) {
@@ -829,8 +880,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         everProposed = true;
 
         const candidates = await this.lookupRecordCandidates(options, personId);
-        const freshIndexes = candidates.flatMap((candidate) => candidate.recordId.slice(0, 15) === personId.slice(0, 15) ? [candidate.index] : []);
-        if (freshIndexes.length !== 1 || freshIndexes[0] !== optionIndex) continue;
+        const fresh = choosePersonLookupCandidate(candidates, personId, searchValue, expectedPhones, requests.recordSeen());
+        if (!fresh || fresh.index !== optionIndex) continue;
         // Click the option itself by the stable candidate index. In the live
         // component the Salesforce id can live on the option or on a nested
         // node, so a :has(...) locator is not an identity-safe target.
@@ -842,6 +893,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
             && await component.locator(".slds-combobox_container.slds-has-selection").count() === 1
             && await dependentFields.count() >= minimumDependentFields
             && !requests.pending()
+            && !requests.inspecting()
             && !(await this.searchIsBusy());
           stableCommit = committed ? stableCommit + 1 : 0;
           if (stableCommit < 2) await this.pauseAwareWait(160);
@@ -855,7 +907,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     throw new ImportV2Error(
       everProposed
         ? `${label}: il record CRM esatto è visibile ma la selezione non viene confermata`
-        : `${label}: la ricerca del gestionale non propone il record atteso`,
+        : `${label}: i risultati del gestionale non identificano in modo univoco il record atteso`,
       "transient_portal",
       { retryable: true, details: { searchTerms: terms } },
     );
@@ -1931,7 +1983,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await component.waitFor({ state: "visible", timeout: 10_000 });
     const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Proprietario principale");
     if (!sameCrmRecordId(current?.personId, desired.personId)) {
-      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), component, 1, "Proprietario principale");
+      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), component, 1, "Proprietario principale", desired.phones);
     }
     const quota = await this.one(this.page.getByLabel("Quota Proprietario", { exact: true }).filter({ visible: true }), "Quota proprietario");
     await this.replaceInputValue(quota, formatDecimal(desired.sharePercentage), "Quota proprietario");
@@ -2013,7 +2065,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const component = await this.one(dialog.locator('c-lookup:has(label:text-is("Cliente"))').filter({ visible: true }), "Lookup Cliente comproprietario");
       const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Cliente comproprietario");
       const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
-      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), dependent, 2, "Cliente comproprietario");
+      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), dependent, 2, "Cliente comproprietario", desired.phones);
     }
     const role = dialog.locator('c-picklist:has(label:text-is("Ruolo"))').filter({ visible: true });
     await this.pick(role, desired.role, "Ruolo");

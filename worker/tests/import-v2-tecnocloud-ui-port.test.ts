@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chromium, type Locator } from "playwright";
 
-import { chooseLookupRecordCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
+import { chooseLookupRecordCandidate, choosePersonLookupCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
@@ -71,6 +71,17 @@ describe("Tecnocloud UI V2", () => {
     } finally {
       await browser.close();
     }
+  });
+
+  it("non sceglie un omonimo quando il lookup nasconde gli ID", () => {
+    const candidates = [
+      { index: 0, recordId: "", text: "Mario Rossi" },
+      { index: 1, recordId: "", text: "ROSSI MARIO 3331111111" },
+      { index: 2, recordId: "", text: "ROSSI MARIO 0802222222" },
+    ];
+    expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", [], true)).toBeNull();
+    expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", ["080 2222222"], true)?.index).toBe(2);
+    expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", ["080 2222222"], false)).toBeNull();
   });
 
   it.each([1, 2])("rilegge tutti i %s riscontri catastali e attende i dettagli senza cercare tutta la via", async (count) => {
@@ -527,6 +538,56 @@ describe("Tecnocloud UI V2", () => {
       await browser.close();
     }
   }, 12_000);
+
+  it("seleziona il nominativo quando Lightning nasconde l'id nel DOM ma il cloud lo ha restituito", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (pathname === "/lookup") {
+          return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "001RD00000ywHCnYAM", name: "ROSSI MARIO" }) });
+        }
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <c-lookup>
+            <label>Cliente</label>
+            <div class="slds-combobox_container">
+              <input placeholder="Cerca">
+              <ul id="results"></ul>
+            </div>
+          </c-lookup>
+          <c-picklist><label>Ruolo</label></c-picklist><lightning-input><label>Quota</label></lightning-input>
+          <script>
+            const input = document.querySelector('input');
+            const container = document.querySelector('.slds-combobox_container');
+            const results = document.querySelector('#results');
+            input.addEventListener('input', async () => {
+              await fetch('/lookup?q=' + encodeURIComponent(input.value));
+              results.innerHTML = '<li role="option">' + input.value + '</li><li role="option" data-person="true">ROSSI MARIO</li>';
+            });
+            results.onclick = (event) => {
+              const option = event.target.closest('[data-person]');
+              if (!option) return;
+              input.value = 'ROSSI MARIO';
+              input.readOnly = true;
+              container.classList.add('slds-has-selection');
+              document.body.dataset.selected = 'yes';
+              results.innerHTML = '';
+            };
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const component = page.locator('c-lookup');
+      await (port as unknown as {
+        fillPersonLookup(component: Locator, input: Locator, personId: string, searchTerms: string[], dependentFields: Locator, minimumDependentFields: number, label: string): Promise<void>;
+      }).fillPersonLookup(component, component.locator('input'), "001RD00000ywHCnYAM", ["MARIO ROSSI"], page.locator('c-picklist, lightning-input'), 2, "Cliente comproprietario");
+      expect(await page.locator("body").getAttribute("data-selected")).toBe("yes");
+    } finally {
+      await browser.close();
+    }
+  }, 15_000);
 
   it("riprova con nome e cognome quando l'ordine della fonte non propone nulla", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

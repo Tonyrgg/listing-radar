@@ -34,6 +34,7 @@ export type OwnershipWrite = {
   personId: string;
   taxCode: string;
   fullName: string;
+  phones?: string[];
   sharePercentage: number | null;
   role: "Proprietario Principale" | "Comproprietario";
 };

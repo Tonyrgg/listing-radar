@@ -368,11 +368,11 @@ Un nominativo sotto il quale la terna catastale è già stata verificata è già
 collegato: viene conservato nel checkpoint e non riapre `Soggetto correlato`.
 
 - l'ID CRM della scheda già verificata per codice fiscale è determinante;
+- se Lightning non espone l'ID nel DOM, il worker usa anche la risposta Cloud che ha popolato il menu: l'ID verificato deve comparire nella risposta e nome/cognome (o un telefono noto) devono lasciare un solo candidato visibile, escludendo la riga che ripete la ricerca;
 - nome e cognome possono comparire in qualunque ordine, ma entrambe le parole devono essere presenti;
 - un telefono vecchio o duplicato non annulla la corrispondenza dell'ID CRM;
 - dopo il click sull'ID esatto, una lista Lightning rimasta visibile non impedisce di completare diritto, ruolo e quota se il valore selezionato è confermato;
-- se non esistono telefoni e ci sono più omonimi, si può scegliere il primo solo come ultima risorsa, creando una nota auditabile;
-- se esiste un telefono raccolto ma nessun risultato lo mostra correttamente, fermarsi in `needs_review`.
+- il primo risultato non viene mai scelto alla cieca: più omonimi non risolti o una risposta che non contiene l'ID atteso fermano l'inserimento in sicurezza.
 
 ### Attività con e senza telefono
 

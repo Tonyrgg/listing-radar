@@ -376,6 +376,7 @@ export class ImportV2Engine {
         personId: person.crmPersonId,
         taxCode: owner.taxCode,
         fullName: formatPersonName(owner.fullName),
+        phones: owner.contacts.phones,
         sharePercentage: owner.sharePercentage,
         role: owner.sourcePersonId === primarySourcePersonId ? "Proprietario Principale" : "Comproprietario",
       };
