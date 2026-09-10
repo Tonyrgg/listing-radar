@@ -466,6 +466,14 @@ La scansione civico per civico e la regola dei 50 civici vuoti restano come stra
 - Una variante fallita non viene interpretata come vuota e mette in pausa la run sulla stessa variante.
 - Una run reale incompleta resta salvata e correggibile; non avvia l'import.
 
+### Schede Portoni
+
+Portoni riusa la scansione completa della via senza aprire Tecnocloud. Per
+impostazione predefinita «Solo abitazioni» conserva esclusivamente le categorie
+A; disattivando esplicitamente il controllo vengono acquisite e inserite nella
+scheda stampabile anche le categorie C. I filtri per piano e intervallo civici
+si applicano nello stesso passaggio, prima di aprire gli intestatari.
+
 ### Rete proprietari attuale: sequenza delle vie
 
 Il comando desktop `desktop:start-network-run` avvia

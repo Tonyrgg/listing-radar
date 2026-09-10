@@ -1649,7 +1649,7 @@ async function runSisterStreet(input: {
 
 async function runPortoni(input: { street: string; filters?: Partial<StreetPropertyFilters> }) {
   const street = input.street.replace(/\s+/g, " ").trim();
-  const filters = normalizeStreetPropertyFilters({ ...input.filters, residentialOnly: true });
+  const filters = normalizeStreetPropertyFilters(input.filters);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   reserveOperation("portoni");
   let config: WorkerConfig;
@@ -1709,7 +1709,7 @@ async function runPortoni(input: { street: string; filters?: Partial<StreetPrope
       await persistPortoniHistory();
       pushActivity(
         result.status === "completed"
-          ? `Scheda Portoni pronta: ${sheet.rows.length} immobili di categoria A ordinati per civico`
+          ? `Scheda Portoni pronta: ${sheet.rows.length} immobili ${filters.residentialOnly ? "di categoria A" : "di categoria A e C"} ordinati per civico`
           : `Scheda Portoni sospesa e conservata con ${sheet.rows.length} immobili`,
         result.status === "completed" ? "success" : "warning",
       );

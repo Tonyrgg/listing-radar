@@ -396,11 +396,12 @@
           <summary>Schede Portoni</summary>
           <div class="section-body portoni-layout">
             <section class="portoni-card">
-              <header><div><p class="eyebrow">Nuova scheda</p><h2>Acquisisci un portone</h2><p>Legge da SISTER tutti gli immobili di categoria A, li ordina per civico e abbina i soli recapiti presenti nel file Excel. Il gestionale non viene aperto.</p></div><span id="portoniBadge" class="status-pill is-idle"><span></span>Pronto</span></header>
+              <header><div><p class="eyebrow">Nuova scheda</p><h2>Acquisisci un portone</h2><p>Legge da SISTER gli immobili della via, li ordina per civico e abbina i soli recapiti presenti nel file Excel. Il gestionale non viene aperto.</p></div><span id="portoniBadge" class="status-pill is-idle"><span></span>Pronto</span></header>
               <div class="portoni-launcher"><label>Via completa<input id="portoniStreet" type="text" autocomplete="off" placeholder="es. via luigi castellucci" /></label><button id="portoniBlank" class="button secondary">Crea scheda vuota</button><button id="portoniCancel" class="button danger is-hidden">Metti in pausa</button><button id="portoniStart" class="button primary">Acquisisci da SISTER</button></div>
               <fieldset class="street-run-filters portoni-filters">
-                <legend>Affina il portone <small>Facoltativo: vengono comunque considerate solo le categorie A.</small></legend>
+                <legend>Affina il portone <small>Facoltativo: scegli categorie, piano e intervallo civici.</small></legend>
                 <div class="street-filter-grid">
+                  <label class="safe-check street-residential-check"><input id="portoniResidentialOnly" type="checkbox" checked /><span><b>Solo abitazioni</b><small>Se disattivato include anche le categorie C/.</small></span></label>
                   <label>Piano <span class="street-floor-fields"><select id="portoniFloorMode"><option value="any">Qualsiasi</option><option value="exact">Solo</option><option value="minimum">Da questo in su</option><option value="maximum">Fino a questo</option></select><input id="portoniFloorValue" type="number" min="-10" max="100" placeholder="0" disabled /></span></label>
                   <label>Civici <span class="street-civic-fields"><input id="portoniMinCivic" type="number" min="0" max="999999" placeholder="da" /><span aria-hidden="true">–</span><input id="portoniMaxCivic" type="number" min="0" max="999999" placeholder="a" /></span></label>
                 </div>

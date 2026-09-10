@@ -2336,7 +2336,7 @@ function renderPortoni() {
   $("portoniBadge").className = `status-pill ${state.active ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
   $("portoniBadge").innerHTML = `<span></span>${state.active ? "Acquisizione in corso" : "Pronto"}`;
   $("portoniStart").disabled = Boolean(state.active);
-  for (const id of ["portoniStreet", "portoniBlank", "portoniFloorMode", "portoniFloorValue", "portoniMinCivic", "portoniMaxCivic"])
+  for (const id of ["portoniStreet", "portoniBlank", "portoniResidentialOnly", "portoniFloorMode", "portoniFloorValue", "portoniMinCivic", "portoniMaxCivic"])
     $(id).disabled = Boolean(state.active) || (id === "portoniFloorValue" && $("portoniFloorMode").value === "any");
   $("portoniCancel").classList.toggle("is-hidden", !state.active);
   $("portoniError").classList.toggle("is-hidden", !state.lastError);
@@ -2546,7 +2546,7 @@ document.addEventListener("click", async (event) => {
       if (target.id === "portoniStart") return window.propertyWorker.startPortoni({
         street: $("portoniStreet").value,
         filters: {
-          residentialOnly: true,
+          residentialOnly: $("portoniResidentialOnly").checked,
           floorMode: $("portoniFloorMode").value,
           floorValue: nullableNumber($("portoniFloorValue").value),
           minCivicNumber: nullableNumber($("portoniMinCivic").value),

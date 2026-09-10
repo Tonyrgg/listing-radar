@@ -20,4 +20,11 @@ describe("filtri via completa nel desktop", () => {
     expect(main).toContain("filters: values.filters");
     expect(main).toContain("filters,");
   });
+
+  it("espone Solo abitazioni anche in Portoni e inoltra la scelta senza forzarla", () => {
+    expect(html).toContain('id="portoniResidentialOnly" type="checkbox" checked');
+    expect(renderer).toContain('residentialOnly: $("portoniResidentialOnly").checked');
+    expect(main).toContain("const filters = normalizeStreetPropertyFilters(input.filters);");
+    expect(main).not.toContain("normalizeStreetPropertyFilters({ ...input.filters, residentialOnly: true })");
+  });
 });
