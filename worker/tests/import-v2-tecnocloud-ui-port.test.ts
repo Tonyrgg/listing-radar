@@ -73,6 +73,25 @@ describe("Tecnocloud UI V2", () => {
     }
   });
 
+  it("legge il nominativo visibile anche quando LWC lo rende nello shadow DOM", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<li role="option"><lookup-name></lookup-name></li><script>
+        customElements.define('lookup-name', class extends HTMLElement {
+          connectedCallback() { this.attachShadow({ mode: 'open' }).innerHTML = '<span>Luigi Francesco Cappiello</span>'; }
+        });
+      </script>`);
+      const port = new TecnocloudUiV2Port(page);
+      const candidates = await (port as unknown as {
+        lookupRecordCandidates(options: Locator): Promise<Array<{ text: string }>>;
+      }).lookupRecordCandidates(page.locator('[role="option"]'));
+      expect(candidates[0]?.text).toBe("Luigi Francesco Cappiello");
+    } finally {
+      await browser.close();
+    }
+  });
+
   it("non sceglie un omonimo quando il lookup nasconde gli ID", () => {
     const candidates = [
       { index: 0, recordId: "", text: "Mario Rossi" },
@@ -81,7 +100,22 @@ describe("Tecnocloud UI V2", () => {
     ];
     expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", [], true)).toBeNull();
     expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", ["080 2222222"], true)?.index).toBe(2);
-    expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", ["080 2222222"], false)).toBeNull();
+    expect(choosePersonLookupCandidate(candidates, "001RD00000ywHCnYAM", "Mario Rossi", ["080 2222222"], false)?.index).toBe(2);
+  });
+
+  it("sceglie la riga nominativo visibile e non l'eco della ricerca", () => {
+    const candidates = [
+      { index: 0, recordId: "", text: "Luigi Francesco Cappiello" },
+      { index: 1, recordId: "", text: "Luigi Francesco Cappiello" },
+      { index: 2, recordId: "", text: "Nuovo record" },
+    ];
+    expect(choosePersonLookupCandidate(
+      candidates,
+      "001RD00000ywHCnYAM",
+      "Luigi Francesco Cappiello",
+      [],
+      false,
+    )?.index).toBe(1);
   });
 
   it.each([1, 2])("rilegge tutti i %s riscontri catastali e attende i dettagli senza cercare tutta la via", async (count) => {
@@ -320,6 +354,24 @@ describe("Tecnocloud UI V2", () => {
     });
   });
 
+  it("se manca il toponimo esatto usa l'unico risultato della provincia che inizia allo stesso modo", () => {
+    const candidates = [
+      { index: 0, recordId: "", text: "CARBONARA" },
+      { index: 1, recordId: "a0Q000000000001AAA", text: "CARBONARA AL TICINOCARBONARA AL TICINO - PV" },
+      { index: 2, recordId: "a0Q000000000002AAA", text: "CARBONARA DI BARICARBONARA DI BARI - BA" },
+      { index: 3, recordId: "a0Q000000000003AAA", text: "CARBONARA DI NOLACARBONARA DI NOLA - NA" },
+      { index: 4, recordId: "a0Q000000000004AAA", text: "CARBONARA DI POCARBONARA DI PO - MN" },
+    ];
+    expect(chooseLookupRecordCandidate(candidates, "CARBONARA", "BA")).toEqual(candidates[2]);
+  });
+
+  it("non forza il fallback provinciale se restano due risultati compatibili", () => {
+    expect(chooseLookupRecordCandidate([
+      { index: 0, recordId: "a0Q000000000001AAA", text: "CARBONARA DI BARICARBONARA DI BARI - BA" },
+      { index: 1, recordId: "a0Q000000000002AAA", text: "CARBONARA VECCHIACARBONARA VECCHIA - BA" },
+    ], "CARBONARA", "BA")).toBeNull();
+  });
+
   it("aspetta il vero record del luogo di nascita prima di cliccare", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -366,6 +418,45 @@ describe("Tecnocloud UI V2", () => {
       await browser.close();
     }
   });
+
+  it("compila CARBONARA scegliendo CARBONARA DI BARI tramite provincia BA", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <c-lookup><label>Luogo Di Nascita</label><div class="slds-combobox_container">
+          <input placeholder="Cerca"><ul id="results"></ul>
+        </div></c-lookup>
+        <script>
+          const input = document.querySelector('input');
+          const container = document.querySelector('.slds-combobox_container');
+          const results = document.querySelector('#results');
+          input.addEventListener('input', () => {
+            results.innerHTML = '<li role="option">CARBONARA</li>'
+              + '<li role="option" data-item-id="a0Q000000000001AAA">CARBONARA AL TICINO<span>CARBONARA AL TICINO - PV</span></li>'
+              + '<li role="option" data-item-id="a0Q000000000002AAA">CARBONARA DI BARI<span>CARBONARA DI BARI - BA</span></li>'
+              + '<li role="option" data-item-id="a0Q000000000003AAA">CARBONARA DI NOLA<span>CARBONARA DI NOLA - NA</span></li>';
+          });
+          results.addEventListener('click', event => {
+            const option = event.target.closest('[data-item-id]');
+            if (!option) return;
+            input.value = option.firstChild.textContent;
+            input.readOnly = true;
+            container.classList.add('slds-has-selection');
+            document.body.dataset.selectedId = option.dataset.itemId;
+            results.innerHTML = '';
+          });
+        </script>
+      </body>`);
+      const port = new TecnocloudUiV2Port(page);
+      await (port as unknown as { fillBirthPlace(value: string, province: string | null): Promise<void> })
+        .fillBirthPlace("CARBONARA", "BA");
+      expect(await page.locator("body").getAttribute("data-selected-id")).toBe("a0Q000000000002AAA");
+      expect(await page.locator("input").inputValue()).toBe("CARBONARA DI BARI");
+    } finally {
+      await browser.close();
+    }
+  }, 12_000);
 
   it("non clicca il record del lookup mentre la richiesta Cloud e ancora pendente", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
@@ -588,6 +679,57 @@ describe("Tecnocloud UI V2", () => {
       await browser.close();
     }
   }, 15_000);
+
+  it("clicca il nominativo esatto gia' visibile anche senza dipendere dalla telemetria di rete", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><body>
+        <c-lookup>
+          <label>Cliente</label>
+          <div class="slds-combobox_container">
+            <input placeholder="Cerca"><ul id="results"></ul>
+          </div>
+        </c-lookup>
+        <c-picklist><label>Ruolo</label></c-picklist><lightning-input><label>Quota</label></lightning-input>
+        <script>
+          const input = document.querySelector('input');
+          const container = document.querySelector('.slds-combobox_container');
+          const results = document.querySelector('#results');
+          input.addEventListener('input', () => {
+            results.innerHTML = '<li role="option" data-search="true">' + input.value + '</li>'
+              + '<li role="option" data-person="true"><span data-item-id="001RD00000ywHCnYAM">Luigi Francesco Cappiello</span></li>'
+              + '<li role="option">Nuovo record</li>';
+          });
+          results.addEventListener('click', event => {
+            const option = event.target.closest('[role="option"][data-person]');
+            if (!option) return;
+            input.value = 'Luigi Francesco Cappiello';
+            input.readOnly = true;
+            container.classList.add('slds-has-selection');
+            document.body.dataset.selected = 'yes';
+            results.innerHTML = '';
+          });
+        </script>
+      </body>`);
+      const port = new TecnocloudUiV2Port(page);
+      const component = page.locator('c-lookup');
+      await (port as unknown as {
+        fillPersonLookup(component: Locator, input: Locator, personId: string, searchTerms: string[], dependentFields: Locator, minimumDependentFields: number, label: string): Promise<void>;
+      }).fillPersonLookup(
+        component,
+        component.locator('input'),
+        "001RD00000ywHCnYAM",
+        ["Luigi Francesco Cappiello"],
+        page.locator('c-picklist, lightning-input'),
+        2,
+        "Cliente comproprietario",
+      );
+      expect(await page.locator("body").getAttribute("data-selected")).toBe("yes");
+    } finally {
+      await browser.close();
+    }
+  }, 12_000);
 
   it("non lascia un ID esatto bloccato da una richiesta Lightning persistente", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

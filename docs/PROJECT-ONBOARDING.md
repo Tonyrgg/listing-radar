@@ -493,6 +493,16 @@ soltanto l'azione atomica gia' partita. Se la seconda pagina non puo' essere
 aperta o autenticata, la run prosegue automaticamente sul percorso storico a
 pagina singola.
 
+Nei lookup Tecnocloud la prima riga che ripete il testo digitato e' soltanto
+l'azione di ricerca. Per i comproprietari il worker seleziona la successiva
+riga nominativo quando e' univoca, anche se Lightning nasconde l'ID dal DOM o
+dalla telemetria di rete; omonimi non risolti restano bloccanti e la rilettura
+finale dell'immobile verifica comunque l'ID CRM collegato. Per il luogo di
+nascita viene preferito il comune esatto; se la fonte usa un toponimo storico
+(per esempio `CARBONARA`), e' ammesso un unico risultato della provincia della
+fonte che inizi con quel toponimo (`CARBONARA DI BARI - BA`). Piu' risultati
+compatibili non vengono scelti automaticamente.
+
 ### Rete proprietari attuale: sequenza delle vie
 
 Il comando desktop `desktop:start-network-run` avvia

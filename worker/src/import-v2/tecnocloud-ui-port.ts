@@ -122,8 +122,9 @@ function phonesInLookupText(value: string): string[] {
 
 /**
  * Some Lightning account lookups omit the Salesforce id from the option DOM.
- * In that case the response that populated the menu must contain the already
- * verified id, and the visible menu must still identify one person only.
+ * The synthetic first row only repeats the query; a later unique row whose
+ * visible name matches is sufficient to click, while the post-save ownership
+ * reread remains the authoritative identity check.
  */
 export function choosePersonLookupCandidate(
   candidates: LookupRecordCandidate[],
@@ -134,7 +135,7 @@ export function choosePersonLookupCandidate(
 ): LookupRecordCandidate | null {
   const exact = candidates.filter((candidate) => sameCrmRecordId(candidate.recordId, expectedRecordId));
   if (exact.length === 1) return exact[0]!;
-  if (exact.length > 1 || !cloudRecordSeen) return null;
+  if (exact.length > 1) return null;
 
   const search = normalized(searchValue);
   const nameTokens = [...new Set(search.split(" ").filter((token) => token.length > 1))];
@@ -142,7 +143,9 @@ export function choosePersonLookupCandidate(
     if (candidate.recordId) return false;
     const text = normalized(candidate.text);
     if (!text || /^(?:CERCA|MOSTRA TUTTI|CREA|NUOVO)(?:\s|$)/.test(text)) return false;
-    // The first row is often only the typed search echoed by Lightning.
+    // The first row is often only the typed search echoed by Lightning. A
+    // later, unique row with the same visible name is instead the real record
+    // (the live Cliente lookup can hide its Salesforce id from the DOM).
     if (candidate.index === 0 && candidates.length > 1 && text === search) return false;
     return nameTokens.length > 0 && nameTokens.every((token) => text.includes(token));
   });
@@ -151,7 +154,7 @@ export function choosePersonLookupCandidate(
   const phones = new Set(expectedPhones.map(normalizePhone).filter(Boolean));
   if (!phones.size) return null;
   const byPhone = records.filter((candidate) => phonesInLookupText(candidate.text).some((phone) => phones.has(phone)));
-  return byPhone.length === 1 ? byPhone[0]! : null;
+  return byPhone.length === 1 && (cloudRecordSeen || byPhone[0]!.index > 0) ? byPhone[0]! : null;
 }
 
 /**
@@ -167,13 +170,13 @@ export function chooseLookupRecordCandidate(
 ): LookupRecordCandidate | null {
   const place = normalized(expected);
   const provinceToken = normalized(province);
-  const matches = candidates.filter((candidate) => {
-    if (!candidate.recordId) return false;
+  const eligible = candidates.flatMap((candidate) => {
+    if (!candidate.recordId) return [];
     let candidateText = normalized(candidate.text);
     if (provinceToken) {
       const provincePattern = provinceToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const match = candidateText.match(new RegExp(`(?:^|[^A-Z0-9])${provincePattern}$`));
-      if (!match) return false;
+      if (!match) return [];
       candidateText = candidateText.slice(0, match.index).trim();
     } else {
       // Property plans can omit the province while the CRM option still
@@ -181,8 +184,11 @@ export function chooseLookupRecordCandidate(
       const displayedProvince = candidateText.match(/(?:^|[^A-Z0-9])[A-Z]{2}$/);
       if (displayedProvince) candidateText = candidateText.slice(0, displayedProvince.index).trim();
     }
+    return [{ candidate, candidateText }];
+  });
+  const compactPlace = place.replace(/[^A-Z0-9]/g, "");
+  const exact = eligible.filter(({ candidateText }) => {
     const compactCandidate = candidateText.replace(/[^A-Z0-9]/g, "");
-    const compactPlace = place.replace(/[^A-Z0-9]/g, "");
     /*
      * Lightning often repeats the name in the option's two visual levels
      * (`TORINOTORINO - TO` or `TORINO TORINO - TO`). Match only the exact
@@ -191,7 +197,18 @@ export function chooseLookupRecordCandidate(
     return compactCandidate === compactPlace
       || compactCandidate === `${compactPlace}${compactPlace}`;
   });
-  return matches.length === 1 ? matches[0]! : null;
+  if (exact.length === 1) return exact[0]!.candidate;
+  if (exact.length > 1 || !provinceToken) return null;
+
+  /* Alcuni atti riportano la frazione storica (es. CARBONARA), mentre il
+   * lookup espone il comune amministrativo (CARBONARA DI BARI). Se manca
+   * l'esatto, la provincia della fonte puo' risolvere soltanto un risultato
+   * che inizi con lo stesso toponimo e sia unico nella provincia. */
+  const provincialFallback = eligible.filter(({ candidateText }) =>
+    candidateText === place
+    || candidateText.startsWith(`${place} `),
+  );
+  return provincialFallback.length === 1 ? provincialFallback[0]!.candidate : null;
 }
 
 /** A submitted relationship is not real until the property card exposes it. */
@@ -759,15 +776,35 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const exactExpected = expectedId && idsInAttributes.find((value) =>
         value.slice(0, 15) === expectedId.slice(0, 15));
       const recordId = exactExpected ? expectedId! : knownValues.find((value) => /^[A-Z0-9]{15}(?:[A-Z0-9]{3})?$/i.test(value)) ?? "";
-      return { index, recordId, text: (element.textContent ?? "").replace(/\s+/g, " ").trim() };
+      /* c-unescaped-html e altri componenti LWC possono rendere il nome in
+       * uno shadow root: textContent del role=option resta vuoto anche se la
+       * riga e' perfettamente visibile. Acquisiamo anche testo composto e
+       * label accessibili, senza dipendere dalla struttura interna corrente. */
+      const directText = (element instanceof HTMLElement ? element.innerText : "").trim()
+        || (element.textContent ?? "").trim();
+      const shadowTextParts: string[] = [];
+      const accessibleTextParts = [element.getAttribute("aria-label"), element.getAttribute("title")];
+      for (const node of [element, ...Array.from(element.querySelectorAll("*"))]) {
+        accessibleTextParts.push(node.getAttribute("aria-label"), node.getAttribute("title"));
+        if (node.shadowRoot?.textContent) shadowTextParts.push(node.shadowRoot.textContent);
+      }
+      const fallbackParts = shadowTextParts.length ? shadowTextParts : accessibleTextParts;
+      const text = (directText || [...new Set(fallbackParts
+        .map((part) => (part ?? "").replace(/\s+/g, " ").trim())
+        .filter(Boolean))].join(" ")).replace(/\s+/g, " ").trim();
+      return { index, recordId, text };
     }), expectedRecordId);
   }
 
   private async clickPersonLookupCandidate(option: Locator, expectedRecordId: string): Promise<void> {
-    /* Nel lookup Cliente live il data-item-id e' spesso sullo span interno,
-     * non sul div role=option. LWC puo' collegare il gestore proprio a quel
-     * nodo: cliccare il centro del contenitore non equivale sempre a scegliere
-     * il record. Se l'ID e' esposto, clicchiamo il nodo che lo porta. */
+    /* Il gestore del lookup live e' normalmente agganciato alla riga visibile,
+     * anche quando l'ID sta su un figlio. Cliccare direttamente quel figlio
+     * saltava a intermittenza il gestore della riga. Proviamo prima l'opzione
+     * reale e usiamo il nodo-ID solo come recupero se il menu resta aperto. */
+    await option.click({ timeout: 2_500 }).catch(async () => option.click({ force: true }));
+    await this.pauseAwareWait(240);
+    if (!(await option.isVisible().catch(() => false))) return;
+
     const descendants = option.locator("*");
     const matchingIndexes = await descendants.evaluateAll((nodes, expected) => nodes.flatMap((node, index) => {
       const values = Array.from(node.attributes).map((attribute) => attribute.value);
@@ -776,10 +813,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       return matches ? [index] : [];
     }), expectedRecordId);
     if (matchingIndexes.length === 1) {
-      await descendants.nth(matchingIndexes[0]!).click({ force: true });
-      return;
+      await descendants.nth(matchingIndexes[0]!).click({ timeout: 2_500 }).catch(async () =>
+        descendants.nth(matchingIndexes[0]!).click({ force: true }));
     }
-    await option.click({ force: true });
   }
 
   private async lookupIsBusy(component: Locator): Promise<boolean> {
