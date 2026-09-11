@@ -13,6 +13,12 @@ export const DIRECT_CONTACT_DESCRIPTIONS = [
   "Non è stato possibile ottenere informazioni",
   "Da ricontattare di persona",
 ] as const;
+export const KILLER_PHONE_DESCRIPTIONS = [
+  "Non vende",
+  "Ci abita",
+  "Segreteria",
+  "Rifiutato chiamata",
+] as const;
 /** Cosa resta scritto sul checkpoint quando l'attività non viene creata. */
 export const NO_ACTIVITY_DESCRIPTION = "Nessuna attività richiesta";
 export const DIRECT_CONTACT_NR_INTERVALS = [7, 9, 11, 8, 10] as const;
@@ -25,12 +31,15 @@ export const DIRECT_CONTACT_NR_INTERVALS = [7, 9, 11, 8, 10] as const;
  * già eseguito, `plain` lascia l'attività ordinaria da fare. In entrambi i
  * casi l'attività nel gestionale nasce.
  *
+ * `killer` registra invece sempre un contatto già eseguito: «Telefonata» con
+ * una risposta operativa se esiste un numero, «Contatto diretto» altrimenti.
+ *
  * `none` è un'altra cosa: non nasce niente, per nessun immobile. Serve quando
  * si vogliono i proprietari e i recapiti senza toccare il diario — e va detto
  * a chiare lettere, perché è l'unica in cui il gestionale non conserva traccia
  * del giro fatto.
  */
-export type PropertyActivityMode = "direct_contact" | "plain" | "none";
+export type PropertyActivityMode = "direct_contact" | "plain" | "killer" | "none";
 
 export interface PropertyActivityDefinition {
   contactMode: typeof PROPERTY_ACTIVITY_CONTACT_MODE | typeof DIRECT_CONTACT_MODE;
@@ -95,9 +104,17 @@ export function propertyActivityDefinition(
   mode: PropertyActivityMode = "direct_contact",
 ): PropertyActivityDefinition | null {
   if (mode === "none") return null;
+  const ordinal = Math.max(1, Math.trunc(directContactOrdinal));
+  if (mode === "killer" && ownersHaveAnyPhone(owners)) {
+    return {
+      contactMode: PROPERTY_ACTIVITY_CONTACT_MODE,
+      status: DIRECT_CONTACT_STATUS,
+      description: KILLER_PHONE_DESCRIPTIONS[(ordinal - 1) % KILLER_PHONE_DESCRIPTIONS.length]!,
+      directContactOrdinal: null,
+    };
+  }
   if (ownersHaveAnyPhone(owners)) return { ...ORDINARY_ACTIVITY };
   if (mode === "plain") return { ...ORDINARY_ACTIVITY };
-  const ordinal = Math.max(1, Math.trunc(directContactOrdinal));
   return {
     contactMode: DIRECT_CONTACT_MODE,
     status: DIRECT_CONTACT_STATUS,
@@ -106,6 +123,23 @@ export function propertyActivityDefinition(
       : DIRECT_CONTACT_DESCRIPTIONS[(ordinal - 1) % DIRECT_CONTACT_DESCRIPTIONS.length]!,
     directContactOrdinal: ordinal,
   };
+}
+
+/**
+ * La modalità Killer ruota le risposte telefoniche sulla posizione stabile
+ * dell'immobile. Le altre modalità mantengono la sequenza storica dei soli
+ * contatti diretti, così una ripresa non cambia le descrizioni già assegnate.
+ */
+export function activityDescriptionOrdinalForTask(
+  tasks: PropertyActivityTask[],
+  propertyId: string,
+  mode: PropertyActivityMode,
+): number {
+  if (mode === "killer") {
+    const index = tasks.findIndex((task) => task.property.id === propertyId);
+    return Math.max(1, index + 1);
+  }
+  return directContactOrdinalForTask(tasks, propertyId);
 }
 
 export function directContactOrdinalForTask(tasks: PropertyActivityTask[], propertyId: string): number {

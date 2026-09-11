@@ -602,7 +602,7 @@ describe("flusso identità nominativo e immobile", () => {
   });
 
   it("applica il cambio Autocompila al successivo immobile della run", async () => {
-    let activityMode: "direct_contact" | "plain" | "none" = "plain";
+    let activityMode: "direct_contact" | "plain" | "killer" | "none" = "plain";
     const runner = new PropertyWorkerRunner(config, {
       keepAlive: false,
       propertyActivityMode: () => activityMode,

@@ -11,7 +11,7 @@ type ImportRunOptionSource = Partial<ImportRunOptions> & {
 };
 
 const isActivityMode = (value: unknown): value is PropertyActivityMode =>
-  value === "direct_contact" || value === "plain" || value === "none";
+  value === "direct_contact" || value === "plain" || value === "killer" || value === "none";
 
 /**
  * Le scelte dell'ultimo avvio appartengono alla singola acquisizione.

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import {
+  activityDescriptionOrdinalForTask,
   buildPropertyActivityTasks,
   directContactOrdinalForTask,
   isDirectContactNrOrdinal,
@@ -114,7 +115,7 @@ describe("attività property-centric", () => {
     expect(isDirectContactNrOrdinal(8)).toBe(false);
   });
 
-  it("traduce la vecchia preferenza a interruttore nelle tre modalità", async () => {
+  it("traduce la vecchia preferenza a interruttore nelle quattro modalità", async () => {
     /* Chi aveva spento l'interruttore voleva l'attività generica, non
      * «nessuna attività»: la migrazione non deve promuoverlo alla terza. */
     const main = await readFile(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
@@ -139,6 +140,41 @@ describe("attività property-centric", () => {
       description: "Inserire attività",
       directContactOrdinal: null,
     });
+  });
+
+  it("in modalità Killer registra sempre Eseguito e sceglie il canale dai recapiti", () => {
+    const conRecapito = { ...person("person-1", "crm-person-1", "Primo"), mobiles: ["3331234567"] };
+    const senzaRecapito = person("person-2", "crm-person-2", "Secondo");
+
+    expect(propertyActivityDefinition([conRecapito], 1, "killer")).toEqual({
+      contactMode: "Telefonata",
+      status: "Eseguito",
+      description: "Non vende",
+      directContactOrdinal: null,
+    });
+    expect(propertyActivityDefinition([conRecapito], 2, "killer")?.description).toBe("Ci abita");
+    expect(propertyActivityDefinition([conRecapito], 3, "killer")?.description).toBe("Segreteria");
+    expect(propertyActivityDefinition([conRecapito], 4, "killer")?.description).toBe("Rifiutato chiamata");
+    expect(propertyActivityDefinition([conRecapito], 5, "killer")?.description).toBe("Non vende");
+    expect(propertyActivityDefinition([senzaRecapito], 1, "killer")).toMatchObject({
+      contactMode: "Contatto diretto",
+      status: "Eseguito",
+      description: "Non sa nulla",
+    });
+  });
+
+  it("mantiene stabile la risposta Killer sulla riga dell'immobile", () => {
+    const owner = person("person-1", "crm-person-1", "Primo");
+    const tasks = buildPropertyActivityTasks({
+      properties: [property({ id: "property-1" }), property({ id: "property-2" })],
+      people: [owner],
+      ownerships: [
+        { property_id: "property-1", person_id: owner.id, share_percentage: 100 },
+        { property_id: "property-2", person_id: owner.id, share_percentage: 100 },
+      ],
+    });
+    expect(activityDescriptionOrdinalForTask(tasks, "property-1", "killer")).toBe(1);
+    expect(activityDescriptionOrdinalForTask(tasks, "property-2", "killer")).toBe(2);
   });
 
   it("incrementa la sequenza soltanto per contatti diretti realmente completati", () => {

@@ -135,7 +135,7 @@ Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca res
 2. cerca, verifica o crea tutti i proprietari e sincronizza i recapiti mancanti;
 3. sceglie come principale la quota più alta; a quote pari conserva l'ordine SISTER senza applicare preferenze anagrafiche;
 4. cerca, crea o aggiorna l'immobile dalla scheda del proprietario principale;
-5. crea una sola attività partendo dalla scheda dell'immobile: `Telefonata / Da eseguire` se esiste almeno un telefono, altrimenti `Contatto diretto / Eseguito` con descrizione ruotata. La preferenza desktop **Autocompila “Contatto diretto”** mantiene questo comportamento; se disattivata, anche senza recapiti lascia `Telefonata / Da eseguire / Inserire attività` per tutte le run;
+5. crea una sola attività partendo dalla scheda dell'immobile. **Autocompila** usa `Telefonata / Da eseguire` quando esiste un telefono e `Contatto diretto / Eseguito` quando manca; **Generica** lascia sempre `Telefonata / Da eseguire / Inserire attività`; **Killer** registra sempre `Eseguito`, tramite `Telefonata` con una risposta ruotata se trova un numero oppure tramite `Contatto diretto` se non lo trova; **Nessuna** non scrive attività;
 6. collega gli altri proprietari come `Comproprietario`, digitando lentamente nome e cognome e richiedendo anche la corrispondenza del telefono quando disponibile;
 7. compila la quota percentuale con massimo due decimali e verifica che il collegamento sia visibile;
 8. salva il checkpoint dell'immobile e passa al successivo.

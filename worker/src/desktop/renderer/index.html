@@ -139,6 +139,7 @@
             <div class="segmented activity-mode-choices" role="radiogroup" aria-label="Attività nel gestionale">
               <button type="button" data-activity-mode="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button>
               <button type="button" data-activity-mode="plain" role="radio" aria-checked="false">Generica</button>
+              <button type="button" data-activity-mode="killer" role="radio" aria-checked="false">Killer</button>
               <button type="button" data-activity-mode="none" role="radio" aria-checked="false">Nessuna</button>
             </div>
           </div>
@@ -533,7 +534,7 @@
         <div class="import-settings" aria-label="Opzioni di questa importazione">
           <div class="import-setting-row">
             <div class="activity-mode-copy"><b>Attività nel gestionale</b><small id="importActivityHelp">Puoi cambiarla adesso: vale per questa importazione.</small></div>
-            <div class="segmented activity-mode-choices" id="importActivityChoices" role="radiogroup" aria-label="Attività nel gestionale per questo import"><button type="button" data-import-activity="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button><button type="button" data-import-activity="plain" role="radio" aria-checked="false">Generica</button><button type="button" data-import-activity="none" role="radio" aria-checked="false">Nessuna</button></div>
+            <div class="segmented activity-mode-choices" id="importActivityChoices" role="radiogroup" aria-label="Attività nel gestionale per questo import"><button type="button" data-import-activity="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button><button type="button" data-import-activity="plain" role="radio" aria-checked="false">Generica</button><button type="button" data-import-activity="killer" role="radio" aria-checked="false">Killer</button><button type="button" data-import-activity="none" role="radio" aria-checked="false">Nessuna</button></div>
           </div>
           <label class="import-setting-row" for="importCoOwnersToggle"><div class="activity-mode-copy"><b>Importa i comproprietari</b><small>Collega tutti gli intestatari SISTER con la rispettiva quota.</small></div><input id="importCoOwnersToggle" type="checkbox" checked /></label>
           <label class="import-setting-row" for="importParallelCloudToggle"><div class="activity-mode-copy"><b>Due finestre Cloud</b><small>Distribuisce gli immobili indipendenti su due pagine; quelli collegati restano insieme.</small></div><input id="importParallelCloudToggle" type="checkbox" /></label>

@@ -189,6 +189,10 @@ await page.locator('[data-resume-job="55555555-5555-4555-8555-555555555555"]').c
 await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
 const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
 const nonContiguousProgressExplained = await page.getByText("Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute.", { exact: true }).count();
+const importKillerChoiceVisible = await page.locator('[data-import-activity="killer"]:visible').count();
+await page.locator('[data-import-activity="killer"]:visible').click();
+const importKillerHelpVisible = await page.getByText(/Crea sempre un’attività “Eseguito”.*“Telefonata”.*“Rifiutato chiamata”/).count();
+await page.locator('[data-import-activity="plain"]:visible').click();
 await page.locator("#importCoOwnersToggle").uncheck();
 await page.locator("#importParallelCloudToggle").check();
 await page.locator('[data-import-dialog="confirm"]').click();
@@ -215,7 +219,7 @@ const networkPreparationOverflow = await page.locator('[data-run-slide="network"
 await page.locator('[data-run-slide-target="civic"]').click();
 await page.locator('[data-mode="automatic"]').click();
 const activityModeSelections = [];
-for (const mode of ["plain", "none", "direct_contact"]) {
+for (const mode of ["plain", "killer", "none", "direct_contact"]) {
   await page.locator(`[data-activity-mode="${mode}"]`).click();
   activityModeSelections.push(await page.locator(`[data-activity-mode="${mode}"]`).getAttribute("aria-checked"));
 }
@@ -297,7 +301,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, resumeProgressVisible, nonContiguousProgressExplained, detailRestartRowVisible, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, detailRestartRowVisible, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -305,12 +309,13 @@ const failures = [
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible !== 1 ? ["Stato o riga di ripartenza della run non visibili"] : []),
+  ...(importKillerChoiceVisible !== 1 || importKillerHelpVisible !== 1 ? ["Modalità Killer non disponibile o non spiegata nella ripresa"] : []),
   ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== false || workerCalls.resumeJobValues?.parallelCrmWindows !== true
     ? ["Le tre opzioni della ripresa non arrivano insieme al processo principale"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
   ...(portoniCollapsed !== 1 || portoniFiltersVisible !== 1 ? ["Accordion o filtri Portoni non funzionanti"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
-  ...(activityModeSelections.some((selected) => selected !== "true") ? ["Le tre modalità attività non confermano la selezione salvata"] : []),
+  ...(activityModeSelections.length !== 4 || activityModeSelections.some((selected) => selected !== "true") ? ["Le quattro modalità attività non confermano la selezione salvata"] : []),
   ...(!parallelCloudEnabled ? ["La preferenza per due finestre Cloud non resta selezionata"] : []),
   ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),
   ...(!secondaryActionsLocked ? ["Le azioni secondarie non vengono bloccate durante una run"] : []),
@@ -325,7 +330,7 @@ const failures = [
   ...(!cloudRestrictionVisible || !runDisabledDuringRestriction || !updaterEnabledDuringRestriction
     ? ["Stato HTTP 402 non separa correttamente blocco run e aggiornamenti"] : []),
   ...(["openChrome", "startJob", "startStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
-  ...(workerCalls.savePreferences !== 5 ? [`Le preferenze modalità/avvio non sono state salvate cinque volte: ${workerCalls.savePreferences ?? 0}`] : []),
+  ...(workerCalls.savePreferences !== 6 ? [`Le preferenze modalità/avvio non sono state salvate sei volte: ${workerCalls.savePreferences ?? 0}`] : []),
   ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),

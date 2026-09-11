@@ -332,6 +332,7 @@ function commandIdentity(target) {
   const explicit = {
       "activity-mode-direct_contact": "Attività: autocompila contatto diretto",
       "activity-mode-plain": "Attività: generica",
+      "activity-mode-killer": "Attività: killer",
       "activity-mode-none": "Attività: nessuna",
       checkButton: "Controlla collegamenti",
       chromeButton: "Apri Chrome di lavoro",
@@ -881,11 +882,12 @@ function errorAdvice(job, error) {
   };
 }
 
-/* Le tre modalita dell'attivita nel gestionale. La regola vale per tutte le
+/* Le quattro modalità dell'attività nel gestionale. La regola vale per tutte le
  * run: lavorazioni, long run, richieste e incarichi. */
 const ACTIVITY_MODE_HELP = {
   direct_contact: "Senza recapiti usa “Contatto diretto”, “Eseguito” e una descrizione automatica.",
   plain: "Senza recapiti lascia l’attività generica: “Da eseguire” e “Inserire attività”.",
+  killer: "Crea sempre un’attività “Eseguito”: con un numero usa “Telefonata” e alterna “Non vende”, “Ci abita”, “Segreteria” e “Rifiutato chiamata”; senza usa “Contatto diretto”.",
   none: "Nessuna attività viene creata nel gestionale, per nessun immobile.",
 };
 function activityMode() {
@@ -1234,7 +1236,7 @@ function renderAction() {
 /* Da dove viene una raccolta e con quali limiti: senza questa riga tre
  * acquisizioni conservate si distinguono solo per la data. */
 const ACQUISIZIONE_TIPO = { network: "Rete proprietari", street: "Via completa", civic: "Civico" };
-const ATTIVITA_ETICHETTA = { direct_contact: "attività autocompilata", plain: "attività generica", none: "nessuna attività" };
+const ATTIVITA_ETICHETTA = { direct_contact: "attività autocompilata", plain: "attività generica", killer: "attività killer", none: "nessuna attività" };
 
 function riassuntoAcquisizione(acquisition) {
   if (!acquisition || typeof acquisition !== "object") return "";
@@ -1308,6 +1310,12 @@ function markImportActivity() {
     scelta.classList.toggle("is-selected", attiva);
     scelta.setAttribute("aria-checked", String(attiva));
   }
+  const job = (appState?.jobs ?? []).find((row) => row.id === importJobId),
+    inProgress = Boolean(job?.import_started_at) && job?.status !== "completed",
+    suffix = inProgress
+      ? "La scelta vale per le righe non concluse; i passaggi già salvati non vengono ripetuti."
+      : "La scelta vale per questa importazione.";
+  $("importActivityHelp").textContent = `${ACTIVITY_MODE_HELP[importActivityMode] ?? ACTIVITY_MODE_HELP.direct_contact} ${suffix}`;
 }
 
 async function openImportDialog(jobId) {
@@ -1336,10 +1344,6 @@ async function openImportDialog(jobId) {
   document.querySelector('[data-import-dialog="confirm"]').textContent = inProgress
     ? "Riprendi dal punto salvato"
     : "Importa adesso";
-  $("importActivityHelp").textContent = inProgress
-    ? "Le tre scelte valgono per le righe non concluse; i passaggi già salvati non vengono ripetuti."
-    : "Puoi scegliere di nuovo: le tre opzioni valgono per questa importazione.";
-
   const luogo = [job?.municipality, job?.street, job?.civic_number].filter(Boolean).join(" · ");
   const tipo = ACQUISIZIONE_TIPO[job?.acquisition?.kind] ?? null;
   $("importDialogTitle").textContent = luogo || tipo || "Acquisizione conservata";
@@ -2469,6 +2473,7 @@ function renderRunRulesSummary() {
   const activity = {
     direct_contact: "attività autocompilata",
     plain: "attività generica",
+    killer: "attività killer",
     none: "nessuna attività",
   }[appState?.preferences?.propertyActivityMode] ?? "attività autocompilata";
   $("runRulesSummary").textContent = [

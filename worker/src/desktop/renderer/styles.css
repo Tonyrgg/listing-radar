@@ -3035,7 +3035,7 @@ body[data-fase="lavora"] #settings { display: none !important; }
   .run-launcher-header { padding: 18px; }
 }
 
-/* ---------- Attività nel gestionale: tre modalità, una regola globale ---------- */
+/* ---------- Attività nel gestionale: quattro modalità, una regola globale ---------- */
 
 /* La scelta vale per tutte le run — lavorazioni, long run, richieste e
  * incarichi — e per questo sta fra i controlli comuni, non dentro una scheda. */
@@ -3067,7 +3067,7 @@ body[data-fase="lavora"] #settings { display: none !important; }
 .activity-mode-copy b { font-size: var(--lr-text-body); font-weight: var(--lr-weight-medium); }
 .activity-mode-copy small { color: var(--lr-ink-3); }
 
-.activity-mode-choices { flex: none; width: auto; grid-template-columns: repeat(3, auto); }
+.activity-mode-choices { flex: none; width: auto; grid-template-columns: repeat(4, auto); }
 
 .activity-mode-choices button {
   min-height: 38px;
@@ -3078,7 +3078,7 @@ body[data-fase="lavora"] #settings { display: none !important; }
 
 @media (max-width: 900px) {
   .activity-mode-control { flex-direction: column; align-items: stretch; }
-  .activity-mode-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .activity-mode-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* La modalità di prova è una regola della run: stesso vestito dell'attività.

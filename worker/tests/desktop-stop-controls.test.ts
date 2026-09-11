@@ -23,12 +23,13 @@ describe("controlli di arresto desktop", () => {
     expect(html).toContain('id="importParallelCloudToggle"');
     expect(html).toContain('id="stopAfterNextImportButton"');
     expect(html).not.toContain('id="stopAfterNextImportToggle"');
-    /* L'autocompila non e piu un interruttore: sono tre modalita, e la terza
+    /* L'autocompila non e piu un interruttore: sono quattro modalita, e una
      * non scrive nessuna attivita nel gestionale. Restano una regola globale,
      * valida per lavorazioni, long run, richieste e incarichi. */
     expect(html).not.toContain('id="autoFillDirectContactToggle"');
     expect(html).toContain('data-activity-mode="direct_contact"');
     expect(html).toContain('data-activity-mode="plain"');
+    expect(html).toContain('data-activity-mode="killer"');
     expect(html).toContain('data-activity-mode="none"');
     expect(html).toContain("Pausa dopo questo immobile");
     expect(html).toContain('id="streetRunAbandon"');

@@ -377,7 +377,16 @@ collegato: viene conservato nel checkpoint e non riapre `Soggetto correlato`.
 - il primo risultato non viene mai scelto alla cieca: più omonimi non risolti o una risposta che non contiene l'ID atteso fermano l'inserimento in sicurezza.
 - un Cliente appena creato può non comparire subito nell'indice del lookup pur essendo già verificabile direttamente per ID e codice fiscale: l'immobile viene differito senza ripetere cicli identici, la coda prosegue e lo riprova automaticamente alla fine.
 
-### Attività con e senza telefono
+### Modalità delle attività nel gestionale
+
+La regola scelta resta valida per la run e può essere riconfermata alla ripresa:
+
+- `Autocompila`: con un telefono crea `Telefonata / Da eseguire / Inserire attività`; senza telefono crea un `Contatto diretto` già eseguito con descrizione ruotata;
+- `Generica`: crea sempre `Telefonata / Da eseguire / Inserire attività`, anche quando non trova recapiti;
+- `Killer`: crea sempre un'attività `Eseguito`; usa `Telefonata` se trova almeno un numero e ruota `Non vende`, `Ci abita`, `Segreteria`, `Rifiutato chiamata`, mentre senza numeri usa `Contatto diretto` e la rotazione dei contatti diretti;
+- `Nessuna`: non crea attività per alcun immobile.
+
+Nella modalità `Autocompila`, se almeno uno tra proprietario e comproprietari ha un telefono:
 
 Se almeno uno tra proprietario e comproprietari ha un telefono:
 
@@ -392,7 +401,7 @@ Se nessun proprietario ha cellulari o fissi:
 - descrizione scelta da una rotazione fissa;
 - alle soglie cumulative 7, 9, 11, 8 e 10, poi di nuovo dal principio, la descrizione è `nr`.
 
-Le telefonate non incrementano il contatore dei contatti diretti e non usano questa rotazione. La posizione nella sequenza è deterministica nel job, così una ripresa non cambia descrizione.
+Le telefonate di `Autocompila` non incrementano il contatore dei contatti diretti. In `Killer` la risposta telefonica dipende invece dalla posizione stabile dell'immobile nella coda, così una ripresa conserva la stessa descrizione anche con due finestre Cloud.
 
 ### Pausa, skip e annullamento
 

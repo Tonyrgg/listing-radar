@@ -70,6 +70,13 @@ describe("opzioni e avanzamento degli import conservati", () => {
     });
   });
 
+  it("conserva la modalità Killer nella singola run", () => {
+    expect(importRunOptions({ importOptions: { activityMode: "killer" } }, fallback)).toEqual({
+      ...fallback,
+      activityMode: "killer",
+    });
+  });
+
   it("distingue una run mai avviata da una interrotta e trova la riga di ripartenza", () => {
     const properties = [
       property("1", "completed", "completed"),

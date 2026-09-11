@@ -34,7 +34,7 @@ export function importV2Sources(
 
 /**
  * Keeps activity selection live until each property actually starts. This is
- * important for long imports: changing Autocompila/Generica/Nessuna applies
+ * important for long imports: changing Autocompila/Generica/Killer/Nessuna applies
  * to the next untouched property without altering an in-flight checkpoint.
  */
 export function importV2SourceFactories(

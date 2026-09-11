@@ -15,8 +15,8 @@ import { captureDiagnosticScreenshot, pruneDiagnosticScreenshots } from "./scree
 import { SisterKeepAliveScheduler, type SisterKeepAliveResult } from "./sister-keepalive.js";
 import {
   activityCheckpoint,
+  activityDescriptionOrdinalForTask,
   buildPropertyActivityTasks,
-  directContactOrdinalForTask,
   PROPERTY_ACTIVITY_DESCRIPTION,
   PROPERTY_ACTIVITY_CONTACT_MODE,
   NO_ACTIVITY_DESCRIPTION,
@@ -611,7 +611,8 @@ export class PropertyWorkerRunner {
           includeCoOwners: () => this.importCoOwners(),
         });
         const result = await coordinator.runJob(job, (property, owners) => {
-          const definition = propertyActivityDefinition(owners, directContactOrdinalForTask(activityTasks, property.id), this.propertyActivityMode());
+          const activityMode = this.propertyActivityMode();
+          const definition = propertyActivityDefinition(owners, activityDescriptionOrdinalForTask(activityTasks, property.id, activityMode), activityMode);
           return definition
             ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
             : { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" };
@@ -932,10 +933,11 @@ export class PropertyWorkerRunner {
           for (const task of pending) {
             this.throwIfCancellationRequested(job.id);
             const property = asProperty(task.property);
+            const activityMode = this.propertyActivityMode();
             const activityDefinition = propertyActivityDefinition(
               task.owners,
-              directContactOrdinalForTask(tasks, task.property.id),
-              this.propertyActivityMode(),
+              activityDescriptionOrdinalForTask(tasks, task.property.id, activityMode),
+              activityMode,
             );
             /* Modalità «nessuna attività»: il diario del gestionale non si
              * tocca. Il checkpoint si scrive lo stesso, altrimenti la ripresa
@@ -1590,7 +1592,7 @@ export class PropertyWorkerRunner {
               primary.person,
               activeOwners.map((owner) => owner.person),
               crm,
-              directContactOrdinalForTask(buildPropertyActivityTasks(graph), property.id),
+              activityDescriptionOrdinalForTask(buildPropertyActivityTasks(graph), property.id, propertyActivityMode),
               propertyActivityMode,
             ));
           await advanceStage("activity_ready");

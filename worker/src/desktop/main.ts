@@ -632,7 +632,7 @@ function refreshStoppingAll() {
 
 /**
  * Fino alla 0.14 la scelta era un interruttore: `autoFillDirectContact`.
- * Adesso le modalità sono tre, e il vecchio valore va tradotto — chi aveva
+ * Adesso le modalità sono quattro, e il vecchio valore va tradotto — chi aveva
  * spento l'interruttore voleva l'attività generica, non «nessuna attività».
  */
 function migratePreferences(stored: Partial<Preferences> & { autoFillDirectContact?: boolean; safeAddressCheck?: boolean }): Preferences {
@@ -3372,7 +3372,7 @@ function registerIpc() {
       parallelCrmWindows: preferences.parallelCrmWindows,
     });
     const chosen: ImportRunOptions = {
-      activityMode: typeof values !== "string" && ["direct_contact", "plain", "none"].includes(String(values.activityMode))
+      activityMode: typeof values !== "string" && ["direct_contact", "plain", "killer", "none"].includes(String(values.activityMode))
         ? values.activityMode!
         : previous.activityMode,
       importCoOwners: typeof values !== "string" && typeof values.importCoOwners === "boolean"
