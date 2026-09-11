@@ -503,6 +503,13 @@ nascita viene preferito il comune esatto; se la fonte usa un toponimo storico
 fonte che inizi con quel toponimo (`CARBONARA DI BARI - BA`). Piu' risultati
 compatibili non vengono scelti automaticamente.
 
+Se una scheda nominativo verificata risulta archiviata, il worker usa il
+pulsante `Riattiva` prima di aggiornarla o collegarla come soggetto correlato.
+La riattivazione e' conclusa soltanto quando pulsante e avviso sono scomparsi,
+le richieste Cloud sono terminate e la pagina e' stabile; durante una ricerca
+per codice fiscale non viene riattivato un risultato con CF diverso da quello
+atteso.
+
 ### Rete proprietari attuale: sequenza delle vie
 
 Il comando desktop `desktop:start-network-run` avvia

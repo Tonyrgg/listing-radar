@@ -416,6 +416,47 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return "";
   }
 
+  private async reactivateCurrentPersonIfArchived(): Promise<boolean> {
+    const reactivate = this.page.getByRole("button", { name: "Riattiva", exact: true }).filter({ visible: true });
+    const archivedWarning = this.page.getByText(/cliente .* stato archiviato.*pulsante riattiva/i).filter({ visible: true });
+    let buttonCount = await reactivate.count();
+    if (buttonCount > 1) {
+      throw new ImportV2Error("Pulsante Riattiva del nominativo non univoco", "transient_portal", { retryable: true });
+    }
+    if (buttonCount === 0 && await archivedWarning.count() > 0) {
+      for (let wait = 0; wait < 25 && buttonCount === 0; wait += 1) {
+        await this.pauseAwareWait(160);
+        buttonCount = await reactivate.count();
+      }
+    }
+    if (buttonCount === 0) return false;
+
+    const requests = this.watchSearchRequests();
+    try {
+      await reactivate.click();
+      let stable = 0;
+      for (let check = 0; check < 100 && stable < 4; check += 1) {
+        await this.assertSession();
+        await this.assertSearchHealthy(requests.failed());
+        const reactivated = await reactivate.count() === 0
+          && await archivedWarning.count() === 0
+          && !requests.pending()
+          && !requests.inspecting()
+          && !(await this.searchIsBusy());
+        stable = reactivated ? stable + 1 : 0;
+        if (stable < 4) await this.pauseAwareWait(200, false);
+      }
+      if (stable < 4) {
+        throw new ImportV2Error("Riattivazione nominativo non confermata da Tecnocloud", "global_portal", {
+          global: true,
+        });
+      }
+      return true;
+    } finally {
+      requests.stop();
+    }
+  }
+
   private async readCurrentPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
     await this.openPerson(personId);
     let core: [string, string, string, string, string, string, string, string] = ["", "", "", "", "", "", "", ""];
@@ -443,6 +484,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (stable < 3) await this.pauseAwareWait(200);
     }
     const [taxCode, firstName, lastName, fullNameField, clientNameField, birthDate, birthPlaceRaw, birthProvinceRaw] = core;
+    if (!expectedTaxCode || canonicalTaxCode(taxCode) === canonicalTaxCode(expectedTaxCode)) {
+      await this.reactivateCurrentPersonIfArchived();
+    }
     const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"];
     const emailLabels = ["Email", "Email Secondaria"];
     const phones = (await Promise.all(phoneLabels.map((label) => this.detailValue(label)))).filter(Boolean);
@@ -1210,6 +1254,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async openPersonEditForm(personId: string): Promise<void> {
     await this.openPerson(personId);
+    await this.reactivateCurrentPersonIfArchived();
     const triggers = this.page.locator("button.inline-edit-trigger").filter({ visible: true });
     await triggers.first().waitFor({ state: "visible", timeout: 15_000 });
     if (!(await triggers.count())) throw new ImportV2Error("Modifica nominativo non disponibile", "transient_portal", { retryable: true });

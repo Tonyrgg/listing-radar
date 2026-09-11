@@ -943,6 +943,44 @@ describe("Tecnocloud UI V2", () => {
     }
   });
 
+  it("riattiva un nominativo archiviato e attende la conferma Cloud prima di leggerlo", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        if (new URL(route.request().url()).pathname === "/reactivate") {
+          await new Promise(resolve => setTimeout(resolve, 650));
+          return route.fulfill({ body: "ok" });
+        }
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <h1>Nominativo Paolo Scolamacchia</h1>
+          <button id="reactivate">Riattiva</button>
+          <div id="archived">Il cliente è stato archiviato per renderlo modificabile utilizzare il pulsante riattiva</div>
+          <div><div><label>Codice Fiscale</label></div><div class="slds-form-element__static"><span class="slds-grow">SCLPLA36R29A893M</span></div></div>
+          <div><div><label>Nome</label></div><div class="slds-form-element__static"><span class="slds-grow">PAOLO</span></div></div>
+          <div><div><label>Cognome</label></div><div class="slds-form-element__static"><span class="slds-grow">SCOLAMACCHIA</span></div></div>
+          <script>
+            document.querySelector('#reactivate').addEventListener('click', async () => {
+              document.body.dataset.reactivationStarted = 'yes';
+              await fetch('/reactivate');
+              document.querySelector('#reactivate').remove();
+              document.querySelector('#archived').remove();
+              document.body.dataset.reactivationConfirmed = 'yes';
+            });
+          </script>
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/0013Y00002m1SfMQAU/paolo-scolamacchia");
+      const person = await new TecnocloudUiV2Port(page).readPerson("0013Y00002m1SfMQAU", "SCLPLA36R29A893M");
+      expect(person.taxCode).toBe("SCLPLA36R29A893M");
+      expect(await page.locator("body").getAttribute("data-reactivation-started")).toBe("yes");
+      expect(await page.locator("body").getAttribute("data-reactivation-confirmed")).toBe("yes");
+      expect(await page.getByRole("button", { name: "Riattiva", exact: true }).count()).toBe(0);
+    } finally {
+      await browser.close();
+    }
+  }, 12_000);
+
   it("non salva un comproprietario finché ruolo e quota non sono comparsi", () => {
     expect(lookupCommitConfirmed({
       value: "Mario Rossi",
