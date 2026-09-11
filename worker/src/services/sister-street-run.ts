@@ -30,6 +30,9 @@ export type SisterStreetQueryResult = {
   rawRecords: number;
   acceptedProperties: number;
   propertyKeys: string[];
+  /** Immobili trovati aprendo il portafoglio dei proprietari della via. */
+  expandedPropertyKeys?: string[];
+  expandedOwnerKeys?: string[];
   filteredPropertyKeys?: string[];
   filterSkips?: Partial<Record<"non_strategic_category" | "floor_out_of_range" | "civic_out_of_range", number>>;
   ownersRead: number;
@@ -83,6 +86,7 @@ type StreetRunOptions = {
   maxQueryAttempts?: number;
   acquireOwners?: boolean;
   includeAllOwners?: boolean;
+  expandAllOwners?: boolean;
   prepareSearchAutomatically?: boolean;
   strategy?: "bulk_exact_variants" | "civic_fallback";
   mode?: "dry_run" | "live";
@@ -92,6 +96,12 @@ type StreetRunOptions = {
     variant: SisterStreetVariant,
     property: CadastralProperty,
     owners: CadastralOwner[],
+  ) => void | Promise<void>;
+  onOwnerPropertiesAcquired?: (
+    variant: SisterStreetVariant,
+    sourceProperty: CadastralProperty,
+    owner: CadastralOwner,
+    properties: CadastralProperty[],
   ) => void | Promise<void>;
   onProgress?: (progress: SisterStreetRunProgress) => void | Promise<void>;
   isCancelled?: () => boolean;
@@ -131,6 +141,8 @@ export class SisterStreetRun {
   private readonly maximumCivic: number;
   private readonly maxQueryAttempts: number;
   private readonly acquireOwners: boolean;
+  private readonly expandAllOwners: boolean;
+  private readonly expandedOwnerKeys = new Set<string>();
   private readonly prepareSearchAutomatically: boolean;
   private readonly strategy: "bulk_exact_variants" | "civic_fallback";
   private readonly mode: "dry_run" | "live";
@@ -140,12 +152,14 @@ export class SisterStreetRun {
     this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, {
       ignoreOwnerNoMatch: true,
       includeAllOwners: options.includeAllOwners === true,
+      isCancelled: options.isCancelled,
     });
     this.emptyWindow = options.emptyWindow ?? 50;
     this.startCivic = options.startCivic ?? 1;
     this.maximumCivic = options.maximumCivic ?? 5_000;
     this.maxQueryAttempts = options.maxQueryAttempts ?? 3;
     this.acquireOwners = options.acquireOwners !== false;
+    this.expandAllOwners = options.expandAllOwners === true;
     this.prepareSearchAutomatically = options.prepareSearchAutomatically === true;
     this.strategy = options.strategy ?? "bulk_exact_variants";
     this.mode = options.mode ?? "dry_run";
@@ -166,6 +180,10 @@ export class SisterStreetRun {
     }
     const now = new Date().toISOString();
     const compatibleResume = resume?.version === 3 && resume.strategy === this.strategy && resume.mode === this.mode ? resume : undefined;
+    this.expandedOwnerKeys.clear();
+    for (const key of compatibleResume?.results.flatMap((result) => result.expandedOwnerKeys ?? []) ?? []) {
+      this.expandedOwnerKeys.add(key);
+    }
     let checkpoint: SisterStreetRunCheckpoint = compatibleResume
       ? {
           ...compatibleResume,
@@ -232,7 +250,10 @@ export class SisterStreetRun {
           const replacedPartial = previousPartial;
           const previousResults = checkpoint.results.filter((entry) => entry !== replacedPartial);
           const nextResults = [...previousResults, result];
-          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => entry.propertyKeys))];
+          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => [
+            ...entry.propertyKeys,
+            ...(entry.expandedPropertyKeys ?? []),
+          ]))];
           checkpoint = {
             ...checkpoint,
             updatedAt: new Date().toISOString(),
@@ -312,7 +333,10 @@ export class SisterStreetRun {
         if (result.outcome === "paused") {
           const previousResults = checkpoint.results.filter((entry) => entry !== previousPartial);
           const nextResults = [...previousResults, result];
-          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => entry.propertyKeys))];
+          const uniquePropertyKeys = [...new Set(nextResults.flatMap((entry) => [
+            ...entry.propertyKeys,
+            ...(entry.expandedPropertyKeys ?? []),
+          ]))];
           checkpoint = {
             ...checkpoint,
             status: "paused",
@@ -340,6 +364,7 @@ export class SisterStreetRun {
         const uniquePropertyKeys = [...new Set([
           ...(checkpoint.uniquePropertyKeys ?? []),
           ...result.propertyKeys,
+          ...(result.expandedPropertyKeys ?? []),
         ])];
         checkpoint = {
           ...checkpoint,
@@ -696,6 +721,9 @@ export class SisterStreetRun {
     let skippedPropertyRows = previousPartial?.skippedPropertyRows ?? 0;
     const acquiredPropertyKeys: string[] = [...(previousPartial?.propertyKeys ?? [])];
     const acquiredPropertyKeySet = new Set(acquiredPropertyKeys);
+    const expandedPropertyKeys: string[] = [...(previousPartial?.expandedPropertyKeys ?? [])];
+    const expandedPropertyKeySet = new Set(expandedPropertyKeys);
+    const expandedOwnerKeys: string[] = [...(previousPartial?.expandedOwnerKeys ?? [])];
     const filteredPropertyKeys: string[] = [...(previousPartial?.filteredPropertyKeys ?? [])];
     const filteredPropertyKeySet = new Set(filteredPropertyKeys);
     const filterSkips = { ...(previousPartial?.filterSkips ?? {}) };
@@ -736,8 +764,10 @@ export class SisterStreetRun {
             variantSourceId: variant.sourceId,
             outcome: "paused",
             rawRecords,
-            acceptedProperties: acquiredPropertyKeys.length,
+            acceptedProperties: new Set([...acquiredPropertyKeys, ...expandedPropertyKeys]).size,
             propertyKeys: acquiredPropertyKeys,
+            expandedPropertyKeys,
+            expandedOwnerKeys,
             filteredPropertyKeys,
             filterSkips,
             ownersRead,
@@ -756,7 +786,21 @@ export class SisterStreetRun {
             status: "running", nextRetryAt: null,
           });
           try {
-            acquiredOwners = await this.adapter.extractOwners(property);
+            acquiredOwners = await this.adapter.extractOwners(property, this.expandAllOwners ? {
+              shouldExpand: (owner) => !this.expandedOwnerKeys.has(this.ownerExpansionKey(owner)),
+              onProperties: async (owner, expandedProperties) => {
+                const ownerKey = this.ownerExpansionKey(owner);
+                await this.options.onOwnerPropertiesAcquired?.(variant, property, owner, expandedProperties);
+                this.expandedOwnerKeys.add(ownerKey);
+                if (!expandedOwnerKeys.includes(ownerKey)) expandedOwnerKeys.push(ownerKey);
+                for (const expandedProperty of expandedProperties) {
+                  const expandedKey = buildCadastralKey(expandedProperty);
+                  if (expandedPropertyKeySet.has(expandedKey)) continue;
+                  expandedPropertyKeySet.add(expandedKey);
+                  expandedPropertyKeys.push(expandedKey);
+                }
+              },
+            } : undefined);
             ownersRead += acquiredOwners.length;
             if (!acquiredOwners.length) {
               skippedReason = "nessun proprietario interpretabile o nessuna corrispondenza trovata";
@@ -771,7 +815,7 @@ export class SisterStreetRun {
             break;
           } catch (error) {
             propertyError = error;
-            if (error instanceof WorkerError && error.status === "session_expired") {
+            if (error instanceof WorkerError && ["session_expired", "paused"].includes(error.status)) {
               await this.options.onRetryTelemetry?.({
                 operation: "Lettura proprietari SISTER", attempt, maximumAttempts: this.maxQueryAttempts,
                 status: "exhausted", nextRetryAt: null,
@@ -820,8 +864,10 @@ export class SisterStreetRun {
       variantSourceId: variant.sourceId,
       outcome: "found",
       rawRecords,
-      acceptedProperties: acquiredPropertyKeys.length,
+      acceptedProperties: new Set([...acquiredPropertyKeys, ...expandedPropertyKeys]).size,
       propertyKeys: acquiredPropertyKeys,
+      expandedPropertyKeys,
+      expandedOwnerKeys,
       filteredPropertyKeys,
       filterSkips,
       ownersRead,
@@ -829,6 +875,11 @@ export class SisterStreetRun {
       warnings,
       elapsedMs: Date.now() - startedAt,
     };
+  }
+
+  private ownerExpansionKey(owner: CadastralOwner) {
+    return owner.taxCode?.trim().toUpperCase()
+      || [owner.fullName, owner.birthDate ?? ""].map((value) => value.trim().toUpperCase()).join("|");
   }
 
   private async returnToAddressList() {

@@ -8,9 +8,13 @@ export type JobImportProgress = {
   nextRow: number | null;
 };
 
+export function propertyStatusIsHandled(status: string) {
+  return ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(status);
+}
+
 function propertyIsHandled(property: PropertyRow) {
   const stage = String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "");
-  return ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
+  return propertyStatusIsHandled(property.processing_status)
     || stage === "completed"
     || stage === "skipped";
 }
@@ -91,6 +95,8 @@ export function projectStreetCheckpointForRenderer(
     results: checkpoint.results.map((result) => ({
       ...result,
       propertyKeys: [],
+      expandedPropertyKeys: [],
+      expandedOwnerKeys: [],
       filteredPropertyKeys: [],
     })),
   };

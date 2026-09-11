@@ -58,7 +58,7 @@ import { describeSupabaseOperationalError } from "../services/supabase-errors.js
 import { runStreetRegistrySequence } from "../services/street-registry-sequence.js";
 import { removeDiagnosticScreenshots } from "../services/screenshots.js";
 import type { PromptResponse } from "../services/prompts.js";
-import type { WorkerMode } from "../types.js";
+import type { CadastralOwner, WorkerMode } from "../types.js";
 import {
   EMPTY_BROWSER_CONNECTION_STABILITY,
   detectBrowserConnections,
@@ -95,6 +95,9 @@ type Preferences = {
   /* Con false l'import collega il solo intestatario con la quota piu' alta.
    * I comproprietari gia' collegati nel gestionale restano dove sono. */
   importCoOwners: boolean;
+  /* Durante una via, apre a turno gli immobili di ogni proprietario trovato.
+   * L'espansione e' a un solo livello: non rincorre i loro comproprietari. */
+  expandAllOwners: boolean;
   /* Opt-in: una seconda pagina Cloud lavora una coda indipendente. */
   parallelCrmWindows: boolean;
   /* Ambito dell'ultima Rete proprietari: null significa tutta Bitonto. */
@@ -120,7 +123,7 @@ type RetryMonitorState = RetryTelemetry & {
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerRoot = path.resolve(moduleDirectory, "../..");
-const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, parallelCrmWindows: false, streetRegistryZoneId: null };
+const defaultPreferences: Preferences = { mode: "assisted", dryRun: true, keepAcquisition: true, autoRetryEnabled: true, propertyActivityMode: "direct_contact", importCoOwners: true, expandAllOwners: false, parallelCrmWindows: false, streetRegistryZoneId: null };
 const editablePropertySchema = z.object({
   id: z.string().uuid(),
   sheet: z.string().trim().min(1),
@@ -643,6 +646,7 @@ function migratePreferences(stored: Partial<Preferences> & { autoFillDirectConta
     ...rest,
     propertyActivityMode: mode,
     importCoOwners: rest.importCoOwners !== false,
+    expandAllOwners: rest.expandAllOwners === true,
     parallelCrmWindows: rest.parallelCrmWindows === true,
   };
 }
@@ -1015,7 +1019,18 @@ async function refreshSnapshotRemoteData() {
       );
       const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
       next.completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
-      next.jobs = savedJobs;
+      const savedJobCounts = await withOperationTimeout(
+        repo.listSavedJobImportCounts(savedJobs.map((job) => job.id)),
+        12_000,
+        "Conteggio righe delle acquisizioni conservate",
+      );
+      next.jobs = savedJobs.map((job) => ({
+        ...job,
+        import_progress: savedJobCounts.get(job.id) ?? {
+          handled: Number(job.processed_properties ?? 0),
+          total: Number(job.total_properties ?? 0),
+        },
+      }));
       const visibleCompletedJobIds = new Set(completedJobs.map((job) => job.id));
       for (const jobId of completedSummaryCache.keys()) {
         if (!visibleCompletedJobIds.has(jobId)) completedSummaryCache.delete(jobId);
@@ -1391,6 +1406,7 @@ async function runSisterStreet(input: {
 }) {
   const street = input.street.replace(/\s+/g, " ").trim();
   const filters = normalizeStreetPropertyFilters(input.filters);
+  const expandAllOwners = preferences.expandAllOwners;
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
@@ -1461,6 +1477,7 @@ async function runSisterStreet(input: {
          * continuano a non entrare. Vale anche a run avviata: se la pagina si
          * perde per strada, viene rifatta invece di fermare tutto. */
         prepareSearchAutomatically: true,
+        expandAllOwners,
         isCancelled: () => streetRunCancellationRequested,
         onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
           const [savedProperty] = await liveRepository.insertProperties(importJobId!, [{
@@ -1482,6 +1499,27 @@ async function runSisterStreet(input: {
             return;
           }
           for (const owner of owners) await liveRepository.insertOwner(importJobId!, savedProperty.id, owner);
+        } : undefined,
+        onOwnerPropertiesAcquired: liveRepository && importJobId ? async (variant, sourceProperty, owner, properties) => {
+          if (!properties.length) return;
+          const savedProperties = await liveRepository.insertProperties(importJobId!, properties.map((property) => ({
+            ...property,
+            rawPayload: {
+              ...property.rawPayload,
+              sourceOrder: 1_000_000 + Number(property.rawPayload.rowIndex ?? 0),
+              owner_expansion: {
+                depth: 1,
+                ownerTaxCode: owner.taxCode,
+                sourcePropertyKey: `${sourceProperty.municipality}|${sourceProperty.sheet}|${sourceProperty.parcel}|${sourceProperty.subaltern}`,
+                variantId: variant.sourceId,
+                acquiredAt: new Date().toISOString(),
+              },
+            },
+          })), { updateJobTotal: false });
+          for (const [index, savedProperty] of savedProperties.entries()) {
+            const expandedOwner = properties[index]?.rawPayload.expanded_owner_ownership as CadastralOwner | undefined;
+            await liveRepository.insertOwner(importJobId!, savedProperty.id, expandedOwner ?? owner);
+          }
         } : undefined,
         onProgress: (progress) => publishStreetRunProgress(progress),
         onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),

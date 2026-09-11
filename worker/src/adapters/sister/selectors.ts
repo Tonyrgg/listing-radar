@@ -27,6 +27,8 @@ export interface SisterSelectors {
   ownerTaxCode: string;
   ownerRightType: string;
   ownerShare: string;
+  ownerRadioWithinRow: string;
+  ownerPropertiesButton: string;
   ownersBackButton: string;
 }
 
@@ -64,6 +66,8 @@ export const sisterSelectors: SisterSelectors = {
   ownerTaxCode: ":scope > td:nth-child(3)",
   ownerRightType: ":scope > td:nth-child(4)",
   ownerShare: ":scope > td:nth-child(5)",
+  ownerRadioWithinRow: 'input[name="intestatoSelezionato"]',
+  ownerPropertiesButton: 'input[name="immobili"]',
   ownersBackButton: 'form[name="SceltaVisuraImmSoggForm"] input[name="indietro"]',
 };
 
@@ -96,5 +100,7 @@ export const sisterFixtureSelectors: SisterSelectors = {
   ownerTaxCode: "",
   ownerRightType: "",
   ownerShare: "",
+  ownerRadioWithinRow: "",
+  ownerPropertiesButton: "",
   ownersBackButton: "",
 };

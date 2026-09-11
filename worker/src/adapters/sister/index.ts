@@ -34,6 +34,11 @@ export type SisterAdapterOptions = {
   includeAllOwners?: boolean;
 };
 
+export type OwnerPropertyExpansion = {
+  shouldExpand: (owner: CadastralOwner) => boolean;
+  onProperties: (owner: CadastralOwner, properties: CadastralProperty[]) => void | Promise<void>;
+};
+
 const PERSON_SEARCH_CONTROL_TIMEOUT_MS = 8_000;
 const PERSON_SEARCH_OUTCOME_TIMEOUT_MS = 20_000;
 
@@ -428,7 +433,8 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
           address: ["Indirizzo", "Ubicazione"], censusZone: ["Zona cens", "Zona censuaria"],
           category: ["Categoria", "Classamento"],
           class: ["Classe"], consistency: ["Consistenza"], cadastralIncome: ["Rendita"],
-        }, "immobili", ["censusZone"])
+          ownership: ["Titolarita", "Diritto"],
+        }, "immobili", ["censusZone", "ownership"])
       : null;
     type RawPropertyRow = {
       sheet: string;
@@ -440,6 +446,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       class: string;
       consistency: string;
       cadastralIncome: string;
+      ownership: string;
     };
     const rawRows: RawPropertyRow[] = columns
       ? await rows.evaluateAll((elements, indexes) => elements.map((element) => {
@@ -454,6 +461,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
             class: indexes.class == null ? "" : cells[indexes.class] ?? "",
             consistency: indexes.consistency == null ? "" : cells[indexes.consistency] ?? "",
             cadastralIncome: indexes.cadastralIncome == null ? "" : cells[indexes.cadastralIncome] ?? "",
+            ownership: indexes.ownership == null ? "" : cells[indexes.ownership] ?? "",
           };
         }), columns)
       : await Promise.all(Array.from({ length: await rows.count() }, async (_, index) => {
@@ -468,6 +476,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
             class: await text(row, this.selectors.class),
             consistency: await text(row, this.selectors.consistency),
             cadastralIncome: await text(row, this.selectors.cadastralIncome),
+            ownership: "",
           };
         }));
     const properties: CadastralProperty[] = [];
@@ -510,7 +519,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     return properties;
   }
 
-  async extractOwners(property: CadastralProperty): Promise<CadastralOwner[]> {
+  async extractOwners(property: CadastralProperty, expansion?: OwnerPropertyExpansion): Promise<CadastralOwner[]> {
     this.require("propertyRows");
     await this.ensureResultsPage();
     const sourceRowIndex = Number(property.sourceRef ?? property.rawPayload.rowIndex);
@@ -557,8 +566,10 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
     await this.waitForMarker(this.selectors.ownersPageMarker, "l'apertura degli intestatari");
 
     let extractionError: unknown = null;
+    let insideExpandedProperties = false;
     try {
       const ownerRows = this.page.locator(this.selectors.ownerRows);
+      const expandableOwners: Array<{ rowIndex: number; owner: CadastralOwner }> = [];
       const ownerColumns = this.selectors.ownersTable
         ? await columnIndexes(this.page.locator(this.selectors.ownersTable), {
             personalData: ["Nominativo o denominazione", "Nominativo"],
@@ -576,12 +587,64 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
           await ownerValue(ownerRow, "rightType", this.selectors.ownerRightType),
           await ownerValue(ownerRow, "share", this.selectors.ownerShare),
         ].join("\n");
-        this.addOwner(owners, parseOwnerBlock(block), rowIndex);
+        const owner = parseOwnerBlock(block);
+        const acceptedBefore = owners.length;
+        this.addOwner(owners, owner, rowIndex);
+        if (owners.length > acceptedBefore) expandableOwners.push({ rowIndex: index, owner });
+      }
+      if (expansion) {
+        this.require("ownerRadioWithinRow", "ownerPropertiesButton");
+        for (const expandable of expandableOwners) {
+          if (!expansion.shouldExpand(expandable.owner)) continue;
+          if (this.options.isCancelled?.()) break;
+          const currentOwnerRow = this.page.locator(this.selectors.ownerRows).nth(expandable.rowIndex);
+          await currentOwnerRow.locator(this.selectors.ownerRadioWithinRow).check();
+          if (!process.env.VITEST) await this.page.waitForTimeout(150);
+          await clickAndWait(this.page, this.page.locator(this.selectors.ownerPropertiesButton));
+          insideExpandedProperties = true;
+          await this.waitForMarker(this.selectors.resultsPageMarker, `l'apertura degli immobili di ${expandable.owner.fullName}`);
+          const properties = (await this.extractProperties()).map((expandedProperty) => {
+            const rawCells = expandedProperty.rawPayload.rawCells as { ownership?: string } | undefined;
+            if (!rawCells?.ownership) return expandedProperty;
+            const parsedOwnership = parseOwnerBlock([
+              expandable.owner.fullName,
+              expandable.owner.taxCode ?? "",
+              rawCells.ownership,
+            ].join("\n"));
+            return {
+              ...expandedProperty,
+              rawPayload: {
+                ...expandedProperty.rawPayload,
+                expanded_owner_ownership: {
+                  ...expandable.owner,
+                  rightType: parsedOwnership.rightType,
+                  shareOriginal: parsedOwnership.shareOriginal,
+                  shareNumerator: parsedOwnership.shareNumerator,
+                  shareDenominator: parsedOwnership.shareDenominator,
+                  sharePercentage: parsedOwnership.sharePercentage,
+                },
+              },
+            };
+          });
+          await expansion.onProperties(expandable.owner, properties);
+          await clickAndWait(this.page, this.page.locator(this.selectors.ownersBackButton));
+          await this.waitForMarker(this.selectors.ownersPageMarker, "il ritorno all'elenco intestatari");
+          insideExpandedProperties = false;
+        }
       }
     } catch (error) {
       extractionError = error;
       throw error;
     } finally {
+      if (insideExpandedProperties && await this.page.locator(this.selectors.resultsPageMarker).count()) {
+        try {
+          await clickAndWait(this.page, this.page.locator(this.selectors.ownersBackButton));
+          await this.waitForMarker(this.selectors.ownersPageMarker, "il recupero dell'elenco intestatari");
+          insideExpandedProperties = false;
+        } catch (returnError) {
+          if (!extractionError) throw returnError;
+        }
+      }
       if (await this.page.locator(this.selectors.ownersPageMarker).count()) {
         try {
           await this.page.locator(this.selectors.ownersBackButton).click();

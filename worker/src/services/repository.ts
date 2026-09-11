@@ -40,6 +40,8 @@ export type JobRow = {
   /* Da dove viene la raccolta e con quali limiti: vedi migration 034. */
   acquisition?: Record<string, unknown> | null;
   created_at?: string;
+  /** Conteggio reale delle righe, proiettato per la sola plancia desktop. */
+  import_progress?: { handled: number; total: number };
 };
 
 export type PropertyRow = {
@@ -546,6 +548,33 @@ export class WorkerRepository {
     return (data as JobRow[]).filter((job) =>
       job.status !== "completed" && (Boolean(job.saved_at) || recoverableStatuses.has(job.status)),
     );
+  }
+
+  /** Conta le righe concluse senza scaricare payload, persone e quote. */
+  async listSavedJobImportCounts(jobIds: string[]): Promise<Map<string, { handled: number; total: number }>> {
+    const counts = new Map(jobIds.map((jobId) => [jobId, { handled: 0, total: 0 }]));
+    if (!jobIds.length) return counts;
+    const handledStatuses = new Set(["completed", "skipped", "acquisition_skipped", "acquisition_failed"]);
+    const pageSize = 1_000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await this.client
+        .from("property_worker_properties")
+        .select("id,job_id,processing_status")
+        .in("job_id", jobIds)
+        .order("job_id", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(`Conteggio avanzamento import fallito: ${error.message}`);
+      const rows = (data ?? []) as Array<{ id: string; job_id: string; processing_status: string }>;
+      for (const row of rows) {
+        const count = counts.get(row.job_id);
+        if (!count) continue;
+        count.total += 1;
+        if (handledStatuses.has(row.processing_status)) count.handled += 1;
+      }
+      if (rows.length < pageSize) break;
+    }
+    return counts;
   }
 
   async listCompletedJobs(limit = 30): Promise<JobRow[]> {

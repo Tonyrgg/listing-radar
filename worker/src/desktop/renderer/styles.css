@@ -2602,6 +2602,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check input[type="checkbox"],
 #dryRunControl input[type="checkbox"],
 #coOwnersControl input[type="checkbox"],
+#expandAllOwnersControl input[type="checkbox"],
 #parallelCloudControl input[type="checkbox"],
 .import-setting-row input[type="checkbox"] {
   appearance: none;
@@ -2625,6 +2626,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check input[type="checkbox"]::after,
 #dryRunControl input[type="checkbox"]::after,
 #coOwnersControl input[type="checkbox"]::after,
+#expandAllOwnersControl input[type="checkbox"]::after,
 #parallelCloudControl input[type="checkbox"]::after,
 .import-setting-row input[type="checkbox"]::after {
   content: "";
@@ -2642,6 +2644,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check input[type="checkbox"]:checked,
 #dryRunControl input[type="checkbox"]:checked,
 #coOwnersControl input[type="checkbox"]:checked,
+#expandAllOwnersControl input[type="checkbox"]:checked,
 #parallelCloudControl input[type="checkbox"]:checked,
 .import-setting-row input[type="checkbox"]:checked {
   border-color: var(--lr-accent);
@@ -2651,6 +2654,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check input[type="checkbox"]:checked::after,
 #dryRunControl input[type="checkbox"]:checked::after,
 #coOwnersControl input[type="checkbox"]:checked::after,
+#expandAllOwnersControl input[type="checkbox"]:checked::after,
 #parallelCloudControl input[type="checkbox"]:checked::after,
 .import-setting-row input[type="checkbox"]:checked::after {
   left: 19px;
@@ -2660,6 +2664,7 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check input[type="checkbox"]:focus-visible,
 #dryRunControl input[type="checkbox"]:focus-visible,
 #coOwnersControl input[type="checkbox"]:focus-visible,
+#expandAllOwnersControl input[type="checkbox"]:focus-visible,
 #parallelCloudControl input[type="checkbox"]:focus-visible,
 .import-setting-row input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--lr-accent);
@@ -3084,6 +3089,7 @@ body[data-fase="lavora"] #settings { display: none !important; }
 
 #dryRunControl input[type="checkbox"],
 #coOwnersControl input[type="checkbox"],
+#expandAllOwnersControl input[type="checkbox"],
 #parallelCloudControl input[type="checkbox"] { flex: none; }
 
 #dryRunControl:has(input:disabled),
@@ -3328,6 +3334,7 @@ body[data-fase="lavora"] #settings { display: none !important; }
 .ledger-row:hover { background: var(--lr-raised); }
 
 .ledger-mark {
+  position: relative;
   display: grid;
   place-items: center;
   width: 20px;
@@ -3336,6 +3343,35 @@ body[data-fase="lavora"] #settings { display: none !important; }
   border-radius: 50%;
   color: var(--lr-ink-3);
   font-size: var(--lr-text-label);
+}
+
+.ledger-mark.has-tooltip::after {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 9px);
+  left: 0;
+  width: min(300px, 70vw);
+  padding: 9px 11px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: 8px;
+  background: var(--lr-ink);
+  box-shadow: var(--lr-floating);
+  color: var(--lr-accent-ink);
+  content: attr(data-tooltip);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-regular);
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.ledger-mark.has-tooltip:hover::after,
+.ledger-mark.has-tooltip:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .completed-session .ledger-mark { border-color: var(--lr-ok); color: var(--lr-ok); }

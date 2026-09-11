@@ -14,6 +14,8 @@ describe("proiezione leggera dello stato desktop", () => {
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
 
     expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
+    expect(main).toContain("repo.listSavedJobImportCounts(savedJobs.map((job) => job.id))");
+    expect(renderer).toContain("job.import_progress?.handled");
     expect(main).toContain("checkpoint: streetRunActive ? projectStreetCheckpointForRenderer(streetRunCheckpoint) : null");
     expect(main).toContain("streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint)");
     expect(renderer).toContain("item.peopleCount ?? item.people?.length ?? 0");
@@ -34,6 +36,9 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(renderer).toContain("Riparte da qui");
     expect(renderer).not.toContain("${conservate}/3");
     expect(html).not.toContain("Al massimo tre");
+    expect(html).toContain('id="expandAllOwnersToggle"');
+    expect(renderer).toContain("Espansione a un livello di tutti i proprietari attiva");
+    expect(main).toContain("expandAllOwners,");
   });
 
   it("riassume un grafo grande senza inviare immobili, persone e quote al renderer", () => {
@@ -102,6 +107,8 @@ describe("proiezione leggera dello stato desktop", () => {
 
     expect(projected?.uniquePropertyKeys).toEqual([]);
     expect(projected?.results[0]?.propertyKeys).toEqual([]);
+    expect(projected?.results[0]?.expandedPropertyKeys).toEqual([]);
+    expect(projected?.results[0]?.expandedOwnerKeys).toEqual([]);
     expect(projected?.totalAcceptedProperties).toBe(2_000);
     expect(checkpoint.uniquePropertyKeys).toHaveLength(2);
     expect(checkpoint.results[0]?.propertyKeys).toHaveLength(2);

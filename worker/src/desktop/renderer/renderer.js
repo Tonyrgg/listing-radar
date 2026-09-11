@@ -1269,6 +1269,7 @@ function renderJobs() {
       job.status,
       job.import_started_at ?? "",
       job.acquisition ? "p" : "",
+      job.import_progress ? `${job.import_progress.handled}/${job.import_progress.total}` : "",
     ].join(":")),
   ].join("|");
   if (renderKey === jobsRenderKey) return;
@@ -1286,14 +1287,15 @@ function renderJobs() {
             fattori = riassuntoAcquisizione(job.acquisition),
             imported = job.status === "completed",
             inProgress = Boolean(job.import_started_at) && !imported,
-            total = Number(job.total_properties ?? 0),
-            handled = Math.min(total, Number(job.processed_properties ?? 0)),
+            total = Number(job.import_progress?.total ?? job.total_properties ?? 0),
+            handled = Math.min(total, Number(job.import_progress?.handled ?? job.processed_properties ?? 0)),
             runState = imported
               ? "Importazione completata"
               : inProgress
                 ? `Run interrotta · ${fmtCount(handled)} di ${fmtCount(total)} righe concluse`
                 : `Run mai avviata · ${fmtCount(total)} righe da importare`;
-          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark">${inProgress ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${esc(runState)}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi dal punto salvato" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+          const stoppedHelp = "Le righe concluse restano salvate e non vengono cancellate. La ripresa le salta e parte dalla prima riga ancora aperta.";
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark${inProgress ? " has-tooltip" : ""}"${inProgress ? ` tabindex="0" aria-label="${esc(stoppedHelp)}" data-tooltip="${esc(stoppedHelp)}"` : ""}>${inProgress ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${inProgress ? ` title="${esc(stoppedHelp)}"` : ""}>${esc(runState)}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi dal punto salvato" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
@@ -2435,6 +2437,8 @@ function render() {
       : "Ti chiede conferma prima dei salvataggi.";
   $("dryRunToggle").checked = appState.preferences?.keepAcquisition !== false;
   $("coOwnersToggle").checked = appState.preferences?.importCoOwners !== false;
+  $("expandAllOwnersToggle").checked = appState.preferences?.expandAllOwners === true;
+  $("expandAllOwnersToggle").disabled = Boolean(appState.streetRun?.active);
   $("parallelCloudToggle").checked = appState.preferences?.parallelCrmWindows === true;
   $("parallelCloudToggle").disabled = Boolean(appState.active && appState.currentStep === "properties_processed");
   $("versionLabel").textContent = `v${appState.version}`;
@@ -3154,6 +3158,18 @@ $("coOwnersToggle").addEventListener("change", async (event) => {
         ? "Import dei comproprietari attivo"
         : "Import fermo all'intestatario con la quota più alta",
     );
+  } catch (error) {
+    toggle.checked = !toggle.checked;
+    toast(error?.message ?? String(error));
+  }
+});
+$("expandAllOwnersToggle").addEventListener("change", async (event) => {
+  const toggle = event.currentTarget;
+  try {
+    await window.propertyWorker.savePreferences({ expandAllOwners: toggle.checked });
+    toast(toggle.checked
+      ? "Espansione a un livello di tutti i proprietari attiva"
+      : "Espansione degli immobili dei proprietari disattivata");
   } catch (error) {
     toggle.checked = !toggle.checked;
     toast(error?.message ?? String(error));
