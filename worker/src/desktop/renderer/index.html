@@ -504,7 +504,21 @@
     <!-- L'import di un'acquisizione conservata: si rileggono i dati e si
       sceglie come scriverli, perché fra la raccolta e questo momento possono
       essere passati giorni. -->
-    <dialog id="importDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Prima di importare</p><h2 id="importDialogTitle">Controlla cosa stai per scrivere</h2><p id="importDialogMeta"></p></div><button class="icon-button" data-import-dialog="close" aria-label="Chiudi">×</button></header><div class="import-settings"><div class="activity-mode-copy"><b>Attività nel gestionale</b><small id="importActivityHelp">Come alla raccolta, ma puoi cambiarla adesso: vale solo per questo import.</small></div><div class="segmented activity-mode-choices" id="importActivityChoices" role="radiogroup" aria-label="Attività nel gestionale per questo import"><button type="button" data-import-activity="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button><button type="button" data-import-activity="plain" role="radio" aria-checked="false">Generica</button><button type="button" data-import-activity="none" role="radio" aria-checked="false">Nessuna</button></div></div><div id="importDialogContent" class="review-content"></div><footer><p id="importDialogWarning">L'import scrive davvero nel gestionale.</p><div><button class="button secondary" data-import-dialog="close">Torna indietro</button><button class="button primary" data-import-dialog="confirm">Importa adesso</button></div></footer></div></dialog>
+    <dialog id="importDialog" class="review-dialog">
+      <div class="dialog-shell wide">
+        <header><div><p class="eyebrow">Prima di importare</p><h2 id="importDialogTitle">Controlla cosa stai per scrivere</h2><p id="importDialogMeta"></p></div><button class="icon-button" data-import-dialog="close" aria-label="Chiudi">×</button></header>
+        <div class="import-settings" aria-label="Opzioni di questa importazione">
+          <div class="import-setting-row">
+            <div class="activity-mode-copy"><b>Attività nel gestionale</b><small id="importActivityHelp">Puoi cambiarla adesso: vale per questa importazione.</small></div>
+            <div class="segmented activity-mode-choices" id="importActivityChoices" role="radiogroup" aria-label="Attività nel gestionale per questo import"><button type="button" data-import-activity="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button><button type="button" data-import-activity="plain" role="radio" aria-checked="false">Generica</button><button type="button" data-import-activity="none" role="radio" aria-checked="false">Nessuna</button></div>
+          </div>
+          <label class="import-setting-row" for="importCoOwnersToggle"><div class="activity-mode-copy"><b>Importa i comproprietari</b><small>Collega tutti gli intestatari SISTER con la rispettiva quota.</small></div><input id="importCoOwnersToggle" type="checkbox" checked /></label>
+          <label class="import-setting-row" for="importParallelCloudToggle"><div class="activity-mode-copy"><b>Due finestre Cloud</b><small>Distribuisce gli immobili indipendenti su due pagine; quelli collegati restano insieme.</small></div><input id="importParallelCloudToggle" type="checkbox" /></label>
+        </div>
+        <div id="importDialogContent" class="review-content"></div>
+        <footer><p id="importDialogWarning">L'import scrive davvero nel gestionale.</p><div><button class="button secondary" data-import-dialog="close">Torna indietro</button><button class="button primary" data-import-dialog="confirm">Importa adesso</button></div></footer>
+      </div>
+    </dialog>
 
     <dialog id="completedImportDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Sessione completata</p><h2 id="completedImportDialogTitle">Riepilogo import</h2><p id="completedImportDialogMeta"></p></div><button class="icon-button" data-action="close-completed-session" aria-label="Chiudi">×</button></header><div id="completedImportDialogContent" class="review-content"></div><footer><span></span><div><button class="button primary" data-action="close-completed-session">Chiudi riepilogo</button></div></footer></div></dialog>
 

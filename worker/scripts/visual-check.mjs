@@ -14,7 +14,14 @@ const baseState = {
   activity: [{ at: new Date().toISOString(), tone: "success", message: "Configurazione importata e protetta da Windows" }],
   preferences: { mode: "assisted", dryRun: true, contactsExcelPath: "C:\\Dati\\Book1.xlsx" },
   config: { configurationReady: true, configurationSource: "Protetta da Windows", contactsExcelPath: "C:\\Dati\\Book1.xlsx", screenshotDirectory: "C:\\ListingRadar\\worker-errors" },
-  configError: null, cloudError: null, jobs: [], completedImports: [], version: "0.5.0",
+  configError: null, cloudError: null, jobs: [{
+    id: "55555555-5555-4555-8555-555555555555", mode: "automatic", status: "paused",
+    current_step: "properties_processed", last_completed_step: "acquisition_reviewed",
+    municipality: "BITONTO", street: "Via Test", civic_number: null,
+    total_properties: 1, processed_properties: 0, total_people: 1,
+    saved_at: new Date().toISOString(), import_started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    acquisition: { kind: "street", importOptions: { activityMode: "plain", importCoOwners: true, parallelCrmWindows: false } },
+  }], completedImports: [], version: "0.5.0",
   streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
   portoni: { active: false, cancelling: false, progress: null, lastError: null, sheets: [{
     id: "portoni-demo", street: "Via Luigi Castellucci", municipality: "BITONTO", status: "draft",
@@ -28,7 +35,8 @@ const baseState = {
 };
 const graph = {
   job: {},
-  properties: [{ id: "11111111-1111-4111-8111-111111111111", municipality: "BITONTO", sheet: "58", parcel: "1234", subaltern: "", category: "A/3", address: "Via Borgo San Francesco 29 [2]", class: "3", consistency: "5 vani", cadastral_income: 540.22 }],
+  progress: { state: "stopped", handled: 0, total: 1, nextRow: 1 },
+  properties: [{ id: "11111111-1111-4111-8111-111111111111", municipality: "BITONTO", sheet: "58", parcel: "1234", subaltern: "", cadastral_key: "BITONTO|58|1234|7", category: "A/3", address: "Via Borgo San Francesco 29 [2]", class: "3", consistency: "5 vani", cadastral_income: 540.22, processing_status: "normalized", raw_payload: { property_flow: { version: 4, stage: "property_ready" } } }],
   people: [{ id: "22222222-2222-4222-8222-222222222222", full_name: "Mario Rossi", tax_code: null, birth_place: "BITONTO", birth_province: "BA", birth_date: "1970-01-01", share_original: "500/1000", share_percentage: 50 }],
   ownerships: [{ id: "44444444-4444-4444-8444-444444444444", property_id: "11111111-1111-4111-8111-111111111111", person_id: "22222222-2222-4222-8222-222222222222", share_percentage: 50 }],
 };
@@ -68,7 +76,7 @@ await page.addInitScript(({ initialState, details }) => {
       state = { ...state, preferences: { ...state.preferences, ...values } };
       return state.preferences;
     },
-    startJob: async () => called("startJob"), resumeJob: async () => called("resumeJob"), pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
+    startJob: async () => called("startJob"), resumeJob: async (values) => { calls.resumeJobValues = values; return called("resumeJob"); }, pauseJob: async () => called("pauseJob"), cancelJob: async () => called("cancelJob"),
     startStreetRun: async () => called("startStreetRun"), cancelStreetRun: async () => called("cancelStreetRun"),
     startPortoni: async () => called("startPortoni"), cancelPortoni: async () => called("cancelPortoni"),
     createBlankPortoni: async () => called("createBlankPortoni"),
@@ -168,6 +176,16 @@ await page.addInitScript(({ initialState, details }) => {
 await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
 await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
 const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+const stoppedRunVisible = await page.getByText("Run interrotta · 0 di 1 righe concluse", { exact: true }).count();
+await page.locator('[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
+await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
+const resumeProgressVisible = await page.getByText("Run interrotta: ripartenza dalla riga 1 di 1.", { exact: true }).count();
+await page.locator("#importCoOwnersToggle").uncheck();
+await page.locator("#importParallelCloudToggle").check();
+await page.locator('[data-import-dialog="confirm"]').click();
+await page.locator('[data-detail-job="55555555-5555-4555-8555-555555555555"]').click();
+await page.locator("#detailPanel").screenshot({ path: path.join(output, "stopped-import-detail.png") });
+const detailRestartRowVisible = await page.getByText("Riparte da qui", { exact: true }).count();
 await page.locator('[data-scroll="portoni"]').click();
 await page.locator("#portoni").screenshot({ path: path.join(output, "portoni.png") });
 const portoniVisible = await page.locator("#portoniEditor:not(.is-hidden)").count();
@@ -270,13 +288,16 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, stoppedRunVisible, resumeProgressVisible, detailRestartRowVisible, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
   ...([readyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
+  ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || detailRestartRowVisible !== 1 ? ["Stato o riga di ripartenza della run non visibili"] : []),
+  ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== false || workerCalls.resumeJobValues?.parallelCrmWindows !== true
+    ? ["Le tre opzioni della ripresa non arrivano insieme al processo principale"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
   ...(portoniCollapsed !== 1 || portoniFiltersVisible !== 1 ? ["Accordion o filtri Portoni non funzionanti"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),

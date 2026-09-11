@@ -1,4 +1,41 @@
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import type { JobRow, PropertyRow } from "../services/repository.js";
+
+export type JobImportProgress = {
+  state: "not_started" | "running" | "stopped" | "completed";
+  handled: number;
+  total: number;
+  nextRow: number | null;
+};
+
+function propertyIsHandled(property: PropertyRow) {
+  const stage = String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "");
+  return ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
+    || stage === "completed"
+    || stage === "skipped";
+}
+
+export function summarizeJobImportProgress(
+  job: JobRow,
+  properties: PropertyRow[],
+  isActive = false,
+): JobImportProgress {
+  const handled = properties.filter(propertyIsHandled).length;
+  const nextIndex = properties.findIndex((property) => !propertyIsHandled(property));
+  const completed = job.status === "completed" || (properties.length > 0 && handled === properties.length);
+  return {
+    state: completed
+      ? "completed"
+      : isActive
+        ? "running"
+        : job.import_started_at
+          ? "stopped"
+          : "not_started",
+    handled,
+    total: properties.length,
+    nextRow: nextIndex < 0 ? null : nextIndex + 1,
+  };
+}
 
 export type CompletedImportSummary = {
   propertyCount: number;

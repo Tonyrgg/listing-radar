@@ -69,9 +69,11 @@ import {
   type BrowserConnectionStability,
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
+import { importRunOptions, withImportRunOptions, type ImportRunOptions } from "./import-run-options.js";
 import {
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
+  summarizeJobImportProgress,
   type CompletedImportSummary,
 } from "./state-projection.js";
 import { DesktopUpdater, type DesktopUpdateState } from "./updater.js";
@@ -182,6 +184,8 @@ let cancellingJobId: string | null = null;
 let pausingJobId: string | null = null;
 let prompt: DesktopPrompt | null = null;
 let activityModeOverride: PropertyActivityMode | null = null;
+let importCoOwnersOverride: boolean | null = null;
+let parallelCrmWindowsOverride: boolean | null = null;
 let currentStep: string | null = null;
 let propertyProgress: { propertyId: string; index: number; total: number; address: string | null; stage: string; message: string; workerIndex?: number; workerCount?: number; completed?: number } | null = null;
 let crmImportConcurrency = 1;
@@ -1101,7 +1105,12 @@ async function stateSnapshot() {
     },
     activity,
     diagnosticErrors,
-    preferences,
+    preferences: {
+      ...preferences,
+      ...(active && activityModeOverride ? { propertyActivityMode: activityModeOverride } : {}),
+      ...(active && importCoOwnersOverride != null ? { importCoOwners: importCoOwnersOverride } : {}),
+      ...(active && parallelCrmWindowsOverride != null ? { parallelCrmWindows: parallelCrmWindowsOverride } : {}),
+    },
     config: publicConfig,
     configError,
     cloudError,
@@ -2756,13 +2765,20 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     nextRetryAt: null,
   });
   let forceLiveImport = false;
+  let resumedImportOptions: ImportRunOptions | null = null;
   try {
     if (input.jobId) {
-      const pendingJob = await repository().getJob(input.jobId);
+      let pendingJob = await repository().getJob(input.jobId);
       if (pendingJob.error_details?.action === "long-run-acquisition-validation") {
         await repairLongRunJobForImport(input.jobId);
         forceLiveImport = true;
+        pendingJob = await repository().getJob(input.jobId);
       }
+      resumedImportOptions = importRunOptions(pendingJob.acquisition, {
+        activityMode: preferences.propertyActivityMode,
+        importCoOwners: preferences.importCoOwners,
+        parallelCrmWindows: preferences.parallelCrmWindows,
+      });
     }
   } catch (error) {
     if (ownsOperationReservation) releaseOperationReservation("worker");
@@ -2777,6 +2793,11 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   propertyProgress = null;
   crmImportConcurrency = 1;
   activeJobId = input.jobId ?? null;
+  if (resumedImportOptions) {
+    activityModeOverride = resumedImportOptions.activityMode;
+    importCoOwnersOverride = resumedImportOptions.importCoOwners;
+    parallelCrmWindowsOverride = resumedImportOptions.parallelCrmWindows;
+  }
   preferences = { ...preferences, mode: input.mode, dryRun: forceLiveImport ? false : input.dryRun };
   await persistPreferences();
   activePrompts = new DesktopPromptController(publishPrompt);
@@ -2788,8 +2809,8 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     isPauseRequested: (jobId) => pausingJobId === jobId,
     isStopAfterNextImportRequested: () => stopAfterNextImportRequested,
     propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode,
-    importCoOwners: () => preferences.importCoOwners,
-    crmConcurrency: () => preferences.parallelCrmWindows ? 2 : 1,
+    importCoOwners: () => importCoOwnersOverride ?? preferences.importCoOwners,
+    crmConcurrency: () => (parallelCrmWindowsOverride ?? preferences.parallelCrmWindows) ? 2 : 1,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
   });
   activeRunner = runner;
@@ -2844,6 +2865,8 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       activeRunner = null;
       activeRunPromise = null;
       activityModeOverride = null;
+      importCoOwnersOverride = null;
+      parallelCrmWindowsOverride = null;
       crmImportConcurrency = 1;
       stopAfterNextImportRequested = false;
       refreshStoppingAll();
@@ -3178,6 +3201,8 @@ function registerIpc() {
     // A top-bar activity choice made during an imported batch replaces the
     // dialog's run-local default for the next untouched properties.
     if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode;
+    if (active && typeof values.importCoOwners === "boolean") importCoOwnersOverride = values.importCoOwners;
+    if (active && typeof values.parallelCrmWindows === "boolean") parallelCrmWindowsOverride = values.parallelCrmWindows;
     await persistPreferences();
     await publishState();
     return preferences;
@@ -3298,14 +3323,36 @@ function registerIpc() {
     await publishState();
     return true;
   });
-  ipcMain.handle("desktop:resume-job", async (_event, values: string | { jobId: string; activityMode?: PropertyActivityMode }) => {
+  ipcMain.handle("desktop:resume-job", async (_event, values: string | ({ jobId: string } & Partial<ImportRunOptions>)) => {
     const jobId = typeof values === "string" ? values : values.jobId;
-    const chosen = typeof values === "string" ? null : values.activityMode ?? null;
     clearAutoRetry();
     const repo = repository();
     const job = await repo.getJob(jobId);
-    if (job.saved_at) await repo.markImportStarted(jobId);
-    activityModeOverride = chosen;
+    const previous = importRunOptions(job.acquisition, {
+      activityMode: preferences.propertyActivityMode,
+      importCoOwners: preferences.importCoOwners,
+      parallelCrmWindows: preferences.parallelCrmWindows,
+    });
+    const chosen: ImportRunOptions = {
+      activityMode: typeof values !== "string" && ["direct_contact", "plain", "none"].includes(String(values.activityMode))
+        ? values.activityMode!
+        : previous.activityMode,
+      importCoOwners: typeof values !== "string" && typeof values.importCoOwners === "boolean"
+        ? values.importCoOwners
+        : previous.importCoOwners,
+      parallelCrmWindows: typeof values !== "string" && typeof values.parallelCrmWindows === "boolean"
+        ? values.parallelCrmWindows
+        : previous.parallelCrmWindows,
+    };
+    await repo.updateJob(jobId, {
+      ...(job.saved_at || job.import_started_at
+        ? { import_started_at: job.import_started_at ?? new Date().toISOString() }
+        : {}),
+      acquisition: withImportRunOptions(job.acquisition, chosen),
+    });
+    activityModeOverride = chosen.activityMode;
+    importCoOwnersOverride = chosen.importCoOwners;
+    parallelCrmWindowsOverride = chosen.parallelCrmWindows;
     /* Un import dall'archivio e' sempre vero: e' il gesto per cui
      * l'acquisizione era stata conservata. Se qui passasse la preferenza,
      * con «Acquisisci e conserva» acceso girerebbe in simulazione e non
@@ -3383,7 +3430,13 @@ function registerIpc() {
   ipcMain.handle("desktop:get-job-details", async (_event, jobId: string) => {
     const repo = repository();
     const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
-    return { job, properties: graph.properties, people: graph.people, ownerships: graph.ownerships };
+    return {
+      job,
+      properties: graph.properties,
+      people: graph.people,
+      ownerships: graph.ownerships,
+      progress: summarizeJobImportProgress(job, graph.properties, active && activeJobId === jobId),
+    };
   });
   ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {
     if (!values.jobId || !values.propertyId) throw new Error("Immobile da saltare non riconosciuto");

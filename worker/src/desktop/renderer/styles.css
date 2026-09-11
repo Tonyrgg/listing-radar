@@ -1709,14 +1709,72 @@ dialog[open] {
 /* La riga delle impostazioni dentro la finestra dell'import: sta sopra i dati,
  * perche' e' la sola cosa che cambi tu, e i dati sotto sono solo da leggere. */
 .import-settings {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--lr-space-3) var(--lr-space-5);
+  display: grid;
   padding: var(--lr-space-3) var(--lr-space-4);
   border-bottom: 1px solid var(--lr-line-quiet);
   background: var(--lr-raised);
+}
+
+.import-setting-row {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lr-space-5);
+  padding-block: var(--lr-space-2);
+  border-top: 1px solid var(--lr-line-quiet);
+  cursor: pointer;
+}
+
+.import-setting-row:first-child { border-top: 0; }
+.import-setting-row .activity-mode-copy { min-width: 0; }
+.import-setting-row .activity-mode-choices { margin-left: auto; }
+
+.import-progress-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--lr-space-2) var(--lr-space-4);
+  padding: var(--lr-space-3) var(--lr-space-4);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-raised);
+}
+
+.import-progress-summary small { color: var(--lr-ink-3); }
+
+.import-detail-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  justify-content: stretch;
+}
+
+.detail-row-number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: 50%;
+  color: var(--lr-ink-3);
+  font-family: var(--lr-font-mono);
+  font-size: var(--lr-text-label);
+}
+
+.import-detail-row.is-current .detail-row-number {
+  border-color: var(--lr-accent);
+  color: var(--lr-accent);
+}
+
+.import-detail-row.is-done { color: var(--lr-ink-3); }
+.import-detail-row.is-current .completion-label { border-color: var(--lr-accent); color: var(--lr-accent); }
+.import-detail-row.is-done .completion-label { border-color: var(--lr-ok); color: var(--lr-ok); }
+.import-detail-row.is-pending .completion-label { color: var(--lr-ink-3); }
+
+@media (max-width: 720px) {
+  .import-setting-row { align-items: stretch; flex-direction: column; gap: var(--lr-space-2); }
+  .import-setting-row .activity-mode-choices { width: 100%; margin-left: 0; }
 }
 
 #importDialogWarning { color: var(--lr-warn); font-size: var(--lr-text-meta); }
@@ -2542,7 +2600,10 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 .safe-check small { color: var(--lr-ink-3); }
 
 .safe-check input[type="checkbox"],
-#dryRunControl input[type="checkbox"] {
+#dryRunControl input[type="checkbox"],
+#coOwnersControl input[type="checkbox"],
+#parallelCloudControl input[type="checkbox"],
+.import-setting-row input[type="checkbox"] {
   appearance: none;
   position: relative;
   flex: none;
@@ -2562,7 +2623,10 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 }
 
 .safe-check input[type="checkbox"]::after,
-#dryRunControl input[type="checkbox"]::after {
+#dryRunControl input[type="checkbox"]::after,
+#coOwnersControl input[type="checkbox"]::after,
+#parallelCloudControl input[type="checkbox"]::after,
+.import-setting-row input[type="checkbox"]::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -2576,19 +2640,28 @@ body[data-fase="pronto"][data-worker-view="operations"] .page-intro { display: n
 }
 
 .safe-check input[type="checkbox"]:checked,
-#dryRunControl input[type="checkbox"]:checked {
+#dryRunControl input[type="checkbox"]:checked,
+#coOwnersControl input[type="checkbox"]:checked,
+#parallelCloudControl input[type="checkbox"]:checked,
+.import-setting-row input[type="checkbox"]:checked {
   border-color: var(--lr-accent);
   background: var(--lr-accent);
 }
 
 .safe-check input[type="checkbox"]:checked::after,
-#dryRunControl input[type="checkbox"]:checked::after {
+#dryRunControl input[type="checkbox"]:checked::after,
+#coOwnersControl input[type="checkbox"]:checked::after,
+#parallelCloudControl input[type="checkbox"]:checked::after,
+.import-setting-row input[type="checkbox"]:checked::after {
   left: 19px;
   background: var(--lr-accent-ink);
 }
 
 .safe-check input[type="checkbox"]:focus-visible,
-#dryRunControl input[type="checkbox"]:focus-visible {
+#dryRunControl input[type="checkbox"]:focus-visible,
+#coOwnersControl input[type="checkbox"]:focus-visible,
+#parallelCloudControl input[type="checkbox"]:focus-visible,
+.import-setting-row input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--lr-accent);
   outline-offset: 2px;
 }

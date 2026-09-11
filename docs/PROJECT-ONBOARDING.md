@@ -493,6 +493,14 @@ soltanto l'azione atomica gia' partita. Se la seconda pagina non puo' essere
 aperta o autenticata, la run prosegue automaticamente sul percorso storico a
 pagina singola.
 
+Le acquisizioni in «Pronte da importare» chiedono di nuovo, prima di ogni
+avvio o ripresa, le tre regole operative: attività nel gestionale, import dei
+comproprietari e una o due finestre Cloud. La scelta viene salvata dentro il
+job, non soltanto nelle preferenze locali, e viene riletta anche dai retry e
+dalle riprese successive. La lista distingue una run mai avviata da una run
+interrotta; «Apri dati» mostra quante righe sono concluse e la prima riga dalla
+quale il checkpoint ripartirà.
+
 Nei lookup Tecnocloud la prima riga che ripete il testo digitato e' soltanto
 l'azione di ricerca. Per i comproprietari il worker seleziona la successiva
 riga nominativo quando e' univoca, anche se Lightning nasconde l'ID dal DOM o

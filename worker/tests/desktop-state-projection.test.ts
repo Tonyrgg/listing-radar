@@ -29,6 +29,9 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(main).not.toContain("MAX_ACQUISIZIONI_CONSERVATE");
     expect(main).not.toContain("assertSpazioPerConservare");
     expect(renderer).toContain('$("jobCount").textContent = String(conservate)');
+    expect(renderer).toContain("Run mai avviata");
+    expect(renderer).toContain("Run interrotta");
+    expect(renderer).toContain("Riparte da qui");
     expect(renderer).not.toContain("${conservate}/3");
     expect(html).not.toContain("Al massimo tre");
   });
