@@ -32,8 +32,9 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(main).not.toContain("assertSpazioPerConservare");
     expect(renderer).toContain('$("jobCount").textContent = String(conservate)');
     expect(renderer).toContain("Run mai avviata");
-    expect(renderer).toContain("Run interrotta");
-    expect(renderer).toContain("Riparte da qui");
+    expect(renderer).toContain("Prima riga aperta");
+    expect(renderer).toContain("ancora aperte");
+    expect(renderer).toContain("non sono consecutive");
     expect(renderer).not.toContain("${conservate}/3");
     expect(html).not.toContain("Al massimo tre");
     expect(html).toContain('id="expandAllOwnersToggle"');

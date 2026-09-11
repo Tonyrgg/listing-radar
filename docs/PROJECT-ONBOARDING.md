@@ -499,7 +499,10 @@ comproprietari e una o due finestre Cloud. La scelta viene salvata dentro il
 job, non soltanto nelle preferenze locali, e viene riletta anche dai retry e
 dalle riprese successive. La lista distingue una run mai avviata da una run
 interrotta; «Apri dati» mostra quante righe sono concluse e la prima riga dalla
-quale il checkpoint ripartirà.
+quale il checkpoint ripartirà. Con due finestre le righe concluse possono non
+essere consecutive: il totale indica tutto il lavoro già salvato, mentre la
+«prima riga aperta» è la prima ancora incompleta. Alla ripresa le righe concluse
+più avanti vengono saltate e non sono importate una seconda volta.
 
 Nei lookup Tecnocloud la prima riga che ripete il testo digitato e' soltanto
 l'azione di ricerca. Per i comproprietari il worker seleziona la successiva

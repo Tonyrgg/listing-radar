@@ -299,6 +299,8 @@ const fmtCount = (value) =>
     /\B(?=(\d{3})+(?!\d))/g,
     ".",
   );
+const fmtNamedCount = (value, singular, plural) =>
+  `${fmtCount(value)} ${Number(value ?? 0) === 1 ? singular : plural}`;
 function commandIdentity(target) {
   const action = target.dataset.updateAction
     ? `update-${target.dataset.updateAction}`
@@ -1292,9 +1294,9 @@ function renderJobs() {
             runState = imported
               ? "Importazione completata"
               : inProgress
-                ? `Run interrotta · ${fmtCount(handled)} di ${fmtCount(total)} righe concluse`
-                : `Run mai avviata · ${fmtCount(total)} righe da importare`;
-          const stoppedHelp = "Le righe concluse restano salvate e non vengono cancellate. La ripresa le salta e parte dalla prima riga ancora aperta.";
+                ? `Interrotta · ${fmtNamedCount(handled, "conclusa", "concluse")} · ${fmtNamedCount(Math.max(0, total - handled), "aperta", "aperte")}`
+                : `Run mai avviata · ${fmtNamedCount(total, "riga da importare", "righe da importare")}`;
+          const stoppedHelp = "Le righe concluse restano salvate, anche quando non sono consecutive. La ripresa parte dalla prima riga aperta e salta tutte quelle già concluse.";
           return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark${inProgress ? " has-tooltip" : ""}"${inProgress ? ` tabindex="0" aria-label="${esc(stoppedHelp)}" data-tooltip="${esc(stoppedHelp)}"` : ""}>${inProgress ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${inProgress ? ` title="${esc(stoppedHelp)}"` : ""}>${esc(runState)}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi dal punto salvato" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
@@ -1354,12 +1356,8 @@ async function openImportDialog(jobId) {
   if (importJobId !== jobId) return;
   const { peopleById, ownershipsByPropertyId } = relationshipIndex(detail.people, detail.ownerships);
   const progress = detail.progress,
-    progressText = progress?.state === "stopped"
-      ? `Run interrotta: ripartenza dalla riga ${fmtCount(progress.nextRow ?? progress.total)} di ${fmtCount(progress.total)}.`
-      : progress?.state === "running"
-        ? `Run in corso: riga ${fmtCount(progress.nextRow ?? progress.total)} di ${fmtCount(progress.total)}.`
-        : `Run mai avviata: si parte dalla riga 1 di ${fmtCount(progress?.total ?? detail.properties.length)}.`;
-  $("importDialogContent").innerHTML = `<div class="import-progress-summary"><b>${esc(progressText)}</b><small>${fmtCount(progress?.handled ?? 0)} righe già concluse.</small></div><p class="review-count"><b>${fmtCount(detail.properties.length)}</b> immobili · <b>${fmtCount(detail.people.length)}</b> proprietari · <b>${fmtCount(detail.ownerships.length)}</b> quote</p>${detail.properties
+    progressCopy = importProgressPresentation(progress, detail.properties);
+  $("importDialogContent").innerHTML = `<div class="import-progress-summary"><b>${esc(progressCopy.headline)}</b><small>${esc(progressCopy.detail)}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div><p class="review-count"><b>${fmtCount(detail.properties.length)}</b> ${detail.properties.length === 1 ? "immobile" : "immobili"} · <b>${fmtCount(detail.people.length)}</b> ${detail.people.length === 1 ? "proprietario" : "proprietari"} · <b>${fmtCount(detail.ownerships.length)}</b> ${detail.ownerships.length === 1 ? "quota" : "quote"}</p>${detail.properties
     .map((immobile) => {
       const quote = ownershipsByPropertyId.get(immobile.id) ?? [];
       const nomi = quote
@@ -1388,12 +1386,34 @@ function importPropertyIsHandled(property) {
     || stage === "completed"
     || stage === "skipped";
 }
+function importProgressPresentation(progress, properties = []) {
+  const total = Number(progress?.total ?? properties.length ?? 0),
+    handled = Math.min(total, Number(progress?.handled ?? 0)),
+    remaining = Math.max(0, total - handled),
+    nextRow = progress?.nextRow ?? (remaining ? 1 : null),
+    laterRowsAlreadyDone = nextRow != null
+      && properties.slice(nextRow).some((property) => importPropertyIsHandled(property));
+  const headline = progress?.state === "completed"
+    ? "Importazione completata"
+    : progress?.state === "running"
+      ? `Riga in lavorazione: ${fmtCount(nextRow ?? total)} di ${fmtCount(total)}`
+      : progress?.state === "stopped"
+        ? `Prima riga aperta: ${fmtCount(nextRow ?? total)} di ${fmtCount(total)}`
+        : `Prima riga da importare: 1 di ${fmtCount(total)}`;
+  return {
+    headline,
+    detail: `${fmtNamedCount(handled, "conclusa", "concluse")} · ${fmtNamedCount(remaining, "ancora aperta", "ancora aperte")}`,
+    note: laterRowsAlreadyDone
+      ? "Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute."
+      : "",
+  };
+}
 function importPropertyRowState(property, index, progress) {
   if (importPropertyIsHandled(property)) return { className: "is-done", label: "Conclusa" };
   if (progress?.nextRow === index + 1 && progress.state !== "not_started") {
-    return { className: "is-current", label: progress.state === "running" ? "In corso" : "Riparte da qui" };
+    return { className: "is-current", label: progress.state === "running" ? "In corso" : "Prima riga aperta" };
   }
-  return { className: "is-pending", label: "Da importare" };
+  return { className: "is-pending", label: "In attesa" };
 }
 function renderCompletedImports() {
   const imports = appState?.completedImports ?? [];
@@ -2420,6 +2440,46 @@ function renderPortoni() {
   </tr>`).join("");
 }
 
+function renderOperationalFlow() {
+  const acquisitionActive = Boolean(appState?.streetRun?.active || appState?.networkRun?.active),
+    importStages = new Set([
+      "properties_processed", "person_searched", "person_created_or_updated", "person_merge_reviewed",
+      "property_searched", "property_created_or_updated", "activity_created", "contacts_matched", "owners_linked",
+      "verified", "completed",
+    ]),
+    current = appState?.active
+      ? (appState.currentStep === "acquisition_reviewed"
+          ? "review"
+          : importStages.has(appState.currentStep) ? "import" : "acquire")
+      : acquisitionActive
+        ? "acquire"
+        : (appState?.jobs?.length ? "review" : "prepare"),
+    order = ["prepare", "acquire", "review", "import"],
+    currentIndex = order.indexOf(current);
+  for (const item of document.querySelectorAll("[data-worker-flow]")) {
+    const index = order.indexOf(item.dataset.workerFlow);
+    item.classList.toggle("is-current", index === currentIndex);
+    item.classList.toggle("is-complete", index < currentIndex);
+    if (index === currentIndex) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  }
+}
+
+function renderRunRulesSummary() {
+  const activity = {
+    direct_contact: "attività autocompilata",
+    plain: "attività generica",
+    none: "nessuna attività",
+  }[appState?.preferences?.propertyActivityMode] ?? "attività autocompilata";
+  $("runRulesSummary").textContent = [
+    appState?.preferences?.keepAcquisition !== false ? "conserva prima di importare" : "import immediato",
+    appState?.preferences?.importCoOwners !== false ? "tutti i comproprietari" : "solo quota maggiore",
+    appState?.preferences?.expandAllOwners === true ? "sviluppo proprietari" : null,
+    appState?.preferences?.parallelCrmWindows === true ? "due finestre" : "una finestra",
+    activity,
+  ].filter(Boolean).join(" · ");
+}
+
 function render() {
   if (!appState) return;
   selectedMode = appState.preferences?.mode ?? selectedMode;
@@ -2442,6 +2502,8 @@ function render() {
   $("parallelCloudToggle").checked = appState.preferences?.parallelCrmWindows === true;
   $("parallelCloudToggle").disabled = Boolean(appState.active && appState.currentStep === "properties_processed");
   $("versionLabel").textContent = `v${appState.version}`;
+  renderOperationalFlow();
+  renderRunRulesSummary();
   $("excelPath").textContent =
     appState.config?.contactsExcelPath ??
     appState.preferences?.contactsExcelPath ??
@@ -3009,16 +3071,10 @@ document.addEventListener("click", async (event) => {
           target.dataset.detailJob,
         );
         const progress = detail.progress ?? { state: "not_started", handled: 0, total: detail.properties.length, nextRow: 1 },
-          stateLabel = progress.state === "completed"
-            ? "Importazione completata"
-            : progress.state === "running"
-              ? `Importazione in corso alla riga ${fmtCount(progress.nextRow ?? progress.total)} di ${fmtCount(progress.total)}`
-              : progress.state === "stopped"
-                ? `Run interrotta: riparte dalla riga ${fmtCount(progress.nextRow ?? progress.total)} di ${fmtCount(progress.total)}`
-                : `Run mai avviata: partirà dalla riga 1 di ${fmtCount(progress.total)}`;
+          progressCopy = importProgressPresentation(progress, detail.properties);
         $("detailPanel").classList.remove("is-hidden");
         $("detailContent").innerHTML =
-          `<div class="import-progress-summary"><b>${esc(stateLabel)}</b><small>${fmtCount(progress.handled)} righe concluse · ${fmtCount(detail.people.length)} proprietari · ${fmtCount(detail.ownerships.length)} quote</small></div>${detail.properties.map((p, index) => { const rowState = importPropertyRowState(p, index, progress); return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-number">${fmtCount(index + 1)}</span><span><b>${esc(p.address ?? p.cadastral_key)}</b><small>${esc(p.cadastral_key)}</small></span><span class="completion-label">${esc(rowState.label)}</span></div>`; }).join("")}`;
+          `<div class="import-progress-summary"><b>${esc(progressCopy.headline)}</b><small>${esc(progressCopy.detail)} · ${fmtNamedCount(detail.people.length, "proprietario", "proprietari")} · ${fmtNamedCount(detail.ownerships.length, "quota", "quote")}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div>${detail.properties.map((p, index) => { const rowState = importPropertyRowState(p, index, progress); return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-number">${fmtCount(index + 1)}</span><span><b>${esc(p.address ?? p.cadastral_key)}</b><small>${esc(p.cadastral_key)}</small></span><span class="completion-label">${esc(rowState.label)}</span></div>`; }).join("")}`;
         goTo("detailPanel");
         return true;
       }

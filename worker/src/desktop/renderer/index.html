@@ -59,6 +59,15 @@
           <div id="checksGrid" class="checks-grid is-hidden"></div>
         </section>
 
+        <nav class="worker-flow" aria-label="Percorso del lavoro">
+          <ol>
+            <li data-worker-flow="prepare"><span>1</span><div><b>Prepara</b><small>Scegli regole e sorgente</small></div></li>
+            <li data-worker-flow="acquire"><span>2</span><div><b>Acquisisci</b><small>Leggi e conserva da SISTER</small></div></li>
+            <li data-worker-flow="review"><span>3</span><div><b>Verifica</b><small>Controlla la coda salvata</small></div></li>
+            <li data-worker-flow="import"><span>4</span><div><b>Importa</b><small>Scrivi e verifica nel Cloud</small></div></li>
+          </ol>
+        </nav>
+
         <section id="operationConsole" class="operation-console" aria-label="Operazione in corso">
           <header class="operation-console-header"><div><p class="eyebrow">Centro operativo</p><h2>Operazione in corso</h2></div><span class="operation-console-live"><i></i>Live</span></header>
           <div id="operationConsoleBody" class="operation-console-body"></div>
@@ -89,6 +98,11 @@
         </section>
 
         <section id="runControls" class="run-controls" aria-label="Regole della run">
+          <header class="run-controls-header">
+            <div><p class="eyebrow">1 · Regole operative</p><h2>Decidi come deve terminare la run</h2><p>Queste scelte valgono per la prossima lavorazione. Durante una ripresa puoi riconfermarle prima dell’import.</p></div>
+            <strong id="runRulesSummary">Conserva · comproprietari · una finestra</strong>
+          </header>
+          <div class="run-rules-grid">
           <label class="activity-mode-control" id="dryRunControl">
             <div class="activity-mode-copy">
               <b>Acquisisci e conserva</b>
@@ -128,6 +142,7 @@
               <button type="button" data-activity-mode="none" role="radio" aria-checked="false">Nessuna</button>
             </div>
           </div>
+          </div>
           <div class="run-stop-control">
             <button id="stopAfterNextImportButton" class="button secondary is-hidden" type="button" aria-pressed="false">Pausa dopo questo immobile</button>
             <small id="stopAfterNextImportStatus">Disponibile appena parte una run.</small>
@@ -136,6 +151,7 @@
 
         <section class="run-launcher" aria-label="Modalità di acquisizione">
           <header class="run-launcher-header">
+            <p class="eyebrow run-launcher-step">2 · Scegli l’acquisizione</p>
             <div class="run-carousel-nav" role="tablist" aria-label="Tipi di lavorazione">
               <button class="run-mode-tab is-selected" data-run-slide-target="civic" data-run-description="Una ricerca aperta su un solo civico, guidata oppure automatica." role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6M3 20h18"/></svg><b>Civico</b></button>
               <button class="run-mode-tab" data-run-slide-target="street" data-run-description="Acquisisce tutte le varianti esatte della via partendo dall’elenco SISTER." role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l3-10h6l3 10M9 11h6"/></svg><b>Via completa</b></button>
@@ -384,7 +400,7 @@
         </section>
 
         <section id="jobs" class="jobs-card run-keepsakes">
-          <header><div><p class="eyebrow">Acquisizioni conservate</p><h2>Pronte da importare</h2><p>Apri i dati per controllarli, poi avvia l'import quando vuoi. Finché sono qui, nel gestionale non è finito niente.</p></div><span id="jobCount" class="count">0</span></header>
+          <header><div><p class="eyebrow">3 · Verifica e importa</p><h2>Pronte da importare</h2><p>Ogni riga conserva il proprio stato. Apri i dati, controlla la prima riga ancora aperta e poi avvia o riprendi.</p></div><span id="jobCount" class="count">0</span></header>
           <div class="ledger"><div class="ledger-head"><span></span><span>Ricerca</span><span>Immobili</span><span>Proprietari</span><span>Stato</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p></div></div>
         </section>
 
