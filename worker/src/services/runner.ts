@@ -32,8 +32,9 @@ import { indexJobGraph } from "./job-graph.js";
 import { inspectAcquisitionQueue, isAcquisitionExcluded } from "./acquisition-queue.js";
 import { ImportV2Coordinator } from "../import-v2/coordinator.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
+import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
-import type { ImportV2Stage } from "../import-v2/model.js";
+import type { CrmPropertySummary, ImportV2Stage } from "../import-v2/model.js";
 
 /** Cosa sta facendo il worker adesso, detto all'operatore. */
 const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
@@ -194,6 +195,8 @@ export interface RunnerOptions {
   /** Numero di pagine Cloud indipendenti; il percorso storico resta 1. */
   crmConcurrency?: number | (() => number);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
+  /** Street name enables property-first, existing-only CRM refinement. */
+  refinementStreet?: string | null;
 }
 
 export class PropertyWorkerRunner {
@@ -209,6 +212,7 @@ export class PropertyWorkerRunner {
   private readonly importCoOwners: () => boolean;
   private readonly crmConcurrency: () => number;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
+  private readonly refinementStreet: string | null;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
@@ -229,6 +233,7 @@ export class PropertyWorkerRunner {
       ? () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency()) || 1))
       : () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency) || 1));
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
+    this.refinementStreet = options.refinementStreet?.replace(/\s+/g, " ").trim() || null;
   }
 
   async interrupt() {
@@ -605,10 +610,37 @@ export class PropertyWorkerRunner {
         const graph = await this.repository.loadGraph(job.id);
         const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
         const activityTasks = buildPropertyActivityTasks(graph);
+        let refinementInventory: CrmPropertySummary[] | null = null;
+        if (this.refinementStreet) {
+          if (crmV2Ports.length !== 1) {
+            throw new WorkerError("La rifinitura usa una sola finestra Cloud per mantenere ordinato l’inventario della via", "failed");
+          }
+          refinementInventory = await crmV2Ports[0]!.listPropertiesByStreet(this.refinementStreet, (inventoryProgress) => {
+            const property = graph.properties[0];
+            if (!property) return;
+            const message = inventoryProgress.phase === "loading"
+              ? `Carico l’elenco Cloud della via · ${inventoryProgress.current} righe visibili`
+              : `Verifico le schede Cloud · ${inventoryProgress.current}/${inventoryProgress.total}`;
+            this.emitPropertyProgress(job, property, inventoryProgress.current, Math.max(inventoryProgress.total, 1), "property_inventory", message);
+          });
+          if (!refinementInventory.length) {
+            throw new WorkerError(
+              `Nessun immobile della via “${this.refinementStreet}” è stato confermato dal Cloud`,
+              "needs_review",
+              { refinement: true, street: this.refinementStreet },
+              true,
+            );
+          }
+        }
         const coordinator = new ImportV2Coordinator(this.repository, crmV2Ports, {
           maxTransientAttempts: AUTOMATIC_OPERATION_ATTEMPTS,
           isInterruptionRequested: () => this.isCancellationRequested(job.id) || this.isPauseRequested(job.id),
           includeCoOwners: () => this.importCoOwners(),
+          ...(refinementInventory ? {
+            propertyCandidates: async (plan) => refinementInventory!.filter((candidate) =>
+              sameCadastralIdentity({ ...plan.source.cadastral, income: null }, candidate.cadastral)),
+            requireExistingProperty: true,
+          } : {}),
         });
         const result = await coordinator.runJob(job, (property, owners) => {
           const activityMode = this.propertyActivityMode();

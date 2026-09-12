@@ -2234,6 +2234,7 @@ details.section > .section-body {
 }
 
 #sync .request-archive-card,
+#refinement .refinement-card,
 #portoni .portoni-card,
 #history .completed-imports-section,
 #history .jobs-card,
@@ -2268,6 +2269,7 @@ details.section > .section-body {
 #history #detailPanel { grid-column: 1 / -1; }
 
 body[data-worker-view="operations"] .workspace > details.section,
+body[data-worker-view="refinement"] .workspace > :not(#refinement),
 body[data-worker-view="portoni"] .workspace > :not(#portoni),
 body[data-worker-view="sync"] .workspace > :not(#sync),
 body[data-worker-view="history"] .workspace > :not(#history),
@@ -2275,6 +2277,7 @@ body[data-worker-view="settings"] .workspace > :not(#settings) {
   display: none !important;
 }
 
+body[data-worker-view="refinement"] #refinement,
 body[data-worker-view="portoni"] #portoni,
 body[data-worker-view="sync"] #sync,
 body[data-worker-view="history"] #history,
@@ -2287,6 +2290,7 @@ details.section[data-operation-locked] :is(button, input, select, textarea) {
   opacity: 0.5;
 }
 
+body[data-worker-view="refinement"] #refinement::before,
 body[data-worker-view="portoni"] #portoni::before,
 body[data-worker-view="sync"] #sync::before,
 body[data-worker-view="history"] #history::before,
@@ -2300,6 +2304,7 @@ body[data-worker-view="settings"] #settings::before {
   letter-spacing: var(--lr-tracking-title);
 }
 
+body[data-worker-view="refinement"] #refinement::before { content: "Rifinitura vie"; }
 body[data-worker-view="portoni"] #portoni::before { content: "Schede Portoni"; }
 body[data-worker-view="sync"] #sync::before { content: "Sincronizza il gestionale"; }
 body[data-worker-view="history"] #history::before { content: "Cronologia dei lavori"; }
@@ -2311,6 +2316,16 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
 }
 
 .portoni-layout { display: grid; gap: 16px; }
+.refinement-layout { display: grid; gap: var(--lr-space-4); }
+.refinement-card { min-width: 0; }
+.refinement-launcher { display: grid; grid-template-columns: minmax(280px, 1fr) auto auto; align-items: end; gap: var(--lr-space-3); margin-top: var(--lr-space-5); }
+.refinement-launcher label { display: grid; gap: var(--lr-space-2); color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+.refinement-launcher input { min-height: var(--lr-control-height); width: 100%; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); background: var(--lr-raised); padding: var(--lr-space-2) var(--lr-space-3); }
+.refinement-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--lr-space-3); padding: 0; margin: var(--lr-space-5) 0; list-style: none; }
+.refinement-flow li { display: grid; grid-template-columns: 30px 1fr; gap: var(--lr-space-3); padding: var(--lr-space-3); border-top: 1px solid var(--lr-line-quiet); }
+.refinement-flow li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-pill); font-family: var(--lr-font-mono); font-size: var(--lr-text-meta); }
+.refinement-flow b, .refinement-flow small { display: block; }
+.refinement-flow small, .refinement-status { color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
 .portoni-card { padding: 20px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-container); background: var(--lr-surface); min-width: 0; }
 .portoni-launcher { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto auto; align-items: end; gap: 12px; margin-top: 20px; }
 .portoni-launcher label { display: grid; gap: 6px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
@@ -2337,7 +2352,7 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
 .portoni-history-row.is-selected { border-color: var(--lr-accent); }
 .portoni-history-row > button:first-child { border: 0; background: transparent; text-align: left; }
 .portoni-history-row b, .portoni-history-row small { display: block; }
-@media (max-width: 900px) { .portoni-launcher { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .portoni-launcher, .refinement-launcher, .refinement-flow { grid-template-columns: 1fr; } }
 
 /* ========================================================================== */
 /* Worker 0.17 · launcher compatto: tre run, una sola misura                   */

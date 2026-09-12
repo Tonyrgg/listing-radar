@@ -127,6 +127,16 @@ Se Supabase risponde con HTTP 402 o segnala il superamento della quota, il worke
 
 ## Ordine della lavorazione
 
+### Rifinitura vie già presenti
+
+La pagina **Rifinitura** serve alle vie i cui immobili sono già nel Cloud.
+Legge la via da SISTER, carica tutti i risultati della categoria Immobili della
+ricerca globale e apre le schede per confrontarle tramite foglio, particella e
+subalterno. Aggiorna proprietari, comproprietari, quote e recapiti e assicura
+un'attività generica. Non crea immobili mancanti: assenze e ambiguità restano
+nel lavoro come righe da controllare. Il normale import non cambia
+comportamento.
+
 Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTER e mostra il riepilogo. Dopo la conferma lavora **un immobile alla volta**, nell'ordine in cui è stato acquisito:
 
 Dal riepilogo puoi anche scegliere **Salva per importarla dopo**. La ricerca resta nell'archivio con immobili, proprietari, quote e ordine SISTER; il pulsante **Importa** riparte direttamente dai dati conservati senza una nuova acquisizione. Le ricerche possono essere eliminate dall'archivio dopo l'importazione.

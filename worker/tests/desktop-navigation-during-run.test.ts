@@ -22,7 +22,7 @@ describe("navigazione del worker durante una lavorazione", () => {
       readFile(stylesFile, "utf8"),
     ]);
 
-    expect(renderer).toContain('for (const id of ["portoni", "sync", "history", "settings"])');
+    expect(renderer).toContain('for (const id of ["refinement", "portoni", "sync", "history", "settings"])');
     expect(renderer).toContain("section.inert = sectionLocked");
     expect(renderer).toContain('section.toggleAttribute("data-operation-locked", sectionLocked)');
     expect(styles).toContain("details.section[data-operation-locked]");

@@ -1366,7 +1366,118 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     // A Lightning card need not expose an h1/h2. Optional decoration must not
     // spend the default 30-second locator timeout on every matching record.
     const heading = displayName || (await headingField.count() ? await headingField.innerText() : fullAddress);
-    return { id: propertyId, displayName: heading.replace(/\s+/g, " ").trim(), fullAddress: fullAddress || null, cadastral: await this.readCadastralIdentity() };
+    const importedFromRegistry = await this.page.getByText("Importato da visura", { exact: true }).filter({ visible: true }).count() > 0;
+    return {
+      id: propertyId,
+      displayName: heading.replace(/\s+/g, " ").trim(),
+      fullAddress: fullAddress || null,
+      cadastral: await this.readCadastralIdentity(),
+      importedFromRegistry,
+    };
+  }
+
+  /**
+   * Builds the CRM side of a street refinement exactly from the global-search
+   * experience used by the operator. The first type-ahead row is an action,
+   * not a record; after entering the Immobili scope every cloud page is
+   * acknowledged before requesting the next fifty rows.
+   */
+  async listPropertiesByStreet(
+    street: string,
+    onProgress?: (progress: { phase: "loading" | "reading"; current: number; total: number }) => void,
+  ): Promise<CrmPropertySummary[]> {
+    return this.action("Inventario immobili della via", async () => {
+      const requested = street.replace(/\s+/g, " ").trim();
+      if (requested.length < 4) throw new ImportV2Error("Via non valida per la ricerca Cloud", "invalid_source");
+      let searchFields = this.page.locator('input[title="Search..."], input[placeholder="Search..."]').filter({ visible: true });
+      if (await searchFields.count() !== 1) {
+        await this.navigate(ACCOUNT_LIST);
+        searchFields = this.page.locator('input[title="Search..."], input[placeholder="Search..."]').filter({ visible: true });
+      }
+      const search = await this.one(searchFields, "Ricerca globale");
+      await search.fill("");
+      await search.pressSequentially(requested, { delay: 45 });
+      let typingStable = 0;
+      for (let wait = 0; wait < 60 && typingStable < 3; wait += 1) {
+        const ready = normalized(await search.inputValue()) === normalized(requested) && !(await this.searchIsBusy());
+        typingStable = ready ? typingStable + 1 : 0;
+        if (typingStable < 3) await this.pauseAwareWait(200);
+      }
+      if (typingStable < 3) throw new ImportV2Error("La via non è rimasta stabile nella ricerca Cloud", "global_portal", { global: true });
+
+      const searchAction = this.page.locator("li.SEARCH_OPTION a, a.SEARCH_OPTION").filter({ visible: true });
+      if (await searchAction.count() === 1) await searchAction.click({ force: true });
+      else await search.press("Enter");
+      await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
+      const submitted = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "");
+      if (normalized(submitted) !== normalized(requested)) {
+        throw new ImportV2Error("La ricerca Cloud è partita con una via diversa da quella richiesta", "global_portal", { global: true });
+      }
+
+      const scopes = this.page.locator("a.scopesItem").filter({ visible: true });
+      const propertyScope = scopes.filter({ hasText: /^\s*Immobili\s*$/i });
+      const links = this.page.locator('a[href*="/s/immobile/"]').filter({ visible: true });
+      const scopeRequests = this.watchSearchRequests();
+      try {
+        await (await this.one(propertyScope, "Categoria Immobili", 15_000)).click({ force: true });
+        let priorCount = -1;
+        let stable = 0;
+        let confirmedEmpty = false;
+        for (let wait = 0; wait < 100 && stable < 3; wait += 1) {
+          await this.assertSearchHealthy(scopeRequests.failed());
+          const count = await links.count();
+          confirmedEmpty = await this.page.getByText(/Immobili\s*[:(]?\s*0\s*(?:\)?\s*)risultat[io]/i).filter({ visible: true }).count() > 0;
+          const ready = !scopeRequests.pending() && !(await this.searchIsBusy()) && (count > 0 || confirmedEmpty);
+          stable = ready && count === priorCount ? stable + 1 : 0;
+          priorCount = count;
+          if (stable < 3) await this.pauseAwareWait(200);
+        }
+        if (stable < 3) {
+          throw new ImportV2Error("La categoria Immobili non ha confermato né righe né un risultato vuoto", "global_portal", { global: true });
+        }
+      } finally { scopeRequests.stop(); }
+
+      for (let pageIndex = 0; pageIndex < 100; pageIndex += 1) {
+        const more = this.page.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true });
+        if (!(await more.count())) break;
+        const before = await links.count();
+        const requests = this.watchSearchRequests();
+        try {
+          await (await this.one(more, "Mostra di più")).click();
+          for (let wait = 0; wait < 100; wait += 1) {
+            await this.assertSearchHealthy(requests.failed());
+            const current = await links.count();
+            const stillVisible = await more.count() > 0;
+            if (!requests.pending() && !(await this.searchIsBusy()) && (current > before || !stillVisible)) break;
+            await this.pauseAwareWait(200);
+          }
+          const after = await links.count();
+          const stillVisible = await more.count() > 0;
+          if (after === before && stillVisible) {
+            throw new ImportV2Error("Mostra di più non ha aggiunto immobili: rifinitura sospesa sulla lista Cloud", "global_portal", { global: true });
+          }
+          onProgress?.({ phase: "loading", current: after, total: after });
+        } finally { requests.stop(); }
+      }
+      if (await this.page.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true }).count()) {
+        throw new ImportV2Error("La lista Cloud supera il limite operativo di caricamento", "unsupported_case", { global: true });
+      }
+
+      const raw = await links.evaluateAll((nodes) => nodes.flatMap((node) => {
+        const href = node.getAttribute("href") ?? "";
+        const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+        const id = node.getAttribute("data-recordid") ?? node.getAttribute("data-id") ?? href.match(/\/s\/immobile\/([^/?#]+)/i)?.[1] ?? "";
+        return id && /^IM\s*-/i.test(label) ? [{ id, label }] : [];
+      }));
+      const streetKey = normalized(requested);
+      const unique = [...new Map(raw.filter((row) => normalized(row.label).includes(streetKey)).map((row) => [row.id, row])).values()];
+      const summaries: CrmPropertySummary[] = [];
+      for (const [index, row] of unique.entries()) {
+        onProgress?.({ phase: "reading", current: index + 1, total: unique.length });
+        summaries.push(await this.readPropertySummary(row.id, row.label));
+      }
+      return summaries;
+    });
   }
 
   private async propertyLinksForPerson(personId: string, plan: ImportV2Plan): Promise<Array<{ id: string; href: string; label: string }>> {

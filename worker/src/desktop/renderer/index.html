@@ -16,6 +16,7 @@
       </div>
       <nav class="top-nav" aria-label="Sezioni del worker">
         <button class="nav-item is-active" data-scroll="operations">Lavorazioni</button>
+        <button class="nav-item" data-scroll="refinement">Rifinitura</button>
         <button class="nav-item" data-scroll="portoni">Portoni</button>
         <button class="nav-item" data-scroll="sync">Sincronizza</button>
         <button class="nav-item" data-scroll="history">Cronologia <span id="historyNavHint"></span></button>
@@ -423,6 +424,31 @@
         </section>
 
         <!-- Da qui in giù: disponibile a richiesta, non sempre a schermo. -->
+        <details class="section" id="refinement">
+          <summary>Rifinitura vie già importate</summary>
+          <div class="section-body refinement-layout">
+            <section class="refinement-card">
+              <header>
+                <div><p class="eyebrow">Verifica property-first</p><h2>Rifinisci una via esistente</h2><p>Confronta il catasto SISTER con l’inventario completo degli immobili già presenti nel Cloud. Non crea nuove schede immobili.</p></div>
+                <span id="refinementBadge" class="status-pill is-idle"><span></span>Pronto</span>
+              </header>
+              <div class="refinement-launcher">
+                <label>Via completa<input id="refinementStreet" type="text" autocomplete="off" placeholder="es. via luigi castellucci" /></label>
+                <button id="refinementStop" class="button danger is-hidden">Metti in pausa</button>
+                <button id="refinementStart" class="button primary">Avvia rifinitura</button>
+              </div>
+              <ol class="refinement-flow" aria-label="Passaggi della rifinitura">
+                <li><span>1</span><div><b>Legge SISTER</b><small>Raccoglie immobili, intestatari e quote della via.</small></div></li>
+                <li><span>2</span><div><b>Inventaria il Cloud</b><small>Apre “Cerca la via”, Immobili e carica tutte le righe.</small></div></li>
+                <li><span>3</span><div><b>Riconcilia e completa</b><small>Aggiorna persone, recapiti, comproprietari, quote e attività.</small></div></li>
+              </ol>
+              <div id="refinementProgress" class="street-run-progress is-hidden"><span></span></div>
+              <p id="refinementStatus" class="refinement-status">Gli immobili assenti o con catasto ambiguo vengono segnalati e non creati.</p>
+              <p id="refinementError" class="street-registry-error is-hidden" role="alert"></p>
+            </section>
+          </div>
+        </details>
+
         <details class="section" id="portoni">
           <summary>Schede Portoni</summary>
           <div class="section-body portoni-layout">

@@ -219,6 +219,49 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("risolve prima l'immobile dall'inventario della via e non usa le ricerche immobiliari storiche", async () => {
+    class PropertyFirstCrm extends FakeCrm {
+      override async findPropertiesByCadastralIdentity(): Promise<CrmPropertySnapshot[]> {
+        throw new Error("La rifinitura non deve riaprire la ricerca catastale");
+      }
+      override async listAllPropertiesForPeople(): Promise<CrmPropertySnapshot[]> {
+        throw new Error("La rifinitura non deve ricostruire la via dai nominativi");
+      }
+    }
+    const crm = new PropertyFirstCrm();
+    const source = property();
+    crm.properties.set("street-property", {
+      id: "street-property", displayName: "IM - Arco Angarano 10 - Rossi",
+      fullAddress: source.fullAddress,
+      cadastral: { ...structuredClone(source.cadastral), income: 999.99 },
+      owners: [],
+      importedFromRegistry: true,
+    });
+    const inventory = [...crm.properties.values()].map(({ owners: _owners, ...summary }) => summary);
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), {
+      propertyCandidates: async () => inventory,
+      requireExistingProperty: true,
+    }).run(source);
+    expect(outcome).toMatchObject({ state: "completed", crmPropertyId: "street-property" });
+    expect(crm.nextProperty).toBe(1);
+  });
+
+  it("in rifinitura non crea persone né immobili se il catasto SISTER non esiste nell'inventario Cloud", async () => {
+    const crm = new FakeCrm();
+    const outcome = await new ImportV2Engine(crm, new MemoryStore(), {
+      propertyCandidates: async () => [],
+      requireExistingProperty: true,
+    }).run(property());
+    expect(outcome).toMatchObject({
+      state: "quarantined",
+      stage: "planned",
+      failure: { kind: "unsupported_case" },
+    });
+    expect(crm.people.size).toBe(0);
+    expect(crm.properties.size).toBe(0);
+    expect(crm.searches).toHaveLength(0);
+  });
+
   it("non riscrive un nominativo già verificato se il comproprietario successivo richiede un retry", async () => {
     class RetrySecondCrm extends FakeCrm {
       writes: string[] = [];

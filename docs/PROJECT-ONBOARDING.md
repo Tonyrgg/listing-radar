@@ -483,6 +483,30 @@ A; disattivando esplicitamente il controllo vengono acquisite e inserite nella
 scheda stampabile anche le categorie C. I filtri per piano e intervallo civici
 si applicano nello stesso passaggio, prima di aprire gli intestatari.
 
+### Rifinitura delle vie già importate
+
+«Rifinitura» è un percorso distinto dall'import ordinario per le vie già
+presenti nel gestionale. Acquisisce comunque la via completa da SISTER, quindi
+costruisce l'inventario Cloud dalla barra globale: invia l'azione esplicita
+`Cerca “via”`, entra nell'ambito `Immobili` e preme `Mostra di più` soltanto
+dopo che il blocco precedente è cresciuto o il pulsante è scomparso. Le righe
+vengono deduplicate esclusivamente per ID CRM; titoli uguali possono indicare
+unità diverse e non vengono accorpati.
+
+La riconciliazione è property-first ed existing-only. Ogni scheda Cloud viene
+letta per ricavare terna catastale, indirizzo e indicatore `Importato da
+visura`; l'abbinamento operativo richiede foglio, particella e subalterno. Solo
+dopo questo riscontro vengono aggiornati nominativi, recapiti, comproprietari,
+quote e l'attività generica da eseguire. Una ricerca per codice fiscale è
+ammessa per risolvere i nominativi, ma non è mai il punto d'ingresso alla via.
+Un immobile SISTER assente dall'inventario o ambiguo viene accantonato prima di
+qualsiasi creazione: la rifinitura non crea nuove schede immobili.
+
+Questo vincolo è un'opzione del motore V2 usata solo dalla Rifinitura. Le
+lavorazioni ordinarie conservano il percorso storico e possono continuare a
+creare un immobile quando tutte le verifiche anti-duplicato ne provano
+l'assenza.
+
 ### Import Cloud su due pagine
 
 «Due finestre Cloud» e' una preferenza esplicita e disattivata per default:

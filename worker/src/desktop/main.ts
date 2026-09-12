@@ -251,6 +251,9 @@ let streetRunPromise: Promise<void> | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
+let refinementActive = false;
+let refinementStreet: string | null = null;
+let refinementError: string | null = null;
 let portoniActive = false;
 let portoniCancellationRequested = false;
 let portoniError: string | null = null;
@@ -1187,6 +1190,13 @@ async function stateSnapshot() {
       sheets: portoniSheets,
       historyPath: portoniHistoryPath(),
     },
+    refinement: {
+      active: refinementActive,
+      street: refinementStreet,
+      lastError: refinementError,
+      phase: streetRunActive ? "sister" : active && refinementActive ? "cloud" : "idle",
+      progress: streetRunActive ? streetRunProgress : propertyProgress,
+    },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
   };
@@ -1403,14 +1413,15 @@ async function runSisterStreet(input: {
   dryRun: boolean;
   filters?: Partial<StreetPropertyFilters>;
   registryNetwork?: boolean;
+  refinement?: boolean;
 }) {
   const street = input.street.replace(/\s+/g, " ").trim();
   const filters = normalizeStreetPropertyFilters(input.filters);
-  const expandAllOwners = preferences.expandAllOwners;
+  const expandAllOwners = input.refinement ? false : preferences.expandAllOwners;
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
-  const longRunMode = input.resume && resumeCheckpoint
+  const longRunMode = input.refinement ? "live" : input.resume && resumeCheckpoint
     ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
     : (input.dryRun ? "dry_run" : "live");
   const ownsOperationReservation = !input.registryNetwork;
@@ -1426,6 +1437,11 @@ async function runSisterStreet(input: {
     throw error;
   }
   streetRunActive = true;
+  if (input.refinement) {
+    refinementActive = true;
+    refinementStreet = street;
+    refinementError = null;
+  }
   operationCompletion = null;
   streetRunCancellationRequested = false;
   streetRunAbandonRequested = false;
@@ -1589,6 +1605,17 @@ async function runSisterStreet(input: {
           }
         }
       }
+      if (input.refinement && result.importJobId) {
+        await liveRepository!.updateJob(result.importJobId, {
+          acquisition: {
+            strategy: "street_refinement",
+            street,
+            activityMode: "plain",
+            importCoOwners: true,
+            parallelCrmWindows: false,
+          },
+        });
+      }
       pushActivity(
         result.status === "completed"
           ? `${longRunMode === "dry_run" ? "Dry-run" : "Acquisizione reale"} via completata: ${result.totalAcceptedProperties} immobili unici e ${result.totalOwnersRead} proprietari letti`
@@ -1662,7 +1689,13 @@ async function runSisterStreet(input: {
       try {
         pushActivity("Acquisizione bulk completata: avvio l'import automatico degli immobili salvati", "success");
         await repository(config).markImportStarted(jobToImport);
-        await runWorker({ mode: "automatic", dryRun: false, jobId: jobToImport, registryNetwork: input.registryNetwork });
+        await runWorker({
+          mode: "automatic",
+          dryRun: false,
+          jobId: jobToImport,
+          registryNetwork: input.registryNetwork,
+          refinementStreet: input.refinement ? street : undefined,
+        });
         const importPromise = activeRunPromise;
         if (importPromise) await importPromise;
         const importedJob = await repository(config).getJob(jobToImport);
@@ -1697,6 +1730,10 @@ async function runSisterStreet(input: {
       result: registryResult ?? { status: "interrupted", mode: longRunMode },
       error: registryError,
     });
+    if (input.refinement) {
+      refinementActive = false;
+      refinementError = streetRunError ?? lastError;
+    }
     streetRunPromise = null;
   });
   streetRunPromise = runPromise;
@@ -2785,7 +2822,7 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
   await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
 }
 
-async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; registryNetwork?: boolean }) {
+async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; registryNetwork?: boolean; refinementStreet?: string }) {
   const ownsOperationReservation = !input.registryNetwork;
   if (ownsOperationReservation) reserveOperation("worker");
   try {
@@ -2804,6 +2841,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   });
   let forceLiveImport = false;
   let resumedImportOptions: ImportRunOptions | null = null;
+  let effectiveRefinementStreet = input.refinementStreet?.replace(/\s+/g, " ").trim() || null;
   try {
     if (input.jobId) {
       let pendingJob = await repository().getJob(input.jobId);
@@ -2817,6 +2855,9 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
         importCoOwners: preferences.importCoOwners,
         parallelCrmWindows: preferences.parallelCrmWindows,
       });
+      if (!effectiveRefinementStreet && pendingJob.acquisition?.strategy === "street_refinement") {
+        effectiveRefinementStreet = String(pendingJob.acquisition.street ?? pendingJob.street ?? "").replace(/\s+/g, " ").trim() || null;
+      }
     }
   } catch (error) {
     if (ownsOperationReservation) releaseOperationReservation("worker");
@@ -2836,6 +2877,14 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     importCoOwnersOverride = resumedImportOptions.importCoOwners;
     parallelCrmWindowsOverride = resumedImportOptions.parallelCrmWindows;
   }
+  if (effectiveRefinementStreet) {
+    activityModeOverride = "plain";
+    importCoOwnersOverride = true;
+    parallelCrmWindowsOverride = false;
+    refinementActive = true;
+    refinementStreet = effectiveRefinementStreet;
+    refinementError = null;
+  }
   preferences = { ...preferences, mode: input.mode, dryRun: forceLiveImport ? false : input.dryRun };
   await persistPreferences();
   activePrompts = new DesktopPromptController(publishPrompt);
@@ -2850,6 +2899,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     importCoOwners: () => importCoOwnersOverride ?? preferences.importCoOwners,
     crmConcurrency: () => (parallelCrmWindowsOverride ?? preferences.parallelCrmWindows) ? 2 : 1,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
+    refinementStreet: effectiveRefinementStreet,
   });
   activeRunner = runner;
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
@@ -2907,6 +2957,10 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       parallelCrmWindowsOverride = null;
       crmImportConcurrency = 1;
       stopAfterNextImportRequested = false;
+      if (effectiveRefinementStreet && !streetRunActive) {
+        refinementActive = false;
+        refinementError = lastError;
+      }
       refreshStoppingAll();
       await publishState();
     });
@@ -3291,6 +3345,17 @@ function registerIpc() {
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
     await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
+  });
+  ipcMain.handle("desktop:start-refinement", async (_event, values: { street?: string }) => {
+    const street = String(values?.street ?? "");
+    await runSisterStreet({
+      street,
+      resume: false,
+      dryRun: false,
+      refinement: true,
+      filters: { residentialOnly: false },
+    });
+    return { started: true, street: street.replace(/\s+/g, " ").trim() };
   });
   ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string; filters?: Partial<StreetPropertyFilters> }) => ({
     id: await runPortoni({ street: String(values?.street ?? ""), filters: values?.filters }),

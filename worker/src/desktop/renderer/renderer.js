@@ -257,10 +257,12 @@ function markActiveNav(id) {
   });
 }
 function lockSecondaryPageActions(locked) {
-  for (const id of ["portoni", "sync", "history", "settings"]) {
+  for (const id of ["refinement", "portoni", "sync", "history", "settings"]) {
     const section = $(id);
     if (!section) continue;
-    const sectionLocked = locked && !(id === "portoni" && appState?.portoni?.active);
+    const sectionLocked = locked
+      && !(id === "portoni" && appState?.portoni?.active)
+      && !(id === "refinement" && appState?.refinement?.active);
     section.inert = sectionLocked;
     section.toggleAttribute("data-operation-locked", sectionLocked);
   }
@@ -2444,6 +2446,32 @@ function renderPortoni() {
   </tr>`).join("");
 }
 
+function renderRefinement() {
+  const state = appState?.refinement ?? { active: false, phase: "idle", street: null, lastError: null };
+  const running = Boolean(state.active);
+  const phase = state.phase === "sister" ? "Lettura SISTER" : state.phase === "cloud" ? "Verifica Cloud" : "Pronto";
+  $("refinementBadge").className = `status-pill ${running ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
+  $("refinementBadge").innerHTML = `<span></span>${running ? phase : state.lastError ? "Serve attenzione" : "Pronto"}`;
+  $("refinementStreet").disabled = running;
+  $("refinementStart").disabled = running || Boolean(appState?.configError) || Boolean(appState?.cloudError);
+  $("refinementStop").classList.toggle("is-hidden", !running);
+  $("refinementError").classList.toggle("is-hidden", !state.lastError);
+  $("refinementError").textContent = state.lastError ?? "";
+  const progress = state.phase === "sister" ? appState?.streetRun?.progress : appState?.propertyProgress;
+  $("refinementProgress").classList.toggle("is-hidden", !running || !progress);
+  if (running && progress) {
+    const total = Math.max(1, Number(progress.total ?? 1));
+    const current = Math.max(0, Number(progress.current ?? progress.index ?? 0));
+    $("refinementProgress").querySelector("span").style.width = `${Math.min(100, Math.round(current / total * 100))}%`;
+    $("refinementStatus").textContent = progress.message
+      ?? (state.phase === "sister" ? `Acquisizione SISTER · ${current}/${total}` : `Rifinitura Cloud · ${current}/${total}`);
+  } else {
+    $("refinementStatus").textContent = state.lastError
+      ? "La lavorazione resta conservata: puoi riprenderla senza creare immobili mancanti."
+      : "Gli immobili assenti o con catasto ambiguo vengono segnalati e non creati.";
+  }
+}
+
 function renderOperationalFlow() {
   const acquisitionActive = Boolean(appState?.streetRun?.active || appState?.networkRun?.active),
     importStages = new Set([
@@ -2591,6 +2619,7 @@ function render() {
   renderStreetRun();
   renderStreetRegistry();
   renderNetworkRun();
+  renderRefinement();
   renderPortoni();
   renderFiltriRete();
   renderReview();
@@ -2663,6 +2692,12 @@ document.addEventListener("click", async (event) => {
         renderPortoni();
         $("portoniEditor")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return true;
+      }
+      if (target.id === "refinementStart") return window.propertyWorker.startRefinement({ street: $("refinementStreet").value });
+      if (target.id === "refinementStop") {
+        return appState?.refinement?.phase === "sister"
+          ? window.propertyWorker.cancelStreetRun()
+          : window.propertyWorker.pauseJob();
       }
       if (target.dataset.portoniFile) return window.propertyWorker.revealFile(target.dataset.portoniFile);
       if (target.id === "portoniStart") return window.propertyWorker.startPortoni({
@@ -3280,6 +3315,7 @@ window.propertyWorker.onStreetRunProgress((progress) => {
   if (!appState) return;
   appState.streetRun = { ...(appState.streetRun ?? {}), progress };
   renderStreetRunInternalProgress(progress);
+  if (appState.refinement?.active) renderRefinement();
   renderCommandMonitor();
   renderSteps();
 });
@@ -3291,6 +3327,7 @@ window.propertyWorker.onTransientUpdate((update) => {
     renderSteps();
     renderAction();
     enhanceActionPanel();
+    if (appState.refinement?.active) renderRefinement();
     renderOperation = true;
   }
   if (Object.prototype.hasOwnProperty.call(update, "retryMonitor")) {

@@ -23,6 +23,7 @@ import type {
   SourceOwner,
   SourceProperty,
   SyncedPerson,
+  CrmPropertySummary,
 } from "./model.js";
 import type { ImportV2Store, OwnershipWrite, TecnocloudV2Port } from "./ports.js";
 import { isManagedCrmOwnership } from "./ownership-policy.js";
@@ -50,6 +51,14 @@ export type ImportV2EngineOptions = {
    * collegamenti gia' presenti nel gestionale restano dove sono.
    */
   includeCoOwners?: boolean | (() => boolean);
+  /**
+   * Optional property-first inventory. Refinement runs use the CRM street
+   * inventory collected before touching people, while the ordinary import
+   * keeps its historical cadastral/person lookup path unchanged.
+   */
+  propertyCandidates?: (plan: ImportV2Plan) => Promise<CrmPropertySummary[]>;
+  /** Never create a CRM property when the property-first inventory has no match. */
+  requireExistingProperty?: boolean;
 };
 
 function unique<T>(values: T[]): T[] {
@@ -139,6 +148,8 @@ export class ImportV2Engine {
   private readonly now: () => Date;
   private readonly isInterruptionRequested: () => boolean;
   private readonly includeCoOwners: () => boolean;
+  private readonly propertyCandidates?: (plan: ImportV2Plan) => Promise<CrmPropertySummary[]>;
+  private readonly requireExistingProperty: boolean;
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -150,6 +161,8 @@ export class ImportV2Engine {
     this.isInterruptionRequested = options.isInterruptionRequested ?? (() => false);
     const includeCoOwners = options.includeCoOwners ?? true;
     this.includeCoOwners = typeof includeCoOwners === "function" ? includeCoOwners : () => includeCoOwners;
+    this.propertyCandidates = options.propertyCandidates;
+    this.requireExistingProperty = options.requireExistingProperty === true;
   }
 
   /** Gli intestatari che questo import deve creare, collegare e verificare. */
@@ -226,11 +239,45 @@ export class ImportV2Engine {
     switch (checkpoint.stage) {
       case "queued":
         return { ...checkpoint, stage: NEXT_STAGE.queued };
-      case "planned":
-        return { ...checkpoint, people: await this.resolvePeople(this.ownersInScope(plan.source.owners)), stage: NEXT_STAGE.planned };
+      case "planned": {
+        let propertyResolution = checkpoint.propertyResolution;
+        if (!propertyResolution && this.propertyCandidates) {
+          const candidates = await this.propertyCandidates(plan);
+          let choice = choosePropertyCandidate(plan.source, candidates);
+          /* In existing-only mode the caller supplies candidates already
+           * narrowed to the cadastral coordinates. Rendita and address are
+           * values to refresh, not reasons to pretend that the unit is
+           * missing. A single coordinate match is therefore updateable. */
+          if (this.requireExistingProperty && choice.kind === "create" && candidates.length === 1) {
+            choice = { kind: "cadastral_update", candidate: candidates[0]! };
+          }
+          if (this.requireExistingProperty && choice.kind === "create" && candidates.length > 1) {
+            throw new ImportV2Error("Più immobili Cloud condividono la stessa terna catastale", "ambiguous_identity", {
+              details: { candidateIds: candidates.map((candidate) => candidate.id) },
+            });
+          }
+          if (choice.kind === "create" && this.requireExistingProperty) {
+            throw new ImportV2Error(
+              "Immobile non presente nell’inventario Cloud della via: la rifinitura non crea nuove schede",
+              "unsupported_case",
+              { details: { sourcePropertyId: plan.source.sourcePropertyId, cadastral: plan.source.cadastral } },
+            );
+          }
+          propertyResolution = choice.kind === "create"
+            ? { kind: "create", propertyId: null, evidence: { inventoryCount: candidates.length } }
+            : { kind: choice.kind, propertyId: choice.candidate.id, evidence: { candidate: choice.candidate, propertyFirst: true } };
+        }
+        return {
+          ...checkpoint,
+          propertyResolution,
+          people: await this.resolvePeople(this.ownersInScope(plan.source.owners)),
+          stage: NEXT_STAGE.planned,
+        };
+      }
       case "people_resolved":
         return { ...checkpoint, syncedPeople: await this.syncPeople(this.ownersInScope(plan.source.owners), checkpoint), stage: NEXT_STAGE.people_resolved };
       case "people_synced": {
+        if (checkpoint.propertyResolution) return { ...checkpoint, stage: NEXT_STAGE.people_synced };
         const { choice, linkedCount, cadastralCount } = await this.resolveProperty(plan, checkpoint.syncedPeople);
         return {
           ...checkpoint,
@@ -243,6 +290,13 @@ export class ImportV2Engine {
       case "property_resolved": {
         if (!checkpoint.propertyResolution) throw new ImportV2Error("Risoluzione immobile assente", "invalid_source");
         let resolution = checkpoint.propertyResolution;
+        if (resolution.kind === "create" && this.requireExistingProperty) {
+          throw new ImportV2Error(
+            "La rifinitura ha perso il riferimento all’immobile esistente e si è fermata prima di creare duplicati",
+            "verification_failed",
+            { global: true },
+          );
+        }
         if (resolution.kind === "create") {
           // A previous create may have reached Tecnocloud before its local
           // checkpoint was persisted. Re-resolve before any second create.

@@ -84,6 +84,8 @@ export type CrmPropertySummary = {
   displayName: string;
   fullAddress: string | null;
   cadastral: CadastralIdentity | null;
+  /** True/false when the property banner exposes the registry-import marker. */
+  importedFromRegistry?: boolean;
 };
 
 export type CrmOwnershipSnapshot = {
