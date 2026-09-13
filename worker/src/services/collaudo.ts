@@ -95,6 +95,21 @@ function personHasPhone(person: PersonRow | undefined): boolean {
   return Boolean(person && [...(person.mobiles ?? []), ...(person.landlines ?? [])].some((phone) => canonicalPhone(phone)));
 }
 
+type PersistedActivityEvidence = {
+  state?: string;
+  description?: string;
+  status?: string;
+  contactMode?: string;
+  crmPropertyId?: string;
+};
+
+function persistedActivityEvidence(property: PropertyRow | undefined): PersistedActivityEvidence | null {
+  const candidate = property?.raw_payload?.worker_activity;
+  return candidate && typeof candidate === "object" && !Array.isArray(candidate)
+    ? candidate as PersistedActivityEvidence
+    : null;
+}
+
 export function evaluateCollaudo(input: {
   job: JobRow;
   graph: CollaudoGraph;
@@ -178,6 +193,21 @@ export function evaluateCollaudo(input: {
     const expectedDescription = hasPhone ? KILLER_PHONE_DESCRIPTIONS : null;
     const actualDescription = source?.activity.description ?? "";
     const activityEvidence = item.checkpoint?.activityEvidence;
+    const persistedActivity = persistedActivityEvidence(property);
+    /* The desktop runner persists the Cloud activity evidence in the property
+     * payload. Import V2's optional checkpoint evidence is used when present,
+     * but it is not the only valid execution path. */
+    const activityEvidenceVerified = activityEvidence
+      ? activityEvidence.outcome !== "disabled"
+        && activityEvidence.descriptionVerified === true
+        && activityEvidence.statusVerified === true
+        && activityEvidence.expectedStatus === "Eseguito"
+      : Boolean(persistedActivity
+        && ["created", "existing", "manual"].includes(String(persistedActivity.state))
+        && persistedActivity.description === actualDescription
+        && persistedActivity.status === "Eseguito"
+        && persistedActivity.contactMode === expectedMode
+        && persistedActivity.crmPropertyId === item.checkpoint?.crmPropertyId);
     assertions.push(result(
       `killer_${item.property_id}`,
       "L’attività killer è stata preparata come eseguita",
@@ -185,12 +215,9 @@ export function evaluateCollaudo(input: {
         && source.activity.status === "Eseguito"
         && source.activity.contactMode === expectedMode
         && (!expectedDescription || expectedDescription.includes(actualDescription as typeof KILLER_PHONE_DESCRIPTIONS[number]))
-        && activityEvidence?.outcome !== "disabled"
-        && activityEvidence?.descriptionVerified === true
-        && activityEvidence?.statusVerified === true
-        && activityEvidence?.expectedStatus === "Eseguito",
+        && activityEvidenceVerified,
       hasPhone ? "Telefonata eseguita con risposta killer" : "Contatto diretto eseguito",
-      `${source?.activity.contactMode ?? "assente"}, ${source?.activity.status ?? "assente"}, ${actualDescription || "descrizione assente"}; Cloud descrizione ${String(activityEvidence?.descriptionVerified)}, stato ${String(activityEvidence?.statusVerified)}`,
+      `${source?.activity.contactMode ?? "assente"}, ${source?.activity.status ?? "assente"}, ${actualDescription || "descrizione assente"}; Cloud ${activityEvidence ? `descrizione ${String(activityEvidence.descriptionVerified)}, stato ${String(activityEvidence.statusVerified)}` : `checkpoint ${String(persistedActivity?.state ?? "assente")}`}`,
       item.property_id,
     ));
     assertions.push(result(

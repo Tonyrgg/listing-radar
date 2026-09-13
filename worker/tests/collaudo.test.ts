@@ -65,6 +65,14 @@ describe("collaudatore production guard", () => {
 
   it("approva un checkpoint killer coerente entro il budget", () => {
     const properties = [property("1")];
+    properties[0]!.raw_payload = {
+      worker_activity: {
+        version: 3, source: "property", state: "created", dryRun: false,
+        description: "Non vende", contactMode: "Telefonata", status: "Eseguito",
+        crmPropertyId: "crm-1", crmActivityId: null, correlatedProperty: null,
+        attempts: 1, error: null, updatedAt: "2026-09-13T10:00:00.000Z",
+      },
+    };
     const people = [person("1", ["3331234567"]), person("2")];
     const assertions = evaluateCollaudo({
       job: {
@@ -78,9 +86,7 @@ describe("collaudatore production guard", () => {
       ] },
       items: [{
         id: "item", property_id: "1", stage: "completed", status: "completed", last_error: null,
-        checkpoint: { crmPropertyId: "crm-1", activityEvidence: {
-          activityId: null, outcome: "created", descriptionVerified: true, statusVerified: true, expectedStatus: "Eseguito",
-        }, syncedPeople: [
+        checkpoint: { crmPropertyId: "crm-1", syncedPeople: [
           { sourcePersonId: "1", taxCode: "X", crmPersonId: "P1", mergePerformed: false },
           { sourcePersonId: "2", taxCode: "Y", crmPersonId: "P2", mergePerformed: false },
         ] },
