@@ -2270,6 +2270,7 @@ details.section > .section-body {
 
 body[data-worker-view="operations"] .workspace > details.section,
 body[data-worker-view="refinement"] .workspace > :not(#refinement),
+body[data-worker-view="collaudo"] .workspace > :not(#collaudo),
 body[data-worker-view="portoni"] .workspace > :not(#portoni),
 body[data-worker-view="sync"] .workspace > :not(#sync),
 body[data-worker-view="history"] .workspace > :not(#history),
@@ -2278,6 +2279,7 @@ body[data-worker-view="settings"] .workspace > :not(#settings) {
 }
 
 body[data-worker-view="refinement"] #refinement,
+body[data-worker-view="collaudo"] #collaudo,
 body[data-worker-view="portoni"] #portoni,
 body[data-worker-view="sync"] #sync,
 body[data-worker-view="history"] #history,
@@ -2291,6 +2293,7 @@ details.section[data-operation-locked] :is(button, input, select, textarea) {
 }
 
 body[data-worker-view="refinement"] #refinement::before,
+body[data-worker-view="collaudo"] #collaudo::before,
 body[data-worker-view="portoni"] #portoni::before,
 body[data-worker-view="sync"] #sync::before,
 body[data-worker-view="history"] #history::before,
@@ -2305,6 +2308,7 @@ body[data-worker-view="settings"] #settings::before {
 }
 
 body[data-worker-view="refinement"] #refinement::before { content: "Rifinitura vie"; }
+body[data-worker-view="collaudo"] #collaudo::before { content: "Collaudo automatico"; }
 body[data-worker-view="portoni"] #portoni::before { content: "Schede Portoni"; }
 body[data-worker-view="sync"] #sync::before { content: "Sincronizza il gestionale"; }
 body[data-worker-view="history"] #history::before { content: "Cronologia dei lavori"; }
@@ -4079,4 +4083,151 @@ body[data-worker-view="portoni"] .portoni-table :is(input, select, textarea) {
   body[data-worker-view="portoni"] .portoni-table { font-size: var(--lr-text-label); }
   body[data-worker-view="portoni"] .portoni-table th,
   body[data-worker-view="portoni"] .portoni-table td { padding: 5px; }
+}
+
+/* Collaudo: una procedura sorvegliata, con il confine reale sempre davanti
+ * all'operatore e il verdetto espresso riga per riga. */
+.collaudo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: var(--lr-space-4);
+  align-items: start;
+}
+
+.collaudo-card,
+.collaudo-history {
+  min-width: 0;
+  padding: var(--lr-space-4);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-container);
+  background: var(--lr-surface);
+}
+
+.collaudo-card > header,
+.collaudo-history > header {
+  display: flex;
+  gap: var(--lr-space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.collaudo-card header p,
+.collaudo-history header p {
+  max-width: 70ch;
+}
+
+.collaudo-boundary {
+  display: flex;
+  gap: var(--lr-space-4);
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--lr-space-4);
+  padding: var(--lr-space-3) var(--lr-space-4);
+  border: 1px solid var(--lr-warn);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-raised);
+}
+
+.collaudo-boundary div {
+  display: grid;
+  gap: 2px;
+  flex: none;
+}
+
+.collaudo-boundary small,
+.collaudo-boundary p,
+.collaudo-flow small,
+.collaudo-assertion small,
+.collaudo-history-row small {
+  color: var(--lr-ink-3);
+  font-size: var(--lr-text-meta);
+}
+
+.collaudo-boundary strong {
+  font-family: var(--lr-font-mono);
+  font-size: var(--lr-text-record);
+  color: var(--lr-ink);
+}
+
+.collaudo-boundary p { margin: 0; text-align: right; }
+
+.collaudo-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--lr-space-2);
+  margin: var(--lr-space-4) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collaudo-flow li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--lr-space-2);
+  align-items: start;
+  padding: var(--lr-space-3);
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-control);
+}
+
+.collaudo-flow li > span,
+.collaudo-assertion > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-pill);
+  color: var(--lr-ink-2);
+  font-family: var(--lr-font-mono);
+  font-size: var(--lr-text-meta);
+}
+
+.collaudo-flow li div { display: grid; gap: 3px; }
+.collaudo-flow li.is-current { border-color: var(--lr-accent); background: var(--lr-raised); }
+.collaudo-flow li.is-complete > span { border-color: var(--lr-ok); color: var(--lr-ok); }
+.collaudo-flow li.is-failed > span { border-color: var(--lr-danger); color: var(--lr-danger); }
+
+.collaudo-consent { margin-top: var(--lr-space-4); }
+.collaudo-actions { display: flex; justify-content: flex-end; gap: var(--lr-space-2); margin-top: var(--lr-space-3); }
+.collaudo-message { margin: var(--lr-space-3) 0 0; color: var(--lr-ink-2); }
+.collaudo-assertions { display: grid; gap: 2px; margin-top: var(--lr-space-4); }
+
+.collaudo-assertion {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--lr-space-3);
+  align-items: start;
+  padding: var(--lr-space-2) 0;
+  border-top: 1px solid var(--lr-line-quiet);
+}
+
+.collaudo-assertion:first-child { border-top: 0; }
+.collaudo-assertion div { display: grid; gap: 2px; }
+.collaudo-assertion.is-passed > span { border-color: var(--lr-ok); color: var(--lr-ok); }
+.collaudo-assertion.is-failed > span { border-color: var(--lr-danger); color: var(--lr-danger); }
+
+.collaudo-history-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--lr-space-3);
+  padding: var(--lr-space-3) 0;
+  border-top: 1px solid var(--lr-line-quiet);
+}
+
+.collaudo-history-row:first-child { border-top: 0; }
+.collaudo-history-row div { min-width: 0; }
+.collaudo-history-row p { margin: var(--lr-space-1) 0 0; color: var(--lr-ink-2); font-size: var(--lr-text-meta); }
+.collaudo-history-row code { grid-column: 2; overflow-wrap: anywhere; color: var(--lr-ink-3); font-size: var(--lr-text-label); }
+.status-pill.is-ready { border-color: var(--lr-ok); color: var(--lr-ok); }
+
+@media (max-width: 1050px) {
+  .collaudo-layout { grid-template-columns: minmax(0, 1fr); }
+  .collaudo-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .collaudo-flow { grid-template-columns: minmax(0, 1fr); }
+  .collaudo-boundary { align-items: flex-start; flex-direction: column; }
+  .collaudo-boundary p { text-align: left; }
 }

@@ -53,7 +53,13 @@ export interface TecnocloudV2Port {
   /** Replaces private full/bare ownerships; corporate and usufruct links survive untouched. */
   replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options?: OwnershipSyncOptions): Promise<CrmOwnershipSnapshotResult>;
   readProperty(propertyId: string): Promise<CrmPropertySnapshot>;
-  ensureActivity(propertyId: string, plan: ImportV2Plan): Promise<{ activityId: string | null; outcome: "created" | "existing" | "disabled" }>;
+  ensureActivity(propertyId: string, plan: ImportV2Plan): Promise<{
+    activityId: string | null;
+    outcome: "created" | "existing" | "disabled";
+    descriptionVerified?: boolean;
+    statusVerified?: boolean;
+    expectedStatus?: "Da eseguire" | "Eseguito";
+  }>;
   recover(stage: ImportV2Checkpoint["stage"], error: unknown): Promise<void>;
 }
 

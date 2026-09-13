@@ -257,12 +257,13 @@ function markActiveNav(id) {
   });
 }
 function lockSecondaryPageActions(locked) {
-  for (const id of ["refinement", "portoni", "sync", "history", "settings"]) {
+  for (const id of ["refinement", "collaudo", "portoni", "sync", "history", "settings"]) {
     const section = $(id);
     if (!section) continue;
     const sectionLocked = locked
       && !(id === "portoni" && appState?.portoni?.active)
-      && !(id === "refinement" && appState?.refinement?.active);
+      && !(id === "refinement" && appState?.refinement?.active)
+      && !(id === "collaudo" && appState?.collaudo?.active);
     section.inert = sectionLocked;
     section.toggleAttribute("data-operation-locked", sectionLocked);
   }
@@ -341,6 +342,8 @@ function commandIdentity(target) {
       chooseExcelButton: "Scegli file Excel",
       openOperationLogButton: "Apri registro operativo",
       importV2DiagnosticsButton: "Esegui diagnostica Import V2 in sola lettura",
+      collaudoStart: "Avvia collaudo automatico",
+      collaudoStop: "Ferma e conserva il collaudo",
       startButton: "Avvia lavorazione",
       streetRunStart: "Avvia acquisizione via completa",
       streetRegistryStart: "Lavora la prossima via del registro",
@@ -380,6 +383,7 @@ function commandIdentity(target) {
       history: "Apri sezione Cronologia",
       settings: "Apri sezione Impostazioni",
       portoni: "Apri sezione Portoni",
+      collaudo: "Apri sezione Collaudo",
     };
   const label =
     explicit[target.id] ??
@@ -2472,6 +2476,55 @@ function renderRefinement() {
   }
 }
 
+function renderCollaudo() {
+  const state = appState?.collaudo ?? {};
+  const report = state.report;
+  const active = Boolean(state.active);
+  const failed = report?.status === "failed";
+  const passed = report?.status === "passed";
+  const stopped = report?.status === "stopped";
+  const badge = $("collaudoBadge");
+  badge.className = `status-pill ${active ? "is-running" : failed ? "is-error" : passed ? "is-ready" : "is-idle"}`;
+  badge.innerHTML = `<span></span>${active ? "In esecuzione" : passed ? "Superato" : failed ? "Errore rilevato" : stopped ? "Fermato" : "Pronto"}`;
+  $("collaudoStreet").textContent = state.street ?? "VIA PIETRO COLLETTA";
+  $("collaudoBudget").textContent = fmtNamedCount(state.maximumProperties ?? 3, "immobile", "immobili");
+  $("collaudoStart").classList.toggle("is-hidden", active);
+  $("collaudoStop").classList.toggle("is-hidden", !active);
+  $("collaudoStop").disabled = Boolean(state.cancelling);
+  $("collaudoConsent").disabled = active;
+  $("collaudoStart").disabled = active || !$("collaudoConsent").checked || Boolean(appState?.active) || Boolean(appState?.streetRun?.active);
+  $("collaudoMessage").textContent = report?.message ?? "Nessuna prova avviata. Il consenso vale soltanto per il prossimo collaudo.";
+
+  const phases = ["acquisition", "first_import", "resume", "verification"];
+  const currentIndex = phases.indexOf(report?.phase);
+  document.querySelectorAll("[data-collaudo-phase]").forEach((item) => {
+    const index = phases.indexOf(item.dataset.collaudoPhase);
+    item.classList.toggle("is-current", active && index === currentIndex);
+    item.classList.toggle("is-complete", passed || currentIndex > index);
+    item.classList.toggle("is-failed", failed && index === Math.max(0, currentIndex));
+  });
+
+  const progress = state.progress;
+  const progressBar = $("collaudoProgress");
+  progressBar.classList.toggle("is-hidden", !active || !progress);
+  if (progress) {
+    const total = Math.max(1, Number(progress.total ?? 1));
+    const current = Math.max(0, Number(progress.current ?? progress.index ?? 0));
+    progressBar.querySelector("span").style.width = `${Math.min(100, Math.round(current / total * 100))}%`;
+  }
+
+  const assertions = report?.assertions ?? [];
+  $("collaudoAssertions").innerHTML = assertions.length
+    ? assertions.map((assertion) => `<article class="collaudo-assertion is-${esc(assertion.status)}"><span aria-hidden="true">${assertion.status === "passed" ? "✓" : assertion.status === "failed" ? "!" : "·"}</span><div><b>${esc(assertion.label)}</b><small>Atteso: ${esc(assertion.expected)}</small>${assertion.status === "failed" ? `<small>Trovato: ${esc(assertion.actual)}</small>` : ""}</div></article>`).join("")
+    : `<p class="empty-message">Le verifiche compariranno qui dopo il primo stop controllato.</p>`;
+
+  const history = state.history ?? [];
+  $("collaudoHistoryCount").textContent = fmtCount(history.length);
+  $("collaudoHistoryList").innerHTML = history.length
+    ? history.map((item) => `<article class="collaudo-history-row"><span class="ledger-mark">${item.status === "passed" ? "✓" : item.status === "failed" ? "!" : "·"}</span><div><b>${item.status === "passed" ? "Superato" : item.status === "failed" ? "Errore rilevato" : item.status === "stopped" ? "Fermato" : "In corso"}</b><small>${esc(fmtDate(item.completedAt ?? item.startedAt))} · ${fmtNamedCount(item.importedProperties, "immobile", "immobili")} · ${fmtNamedCount(item.resumeCount, "ripresa", "riprese")}</small><p>${esc(item.message)}</p></div>${item.jobId ? `<code>${esc(item.jobId)}</code>` : ""}</article>`).join("")
+    : `<p class="empty-message">La cronologia comparirà dopo la prima prova.</p>`;
+}
+
 function renderOperationalFlow() {
   const acquisitionActive = Boolean(appState?.streetRun?.active || appState?.networkRun?.active),
     importStages = new Set([
@@ -2620,6 +2673,7 @@ function render() {
   renderStreetRegistry();
   renderNetworkRun();
   renderRefinement();
+  renderCollaudo();
   renderPortoni();
   renderFiltriRete();
   renderReview();
@@ -2699,6 +2753,12 @@ document.addEventListener("click", async (event) => {
           ? window.propertyWorker.cancelStreetRun()
           : window.propertyWorker.pauseJob();
       }
+      if (target.id === "collaudoStart") {
+        if (!$("collaudoConsent").checked) throw new Error("Conferma prima il perimetro reale di collaudo");
+        $("collaudoConsent").checked = false;
+        return window.propertyWorker.startCollaudo();
+      }
+      if (target.id === "collaudoStop") return window.propertyWorker.stopCollaudo();
       if (target.dataset.portoniFile) return window.propertyWorker.revealFile(target.dataset.portoniFile);
       if (target.id === "portoniStart") return window.propertyWorker.startPortoni({
         street: $("portoniStreet").value,
@@ -3245,6 +3305,7 @@ $("dryRunToggle").addEventListener("change", async (event) => {
     toast(error?.message ?? String(error));
   }
 });
+$("collaudoConsent").addEventListener("change", renderCollaudo);
 $("coOwnersToggle").addEventListener("change", async (event) => {
   const toggle = event.currentTarget;
   try {
@@ -3316,6 +3377,7 @@ window.propertyWorker.onStreetRunProgress((progress) => {
   appState.streetRun = { ...(appState.streetRun ?? {}), progress };
   renderStreetRunInternalProgress(progress);
   if (appState.refinement?.active) renderRefinement();
+  if (appState.collaudo?.active) renderCollaudo();
   renderCommandMonitor();
   renderSteps();
 });
@@ -3328,6 +3390,7 @@ window.propertyWorker.onTransientUpdate((update) => {
     renderAction();
     enhanceActionPanel();
     if (appState.refinement?.active) renderRefinement();
+    if (appState.collaudo?.active) renderCollaudo();
     renderOperation = true;
   }
   if (Object.prototype.hasOwnProperty.call(update, "retryMonitor")) {

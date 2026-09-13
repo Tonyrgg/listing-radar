@@ -84,6 +84,16 @@ export type PersonRow = {
   crm_record_id: string | null;
 };
 
+export type ImportV2ItemRow = {
+  id: string;
+  property_id: string;
+  stage: string;
+  status: string;
+  plan: import("../import-v2/model.js").ImportV2Plan | null;
+  checkpoint: Partial<import("../import-v2/model.js").ImportV2Checkpoint> | null;
+  last_error: Record<string, unknown> | null;
+};
+
 export type CrmRequestImportRunRow = {
   id: string;
   status: "running" | "completed" | "completed_with_errors" | "failed" | "cancelled";
@@ -184,6 +194,16 @@ export class WorkerRepository {
     const { data, error } = await this.client.from("property_worker_jobs").select("*").eq("id", id).single();
     if (error) throw new Error(`Job ${id} non trovato: ${error.message}`);
     return data as JobRow;
+  }
+
+  async listImportV2Items(jobId: string): Promise<ImportV2ItemRow[]> {
+    const { data, error } = await this.client
+      .from("property_worker_import_v2_items")
+      .select("id,property_id,stage,status,plan,checkpoint,last_error")
+      .eq("job_id", jobId)
+      .order("updated_at", { ascending: true });
+    if (error) throw new Error(`Lettura checkpoint Import V2 fallita: ${error.message}`);
+    return data as ImportV2ItemRow[];
   }
 
   async listJobs(limit = 30): Promise<JobRow[]> {

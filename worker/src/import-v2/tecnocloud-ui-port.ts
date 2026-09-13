@@ -2437,16 +2437,25 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return this.one(this.page.locator("article:visible").filter({ hasText: /Attivit[aà] e appuntamenti/i }), "Attività e appuntamenti", 20_000);
   }
 
-  private async readActivityEvidence(propertyId: string, description: string): Promise<{ card: Locator; found: boolean }> {
+  private async readActivityEvidence(propertyId: string, description: string, status: string): Promise<{
+    card: Locator;
+    found: boolean;
+    descriptionVerified: boolean;
+    statusVerified: boolean;
+  }> {
     const expected = normalized(description);
+    const expectedStatus = normalized(status);
     let responseMatched = false;
+    let responseStatusMatched = false;
     const responseTasks = new Set<Promise<void>>();
     const inspect = (response: Response) => {
       if (!["xhr", "fetch"].includes(response.request().resourceType())) return;
       let task: Promise<void>;
       task = response.text().then((body) => {
         const decoded = body.replace(/\\u([0-9a-f]{4})/gi, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
-        if (normalized(decoded).includes(expected)) responseMatched = true;
+        const normalizedBody = normalized(decoded);
+        if (normalizedBody.includes(expected)) responseMatched = true;
+        if (normalizedBody.includes(expectedStatus)) responseStatusMatched = true;
       }).catch(() => undefined).finally(() => responseTasks.delete(task));
       responseTasks.add(task);
     };
@@ -2463,7 +2472,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (stable < 4) await this.pauseAwareWait(250);
       }
       await Promise.all(responseTasks);
-      return { card, found: responseMatched || normalized(await card.innerText()).includes(expected) };
+      const cardText = normalized(await card.innerText());
+      const descriptionVerified = responseMatched || cardText.includes(expected);
+      const statusVerified = responseStatusMatched || cardText.includes(expectedStatus);
+      return { card, found: descriptionVerified, descriptionVerified, statusVerified };
     } finally {
       this.page.off("response", inspect);
     }
@@ -2495,15 +2507,27 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
   }
 
-  async ensureActivity(propertyId: string, plan: ImportV2Plan): Promise<{ activityId: string | null; outcome: "created" | "existing" | "disabled" }> {
-    if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled" };
-    if (this.dryRun) return { activityId: null, outcome: "existing" };
+  async ensureActivity(propertyId: string, plan: ImportV2Plan): Promise<{
+    activityId: string | null;
+    outcome: "created" | "existing" | "disabled";
+    descriptionVerified?: boolean;
+    statusVerified?: boolean;
+    expectedStatus?: "Da eseguire" | "Eseguito";
+  }> {
+    if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled", descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status };
+    if (this.dryRun) return { activityId: null, outcome: "existing", expectedStatus: plan.source.activity.status };
     return this.action("Attività immobile", async () => {
       await this.page.bringToFront();
       const description = plan.source.activity.description?.trim() || "Inserire attività";
-      const before = await this.readActivityEvidence(propertyId, description);
+      const before = await this.readActivityEvidence(propertyId, description, plan.source.activity.status);
       if (before.found || this.submittedActivities.has(propertyId)) {
-        return { activityId: null, outcome: "existing" };
+        return {
+          activityId: null,
+          outcome: "existing",
+          descriptionVerified: before.descriptionVerified,
+          statusVerified: before.statusVerified,
+          expectedStatus: plan.source.activity.status,
+        };
       }
       const card = before.card;
       const create = await this.one(card.getByRole("button", { name: "Nuovo", exact: true }).filter({ visible: true }), "Nuova attività");
@@ -2555,12 +2579,18 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
       }
       this.submittedActivities.add(propertyId);
-      const after = await this.readActivityEvidence(propertyId, description);
+      const after = await this.readActivityEvidence(propertyId, description, plan.source.activity.status);
       if (!after.found) {
         // The save was submitted, therefore a blind retry could duplicate it.
         throw new ImportV2Error("L’attività salvata non è ancora verificabile nel Cloud. Import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
       }
-      return { activityId: null, outcome: "created" };
+      return {
+        activityId: null,
+        outcome: "created",
+        descriptionVerified: after.descriptionVerified,
+        statusVerified: after.statusVerified,
+        expectedStatus: plan.source.activity.status,
+      };
     });
   }
 

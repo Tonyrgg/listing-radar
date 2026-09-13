@@ -342,9 +342,10 @@ export class ImportV2Engine {
         assertOwnerships(property, this.desiredOwnerships(this.ownersInScope(plan.source.owners), checkpoint.syncedPeople), !this.includeCoOwners());
         return { ...checkpoint, stage: NEXT_STAGE.ownerships_synced };
       }
-      case "verified":
-        await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan);
-        return { ...checkpoint, stage: NEXT_STAGE.verified };
+      case "verified": {
+        const activityEvidence = await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan);
+        return { ...checkpoint, activityEvidence, stage: NEXT_STAGE.verified };
+      }
       case "activity_synced":
         return { ...checkpoint, stage: NEXT_STAGE.activity_synced };
       case "completed":

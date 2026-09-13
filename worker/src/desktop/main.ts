@@ -18,6 +18,15 @@ import { loadConfig, type WorkerConfig } from "../config.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
+import {
+  COLLAUDO_MAX_PROPERTIES,
+  COLLAUDO_SCENARIO_ID,
+  COLLAUDO_STREET,
+  assertCollaudoStreet,
+  evaluateCollaudo,
+  failedCollaudoAssertions,
+  type CollaudoReport,
+} from "../services/collaudo.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
@@ -109,7 +118,7 @@ type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"
 type DiagnosticErrorItem = {
   id: string;
   at: string;
-  source: "worker" | "street-run" | "request-archive" | "mandate-archive" | "desktop-ui" | "import-v2-diagnostics";
+  source: "worker" | "street-run" | "collaudo" | "request-archive" | "mandate-archive" | "desktop-ui" | "import-v2-diagnostics";
   status: string;
   message: string;
   jobId: string | null;
@@ -254,6 +263,12 @@ let streetRunProgress: SisterStreetRunProgress | null = null;
 let refinementActive = false;
 let refinementStreet: string | null = null;
 let refinementError: string | null = null;
+let collaudoActive = false;
+let collaudoCancellationRequested = false;
+let collaudoReport: CollaudoReport | null = null;
+let collaudoHistory: CollaudoReport[] = [];
+let collaudoPromise: Promise<void> | null = null;
+let collaudoCurrentJobId: string | null = null;
 let portoniActive = false;
 let portoniCancellationRequested = false;
 let portoniError: string | null = null;
@@ -326,7 +341,7 @@ const completedSummaryCache = new Map<string, {
 }>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
-let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "portoni" | "import-v2-diagnostics" | null = null;
+let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "portoni" | "collaudo" | "import-v2-diagnostics" | null = null;
 
 type ConnectionCheck = BrowserConnectionCheck | {
   id: string;
@@ -359,12 +374,13 @@ function resetStaleOperationState() {
   if (streetRunActive && !streetRunPromise) streetRunActive = false;
   if (networkRunActive && !networkRunPromise) networkRunActive = false;
   if (portoniActive && !portoniPromise) portoniActive = false;
+  if (collaudoActive && !collaudoPromise) collaudoActive = false;
   refreshStoppingAll();
 }
 
 function reserveOperation(kind: NonNullable<typeof operationReservation>) {
   resetStaleOperationState();
-  if (operationReservation || active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive) {
+  if (operationReservation || active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive || collaudoActive) {
     throw new Error("Attendi la fine della lavorazione già in esecuzione");
   }
   operationReservation = kind;
@@ -482,6 +498,31 @@ function portoniHistoryPath() {
 
 function portoniDocumentsDirectory() {
   return path.join(app.getPath("userData"), "portoni", "documenti");
+}
+
+function collaudoHistoryPath() {
+  return path.join(app.getPath("userData"), "collaudo", "history.json");
+}
+
+async function loadCollaudoHistory() {
+  try {
+    const loaded = JSON.parse(await readFile(collaudoHistoryPath(), "utf8"));
+    collaudoHistory = Array.isArray(loaded) ? loaded.slice(0, 30) as CollaudoReport[] : [];
+    collaudoReport = collaudoHistory[0] ?? null;
+  } catch {
+    collaudoHistory = [];
+    collaudoReport = null;
+  }
+}
+
+async function persistCollaudoReport(report: CollaudoReport) {
+  collaudoReport = report;
+  collaudoHistory = [report, ...collaudoHistory.filter((candidate) => candidate.id !== report.id)].slice(0, 30);
+  const target = collaudoHistoryPath();
+  const temporary = `${target}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(temporary, JSON.stringify(collaudoHistory, null, 2), "utf8");
+  await rename(temporary, target);
 }
 
 async function loadPortoniHistory() {
@@ -1197,6 +1238,15 @@ async function stateSnapshot() {
       phase: streetRunActive ? "sister" : active && refinementActive ? "cloud" : "idle",
       progress: streetRunActive ? streetRunProgress : propertyProgress,
     },
+    collaudo: {
+      active: collaudoActive,
+      cancelling: collaudoCancellationRequested,
+      street: COLLAUDO_STREET,
+      maximumProperties: COLLAUDO_MAX_PROPERTIES,
+      report: collaudoReport,
+      history: collaudoHistory.slice(0, 10),
+      progress: streetRunActive ? streetRunProgress : propertyProgress,
+    },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
   };
@@ -1414,10 +1464,14 @@ async function runSisterStreet(input: {
   filters?: Partial<StreetPropertyFilters>;
   registryNetwork?: boolean;
   refinement?: boolean;
+  collaudo?: boolean;
 }) {
   const street = input.street.replace(/\s+/g, " ").trim();
+  if (input.collaudo) assertCollaudoStreet(street);
   const filters = normalizeStreetPropertyFilters(input.filters);
-  const expandAllOwners = input.refinement ? false : preferences.expandAllOwners;
+  // A collaudo must never follow an owner into properties outside the fixed
+  // test street. Co-owners of the sampled properties are still imported.
+  const expandAllOwners = input.refinement || input.collaudo ? false : preferences.expandAllOwners;
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
   if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
@@ -1429,7 +1483,7 @@ async function runSisterStreet(input: {
   try {
     const checks = await healthChecks({ silent: true });
     if (longRunMode === "live") requireCloudAvailable(checks);
-    if (!input.resume && streetRunCheckpoint) {
+    if (!input.resume && streetRunCheckpoint && !input.collaudo) {
       await archiveStreetRunCheckpoint("Checkpoint precedente archiviato prima di una nuova run via");
     }
   } catch (error) {
@@ -1459,6 +1513,7 @@ async function runSisterStreet(input: {
   const config = workerConfig({ dryRun: longRunMode === "dry_run" });
   let jobToImport: string | null = null;
   let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
+  const collaudoPropertyKeys = new Set<string>();
   let registryOutcome: StreetRegistryOutcome | null = null;
   let registryResult: Record<string, unknown> | undefined;
   let registryError: Record<string, unknown> | undefined;
@@ -1472,6 +1527,7 @@ async function runSisterStreet(input: {
         const importJob = await liveRepository.createJob("automatic");
         importJobId = importJob.id;
         streetImportJobId = importJob.id;
+        if (input.collaudo) collaudoCurrentJobId = importJob.id;
         await liveRepository.setJobContext(importJob.id, {
           municipality: "BITONTO",
           street,
@@ -1496,6 +1552,14 @@ async function runSisterStreet(input: {
         expandAllOwners,
         isCancelled: () => streetRunCancellationRequested,
         onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
+          if (input.collaudo) {
+            assertCollaudoStreet(property.address);
+            const key = [property.municipality, property.sheet, property.parcel, property.subaltern]
+              .map((value) => String(value ?? "").trim().toLocaleUpperCase("it-IT"))
+              .join("|");
+            if (collaudoPropertyKeys.has(key) || collaudoPropertyKeys.size >= COLLAUDO_MAX_PROPERTIES) return;
+            collaudoPropertyKeys.add(key);
+          }
           const [savedProperty] = await liveRepository.insertProperties(importJobId!, [{
             ...property,
             rawPayload: {
@@ -1540,7 +1604,7 @@ async function runSisterStreet(input: {
         onProgress: (progress) => publishStreetRunProgress(progress),
         onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),
         onCheckpoint: async (checkpoint) => {
-          await persistStreetRunCheckpoint(checkpoint);
+          if (!input.collaudo) await persistStreetRunCheckpoint(checkpoint);
           publishTransientUpdate({
             streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint),
           });
@@ -1616,6 +1680,22 @@ async function runSisterStreet(input: {
           },
         });
       }
+      if (input.collaudo && result.importJobId) {
+        const collaudoJob = await liveRepository!.getJob(result.importJobId);
+        await liveRepository!.updateJob(result.importJobId, {
+          acquisition: withImportRunOptions({
+            ...(collaudoJob.acquisition ?? {}),
+            strategy: "collaudo",
+            scenarioId: COLLAUDO_SCENARIO_ID,
+            street: COLLAUDO_STREET,
+            maximumProperties: COLLAUDO_MAX_PROPERTIES,
+          }, {
+            activityMode: "killer",
+            importCoOwners: true,
+            parallelCrmWindows: false,
+          }),
+        });
+      }
       pushActivity(
         result.status === "completed"
           ? `${longRunMode === "dry_run" ? "Dry-run" : "Acquisizione reale"} via completata: ${result.totalAcceptedProperties} immobili unici e ${result.totalOwnersRead} proprietari letti`
@@ -1688,6 +1768,7 @@ async function runSisterStreet(input: {
     if (jobToImport) {
       try {
         pushActivity("Acquisizione bulk completata: avvio l'import automatico degli immobili salvati", "success");
+        if (input.collaudo) stopAfterNextImportRequested = true;
         await repository(config).markImportStarted(jobToImport);
         await runWorker({
           mode: "automatic",
@@ -2969,6 +3050,158 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   void runPromise;
 }
 
+async function updateCollaudoReport(values: Partial<CollaudoReport>) {
+  if (!collaudoReport) return;
+  await persistCollaudoReport({ ...collaudoReport, ...values });
+  await publishState();
+}
+
+async function readCollaudoEvidence(jobId: string, minimumCompleted: number, expectedPaused: boolean) {
+  const repo = repository();
+  const [job, graph, items] = await Promise.all([
+    repo.getJob(jobId),
+    repo.loadGraph(jobId),
+    repo.listImportV2Items(jobId),
+  ]);
+  const assertions = evaluateCollaudo({ job, graph, items, minimumCompleted, expectedPaused });
+  return { job, graph, items, assertions, failures: failedCollaudoAssertions(assertions) };
+}
+
+async function runCollaudoScenario() {
+  reserveOperation("collaudo");
+  collaudoActive = true;
+  collaudoCancellationRequested = false;
+  collaudoCurrentJobId = null;
+  collaudoReport = {
+    id: randomUUID(),
+    scenarioId: COLLAUDO_SCENARIO_ID,
+    street: COLLAUDO_STREET,
+    status: "running",
+    phase: "preflight",
+    jobId: null,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    importedProperties: 0,
+    resumeCount: 0,
+    message: `Controllo collegamenti prima di acquisire al massimo ${COLLAUDO_MAX_PROPERTIES} immobili`,
+    assertions: [],
+  };
+  await persistCollaudoReport(collaudoReport);
+  pushActivity(`Collaudo reale avviato su ${COLLAUDO_STREET}: scenario Killer, comproprietari e ripresa`, "warning");
+  await publishState();
+
+  const scenarioPromise = (async () => {
+    try {
+      await updateCollaudoReport({ phase: "acquisition", message: `Acquisisco da SISTER un campione massimo di ${COLLAUDO_MAX_PROPERTIES} immobili` });
+      await runSisterStreet({
+        street: COLLAUDO_STREET,
+        resume: false,
+        dryRun: false,
+        registryNetwork: true,
+        collaudo: true,
+        filters: { residentialOnly: false },
+      });
+      const acquisitionAndFirstImport = streetRunPromise;
+      if (!acquisitionAndFirstImport) throw new Error("Il collaudo non ha avviato l’acquisizione SISTER");
+      await updateCollaudoReport({ phase: "first_import", message: "Importo una riga, poi verifico che la pausa conservi il punto esatto" });
+      await acquisitionAndFirstImport;
+
+      const jobId = collaudoCurrentJobId;
+      if (!jobId) throw new Error("SISTER non ha creato il lavoro di collaudo");
+      await updateCollaudoReport({ jobId });
+      if (collaudoCancellationRequested) {
+        await updateCollaudoReport({
+          status: "stopped", completedAt: new Date().toISOString(),
+          message: "Collaudo fermato. Il lavoro acquisito è rimasto conservato.",
+        });
+        return;
+      }
+
+      const firstEvidence = await readCollaudoEvidence(jobId, 1, true);
+      await updateCollaudoReport({
+        assertions: firstEvidence.assertions,
+        importedProperties: firstEvidence.items.filter((item) => item.status === "completed").length,
+      });
+      if (firstEvidence.failures.length) {
+        throw new Error(`Prima fase incoerente: ${firstEvidence.failures.map((failure) => failure.label).join("; ")}`);
+      }
+
+      await updateCollaudoReport({
+        phase: "resume", resumeCount: 1,
+        message: "Riprendo la run stoppata con le stesse opzioni e completo il piccolo campione",
+      });
+      stopAfterNextImportRequested = false;
+      await runWorker({ mode: "automatic", dryRun: false, jobId, registryNetwork: true });
+      const resumedImport = activeRunPromise;
+      if (!resumedImport) throw new Error("La ripresa del collaudo non è partita");
+      await resumedImport;
+      if (collaudoCancellationRequested) {
+        await updateCollaudoReport({
+          status: "stopped", completedAt: new Date().toISOString(),
+          message: "Collaudo fermato durante la ripresa. Il checkpoint è rimasto conservato.",
+        });
+        return;
+      }
+
+      await updateCollaudoReport({ phase: "verification", message: "Confronto opzioni, checkpoint, proprietari, attività e confine della via" });
+      const finalGraph = await repository().loadGraph(jobId);
+      const finalEvidence = await readCollaudoEvidence(jobId, finalGraph.properties.length, false);
+      await updateCollaudoReport({
+        assertions: finalEvidence.assertions,
+        importedProperties: finalEvidence.items.filter((item) => item.status === "completed").length,
+      });
+      if (finalEvidence.failures.length) {
+        throw new Error(`Collaudo non superato: ${finalEvidence.failures.map((failure) => failure.label).join("; ")}`);
+      }
+      await updateCollaudoReport({
+        status: "passed", phase: "completed", completedAt: new Date().toISOString(),
+        message: `Scenario superato su ${finalGraph.properties.length} immobili: acquisizione, stop, ripresa, comproprietari e attività Killer coerenti.`,
+      });
+      pushActivity("Collaudo automatico superato: tutte le prove richieste coincidono con il risultato", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stopped = collaudoCancellationRequested;
+      await updateCollaudoReport({
+        status: stopped ? "stopped" : "failed",
+        completedAt: new Date().toISOString(),
+        message: stopped ? "Collaudo fermato e lavoro conservato." : message,
+      });
+      pushActivity(stopped ? "Collaudo fermato e conservato" : `Collaudo fallito: ${message}`, stopped ? "warning" : "error");
+      if (!stopped) {
+        await recordDiagnosticErrorSafely({
+          source: "collaudo", status: "failed", message, jobId: collaudoCurrentJobId,
+          details: { scenarioId: COLLAUDO_SCENARIO_ID, street: COLLAUDO_STREET, reportId: collaudoReport?.id },
+        });
+      }
+    } finally {
+      stopAfterNextImportRequested = false;
+      collaudoActive = false;
+      collaudoCancellationRequested = false;
+      collaudoPromise = null;
+      releaseOperationReservation("collaudo");
+      refreshStoppingAll();
+      await publishState();
+    }
+  })();
+  collaudoPromise = scenarioPromise;
+  void scenarioPromise;
+}
+
+async function stopCollaudoScenario() {
+  if (!collaudoActive) return false;
+  collaudoCancellationRequested = true;
+  stopAfterNextImportRequested = true;
+  if (streetRunActive) streetRunCancellationRequested = true;
+  if (active && activeJobId) {
+    pausingJobId = activeJobId;
+    activePrompts?.cancel("Pausa richiesta dal collaudatore");
+    await repository().updateJob(activeJobId, { status: "paused" }).catch(() => undefined);
+  }
+  pushActivity("Stop collaudo richiesto: conservo acquisizione e checkpoint", "warning");
+  await publishState();
+  return true;
+}
+
 async function abandonStreetRun() {
   if (streetRunActive) {
     streetRunAbandonRequested = true;
@@ -2987,7 +3220,7 @@ async function stopEverything() {
   clearAutoRetry();
   clearRetryMonitor();
   const actions: string[] = [];
-  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive;
+  const hadActiveOperation = active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive || collaudoActive;
   stoppingAll = hadActiveOperation;
 
   if (active && activeJobId) {
@@ -3010,8 +3243,9 @@ async function stopEverything() {
   }
   if (streetRunActive) {
     streetRunCancellationRequested = true;
-    streetRunAbandonRequested = true;
-    actions.push("run via arrestata");
+    streetRunAbandonRequested = !collaudoActive;
+    if (collaudoActive) collaudoCancellationRequested = true;
+    actions.push(collaudoActive ? "collaudo messo in pausa e conservato" : "run via arrestata");
   }
   if (networkRunActive) {
     networkRunCancellationRequested = true;
@@ -3035,7 +3269,7 @@ async function stopEverything() {
     networkRunCancellationRequested ? activeNetworkBrowser?.close().catch(() => undefined) : undefined,
     portoniCancellationRequested ? activePortoniBrowser?.close().catch(() => undefined) : undefined,
   ]);
-  const pendingOperations = [activeRunPromise, requestImportPromise, mandateImportPromise, streetRunPromise, networkRunPromise, portoniPromise]
+  const pendingOperations = [activeRunPromise, requestImportPromise, mandateImportPromise, streetRunPromise, networkRunPromise, portoniPromise, collaudoPromise]
     .filter((promise): promise is Promise<void> => Boolean(promise));
   if (pendingOperations.length) {
     try {
@@ -3357,6 +3591,11 @@ function registerIpc() {
     });
     return { started: true, street: street.replace(/\s+/g, " ").trim() };
   });
+  ipcMain.handle("desktop:start-collaudo", async () => {
+    await runCollaudoScenario();
+    return { started: true, street: COLLAUDO_STREET, scenarioId: COLLAUDO_SCENARIO_ID };
+  });
+  ipcMain.handle("desktop:stop-collaudo", () => stopCollaudoScenario());
   ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string; filters?: Partial<StreetPropertyFilters> }) => ({
     id: await runPortoni({ street: String(values?.street ?? ""), filters: values?.filters }),
   }));
@@ -3658,6 +3897,7 @@ app.whenReady().then(async () => {
   await loadStreetRunCheckpoint();
   await loadNetworkRunCheckpoint();
   await loadPortoniHistory();
+  await loadCollaudoHistory();
   await loadDiagnosticErrors();
   registerIpc();
   await createWindow();

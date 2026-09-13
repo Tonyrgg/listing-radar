@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled),
   startStreetRun: (values) => ipcRenderer.invoke("desktop:start-street-run", values),
   startRefinement: (values) => ipcRenderer.invoke("desktop:start-refinement", values),
+  startCollaudo: () => ipcRenderer.invoke("desktop:start-collaudo"),
+  stopCollaudo: () => ipcRenderer.invoke("desktop:stop-collaudo"),
   startPortoni: (values) => ipcRenderer.invoke("desktop:start-portoni", values),
   createBlankPortoni: (values) => ipcRenderer.invoke("desktop:create-blank-portoni", values),
   cancelPortoni: () => ipcRenderer.invoke("desktop:cancel-portoni"),

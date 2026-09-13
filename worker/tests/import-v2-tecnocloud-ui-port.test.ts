@@ -1392,6 +1392,9 @@ describe("Tecnocloud UI V2", () => {
       } satisfies ImportV2Plan;
       const result = await new TecnocloudUiV2Port(page).ensureActivity("property-activity", plan);
       expect(result.outcome).toBe("created");
+      expect(result.descriptionVerified).toBe(true);
+      expect(result.statusVerified).toBe(true);
+      expect(result.expectedStatus).toBe("Eseguito");
       expect(await page.locator('#activity').innerText()).toContain("Non sa nulla");
       expect(await page.locator('[role="dialog"]:visible').count()).toBe(0);
     } finally {
@@ -1405,7 +1408,7 @@ describe("Tecnocloud UI V2", () => {
       const page = await browser.newPage();
       await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
         if (new URL(route.request().url()).pathname === "/activity-data") {
-          await route.fulfill({ contentType: "application/json", body: JSON.stringify({ description: "Non sa nulla" }) });
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify({ description: "Non sa nulla", status: "Eseguito" }) });
           return;
         }
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
@@ -1426,6 +1429,8 @@ describe("Tecnocloud UI V2", () => {
       } satisfies ImportV2Plan;
       const result = await new TecnocloudUiV2Port(page).ensureActivity("property-activity", plan);
       expect(result.outcome).toBe("existing");
+      expect(result.descriptionVerified).toBe(true);
+      expect(result.statusVerified).toBe(true);
       expect(await page.evaluate(() => (window as unknown as { created?: boolean }).created ?? false)).toBe(false);
     } finally {
       await browser.close();

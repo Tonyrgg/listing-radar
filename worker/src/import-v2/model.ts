@@ -136,6 +136,14 @@ export type ImportV2Checkpoint = {
   ownershipVerifiedPersonIds?: string[];
   propertyResolution: PropertyResolution | null;
   crmPropertyId: string | null;
+  /** Evidence returned only after the Cloud activity write/read cycle. */
+  activityEvidence?: {
+    activityId: string | null;
+    outcome: "created" | "existing" | "disabled";
+    descriptionVerified?: boolean;
+    statusVerified?: boolean;
+    expectedStatus?: "Da eseguire" | "Eseguito";
+  } | null;
   attempts: number;
   nextAttemptAt: string | null;
   lastError: ImportV2Failure | null;

@@ -507,6 +507,31 @@ lavorazioni ordinarie conservano il percorso storico e possono continuare a
 creare un immobile quando tutte le verifiche anti-duplicato ne provano
 l'assenza.
 
+### Collaudatore reale del worker
+
+La scheda `Collaudo` ospita scenari end-to-end sorvegliati senza modificare il
+percorso delle lavorazioni ordinarie. Il primo scenario,
+`killer_coowners_resume`, ha un perimetro di produzione fisso:
+`VIA PIETRO COLLETTA`, massimo tre immobili catastalmente distinti, una finestra
+Cloud, tutti i comproprietari del singolo immobile e attività `killer`.
+L'operatore deve confermare esplicitamente a ogni avvio che la prova genera
+scritture reali.
+
+Il flusso acquisisce da SISTER, importa un immobile, richiede lo stop dopo
+l'azione atomica, verifica la pausa persistita e riprende lo stesso job fino a
+chiudere il campione. Durante il collaudo `expandAllOwners` è sempre disattivato:
+non si seguono gli intestatari verso immobili estranei alla via. Un indirizzo
+fuori perimetro interrompe il test prima del salvataggio. L'oracolo finale
+controlla via, budget, unicità catastale, opzioni salvate nel job, intestatari
+sincronizzati, ID Cloud e l'evidenza riletta che l'attività Killer sia stata
+salvata come `Eseguito`. Lo stop manuale conserva job e checkpoint.
+
+I rapporti non richiedono tabelle applicative: il desktop conserva gli ultimi
+30 in `<userData>/collaudo/history.json`, con scenario, job, fase, asserzioni e
+causa dell'arresto. La via è corta e va trattata come spazio di prova condiviso;
+nuovi scenari devono mantenere un budget esplicito e guardie pre-scrittura
+altrettanto restrittive.
+
 ### Import Cloud su due pagine
 
 «Due finestre Cloud» e' una preferenza esplicita e disattivata per default:
