@@ -3069,45 +3069,69 @@ async function readCollaudoEvidence(jobId: string, minimumCompleted: number, exp
 
 async function runCollaudoScenario() {
   reserveOperation("collaudo");
+  const previousReport = collaudoReport;
+  const resumableJobId = previousReport
+    && ["failed", "stopped"].includes(previousReport.status)
+    && previousReport.jobId
+    ? previousReport.jobId
+    : null;
   collaudoActive = true;
   collaudoCancellationRequested = false;
-  collaudoCurrentJobId = null;
-  collaudoReport = {
-    id: randomUUID(),
-    scenarioId: COLLAUDO_SCENARIO_ID,
-    street: COLLAUDO_STREET,
-    status: "running",
-    phase: "preflight",
-    jobId: null,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-    importedProperties: 0,
-    resumeCount: 0,
-    message: `Controllo collegamenti prima di acquisire al massimo ${COLLAUDO_MAX_PROPERTIES} immobili`,
-    assertions: [],
-  };
+  collaudoCurrentJobId = resumableJobId;
+  collaudoReport = resumableJobId && previousReport
+    ? {
+      ...previousReport,
+      status: "running",
+      phase: "first_import",
+      completedAt: null,
+      message: "Rileggo il checkpoint del collaudo fermato prima di riprendere le righe aperte",
+    }
+    : {
+      id: randomUUID(),
+      scenarioId: COLLAUDO_SCENARIO_ID,
+      street: COLLAUDO_STREET,
+      status: "running",
+      phase: "preflight",
+      jobId: null,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      importedProperties: 0,
+      resumeCount: 0,
+      message: `Controllo collegamenti prima di acquisire al massimo ${COLLAUDO_MAX_PROPERTIES} immobili`,
+      assertions: [],
+    };
   await persistCollaudoReport(collaudoReport);
-  pushActivity(`Collaudo reale avviato su ${COLLAUDO_STREET}: scenario Killer, comproprietari e ripresa`, "warning");
+  pushActivity(
+    resumableJobId
+      ? `Collaudo ripreso sul job conservato ${resumableJobId.slice(0, 8)}: rivalido il punto prima di continuare`
+      : `Collaudo reale avviato su ${COLLAUDO_STREET}: scenario Killer, comproprietari e ripresa`,
+    "warning",
+  );
   await publishState();
 
   const scenarioPromise = (async () => {
     try {
-      await updateCollaudoReport({ phase: "acquisition", message: `Acquisisco da SISTER un campione massimo di ${COLLAUDO_MAX_PROPERTIES} immobili` });
-      await runSisterStreet({
-        street: COLLAUDO_STREET,
-        resume: false,
-        dryRun: false,
-        registryNetwork: true,
-        collaudo: true,
-        filters: { residentialOnly: false },
-      });
-      const acquisitionAndFirstImport = streetRunPromise;
-      if (!acquisitionAndFirstImport) throw new Error("Il collaudo non ha avviato l’acquisizione SISTER");
-      await updateCollaudoReport({ phase: "first_import", message: "Importo una riga, poi verifico che la pausa conservi il punto esatto" });
-      await acquisitionAndFirstImport;
-
-      const jobId = collaudoCurrentJobId;
-      if (!jobId) throw new Error("SISTER non ha creato il lavoro di collaudo");
+      let jobId = resumableJobId;
+      if (!jobId) {
+        await updateCollaudoReport({ phase: "acquisition", message: `Acquisisco da SISTER un campione massimo di ${COLLAUDO_MAX_PROPERTIES} immobili` });
+        await runSisterStreet({
+          street: COLLAUDO_STREET,
+          resume: false,
+          dryRun: false,
+          registryNetwork: true,
+          collaudo: true,
+          filters: { residentialOnly: false },
+        });
+        const acquisitionAndFirstImport = streetRunPromise;
+        if (!acquisitionAndFirstImport) throw new Error("Il collaudo non ha avviato l’acquisizione SISTER");
+        await updateCollaudoReport({ phase: "first_import", message: "Importo una riga, poi verifico che la pausa conservi il punto esatto" });
+        await acquisitionAndFirstImport;
+        jobId = collaudoCurrentJobId;
+        if (!jobId) throw new Error("SISTER non ha creato il lavoro di collaudo");
+      } else {
+        await updateCollaudoReport({ phase: "first_import", message: "Rileggo il primo immobile e il checkpoint conservato prima della ripresa" });
+      }
+      if (!jobId) throw new Error("Il collaudo non ha un job conservato da verificare");
       await updateCollaudoReport({ jobId });
       if (collaudoCancellationRequested) {
         await updateCollaudoReport({

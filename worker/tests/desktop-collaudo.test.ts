@@ -28,5 +28,7 @@ describe("collaudatore desktop", () => {
     expect(main).toContain("assertCollaudoStreet(property.address)");
     expect(main).toContain("collaudoPropertyKeys.size >= COLLAUDO_MAX_PROPERTIES");
     expect(main).toContain("input.refinement || input.collaudo ? false : preferences.expandAllOwners");
+    expect(main).toContain("Rileggo il checkpoint del collaudo fermato prima di riprendere le righe aperte");
+    expect(renderer).toContain('resumable ? "Rivalida e riprendi" : "Avvia collaudo"');
   });
 });

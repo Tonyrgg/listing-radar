@@ -2483,6 +2483,7 @@ function renderCollaudo() {
   const failed = report?.status === "failed";
   const passed = report?.status === "passed";
   const stopped = report?.status === "stopped";
+  const resumable = !active && Boolean(report?.jobId) && (failed || stopped);
   const badge = $("collaudoBadge");
   badge.className = `status-pill ${active ? "is-running" : failed ? "is-error" : passed ? "is-ready" : "is-idle"}`;
   badge.innerHTML = `<span></span>${active ? "In esecuzione" : passed ? "Superato" : failed ? "Errore rilevato" : stopped ? "Fermato" : "Pronto"}`;
@@ -2493,6 +2494,7 @@ function renderCollaudo() {
   $("collaudoStop").disabled = Boolean(state.cancelling);
   $("collaudoConsent").disabled = active;
   $("collaudoStart").disabled = active || !$("collaudoConsent").checked || Boolean(appState?.active) || Boolean(appState?.streetRun?.active);
+  $("collaudoStart").textContent = resumable ? "Rivalida e riprendi" : "Avvia collaudo";
   $("collaudoMessage").textContent = report?.message ?? "Nessuna prova avviata. Il consenso vale soltanto per il prossimo collaudo.";
 
   const phases = ["acquisition", "first_import", "resume", "verification"];
