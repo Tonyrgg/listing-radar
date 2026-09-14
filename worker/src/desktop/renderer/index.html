@@ -17,7 +17,6 @@
       <nav class="top-nav" aria-label="Sezioni del worker">
         <button class="nav-item is-active" data-scroll="operations">Lavorazioni</button>
         <button class="nav-item" data-scroll="refinement">Rifinitura</button>
-        <button class="nav-item" data-scroll="collaudo">Collaudo</button>
         <button class="nav-item" data-scroll="portoni">Portoni</button>
         <button class="nav-item" data-scroll="sync">Sincronizza</button>
         <button class="nav-item" data-scroll="history">Cronologia <span id="historyNavHint"></span></button>
@@ -450,40 +449,6 @@
           </div>
         </details>
 
-        <details class="section" id="collaudo">
-          <summary>Collaudatore automatico</summary>
-          <div class="section-body collaudo-layout">
-            <section class="collaudo-card">
-              <header>
-                <div><p class="eyebrow">Prova reale sorvegliata</p><h2>Killer, comproprietari e ripresa</h2><p>Acquisisce un campione da SISTER, importa una riga, interrompe la run e la riprende. Ogni passaggio viene confrontato con il risultato atteso.</p></div>
-                <span id="collaudoBadge" class="status-pill is-idle"><span></span>Pronto</span>
-              </header>
-              <div class="collaudo-boundary">
-                <div><small>Perimetro autorizzato</small><strong id="collaudoStreet">VIA PIETRO COLLETTA</strong></div>
-                <p>Massimo <b id="collaudoBudget">3 immobili</b>. Qualsiasi indirizzo esterno ferma il test prima della scrittura.</p>
-              </div>
-              <ol class="collaudo-flow" aria-label="Fasi del collaudo">
-                <li data-collaudo-phase="acquisition"><span>1</span><div><b>Acquisizione</b><small>Legge la via da SISTER e conserva solo il piccolo campione.</small></div></li>
-                <li data-collaudo-phase="first_import"><span>2</span><div><b>Stop controllato</b><small>Importa una riga con Killer e comproprietari, poi salva il punto.</small></div></li>
-                <li data-collaudo-phase="resume"><span>3</span><div><b>Ripresa</b><small>Riparte dal checkpoint senza cambiare le opzioni.</small></div></li>
-                <li data-collaudo-phase="verification"><span>4</span><div><b>Verdetto</b><small>Controlla confine, proprietari, quote, attività e riferimenti Cloud.</small></div></li>
-              </ol>
-              <label class="safe-check collaudo-consent"><input id="collaudoConsent" type="checkbox" /><span><b>Confermo il collaudo reale</b><small>Il worker può aggiornare immobili, nominativi, comproprietari, quote, recapiti e attività esclusivamente in VIA PIETRO COLLETTA.</small></span></label>
-              <div class="collaudo-actions">
-                <button id="collaudoStop" class="button danger is-hidden">Ferma e conserva</button>
-                <button id="collaudoStart" class="button primary" disabled>Avvia collaudo</button>
-              </div>
-              <div id="collaudoProgress" class="street-run-progress is-hidden"><span></span></div>
-              <p id="collaudoMessage" class="collaudo-message">Nessuna prova avviata. Il consenso vale soltanto per il prossimo collaudo.</p>
-              <div id="collaudoAssertions" class="collaudo-assertions"><p class="empty-message">Le verifiche compariranno qui dopo il primo stop controllato.</p></div>
-            </section>
-            <section class="collaudo-history">
-              <header><div><p class="eyebrow">Rapporti locali</p><h2>Ultimi collaudi</h2><p>Ogni rapporto conserva scenario, job, controlli superati e causa dell’eventuale arresto.</p></div><span id="collaudoHistoryCount" class="count">0</span></header>
-              <div id="collaudoHistoryList"><p class="empty-message">La cronologia comparirà dopo la prima prova.</p></div>
-            </section>
-          </div>
-        </details>
-
         <details class="section" id="portoni">
           <summary>Schede Portoni</summary>
           <div class="section-body portoni-layout">
@@ -556,8 +521,8 @@
             <section class="activity-card"><header><div><p class="eyebrow">Ultime operazioni</p><h2>Cosa ha fatto il programma</h2></div></header><div id="activityList" class="activity-list"></div></section>
 
             <section class="activity-card" id="diagnosticErrors">
-              <header><div><p class="eyebrow">Diagnostica persistente</p><h2>Registro degli arresti</h2><p>Ogni blocco conserva momento, operazione, causa e dettagli tecnici utili all'assistenza. Le credenziali vengono escluse.</p></div><span id="diagnosticErrorCount" class="count">0</span></header>
-              <div id="diagnosticErrorList" class="diagnostic-error-list"><p class="empty-message">Nessun arresto registrato.</p></div>
+              <header><div><p class="eyebrow">Sorveglianza automatica · attiva su ogni run</p><h2>Errori e incoerenze rilevati</h2><p>Il controllo interno osserva acquisizione, import, comproprietari e attività senza aprire pagine o ripetere scritture. Ogni anomalia reale resta qui con il punto esatto in cui è avvenuta.</p></div><span id="diagnosticErrorCount" class="count">0</span></header>
+              <div id="diagnosticErrorList" class="diagnostic-error-list"><p class="empty-message">Nessuna anomalia rilevata.</p></div>
             </section>
           </div>
         </details>

@@ -29,8 +29,18 @@ describe("Ricerca nominativo nel lookup", () => {
         const path = new URL(route.request().url()).pathname;
         if (path.endsWith("/s/account/Account")) {
           await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-            <input title="Search..." onkeyup="document.querySelector('a.SEARCH_OPTION').href='/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(this.value)">
-            <a class="SEARCH_OPTION" href="#">Cerca</a>
+            <input title="Search...">
+            <a class="SEARCH_OPTION" href="#" onclick="event.preventDefault();history.pushState({},'', '/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(document.querySelector('input').value));document.querySelector('#initial').hidden=true;document.querySelector('#results-page').hidden=false">Cerca</a>
+            <div id="initial"></div>
+            <section id="results-page" hidden>
+              <h1>Risultati di ricerca</h1><div class="slds-nav-vertical"><a class="slds-nav-vertical__action" href="#" onclick="event.preventDefault();document.querySelector('#results').hidden=false">Immobili</a></div>
+              <section id="results" hidden><h2>Immobili</h2><div>50+ risultati</div>
+                <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
+                <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
+                <a href="/CRMImmobiliareLightning/s/immobile/property-2">IM - Via Luigi Castellucci 2 - Verdi</a>
+                <a href="/CRMImmobiliareLightning/s/immobile/other">IM - Via Raffaele Comes 9 - Bianchi</a>
+              </section>
+            </section>
           </body>` });
           return;
         }

@@ -598,9 +598,31 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
           if (!expansion.shouldExpand(expandable.owner)) continue;
           if (this.options.isCancelled?.()) break;
           const currentOwnerRow = this.page.locator(this.selectors.ownerRows).nth(expandable.rowIndex);
-          await currentOwnerRow.locator(this.selectors.ownerRadioWithinRow).check();
+          const ownerRadio = currentOwnerRow.locator(this.selectors.ownerRadioWithinRow);
+          await ownerRadio.check();
+          if (!(await ownerRadio.isChecked())) {
+            throw new WorkerError(
+              `SISTER non ha selezionato ${expandable.owner.fullName} prima di aprirne gli immobili`,
+              "portal_error",
+              { portal: "SISTER", action: "owner-expansion-radio", ownerTaxCode: expandable.owner.taxCode },
+              true,
+            );
+          }
           if (!process.env.VITEST) await this.page.waitForTimeout(150);
-          await clickAndWait(this.page, this.page.locator(this.selectors.ownerPropertiesButton));
+          const ownerForm = currentOwnerRow.locator("xpath=ancestor::form[1]");
+          const scopedButton = ownerForm.locator(this.selectors.ownerPropertiesButton);
+          const ownerPropertiesButton = await scopedButton.count() === 1
+            ? scopedButton
+            : this.page.locator(this.selectors.ownerPropertiesButton).filter({ visible: true });
+          if (await ownerPropertiesButton.count() !== 1) {
+            throw new WorkerError(
+              `Comando Immobili non univoco per ${expandable.owner.fullName}`,
+              "portal_error",
+              { portal: "SISTER", action: "owner-expansion-properties", count: await ownerPropertiesButton.count() },
+              true,
+            );
+          }
+          await clickAndWait(this.page, ownerPropertiesButton);
           insideExpandedProperties = true;
           await this.waitForMarker(this.selectors.resultsPageMarker, `l'apertura degli immobili di ${expandable.owner.fullName}`);
           const properties = (await this.extractProperties()).map((expandedProperty) => {

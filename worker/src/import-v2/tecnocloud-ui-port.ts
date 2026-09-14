@@ -1408,18 +1408,45 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const searchAction = this.page.locator("li.SEARCH_OPTION a, a.SEARCH_OPTION").filter({ visible: true });
       if (await searchAction.count() === 1) await searchAction.click({ force: true });
       else await search.press("Enter");
-      await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
-      const submitted = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "");
+      /* Lightning aggiorna spesso l'URL con history.pushState senza terminare
+       * un evento `load`. Aspettarlo lasciava la Rifinitura ferma pur essendo
+       * già atterrata sulla pagina corretta. */
+      let submitted = "";
+      for (let wait = 0; wait < 100; wait += 1) {
+        await this.assertSession();
+        submitted = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "");
+        if (normalized(submitted) === normalized(requested)) break;
+        await this.pauseAwareWait(200);
+      }
       if (normalized(submitted) !== normalized(requested)) {
         throw new ImportV2Error("La ricerca Cloud è partita con una via diversa da quella richiesta", "global_portal", { global: true });
       }
 
-      const scopes = this.page.locator("a.scopesItem").filter({ visible: true });
-      const propertyScope = scopes.filter({ hasText: /^\s*Immobili\s*$/i });
+      /* La voce è semanticamente sempre Immobili, ma il portale alterna la
+       * classe custom `scopesItem` con la sola struttura SLDS. Risolviamo
+       * l'ambito verticale senza prendere il link della navigazione generale. */
+      let propertyScope: Locator | null = null;
+      for (let wait = 0; wait < 100 && !propertyScope; wait += 1) {
+        const candidates = [
+          this.page.locator("a.scopesItem, button.scopesItem").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
+          this.page.locator(".slds-nav-vertical a.slds-nav-vertical__action, .slds-nav-vertical button").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
+          this.page.locator('[role="navigation"] a, [role="navigation"] button, [role="tablist"] [role="tab"]').filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
+        ];
+        for (const candidate of candidates) {
+          if (await candidate.count() === 1) {
+            propertyScope = candidate;
+            break;
+          }
+        }
+        if (!propertyScope) await this.pauseAwareWait(200);
+      }
+      if (!propertyScope) {
+        throw new ImportV2Error("Categoria Immobili non disponibile entro 20000 ms", "global_portal", { global: true });
+      }
       const links = this.page.locator('a[href*="/s/immobile/"]').filter({ visible: true });
       const scopeRequests = this.watchSearchRequests();
       try {
-        await (await this.one(propertyScope, "Categoria Immobili", 15_000)).click({ force: true });
+        await propertyScope.click({ force: true });
         let priorCount = -1;
         let stable = 0;
         let confirmedEmpty = false;

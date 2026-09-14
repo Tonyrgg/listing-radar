@@ -304,6 +304,18 @@ export class PropertyWorkerRunner {
       await this.repository.updateJob(job.id, { status: "running", current_step: state.current, error_message: null, error_details: null });
       job = await this.repository.getJob(job.id);
     }
+    await this.repository.updateJob(job.id, {
+      acquisition: {
+        ...(job.acquisition ?? {}),
+        importOptions: {
+          activityMode: this.propertyActivityMode(),
+          importCoOwners: this.importCoOwners(),
+          parallelCrmWindows: this.crmConcurrency() === 2,
+          selectedAt: new Date().toISOString(),
+        },
+      },
+    });
+    job = await this.repository.getJob(job.id);
     this.onEvent({ type: "job-ready", job, dryRun: this.config.WORKER_DRY_RUN });
     logger.info({ jobId: job.id, mode: job.mode, dryRun: this.config.WORKER_DRY_RUN, resumeFrom: state.current }, "Worker avviato");
 
@@ -361,6 +373,12 @@ export class PropertyWorkerRunner {
               workerMode: job.mode,
               dryRun: this.config.WORKER_DRY_RUN,
               activityMode: this.propertyActivityMode(),
+              importOptions: {
+                activityMode: this.propertyActivityMode(),
+                importCoOwners: this.importCoOwners(),
+                parallelCrmWindows: this.crmConcurrency() === 2,
+                selectedAt: new Date().toISOString(),
+              },
               place: [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || null,
               properties: output.propertyCount ?? null,
               owners: output.ownerCount ?? null,
