@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { importRunOptions, withImportRunOptions } from "../src/desktop/import-run-options.js";
+import { importRunOptions, withImportRunOptions, withLockedImportRunOptions } from "../src/desktop/import-run-options.js";
 import { summarizeJobImportProgress } from "../src/desktop/state-projection.js";
 import type { JobRow, PropertyRow } from "../src/services/repository.js";
 
@@ -77,6 +77,27 @@ describe("opzioni e avanzamento degli import conservati", () => {
     });
   });
 
+  it("blocca le impostazioni al primo avvio e ignora i tentativi di cambiarle alla ripresa", () => {
+    const first = withLockedImportRunOptions({}, {
+      activityMode: "killer",
+      importCoOwners: true,
+      parallelCrmWindows: true,
+    }, "2026-09-15T08:00:00.000Z");
+    const resumed = withLockedImportRunOptions(first, {
+      activityMode: "none",
+      importCoOwners: false,
+      parallelCrmWindows: false,
+    }, "2026-09-15T09:00:00.000Z");
+
+    expect(resumed.importOptions).toEqual({
+      activityMode: "killer",
+      importCoOwners: true,
+      parallelCrmWindows: true,
+      selectedAt: "2026-09-15T08:00:00.000Z",
+      lockedAt: "2026-09-15T08:00:00.000Z",
+    });
+  });
+
   it("distingue una run mai avviata da una interrotta e trova la riga di ripartenza", () => {
     const properties = [
       property("1", "completed", "completed"),
@@ -89,12 +110,22 @@ describe("opzioni e avanzamento degli import conservati", () => {
       handled: 1,
       total: 3,
       nextRow: 2,
+      nextRecordId: "2",
+      completed: 1,
+      completedWithAnomalies: 0,
+      skipped: 0,
+      pending: 2,
     });
     expect(summarizeJobImportProgress(job({ import_started_at: "2026-09-11T10:00:00.000Z", status: "paused" }), properties)).toEqual({
       state: "stopped",
       handled: 1,
       total: 3,
       nextRow: 2,
+      nextRecordId: "2",
+      completed: 1,
+      completedWithAnomalies: 0,
+      skipped: 0,
+      pending: 2,
     });
   });
 });

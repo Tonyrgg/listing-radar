@@ -475,6 +475,23 @@ La scansione civico per civico e la regola dei 50 civici vuoti restano come stra
 - Una variante fallita non viene interpretata come vuota e mette in pausa la run sulla stessa variante.
 - Una run reale incompleta resta salvata e correggibile; non avvia l'import.
 
+### Stato atomico e ripartenza delle run
+
+Lavorazione, Rifinitura e Portoni mantengono motori e checkpoint distinti. Le
+impostazioni scelte al primo avvio vengono salvate nel lavoro con data di blocco
+e non possono cambiare durante una pausa o una ripresa; le modifiche alle
+preferenze desktop valgono soltanto per la run successiva. I vecchi checkpoint
+di Rifinitura vengono migrati automaticamente dal file condiviso al file
+`sister-refinement-run.json`.
+
+Ogni immobile acquisito viene conservato subito. Il ledger della run assegna a
+ogni riga uno solo fra `in attesa`, `in corso`, `eseguito`, `eseguito con
+anomalie` e `saltato`; per anomalie e salti conserva anche la motivazione
+mostrata nel tooltip. Contatori, dettaglio della pausa e cursore di ripartenza
+sono tutti calcolati dallo stesso ledger persistito: con due finestre la prima
+riga aperta puo' precedere altre righe gia' concluse, che alla ripresa vengono
+saltate senza essere importate di nuovo.
+
 ### Schede Portoni
 
 Portoni riusa la scansione completa della via senza aprire Tecnocloud. Per
@@ -482,6 +499,9 @@ impostazione predefinita «Solo abitazioni» conserva esclusivamente le categori
 A; disattivando esplicitamente il controllo vengono acquisite e inserite nella
 scheda stampabile anche le categorie C. I filtri per piano e intervallo civici
 si applicano nello stesso passaggio, prima di aprire gli intestatari.
+La scheda conserva inoltre impostazioni, checkpoint SISTER e stato di ciascuna
+riga dopo ogni immobile acquisito; una scheda sospesa riparte dallo stesso
+checkpoint senza ricreare le righe gia' raccolte.
 
 ### Rifinitura delle vie già importate
 
@@ -602,7 +622,11 @@ La modalità «Segui una rete di proprietari» parte da codici fiscali verificat
 
 **I filtri decidono cosa si acquisisce, mai dove si passa.** Di ogni persona visitata vengono letti tutti gli immobili e tutti i loro comproprietari, che entrano in coda a prescindere da come l'immobile e' stato giudicato: anche un box o un immobile fuori dai criteri dice con chi si possiede, ed e' un ramo della rete. Prima i comproprietari venivano accodati solo dopo che l'immobile aveva superato ogni barriera, e con un requisito stretto l'esplorazione moriva subito dopo i punti di partenza. L'eta' del proprietario si legge dalla data che SISTER stampa e, quando manca, si decodifica dal codice fiscale, che la contiene per costruzione. Quando la coda si esaurisce senza aver raggiunto l'obiettivo, altri punti di partenza vengono ripescati fra i Clienti del gestionale escludendo chi è già stato visitato; se non ne restano, l'esplorazione si chiude. Gli immobili esclusi da questi filtri non consumano il limite della coda. Un dato necessario ma assente, come piano o data di nascita, non viene inventato: quando il relativo filtro è attivo l'immobile viene escluso e conteggiato nel primo motivo di scarto deterministico applicabile.
 
-La preparazione delle tre run è sempre orientata a una nuova operazione. Non mostra né ripropone checkpoint, risultati o azioni di lavori precedenti; ciò che è già stato raccolto resta consultabile soltanto in Cronologia. I checkpoint locali continuano a esistere come protezione tecnica durante l'operazione atomica corrente, non come percorso di navigazione della schermata iniziale.
+La preparazione delle tre run resta orientata a una nuova operazione quando non
+esiste un lavoro sospeso. Se il relativo motore ha un checkpoint in pausa, la
+sua sezione mostra invece via, impostazioni bloccate e comando esplicito di
+ripresa; checkpoint di motori diversi non vengono mai proposti nello stesso
+percorso. Risultati conclusi e documenti restano consultabili in Cronologia.
 
 ## 11. Sessione SISTER
 

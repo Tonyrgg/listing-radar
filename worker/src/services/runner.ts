@@ -304,15 +304,26 @@ export class PropertyWorkerRunner {
       await this.repository.updateJob(job.id, { status: "running", current_step: state.current, error_message: null, error_details: null });
       job = await this.repository.getJob(job.id);
     }
-    await this.repository.updateJob(job.id, {
-      acquisition: {
-        ...(job.acquisition ?? {}),
-        importOptions: {
+    const storedImportOptions = job.acquisition?.importOptions as Record<string, unknown> | undefined;
+    const lockedImportOptions = storedImportOptions?.lockedAt
+      ? storedImportOptions
+      : {
           activityMode: this.propertyActivityMode(),
           importCoOwners: this.importCoOwners(),
           parallelCrmWindows: this.crmConcurrency() === 2,
-          selectedAt: new Date().toISOString(),
+          selectedAt: String(storedImportOptions?.selectedAt ?? new Date().toISOString()),
+          lockedAt: new Date().toISOString(),
+        };
+    await this.repository.updateJob(job.id, {
+      acquisition: {
+        ...(job.acquisition ?? {}),
+        engine: this.refinementStreet ? "rifinitura" : "lavorazione",
+        runSettings: job.acquisition?.runSettings ?? {
+          lockedAt: new Date().toISOString(),
+          workerMode: job.mode,
+          dryRun: this.config.WORKER_DRY_RUN,
         },
+        importOptions: lockedImportOptions,
       },
     });
     job = await this.repository.getJob(job.id);
@@ -373,12 +384,13 @@ export class PropertyWorkerRunner {
               workerMode: job.mode,
               dryRun: this.config.WORKER_DRY_RUN,
               activityMode: this.propertyActivityMode(),
-              importOptions: {
-                activityMode: this.propertyActivityMode(),
-                importCoOwners: this.importCoOwners(),
-                parallelCrmWindows: this.crmConcurrency() === 2,
-                selectedAt: new Date().toISOString(),
+              engine: this.refinementStreet ? "rifinitura" : "lavorazione",
+              runSettings: job.acquisition?.runSettings ?? {
+                lockedAt: job.started_at ?? new Date().toISOString(),
+                workerMode: job.mode,
+                dryRun: this.config.WORKER_DRY_RUN,
               },
+              importOptions: lockedImportOptions,
               place: [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || null,
               properties: output.propertyCount ?? null,
               owners: output.ownerCount ?? null,

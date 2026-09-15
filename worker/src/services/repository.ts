@@ -41,7 +41,7 @@ export type JobRow = {
   acquisition?: Record<string, unknown> | null;
   created_at?: string;
   /** Conteggio reale delle righe, proiettato per la sola plancia desktop. */
-  import_progress?: { handled: number; total: number };
+  import_progress?: { handled: number; total: number; completed?: number; skipped?: number; completedWithAnomalies?: number };
 };
 
 export type PropertyRow = {
@@ -571,10 +571,11 @@ export class WorkerRepository {
   }
 
   /** Conta le righe concluse senza scaricare payload, persone e quote. */
-  async listSavedJobImportCounts(jobIds: string[]): Promise<Map<string, { handled: number; total: number }>> {
-    const counts = new Map(jobIds.map((jobId) => [jobId, { handled: 0, total: 0 }]));
+  async listSavedJobImportCounts(jobIds: string[]): Promise<Map<string, { handled: number; total: number; completed: number; skipped: number }>> {
+    const counts = new Map(jobIds.map((jobId) => [jobId, { handled: 0, total: 0, completed: 0, skipped: 0 }]));
     if (!jobIds.length) return counts;
-    const handledStatuses = new Set(["completed", "skipped", "acquisition_skipped", "acquisition_failed"]);
+    const skippedStatuses = new Set(["skipped", "acquisition_skipped", "acquisition_failed"]);
+    const completedStatuses = new Set(["completed", "synced", "dry_run"]);
     const pageSize = 1_000;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await this.client
@@ -590,7 +591,13 @@ export class WorkerRepository {
         const count = counts.get(row.job_id);
         if (!count) continue;
         count.total += 1;
-        if (handledStatuses.has(row.processing_status)) count.handled += 1;
+        if (skippedStatuses.has(row.processing_status)) {
+          count.handled += 1;
+          count.skipped += 1;
+        } else if (completedStatuses.has(row.processing_status)) {
+          count.handled += 1;
+          count.completed += 1;
+        }
       }
       if (rows.length < pageSize) break;
     }

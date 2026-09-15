@@ -7,7 +7,7 @@ export type ImportRunOptions = {
 };
 
 type ImportRunOptionSource = Partial<ImportRunOptions> & {
-  importOptions?: Partial<ImportRunOptions> | null;
+  importOptions?: (Partial<ImportRunOptions> & { selectedAt?: string; lockedAt?: string }) | null;
 };
 
 const isActivityMode = (value: unknown): value is PropertyActivityMode =>
@@ -47,5 +47,23 @@ export function withImportRunOptions(
   return {
     ...(acquisition ?? {}),
     importOptions: { ...options, selectedAt },
+  };
+}
+
+/** Blocca le scelte al primo avvio dell'import e conserva il lock ai resume. */
+export function withLockedImportRunOptions(
+  acquisition: Record<string, unknown> | null | undefined,
+  options: ImportRunOptions,
+  lockedAt = new Date().toISOString(),
+): Record<string, unknown> {
+  const existing = (acquisition?.importOptions ?? null) as (Partial<ImportRunOptions> & { selectedAt?: string; lockedAt?: string }) | null;
+  if (existing?.lockedAt) return { ...(acquisition ?? {}) };
+  return {
+    ...withImportRunOptions(acquisition, options, existing?.selectedAt ?? lockedAt),
+    importOptions: {
+      ...options,
+      selectedAt: existing?.selectedAt ?? lockedAt,
+      lockedAt,
+    },
   };
 }

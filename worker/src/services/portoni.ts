@@ -1,4 +1,6 @@
 import type { ContactMatchResult, CadastralOwner, CadastralProperty } from "../types.js";
+import type { StreetPropertyFilters } from "../core/network-exploration.js";
+import type { SisterStreetRunCheckpoint } from "./sister-street-run.js";
 
 export type PortoniOutcome = "" | "assente" | "parlato" | "interessato" | "non_interessato";
 
@@ -15,6 +17,8 @@ export type PortoniRow = {
   notes: string;
   category: string;
   ownership: string;
+  workState?: "pending" | "completed" | "completed_with_anomalies" | "skipped";
+  workAnomalies?: string[];
 };
 
 export type PortoniSheet = {
@@ -27,6 +31,13 @@ export type PortoniSheet = {
   generatedAt: string | null;
   documentPath: string | null;
   rows: PortoniRow[];
+  runStatus?: "draft" | "running" | "paused" | "completed" | "failed";
+  runSettings?: {
+    lockedAt: string;
+    filters: StreetPropertyFilters;
+  };
+  checkpoint?: SisterStreetRunCheckpoint | null;
+  lastError?: string | null;
 };
 
 const clean = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
@@ -108,6 +119,8 @@ export function buildPortoniRow(
     notes: "",
     category: clean(property.category),
     ownership: "",
+    workState: "completed",
+    workAnomalies: [],
   };
 }
 

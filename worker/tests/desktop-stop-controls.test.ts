@@ -46,7 +46,8 @@ describe("controlli di arresto desktop", () => {
     expect(renderer).toContain("parallelCrmWindows: toggle.checked");
     expect(renderer).toContain("importCoOwners,");
     expect(renderer).toContain("parallelCrmWindows: importParallelCloud");
-    expect(main).toContain("if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode");
+    expect(main).not.toContain("if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode");
+    expect(main).toContain("preferenze valgono soltanto dalla lavorazione successiva");
     expect(main).toMatch(/activeRunPromise = null;\s+activityModeOverride = null;\s+importCoOwnersOverride = null;\s+parallelCrmWindowsOverride = null;/);
     expect(runner).toContain("this.propertyActivityMode()");
     expect(runner).toContain("this.isStopAfterNextImportRequested(job.id)");
@@ -59,7 +60,7 @@ describe("controlli di arresto desktop", () => {
     expect(chrome).toContain("a0Q3Y00000ecMlzUAE");
     expect(chrome).toContain("a0Q3Y00000echeFUAQ");
     expect(main).toContain('ipcMain.handle("desktop:abandon-street-run"');
-    expect(main).toContain("sister-street-run.abandoned.");
+    expect(main).toContain("`sister-${engine}-run.abandoned.${Date.now()}.json`");
     expect(main).toContain("await rename(source, archived)");
   });
 

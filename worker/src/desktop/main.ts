@@ -19,6 +19,7 @@ import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { auditImportRun, auditStreetRun, type RunAuditFinding } from "../services/run-auditor.js";
+import { buildPropertyRunLedger } from "../services/run-ledger.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
@@ -70,7 +71,7 @@ import {
   type BrowserConnectionStability,
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
-import { importRunOptions, withImportRunOptions, type ImportRunOptions } from "./import-run-options.js";
+import { importRunOptions, withLockedImportRunOptions, type ImportRunOptions } from "./import-run-options.js";
 import {
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
@@ -174,6 +175,8 @@ const portoniRowSchema = z.object({
   id: z.string().min(1), cadastralKey: z.string().min(1), sisterNames: z.string(), actualNames: z.string(),
   civicAndStair: z.string(), floorAndInternal: z.string(), telephone: z.string(), outcome: portoniOutcomeSchema,
   visitedAt: z.string(), notes: z.string(), category: z.string(), ownership: z.string(),
+  workState: z.enum(["pending", "completed", "completed_with_anomalies", "skipped"]).optional(),
+  workAnomalies: z.array(z.string()).optional(),
 });
 const savePortoniSchema = z.object({ id: z.string().min(1), rows: z.array(portoniRowSchema) });
 
@@ -250,6 +253,7 @@ let streetRunAbandonRequested = false;
 let activeStreetBrowser: { close: () => Promise<void> } | null = null;
 let streetRunPromise: Promise<void> | null = null;
 let streetRunCheckpoint: SisterStreetRunCheckpoint | null = null;
+let refinementRunCheckpoint: SisterStreetRunCheckpoint | null = null;
 let streetRunError: string | null = null;
 let streetRunProgress: SisterStreetRunProgress | null = null;
 let refinementActive = false;
@@ -414,6 +418,7 @@ function publishTransientUpdate(update: {
   networkRunProgress?: typeof networkRunProgress;
   portoniProgress?: typeof portoniProgress;
   streetRunCheckpoint?: typeof streetRunCheckpoint;
+  refinementRunCheckpoint?: typeof refinementRunCheckpoint;
   networkRunCheckpoint?: typeof networkRunCheckpoint;
   sisterKeepAlive?: typeof sisterKeepAlive;
   connections?: { checks: ConnectionCheck[]; checkedAt: string | null; checking: boolean };
@@ -469,8 +474,8 @@ function preferencesPath() {
   return path.join(app.getPath("userData"), "desktop-preferences.json");
 }
 
-function streetRunCheckpointPath() {
-  return path.join(app.getPath("userData"), "sister-street-run.json");
+function streetRunCheckpointPath(engine: "lavorazione" | "rifinitura" = "lavorazione") {
+  return path.join(app.getPath("userData"), engine === "rifinitura" ? "sister-refinement-run.json" : "sister-street-run.json");
 }
 
 function networkRunCheckpointPath() {
@@ -490,7 +495,15 @@ async function loadPortoniHistory() {
     const loaded = JSON.parse(await readFile(portoniHistoryPath(), "utf8"));
     portoniSheets = Array.isArray(loaded) ? (loaded.slice(0, 100) as PortoniSheet[]).map((sheet) => ({
       ...sheet,
-      rows: sheet.rows.map((row) => ({ ...row, sisterNames: portoniOwnerSummary(row), ownership: "" })),
+      runStatus: sheet.runStatus ?? (sheet.checkpoint ? (sheet.checkpoint.status === "completed" ? "completed" : "paused") : "draft"),
+      lastError: sheet.lastError ?? sheet.checkpoint?.lastError ?? null,
+      rows: sheet.rows.map((row) => ({
+        ...row,
+        sisterNames: portoniOwnerSummary(row),
+        ownership: "",
+        workState: row.workState ?? (row.cadastralKey.startsWith("manuale-") ? "pending" : "completed"),
+        workAnomalies: row.workAnomalies ?? [],
+      })),
     })) : [];
   } catch {
     portoniSheets = [];
@@ -608,20 +621,34 @@ async function auditPersistedImport(jobId: string, runType: string) {
 }
 
 async function loadStreetRunCheckpoint() {
-  try {
-    streetRunCheckpoint = JSON.parse(await readFile(streetRunCheckpointPath(), "utf8")) as SisterStreetRunCheckpoint;
-  } catch {
+  const load = async (engine: "lavorazione" | "rifinitura") => {
+    try {
+      return JSON.parse(await readFile(streetRunCheckpointPath(engine), "utf8")) as SisterStreetRunCheckpoint;
+    } catch {
+      return null;
+    }
+  };
+  [streetRunCheckpoint, refinementRunCheckpoint] = await Promise.all([load("lavorazione"), load("rifinitura")]);
+
+  // Migrazione trasparente: le versioni precedenti salvavano Rifinitura nel
+  // file di Lavorazione. Lo spostiamo una volta sola senza perdere la pausa.
+  if (streetRunCheckpoint?.runSettings?.engine === "rifinitura" && !refinementRunCheckpoint) {
+    refinementRunCheckpoint = streetRunCheckpoint;
     streetRunCheckpoint = null;
+    await persistStreetRunCheckpoint(refinementRunCheckpoint);
+    try { await rename(streetRunCheckpointPath("lavorazione"), `${streetRunCheckpointPath("lavorazione")}.migrated.${Date.now()}`); } catch { /* file legacy assente */ }
   }
 }
 
 async function persistStreetRunCheckpoint(checkpoint: SisterStreetRunCheckpoint) {
-  const target = streetRunCheckpointPath();
+  const engine = checkpoint.runSettings?.engine === "rifinitura" ? "rifinitura" : "lavorazione";
+  const target = streetRunCheckpointPath(engine);
   const temporary = `${target}.tmp`;
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(temporary, JSON.stringify(checkpoint, null, 2), "utf8");
   await rename(temporary, target);
-  streetRunCheckpoint = checkpoint;
+  if (engine === "rifinitura") refinementRunCheckpoint = checkpoint;
+  else streetRunCheckpoint = checkpoint;
 }
 
 async function loadNetworkRunCheckpoint() {
@@ -641,8 +668,8 @@ async function persistNetworkRunCheckpoint(checkpoint: SisterNetworkRunCheckpoin
   networkRunCheckpoint = checkpoint;
 }
 
-async function archiveStreetRunCheckpoint(reason: string) {
-  const checkpoint = streetRunCheckpoint;
+async function archiveStreetRunCheckpoint(reason: string, engine: "lavorazione" | "rifinitura" = "lavorazione") {
+  const checkpoint = engine === "rifinitura" ? refinementRunCheckpoint : streetRunCheckpoint;
   if (!checkpoint) return null;
   if (checkpoint.importJobId) {
     try {
@@ -656,17 +683,22 @@ async function archiveStreetRunCheckpoint(reason: string) {
       pushActivity("Checkpoint locale archiviato; lo stato cloud del job non era raggiungibile", "warning");
     }
   }
-  const source = streetRunCheckpointPath();
-  const archived = path.join(path.dirname(source), `sister-street-run.abandoned.${Date.now()}.json`);
+  const source = streetRunCheckpointPath(engine);
+  const archived = path.join(path.dirname(source), `sister-${engine}-run.abandoned.${Date.now()}.json`);
   try {
     await rename(source, archived);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  streetRunCheckpoint = null;
+  if (engine === "rifinitura") {
+    refinementRunCheckpoint = null;
+    refinementError = null;
+  } else {
+    streetRunCheckpoint = null;
+    streetRunError = null;
+  }
   streetRunProgress = null;
-  streetRunError = null;
-  pushActivity(`Checkpoint via abbandonato e archiviato: ${checkpoint.requestedStreet}`, "success");
+  pushActivity(`Checkpoint ${engine} abbandonato e archiviato: ${checkpoint.requestedStreet}`, "success");
   return archived;
 }
 
@@ -1068,11 +1100,23 @@ async function refreshSnapshotRemoteData() {
         12_000,
         "Conteggio righe delle acquisizioni conservate",
       );
+      const anomalousPropertiesByJob = new Map<string, Set<string>>();
+      for (const error of diagnosticErrors) {
+        if (error.source !== "run-auditor" || !error.jobId || typeof error.details.propertyId !== "string") continue;
+        const ids = anomalousPropertiesByJob.get(error.jobId) ?? new Set<string>();
+        ids.add(error.details.propertyId);
+        anomalousPropertiesByJob.set(error.jobId, ids);
+      }
       next.jobs = savedJobs.map((job) => ({
         ...job,
-        import_progress: savedJobCounts.get(job.id) ?? {
+        import_progress: {
+          ...(savedJobCounts.get(job.id) ?? {
           handled: Number(job.processed_properties ?? 0),
           total: Number(job.total_properties ?? 0),
+            completed: Number(job.processed_properties ?? 0),
+            skipped: 0,
+          }),
+          completedWithAnomalies: anomalousPropertiesByJob.get(job.id)?.size ?? 0,
         },
       }));
       const visibleCompletedJobIds = new Set(completedJobs.map((job) => job.id));
@@ -1193,9 +1237,9 @@ async function stateSnapshot() {
       schemaError: mandateImportSchemaError,
     },
     streetRun: {
-      active: streetRunActive,
+      active: streetRunActive && !refinementActive,
       cancelling: streetRunCancellationRequested,
-      checkpoint: streetRunActive ? projectStreetCheckpointForRenderer(streetRunCheckpoint) : null,
+      checkpoint: projectStreetCheckpointForRenderer(streetRunCheckpoint),
       progress: streetRunProgress,
       lastError: streetRunError,
       checkpointPath: streetRunCheckpointPath(),
@@ -1235,8 +1279,9 @@ async function stateSnapshot() {
       active: refinementActive,
       street: refinementStreet,
       lastError: refinementError,
-      phase: streetRunActive ? "sister" : active && refinementActive ? "cloud" : "idle",
-      progress: streetRunActive ? streetRunProgress : propertyProgress,
+      phase: refinementActive && streetRunActive ? "sister" : active && refinementActive ? "cloud" : "idle",
+      progress: refinementActive ? (streetRunActive ? streetRunProgress : propertyProgress) : null,
+      checkpoint: projectStreetCheckpointForRenderer(refinementRunCheckpoint),
     },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
@@ -1457,13 +1502,21 @@ async function runSisterStreet(input: {
   refinement?: boolean;
 }) {
   const street = input.street.replace(/\s+/g, " ").trim();
-  const filters = normalizeStreetPropertyFilters(input.filters);
+  const requestedEngine = input.refinement ? "rifinitura" : "lavorazione";
+  const engineCheckpoint = requestedEngine === "rifinitura" ? refinementRunCheckpoint : streetRunCheckpoint;
+  const resumeCheckpoint = input.resume ? engineCheckpoint ?? undefined : undefined;
+  if (input.resume && !resumeCheckpoint) throw new Error(`Non esiste una scansione ${requestedEngine} da riprendere`);
+  if (resumeCheckpoint?.runSettings?.engine && resumeCheckpoint.runSettings.engine !== requestedEngine) {
+    throw new Error(`Il checkpoint appartiene al motore ${resumeCheckpoint.runSettings.engine} e non può essere ripreso da ${requestedEngine}`);
+  }
+  const filters = normalizeStreetPropertyFilters(
+    resumeCheckpoint?.runSettings?.filters ?? resumeCheckpoint?.filters ?? input.filters,
+  );
   // Rifinitura deve riconciliare soltanto l'inventario della via; le run
   // ordinarie rispettano invece la scelta esplicita di sviluppare i titolari.
-  const expandAllOwners = input.refinement ? false : preferences.expandAllOwners;
+  const expandAllOwners = resumeCheckpoint?.runSettings?.expandAllOwners
+    ?? (input.refinement ? false : preferences.expandAllOwners);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
-  const resumeCheckpoint = input.resume ? streetRunCheckpoint ?? undefined : undefined;
-  if (input.resume && !resumeCheckpoint) throw new Error("Non esiste una scansione da riprendere");
   const longRunMode = input.refinement ? "live" : input.resume && resumeCheckpoint
     ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
     : (input.dryRun ? "dry_run" : "live");
@@ -1472,8 +1525,8 @@ async function runSisterStreet(input: {
   try {
     const checks = await healthChecks({ silent: true });
     if (longRunMode === "live") requireCloudAvailable(checks);
-    if (!input.resume && streetRunCheckpoint) {
-      await archiveStreetRunCheckpoint("Checkpoint precedente archiviato prima di una nuova run via");
+    if (!input.resume && engineCheckpoint) {
+      await archiveStreetRunCheckpoint(`Checkpoint precedente archiviato prima di una nuova run ${requestedEngine}`, requestedEngine);
     }
   } catch (error) {
     if (ownsOperationReservation) releaseOperationReservation("street");
@@ -1521,9 +1574,22 @@ async function runSisterStreet(input: {
           civicNumber: null,
           sourceUrl: tabs.sisterPage.url(),
         });
+        await liveRepository.updateJob(importJob.id, {
+          acquisition: {
+            engine: input.refinement ? "rifinitura" : "lavorazione",
+            strategy: input.refinement ? "street_refinement" : "bulk_exact_variants",
+            runSettings: {
+              lockedAt: new Date().toISOString(),
+              street,
+              filters,
+              expandAllOwners,
+            },
+          },
+        });
       }
       const scanner = new SisterStreetRun(tabs.sisterPage, {
         strategy: "bulk_exact_variants",
+        engine: requestedEngine,
         mode: longRunMode,
         importJobId,
         filters,
@@ -1585,7 +1651,9 @@ async function runSisterStreet(input: {
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
           publishTransientUpdate({
-            streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint),
+            ...(requestedEngine === "rifinitura"
+              ? { refinementRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint) }
+              : { streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint) }),
           });
         },
       });
@@ -1656,8 +1724,11 @@ async function runSisterStreet(input: {
         }
       }
       if (input.refinement && result.importJobId) {
+        const refinementJob = await liveRepository!.getJob(result.importJobId);
         await liveRepository!.updateJob(result.importJobId, {
           acquisition: {
+            ...(refinementJob.acquisition ?? {}),
+            engine: "rifinitura",
             strategy: "street_refinement",
             street,
             activityMode: "plain",
@@ -1707,6 +1778,7 @@ async function runSisterStreet(input: {
       return;
     }
     streetRunError = error instanceof Error ? error.message : String(error);
+    if (input.refinement) refinementError = streetRunError;
     registryOutcome = "failed";
     registryError = { message: streetRunError };
     reportRunInterruption("street", "Acquisizione via interrotta");
@@ -1717,14 +1789,14 @@ async function runSisterStreet(input: {
       status: "failed",
       message: streetRunError,
       jobId: streetImportJobId,
-      details: { checkpointPath: streetRunCheckpointPath(), street },
+      details: { checkpointPath: streetRunCheckpointPath(requestedEngine), street, engine: requestedEngine },
     }, { publish: true });
   }).finally(async () => {
     streetRunActive = false;
     streetRunCancellationRequested = false;
     streetRunProgress = null;
     if (streetRunAbandonRequested) {
-      await archiveStreetRunCheckpoint("Run via interrotta e abbandonata dall'operatore").catch((error) => {
+      await archiveStreetRunCheckpoint("Run via interrotta e abbandonata dall'operatore", requestedEngine).catch((error) => {
         streetRunError = `Checkpoint non archiviato: ${error instanceof Error ? error.message : String(error)}`;
       });
       streetRunAbandonRequested = false;
@@ -1760,6 +1832,7 @@ async function runSisterStreet(input: {
         operationCompletion = null;
         const message = `Acquisizione salvata, ma avvio import non riuscito: ${error instanceof Error ? error.message : String(error)}`;
         streetRunError = message;
+        if (input.refinement) refinementError = message;
         registryOutcome = "to_recheck";
         registryError = { message };
         pushActivity(message, "error");
@@ -1783,6 +1856,9 @@ async function runSisterStreet(input: {
     if (input.refinement) {
       refinementActive = false;
       refinementError = streetRunError ?? lastError;
+      // L'errore appartiene alla sezione Rifinitura: non deve comparire anche
+      // come errore di una successiva Lavorazione ordinaria.
+      streetRunError = null;
     }
     streetRunPromise = null;
   });
@@ -1791,9 +1867,13 @@ async function runSisterStreet(input: {
   void runPromise;
 }
 
-async function runPortoni(input: { street: string; filters?: Partial<StreetPropertyFilters> }) {
-  const street = input.street.replace(/\s+/g, " ").trim();
-  const filters = normalizeStreetPropertyFilters(input.filters);
+async function runPortoni(input: { street: string; filters?: Partial<StreetPropertyFilters>; resumeSheetId?: string }) {
+  const resumedSheet = input.resumeSheetId
+    ? portoniSheets.find((candidate) => candidate.id === input.resumeSheetId) ?? null
+    : null;
+  if (input.resumeSheetId && !resumedSheet) throw new Error("Scheda Portoni da riprendere non trovata");
+  const street = (resumedSheet?.street ?? input.street).replace(/\s+/g, " ").trim();
+  const filters = normalizeStreetPropertyFilters(resumedSheet?.runSettings?.filters ?? input.filters);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
   reserveOperation("portoni");
   let config: WorkerConfig;
@@ -1808,15 +1888,18 @@ async function runPortoni(input: { street: string; filters?: Partial<StreetPrope
     throw new Error("Seleziona prima il file Excel dei recapiti");
   }
   const now = new Date().toISOString();
-  const sheet: PortoniSheet = {
+  const sheet: PortoniSheet = resumedSheet ?? {
     id: randomUUID(), street, municipality: "BITONTO", status: "draft", createdAt: now, updatedAt: now,
-    generatedAt: null, documentPath: null, rows: [],
+    generatedAt: null, documentPath: null, rows: [], runStatus: "running",
+    runSettings: { lockedAt: now, filters }, checkpoint: null, lastError: null,
   };
-  portoniSheets.unshift(sheet);
+  if (!resumedSheet) portoniSheets.unshift(sheet);
+  sheet.runStatus = "running";
+  sheet.lastError = null;
   try {
     await persistPortoniHistory();
   } catch (error) {
-    portoniSheets = portoniSheets.filter((candidate) => candidate.id !== sheet.id);
+    if (!resumedSheet) portoniSheets = portoniSheets.filter((candidate) => candidate.id !== sheet.id);
     releaseOperationReservation("portoni");
     throw error;
   }
@@ -1832,23 +1915,36 @@ async function runPortoni(input: { street: string; filters?: Partial<StreetPrope
     await contacts.load();
     const tabs = await connectToSisterChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH);
     activePortoniBrowser = tabs.browser;
-    const rows = new Map<string, PortoniRow>();
+    const rows = new Map<string, PortoniRow>(sheet.rows.map((row) => [row.id, row]));
     try {
       const scanner = new SisterStreetRun(tabs.sisterPage, {
-        strategy: "bulk_exact_variants", mode: "dry_run", acquireOwners: true, includeAllOwners: true, prepareSearchAutomatically: true,
+        strategy: "bulk_exact_variants", engine: "portoni", mode: "dry_run", acquireOwners: true, includeAllOwners: true, prepareSearchAutomatically: true,
         filters,
         isCancelled: () => portoniCancellationRequested,
         onProgress: async (progress) => {
           portoniProgress = progress;
           publishTransientUpdate({ portoniProgress: progress });
         },
-        onPropertyAcquired: (_variant, property, owners) => {
+        onPropertyAcquired: async (_variant, property, owners) => {
           const row = buildPortoniRow(property, owners, (taxCode) => contacts.findByTaxCode(taxCode));
           rows.set(row.id, row);
+          sheet.rows = sortPortoniRows([...rows.values()]);
+          sheet.updatedAt = new Date().toISOString();
+          await persistPortoniHistory();
+        },
+        onCheckpoint: async (checkpoint) => {
+          sheet.checkpoint = checkpoint;
+          sheet.runStatus = checkpoint.status;
+          sheet.updatedAt = checkpoint.updatedAt;
+          sheet.lastError = checkpoint.lastError;
+          await persistPortoniHistory();
         },
       });
-      const result = await scanner.run(street);
+      const result = await scanner.run(street, resumedSheet?.checkpoint ?? undefined);
       sheet.rows = sortPortoniRows([...rows.values()]);
+      sheet.checkpoint = result;
+      sheet.runStatus = result.status;
+      sheet.lastError = result.lastError;
       sheet.updatedAt = new Date().toISOString();
       await persistPortoniHistory();
       pushActivity(
@@ -1863,6 +1959,8 @@ async function runPortoni(input: { street: string; filters?: Partial<StreetPrope
     }
   })().catch(async (error) => {
     portoniError = error instanceof Error ? error.message : String(error);
+    sheet.runStatus = portoniCancellationRequested ? "paused" : "failed";
+    sheet.lastError = portoniError;
     sheet.updatedAt = new Date().toISOString();
     await persistPortoniHistory().catch(() => undefined);
     pushActivity(`Portoni non completato: ${portoniError}`, "error");
@@ -1889,7 +1987,8 @@ async function createBlankPortoni(streetInput: string) {
   }));
   const sheet: PortoniSheet = {
     id: randomUUID(), street, municipality: "BITONTO", status: "draft", createdAt: now, updatedAt: now,
-    generatedAt: null, documentPath: null, rows,
+    generatedAt: null, documentPath: null, rows: rows.map((row) => ({ ...row, workState: "pending", workAnomalies: [] })),
+    runStatus: "draft", checkpoint: null, lastError: null,
   };
   portoniSheets.unshift(sheet);
   await persistPortoniHistory();
@@ -2891,6 +2990,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   });
   let forceLiveImport = false;
   let resumedImportOptions: ImportRunOptions | null = null;
+  let resumeCursor: { propertyId: string; index: number; total: number; address: string | null } | null = null;
   let effectiveRefinementStreet = input.refinementStreet?.replace(/\s+/g, " ").trim() || null;
   try {
     if (input.jobId) {
@@ -2905,6 +3005,21 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
         importCoOwners: preferences.importCoOwners,
         parallelCrmWindows: preferences.parallelCrmWindows,
       });
+      if (pendingJob.import_started_at || pendingJob.current_step === "properties_processed") {
+        const graph = await repository().loadGraph(pendingJob.id);
+        const progress = summarizeJobImportProgress(pendingJob, graph.properties);
+        const nextProperty = progress.nextRecordId
+          ? graph.properties.find((property) => property.id === progress.nextRecordId) ?? null
+          : null;
+        if (nextProperty && progress.nextRow) {
+          resumeCursor = {
+            propertyId: nextProperty.id,
+            index: progress.nextRow,
+            total: progress.total,
+            address: nextProperty.address,
+          };
+        }
+      }
       if (!effectiveRefinementStreet && pendingJob.acquisition?.strategy === "street_refinement") {
         effectiveRefinementStreet = String(pendingJob.acquisition.street ?? pendingJob.street ?? "").replace(/\s+/g, " ").trim() || null;
       }
@@ -2919,7 +3034,11 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   pausingJobId = null;
   lastError = null;
   currentStep = null;
-  propertyProgress = null;
+  propertyProgress = resumeCursor ? {
+    ...resumeCursor,
+    stage: "resume_cursor",
+    message: "Riparto da questo record; quelli con esito terminale verranno saltati",
+  } : null;
   crmImportConcurrency = 1;
   activeJobId = input.jobId ?? null;
   if (resumedImportOptions) {
@@ -2935,6 +3054,9 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     refinementStreet = effectiveRefinementStreet;
     refinementError = null;
   }
+  activityModeOverride ??= preferences.propertyActivityMode;
+  importCoOwnersOverride ??= preferences.importCoOwners;
+  parallelCrmWindowsOverride ??= preferences.parallelCrmWindows;
   preferences = { ...preferences, mode: input.mode, dryRun: forceLiveImport ? false : input.dryRun };
   await persistPreferences();
   activePrompts = new DesktopPromptController(publishPrompt);
@@ -3348,11 +3470,8 @@ function registerIpc() {
        * niente comunque: i due flag non possono divergere. */
       dryRun: values.keepAcquisition != null ? keep : (values.dryRun ?? preferences.dryRun),
     };
-    // A top-bar activity choice made during an imported batch replaces the
-    // dialog's run-local default for the next untouched properties.
-    if (active && values.propertyActivityMode) activityModeOverride = values.propertyActivityMode;
-    if (active && typeof values.importCoOwners === "boolean") importCoOwnersOverride = values.importCoOwners;
-    if (active && typeof values.parallelCrmWindows === "boolean") parallelCrmWindowsOverride = values.parallelCrmWindows;
+    // Durante una run le scelte restano congelate negli override. Queste
+    // preferenze valgono soltanto dalla lavorazione successiva.
     await persistPreferences();
     await publishState();
     return preferences;
@@ -3401,22 +3520,22 @@ function registerIpc() {
     return stopAfterNextImportRequested;
   });
   ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
-    await runSisterStreet({ street: String(values.street ?? ""), resume: false, dryRun: values.dryRun !== false, filters: values.filters });
+    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
-  ipcMain.handle("desktop:start-refinement", async (_event, values: { street?: string }) => {
+  ipcMain.handle("desktop:start-refinement", async (_event, values: { street?: string; resume?: boolean }) => {
     const street = String(values?.street ?? "");
     await runSisterStreet({
       street,
-      resume: false,
+      resume: values?.resume === true,
       dryRun: false,
       refinement: true,
       filters: { residentialOnly: false },
     });
     return { started: true, street: street.replace(/\s+/g, " ").trim() };
   });
-  ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string; filters?: Partial<StreetPropertyFilters> }) => ({
-    id: await runPortoni({ street: String(values?.street ?? ""), filters: values?.filters }),
+  ipcMain.handle("desktop:start-portoni", async (_event, values: { street?: string; filters?: Partial<StreetPropertyFilters>; resumeSheetId?: string }) => ({
+    id: await runPortoni({ street: String(values?.street ?? ""), filters: values?.filters, resumeSheetId: values?.resumeSheetId }),
   }));
   ipcMain.handle("desktop:create-blank-portoni", (_event, values: { street?: string }) => createBlankPortoni(String(values?.street ?? "")));
   ipcMain.handle("desktop:cancel-portoni", async () => {
@@ -3494,7 +3613,7 @@ function registerIpc() {
       importCoOwners: preferences.importCoOwners,
       parallelCrmWindows: preferences.parallelCrmWindows,
     });
-    const chosen: ImportRunOptions = {
+    const requested: ImportRunOptions = {
       activityMode: typeof values !== "string" && ["direct_contact", "plain", "killer", "none"].includes(String(values.activityMode))
         ? values.activityMode!
         : previous.activityMode,
@@ -3505,11 +3624,13 @@ function registerIpc() {
         ? values.parallelCrmWindows
         : previous.parallelCrmWindows,
     };
+    const chosen = job.import_started_at ? previous : requested;
+    const startedAt = job.import_started_at ?? new Date().toISOString();
     await repo.updateJob(jobId, {
       ...(job.saved_at || job.import_started_at
-        ? { import_started_at: job.import_started_at ?? new Date().toISOString() }
+        ? { import_started_at: startedAt }
         : {}),
-      acquisition: withImportRunOptions(job.acquisition, chosen),
+      acquisition: withLockedImportRunOptions(job.acquisition, chosen, startedAt),
     });
     activityModeOverride = chosen.activityMode;
     importCoOwnersOverride = chosen.importCoOwners;
@@ -3591,12 +3712,32 @@ function registerIpc() {
   ipcMain.handle("desktop:get-job-details", async (_event, jobId: string) => {
     const repo = repository();
     const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
+    const anomalies = diagnosticErrors
+      .filter((item) => item.jobId === jobId && typeof item.details.propertyId === "string")
+      .map((item) => ({
+        propertyId: String(item.details.propertyId),
+        code: typeof item.details.auditCode === "string" ? item.details.auditCode : item.source,
+        message: item.message,
+      }));
+    const ledger = buildPropertyRunLedger({
+      job,
+      properties: graph.properties,
+      anomalies,
+      activePropertyId: active && activeJobId === jobId ? propertyProgress?.propertyId ?? null : null,
+    });
     return {
       job,
       properties: graph.properties,
       people: graph.people,
       ownerships: graph.ownerships,
-      progress: summarizeJobImportProgress(job, graph.properties, active && activeJobId === jobId),
+      ledger,
+      progress: summarizeJobImportProgress(
+        job,
+        graph.properties,
+        active && activeJobId === jobId,
+        anomalies,
+        propertyProgress?.propertyId ?? null,
+      ),
     };
   });
   ipcMain.handle("desktop:skip-property", async (_event, values: { jobId: string; propertyId: string }) => {

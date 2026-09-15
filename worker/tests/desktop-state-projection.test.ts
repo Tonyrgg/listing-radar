@@ -16,7 +16,8 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
     expect(main).toContain("repo.listSavedJobImportCounts(savedJobs.map((job) => job.id))");
     expect(renderer).toContain("job.import_progress?.handled");
-    expect(main).toContain("checkpoint: streetRunActive ? projectStreetCheckpointForRenderer(streetRunCheckpoint) : null");
+    expect(main).toContain("checkpoint: projectStreetCheckpointForRenderer(streetRunCheckpoint)");
+    expect(main).toContain("checkpoint: projectStreetCheckpointForRenderer(refinementRunCheckpoint)");
     expect(main).toContain("streetRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint)");
     expect(renderer).toContain("item.peopleCount ?? item.people?.length ?? 0");
     expect(renderer).toContain("if (renderKey === jobsRenderKey) return");

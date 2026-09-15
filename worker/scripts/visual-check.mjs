@@ -186,21 +186,19 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: path.join(output, "ready-mobile.png"), fullPage: true });
 const readyMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
-const stoppedRunVisible = await page.getByText("Interrotta · 2 concluse · 1 aperta", { exact: true }).count();
+const stoppedRunVisible = await page.getByText(/Interrotta · 2 eseguite.*1 aperta/).count();
 await page.locator('[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
 await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
 const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
 const nonContiguousProgressExplained = await page.getByText("Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute.", { exact: true }).count();
 const importKillerChoiceVisible = await page.locator('[data-import-activity="killer"]:visible').count();
-await page.locator('[data-import-activity="killer"]:visible').click();
-const importKillerHelpVisible = await page.getByText(/Crea sempre un’attività “Eseguito”.*“Telefonata”.*“Rifiutato chiamata”/).count();
-await page.locator('[data-import-activity="plain"]:visible').click();
-await page.locator("#importCoOwnersToggle").uncheck();
-await page.locator("#importParallelCloudToggle").check();
+const lockedImportChoices = await page.locator("#importDialog [data-import-activity], #importCoOwnersToggle, #importParallelCloudToggle").evaluateAll((elements) => elements.every((element) => element.disabled));
+const lockedImportExplanationVisible = await page.getByText("Impostazioni bloccate alla partenza", { exact: false }).count();
+const importKillerHelpVisible = 0;
 await page.locator('[data-import-dialog="confirm"]').click();
 await page.locator('[data-detail-job="55555555-5555-4555-8555-555555555555"]').click();
 await page.locator("#detailPanel").screenshot({ path: path.join(output, "stopped-import-detail.png") });
-const detailRestartRowVisible = await page.getByText("Prima riga aperta", { exact: true }).count();
+const detailRestartRowVisible = await page.getByText(/Prima riga aperta: 1 di 3/).count();
 await page.locator('[data-scroll="refinement"]').click();
 await page.locator("#refinement").screenshot({ path: path.join(output, "refinement.png") });
 const refinementVisible = await page.locator("#refinementStart:visible").count();
@@ -313,17 +311,17 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
   ...([readyOverflow, readyMobileOverflow, refinementOverflow, historyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
-  ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible !== 1 ? ["Stato o riga di ripartenza della run non visibili"] : []),
-  ...(importKillerChoiceVisible !== 1 || importKillerHelpVisible !== 1 ? ["Modalità Killer non disponibile o non spiegata nella ripresa"] : []),
-  ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== false || workerCalls.resumeJobValues?.parallelCrmWindows !== true
-    ? ["Le tre opzioni della ripresa non arrivano insieme al processo principale"] : []),
+  ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible < 1 ? ["Stato o riga di ripartenza della run non visibili"] : []),
+  ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || lockedImportExplanationVisible < 1 ? ["Le impostazioni della run interrotta non sono visibili e bloccate"] : []),
+  ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== true || workerCalls.resumeJobValues?.parallelCrmWindows !== false
+    ? ["La ripresa non conserva le tre impostazioni originarie"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
   ...(refinementVisible !== 1 || refinementBoundaryVisible < 1 ? ["Pagina Rifinitura non visibile o confine operativo assente"] : []),
   ...(automaticAuditorVisible !== 1 || !automaticAuditorNoManualStart ? ["La sorveglianza automatica non è integrata nella Cronologia o conserva ancora un avvio manuale"] : []),

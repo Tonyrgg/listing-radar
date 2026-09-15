@@ -1770,7 +1770,56 @@ dialog[open] {
 .import-detail-row.is-done { color: var(--lr-ink-3); }
 .import-detail-row.is-current .completion-label { border-color: var(--lr-accent); color: var(--lr-accent); }
 .import-detail-row.is-done .completion-label { border-color: var(--lr-ok); color: var(--lr-ok); }
+.import-detail-row.is-anomaly .completion-label { border-color: var(--lr-warn); color: var(--lr-warn); }
+.import-detail-row.is-skipped .completion-label { border-color: var(--lr-ink-3); color: var(--lr-ink-3); }
 .import-detail-row.is-pending .completion-label { color: var(--lr-ink-3); }
+
+.completion-label.has-tooltip { position: relative; cursor: help; }
+.completion-label.has-tooltip::after {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  bottom: calc(100% + var(--lr-space-2));
+  width: min(340px, 72vw);
+  padding: var(--lr-space-2) var(--lr-space-3);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-control);
+  background: var(--lr-raised);
+  color: var(--lr-ink);
+  content: attr(data-tooltip);
+  font-family: var(--lr-font-sans);
+  font-size: var(--lr-text-meta);
+  font-weight: var(--lr-weight-regular);
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  white-space: normal;
+  transform: translateY(4px);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
+}
+.completion-label.has-tooltip:hover::after,
+.completion-label.has-tooltip:focus-visible::after { opacity: 1; transform: translateY(0); }
+
+.run-settings-snapshot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--lr-space-1) var(--lr-space-3);
+  margin-bottom: var(--lr-space-3);
+  padding-bottom: var(--lr-space-3);
+  border-bottom: 1px solid var(--lr-line-quiet);
+}
+.run-settings-snapshot > span {
+  grid-row: 1 / span 2;
+  align-self: center;
+  padding: 2px var(--lr-space-2);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-pill);
+  color: var(--lr-ink-2);
+  font-size: var(--lr-text-label);
+  text-transform: uppercase;
+}
+.run-settings-snapshot small { color: var(--lr-ink-3); }
 
 @media (max-width: 720px) {
   .import-setting-row { align-items: stretch; flex-direction: column; gap: var(--lr-space-2); }

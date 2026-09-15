@@ -59,6 +59,14 @@ export type SisterStreetRunCheckpoint = {
   requestedStreet: string;
   municipality: "BITONTO";
   filters?: StreetPropertyFilters;
+  /** Scelte immutabili della singola acquisizione. Assente nei checkpoint storici. */
+  runSettings?: {
+    engine: "lavorazione" | "rifinitura" | "portoni";
+    lockedAt: string;
+    expandAllOwners: boolean;
+    acquireOwners: boolean;
+    filters: StreetPropertyFilters;
+  };
   status: "running" | "paused" | "completed" | "failed";
   startedAt: string;
   updatedAt: string;
@@ -92,6 +100,7 @@ type StreetRunOptions = {
   mode?: "dry_run" | "live";
   importJobId?: string | null;
   filters?: Partial<StreetPropertyFilters>;
+  engine?: "lavorazione" | "rifinitura" | "portoni";
   onPropertyAcquired?: (
     variant: SisterStreetVariant,
     property: CadastralProperty,
@@ -147,6 +156,7 @@ export class SisterStreetRun {
   private readonly strategy: "bulk_exact_variants" | "civic_fallback";
   private readonly mode: "dry_run" | "live";
   private readonly filters: StreetPropertyFilters;
+  private readonly engine: "lavorazione" | "rifinitura" | "portoni";
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
     this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, {
@@ -164,6 +174,7 @@ export class SisterStreetRun {
     this.strategy = options.strategy ?? "bulk_exact_variants";
     this.mode = options.mode ?? "dry_run";
     this.filters = normalizeStreetPropertyFilters(options.filters);
+    this.engine = options.engine ?? "lavorazione";
   }
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
@@ -192,6 +203,13 @@ export class SisterStreetRun {
           completedAt: null,
           variants,
           filters: this.filters,
+          runSettings: compatibleResume.runSettings ?? {
+            engine: this.engine,
+            lockedAt: compatibleResume.startedAt,
+            expandAllOwners: this.expandAllOwners,
+            acquireOwners: this.acquireOwners,
+            filters: this.filters,
+          },
           consecutiveEmptyByVariant: Object.fromEntries(variants.map((variant) => [
             variant.key,
             compatibleResume.consecutiveEmptyByVariant[variant.key] ?? 0,
@@ -206,6 +224,13 @@ export class SisterStreetRun {
           requestedStreet: normalizedRequestedStreet,
           municipality: "BITONTO",
           filters: this.filters,
+          runSettings: {
+            engine: this.engine,
+            lockedAt: now,
+            expandAllOwners: this.expandAllOwners,
+            acquireOwners: this.acquireOwners,
+            filters: this.filters,
+          },
           status: "running",
           startedAt: now,
           updatedAt: now,

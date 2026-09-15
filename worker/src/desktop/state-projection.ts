@@ -1,43 +1,42 @@
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import type { JobRow, PropertyRow } from "../services/repository.js";
+import { buildPropertyRunLedger, type RunLedgerAnomaly } from "../services/run-ledger.js";
 
 export type JobImportProgress = {
   state: "not_started" | "running" | "stopped" | "completed";
   handled: number;
   total: number;
   nextRow: number | null;
+  nextRecordId: string | null;
+  completed: number;
+  completedWithAnomalies: number;
+  skipped: number;
+  pending: number;
 };
-
-export function propertyStatusIsHandled(status: string) {
-  return ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(status);
-}
-
-function propertyIsHandled(property: PropertyRow) {
-  const stage = String((property.raw_payload?.property_flow as { stage?: string } | undefined)?.stage ?? "");
-  return propertyStatusIsHandled(property.processing_status)
-    || stage === "completed"
-    || stage === "skipped";
-}
 
 export function summarizeJobImportProgress(
   job: JobRow,
   properties: PropertyRow[],
   isActive = false,
+  anomalies: RunLedgerAnomaly[] = [],
+  activePropertyId: string | null = null,
 ): JobImportProgress {
-  const handled = properties.filter(propertyIsHandled).length;
-  const nextIndex = properties.findIndex((property) => !propertyIsHandled(property));
-  const completed = job.status === "completed" || (properties.length > 0 && handled === properties.length);
+  const ledger = buildPropertyRunLedger({
+    job,
+    properties,
+    anomalies,
+    activePropertyId: isActive ? activePropertyId : null,
+  });
   return {
-    state: completed
-      ? "completed"
-      : isActive
-        ? "running"
-        : job.import_started_at
-          ? "stopped"
-          : "not_started",
-    handled,
-    total: properties.length,
-    nextRow: nextIndex < 0 ? null : nextIndex + 1,
+    state: ledger.state,
+    handled: ledger.counts.terminal,
+    total: ledger.counts.total,
+    nextRow: ledger.cursor.nextRow,
+    nextRecordId: ledger.cursor.nextRecordId,
+    completed: ledger.counts.completed,
+    completedWithAnomalies: ledger.counts.completedWithAnomalies,
+    skipped: ledger.counts.skipped,
+    pending: ledger.counts.pending,
   };
 }
 
