@@ -175,7 +175,7 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       const acquired: string[] = [];
       const checkpoint = await new SisterStreetRun(page, {
         engine: "rifinitura",
-        refinementSecondaryStreet: "via dottor test",
+        refinementCloudStreet: "via dottor test",
         onPropertyAcquired: (_variant, property) => { acquired.push(property.parcel); },
       }).run("VIA TEST");
 
@@ -185,7 +185,7 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
         totalSkippedPropertyRows: 1,
       });
       expect(acquired).toEqual([]);
-      expect(checkpoint.runSettings?.refinementSecondaryStreet).toBe("via dottor test");
+      expect(checkpoint.runSettings?.refinementCloudStreet).toBe("via dottor test");
       expect(checkpoint.results[0]?.warnings[0]).toContain("nessun proprietario interpretabile");
       expect(await page.locator('select[name="indirizzoSel"]').count()).toBe(1);
     } finally {

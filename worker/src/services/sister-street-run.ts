@@ -66,6 +66,9 @@ export type SisterStreetRunCheckpoint = {
     expandAllOwners: boolean;
     acquireOwners: boolean;
     filters: StreetPropertyFilters;
+    /** Dizione usata esclusivamente nel filtro Indirizzo del Cloud. */
+    refinementCloudStreet?: string | null;
+    /** @deprecated Dizione Cloud dei checkpoint precedenti alla 0.33.43. */
     refinementSecondaryStreet?: string | null;
   };
   status: "running" | "paused" | "completed" | "failed";
@@ -102,6 +105,8 @@ type StreetRunOptions = {
   importJobId?: string | null;
   filters?: Partial<StreetPropertyFilters>;
   engine?: "lavorazione" | "rifinitura" | "portoni";
+  refinementCloudStreet?: string | null;
+  /** @deprecated Compatibilita con i checkpoint storici. */
   refinementSecondaryStreet?: string | null;
   onPropertyAcquired?: (
     variant: SisterStreetVariant,
@@ -232,7 +237,9 @@ export class SisterStreetRun {
             expandAllOwners: this.expandAllOwners,
             acquireOwners: this.acquireOwners,
             filters: this.filters,
-            refinementSecondaryStreet: this.options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim() || null,
+            refinementCloudStreet: this.options.refinementCloudStreet?.replace(/\s+/g, " ").trim()
+              || this.options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim()
+              || null,
           },
           status: "running",
           startedAt: now,

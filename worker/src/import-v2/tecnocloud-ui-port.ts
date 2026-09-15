@@ -1376,12 +1376,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     };
   }
 
-  /**
-   * Builds the CRM side of a street refinement exactly from the global-search
-   * experience used by the operator. The first type-ahead row is an action,
-   * not a record; after entering the Immobili scope every cloud page is
-   * acknowledged before requesting the next fifty rows.
-   */
+  /** Costruisce l'inventario Cloud dalla normale pagina Immobili residenziali. */
   async listPropertiesByStreet(
     street: string,
     onProgress?: (progress: { phase: "loading" | "reading"; current: number; total: number }) => void,
@@ -1389,151 +1384,99 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return this.action("Inventario immobili della via", async () => {
       const requested = street.replace(/\s+/g, " ").trim();
       if (requested.length < 4) throw new ImportV2Error("Via non valida per la ricerca Cloud", "invalid_source");
-      let searchFields = this.page.locator('input[title="Search..."], input[placeholder="Search..."]').filter({ visible: true });
-      if (await searchFields.count() !== 1) {
-        await this.navigate(ACCOUNT_LIST);
-        searchFields = this.page.locator('input[title="Search..."], input[placeholder="Search..."]').filter({ visible: true });
+      await this.navigate(PROPERTY_SEARCH);
+      const view = this.page.locator('input[placeholder="--- Seleziona ---"]').filter({ visible: true }).first();
+      await view.waitFor({ state: "visible", timeout: 20_000 });
+      let viewStable = 0;
+      let viewValue = "";
+      for (let wait = 0; wait < 60 && viewStable < 3; wait += 1) {
+        const current = await view.inputValue();
+        const ready = Boolean(current.trim()) && !(await this.searchIsBusy());
+        viewStable = ready && current === viewValue ? viewStable + 1 : 0;
+        viewValue = current;
+        if (viewStable < 3) await this.pauseAwareWait(200);
       }
-      const search = await this.one(searchFields, "Ricerca globale");
-      await search.fill("");
-      await search.pressSequentially(requested, { delay: 45 });
-      let typingStable = 0;
-      for (let wait = 0; wait < 60 && typingStable < 3; wait += 1) {
-        const ready = normalized(await search.inputValue()) === normalized(requested) && !(await this.searchIsBusy());
-        typingStable = ready ? typingStable + 1 : 0;
-        if (typingStable < 3) await this.pauseAwareWait(200);
-      }
-      if (typingStable < 3) throw new ImportV2Error("La via non è rimasta stabile nella ricerca Cloud", "global_portal", { global: true });
-
-      const searchAction = this.page.locator("li.SEARCH_OPTION a, a.SEARCH_OPTION").filter({ visible: true });
-      if (await searchAction.count() === 1) await searchAction.click({ force: true });
-      else await search.press("Enter");
-      /* Lightning aggiorna spesso l'URL con history.pushState senza terminare
-       * un evento `load`. Aspettarlo lasciava la Rifinitura ferma pur essendo
-       * già atterrata sulla pagina corretta. */
-      let submitted = "";
-      for (let wait = 0; wait < 100; wait += 1) {
-        await this.assertSession();
-        submitted = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "");
-        if (normalized(submitted) === normalized(requested)) break;
-        await this.pauseAwareWait(200);
-      }
-      if (normalized(submitted) !== normalized(requested)) {
-        throw new ImportV2Error("La ricerca Cloud è partita con una via diversa da quella richiesta", "global_portal", { global: true });
+      if (viewStable < 3) throw new ImportV2Error("La vista immobili non ha terminato il caricamento", "transient_portal", { retryable: true });
+      if (!normalized(viewValue).includes("IMMOBILI RESIDENZIALI")) {
+        const residential = this.page.locator('[role="option"]').filter({ hasText: /^\s*•?\s*Immobili residenziali\s*$/i }).filter({ visible: true });
+        let selected: Locator | null = null;
+        for (let attempt = 0; attempt < 3 && !selected; attempt += 1) {
+          await view.click({ force: true });
+          selected = await residential.first().waitFor({ state: "visible", timeout: 5_000 }).then(() => residential.first()).catch(() => null);
+        }
+        if (!selected) throw new ImportV2Error("Vista Immobili residenziali non disponibile", "transient_portal", { retryable: true });
+        await selected.click({ force: true });
+        for (let wait = 0; wait < 40 && !normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI"); wait += 1) await this.pauseAwareWait(200);
+        if (!normalized(await view.inputValue()).includes("IMMOBILI RESIDENZIALI")) {
+          throw new ImportV2Error("Vista Immobili residenziali non confermata", "transient_portal", { retryable: true });
+        }
       }
 
-      /* Il Cloud alterna due layout: talvolta mostra una voce Immobili da
-       * aprire, talvolta espone gia' il blocco completo insieme a Clienti e
-       * Notizie. Nel secondo caso non esiste alcuna voce cliccabile: isoliamo
-       * il contenitore che parte dal titolo Immobili, cosi' i link presenti
-       * nelle tabelle Notizie non entrano nell'inventario. */
-      let propertyScope: Locator | null = null;
-      let resultsRoot = this.page.locator("body");
-      let links = resultsRoot.locator('a[href*="/s/immobile/"]').filter({ visible: true });
-      let resultsAlreadyVisible = false;
-      for (let wait = 0; wait < 100 && !propertyScope && !resultsAlreadyVisible; wait += 1) {
-        const headings = this.page.getByRole("heading", { name: "Immobili", exact: true }).filter({ visible: true });
-        if (await headings.count() === 1) {
-          const directRoot = headings.locator('xpath=ancestor::*[.//a[contains(@href, "/s/immobile/")]][1]');
-          const directLinks = directRoot.locator('a[href*="/s/immobile/"]').filter({ visible: true });
-          if (await directRoot.count() === 1 && await directLinks.count() > 0) {
-            resultsRoot = directRoot;
-            links = directLinks;
-            resultsAlreadyVisible = true;
-            break;
-          }
+      const filterHosts = this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index]');
+      const addressHost = () => this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="9"]');
+      const drawerIsOpen = async () => {
+        const address = addressHost().locator("input").filter({ visible: true });
+        if (await address.count() !== 1) return false;
+        return address.evaluate((input) => {
+          const rect = input.getBoundingClientRect();
+          return rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth;
+        });
+      };
+      if (!(await drawerIsOpen())) {
+        const trigger = await this.one(this.page.locator('button[title="Filters"]').filter({ visible: true }), "Filtri immobili", 12_000);
+        for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
+          await trigger.click({ force: true });
+          for (let wait = 0; wait < 15 && !(await drawerIsOpen()); wait += 1) await this.pauseAwareWait(200);
         }
-        const scopeLabel = /^\s*Immobili(?:\s*\(\s*\d+\s*\))?\s*$/i;
-        const candidates = [
-          this.page.locator("a.scopesItem, button.scopesItem, .scopesItem[role], li.scopesItem, div.scopesItem").filter({ hasText: scopeLabel }).filter({ visible: true }),
-          this.page.locator(".slds-nav-vertical__action, [data-scope], [data-object], [data-tab-value]").filter({ hasText: scopeLabel }).filter({ visible: true }),
-          this.page.locator('[role="navigation"] :is(a,button,[role="menuitem"],[role="option"]), [role="tablist"] [role="tab"]').filter({ hasText: scopeLabel }).filter({ visible: true }),
-          this.page.locator('a, button, [role="tab"], [role="menuitem"], [role="option"]').filter({ hasText: scopeLabel }).filter({ visible: true }),
-        ];
-        for (const candidate of candidates) {
-          if (await candidate.count() === 1) {
-            propertyScope = candidate;
-            break;
-          }
-        }
-        /* Alcune release Lightning mettono il testo in uno span e il listener
-         * sul li/div esterno, senza ruolo ARIA. Risaliamo al primo antenato
-         * azionabile invece di attendere per sempre un tag a/button. */
-        if (!propertyScope) {
-          const labels = this.page.getByText(scopeLabel).filter({ visible: true });
-          for (let index = 0; index < await labels.count(); index += 1) {
-            const actionable = labels.nth(index).locator(
-              'xpath=ancestor-or-self::*[self::a or self::button or @role="tab" or @role="menuitem" or @role="option" or @onclick or contains(concat(" ", normalize-space(@class), " "), " scopesItem ") or contains(concat(" ", normalize-space(@class), " "), " slds-nav-vertical__action ")][1]',
-            );
-            if (await actionable.count() === 1 && await actionable.isVisible()) {
-              propertyScope = actionable;
-              break;
-            }
-          }
-        }
-        if (!propertyScope && !resultsAlreadyVisible) await this.pauseAwareWait(200);
       }
-      if (!propertyScope && !resultsAlreadyVisible) {
-        throw new ImportV2Error("Categoria Immobili non disponibile entro 20000 ms", "global_portal", { global: true });
+      if (!(await drawerIsOpen())) throw new ImportV2Error("Il pannello dei filtri immobili non si è aperto", "transient_portal", { retryable: true });
+
+      const pairs = await filterHosts.evaluateAll((elements) => elements.flatMap((element) => {
+        const index = Number(element.getAttribute("data-index"));
+        const container = element.parentElement?.parentElement?.parentElement;
+        const name = (container?.textContent ?? "").replace(/\s+/g, " ").replace(/\s*:\s*$/, "").trim();
+        return Number.isFinite(index) && name ? [[name, index] as [string, number]] : [];
+      })).catch(() => [] as Array<[string, number]>);
+      const addressIndex = new Map(pairs.map(([name, index]) => [normalized(name), index])).get(normalized("Indirizzo")) ?? 9;
+      const inputs = filterHosts.locator("input");
+      for (let index = 0; index < await inputs.count(); index += 1) {
+        const input = inputs.nth(index);
+        await input.scrollIntoViewIfNeeded();
+        await input.fill("");
       }
-      const scopeRequests = this.watchSearchRequests();
+      const address = this.page.locator(`lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="${addressIndex}"] input`);
+      if (await address.count() !== 1) throw new ImportV2Error("Filtro indirizzo non univoco", "transient_portal", { retryable: true });
+      await address.fill(requested);
+      if (normalized(await address.inputValue()) !== normalized(requested)) {
+        throw new ImportV2Error("Filtro indirizzo non confermato", "transient_portal", { retryable: true });
+      }
+
+      const requests = this.watchSearchRequests();
+      const ids = this.page.locator('lightning-input[c-queryviewer_queryviewer][data-id]');
       try {
-        if (propertyScope) await propertyScope.click({ force: true });
-        let priorCount = -1;
+        await (await this.one(this.page.locator("button").filter({ hasText: /^\s*Applica\s*$/, visible: true }), "Applica filtri")).click({ force: true });
+        let prior = "";
         let stable = 0;
-        let confirmedEmpty = false;
-        for (let wait = 0; wait < 100 && stable < 3; wait += 1) {
-          await this.assertSearchHealthy(scopeRequests.failed());
-          const count = await links.count();
-          confirmedEmpty = await resultsRoot.getByText(/Immobili\s*[:(]?\s*0\s*(?:\)?\s*)risultat[io]/i).filter({ visible: true }).count() > 0;
-          const ready = !scopeRequests.pending() && !(await this.searchIsBusy()) && (count > 0 || confirmedEmpty);
-          stable = ready && count === priorCount ? stable + 1 : 0;
-          priorCount = count;
-          if (stable < 3) await this.pauseAwareWait(200);
+        for (let attempt = 0; attempt < 80 && stable < 4; attempt += 1) {
+          await this.assertSession();
+          await this.assertSearchHealthy(requests.failed());
+          const records = (await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean).sort())).join("|");
+          const empty = await this.page.getByText(/^(?:Nessun risultat[io](?: trovato)?|Nessun (?:record|elemento)(?: da visualizzare)?|Non (?:sono presenti|ci sono) (?:record|elementi)|0 (?:record|risultati|elementi))\s*[.!]?$/i).filter({ visible: true }).count() > 0;
+          const busy = requests.pending() || await this.searchIsBusy();
+          const signature = busy ? "loading" : records || (empty ? "empty" : "loading");
+          stable = signature !== "loading" && signature === prior ? stable + 1 : 0;
+          prior = signature;
+          onProgress?.({ phase: "loading", current: records ? records.split("|").length : 0, total: records ? records.split("|").length : 0 });
+          if (stable < 4) await this.pauseAwareWait(250);
         }
-        if (stable < 3) {
-          throw new ImportV2Error("La categoria Immobili non ha confermato né righe né un risultato vuoto", "global_portal", { global: true });
-        }
-      } finally { scopeRequests.stop(); }
+        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: rifinitura in pausa prima di aggiornare schede.", "global_portal", { global: true });
+      } finally { requests.stop(); }
 
-      for (let pageIndex = 0; pageIndex < 100; pageIndex += 1) {
-        const more = resultsRoot.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true });
-        if (!(await more.count())) break;
-        const before = await links.count();
-        const requests = this.watchSearchRequests();
-        try {
-          await (await this.one(more, "Mostra di più")).click();
-          for (let wait = 0; wait < 100; wait += 1) {
-            await this.assertSearchHealthy(requests.failed());
-            const current = await links.count();
-            const stillVisible = await more.count() > 0;
-            if (!requests.pending() && !(await this.searchIsBusy()) && (current > before || !stillVisible)) break;
-            await this.pauseAwareWait(200);
-          }
-          const after = await links.count();
-          const stillVisible = await more.count() > 0;
-          if (after === before && stillVisible) {
-            throw new ImportV2Error("Mostra di più non ha aggiunto immobili: rifinitura sospesa sulla lista Cloud", "global_portal", { global: true });
-          }
-          onProgress?.({ phase: "loading", current: after, total: after });
-        } finally { requests.stop(); }
-      }
-      if (await resultsRoot.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true }).count()) {
-        throw new ImportV2Error("La lista Cloud supera il limite operativo di caricamento", "unsupported_case", { global: true });
-      }
-
-      const raw = await links.evaluateAll((nodes) => nodes.flatMap((node) => {
-        const href = node.getAttribute("href") ?? "";
-        const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-        const id = node.getAttribute("data-recordid") ?? node.getAttribute("data-id") ?? href.match(/\/s\/immobile\/([^/?#]+)/i)?.[1] ?? "";
-        return id && /^IM\s*-/i.test(label) ? [{ id, label }] : [];
-      }));
-      const streetKey = normalized(requested);
-      const unique = [...new Map(raw.filter((row) => normalized(row.label).includes(streetKey)).map((row) => [row.id, row])).values()];
+      const unique = [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
       const summaries: CrmPropertySummary[] = [];
-      for (const [index, row] of unique.entries()) {
+      for (const [index, propertyId] of unique.entries()) {
         onProgress?.({ phase: "reading", current: index + 1, total: unique.length });
-        summaries.push(await this.readPropertySummary(row.id, row.label));
+        summaries.push(await this.readPropertySummary(propertyId));
       }
       return summaries;
     });

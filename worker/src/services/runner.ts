@@ -50,18 +50,6 @@ const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
   completed: "Immobile completato",
 };
 
-export function refinementStreetQueries(primary: string, secondary?: string | null): string[] {
-  return [primary, secondary]
-    .map((street) => String(street ?? "").replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .filter((street, index, all) => all.findIndex((candidate) =>
-      candidate.localeCompare(street, "it", { sensitivity: "base" }) === 0) === index);
-}
-
-export function mergeRefinementInventories(inventories: CrmPropertySummary[][]): CrmPropertySummary[] {
-  return [...new Map(inventories.flat().map((candidate) => [candidate.id, candidate])).values()];
-}
-
 export function assertImportV2BatchComplete(result: ImportV2BatchResult): void {
   if (!result.quarantined.length) return;
   const first = result.quarantined[0]!;
@@ -207,10 +195,8 @@ export interface RunnerOptions {
   /** Numero di pagine Cloud indipendenti; il percorso storico resta 1. */
   crmConcurrency?: number | (() => number);
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
-  /** Street name enables property-first, existing-only CRM refinement. */
+  /** Nome della via nel Cloud; abilita la rifinitura existing-only. */
   refinementStreet?: string | null;
-  /** Optional second Cloud spelling for the same SISTER street. */
-  refinementSecondaryStreet?: string | null;
 }
 
 export class PropertyWorkerRunner {
@@ -227,7 +213,6 @@ export class PropertyWorkerRunner {
   private readonly crmConcurrency: () => number;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
   private readonly refinementStreet: string | null;
-  private readonly refinementSecondaryStreet: string | null;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
@@ -249,7 +234,6 @@ export class PropertyWorkerRunner {
       : () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency) || 1));
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
     this.refinementStreet = options.refinementStreet?.replace(/\s+/g, " ").trim() || null;
-    this.refinementSecondaryStreet = options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim() || null;
   }
 
   async interrupt() {
@@ -661,26 +645,19 @@ export class PropertyWorkerRunner {
           if (crmV2Ports.length !== 1) {
             throw new WorkerError("La rifinitura usa una sola finestra Cloud per mantenere ordinato l’inventario della via", "failed");
           }
-          const streetQueries = refinementStreetQueries(this.refinementStreet, this.refinementSecondaryStreet);
-          const inventories: CrmPropertySummary[][] = [];
-          for (const [streetIndex, streetQuery] of streetQueries.entries()) {
-            const found = await crmV2Ports[0]!.listPropertiesByStreet(streetQuery, (inventoryProgress) => {
-              const property = graph.properties[0];
-              if (!property) return;
-              const queryLabel = streetQueries.length > 1 ? ` · nome ${streetIndex + 1}/${streetQueries.length}` : "";
-              const message = inventoryProgress.phase === "loading"
-                ? `Carico l’elenco Cloud della via${queryLabel} · ${inventoryProgress.current} righe visibili`
-                : `Verifico le schede Cloud${queryLabel} · ${inventoryProgress.current}/${inventoryProgress.total}`;
-              this.emitPropertyProgress(job, property, inventoryProgress.current, Math.max(inventoryProgress.total, 1), "property_inventory", message);
-            });
-            inventories.push(found);
-          }
-          refinementInventory = mergeRefinementInventories(inventories);
+          refinementInventory = await crmV2Ports[0]!.listPropertiesByStreet(this.refinementStreet, (inventoryProgress) => {
+            const property = graph.properties[0];
+            if (!property) return;
+            const message = inventoryProgress.phase === "loading"
+              ? `Carico gli immobili filtrati nel Cloud · ${inventoryProgress.current} righe visibili`
+              : `Verifico le schede Cloud · ${inventoryProgress.current}/${inventoryProgress.total}`;
+            this.emitPropertyProgress(job, property, inventoryProgress.current, Math.max(inventoryProgress.total, 1), "property_inventory", message);
+          });
           if (!refinementInventory.length) {
             throw new WorkerError(
-              `Nessun immobile della via “${streetQueries.join("” o “")}” è stato confermato dal Cloud`,
+              `Nessun immobile della via “${this.refinementStreet}” è stato confermato dal Cloud`,
               "needs_review",
-              { refinement: true, streets: streetQueries },
+              { refinement: true, cloudStreet: this.refinementStreet },
               true,
             );
           }

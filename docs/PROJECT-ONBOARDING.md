@@ -511,14 +511,14 @@ checkpoint senza ricreare le righe gia' raccolte.
 ### Rifinitura delle vie già importate
 
 «Rifinitura» è un percorso distinto dall'import ordinario per le vie già
-presenti nel gestionale. Acquisisce comunque la via completa da SISTER, quindi
-costruisce l'inventario Cloud dalla barra globale: invia l'azione esplicita
-`Cerca “via”`; se il Cloud presenta l'ambito `Immobili` lo apre, mentre se la
-pagina mostra già insieme i blocchi `Immobili`, `Clienti` e `Notizie` usa
-direttamente e soltanto il primo. Preme `Mostra di più` soltanto dopo che il
-blocco precedente è cresciuto o il pulsante è scomparso. Le righe
-vengono deduplicate esclusivamente per ID CRM; titoli uguali possono indicare
-unità diverse e non vengono accorpati.
+presenti nel gestionale. Richiede due dizioni esplicite e immutabili: «Nome in
+SISTER» alimenta l'acquisizione catastale, mentre «Nome nel Cloud» alimenta
+soltanto il filtro `Indirizzo`. Dopo l'acquisizione apre direttamente la normale
+pagina immobili, seleziona `Immobili residenziali`, apre i filtri, azzera i
+valori rimasti da ricerche precedenti e applica il nome Cloud all'indirizzo. Non
+usa più la ricerca globale né deve individuare o cliccare una voce `Immobili`.
+Le righe restituite vengono deduplicate esclusivamente per ID CRM; titoli uguali
+possono indicare unità diverse e non vengono accorpati.
 
 La riconciliazione è property-first ed existing-only. Ogni scheda Cloud viene
 letta per ricavare terna catastale, indirizzo e indicatore `Importato da
@@ -526,9 +526,8 @@ visura`; l'abbinamento operativo richiede foglio, particella e subalterno. Solo
 dopo questo riscontro vengono aggiornati nominativi, recapiti, comproprietari,
 quote e l'attività generica da eseguire. Una ricerca per codice fiscale è
 ammessa per risolvere i nominativi, ma non è mai il punto d'ingresso alla via.
-Un secondo nome facoltativo amplia soltanto l'inventario Cloud quando la stessa
-via è censita con due diciture: i risultati delle due ricerche vengono uniti per
-ID CRM e l'aggiornamento conserva come nome autorevole quello letto da SISTER.
+L'aggiornamento conserva come nome autorevole quello letto da SISTER, anche
+quando la dizione usata per trovare l'inventario nel Cloud è differente.
 Un immobile SISTER assente dall'inventario o ambiguo viene accantonato prima di
 qualsiasi creazione: la rifinitura non crea nuove schede immobili.
 

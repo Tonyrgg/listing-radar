@@ -21,94 +21,49 @@ describe("Ricerca nominativo nel lookup", () => {
     expect(personLookupTerms("Coviello", "CVLCRN36E57A893C")).toEqual(["Coviello"]);
   });
 
-  it("carica tutta la categoria Immobili della ricerca via, elimina gli ID ripetuti e scarta altre vie", async () => {
+  it("apre Immobili residenziali, pulisce i filtri e usa il nome Cloud nel filtro Indirizzo", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
+      const applied: string[] = [];
       await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
         const path = new URL(route.request().url()).pathname;
-        if (path.endsWith("/s/account/Account")) {
-          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-            <input title="Search...">
-            <a class="SEARCH_OPTION" href="#" onclick="event.preventDefault();history.pushState({},'', '/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(document.querySelector('input').value));document.querySelector('#initial').hidden=true;document.querySelector('#results-page').hidden=false">Cerca</a>
-            <div id="initial"></div>
-            <section id="results-page" hidden>
-              <h1>Risultati di ricerca</h1><ul class="slds-nav-vertical"><li class="scopesItem" onclick="document.querySelector('#results').hidden=false"><span>Immobili (2)</span></li></ul>
-              <section id="results" hidden><h2>Immobili</h2><div>50+ risultati</div>
-                <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
-                <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
-                <a href="/CRMImmobiliareLightning/s/immobile/property-2">IM - Via Luigi Castellucci 2 - Verdi</a>
-                <a href="/CRMImmobiliareLightning/s/immobile/other">IM - Via Raffaele Comes 9 - Bianchi</a>
-              </section>
-            </section>
-          </body>` });
+        if (path === "/applied") {
+          applied.push(new URL(route.request().url()).searchParams.get("values") ?? "");
+          await route.fulfill({ body: "ok" });
           return;
         }
-        if (path.includes("/s/global-search/")) {
+        if (path.endsWith("/s/immobile/Immobile__c/Default")) {
           await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-            <h1>Risultati di ricerca</h1><a class="scopesItem" href="#" onclick="event.preventDefault();document.querySelector('#results').hidden=false">Immobili</a>
-            <section id="results" hidden><h2>Immobili</h2><div>50+ risultati</div>
-              <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
-              <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
-              <a href="/CRMImmobiliareLightning/s/immobile/property-2">IM - Via Luigi Castellucci 2 - Verdi</a>
-              <a href="/CRMImmobiliareLightning/s/immobile/other">IM - Via Raffaele Comes 9 - Bianchi</a>
-            </section>
+            <input placeholder="--- Seleziona ---" value="Immobili residenziali">
+            <button title="Filters" aria-expanded="true">Filters</button>
+            <div>Altro filtro:<div><div><lightning-input c-queryviewerfilters_queryviewerfilters data-index="1"><input value="vecchio"></lightning-input></div></div></div>
+            <div>Indirizzo:<div><div><lightning-input c-queryviewerfilters_queryviewerfilters data-index="9"><input></lightning-input></div></div></div>
+            <button id="apply">Applica</button><div id="results"></div>
+            <script>document.querySelector('#apply').onclick = () => {
+              const values = ['1','9'].map(index => document.querySelector('lightning-input[data-index="'+index+'"] input').value).join('|');
+              fetch('/applied?values=' + encodeURIComponent(values));
+              document.querySelector('#results').innerHTML = '<lightning-input c-queryviewer_queryviewer data-id="property-1"></lightning-input><lightning-input c-queryviewer_queryviewer data-id="property-2"></lightning-input>';
+            };</script>
           </body>` });
           return;
         }
         const id = path.match(/\/s\/immobile\/([^/]+)/)?.[1] ?? "property-1";
         const second = id === "property-2";
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-          <h1>IM - Via Luigi Castellucci ${second ? "2" : "1"}</h1>
+          <h1>IM - Via Cesare Cantù ${second ? "2" : "1"}</h1>
           ${!second ? "<div>Importato da visura</div>" : ""}
-          ${[["Indirizzo Completo Immobile", `Via Luigi Castellucci ${second ? "2" : "1"}, 70032 BITONTO (BA)`], ["Catasto Sezione Urbana", ""], ["Catasto Foglio", "48"], ["Catasto Particella", "89"], ["Catasto Denom Particella", ""], ["Catasto Subalterno", second ? "2" : "1"], ["Catasto Rendita", "100,00"]].map(([label, value]) => `<div><div><label>${label}</label></div><div class="slds-form-element__static"><span class="slds-grow">${value}</span></div></div>`).join("")}
+          ${[["Indirizzo Completo Immobile", `Via Cesare Cantù ${second ? "2" : "1"}, 70032 BITONTO (BA)`], ["Catasto Sezione Urbana", ""], ["Catasto Foglio", "48"], ["Catasto Particella", "89"], ["Catasto Denom Particella", ""], ["Catasto Subalterno", second ? "2" : "1"], ["Catasto Rendita", "100,00"]].map(([label, value]) => `<div><div><label>${label}</label></div><div class="slds-form-element__static"><span class="slds-grow">${value}</span></div></div>`).join("")}
         </body>` });
       });
       await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
       const progress: string[] = [];
-      const found = await new TecnocloudUiV2Port(page).listPropertiesByStreet("via luigi castellucci", (item) => progress.push(`${item.phase}:${item.current}/${item.total}`));
+      const found = await new TecnocloudUiV2Port(page).listPropertiesByStreet("via cesare cantù", (item) => progress.push(`${item.phase}:${item.current}/${item.total}`));
       expect(found.map((property) => property.id)).toEqual(["property-1", "property-2"]);
       expect(found.map((property) => property.importedFromRegistry)).toEqual([true, false]);
+      expect(applied).toEqual(["|via cesare cantù"]);
+      expect(page.url()).not.toContain("global-search");
       expect(progress).toContain("reading:2/2");
-    } finally {
-      await browser.close();
-    }
-  }, 20_000);
-
-  it("usa il blocco Immobili già visibile senza aspettare una voce da cliccare e ignora i link nelle Notizie", async () => {
-    const browser = await chromium.launch({ headless: true, channel: "chrome" });
-    try {
-      const page = await browser.newPage();
-      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
-        const path = new URL(route.request().url()).pathname;
-        if (path.endsWith("/s/account/Account")) {
-          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-            <input title="Search...">
-            <a class="SEARCH_OPTION" href="#" onclick="event.preventDefault();history.pushState({},'', '/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(document.querySelector('input').value));document.querySelector('#results-page').hidden=false">Cerca</a>
-            <main id="results-page" hidden>
-              <section><h2>Clienti</h2><a href="/CRMImmobiliareLightning/s/account/person-1">Mario Rossi</a></section>
-              <section id="property-results"><h2>Immobili</h2><div>5+ risultati</div>
-                <a href="/CRMImmobiliareLightning/s/immobile/property-direct">IM - via domenico damascelli 82 - Piacente</a>
-              </section>
-              <section id="news-results"><h2>Notizie</h2><div>5+ risultati</div>
-                <a href="/CRMImmobiliareLightning/s/notizia/news-1">NT - Vendita - Chiusa</a>
-                <a href="/CRMImmobiliareLightning/s/immobile/property-from-news">IM - via domenico damascelli 99 - Estraneo</a>
-              </section>
-            </main>
-          </body>` });
-          return;
-        }
-        const id = path.match(/\/s\/immobile\/([^/]+)/)?.[1] ?? "property-direct";
-        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
-          <h1>IM - Via Domenico Damascelli ${id === "property-direct" ? "82" : "99"}</h1>
-          ${[["Indirizzo Completo Immobile", `Via Domenico Damascelli ${id === "property-direct" ? "82" : "99"}, 70032 BITONTO (BA)`], ["Catasto Sezione Urbana", ""], ["Catasto Foglio", "48"], ["Catasto Particella", "89"], ["Catasto Denom Particella", ""], ["Catasto Subalterno", id === "property-direct" ? "1" : "2"], ["Catasto Rendita", "100,00"]].map(([label, value]) => `<div><div><label>${label}</label></div><div class="slds-form-element__static"><span class="slds-grow">${value}</span></div></div>`).join("")}
-        </body>` });
-      });
-      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/Account");
-
-      const found = await new TecnocloudUiV2Port(page).listPropertiesByStreet("via domenico damascelli");
-
-      expect(found.map((property) => property.id)).toEqual(["property-direct"]);
     } finally {
       await browser.close();
     }

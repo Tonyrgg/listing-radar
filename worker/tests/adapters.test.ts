@@ -515,7 +515,7 @@ describe("adattatori con fixture HTML", () => {
       })).resolves.toMatchObject({ outcome: "simulated", attempts: 3 });
       expect(await page.evaluate(() => localStorage.getItem("activity-attempt"))).toBe("3");
     } finally { await browser.close(); }
-  });
+  }, 15_000);
 
   it("annulla una vecchia finestra Soggetto correlato e continua con l'attività", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

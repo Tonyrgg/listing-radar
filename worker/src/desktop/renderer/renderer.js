@@ -2589,11 +2589,14 @@ function renderRefinement() {
   $("refinementBadge").className = `status-pill ${running ? "is-running" : state.lastError ? "is-error" : completion ? "is-complete" : "is-idle"}`;
   $("refinementBadge").innerHTML = `<span></span>${running ? phase : state.lastError ? "Serve attenzione" : completion ? "Completata" : "Pronto"}`;
   if (resumable) {
-    $("refinementStreet").value = checkpoint.requestedStreet ?? "";
-    $("refinementSecondaryStreet").value = checkpoint.runSettings?.refinementSecondaryStreet ?? "";
+    $("refinementSisterStreet").value = checkpoint.requestedStreet ?? "";
+    $("refinementCloudStreet").value = checkpoint.runSettings?.refinementCloudStreet
+      ?? checkpoint.runSettings?.refinementSecondaryStreet
+      ?? checkpoint.requestedStreet
+      ?? "";
   }
-  $("refinementStreet").disabled = running || resumable;
-  $("refinementSecondaryStreet").disabled = running || resumable;
+  $("refinementSisterStreet").disabled = running || resumable;
+  $("refinementCloudStreet").disabled = running || resumable;
   $("refinementStart").disabled = running || Boolean(appState?.configError) || Boolean(appState?.cloudError);
   $("refinementStart").textContent = resumable ? "Riprendi rifinitura" : "Avvia rifinitura";
   $("refinementStop").classList.toggle("is-hidden", !running);
@@ -2854,8 +2857,10 @@ document.addEventListener("click", async (event) => {
         const checkpoint = appState?.refinement?.checkpoint,
           resume = Boolean(checkpoint && ["paused", "failed", "running"].includes(checkpoint.status));
         return window.propertyWorker.startRefinement({
-          street: resume ? checkpoint.requestedStreet : $("refinementStreet").value,
-          secondaryStreet: resume ? checkpoint.runSettings?.refinementSecondaryStreet ?? "" : $("refinementSecondaryStreet").value,
+          sisterStreet: resume ? checkpoint.requestedStreet : $("refinementSisterStreet").value,
+          cloudStreet: resume
+            ? checkpoint.runSettings?.refinementCloudStreet ?? checkpoint.runSettings?.refinementSecondaryStreet ?? checkpoint.requestedStreet
+            : $("refinementCloudStreet").value,
           resume,
         });
       }
