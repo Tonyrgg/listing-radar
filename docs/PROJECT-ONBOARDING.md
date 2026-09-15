@@ -508,8 +508,10 @@ checkpoint senza ricreare le righe gia' raccolte.
 «Rifinitura» è un percorso distinto dall'import ordinario per le vie già
 presenti nel gestionale. Acquisisce comunque la via completa da SISTER, quindi
 costruisce l'inventario Cloud dalla barra globale: invia l'azione esplicita
-`Cerca “via”`, entra nell'ambito `Immobili` e preme `Mostra di più` soltanto
-dopo che il blocco precedente è cresciuto o il pulsante è scomparso. Le righe
+`Cerca “via”`; se il Cloud presenta l'ambito `Immobili` lo apre, mentre se la
+pagina mostra già insieme i blocchi `Immobili`, `Clienti` e `Notizie` usa
+direttamente e soltanto il primo. Preme `Mostra di più` soltanto dopo che il
+blocco precedente è cresciuto o il pulsante è scomparso. Le righe
 vengono deduplicate esclusivamente per ID CRM; titoli uguali possono indicare
 unità diverse e non vengono accorpati.
 

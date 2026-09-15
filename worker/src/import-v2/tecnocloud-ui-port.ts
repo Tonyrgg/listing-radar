@@ -1422,11 +1422,27 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         throw new ImportV2Error("La ricerca Cloud è partita con una via diversa da quella richiesta", "global_portal", { global: true });
       }
 
-      /* La voce è semanticamente sempre Immobili, ma il portale alterna la
-       * classe custom `scopesItem` con la sola struttura SLDS. Risolviamo
-       * l'ambito verticale senza prendere il link della navigazione generale. */
+      /* Il Cloud alterna due layout: talvolta mostra una voce Immobili da
+       * aprire, talvolta espone gia' il blocco completo insieme a Clienti e
+       * Notizie. Nel secondo caso non esiste alcuna voce cliccabile: isoliamo
+       * il contenitore che parte dal titolo Immobili, cosi' i link presenti
+       * nelle tabelle Notizie non entrano nell'inventario. */
       let propertyScope: Locator | null = null;
-      for (let wait = 0; wait < 100 && !propertyScope; wait += 1) {
+      let resultsRoot = this.page.locator("body");
+      let links = resultsRoot.locator('a[href*="/s/immobile/"]').filter({ visible: true });
+      let resultsAlreadyVisible = false;
+      for (let wait = 0; wait < 100 && !propertyScope && !resultsAlreadyVisible; wait += 1) {
+        const headings = this.page.getByRole("heading", { name: "Immobili", exact: true }).filter({ visible: true });
+        if (await headings.count() === 1) {
+          const directRoot = headings.locator('xpath=ancestor::*[.//a[contains(@href, "/s/immobile/")]][1]');
+          const directLinks = directRoot.locator('a[href*="/s/immobile/"]').filter({ visible: true });
+          if (await directRoot.count() === 1 && await directLinks.count() > 0) {
+            resultsRoot = directRoot;
+            links = directLinks;
+            resultsAlreadyVisible = true;
+            break;
+          }
+        }
         const candidates = [
           this.page.locator("a.scopesItem, button.scopesItem").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
           this.page.locator(".slds-nav-vertical a.slds-nav-vertical__action, .slds-nav-vertical button").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
@@ -1438,22 +1454,21 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
             break;
           }
         }
-        if (!propertyScope) await this.pauseAwareWait(200);
+        if (!propertyScope && !resultsAlreadyVisible) await this.pauseAwareWait(200);
       }
-      if (!propertyScope) {
+      if (!propertyScope && !resultsAlreadyVisible) {
         throw new ImportV2Error("Categoria Immobili non disponibile entro 20000 ms", "global_portal", { global: true });
       }
-      const links = this.page.locator('a[href*="/s/immobile/"]').filter({ visible: true });
       const scopeRequests = this.watchSearchRequests();
       try {
-        await propertyScope.click({ force: true });
+        if (propertyScope) await propertyScope.click({ force: true });
         let priorCount = -1;
         let stable = 0;
         let confirmedEmpty = false;
         for (let wait = 0; wait < 100 && stable < 3; wait += 1) {
           await this.assertSearchHealthy(scopeRequests.failed());
           const count = await links.count();
-          confirmedEmpty = await this.page.getByText(/Immobili\s*[:(]?\s*0\s*(?:\)?\s*)risultat[io]/i).filter({ visible: true }).count() > 0;
+          confirmedEmpty = await resultsRoot.getByText(/Immobili\s*[:(]?\s*0\s*(?:\)?\s*)risultat[io]/i).filter({ visible: true }).count() > 0;
           const ready = !scopeRequests.pending() && !(await this.searchIsBusy()) && (count > 0 || confirmedEmpty);
           stable = ready && count === priorCount ? stable + 1 : 0;
           priorCount = count;
@@ -1465,7 +1480,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       } finally { scopeRequests.stop(); }
 
       for (let pageIndex = 0; pageIndex < 100; pageIndex += 1) {
-        const more = this.page.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true });
+        const more = resultsRoot.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true });
         if (!(await more.count())) break;
         const before = await links.count();
         const requests = this.watchSearchRequests();
@@ -1486,7 +1501,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           onProgress?.({ phase: "loading", current: after, total: after });
         } finally { requests.stop(); }
       }
-      if (await this.page.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true }).count()) {
+      if (await resultsRoot.getByRole("button", { name: "Mostra di più", exact: true }).filter({ visible: true }).count()) {
         throw new ImportV2Error("La lista Cloud supera il limite operativo di caricamento", "unsupported_case", { global: true });
       }
 

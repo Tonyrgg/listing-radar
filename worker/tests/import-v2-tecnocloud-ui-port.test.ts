@@ -74,6 +74,45 @@ describe("Ricerca nominativo nel lookup", () => {
       await browser.close();
     }
   }, 20_000);
+
+  it("usa il blocco Immobili già visibile senza aspettare una voce da cliccare e ignora i link nelle Notizie", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith("/s/account/Account")) {
+          await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+            <input title="Search...">
+            <a class="SEARCH_OPTION" href="#" onclick="event.preventDefault();history.pushState({},'', '/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(document.querySelector('input').value));document.querySelector('#results-page').hidden=false">Cerca</a>
+            <main id="results-page" hidden>
+              <section><h2>Clienti</h2><a href="/CRMImmobiliareLightning/s/account/person-1">Mario Rossi</a></section>
+              <section id="property-results"><h2>Immobili</h2><div>5+ risultati</div>
+                <a href="/CRMImmobiliareLightning/s/immobile/property-direct">IM - via domenico damascelli 82 - Piacente</a>
+              </section>
+              <section id="news-results"><h2>Notizie</h2><div>5+ risultati</div>
+                <a href="/CRMImmobiliareLightning/s/notizia/news-1">NT - Vendita - Chiusa</a>
+                <a href="/CRMImmobiliareLightning/s/immobile/property-from-news">IM - via domenico damascelli 99 - Estraneo</a>
+              </section>
+            </main>
+          </body>` });
+          return;
+        }
+        const id = path.match(/\/s\/immobile\/([^/]+)/)?.[1] ?? "property-direct";
+        await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <h1>IM - Via Domenico Damascelli ${id === "property-direct" ? "82" : "99"}</h1>
+          ${[["Indirizzo Completo Immobile", `Via Domenico Damascelli ${id === "property-direct" ? "82" : "99"}, 70032 BITONTO (BA)`], ["Catasto Sezione Urbana", ""], ["Catasto Foglio", "48"], ["Catasto Particella", "89"], ["Catasto Denom Particella", ""], ["Catasto Subalterno", id === "property-direct" ? "1" : "2"], ["Catasto Rendita", "100,00"]].map(([label, value]) => `<div><div><label>${label}</label></div><div class="slds-form-element__static"><span class="slds-grow">${value}</span></div></div>`).join("")}
+        </body>` });
+      });
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/account/Account");
+
+      const found = await new TecnocloudUiV2Port(page).listPropertiesByStreet("via domenico damascelli");
+
+      expect(found.map((property) => property.id)).toEqual(["property-direct"]);
+    } finally {
+      await browser.close();
+    }
+  }, 20_000);
 });
 
 describe("Mappatura sottotipologia immobile", () => {
