@@ -16,7 +16,10 @@ describe("Rifinitura vie", () => {
     expect(html).toContain('id="refinement"');
     expect(html).toContain("Non crea nuove schede immobili");
     expect(html).toContain('id="refinementStart"');
+    expect(html).toContain('id="refinementSecondaryStreet"');
+    expect(html).toContain("Facoltativo, solo per la ricerca Cloud");
     expect(renderer).toContain("window.propertyWorker.startRefinement");
+    expect(renderer).toContain('secondaryStreet: resume ? checkpoint.runSettings?.refinementSecondaryStreet ?? "" : $("refinementSecondaryStreet").value');
     expect(preload).toContain('ipcRenderer.invoke("desktop:start-refinement"');
   });
 });

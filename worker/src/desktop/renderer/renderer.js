@@ -2509,8 +2509,12 @@ function renderRefinement() {
   const phase = state.phase === "sister" ? "Lettura SISTER" : state.phase === "cloud" ? "Verifica Cloud" : "Pronto";
   $("refinementBadge").className = `status-pill ${running ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
   $("refinementBadge").innerHTML = `<span></span>${running ? phase : state.lastError ? "Serve attenzione" : "Pronto"}`;
-  if (resumable) $("refinementStreet").value = checkpoint.requestedStreet ?? "";
+  if (resumable) {
+    $("refinementStreet").value = checkpoint.requestedStreet ?? "";
+    $("refinementSecondaryStreet").value = checkpoint.runSettings?.refinementSecondaryStreet ?? "";
+  }
   $("refinementStreet").disabled = running || resumable;
+  $("refinementSecondaryStreet").disabled = running || resumable;
   $("refinementStart").disabled = running || Boolean(appState?.configError) || Boolean(appState?.cloudError);
   $("refinementStart").textContent = resumable ? "Riprendi rifinitura" : "Avvia rifinitura";
   $("refinementStop").classList.toggle("is-hidden", !running);
@@ -2764,6 +2768,7 @@ document.addEventListener("click", async (event) => {
           resume = Boolean(checkpoint && ["paused", "failed", "running"].includes(checkpoint.status));
         return window.propertyWorker.startRefinement({
           street: resume ? checkpoint.requestedStreet : $("refinementStreet").value,
+          secondaryStreet: resume ? checkpoint.runSettings?.refinementSecondaryStreet ?? "" : $("refinementSecondaryStreet").value,
           resume,
         });
       }

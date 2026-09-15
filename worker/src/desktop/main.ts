@@ -1495,6 +1495,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
 
 async function runSisterStreet(input: {
   street: string;
+  refinementSecondaryStreet?: string;
   resume: boolean;
   dryRun: boolean;
   filters?: Partial<StreetPropertyFilters>;
@@ -1512,11 +1513,19 @@ async function runSisterStreet(input: {
   const filters = normalizeStreetPropertyFilters(
     resumeCheckpoint?.runSettings?.filters ?? resumeCheckpoint?.filters ?? input.filters,
   );
+  const refinementSecondaryStreet = input.refinement
+    ? String(input.resume
+      ? resumeCheckpoint?.runSettings?.refinementSecondaryStreet ?? ""
+      : input.refinementSecondaryStreet ?? "").replace(/\s+/g, " ").trim()
+    : "";
   // Rifinitura deve riconciliare soltanto l'inventario della via; le run
   // ordinarie rispettano invece la scelta esplicita di sviluppare i titolari.
   const expandAllOwners = resumeCheckpoint?.runSettings?.expandAllOwners
     ?? (input.refinement ? false : preferences.expandAllOwners);
   if (street.length < 4) throw new Error("Inserisci il nome completo della via");
+  if (refinementSecondaryStreet && refinementSecondaryStreet.length < 4) {
+    throw new Error("Inserisci il secondo nome completo della via oppure lascialo vuoto");
+  }
   const longRunMode = input.refinement ? "live" : input.resume && resumeCheckpoint
     ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
     : (input.dryRun ? "dry_run" : "live");
@@ -1581,6 +1590,7 @@ async function runSisterStreet(input: {
             runSettings: {
               lockedAt: new Date().toISOString(),
               street,
+              refinementSecondaryStreet: refinementSecondaryStreet || null,
               filters,
               expandAllOwners,
             },
@@ -1590,6 +1600,7 @@ async function runSisterStreet(input: {
       const scanner = new SisterStreetRun(tabs.sisterPage, {
         strategy: "bulk_exact_variants",
         engine: requestedEngine,
+        refinementSecondaryStreet: refinementSecondaryStreet || null,
         mode: longRunMode,
         importJobId,
         filters,
@@ -1731,6 +1742,7 @@ async function runSisterStreet(input: {
             engine: "rifinitura",
             strategy: "street_refinement",
             street,
+            refinementSecondaryStreet: refinementSecondaryStreet || null,
             activityMode: "plain",
             importCoOwners: true,
             parallelCrmWindows: false,
@@ -1817,6 +1829,7 @@ async function runSisterStreet(input: {
           jobId: jobToImport,
           registryNetwork: input.registryNetwork,
           refinementStreet: input.refinement ? street : undefined,
+          refinementSecondaryStreet: input.refinement ? refinementSecondaryStreet : undefined,
         });
         const importPromise = activeRunPromise;
         if (importPromise) await importPromise;
@@ -2971,7 +2984,7 @@ async function reanalyzePropertyFromScratch(jobId: string, propertyId: string) {
   await runWorker({ mode: job.mode, dryRun: preferences.dryRun, jobId: job.id });
 }
 
-async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; registryNetwork?: boolean; refinementStreet?: string }) {
+async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: string; registryNetwork?: boolean; refinementStreet?: string; refinementSecondaryStreet?: string }) {
   const ownsOperationReservation = !input.registryNetwork;
   if (ownsOperationReservation) reserveOperation("worker");
   try {
@@ -2992,6 +3005,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   let resumedImportOptions: ImportRunOptions | null = null;
   let resumeCursor: { propertyId: string; index: number; total: number; address: string | null } | null = null;
   let effectiveRefinementStreet = input.refinementStreet?.replace(/\s+/g, " ").trim() || null;
+  let effectiveRefinementSecondaryStreet = input.refinementSecondaryStreet?.replace(/\s+/g, " ").trim() || null;
   try {
     if (input.jobId) {
       let pendingJob = await repository().getJob(input.jobId);
@@ -3022,6 +3036,12 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       }
       if (!effectiveRefinementStreet && pendingJob.acquisition?.strategy === "street_refinement") {
         effectiveRefinementStreet = String(pendingJob.acquisition.street ?? pendingJob.street ?? "").replace(/\s+/g, " ").trim() || null;
+      }
+      if (!effectiveRefinementSecondaryStreet && pendingJob.acquisition?.strategy === "street_refinement") {
+        const runSettings = pendingJob.acquisition.runSettings as Record<string, unknown> | undefined;
+        effectiveRefinementSecondaryStreet = String(
+          pendingJob.acquisition.refinementSecondaryStreet ?? runSettings?.refinementSecondaryStreet ?? "",
+        ).replace(/\s+/g, " ").trim() || null;
       }
     }
   } catch (error) {
@@ -3072,6 +3092,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     crmConcurrency: () => (parallelCrmWindowsOverride ?? preferences.parallelCrmWindows) ? 2 : 1,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
     refinementStreet: effectiveRefinementStreet,
+    refinementSecondaryStreet: effectiveRefinementSecondaryStreet,
   });
   activeRunner = runner;
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");
@@ -3523,10 +3544,11 @@ function registerIpc() {
     await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
-  ipcMain.handle("desktop:start-refinement", async (_event, values: { street?: string; resume?: boolean }) => {
+  ipcMain.handle("desktop:start-refinement", async (_event, values: { street?: string; secondaryStreet?: string; resume?: boolean }) => {
     const street = String(values?.street ?? "");
     await runSisterStreet({
       street,
+      refinementSecondaryStreet: String(values?.secondaryStreet ?? ""),
       resume: values?.resume === true,
       dryRun: false,
       refinement: true,

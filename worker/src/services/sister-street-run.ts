@@ -66,6 +66,7 @@ export type SisterStreetRunCheckpoint = {
     expandAllOwners: boolean;
     acquireOwners: boolean;
     filters: StreetPropertyFilters;
+    refinementSecondaryStreet?: string | null;
   };
   status: "running" | "paused" | "completed" | "failed";
   startedAt: string;
@@ -101,6 +102,7 @@ type StreetRunOptions = {
   importJobId?: string | null;
   filters?: Partial<StreetPropertyFilters>;
   engine?: "lavorazione" | "rifinitura" | "portoni";
+  refinementSecondaryStreet?: string | null;
   onPropertyAcquired?: (
     variant: SisterStreetVariant,
     property: CadastralProperty,
@@ -230,6 +232,7 @@ export class SisterStreetRun {
             expandAllOwners: this.expandAllOwners,
             acquireOwners: this.acquireOwners,
             filters: this.filters,
+            refinementSecondaryStreet: this.options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim() || null,
           },
           status: "running",
           startedAt: now,

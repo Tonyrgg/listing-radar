@@ -519,6 +519,9 @@ visura`; l'abbinamento operativo richiede foglio, particella e subalterno. Solo
 dopo questo riscontro vengono aggiornati nominativi, recapiti, comproprietari,
 quote e l'attività generica da eseguire. Una ricerca per codice fiscale è
 ammessa per risolvere i nominativi, ma non è mai il punto d'ingresso alla via.
+Un secondo nome facoltativo amplia soltanto l'inventario Cloud quando la stessa
+via è censita con due diciture: i risultati delle due ricerche vengono uniti per
+ID CRM e l'aggiornamento conserva come nome autorevole quello letto da SISTER.
 Un immobile SISTER assente dall'inventario o ambiguo viene accantonato prima di
 qualsiasi creazione: la rifinitura non crea nuove schede immobili.
 
