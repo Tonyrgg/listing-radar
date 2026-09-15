@@ -136,12 +136,22 @@ export function sortPortoniRows(rows: PortoniRow[]): PortoniRow[] {
   });
 }
 
+export function sortPortoniDocumentRows(rows: PortoniRow[]): PortoniRow[] {
+  return sortPortoniRows(rows).sort((left, right) => {
+    const leftCivic = Number(left.civicAndStair.match(/\d+/)?.[0]);
+    const rightCivic = Number(right.civicAndStair.match(/\d+/)?.[0]);
+    const leftGroup = Number.isFinite(leftCivic) ? (leftCivic % 2 === 0 ? 1 : 0) : 2;
+    const rightGroup = Number.isFinite(rightCivic) ? (rightCivic % 2 === 0 ? 1 : 0) : 2;
+    return leftGroup - rightGroup;
+  });
+}
+
 const html = (value: unknown) => String(value ?? "").trim().replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 }[character]!)).replace(/\n/g, "<br>");
 
 export function portoniDocumentHtml(sheet: PortoniSheet): string {
-  const rows = sortPortoniRows(sheet.rows).map((row) => `<tr data-portoni-source-row>
+  const rows = sortPortoniDocumentRows(sheet.rows).map((row) => `<tr data-portoni-source-row>
       <td>${html(portoniOwnerSummary(row))}</td><td>${html(row.actualNames)}</td><td>${html(row.civicAndStair)}</td>
       <td>${html(row.floorAndInternal)}</td><td>${html(row.telephone)}</td><td>${html(row.notes)}</td>
     </tr>`).join("");

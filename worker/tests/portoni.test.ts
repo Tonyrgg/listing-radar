@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import { describe, expect, it } from "vitest";
-import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows } from "../src/services/portoni.js";
+import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniDocumentRows, sortPortoniRows } from "../src/services/portoni.js";
 
 const property = (address: string, subaltern = "1") => ({
   municipality: "BITONTO", sheet: "10", parcel: "20", subaltern, address,
@@ -24,6 +24,13 @@ describe("portoni", () => {
   it("ordina naturalmente per civico", () => {
     const rows = ["12", "2", "10"].map((civic, index) => buildPortoniRow(property(`VIA X N. ${civic}`, String(index)), [], () => ({ taxCode: "", matchedRows: 0, mobiles: [], landlines: [], emails: [], whatsapp: [], overflowPhones: [], notes: [] })));
     expect(sortPortoniRows(rows).map((row) => row.civicAndStair)).toEqual(["Civico 2", "Civico 10", "Civico 12"]);
+  });
+
+  it("ordina le righe del PDF prima per civici dispari e poi per civici pari", () => {
+    const rows = ["12", "3", "2", "11", "4", "1"].map((civic, index) => buildPortoniRow(property(`VIA X N. ${civic}`, String(index)), [], () => ({ taxCode: "", matchedRows: 0, mobiles: [], landlines: [], emails: [], whatsapp: [], overflowPhones: [], notes: [] })));
+    expect(sortPortoniDocumentRows(rows).map((row) => row.civicAndStair)).toEqual([
+      "Civico 1", "Civico 3", "Civico 11", "Civico 2", "Civico 4", "Civico 12",
+    ]);
   });
 
   it("genera un documento stampabile senza HTML iniettato", () => {
