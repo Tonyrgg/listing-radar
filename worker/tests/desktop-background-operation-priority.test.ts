@@ -41,7 +41,7 @@ describe("priorità delle operazioni desktop in background", () => {
     expect(enhancer).not.toContain("appState?.lastError");
     expect(enhancer).toContain("hasVisibleForegroundError()");
     expect(renderer).toContain(
-      'anyOperationActive ? "In lavorazione"',
+      'workOperationActive ? "In lavorazione"',
     );
   });
 });

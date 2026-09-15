@@ -16,16 +16,16 @@ describe("navigazione del worker durante una lavorazione", () => {
     expect(renderer).toContain("lockSecondaryPageActions(anyOperationActive)");
   });
 
-  it("lascia navigabili le pagine ma rende inattive le loro azioni", async () => {
+  it("lascia navigabili pagine e archivi e blocca soltanto l'avvio di un secondo motore", async () => {
     const [renderer, styles] = await Promise.all([
       readFile(rendererFile, "utf8"),
       readFile(stylesFile, "utf8"),
     ]);
 
     expect(renderer).toContain('for (const id of ["refinement", "portoni", "sync", "history", "settings"])');
-    expect(renderer).toContain("section.inert = sectionLocked");
+    expect(renderer).not.toContain("section.inert = sectionLocked");
     expect(renderer).toContain('section.toggleAttribute("data-operation-locked", sectionLocked)');
-    expect(styles).toContain("details.section[data-operation-locked]");
-    expect(styles).toContain("cursor: not-allowed");
+    expect(renderer).toContain('const starts = ["refinementStart", "portoniStart", "portoniBlank"');
+    expect(styles).not.toContain('body[data-fase="lavora"] .workspace > details.section');
   });
 });

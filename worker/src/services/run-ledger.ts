@@ -47,6 +47,25 @@ export function propertyRunEngine(job: JobRow): Exclude<RunEngine, "portoni"> {
     : "lavorazione";
 }
 
+/**
+ * The database is a durable store shared by the desktop worker, while the
+ * product exposes two independent workspaces.  Partition at the boundary so
+ * a refinement can never leak into the ordinary import queue or archive.
+ */
+export function partitionPropertyRuns<T extends { job: JobRow }>(items: T[]) {
+  return {
+    lavorazione: items.filter(({ job }) => propertyRunEngine(job) === "lavorazione"),
+    rifinitura: items.filter(({ job }) => propertyRunEngine(job) === "rifinitura"),
+  };
+}
+
+export function partitionPropertyJobs<T extends JobRow>(jobs: T[]) {
+  return {
+    lavorazione: jobs.filter((job) => propertyRunEngine(job) === "lavorazione"),
+    rifinitura: jobs.filter((job) => propertyRunEngine(job) === "rifinitura"),
+  };
+}
+
 function skipReason(property: PropertyRow): string | null {
   const payload = property.raw_payload ?? {};
   const skip = payload.skip_details as { reason?: unknown } | undefined;

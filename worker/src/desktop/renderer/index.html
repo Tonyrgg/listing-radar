@@ -447,6 +447,24 @@
               <p id="refinementStatus" class="refinement-status">Gli immobili assenti o con catasto ambiguo vengono segnalati e non creati.</p>
               <p id="refinementError" class="street-registry-error is-hidden" role="alert"></p>
             </section>
+            <section class="refinement-card">
+              <header><div><p class="eyebrow">Coda Rifinitura</p><h2>Rifiniture salvate</h2><p>Qui compaiono soltanto le vie acquisite per la rifinitura. Impostazioni, avanzamento e anomalie restano fissati alla singola run.</p></div><span id="refinementJobCount" class="count">0</span></header>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Immobili</span><span>Nominativi</span><span>Stato</span><span></span></div><div id="refinementJobsList"><p class="empty-message">Nessuna rifinitura salvata.</p></div></div>
+            </section>
+            <section class="refinement-card">
+              <header><div><p class="eyebrow">Archivio Rifinitura</p><h2>Rifiniture concluse</h2><p>Una memoria separata dalle importazioni ordinarie, con il riepilogo di ogni immobile verificato.</p></div><span id="refinementCompletedCount" class="count">0</span></header>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Immobili</span><span>Nominativi</span><span>Esito</span><span></span></div><div id="refinementCompletedList"><p class="empty-message">Le rifiniture concluse compariranno qui.</p></div></div>
+              <footer class="completed-imports-footer"><button id="refinementCompletedLoadMore" class="button secondary is-hidden">Carica altre rifiniture</button></footer>
+            </section>
+            <section id="refinementDetailPanel" class="detail-card refinement-card is-hidden"><header><div><p class="eyebrow">Dettaglio Rifinitura</p><h2>Immobili verificati</h2></div><button class="icon-button" data-action="close-refinement-detail" aria-label="Chiudi">×</button></header><div id="refinementDetailContent"></div></section>
+            <section class="refinement-card">
+              <header><div><p class="eyebrow">Sorveglianza Rifinitura</p><h2>Anomalie del flusso</h2><p>Solo gli errori appartenenti alle run di rifinitura, conservati con il record e il passaggio in cui sono avvenuti.</p></div><span id="refinementDiagnosticCount" class="count">0</span></header>
+              <div id="refinementDiagnosticList" class="diagnostic-error-list"><p class="empty-message">Nessuna anomalia di rifinitura rilevata.</p></div>
+            </section>
+            <section class="refinement-card">
+              <header><div><p class="eyebrow">Diario Rifinitura</p><h2>Operazioni eseguite</h2><p>Il tracciato operativo della rifinitura resta qui e non confluisce nella cronologia delle lavorazioni.</p></div></header>
+              <div id="refinementActivityList" class="activity-list"><p class="empty-message">Le operazioni della rifinitura compariranno qui.</p></div>
+            </section>
           </div>
         </details>
 

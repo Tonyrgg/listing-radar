@@ -137,25 +137,17 @@ un'attività generica. Non crea immobili mancanti: assenze e ambiguità restano
 nel lavoro come righe da controllare. Il normale import non cambia
 comportamento.
 
-### Collaudatore reale controllato
+Rifinitura ha una coda, un archivio, un dettaglio e un elenco anomalie propri:
+non compare mai nelle lavorazioni ordinarie. Le impostazioni vengono mostrate
+come fotografia non modificabile della partenza; contatori e punto di ripresa
+derivano dallo stesso ledger persistito per riga.
 
-La pagina **Collaudo** esegue lo scenario automatico iniziale esclusivamente
-su `VIA PIETRO COLLETTA`. È una prova reale: acquisisce da SISTER, conserva al
-massimo tre immobili catastalmente distinti, importa tutti i comproprietari del
-singolo immobile con le relative quote e usa la modalità attività **Killer** su
-una sola finestra Cloud. Dopo il primo immobile chiede al runner uno stop
-cooperativo, verifica che il job sia in pausa e riprende lo stesso checkpoint
-fino alla conclusione del campione.
+### Collaudatore interno
 
-Il consenso deve essere selezionato a ogni avvio. Il collaudatore non segue la
-rete di un proprietario verso altri immobili, anche quando la preferenza
-«Sviluppa tutti i proprietari» è attiva: qualunque indirizzo diverso dalla via
-autorizzata arresta il test prima della scrittura. Il verdetto confronta
-perimetro, unicità catastale, opzioni persistite, numero di intestatari
-sincronizzati, riferimenti Cloud e prova riletta dell'attività Killer
-(`Eseguito`). **Ferma e conserva** mantiene il job e il checkpoint. Gli ultimi
-30 rapporti sono locali nella cartella dati dell'app, sotto
-`collaudo/history.json`.
+Il collaudatore non è una pagina e non avvia run proprie. Sorveglia ogni run
+reale, confronta opzioni persistite, risultati e riletture Cloud e conserva le
+anomalie nel flusso a cui appartengono. `VIA PIETRO COLLETTA` resta il perimetro
+operativo concordato quando si eseguono collaudi manuali controllati.
 
 Il worker acquisisce prima tutti gli immobili, i proprietari e le quote da SISTER e mostra il riepilogo. Dopo la conferma lavora **un immobile alla volta**, nell'ordine in cui è stato acquisito:
 

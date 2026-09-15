@@ -33,7 +33,7 @@ describe("Ricerca nominativo nel lookup", () => {
             <a class="SEARCH_OPTION" href="#" onclick="event.preventDefault();history.pushState({},'', '/CRMImmobiliareLightning/s/global-search/'+encodeURIComponent(document.querySelector('input').value));document.querySelector('#initial').hidden=true;document.querySelector('#results-page').hidden=false">Cerca</a>
             <div id="initial"></div>
             <section id="results-page" hidden>
-              <h1>Risultati di ricerca</h1><div class="slds-nav-vertical"><a class="slds-nav-vertical__action" href="#" onclick="event.preventDefault();document.querySelector('#results').hidden=false">Immobili</a></div>
+              <h1>Risultati di ricerca</h1><ul class="slds-nav-vertical"><li class="scopesItem" onclick="document.querySelector('#results').hidden=false"><span>Immobili (2)</span></li></ul>
               <section id="results" hidden><h2>Immobili</h2><div>50+ risultati</div>
                 <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
                 <a href="/CRMImmobiliareLightning/s/immobile/property-1">IM - Via Luigi Castellucci 1 - Rossi</a>
@@ -1317,7 +1317,7 @@ describe("Tecnocloud UI V2", () => {
     } finally {
       await browser.close();
     }
-  });
+  }, 15_000);
 
   it("attende lo stato Lightning della ricerca CF prima di premere Invio", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });

@@ -1443,15 +1443,32 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
             break;
           }
         }
+        const scopeLabel = /^\s*Immobili(?:\s*\(\s*\d+\s*\))?\s*$/i;
         const candidates = [
-          this.page.locator("a.scopesItem, button.scopesItem").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
-          this.page.locator(".slds-nav-vertical a.slds-nav-vertical__action, .slds-nav-vertical button").filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
-          this.page.locator('[role="navigation"] a, [role="navigation"] button, [role="tablist"] [role="tab"]').filter({ hasText: /^\s*Immobili\s*$/i }).filter({ visible: true }),
+          this.page.locator("a.scopesItem, button.scopesItem, .scopesItem[role], li.scopesItem, div.scopesItem").filter({ hasText: scopeLabel }).filter({ visible: true }),
+          this.page.locator(".slds-nav-vertical__action, [data-scope], [data-object], [data-tab-value]").filter({ hasText: scopeLabel }).filter({ visible: true }),
+          this.page.locator('[role="navigation"] :is(a,button,[role="menuitem"],[role="option"]), [role="tablist"] [role="tab"]').filter({ hasText: scopeLabel }).filter({ visible: true }),
+          this.page.locator('a, button, [role="tab"], [role="menuitem"], [role="option"]').filter({ hasText: scopeLabel }).filter({ visible: true }),
         ];
         for (const candidate of candidates) {
           if (await candidate.count() === 1) {
             propertyScope = candidate;
             break;
+          }
+        }
+        /* Alcune release Lightning mettono il testo in uno span e il listener
+         * sul li/div esterno, senza ruolo ARIA. Risaliamo al primo antenato
+         * azionabile invece di attendere per sempre un tag a/button. */
+        if (!propertyScope) {
+          const labels = this.page.getByText(scopeLabel).filter({ visible: true });
+          for (let index = 0; index < await labels.count(); index += 1) {
+            const actionable = labels.nth(index).locator(
+              'xpath=ancestor-or-self::*[self::a or self::button or @role="tab" or @role="menuitem" or @role="option" or @onclick or contains(concat(" ", normalize-space(@class), " "), " scopesItem ") or contains(concat(" ", normalize-space(@class), " "), " slds-nav-vertical__action ")][1]',
+            );
+            if (await actionable.count() === 1 && await actionable.isVisible()) {
+              propertyScope = actionable;
+              break;
+            }
           }
         }
         if (!propertyScope && !resultsAlreadyVisible) await this.pauseAwareWait(200);

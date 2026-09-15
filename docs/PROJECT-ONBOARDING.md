@@ -484,6 +484,11 @@ preferenze desktop valgono soltanto per la run successiva. I vecchi checkpoint
 di Rifinitura vengono migrati automaticamente dal file condiviso al file
 `sister-refinement-run.json`.
 
+Anche la proiezione desktop rispetta questo confine: Lavorazioni riceve solo i
+job ordinari; Rifinitura espone coda, archivio, dettaglio e anomalie propri;
+Portoni continua a usare il suo archivio locale. Avviare o riprendere un motore
+non cambia pagina e non rende inaccessibili gli archivi degli altri flussi.
+
 Ogni immobile acquisito viene conservato subito. Il ledger della run assegna a
 ogni riga uno solo fra `in attesa`, `in corso`, `eseguito`, `eseguito con
 anomalie` e `saltato`; per anomalie e salti conserva anche la motivazione

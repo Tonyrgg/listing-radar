@@ -162,6 +162,8 @@ let appState = null,
   portoniRenderKey = null;
 let completedImportsRenderKey = null,
   jobsRenderKey = null,
+  refinementJobsRenderKey = null,
+  refinementDiagnosticsRenderKey = null,
   lastRunRenderKey = null,
   importJobId = null,
   importActivityMode = null,
@@ -261,11 +263,23 @@ function lockSecondaryPageActions(locked) {
   for (const id of ["refinement", "portoni", "sync", "history", "settings"]) {
     const section = $(id);
     if (!section) continue;
+    /* Gli archivi restano consultabili durante qualsiasi run. Blocchiamo solo
+     * l'avvio di un secondo motore: rendere inert l'intera pagina cancellava
+     * di fatto contesto, dettagli e memoria proprio mentre servivano. */
     const sectionLocked = locked
       && !(id === "portoni" && appState?.portoni?.active)
       && !(id === "refinement" && appState?.refinement?.active);
-    section.inert = sectionLocked;
     section.toggleAttribute("data-operation-locked", sectionLocked);
+  }
+  const starts = ["refinementStart", "portoniStart", "portoniBlank", "requestArchiveStart", "requestArchiveNew", "mandateArchiveStart", "mandateArchiveNew"];
+  for (const id of starts) {
+    const control = $(id);
+    if (!control) continue;
+    const ownRun = (id.startsWith("refinement") && appState?.refinement?.active)
+      || (id.startsWith("portoni") && appState?.portoni?.active)
+      || (id.startsWith("request") && appState?.requestArchive?.active)
+      || (id.startsWith("mandate") && appState?.mandateArchive?.active);
+    if (locked && !ownRun) control.disabled = true;
   }
 }
 const RUN_SLIDES = ["civic", "street", "network"];
@@ -325,6 +339,8 @@ function commandIdentity(target) {
                   ? "resume-job"
                   : target.dataset.detailJob
                     ? "job-details"
+                    : target.dataset.refinementDetailJob
+                      ? "refinement-details"
                     : target.dataset.completedSession
                       ? "completed-session"
                       : target.dataset.cancelJob
@@ -701,6 +717,9 @@ function renderRetryMonitor() {
 }
 function completedJobs() {
   return (appState?.completedImports ?? []).map((item) => item.job);
+}
+function allSavedJobs() {
+  return [...(appState?.jobs ?? []), ...(appState?.refinement?.jobs ?? [])];
 }
 function currentJob() {
   return [...(appState?.jobs ?? []), ...completedJobs()].find(
@@ -1322,7 +1341,7 @@ function markImportActivity() {
     scelta.classList.toggle("is-selected", attiva);
     scelta.setAttribute("aria-checked", String(attiva));
   }
-  const job = (appState?.jobs ?? []).find((row) => row.id === importJobId),
+  const job = allSavedJobs().find((row) => row.id === importJobId),
     inProgress = Boolean(job?.import_started_at) && job?.status !== "completed",
     suffix = inProgress
       ? "La scelta vale per le righe non concluse; i passaggi già salvati non vengono ripetuti."
@@ -1331,22 +1350,27 @@ function markImportActivity() {
 }
 
 async function openImportDialog(jobId) {
-  const job = (appState?.jobs ?? []).find((riga) => riga.id === jobId);
+  const job = allSavedJobs().find((riga) => riga.id === jobId);
   const inProgress = Boolean(job?.import_started_at) && job?.status !== "completed";
   importJobId = jobId;
   /* Il modo con cui i dati sono stati raccolti e' il default: se allora le
    * attivita' erano autocompilate, importarle mute sarebbe una sorpresa. */
   const savedOptions = job?.acquisition?.importOptions ?? {};
-  importOptionsLocked = Boolean(savedOptions.lockedAt || inProgress);
+  const isRefinement = job?.acquisition?.engine === "rifinitura" || job?.acquisition?.strategy === "street_refinement";
+  importOptionsLocked = Boolean(isRefinement || savedOptions.lockedAt || inProgress);
   importActivityMode = savedOptions.activityMode
     ?? job?.acquisition?.activityMode
     ?? appState?.preferences?.propertyActivityMode
     ?? "direct_contact";
   importCoOwners = typeof savedOptions.importCoOwners === "boolean"
     ? savedOptions.importCoOwners
+    : typeof job?.acquisition?.importCoOwners === "boolean"
+      ? job.acquisition.importCoOwners
     : appState?.preferences?.importCoOwners !== false;
   importParallelCloud = typeof savedOptions.parallelCrmWindows === "boolean"
     ? savedOptions.parallelCrmWindows
+    : typeof job?.acquisition?.parallelCrmWindows === "boolean"
+      ? job.acquisition.parallelCrmWindows
     : appState?.preferences?.parallelCrmWindows === true;
   markImportActivity();
   $("importCoOwnersToggle").checked = importCoOwners;
@@ -2501,14 +2525,69 @@ function renderPortoni() {
   </tr>`).join("");
 }
 
+function refinementRunState(job) {
+  const total = Number(job.import_progress?.total ?? job.total_properties ?? 0),
+    handled = Math.min(total, Number(job.import_progress?.handled ?? job.processed_properties ?? 0)),
+    anomalies = Math.min(handled, Number(job.import_progress?.completedWithAnomalies ?? 0)),
+    skipped = Math.min(handled, Number(job.import_progress?.skipped ?? 0)),
+    completed = Math.max(0, Number(job.import_progress?.completed ?? handled - skipped) - anomalies),
+    started = Boolean(job.import_started_at),
+    label = started
+      ? `Interrotta · ${fmtNamedCount(completed, "eseguita", "eseguite")} · ${fmtNamedCount(anomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(skipped, "saltata", "saltate")} · ${fmtNamedCount(Math.max(0, total - handled), "aperta", "aperte")}`
+      : `Mai avviata · ${fmtNamedCount(total, "riga da rifinire", "righe da rifinire")}`;
+  return { total, started, label };
+}
+
+function renderRefinementArchive() {
+  const state = appState?.refinement ?? {},
+    jobs = state.jobs ?? [],
+    completed = state.completedImports ?? [],
+    diagnostics = state.diagnosticErrors ?? [],
+    renderKey = [state.active ? "active" : "idle", ...jobs.map((job) => `${job.id}:${job.updated_at}:${job.status}:${job.import_progress?.handled ?? 0}`), ...completed.map((item) => `${item.job.id}:${item.job.updated_at}`)].join("|");
+  $("refinementJobCount").textContent = jobs.length;
+  $("refinementCompletedCount").textContent = completed.length;
+  $("refinementCompletedLoadMore").classList.toggle("is-hidden", !state.completedImportsHasMore);
+  if (renderKey !== refinementJobsRenderKey) {
+    refinementJobsRenderKey = renderKey;
+    $("refinementJobsList").innerHTML = jobs.length ? jobs.map((job) => {
+      const progress = refinementRunState(job),
+        place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
+        settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili",
+        canResume = !state.active && job.status !== "completed";
+      return `<article class="ledger-row job-item ${progress.started ? "is-running" : "is-not-started"}"><span class="ledger-mark${progress.started ? " has-tooltip" : ""}"${progress.started ? ` tabindex="0" data-tooltip="La ripresa parte dalla prima riga aperta e non ripete quelle concluse."` : ""}>${progress.started ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small></span><span class="ledger-figure">${fmtCount(progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${esc(progress.label)}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri dati</button>${canResume ? `<button class="text-button" data-resume-job="${job.id}">${progress.started ? "Riprendi dal punto salvato" : "Avvia rifinitura"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+    }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le lavorazioni ordinarie non compariranno qui.</p>`;
+    $("refinementCompletedList").innerHTML = completed.length ? completed.map((item) => {
+      const job = item.job,
+        place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
+        stats = completedSessionStats(item);
+      return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))} · ${esc(riassuntoAcquisizione(job.acquisition))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(item.peopleCount ?? item.people?.length ?? 0)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri sessione</button></span></article>`;
+    }).join("") : `<p class="empty-message">Le rifiniture concluse compariranno qui, separate dagli import.</p>`;
+  }
+  $("refinementDiagnosticCount").textContent = diagnostics.length;
+  const diagnosticKey = diagnostics.map((item) => `${item.at}:${item.jobId ?? ""}`).join("|");
+  if (diagnosticKey !== refinementDiagnosticsRenderKey) {
+    refinementDiagnosticsRenderKey = diagnosticKey;
+    $("refinementDiagnosticList").innerHTML = diagnostics.length ? diagnostics.map((item) => {
+      const action = item.details?.action ?? item.details?.operationLabel ?? "Passaggio non identificato",
+        property = item.details?.propertyAddress ?? item.details?.cadastralKey;
+      return `<article class="diagnostic-error-item"><header><div><b>${esc(item.message)}</b><small>${fmtDate(item.at)} · ${esc(item.status)}</small></div><span>${esc(item.jobId?.slice(0, 8) ?? "—")}</span></header><p><b>Passaggio:</b> ${esc(action)}${property ? ` · <b>Immobile:</b> ${esc(property)}` : ""}</p><details><summary>Dettagli tecnici</summary><pre>${esc(JSON.stringify(item.details ?? {}, null, 2))}</pre></details></article>`;
+    }).join("") : `<p class="empty-message">Nessuna anomalia di rifinitura rilevata.</p>`;
+  }
+  const activity = state.activity ?? [];
+  $("refinementActivityList").innerHTML = activity.length
+    ? activity.slice(0, MAX_RIGHE_DIARIO).map(rigaDiario).join("")
+    : `<p class="empty-message">Le operazioni della rifinitura compariranno qui.</p>`;
+}
+
 function renderRefinement() {
   const state = appState?.refinement ?? { active: false, phase: "idle", street: null, lastError: null };
   const running = Boolean(state.active),
+    completion = state.operationCompletion,
     checkpoint = state.checkpoint,
     resumable = Boolean(!running && checkpoint && ["paused", "failed", "running"].includes(checkpoint.status));
   const phase = state.phase === "sister" ? "Lettura SISTER" : state.phase === "cloud" ? "Verifica Cloud" : "Pronto";
-  $("refinementBadge").className = `status-pill ${running ? "is-running" : state.lastError ? "is-error" : "is-idle"}`;
-  $("refinementBadge").innerHTML = `<span></span>${running ? phase : state.lastError ? "Serve attenzione" : "Pronto"}`;
+  $("refinementBadge").className = `status-pill ${running ? "is-running" : state.lastError ? "is-error" : completion ? "is-complete" : "is-idle"}`;
+  $("refinementBadge").innerHTML = `<span></span>${running ? phase : state.lastError ? "Serve attenzione" : completion ? "Completata" : "Pronto"}`;
   if (resumable) {
     $("refinementStreet").value = checkpoint.requestedStreet ?? "";
     $("refinementSecondaryStreet").value = checkpoint.runSettings?.refinementSecondaryStreet ?? "";
@@ -2520,7 +2599,7 @@ function renderRefinement() {
   $("refinementStop").classList.toggle("is-hidden", !running);
   $("refinementError").classList.toggle("is-hidden", !state.lastError);
   $("refinementError").textContent = state.lastError ?? "";
-  const progress = state.phase === "sister" ? appState?.streetRun?.progress : appState?.propertyProgress;
+  const progress = state.progress;
   $("refinementProgress").classList.toggle("is-hidden", !running || !progress);
   if (running && progress) {
     const total = Math.max(1, Number(progress.total ?? 1));
@@ -2533,8 +2612,11 @@ function renderRefinement() {
       ? `Ripresa pronta dalla variante ${fmtCount((checkpoint.currentVariantIndex ?? 0) + 1)} di ${fmtCount(checkpoint.variants?.length ?? 0)}. Le impostazioni restano quelle della partenza.`
       : state.lastError
       ? "La lavorazione resta conservata: puoi riprenderla senza creare immobili mancanti."
+      : completion?.summary
+      ? completion.summary
       : "Gli immobili assenti o con catasto ambiguo vengono segnalati e non creati.";
   }
+  renderRefinementArchive();
 }
 
 function renderOperationalFlow() {
@@ -2627,13 +2709,17 @@ function render() {
     Boolean(appState.lastError && appState.activeJobId && !completed);
   /* La fase decide cosa merita spazio: fermi si vede come partire, in
    * lavorazione si vede il lavoro. Il resto lo fa il foglio di stile. */
-  const anyOperationActive = Boolean(
+  const workOperationActive = Boolean(
     appState.active || appState.streetRun?.active || appState.networkRun?.active ||
-    appState.requestArchive?.active || appState.mandateArchive?.active || appState.portoni?.active || appState.stoppingAll,
+    appState.stoppingAll,
   );
-  lockSecondaryPageActions(anyOperationActive);
+  const anyOperationActive = Boolean(
+    workOperationActive || appState.refinement?.active || appState.requestArchive?.active ||
+    appState.mandateArchive?.active || appState.portoni?.active,
+  );
+  if (anyOperationActive && !workOperationActive) $("startButton").disabled = true;
   document.body.dataset.fase =
-    anyOperationActive
+    workOperationActive
       ? "lavora"
       : appState.operationCompletion || completed
         ? "finita"
@@ -2654,9 +2740,9 @@ function render() {
   $("workspaceTitle").textContent = titolo;
   $("workspaceSubtitle").textContent = sottotitolo;
   $("runBadge").className =
-    `status-pill ${anyOperationActive ? "is-running" : appState.operationCompletion || completed ? "is-complete" : appState.lastError ? "is-error" : "is-idle"}`;
+    `status-pill ${workOperationActive ? "is-running" : appState.operationCompletion || completed ? "is-complete" : appState.lastError ? "is-error" : "is-idle"}`;
   $("runBadge").innerHTML =
-    `<span></span>${anyOperationActive ? "In lavorazione" : appState.operationCompletion || completed ? "Completata" : appState.lastError ? "Serve attenzione" : "Pronto"}`;
+    `<span></span>${workOperationActive ? "In lavorazione" : appState.operationCompletion || completed ? "Completata" : appState.lastError ? "Serve attenzione" : "Pronto"}`;
   $("operationTitle").textContent = appState.active
     ? guide(appState.currentStep).label
     : appState.operationCompletion
@@ -2693,6 +2779,7 @@ function render() {
   renderCommandMonitor();
   renderRetryMonitor();
   renderRunControls();
+  lockSecondaryPageActions(anyOperationActive);
 }
 async function runChecks() {
   const button = $("checkButton");
@@ -2777,6 +2864,7 @@ document.addEventListener("click", async (event) => {
           ? window.propertyWorker.cancelStreetRun()
           : window.propertyWorker.pauseJob();
       }
+      if (target.id === "refinementCompletedLoadMore") return window.propertyWorker.loadMoreCompleted();
       if (target.dataset.portoniFile) return window.propertyWorker.revealFile(target.dataset.portoniFile);
       if (target.id === "portoniStart") return window.propertyWorker.startPortoni({
         street: $("portoniStreet").value,
@@ -3187,23 +3275,30 @@ document.addEventListener("click", async (event) => {
               ? undefined
               : target.dataset.prompt,
         });
-      if (target.dataset.detailJob) {
+      if (target.dataset.detailJob || target.dataset.refinementDetailJob) {
+        const refinementDetail = Boolean(target.dataset.refinementDetailJob);
         const detail = await window.propertyWorker.getJobDetails(
-          target.dataset.detailJob,
+          target.dataset.refinementDetailJob ?? target.dataset.detailJob,
         );
         const progress = detail.progress ?? { state: "not_started", handled: 0, total: detail.properties.length, nextRow: 1 },
           progressCopy = importProgressPresentation(progress, detail.properties);
         const ledgerById = new Map((detail.ledger?.rows ?? []).map((row) => [row.recordId, row])),
           engineLabel = detail.ledger?.engine === "rifinitura" ? "Rifinitura" : "Lavorazione",
           settings = riassuntoAcquisizione(detail.job?.acquisition) || "Impostazioni storiche non disponibili";
-        $("detailPanel").classList.remove("is-hidden");
-        $("detailContent").innerHTML =
+        const panelId = refinementDetail ? "refinementDetailPanel" : "detailPanel",
+          contentId = refinementDetail ? "refinementDetailContent" : "detailContent";
+        $(panelId).classList.remove("is-hidden");
+        $(contentId).innerHTML =
           `<div class="run-settings-snapshot"><span>Motore ${esc(engineLabel)}</span><b>Impostazioni fissate alla partenza</b><small>${esc(settings)}</small></div><div class="import-progress-summary"><b>${esc(progressCopy.headline)}</b><small>${esc(progressCopy.detail)} · ${fmtNamedCount(detail.people.length, "proprietario", "proprietari")} · ${fmtNamedCount(detail.ownerships.length, "quota", "quote")}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div>${detail.properties.map((p, index) => { const rowState = importPropertyRowState(p, index, progress, ledgerById.get(p.id)); return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-number">${fmtCount(index + 1)}</span><span><b>${esc(p.address ?? p.cadastral_key)}</b><small>${esc(p.cadastral_key)}</small></span><span class="completion-label${rowState.tooltip ? " has-tooltip" : ""}"${rowState.tooltip ? ` tabindex="0" data-tooltip="${esc(rowState.tooltip)}" aria-label="${esc(`${rowState.label}: ${rowState.tooltip}`)}"` : ""}>${esc(rowState.label)}</span></div>`; }).join("")}`;
-        goTo("detailPanel");
+        goTo(panelId);
         return true;
       }
       if (target.dataset.action === "close-detail") {
         $("detailPanel").classList.add("is-hidden");
+        return true;
+      }
+      if (target.dataset.action === "close-refinement-detail") {
+        $("refinementDetailPanel").classList.add("is-hidden");
         return true;
       }
       if (target.dataset.cancelJob) {
@@ -3407,12 +3502,16 @@ window.propertyWorker.onTransientUpdate((update) => {
   if (!appState || !update) return;
   let renderOperation = false;
   if (Object.prototype.hasOwnProperty.call(update, "propertyProgress")) {
-    appState.propertyProgress = update.propertyProgress;
-    renderSteps();
-    renderAction();
-    enhanceActionPanel();
-    if (appState.refinement?.active) renderRefinement();
-    renderOperation = true;
+    if (appState.refinement?.active) {
+      appState.refinement = { ...appState.refinement, progress: update.propertyProgress };
+      renderRefinement();
+    } else {
+      appState.propertyProgress = update.propertyProgress;
+      renderSteps();
+      renderAction();
+      enhanceActionPanel();
+      renderOperation = true;
+    }
   }
   if (Object.prototype.hasOwnProperty.call(update, "retryMonitor")) {
     appState.retryMonitor = update.retryMonitor;
@@ -3475,11 +3574,19 @@ window.propertyWorker.onTransientUpdate((update) => {
     renderChecks();
   }
   if (update.activityItem) {
-    const items = appState.activity ?? [];
-    if (items[0]?.at !== update.activityItem.at || items[0]?.message !== update.activityItem.message) {
-      appState.activity = [update.activityItem, ...items].slice(0, 300);
+    if (update.activityItem.workspace === "rifinitura" && appState.refinement) {
+      const items = appState.refinement.activity ?? [];
+      if (items[0]?.at !== update.activityItem.at || items[0]?.message !== update.activityItem.message) {
+        appState.refinement.activity = [update.activityItem, ...items].slice(0, 300);
+      }
+      renderRefinement();
+    } else {
+      const items = appState.activity ?? [];
+      if (items[0]?.at !== update.activityItem.at || items[0]?.message !== update.activityItem.message) {
+        appState.activity = [update.activityItem, ...items].slice(0, 300);
+      }
+      renderActivity();
     }
-    renderActivity();
   }
   if (renderOperation) renderCommandMonitor();
 });

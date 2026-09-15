@@ -14,7 +14,10 @@ describe("proiezione leggera dello stato desktop", () => {
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
 
     expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
-    expect(main).toContain("repo.listSavedJobImportCounts(savedJobs.map((job) => job.id))");
+    expect(main).toContain("repo.listSavedJobImportCounts([...savedJobs, ...refinementJobs].map((job) => job.id))");
+    expect(main).toContain("const savedPartitions = partitionPropertyJobs(allSavedJobs)");
+    expect(main).toContain("active: workImportActive");
+    expect(main).toContain("jobs: refinementJobs");
     expect(renderer).toContain("job.import_progress?.handled");
     expect(main).toContain("checkpoint: projectStreetCheckpointForRenderer(streetRunCheckpoint)");
     expect(main).toContain("checkpoint: projectStreetCheckpointForRenderer(refinementRunCheckpoint)");

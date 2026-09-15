@@ -19,7 +19,7 @@ import { sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { auditImportRun, auditStreetRun, type RunAuditFinding } from "../services/run-auditor.js";
-import { buildPropertyRunLedger } from "../services/run-ledger.js";
+import { buildPropertyRunLedger, partitionPropertyJobs, partitionPropertyRuns } from "../services/run-ledger.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
@@ -107,7 +107,7 @@ type Preferences = {
   encryptedEnvironment?: string;
 };
 
-type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"; message: string };
+type ActivityItem = { at: string; tone: "info" | "success" | "warning" | "error"; message: string; workspace?: "lavorazione" | "rifinitura" | "portoni" | "system" };
 type DiagnosticErrorItem = {
   id: string;
   at: string;
@@ -213,13 +213,14 @@ let requestImportPromise: Promise<void> | null = null;
 let requestImportError: string | null = null;
 let requestImportProgress: { runId: string | null; index: number; total: number; title: string; externalId: string | null; failed: number; phase: "index" | "detail" } | null = null;
 type DesktopOperationCompletion = {
-  kind: "acquisition" | "requests" | "mandates" | "street" | "network";
+  kind: "acquisition" | "requests" | "mandates" | "street" | "network" | "refinement";
   title: string;
   summary: string;
   completedAt: string;
   stats: Array<{ label: string; value: number }>;
 };
 let operationCompletion: DesktopOperationCompletion | null = null;
+let refinementOperationCompletion: DesktopOperationCompletion | null = null;
 let mandateImportActive = false;
 let mandateImportCancellationRequested = false;
 let activeMandateImporter: MandateArchiveImporter | null = null;
@@ -307,6 +308,11 @@ type SnapshotRemoteData = {
     job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
   }>;
   completedImportsHasMore: boolean;
+  refinementJobs: Awaited<ReturnType<WorkerRepository["listJobs"]>>;
+  refinementCompletedImports: Array<CompletedImportSummary & {
+    job: Awaited<ReturnType<WorkerRepository["getJob"]>>;
+  }>;
+  refinementCompletedImportsHasMore: boolean;
   publicConfig: Record<string, unknown>;
   configError: string | null;
   cloudError: string | null;
@@ -317,7 +323,9 @@ type SnapshotRemoteData = {
 };
 
 const emptySnapshotRemoteData = (): SnapshotRemoteData => ({
-  jobs: [], completedImports: [], completedImportsHasMore: false, publicConfig: {}, configError: null, cloudError: null,
+  jobs: [], completedImports: [], completedImportsHasMore: false,
+  refinementJobs: [], refinementCompletedImports: [], refinementCompletedImportsHasMore: false,
+  publicConfig: {}, configError: null, cloudError: null,
   latestRequestImport: null, requestImportSchemaError: null, latestMandateImport: null, mandateImportSchemaError: null,
 });
 let snapshotRemoteData = emptySnapshotRemoteData();
@@ -398,7 +406,14 @@ function flushActivityLog() {
 }
 
 function pushActivity(message: string, tone: ActivityItem["tone"] = "info") {
-  const entry = { at: new Date().toISOString(), tone, message: sanitizeSensitiveText(message) } satisfies ActivityItem;
+  const workspace: NonNullable<ActivityItem["workspace"]> = refinementActive
+    ? "rifinitura"
+    : portoniActive
+      ? "portoni"
+      : ["requests", "mandates"].includes(operationReservation ?? "")
+        ? "system"
+        : "lavorazione";
+  const entry = { at: new Date().toISOString(), tone, message: sanitizeSensitiveText(message), workspace } satisfies ActivityItem;
   activity.unshift(entry);
   activity.splice(300);
   activityLogBuffer.push(`${JSON.stringify(entry)}\n`);
@@ -1015,6 +1030,8 @@ async function purgeJob(jobId: string) {
     ...snapshotRemoteData,
     jobs: snapshotRemoteData.jobs.filter((job) => job.id !== jobId),
     completedImports: snapshotRemoteData.completedImports.filter(({ job }) => job.id !== jobId),
+    refinementJobs: snapshotRemoteData.refinementJobs.filter((job) => job.id !== jobId),
+    refinementCompletedImports: snapshotRemoteData.refinementCompletedImports.filter(({ job }) => job.id !== jobId),
   };
   snapshotRemoteLoadedAt = Date.now();
   completedSummaryCache.delete(jobId);
@@ -1088,15 +1105,22 @@ async function refreshSnapshotRemoteData() {
         }
       })();
 
-      const [savedJobs, completedJobsPage] = await withOperationTimeout(
-        Promise.all([repo.listSavedJobs(), repo.listCompletedJobs(completedImportsLimit + 1)]),
+      const archiveReadLimit = Math.max(100, (completedImportsLimit + 1) * 4);
+      const [allSavedJobs, allCompletedJobs] = await withOperationTimeout(
+        Promise.all([repo.listSavedJobs(200), repo.listCompletedJobs(archiveReadLimit)]),
         12_000,
         "Aggiornamento riepilogo cloud",
       );
-      const completedJobs = completedJobsPage.slice(0, completedImportsLimit);
-      next.completedImportsHasMore = completedJobsPage.length > completedImportsLimit;
+      const savedPartitions = partitionPropertyJobs(allSavedJobs);
+      const completedPartitions = partitionPropertyJobs(allCompletedJobs);
+      const savedJobs = savedPartitions.lavorazione;
+      const refinementJobs = savedPartitions.rifinitura;
+      const completedJobs = completedPartitions.lavorazione.slice(0, completedImportsLimit);
+      const refinementCompletedJobs = completedPartitions.rifinitura.slice(0, completedImportsLimit);
+      next.completedImportsHasMore = completedPartitions.lavorazione.length > completedImportsLimit;
+      next.refinementCompletedImportsHasMore = completedPartitions.rifinitura.length > completedImportsLimit;
       const savedJobCounts = await withOperationTimeout(
-        repo.listSavedJobImportCounts(savedJobs.map((job) => job.id)),
+        repo.listSavedJobImportCounts([...savedJobs, ...refinementJobs].map((job) => job.id)),
         12_000,
         "Conteggio righe delle acquisizioni conservate",
       );
@@ -1119,12 +1143,24 @@ async function refreshSnapshotRemoteData() {
           completedWithAnomalies: anomalousPropertiesByJob.get(job.id)?.size ?? 0,
         },
       }));
-      const visibleCompletedJobIds = new Set(completedJobs.map((job) => job.id));
+      next.refinementJobs = refinementJobs.map((job) => ({
+        ...job,
+        import_progress: {
+          ...(savedJobCounts.get(job.id) ?? {
+            handled: Number(job.processed_properties ?? 0),
+            total: Number(job.total_properties ?? 0),
+            completed: Number(job.processed_properties ?? 0),
+            skipped: 0,
+          }),
+          completedWithAnomalies: anomalousPropertiesByJob.get(job.id)?.size ?? 0,
+        },
+      }));
+      const visibleCompletedJobIds = new Set([...completedJobs, ...refinementCompletedJobs].map((job) => job.id));
       for (const jobId of completedSummaryCache.keys()) {
         if (!visibleCompletedJobIds.has(jobId)) completedSummaryCache.delete(jobId);
       }
-      next.completedImports = await withOperationTimeout(
-        Promise.all(completedJobs.map(async (job) => {
+      const completedSummaries = await withOperationTimeout(
+        Promise.all([...completedJobs, ...refinementCompletedJobs].map(async (job) => {
           const version = job.updated_at ?? job.completed_at ?? job.created_at ?? "";
           const cached = completedSummaryCache.get(job.id);
           const summary = cached?.version === version
@@ -1134,8 +1170,11 @@ async function refreshSnapshotRemoteData() {
           return { job, ...summary };
         })),
         15_000,
-        "Aggiornamento cronologia import",
+        "Aggiornamento archivi lavorazioni",
       );
+      const completedSummaryPartitions = partitionPropertyRuns(completedSummaries);
+      next.completedImports = completedSummaryPartitions.lavorazione;
+      next.refinementCompletedImports = completedSummaryPartitions.rifinitura;
       const [esitoRichieste, esitoIncarichi] = await Promise.all([richieste, incarichi]);
       next.latestRequestImport = esitoRichieste.run;
       next.requestImportSchemaError = esitoRichieste.error;
@@ -1179,40 +1218,53 @@ async function stateSnapshot() {
     void refreshSnapshotRemoteData().then(() => publishState()).catch(() => undefined);
   }
   const {
-    jobs, completedImports, completedImportsHasMore, publicConfig, configError, cloudError,
+    jobs, completedImports, completedImportsHasMore,
+    refinementJobs, refinementCompletedImports, refinementCompletedImportsHasMore,
+    publicConfig, configError, cloudError,
     latestRequestImport, requestImportSchemaError, latestMandateImport, mandateImportSchemaError,
   } = snapshotRemoteData;
+  const refinementJobIds = new Set([
+    ...refinementJobs.map((job) => job.id),
+    ...refinementCompletedImports.map(({ job }) => job.id),
+    ...(activeJobId && refinementActive ? [activeJobId] : []),
+  ]);
+  const refinementImportActive = active && refinementActive;
+  const workImportActive = active && !refinementActive;
+  const isRefinementDiagnostic = (item: DiagnosticErrorItem) => item.details.runType === "refinement"
+    || Boolean(item.jobId && refinementJobIds.has(item.jobId));
+  const workDiagnosticErrors = diagnosticErrors.filter((item) => !isRefinementDiagnostic(item));
+  const refinementDiagnosticErrors = diagnosticErrors.filter(isRefinementDiagnostic);
   return {
-    active,
+    active: workImportActive,
     stoppingAll,
-    activeJobId,
-    cancellingJobId,
-    pausingJobId,
-    skippingPropertyId,
-    currentStep,
-    propertyProgress,
-    crmImportConcurrency,
-    autoRetry: autoRetryAt && autoRetryJobId
+    activeJobId: workImportActive ? activeJobId : null,
+    cancellingJobId: workImportActive ? cancellingJobId : null,
+    pausingJobId: workImportActive ? pausingJobId : null,
+    skippingPropertyId: workImportActive ? skippingPropertyId : null,
+    currentStep: workImportActive ? currentStep : null,
+    propertyProgress: workImportActive ? propertyProgress : null,
+    crmImportConcurrency: workImportActive ? crmImportConcurrency : 1,
+    autoRetry: workImportActive && autoRetryAt && autoRetryJobId
       ? { jobId: autoRetryJobId, dueAt: autoRetryAt, attempt: autoRetryAttemptNumber, maximumAttempts: 3 }
       : null,
     autoRetryEnabled: preferences.autoRetryEnabled,
-    retryMonitor,
-    prompt,
-    lastError,
-    operationCompletion,
+    retryMonitor: workImportActive ? retryMonitor : null,
+    prompt: workImportActive ? prompt : null,
+    lastError: workImportActive ? lastError : null,
+    operationCompletion: refinementActive ? null : operationCompletion,
     sisterKeepAlive,
     connections: { checks: connectionChecks, checkedAt: connectionChecksAt, checking: Boolean(healthCheckPromise) },
     softwareUpdate: desktopUpdater?.snapshot() ?? {
       status: "unavailable", currentVersion: app.getVersion(), availableVersion: null, percent: null,
       transferred: null, total: null, message: "Controllo aggiornamenti non inizializzato", checkedAt: null,
     },
-    activity,
-    diagnosticErrors,
+    activity: activity.filter((item) => !item.workspace || item.workspace === "lavorazione" || item.workspace === "system"),
+    diagnosticErrors: workDiagnosticErrors,
     preferences: {
       ...preferences,
-      ...(active && activityModeOverride ? { propertyActivityMode: activityModeOverride } : {}),
-      ...(active && importCoOwnersOverride != null ? { importCoOwners: importCoOwnersOverride } : {}),
-      ...(active && parallelCrmWindowsOverride != null ? { parallelCrmWindows: parallelCrmWindowsOverride } : {}),
+      ...(workImportActive && activityModeOverride ? { propertyActivityMode: activityModeOverride } : {}),
+      ...(workImportActive && importCoOwnersOverride != null ? { importCoOwners: importCoOwnersOverride } : {}),
+      ...(workImportActive && parallelCrmWindowsOverride != null ? { parallelCrmWindows: parallelCrmWindowsOverride } : {}),
     },
     config: publicConfig,
     configError,
@@ -1277,11 +1329,26 @@ async function stateSnapshot() {
     },
     refinement: {
       active: refinementActive,
+      importActive: refinementImportActive,
+      activeJobId: refinementImportActive ? activeJobId : null,
       street: refinementStreet,
-      lastError: refinementError,
+      lastError: refinementError ?? (refinementImportActive ? lastError : null),
       phase: refinementActive && streetRunActive ? "sister" : active && refinementActive ? "cloud" : "idle",
       progress: refinementActive ? (streetRunActive ? streetRunProgress : propertyProgress) : null,
+      currentStep: refinementImportActive ? currentStep : null,
+      prompt: refinementImportActive ? prompt : null,
+      cancellingJobId: refinementImportActive ? cancellingJobId : null,
+      pausingJobId: refinementImportActive ? pausingJobId : null,
+      skippingPropertyId: refinementImportActive ? skippingPropertyId : null,
+      crmImportConcurrency: refinementImportActive ? crmImportConcurrency : 1,
+      retryMonitor: refinementImportActive ? retryMonitor : null,
+      operationCompletion: refinementOperationCompletion,
       checkpoint: projectStreetCheckpointForRenderer(refinementRunCheckpoint),
+      jobs: refinementJobs,
+      completedImports: refinementCompletedImports,
+      completedImportsHasMore: refinementCompletedImportsHasMore,
+      diagnosticErrors: refinementDiagnosticErrors,
+      activity: activity.filter((item) => item.workspace === "rifinitura"),
     },
     stopAfterNextImport: stopAfterNextImportRequested,
     version: app.getVersion(),
@@ -1546,6 +1613,7 @@ async function runSisterStreet(input: {
     refinementActive = true;
     refinementStreet = street;
     refinementError = null;
+    refinementOperationCompletion = null;
   }
   operationCompletion = null;
   streetRunCancellationRequested = false;
@@ -1801,7 +1869,7 @@ async function runSisterStreet(input: {
       status: "failed",
       message: streetRunError,
       jobId: streetImportJobId,
-      details: { checkpointPath: streetRunCheckpointPath(requestedEngine), street, engine: requestedEngine },
+      details: { checkpointPath: streetRunCheckpointPath(requestedEngine), street, engine: requestedEngine, runType: requestedEngine === "rifinitura" ? "refinement" : "street" },
     }, { publish: true });
   }).finally(async () => {
     streetRunActive = false;
@@ -1854,7 +1922,7 @@ async function runSisterStreet(input: {
           status: "failed",
           message,
           jobId: jobToImport,
-          details: { operation: "long-run-import-start", street },
+          details: { operation: "long-run-import-start", street, runType: input.refinement ? "refinement" : "property-import" },
         });
         await publishState();
       }
@@ -2758,6 +2826,15 @@ function handleRunnerEvent(event: RunnerEvent) {
     propertyProgress = null;
     prompt = null;
     lastError = null;
+    if (refinementActive) {
+      refinementOperationCompletion = {
+        kind: "refinement",
+        title: "Rifinitura completata",
+        summary: "La via è stata riconciliata con il Cloud. Dettagli e anomalie restano nell'archivio Rifinitura.",
+        completedAt: new Date().toISOString(),
+        stats: [],
+      };
+    }
     pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
     clearAutoRetry();
@@ -3073,6 +3150,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     refinementActive = true;
     refinementStreet = effectiveRefinementStreet;
     refinementError = null;
+    refinementOperationCompletion = null;
   }
   activityModeOverride ??= preferences.propertyActivityMode;
   importCoOwnersOverride ??= preferences.importCoOwners;
@@ -3112,7 +3190,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
           status: "failed",
           message,
           jobId: activeJobId,
-          details: { operation: "worker-start-or-run" },
+          details: { operation: "worker-start-or-run", runType: effectiveRefinementStreet ? "refinement" : "property-import" },
         }, { publish: true });
       }
     })

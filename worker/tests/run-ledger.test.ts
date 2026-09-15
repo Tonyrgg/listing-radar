@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPropertyRunLedger } from "../src/services/run-ledger.js";
+import { buildPropertyRunLedger, partitionPropertyJobs, partitionPropertyRuns } from "../src/services/run-ledger.js";
 import type { JobRow, PropertyRow } from "../src/services/repository.js";
 
 const job = (values: Partial<JobRow> = {}): JobRow => ({
@@ -51,5 +51,19 @@ describe("registro atomico delle run", () => {
     expect(ledger.rows[1]?.state).toBe("running");
     expect(ledger.counts.completedWithAnomalies).toBe(1);
     expect(ledger.cursor.nextRecordId).toBe("2");
+  });
+
+  it("non lascia mai entrare una rifinitura nelle code o negli archivi delle lavorazioni", () => {
+    const ordinary = job({ id: "ordinary", acquisition: { engine: "lavorazione" } });
+    const refinement = job({ id: "refinement", acquisition: { engine: "rifinitura", strategy: "street_refinement" } });
+
+    expect(partitionPropertyJobs([ordinary, refinement])).toEqual({
+      lavorazione: [ordinary],
+      rifinitura: [refinement],
+    });
+    expect(partitionPropertyRuns([{ job: ordinary, result: 1 }, { job: refinement, result: 2 }])).toEqual({
+      lavorazione: [{ job: ordinary, result: 1 }],
+      rifinitura: [{ job: refinement, result: 2 }],
+    });
   });
 });

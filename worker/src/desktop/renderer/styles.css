@@ -2284,6 +2284,7 @@ details.section > .section-body {
 
 #sync .request-archive-card,
 #refinement .refinement-card,
+#refinement .detail-card,
 #portoni .portoni-card,
 #history .completed-imports-section,
 #history .jobs-card,
@@ -2332,11 +2333,6 @@ body[data-worker-view="sync"] #sync,
 body[data-worker-view="history"] #history,
 body[data-worker-view="settings"] #settings {
   display: block;
-}
-
-details.section[data-operation-locked] :is(button, input, select, textarea) {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 body[data-worker-view="refinement"] #refinement::before,
@@ -3065,11 +3061,9 @@ body[data-fase="finita"] .run-launcher { display: none; }
 .operation-console-body > .now-card { border-top: 1px solid var(--lr-line-quiet) !important; }
 .operation-console-body > .is-hidden { display: none !important; }
 
-body[data-fase="lavora"] .workspace > details.section,
-body[data-fase="lavora"] .workspace > .section,
-body[data-fase="lavora"] #sync,
-body[data-fase="lavora"] #history,
-body[data-fase="lavora"] #settings { display: none !important; }
+/* La pagina visibile dipende esclusivamente dalla navigazione. Una run non
+ * deve mai nascondere Rifinitura o Portoni e far sembrare che sia stata
+ * trasferita nella plancia Lavorazioni. */
 
 @media (max-width: 1120px) {
   .app-header { grid-template-columns: auto 1fr; }
