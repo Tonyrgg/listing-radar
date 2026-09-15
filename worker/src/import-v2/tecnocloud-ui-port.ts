@@ -231,6 +231,16 @@ export function protectedUnknownOwnerships(actual: CrmOwnershipSnapshot[], desir
     && !desired.some((candidate) => sameCrmRecordId(candidate.personId, owner.personId)));
 }
 
+/** Banner informativi globali non sono errori del modulo nominativo. */
+export function actionablePersonValidationMessages(messages: string[]): string[] {
+  return [...new Set(messages.map((message) => message.replace(/\s+/g, " ").trim()).filter((message) => {
+    if (!message) return false;
+    const text = normalized(message);
+    if (text === "ATTENZIONE") return false;
+    return !/NECESSARIO CARICARE L.INFORMATIVA CONSEGNATA AL CLIENTE/.test(text);
+  }))];
+}
+
 export function editableLinkedOwnerships(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): CrmOwnershipSnapshot[] {
   return actual.filter((owner) => owner.role !== "Proprietario Principale"
     && (isManagedCrmOwnership(owner) || desired.some((candidate) => sameCrmRecordId(candidate.personId, owner.personId))));
@@ -727,7 +737,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   private async waitForLookupEditable(component: Locator, input: Locator, label: string): Promise<void> {
     let stable = 0;
     for (let check = 0; check < 50 && stable < 2; check += 1) {
-      const editable = await input.getAttribute("readonly") === null
+      const editable = await input.isEditable().catch(() => false)
+        && await input.getAttribute("readonly") === null
         && await component.locator(".slds-combobox_container.slds-has-selection").count() === 0
         && !(await this.searchIsBusy());
       stable = editable ? stable + 1 : 0;
@@ -950,7 +961,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     let everProposed = false;
     for (let attempt = 0; attempt < terms.length; attempt += 1) {
       const searchValue = terms[Math.min(termIndex, terms.length - 1)]!;
-      if (await input.getAttribute("readonly") !== null) {
+      const selected = await component.locator(".slds-combobox_container.slds-has-selection").count() > 0;
+      const editable = await input.isEditable().catch(() => false);
+      if (selected || !editable || await input.getAttribute("readonly") !== null) {
         const remove = await this.one(component.locator('button[title="Remove selected option"]').filter({ visible: true }), `Rimuovi ${label}`);
         await remove.click();
         await this.waitForLookupEditable(component, input, label);
@@ -1218,9 +1231,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       if (!result) throw new ImportV2Error("Esito del salvataggio nominativo non confermato", "verification_failed", { retryable: true });
     } catch (error) {
-      const messages = (await this.page.locator('.slds-form-element__help:visible, [role="alert"]:visible').allTextContents())
-        .map((message) => message.replace(/\s+/g, " ").trim())
-        .filter(Boolean);
+      const messages = actionablePersonValidationMessages(
+        await this.page.locator('.slds-form-element__help:visible, [role="alert"]:visible').allTextContents(),
+      );
       const body = normalized(await this.page.locator("body").innerText().catch(() => ""));
       if (body.includes("CODICE FISCALE NON COERENTE")) {
         throw new ImportV2Error("Tecnocloud rifiuta il codice fiscale rispetto ai dati anagrafici", "invalid_source", {
@@ -2218,8 +2231,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const saveRequests = this.watchSearchRequests();
     try {
       await save.click();
-      await save.waitFor({ state: "hidden", timeout: 15_000 });
+      let editorClosed = true;
+      try {
+        await save.waitFor({ state: "hidden", timeout: 4_000 });
+      } catch {
+        editorClosed = false;
+      }
       await this.waitForCloudStable(saveRequests, "Salvataggio proprietario principale");
+      if (!editorClosed && await save.isVisible().catch(() => false)) {
+        // Lightning puo' completare la mutation ma lasciare montato l'editor.
+        // Riaprire e rileggere e' prova del risultato; ripetere alla cieca il
+        // salvataggio produce invece retry lenti e potenzialmente duplicati.
+        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      }
     } finally {
       saveRequests.stop();
     }
@@ -2230,7 +2254,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return true;
   }
 
-  private async ownershipRow(propertyId: string, personId: string): Promise<Locator> {
+  private async ownershipRow(propertyId: string, personId: string, requireAction = false): Promise<Locator> {
     const card = await this.ownershipCard(propertyId);
     let scope = card;
     const linksForPerson = (ownerScope: Locator) => ownerScope.locator('a[href*="/s/account/"]').filter({ visible: true });
@@ -2245,27 +2269,49 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       return indexes.length === 1 ? links.nth(indexes[0]!) : ownerScope.locator("a.__worker-no-match__");
     };
     let link = await matchingLinks(scope);
-    if (await link.count() !== 1) {
+    let row = await link.count() === 1
+      ? (await link.locator("xpath=ancestor::tr[1]").count() ? link.locator("xpath=ancestor::tr[1]") : link.locator("xpath=../.."))
+      : null;
+    const hasAction = async (candidate: Locator | null) => Boolean(candidate && await candidate.locator([
+      'button[aria-haspopup="menu"]',
+      'button[title*="Azioni" i]',
+      'button[title*="Actions" i]',
+      'button[aria-label*="azioni" i]',
+      'lightning-button-menu button',
+    ].join(", ")).filter({ visible: true }).count());
+    if (await link.count() !== 1 || (requireAction && !(await hasAction(row)))) {
       const viewAll = card.getByText("Visualizza tutto", { exact: true }).filter({ visible: true });
       if (await viewAll.count() === 1) {
         await viewAll.click({ force: true });
         scope = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetti collegati/i }), "Elenco soggetti collegati", 12_000);
         link = await matchingLinks(scope);
+        row = await link.count() === 1
+          ? (await link.locator("xpath=ancestor::tr[1]").count() ? link.locator("xpath=ancestor::tr[1]") : link.locator("xpath=../.."))
+          : null;
       }
     }
     await link.first().waitFor({ state: "visible", timeout: 10_000 });
     if (await link.count() !== 1) throw new ImportV2Error("Riga soggetto collegato non univoca", "verification_failed", { retryable: true });
-    const tr = link.locator("xpath=ancestor::tr[1]");
-    if (await tr.count()) return tr;
-    return link.locator("xpath=../..");
+    return row ?? link.locator("xpath=../..");
   }
 
   private async relationshipAction(propertyId: string, personId: string, action: "Modifica" | "Elimina"): Promise<void> {
-    const row = await this.ownershipRow(propertyId, personId);
+    const row = await this.ownershipRow(propertyId, personId, true);
     const direct = row.getByRole("button", { name: action, exact: true }).filter({ visible: true });
     if (await direct.count() === 1) { await direct.click(); return; }
-    const menu = row.locator('button[title*="Azioni"], button[title*="Actions"], button.slds-button_icon').filter({ visible: true });
-    if (await menu.count() !== 1) throw new ImportV2Error(`Azione ${action} non disponibile sul soggetto`, "transient_portal", { retryable: true });
+    const menu = row.locator([
+      'button[aria-haspopup="menu"]',
+      'button[title*="Azioni" i]',
+      'button[title*="Actions" i]',
+      'button[aria-label*="azioni" i]',
+      'lightning-button-menu button',
+    ].join(", ")).filter({ visible: true });
+    if (await menu.count() !== 1) {
+      throw new ImportV2Error(`Azione ${action} non disponibile sul soggetto`, "transient_portal", {
+        retryable: true,
+        details: { actionMenuCount: await menu.count() },
+      });
+    }
     await menu.click({ force: true });
     const item = this.page.getByText(action, { exact: true }).filter({ visible: true });
     await (await this.one(item, action, 6_000)).click({ force: true });
@@ -2311,15 +2357,18 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await save.click();
       const duplicate = dialog.getByText(/già.*proprietario|proprietario pri(?:n)?cipale/i).filter({ visible: true });
       const outcome = await Promise.race([
-        dialog.waitFor({ state: "hidden", timeout: 15_000 }).then(() => "saved" as const),
-        duplicate.first().waitFor({ state: "visible", timeout: 15_000 }).then(() => "existing" as const),
-      ]);
+        dialog.waitFor({ state: "hidden", timeout: 4_000 }).then(() => "saved" as const),
+        duplicate.first().waitFor({ state: "visible", timeout: 4_000 }).then(() => "existing" as const),
+      ]).catch(() => "unclosed" as const);
       if (outcome === "existing") {
         const cancel = dialog.getByRole("button", { name: "Annulla", exact: true }).filter({ visible: true });
         if (await cancel.count() === 1) await cancel.click();
         await dialog.waitFor({ state: "hidden", timeout: 8_000 });
       }
       await this.waitForCloudStable(saveRequests, "Salvataggio comproprietario");
+      if (outcome === "unclosed" && await dialog.isVisible().catch(() => false)) {
+        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      }
     } finally {
       saveRequests.stop();
     }
@@ -2333,8 +2382,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const saveRequests = this.watchSearchRequests();
     try {
       await save.click();
-      await dialog.waitFor({ state: "hidden", timeout: 15_000 });
+      let dialogClosed = true;
+      try {
+        await dialog.waitFor({ state: "hidden", timeout: 4_000 });
+      } catch {
+        dialogClosed = false;
+      }
       await this.waitForCloudStable(saveRequests, "Aggiornamento comproprietario");
+      if (!dialogClosed && await dialog.isVisible().catch(() => false)) {
+        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      }
     } finally {
       saveRequests.stop();
     }
@@ -2364,15 +2421,11 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         return { propertyId, owners: structuredClone(property.owners), removedPersonIds };
       }
       const before = await this.readOwnerships(propertyId);
-      const unknownPrivate = protectedUnknownOwnerships(before, desired);
-      if (unknownPrivate.length) {
-        throw new ImportV2Error("Uno o più soggetti privati non espongono ruolo o diritto verificabili", "verification_failed", {
-          // Unrelated links are protected. Retrying cannot change this
-          // deterministic condition, so quarantine once instead of looping.
-          retryable: false,
-          details: { personIds: unknownPrivate.map((owner) => owner.personId) },
-        });
-      }
+      // I collegamenti privati senza ruolo/diritto restano protetti e fuori
+      // dal set gestito: non sono prova sufficiente per cancellare qualcuno,
+      // ma non devono neppure bloccare tutta la rifinitura. Se SISTER include
+      // quel soggetto, editableLinkedOwnerships lo riconosce per id e lo
+      // normalizza esplicitamente.
       const desiredPrimary = desired.filter((owner) => owner.role === "Proprietario Principale");
       if (desiredPrimary.length !== 1) {
         throw new ImportV2Error("La fonte deve identificare un solo proprietario principale", "invalid_source");

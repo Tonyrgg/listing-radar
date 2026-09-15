@@ -183,7 +183,10 @@ export class ImportV2Engine {
    * `onStage` riceve lo stadio che sta per essere eseguito, cosi' chi guarda
    * la run sa a che punto e' senza dover leggere il database.
    */
-  async run(source: SourceProperty, onStage?: (stage: ImportV2Stage) => void): Promise<ImportV2Outcome> {
+  async run(
+    source: SourceProperty,
+    onStage?: (stage: ImportV2Stage, retry: { attempt: number; maxAttempts: number; previousFailure: ImportV2Failure | null }) => void,
+  ): Promise<ImportV2Outcome> {
     let plan;
     try {
       plan = buildPlan(source);
@@ -196,7 +199,11 @@ export class ImportV2Engine {
     let checkpoint = await this.store.loadOrCreate(plan);
     while (checkpoint.stage !== "completed") {
       try {
-        onStage?.(checkpoint.stage);
+        onStage?.(checkpoint.stage, {
+          attempt: checkpoint.attempts + 1,
+          maxAttempts: this.maxTransientAttempts,
+          previousFailure: checkpoint.lastError,
+        });
         this.throwIfInterruptionRequested();
         await this.crm.assertSession();
         checkpoint = await this.executeStage(checkpoint);
@@ -229,7 +236,7 @@ export class ImportV2Engine {
         return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "quarantined", stage: checkpoint.stage, failure };
       }
     }
-    onStage?.("completed");
+    onStage?.("completed", { attempt: 1, maxAttempts: this.maxTransientAttempts, previousFailure: null });
     return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "completed", stage: "completed", failure: null };
   }
 

@@ -280,9 +280,14 @@ describe("Import V2 engine", () => {
       }
     }
     const crm = new RetrySecondCrm();
-    expect((await new ImportV2Engine(crm, new MemoryStore()).run(property())).state).toBe("completed");
+    const retries: Array<{ stage: string; attempt: number; message?: string }> = [];
+    const outcome = await new ImportV2Engine(crm, new MemoryStore()).run(property(), (stage, retry) => {
+      retries.push({ stage, attempt: retry.attempt, message: retry.previousFailure?.message });
+    });
+    expect(outcome.state).toBe("completed");
     expect(crm.writes.filter((taxCode) => taxCode === "RSSMRA80A01A893P")).toHaveLength(1);
     expect(crm.writes.filter((taxCode) => taxCode === "VRDLCU82B02A893X")).toHaveLength(2);
+    expect(retries).toContainEqual({ stage: "people_resolved", attempt: 2, message: "Risposta in ritardo" });
   });
 
   it("passa alla scrittura quando la ricerca catastale trova l'immobile esatto senza riaprire i nominativi", async () => {

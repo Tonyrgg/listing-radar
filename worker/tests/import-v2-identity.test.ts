@@ -199,6 +199,14 @@ describe("Import V2 identity", () => {
     expect(sameAddress("VIA MARSALA n. 4 Piano T", "Via Marsala 4 [.], 70032 BITONTO (BA)")).toBe(true);
   });
 
+  it("considera equivalenti i segni usati da SISTER per l'apostrofo nel nome via", () => {
+    expect(sameAddress(
+      "VIA CESARE CANTU` n. 1 Piano T",
+      "via cesare cantu' 1, 70032 BITONTO (BA)",
+    )).toBe(true);
+    expect(sameAddress("VIA CESARE CANTU’ n. 1", "VIA CESARE CANTU 1")).toBe(true);
+  });
+
   // Chi scrive l'indirizzo nel gestionale si ferma al civico e toglie scala ed
   // edificio: chi confronta deve fare lo stesso, o rifiuta un immobile appena
   // creato con l'indirizzo giusto.

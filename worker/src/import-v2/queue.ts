@@ -1,4 +1,4 @@
-import type { ImportV2Outcome, ImportV2Stage, SourceProperty } from "./model.js";
+import type { ImportV2Failure, ImportV2Outcome, ImportV2Stage, SourceProperty } from "./model.js";
 import { ImportV2Engine } from "./engine.js";
 
 export type ImportV2BatchResult = {
@@ -15,6 +15,9 @@ export type ImportV2Progress = {
   workerIndex?: number;
   workerCount?: number;
   completed?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  previousFailure?: ImportV2Failure | null;
 };
 
 type ImportV2Source = SourceProperty | (() => SourceProperty);
@@ -114,8 +117,8 @@ export async function runImportV2Batch(
   const deferred: Array<{ source: SourceProperty | (() => SourceProperty); position: number }> = [];
   for (const [position, source] of properties.entries()) {
     const property = typeof source === "function" ? source() : source;
-    const outcome = await engine.run(property, (stage) => onProgress?.({
-      propertyId: property.sourcePropertyId, index: position + 1, total, stage,
+    const outcome = await engine.run(property, (stage, retry) => onProgress?.({
+      propertyId: property.sourcePropertyId, index: position + 1, total, stage, ...retry,
     }));
     onOutcome?.(outcome);
     if (outcome.state === "completed") result.completed.push(outcome);
@@ -150,8 +153,8 @@ export async function runImportV2Batch(
   if (!result.paused) {
     for (const item of deferred) {
       const property = typeof item.source === "function" ? item.source() : item.source;
-      const outcome = await engine.run(property, (stage) => onProgress?.({
-        propertyId: property.sourcePropertyId, index: item.position + 1, total, stage,
+      const outcome = await engine.run(property, (stage, retry) => onProgress?.({
+        propertyId: property.sourcePropertyId, index: item.position + 1, total, stage, ...retry,
       }));
       onOutcome?.(outcome);
       if (outcome.state === "completed") result.completed.push(outcome);

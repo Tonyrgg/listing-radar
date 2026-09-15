@@ -34,7 +34,7 @@ import { ImportV2Coordinator } from "../import-v2/coordinator.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
-import type { CrmPropertySummary, ImportV2Stage } from "../import-v2/model.js";
+import type { CrmPropertySummary, ImportV2Failure, ImportV2Stage } from "../import-v2/model.js";
 
 /** Cosa sta facendo il worker adesso, detto all'operatore. */
 const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
@@ -687,10 +687,16 @@ export class PropertyWorkerRunner {
           const lane = progress.workerCount && progress.workerCount > 1
             ? `Finestra ${progress.workerIndex}/${progress.workerCount} · `
             : "";
-          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, `${lane}${IMPORT_V2_STAGE_MESSAGES[progress.stage]}`, {
+          const retry = progress.attempt && progress.attempt > 1
+            ? ` · tentativo ${progress.attempt}/${progress.maxAttempts ?? "?"} dopo: ${progress.previousFailure?.message.split("\n")[0] ?? "errore transitorio"}`
+            : "";
+          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, `${lane}${IMPORT_V2_STAGE_MESSAGES[progress.stage]}${retry}`, {
             workerIndex: progress.workerIndex,
             workerCount: progress.workerCount,
             completed: progress.completed,
+            attempt: progress.attempt,
+            maxAttempts: progress.maxAttempts,
+            previousFailure: progress.previousFailure,
           });
         }, () => this.isStopAfterNextImportRequested(job.id));
         for (const outcome of result.completed) {
@@ -1174,7 +1180,14 @@ export class PropertyWorkerRunner {
     total: number,
     stage: string,
     message: string,
-    parallel: { workerIndex?: number; workerCount?: number; completed?: number } = {},
+    parallel: {
+      workerIndex?: number;
+      workerCount?: number;
+      completed?: number;
+      attempt?: number;
+      maxAttempts?: number;
+      previousFailure?: ImportV2Failure | null;
+    } = {},
   ) {
     this.onEvent({
       type: "property-progress", jobId: job.id, propertyId: property.id, index, total,

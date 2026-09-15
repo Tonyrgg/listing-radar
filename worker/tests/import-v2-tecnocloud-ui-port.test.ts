@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chromium, type Locator } from "playwright";
 
-import { chooseLookupRecordCandidate, choosePersonLookupCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
+import { actionablePersonValidationMessages, chooseLookupRecordCandidate, choosePersonLookupCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
@@ -1077,6 +1077,20 @@ describe("Tecnocloud UI V2", () => {
 
     expect(editableLinkedOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-sister"]);
     expect(protectedUnknownOwnerships(actual, desired).map((owner) => owner.personId)).toEqual(["owner-other"]);
+    expect(ownershipSyncConfirmed([
+      { linkId: "primary", personId: "owner-primary", taxCode: "TESTCF0000000003", sharePercentage: 100, rightType: "Proprietà", role: "Proprietario Principale" },
+      actual[1]!,
+    ], [
+      { personId: "owner-primary", taxCode: "TESTCF0000000003", fullName: "TERZO TEST", sharePercentage: 100, role: "Proprietario Principale" },
+    ])).toBe(true);
+  });
+
+  it("non scambia il banner privacy globale per un errore del nominativo", () => {
+    expect(actionablePersonValidationMessages([
+      "Attenzione",
+      "Attenzione Ti ricordiamo che è necessario caricare l'informativa consegnata al cliente",
+      "Il campo Cognome è obbligatorio",
+    ])).toEqual(["Il campo Cognome è obbligatorio"]);
   });
 
   it("ritrova la riga del soggetto collegato quando il DOM espone l'ID corto", async () => {

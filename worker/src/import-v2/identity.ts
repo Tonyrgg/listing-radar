@@ -99,6 +99,9 @@ function plainWords(value: unknown): string {
     .normalize("NFD")
     .replace(DIACRITICS, "")
     .toUpperCase()
+    // SISTER alterna accento grave, apostrofo ASCII e apostrofo tipografico
+    // nei toponimi (CANTU`, CANTU', CANTU’). Sono la stessa via.
+    .replace(/['’`]/g, "")
     .replace(/[.,;:()]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
