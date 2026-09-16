@@ -96,14 +96,16 @@ describe("controlli di arresto desktop", () => {
     expect(renderer).not.toContain("stopAfterNextImportToggle");
   });
 
-  it("usa una plancia senza sidebar, con stati automatici e un carosello unico", async () => {
+  it("usa un registro con sidebar, stati automatici e un carosello unico", async () => {
     const [html, renderer, main] = await Promise.all([
       readFile(source("desktop", "renderer", "index.html"), "utf8"),
       readFile(source("desktop", "renderer", "renderer.js"), "utf8"),
       readFile(source("desktop", "main.ts"), "utf8"),
     ]);
 
-    expect(html).not.toContain('class="side-nav"');
+    expect(html).toContain('class="side-nav"');
+    expect(html).toContain('id="workspaceInspector"');
+    expect(html).toContain('id="themeToggle"');
     /* Il controllo dei collegamenti resta automatico: la fascia a tutta
      * larghezza e sparita e lo stato vive nella pastiglia della testata. Il
      * ri-controllo manuale torna soltanto dentro la barra d'errore, dov'e

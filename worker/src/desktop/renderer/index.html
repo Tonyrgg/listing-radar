@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it" data-theme="dark">
+<html lang="it" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,31 +9,46 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body data-worker-view="operations">
+    <a class="skip-link" href="#operations">Vai al contenuto principale</a>
     <header class="app-header">
       <div class="brand">
         <span class="brand-mark"><img src="./icon.png" alt="" /></span>
         <div><strong>Property Worker</strong><small>Listing Radar</small></div>
       </div>
-      <nav class="top-nav" aria-label="Sezioni del worker">
-        <button class="nav-item is-active" data-scroll="operations">Lavorazioni</button>
-        <button class="nav-item" data-scroll="refinement">Rifinitura</button>
-        <button class="nav-item" data-scroll="portoni">Portoni</button>
-        <button class="nav-item" data-scroll="sync">Sincronizza</button>
-        <button class="nav-item" data-scroll="history">Cronologia <span id="historyNavHint"></span></button>
-        <button class="nav-item" data-scroll="settings">Impostazioni</button>
-      </nav>
+      <div class="header-context" aria-live="polite">
+        <span id="headerSectionEyebrow">Registro operativo</span>
+        <strong id="headerSectionTitle">Lavorazioni</strong>
+      </div>
       <div class="header-actions">
         <span id="connectionPill" class="connection-pill" title="Stato dei collegamenti">
           <span class="connection-pill-dot"></span>
           <span id="connectionPillLabel">Controllo in corso</span>
         </span>
         <span id="versionLabel" class="version">v—</span>
+        <button id="themeToggle" class="icon-button theme-toggle" type="button" aria-label="Attiva tema scuro" title="Cambia tema">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 13.4 3H12Z"/></svg>
+        </button>
         <button id="stopAllButton" class="button danger is-hidden">Arresta processo</button>
         <button id="updateButton" class="button secondary" data-update-action="check">Controlla aggiornamenti</button>
       </div>
     </header>
 
-    <main class="workspace" id="operations">
+    <div class="app-layout">
+      <aside class="side-nav-shell">
+        <nav class="side-nav" aria-label="Sezioni del worker">
+          <p class="nav-group-label">Lavoro</p>
+          <button class="nav-item is-active" data-scroll="operations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg><span><b>Lavorazioni</b><small>Acquisisci e importa</small></span></button>
+          <button class="nav-item" data-scroll="refinement"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 9-9 5 5-9 9H4v-5ZM12 7l5 5M15 18h5"/></svg><span><b>Rifinitura</b><small>Aggiorna l'esistente</small></span></button>
+          <button class="nav-item" data-scroll="portoni"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4h14v17M9 8h2M15 8h.01M9 12h2M15 12h.01M9 16h2M15 16h.01M3 21h18"/></svg><span><b>Portoni</b><small>Raccogli e stampa</small></span></button>
+          <p class="nav-group-label">Archivio</p>
+          <button class="nav-item" data-scroll="sync"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-7M17 4l3 3-3 3M4 17h7M7 14l-3 3 3 3M6 7a7 7 0 0 1 11-2M18 17a7 7 0 0 1-11 2"/></svg><span><b>Sincronizzazione</b><small>Richieste e incarichi</small></span></button>
+          <button class="nav-item" data-scroll="history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span><b>Cronologia</b><small id="historyNavHint">Lavori conservati</small></span></button>
+          <button class="nav-item nav-settings" data-scroll="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7L10.5 2h-3l-.7 2.3-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2.3h3l.7-2.3 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7 2-.7Z"/></svg><span><b>Impostazioni</b><small>Collegamenti e app</small></span></button>
+        </nav>
+        <div class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10ZM9 12l2 2 4-5"/></svg><span><b>Dati locali protetti</b><small>Run e configurazione restano sul computer.</small></span></div>
+      </aside>
+
+      <main class="workspace" id="operations">
         <section class="page-intro">
           <div>
             <p class="eyebrow">Assistente di acquisizione</p>
@@ -565,7 +580,15 @@
             </section>
           </div>
         </details>
-    </main>
+      </main>
+
+      <aside id="workspaceInspector" class="workspace-inspector" aria-label="Dettagli del record selezionato">
+        <header><p class="eyebrow">Contesto</p><h2 id="inspectorTitle">Nessun record selezionato</h2><p id="inspectorSubtitle">Seleziona una riga del registro per vedere stato, impostazioni e prossima azione.</p></header>
+        <div id="inspectorBody" class="inspector-body">
+          <div class="inspector-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg><b>Il lavoro, senza perdere il filo</b><p>Qui compariranno posizione esatta, anomalie e regole fissate alla partenza.</p></div>
+        </div>
+      </aside>
+    </div>
 
     <dialog id="acquisitionReviewDialog" class="review-dialog"><div class="dialog-shell wide"><header><div><p class="eyebrow">Raccolta SISTER completata</p><h2 id="acquisitionReviewTitle">Controlla prima di proseguire</h2><p id="acquisitionReviewContext"></p></div><span id="acquisitionReviewCount" class="count"></span></header><div id="acquisitionReviewContent" class="review-content"></div><footer><p>Puoi importare ora oppure conservare questa ricerca nell'archivio.</p><div><button class="button secondary" data-review-decision="cancel">Torna indietro</button><button class="button danger" data-action="cancel-current">Annulla tutto</button><button class="button secondary" data-review-decision="save">Salva per importarla dopo</button><button class="button primary" data-review-decision="proceed">Importa adesso</button></div></footer></div></dialog>
 

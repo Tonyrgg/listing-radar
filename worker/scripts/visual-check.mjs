@@ -214,10 +214,17 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.screenshot({ path: path.join(output, "ready-mobile.png"), fullPage: true });
 const readyMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
+const sideNavigationVisible = await page.locator(".side-nav-shell").isVisible();
+const initialTheme = await page.locator("html").getAttribute("data-theme");
+await page.locator("#themeToggle").click();
+const darkThemeApplied = await page.locator("html").getAttribute("data-theme") === "dark";
+await page.locator("#themeToggle").click();
+await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
+const inspectorSelectionVisible = await page.locator("#inspectorTitle").getByText("BITONTO · Via Test", { exact: true }).count();
 const stoppedRunVisible = await page.getByText(/Interrotta · 2 eseguite.*1 aperta/).count();
 const exactAcquisitionCursorVisible = await page.getByText("Riparte dalla riga 3 di 150", { exact: true }).count();
 const exactAcquisitionOwnerVisible = await page.getByText(/Prossimo record: Mario Rossi/).count();
-await page.locator('[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
+await page.locator('.row-primary[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
 await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
 const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
 const nonContiguousProgressExplained = await page.getByText("Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute.", { exact: true }).count();
@@ -226,7 +233,8 @@ const lockedImportChoices = await page.locator("#importDialog [data-import-activ
 const lockedImportExplanationVisible = await page.getByText("Impostazioni bloccate alla partenza", { exact: false }).count();
 const importKillerHelpVisible = 0;
 await page.locator('[data-import-dialog="confirm"]').click();
-await page.locator('[data-detail-job="55555555-5555-4555-8555-555555555555"]').click();
+await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .row-overflow > summary').click();
+await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] [data-detail-job="55555555-5555-4555-8555-555555555555"]').click();
 await page.locator("#detailPanel").screenshot({ path: path.join(output, "stopped-import-detail.png") });
 const detailRestartRowVisible = await page.getByText(/Prima riga aperta: 1 di 3/).count();
 await page.locator('[data-scroll="refinement"]').click();
@@ -344,10 +352,11 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
+  ...(!sideNavigationVisible || initialTheme !== "light" || !darkThemeApplied || inspectorSelectionVisible !== 1 ? ["Guscio, tema o ispettore del registro non funzionanti"] : []),
   ...([readyOverflow, readyMobileOverflow, refinementOverflow, historyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),

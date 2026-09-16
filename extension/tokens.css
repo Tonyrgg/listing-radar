@@ -10,13 +10,13 @@
 :root {
   --lr-font-sans: "Instrument Sans", "Segoe UI", sans-serif;
   --lr-font-mono: "IBM Plex Mono", "Cascadia Mono", monospace;
-  /* A warm paper workspace: quiet enough for dense operational data. */
-  --lr-canvas: #eae0cf;
-  --lr-surface: #fffdf8;
-  --lr-raised: #ebe2d2;
+  /* Daylight workspace: neutral, calm and precise on office monitors. */
+  --lr-canvas: #f1f4f2;
+  --lr-surface: #ffffff;
+  --lr-raised: #e9efec;
 
-  --lr-line: #807564;
-  --lr-line-quiet: #d9cdb9;
+  --lr-line: #9caeaa;
+  --lr-line-quiet: #d7e0dd;
 
   --lr-ink: #16363a;
   --lr-ink-2: #3f5c61;
@@ -132,11 +132,11 @@
 }
 
 :root[data-theme="light"] {
-  --lr-canvas: #eae0cf;
-  --lr-surface: #fffdf8;
-  --lr-raised: #ebe2d2;
-  --lr-line: #807564;
-  --lr-line-quiet: #d9cdb9;
+  --lr-canvas: #f1f4f2;
+  --lr-surface: #ffffff;
+  --lr-raised: #e9efec;
+  --lr-line: #9caeaa;
+  --lr-line-quiet: #d7e0dd;
   --lr-ink: #16363a;
   --lr-ink-2: #3f5c61;
   --lr-ink-3: #52666a;

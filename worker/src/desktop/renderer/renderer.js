@@ -159,7 +159,8 @@ let appState = null,
   latestUiCommand = null,
   selectedRunSlide = "civic",
   selectedPortoniId = null,
-  portoniRenderKey = null;
+  portoniRenderKey = null,
+  selectedInspectorJobId = null;
 let completedImportsRenderKey = null,
   jobsRenderKey = null,
   refinementJobsRenderKey = null,
@@ -178,6 +179,25 @@ let attivitaCimaDisegnata = null,
 const MAX_RIGHE_DIARIO = 300;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
+const SECTION_LABELS = {
+  operations: ["Registro operativo", "Lavorazioni"],
+  refinement: ["Verifica e aggiornamento", "Rifinitura"],
+  portoni: ["Raccolta territoriale", "Portoni"],
+  sync: ["Archivi del gestionale", "Sincronizzazione"],
+  history: ["Memoria del worker", "Cronologia"],
+  settings: ["Sistema", "Impostazioni"],
+};
+const storedTheme = localStorage.getItem("property-worker-theme");
+document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
+
+function renderThemeToggle() {
+  const button = $("themeToggle");
+  if (!button) return;
+  const dark = document.documentElement.dataset.theme === "dark";
+  button.setAttribute("aria-label", dark ? "Attiva tema chiaro" : "Attiva tema scuro");
+  button.title = dark ? "Passa al tema chiaro" : "Passa al tema scuro";
+  button.dataset.themeState = dark ? "dark" : "light";
+}
 
 const operationConsoleBody = $("operationConsoleBody");
 for (const id of ["commandMonitor", "retryMonitor", "actionPanel", "manualCorrectionPanel", "progressPercent", "workflowSteps"]) {
@@ -257,7 +277,54 @@ function updateHistoryNavHint() {
 function markActiveNav(id) {
   document.querySelectorAll(".nav-item[data-scroll]").forEach((item) => {
     item.classList.toggle("is-active", item.dataset.scroll === id);
+    if (item.dataset.scroll === id) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
   });
+  const [eyebrow, title] = SECTION_LABELS[id] ?? SECTION_LABELS.operations;
+  if ($("headerSectionEyebrow")) $("headerSectionEyebrow").textContent = eyebrow;
+  if ($("headerSectionTitle")) $("headerSectionTitle").textContent = title;
+}
+
+function renderWorkspaceInspector() {
+  const inspector = $("workspaceInspector");
+  if (!inspector || !appState) return;
+  const jobs = [
+    ...(appState.jobs ?? []),
+    ...(appState.refinement?.jobs ?? []),
+    ...(appState.completedImports ?? []).map((entry) => entry.job ?? entry),
+    ...(appState.refinement?.completedImports ?? []).map((entry) => entry.job ?? entry),
+  ].filter(Boolean);
+  const job = jobs.find((entry) => entry.id === selectedInspectorJobId)
+    ?? jobs.find((entry) => entry.id === appState.activeJobId)
+    ?? null;
+  if (!job) {
+    $("inspectorTitle").textContent = "Nessun record selezionato";
+    $("inspectorSubtitle").textContent = "Seleziona una riga del registro per vedere stato, impostazioni e prossima azione.";
+    $("inspectorBody").innerHTML = `<div class="inspector-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg><b>Il lavoro, senza perdere il filo</b><p>Qui compariranno posizione esatta, anomalie e regole fissate alla partenza.</p></div>`;
+    return;
+  }
+  selectedInspectorJobId = job.id;
+  const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Ricerca ${job.id.slice(0, 8)}`;
+  const total = Number(job.import_progress?.total ?? job.total_properties ?? job.acquisition?.acquisitionProgress?.total ?? 0);
+  const handled = Math.min(total, Number(job.import_progress?.handled ?? job.processed_properties ?? job.acquisition?.acquisitionProgress?.completed ?? 0));
+  const remaining = Math.max(0, total - handled);
+  const anomalies = Number(job.import_progress?.completedWithAnomalies ?? 0);
+  const skipped = Number(job.import_progress?.skipped ?? 0);
+  const complete = job.status === "completed";
+  const refinement = job.acquisition?.engine === "rifinitura" || job.acquisition?.strategy === "street_refinement";
+  const acquisitionIncomplete = Boolean(job.acquisition?.acquisitionProgress && job.acquisition.acquisitionProgress.state !== "completed");
+  $("inspectorTitle").textContent = place;
+  $("inspectorSubtitle").textContent = refinement ? "Rifinitura salvata" : "Lavorazione salvata";
+  const primary = complete
+    ? `<button class="button secondary" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Apri riepilogo</button>`
+    : acquisitionIncomplete
+      ? `<button class="button primary" data-resume-acquisition="${job.id}">Continua acquisizione</button>`
+      : `<button class="button primary" data-resume-job="${job.id}">${job.import_started_at ? "Riprendi dal punto salvato" : refinement ? "Avvia rifinitura" : "Avvia import"}</button>`;
+  $("inspectorBody").innerHTML = `
+    <section class="inspector-section"><span class="inspector-status ${complete ? "is-complete" : job.import_started_at ? "is-paused" : "is-ready"}">${complete ? "Completata" : job.import_started_at ? "In pausa" : acquisitionIncomplete ? "Acquisizione incompleta" : "Pronta"}</span><progress class="inspector-progress" max="${Math.max(1, total)}" value="${handled}" aria-label="${fmtCount(handled)} di ${fmtCount(total)} righe concluse"></progress><b>${fmtCount(handled)} di ${fmtCount(total)} righe concluse</b><small>${remaining ? `Prossima riga aperta: ${fmtCount(handled + 1)} · ${fmtCount(remaining)} rimanenti` : "Tutte le righe risultano concluse"}</small></section>
+    <section class="inspector-section"><p class="eyebrow">Esito registrato</p><dl class="inspector-stats"><div><dt>Eseguite</dt><dd>${fmtCount(Math.max(0, handled - anomalies - skipped))}</dd></div><div><dt>Anomalie</dt><dd>${fmtCount(anomalies)}</dd></div><div><dt>Saltate</dt><dd>${fmtCount(skipped)}</dd></div><div><dt>Proprietari</dt><dd>${fmtCount(job.total_people ?? 0)}</dd></div></dl></section>
+    <section class="inspector-section"><p class="eyebrow">Impostazioni fissate</p><p>${esc(riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili")}</p></section>
+    <div class="inspector-actions">${primary}<button class="button quiet" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Vedi tutte le righe</button></div>`;
 }
 function lockSecondaryPageActions(locked) {
   for (const id of ["refinement", "portoni", "sync", "history", "settings"]) {
@@ -1378,7 +1445,12 @@ function renderJobs() {
                 : `Pronta per l'import · ${fmtNamedCount(total, "riga", "righe")}`);
           const stoppedHelp = "Le righe concluse restano salvate, anche quando non sono consecutive. La ripresa parte dalla prima riga aperta e salta tutte quelle già concluse.";
           const help = acquisitionState?.detail ?? (inProgress ? stoppedHelp : "");
-          return `<article class="ledger-row job-item ${imported ? "is-completed" : acquisitionIncomplete || inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" aria-label="${esc(help)}" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || inProgress ? "!" : imported ? "✓" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${help ? ` title="${esc(help)}"` : ""}><b>${esc(runState)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri record</button>${canResumeAcquisition ? `<button class="text-button" data-resume-acquisition="${job.id}">Continua acquisizione</button>` : ""}${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi import" : "Avvia import"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+          const primaryAction = canResumeAcquisition
+            ? `<button class="row-primary" data-resume-acquisition="${job.id}">Continua acquisizione</button>`
+            : canImport
+              ? `<button class="row-primary" data-resume-job="${job.id}">${inProgress ? "Riprendi import" : "Avvia import"}</button>`
+              : `<button class="row-primary is-secondary" data-detail-job="${job.id}">Apri record</button>`;
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : acquisitionIncomplete || inProgress ? "is-running" : "is-not-started"}" data-record-id="${job.id}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" aria-label="${esc(help)}" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || inProgress ? "!" : imported ? "✓" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${help ? ` title="${esc(help)}"` : ""}><b>${esc(runState)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions">${primaryAction}<details class="row-overflow"><summary aria-label="Altre azioni" title="Altre azioni">•••</summary><div><button class="text-button" data-detail-job="${job.id}">Apri dettagli</button><button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina record</button></div></details></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
@@ -2621,7 +2693,12 @@ function renderRefinementArchive() {
         settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili",
         canResume = !state.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
         help = acquisitionState?.detail ?? (progress.started ? "La ripresa parte dalla prima riga aperta e non ripete quelle concluse." : "");
-      return `<article class="ledger-row job-item ${acquisitionIncomplete || progress.started ? "is-running" : "is-not-started"}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || progress.started ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"><b>${esc(acquisitionState?.title ?? progress.label)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri record</button>${acquisitionIncomplete && !state.active ? `<button class="text-button" data-resume-acquisition="${job.id}">Continua acquisizione</button>` : ""}${canResume ? `<button class="text-button" data-resume-job="${job.id}">${progress.started ? "Riprendi rifinitura" : "Avvia rifinitura"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+      const primaryAction = acquisitionIncomplete && !state.active
+        ? `<button class="row-primary" data-resume-acquisition="${job.id}">Continua acquisizione</button>`
+        : canResume
+          ? `<button class="row-primary" data-resume-job="${job.id}">${progress.started ? "Riprendi rifinitura" : "Avvia rifinitura"}</button>`
+          : `<button class="row-primary is-secondary" data-refinement-detail-job="${job.id}">Apri record</button>`;
+      return `<article class="ledger-row job-item ${acquisitionIncomplete || progress.started ? "is-running" : "is-not-started"}" data-record-id="${job.id}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || progress.started ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"><b>${esc(acquisitionState?.title ?? progress.label)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions">${primaryAction}<details class="row-overflow"><summary aria-label="Altre azioni" title="Altre azioni">•••</summary><div><button class="text-button" data-refinement-detail-job="${job.id}">Apri dettagli</button><button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina record</button></div></details></span></article>`;
     }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le lavorazioni ordinarie non compariranno qui.</p>`;
     $("refinementCompletedList").innerHTML = completed.length ? completed.map((item) => {
       const job = item.job,
@@ -2842,6 +2919,7 @@ function render() {
   renderNetworkRun();
   renderRefinement();
   renderPortoni();
+  renderWorkspaceInspector();
   renderFiltriRete();
   renderReview();
   renderSoftwareUpdate();
@@ -2880,9 +2958,24 @@ function openCancel(jobId) {
 }
 
 document.addEventListener("click", async (event) => {
+  const recordRow = event.target.closest("[data-record-id]");
+  if (recordRow && !event.target.closest("button, summary, a, input, select, textarea")) {
+    selectedInspectorJobId = recordRow.dataset.recordId;
+    document.querySelectorAll("[data-record-id]").forEach((row) => row.classList.toggle("is-selected", row.dataset.recordId === selectedInspectorJobId));
+    renderWorkspaceInspector();
+    return;
+  }
   const target = event.target.closest("button");
   if (!target || (target.form && target.type === "submit")) return;
   event.preventDefault();
+
+  if (target.id === "themeToggle") {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("property-worker-theme", next);
+    renderThemeToggle();
+    return;
+  }
 
   /* I bottoni dei filtri non sono comandi: non chiedono niente al processo
    * principale, quindi non passano dal monitor delle operazioni. */
@@ -3352,6 +3445,8 @@ document.addEventListener("click", async (event) => {
         });
       if (target.dataset.detailJob || target.dataset.refinementDetailJob) {
         const refinementDetail = Boolean(target.dataset.refinementDetailJob);
+        selectedInspectorJobId = target.dataset.refinementDetailJob ?? target.dataset.detailJob;
+        renderWorkspaceInspector();
         const detail = await window.propertyWorker.getJobDetails(
           target.dataset.refinementDetailJob ?? target.dataset.detailJob,
         );
@@ -3686,6 +3781,8 @@ window.propertyWorker.onState(async (state) => {
 const acquisitionRegistry = $("jobs");
 const newAcquisitionRules = $("runControls");
 if (acquisitionRegistry && newAcquisitionRules) newAcquisitionRules.before(acquisitionRegistry);
+renderThemeToggle();
+markActiveNav(document.body.dataset.workerView ?? "operations");
 setRunSlide(selectedRunSlide);
 window.propertyWorker
   .getState()
