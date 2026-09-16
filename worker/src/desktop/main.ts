@@ -76,6 +76,7 @@ import {
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
   summarizeJobImportProgress,
+  summarizeStreetAcquisition,
   type CompletedImportSummary,
 } from "./state-projection.js";
 import { DesktopUpdater, type DesktopUpdateState } from "./updater.js";
@@ -1000,8 +1001,14 @@ async function chiudiAcquisizioneInterrotta(jobId: string | null, motivo: string
     const repo = repository(workerConfig({ dryRun: false }));
     const totali = await repo.countAcquisition(jobId);
     if (!totali.properties) {
-      await repo.deleteJob(jobId);
-      pushActivity("Nessun immobile acquisito: la lavorazione vuota non resta fra le acquisizioni.", "info");
+      await repo.updateJob(jobId, {
+        total_properties: 0,
+        total_people: 0,
+        status: "paused",
+        saved_at: new Date().toISOString(),
+        error_message: motivo,
+      });
+      pushActivity("Acquisizione interrotta prima della prima riga: il record resta salvato con la causa del blocco.", "warning");
       return;
     }
     await repo.updateJob(jobId, {
@@ -1568,6 +1575,7 @@ async function runSisterStreet(input: {
   filters?: Partial<StreetPropertyFilters>;
   registryNetwork?: boolean;
   refinement?: boolean;
+  jobId?: string;
 }) {
   const street = input.street.replace(/\s+/g, " ").trim();
   const requestedEngine = input.refinement ? "rifinitura" : "lavorazione";
@@ -1592,11 +1600,13 @@ async function runSisterStreet(input: {
   // ordinarie rispettano invece la scelta esplicita di sviluppare i titolari.
   const expandAllOwners = resumeCheckpoint?.runSettings?.expandAllOwners
     ?? (input.refinement ? false : preferences.expandAllOwners);
+  const keepAcquisition = resumeCheckpoint?.runSettings?.keepAcquisition ?? input.dryRun;
   if (street.length < 4) throw new Error(input.refinement ? "Inserisci il nome completo della via in SISTER" : "Inserisci il nome completo della via");
   if (input.refinement && refinementCloudStreet.length < 4) throw new Error("Inserisci il nome completo della via nel Cloud");
-  const longRunMode = input.refinement ? "live" : input.resume && resumeCheckpoint
-    ? (resumeCheckpoint.mode === "live" ? "live" : "dry_run")
-    : (input.dryRun ? "dry_run" : "live");
+  /* "Acquisisci e conserva" non e' un dry-run: i dati devono nascere nel
+   * registro e sopravvivere a chiusure o giornate diverse. Manteniamo il vero
+   * dry-run soltanto per i checkpoint storici gia' iniziati in quel modo. */
+  const longRunMode = input.resume && resumeCheckpoint?.mode === "dry_run" ? "dry_run" : "live";
   const ownsOperationReservation = !input.registryNetwork;
   if (ownsOperationReservation) reserveOperation("street");
   try {
@@ -1624,15 +1634,85 @@ async function runSisterStreet(input: {
   beginRetryMonitor("street", "Acquisizione via SISTER");
   pushActivity(
     input.resume
-      ? `Ripresa ${longRunMode === "dry_run" ? "dry-run" : "run reale"} via ${street}`
-      : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via ${street} avviato`,
+      ? `Ripresa acquisizione via ${street}`
+      : `Acquisizione via ${street} avviata${keepAcquisition ? ": resterà nel registro" : " con import automatico"}`,
     "info",
   );
   await publishState();
 
   const config = workerConfig({ dryRun: longRunMode === "dry_run" });
   let jobToImport: string | null = null;
-  let streetImportJobId = resumeCheckpoint?.importJobId ?? null;
+  let streetImportJobId = resumeCheckpoint?.importJobId ?? input.jobId ?? null;
+  const liveRepository = longRunMode === "live" ? repository(config) : null;
+  let acquisitionMetadata: Record<string, unknown> = {
+    engine: input.refinement ? "rifinitura" : "lavorazione",
+    strategy: input.refinement ? "street_refinement" : "bulk_exact_variants",
+    runSettings: {
+      lockedAt: resumeCheckpoint?.runSettings?.lockedAt ?? new Date().toISOString(),
+      street,
+      refinementCloudStreet: refinementCloudStreet || null,
+      filters,
+      expandAllOwners,
+      keepAcquisition,
+    },
+    importOptions: {
+      activityMode: input.refinement ? "plain" : preferences.propertyActivityMode,
+      importCoOwners: input.refinement ? true : preferences.importCoOwners,
+      parallelCrmWindows: input.refinement ? false : preferences.parallelCrmWindows,
+      lockedAt: resumeCheckpoint?.runSettings?.lockedAt ?? new Date().toISOString(),
+    },
+    acquisitionProgress: {
+      state: "paused",
+      position: null,
+      total: 0,
+      totalIsFinal: false,
+      completed: 0,
+      completedWithAnomalies: 0,
+      skipped: 0,
+      remaining: 0,
+      currentLabel: null,
+      currentOwnerNames: [],
+      variant: 0,
+      variants: 0,
+    },
+  };
+  let lastCloudAcquisitionHandled = -1;
+  try {
+    if (liveRepository && !streetImportJobId) {
+      const importJob = await liveRepository.createJob("automatic");
+      streetImportJobId = importJob.id;
+      await liveRepository.setJobContext(importJob.id, {
+        municipality: "BITONTO",
+        street,
+        civicNumber: null,
+        sourceUrl: "",
+      });
+      await liveRepository.updateJob(importJob.id, {
+        acquisition: acquisitionMetadata,
+        status: "paused",
+        saved_at: new Date().toISOString(),
+        error_message: "Acquisizione creata; attendo la lettura SISTER.",
+      });
+    } else if (liveRepository && streetImportJobId) {
+      const existingJob = await liveRepository.getJob(streetImportJobId);
+      const existingAcquisition = existingJob.acquisition ?? {};
+      acquisitionMetadata = {
+        ...acquisitionMetadata,
+        ...existingAcquisition,
+        runSettings: existingAcquisition.runSettings ?? acquisitionMetadata.runSettings,
+        importOptions: existingAcquisition.importOptions ?? acquisitionMetadata.importOptions,
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await chiudiAcquisizioneInterrotta(streetImportJobId, message).catch(() => undefined);
+    streetRunActive = false;
+    if (input.refinement) refinementActive = false;
+    clearRetryMonitor();
+    if (ownsOperationReservation) releaseOperationReservation("street");
+    await publishState();
+    throw error;
+  }
   let registryOutcome: StreetRegistryOutcome | null = null;
   let registryResult: Record<string, unknown> | undefined;
   let registryError: Record<string, unknown> | undefined;
@@ -1640,30 +1720,13 @@ async function runSisterStreet(input: {
     activeStreetBrowser = tabs.browser;
     try {
       if (streetRunAbandonRequested) return;
-      const liveRepository = longRunMode === "live" ? repository(config) : null;
-      let importJobId = resumeCheckpoint?.importJobId ?? null;
-      if (liveRepository && !importJobId) {
-        const importJob = await liveRepository.createJob("automatic");
-        importJobId = importJob.id;
-        streetImportJobId = importJob.id;
-        await liveRepository.setJobContext(importJob.id, {
+      const importJobId = streetImportJobId;
+      if (liveRepository && importJobId) {
+        await liveRepository.setJobContext(importJobId, {
           municipality: "BITONTO",
           street,
           civicNumber: null,
           sourceUrl: tabs.sisterPage.url(),
-        });
-        await liveRepository.updateJob(importJob.id, {
-          acquisition: {
-            engine: input.refinement ? "rifinitura" : "lavorazione",
-            strategy: input.refinement ? "street_refinement" : "bulk_exact_variants",
-            runSettings: {
-              lockedAt: new Date().toISOString(),
-              street,
-              refinementCloudStreet: refinementCloudStreet || null,
-              filters,
-              expandAllOwners,
-            },
-          },
         });
       }
       const scanner = new SisterStreetRun(tabs.sisterPage, {
@@ -1683,6 +1746,7 @@ async function runSisterStreet(input: {
          * perde per strada, viene rifatta invece di fermare tutto. */
         prepareSearchAutomatically: true,
         expandAllOwners,
+        keepAcquisition,
         isCancelled: () => streetRunCancellationRequested,
         onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
           const [savedProperty] = await liveRepository.insertProperties(importJobId!, [{
@@ -1730,6 +1794,28 @@ async function runSisterStreet(input: {
         onRetryTelemetry: (telemetry) => updateRetryMonitor("street", telemetry),
         onCheckpoint: async (checkpoint) => {
           await persistStreetRunCheckpoint(checkpoint);
+          if (liveRepository && checkpoint.importJobId) {
+            const acquisitionProgress = summarizeStreetAcquisition(checkpoint);
+            const handled = acquisitionProgress.completed
+              + acquisitionProgress.completedWithAnomalies
+              + acquisitionProgress.skipped;
+            if (handled !== lastCloudAcquisitionHandled || checkpoint.status !== "running") {
+              acquisitionMetadata = {
+                ...acquisitionMetadata,
+                acquisitionProgress,
+                acquisitionCheckpoint: checkpoint,
+              };
+              await liveRepository.updateJob(checkpoint.importJobId, {
+                acquisition: acquisitionMetadata,
+                total_properties: checkpoint.totalAcceptedProperties,
+                total_people: checkpoint.totalOwnersRead,
+                status: checkpoint.status === "completed" ? "saved" : "paused",
+                saved_at: new Date().toISOString(),
+                error_message: checkpoint.lastError,
+              });
+              lastCloudAcquisitionHandled = handled;
+            }
+          }
           publishTransientUpdate({
             ...(requestedEngine === "rifinitura"
               ? { refinementRunCheckpoint: projectStreetCheckpointForRenderer(checkpoint) }
@@ -1762,8 +1848,15 @@ async function runSisterStreet(input: {
         }
 
         if (result.status === "completed" && graph.properties.length === 0) {
-          await liveRepository.deleteJob(result.importJobId);
-          streetImportJobId = null;
+          await liveRepository.updateJob(result.importJobId, {
+            total_properties: 0,
+            total_people: 0,
+            status: "saved",
+            saved_at: new Date().toISOString(),
+            last_completed_step: "acquisition_reviewed",
+            current_step: "properties_processed",
+            error_message: "Acquisizione completata: SISTER non ha restituito righe importabili con queste regole.",
+          });
           streetRunError = null;
         } else {
           await liveRepository.markGraphNormalized(activeProperties, activePeople);
@@ -1778,7 +1871,7 @@ async function runSisterStreet(input: {
               error_message: null,
               error_details: null,
             });
-            jobToImport = result.importJobId;
+            jobToImport = keepAcquisition ? null : result.importJobId;
             streetRunError = null;
           } else {
             const message = result.status !== "completed"
@@ -1820,8 +1913,8 @@ async function runSisterStreet(input: {
       }
       pushActivity(
         result.status === "completed"
-          ? `${longRunMode === "dry_run" ? "Dry-run" : "Acquisizione reale"} via completata: ${result.totalAcceptedProperties} immobili unici e ${result.totalOwnersRead} proprietari letti`
-          : `${longRunMode === "dry_run" ? "Dry-run" : "Run reale"} via sospesa dopo ${result.currentVariantIndex} varianti`,
+          ? `Acquisizione via completata: ${result.totalAcceptedProperties} immobili unici e ${result.totalOwnersRead} proprietari letti`
+          : `Acquisizione via sospesa dopo ${result.currentVariantIndex} varianti`,
         result.status === "completed" ? "success" : "warning",
       );
       /* Una run sospesa non e' una via fallita: torna in coda come da
@@ -1837,7 +1930,7 @@ async function runSisterStreet(input: {
       if (result.status === "completed" && !result.lastError && !streetRunError) {
         operationCompletion = {
           kind: "street",
-          title: longRunMode === "dry_run" ? "Dry-run della via completato" : "Acquisizione della via completata",
+          title: "Acquisizione della via completata",
           summary: jobToImport
             ? "La raccolta è conclusa. Ora completo automaticamente l’import nel gestionale."
             : "La run ha concluso tutte le varianti esatte previste.",
@@ -3626,6 +3719,41 @@ function registerIpc() {
     await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
+  ipcMain.handle("desktop:resume-acquisition", async (_event, jobId: string) => {
+    if (streetRunActive || active) throw new Error("C'e gia una lavorazione in corso");
+    const job = await repository().getJob(String(jobId));
+    const acquisition = job.acquisition ?? {};
+    const checkpoint = acquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
+    if (!checkpoint || ![3, 4].includes(checkpoint.version)) {
+      const settings = (acquisition.runSettings ?? {}) as Record<string, unknown>;
+      const engine = acquisition.engine === "rifinitura" ? "rifinitura" : "lavorazione";
+      const savedStreet = String(settings.street ?? job.street ?? "");
+      await runSisterStreet({
+        street: savedStreet,
+        refinementCloudStreet: typeof settings.refinementCloudStreet === "string" ? settings.refinementCloudStreet : undefined,
+        resume: false,
+        dryRun: settings.keepAcquisition !== false,
+        filters: settings.filters as Partial<StreetPropertyFilters> | undefined,
+        refinement: engine === "rifinitura",
+        jobId: job.id,
+      });
+      return true;
+    }
+    if (checkpoint.status === "completed") throw new Error("L'acquisizione SISTER e gia completa");
+    const engine = checkpoint.runSettings?.engine === "rifinitura" ? "rifinitura" : "lavorazione";
+    await persistStreetRunCheckpoint(checkpoint);
+    await runSisterStreet({
+      street: checkpoint.requestedStreet,
+      refinementCloudStreet: checkpoint.runSettings?.refinementCloudStreet
+        ?? checkpoint.runSettings?.refinementSecondaryStreet
+        ?? undefined,
+      resume: true,
+      dryRun: checkpoint.mode !== "live",
+      filters: checkpoint.runSettings?.filters ?? checkpoint.filters,
+      refinement: engine === "rifinitura",
+    });
+    return true;
+  });
   ipcMain.handle("desktop:start-refinement", async (_event, values: { sisterStreet?: string; cloudStreet?: string; street?: string; secondaryStreet?: string; resume?: boolean }) => {
     const street = String(values?.sisterStreet ?? values?.street ?? "");
     const cloudStreet = String(values?.cloudStreet ?? values?.secondaryStreet ?? values?.street ?? "");
@@ -3633,7 +3761,7 @@ function registerIpc() {
       street,
       refinementCloudStreet: cloudStreet,
       resume: values?.resume === true,
-      dryRun: false,
+      dryRun: preferences.keepAcquisition,
       refinement: true,
       filters: { residentialOnly: false },
     });

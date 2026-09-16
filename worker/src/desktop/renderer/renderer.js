@@ -335,9 +335,11 @@ function commandIdentity(target) {
               ? `review-${target.dataset.reviewDecision}`
               : target.dataset.skipProperty
                 ? "skip-property"
-                : target.dataset.resumeJob
-                  ? "resume-job"
-                  : target.dataset.detailJob
+                 : target.dataset.resumeJob
+                   ? "resume-job"
+                  : target.dataset.resumeAcquisition
+                    ? "resume-acquisition"
+                   : target.dataset.detailJob
                     ? "job-details"
                     : target.dataset.refinementDetailJob
                       ? "refinement-details"
@@ -1288,6 +1290,45 @@ function riassuntoAcquisizione(acquisition) {
   return pezzi.join(" · ");
 }
 
+function badgeAcquisizione(acquisition) {
+  if (!acquisition || typeof acquisition !== "object") return "";
+  const settings = acquisition.runSettings ?? acquisition.acquisitionSettings ?? {};
+  const options = acquisition.importOptions ?? acquisition;
+  const badges = [
+    settings.expandAllOwners === true ? "Sviluppo proprietari" : "Via diretta",
+    options.importCoOwners === false ? "Solo principale" : "Comproprietari",
+    options.parallelCrmWindows === true ? "2 finestre Cloud" : "1 finestra Cloud",
+    ATTIVITA_ETICHETTA[options.activityMode] ?? null,
+    settings.filters?.residentialOnly === true ? "Solo abitazioni" : null,
+  ].filter(Boolean);
+  return `<span class="acquisition-badges">${badges.map((badge) => `<span>${esc(badge)}</span>`).join("")}</span>`;
+}
+
+function statoAcquisizione(progress) {
+  if (!progress || progress.state === "completed") return null;
+  const handled = Number(progress.completed || 0) + Number(progress.completedWithAnomalies || 0) + Number(progress.skipped || 0);
+  const position = progress.position && progress.total
+    ? `Fermo alla riga ${fmtCount(progress.position)} di ${fmtCount(progress.total)}${progress.totalIsFinal === false ? " note finora" : ""}`
+    : progress.total
+      ? `${fmtCount(handled)} di ${fmtCount(progress.total)} righe gestite`
+      : "Preparazione SISTER salvata";
+  const owner = progress.currentOwnerNames?.length ? ` · ${progress.currentOwnerNames.join(", ")}` : "";
+  const current = progress.currentLabel ? ` · ${progress.currentLabel}` : "";
+  return {
+    title: position,
+    detail: `${fmtNamedCount(progress.completed, "salvata", "salvate")} · ${fmtNamedCount(progress.completedWithAnomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(progress.skipped, "esclusa", "escluse")} · ${fmtNamedCount(progress.remaining, "mancante", "mancanti")}${owner}${current}`,
+  };
+}
+
+function dettaglioAcquisizione(acquisition) {
+  const progress = acquisition?.acquisitionProgress;
+  const checkpoint = acquisition?.acquisitionCheckpoint;
+  if (!progress || !checkpoint) return "";
+  const state = statoAcquisizione(progress);
+  const records = (checkpoint.results ?? []).flatMap((result) => result.recordLedger ?? []);
+  return `<section class="acquisition-detail"><header><div><p class="eyebrow">Acquisizione SISTER</p><h3>${esc(state?.title ?? "Acquisizione completata")}</h3><small>${esc(state?.detail ?? `${fmtCount(records.length)} righe registrate`)}</small></div>${badgeAcquisizione(acquisition)}</header>${records.map((record) => `<div class="detail-group import-detail-row ${record.status === "completed" ? "is-completed" : record.status === "skipped" ? "is-skipped" : "has-anomaly"}"><span class="detail-row-number">${fmtCount(record.index)}</span><span><b>${esc(record.ownerNames?.join(", ") || record.label)}</b><small>${esc(record.ownerNames?.length ? record.label : record.key)}</small></span><span class="completion-label${record.anomaly ? " has-tooltip" : ""}"${record.anomaly ? ` tabindex="0" data-tooltip="${esc(record.anomaly)}"` : ""}>${record.status === "completed" ? "Salvata" : record.status === "skipped" ? "Esclusa" : "Con anomalia"}</span></div>`).join("")}</section>`;
+}
+
 function renderJobs() {
   const jobs = appState?.jobs ?? [];
   const conservate = jobs.length;
@@ -1309,7 +1350,11 @@ function renderJobs() {
   $("jobsList").innerHTML = jobs.length
     ? jobs
         .map((job) => {
-          const canImport = !appState.active && job.status !== "completed",
+          const acquisitionProgress = job.acquisition?.acquisitionProgress,
+            acquisitionState = statoAcquisizione(acquisitionProgress),
+            acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed"),
+            canImport = !appState.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
+            canResumeAcquisition = !appState.active && acquisitionIncomplete,
             tipo = ACQUISIZIONE_TIPO[job.acquisition?.kind] ?? null,
             luogo =
               [job.municipality, job.street, job.civic_number]
@@ -1324,13 +1369,14 @@ function renderJobs() {
             anomalies = Math.min(handled, Number(job.import_progress?.completedWithAnomalies ?? 0)),
             skipped = Math.min(handled, Number(job.import_progress?.skipped ?? 0)),
             executed = Math.max(0, Number(job.import_progress?.completed ?? handled - skipped) - anomalies),
-            runState = imported
+            runState = acquisitionState?.title ?? (imported
               ? "Importazione completata"
               : inProgress
                 ? `Interrotta · ${fmtNamedCount(executed, "eseguita", "eseguite")} · ${fmtNamedCount(anomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(skipped, "saltata", "saltate")} · ${fmtNamedCount(Math.max(0, total - handled), "aperta", "aperte")}`
-                : `Run mai avviata · ${fmtNamedCount(total, "riga da importare", "righe da importare")}`;
+                : `Pronta per l'import · ${fmtNamedCount(total, "riga", "righe")}`);
           const stoppedHelp = "Le righe concluse restano salvate, anche quando non sono consecutive. La ripresa parte dalla prima riga aperta e salta tutte quelle già concluse.";
-          return `<article class="ledger-row job-item ${imported ? "is-completed" : inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark${inProgress ? " has-tooltip" : ""}"${inProgress ? ` tabindex="0" aria-label="${esc(stoppedHelp)}" data-tooltip="${esc(stoppedHelp)}"` : ""}>${inProgress ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small></span><span class="ledger-figure">${fmtCount(total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${inProgress ? ` title="${esc(stoppedHelp)}"` : ""}>${esc(runState)}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri dati</button>${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi dal punto salvato" : "Importa"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+          const help = acquisitionState?.detail ?? (inProgress ? stoppedHelp : "");
+          return `<article class="ledger-row job-item ${imported ? "is-completed" : acquisitionIncomplete || inProgress ? "is-running" : "is-not-started"}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" aria-label="${esc(help)}" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || inProgress ? "!" : imported ? "✓" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc([tipo && luogo ? tipo : null, fmtDate(job.saved_at ?? job.created_at), fattori].filter(Boolean).join(" · "))}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"${help ? ` title="${esc(help)}"` : ""}><b>${esc(runState)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri record</button>${canResumeAcquisition ? `<button class="text-button" data-resume-acquisition="${job.id}">Continua acquisizione</button>` : ""}${canImport ? `<button class="text-button" data-resume-job="${job.id}">${inProgress ? "Riprendi import" : "Avvia import"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
         })
         .join("")
     : `<p class="empty-message">Nessuna ricerca salvata. Dopo la lettura SISTER potrai conservarla qui e importarla quando vuoi.</p>`;
@@ -1862,13 +1908,13 @@ function renderStreetRun() {
       .map((id) => $(id));
   if (resumable) {
     input.value = checkpoint.requestedStreet ?? input.value;
-    dryToggle.checked = checkpoint.mode !== "live";
+    dryToggle.checked = checkpoint.runSettings?.keepAcquisition ?? checkpoint.mode !== "live";
   }
   dryToggle.disabled = active || resumable;
   input.disabled = active || resumable;
   for (const control of streetFilterInputs) control.disabled = active || resumable;
   $("streetFloorValue").disabled = active || resumable || $("streetFloorMode").value === "any";
-  $("streetRunStartLabel").textContent = resumable ? "Riprendi dal punto salvato" : dryToggle.checked ? "Avvia dry-run" : "Avvia run reale";
+  $("streetRunStartLabel").textContent = resumable ? "Riprendi dal punto salvato" : dryToggle.checked ? "Acquisisci e conserva" : "Acquisisci e importa";
   start.disabled =
     Boolean(appState?.active) ||
     Boolean(appState?.requestArchive?.active) ||
@@ -1911,7 +1957,7 @@ function renderStreetRun() {
         ? `civici ${checkpoint.filters.minCivicNumber ?? "inizio"}–${checkpoint.filters.maxCivicNumber ?? "fine"}` : null,
     ].filter(Boolean).join(" · ");
   $("streetRunSummary").innerHTML =
-    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione di ogni variante in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Escluse dai filtri</dt><dd>${filterSkips}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.mode === "live" ? "run reale" : "dry-run")}${activeFilters ? ` · ${esc(activeFilters)}` : ""} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
+    `<div class="street-run-current"><div><small>Varianti esatte</small><strong>${completedVariants}/${variants.length}</strong><span>Acquisizione di ogni variante in corso</span></div><dl><div><dt>Righe lette</dt><dd>${checkpoint.totalRawRecords ?? 0}</dd></div><div><dt>Case distinte</dt><dd>${checkpoint.totalAcceptedProperties ?? 0}</dd></div><div><dt>Righe tenute</dt><dd>${occurrences}</dd></div><div><dt>Escluse dai filtri</dt><dd>${filterSkips}</dd></div><div><dt>Interrogazioni fallite</dt><dd>${failed}</dd></div></dl></div><p class="street-run-variants"><b>${esc(checkpoint.requestedStreet)}</b> · ${esc(checkpoint.runSettings?.keepAcquisition ? "acquisizione da conservare" : checkpoint.mode === "live" ? "acquisizione con import" : "dry-run storico")}${activeFilters ? ` · ${esc(activeFilters)}` : ""} · ${variants.map((v, index) => `variante ${esc(v.sourceId)}: ${index < completedVariants ? "completata" : index === completedVariants && active ? "in corso" : "in attesa"}`).join(" · ")}${checkpoint.totalOwnersRead ? `<br>Proprietari letti: <b>${checkpoint.totalOwnersRead}</b>` : ""}${error ? `<br><b>Errore della run corrente:</b> ${esc(error)}` : ""}</p>`;
   const progress = $("streetRunProgress");
   progress.classList.remove("is-hidden");
   progress.querySelector("span").style.width = `${percent}%`;
@@ -2470,6 +2516,17 @@ function portoniSettingsText(sheet) {
   ].filter(Boolean).join(" · ");
 }
 
+function progressoCheckpointSister(checkpoint) {
+  if (!checkpoint) return null;
+  const records = (checkpoint.results ?? []).flatMap((result) => result.recordLedger ?? []);
+  const cursor = (checkpoint.results ?? []).find((result) => result.cursor)?.cursor ?? null;
+  const total = (checkpoint.results ?? []).reduce((sum, result) => sum + Number(result.rawRecords || 0), 0);
+  const completed = records.filter((record) => record.status === "completed").length;
+  const completedWithAnomalies = records.filter((record) => record.status === "completed_with_anomalies").length;
+  const skipped = records.filter((record) => record.status === "skipped").length;
+  return { state: checkpoint.status, position: cursor?.position ?? null, total, totalIsFinal: checkpoint.status === "completed" || checkpoint.currentVariantIndex >= (checkpoint.variants?.length ?? 1) - 1, completed, completedWithAnomalies, skipped, remaining: Math.max(0, total - records.length), currentLabel: cursor?.label ?? null, currentOwnerNames: cursor?.ownerNames ?? [] };
+}
+
 function renderPortoni() {
   const state = appState?.portoni ?? { sheets: [] };
   const sheets = state.sheets ?? [];
@@ -2492,9 +2549,10 @@ function renderPortoni() {
   $("portoniHistory").innerHTML = sheets.length ? sheets.map((entry) => {
     const runStatus = entry.runStatus ?? "draft",
       resumable = ["paused", "failed", "running"].includes(runStatus),
-      statusLabel = runStatus === "completed" ? "Acquisizione eseguita" : runStatus === "failed" ? "Interrotta con errore" : resumable ? "In pausa" : "Scheda manuale";
+      acquisitionState = statoAcquisizione(progressoCheckpointSister(entry.checkpoint)),
+      statusLabel = acquisitionState?.title ?? (runStatus === "completed" ? "Acquisizione eseguita" : runStatus === "failed" ? "Interrotta con errore" : resumable ? "In pausa" : "Scheda manuale");
     return `<article class="portoni-history-row ${entry.id === selectedPortoniId ? "is-selected" : ""}">
-    <button type="button" data-portoni-open="${esc(entry.id)}"><b>${esc(entry.street)}</b><small>${entry.rows.length} immobili conservati · ${esc(statusLabel)} · ${esc(portoniSettingsText(entry))} · ${fmtDate(entry.updatedAt)}</small></button>
+    <button type="button" data-portoni-open="${esc(entry.id)}"><b>${esc(entry.street)}</b><small>${entry.rows.length} immobili conservati · ${esc(statusLabel)} · ${esc(portoniSettingsText(entry))} · ${fmtDate(entry.updatedAt)}${acquisitionState ? `<br>${esc(acquisitionState.detail)}` : ""}</small></button>
     ${resumable ? `<button type="button" class="button primary" data-portoni-resume="${esc(entry.id)}">Riprendi</button>` : entry.documentPath ? `<button type="button" class="button secondary" data-portoni-file="${esc(entry.documentPath)}">Apri PDF</button>` : `<span class="status-pill is-idle">${esc(statusLabel)}</span>`}
   </article>`;
   }).join("") : '<p class="empty-message">Le schede compariranno qui.</p>';
@@ -2508,10 +2566,13 @@ function renderPortoni() {
     anomalyRows = sheet.rows.filter((row) => row.workState === "completed_with_anomalies").length,
     skippedRows = sheet.rows.filter((row) => row.workState === "skipped").length,
     pendingRows = sheet.rows.filter((row) => row.workState === "pending").length,
-    cursor = sheet.checkpoint && sheet.runStatus !== "completed"
+    checkpointProgress = progressoCheckpointSister(sheet.checkpoint),
+    acquisitionState = statoAcquisizione(checkpointProgress),
+    cursor = acquisitionState?.title
+      ?? (sheet.checkpoint && sheet.runStatus !== "completed"
       ? `Riparte dalla variante ${fmtCount((sheet.checkpoint.currentVariantIndex ?? 0) + 1)} di ${fmtCount(sheet.checkpoint.variants?.length ?? 0)}`
-      : sheet.runStatus === "draft" ? "Scheda manuale, nessuna acquisizione da riprendere" : "Acquisizione SISTER conclusa";
-  $("portoniRunSummary").innerHTML = `<span>Motore Portoni</span><b>${esc(cursor)}</b><small>${sheet.runSettings ? `Impostazioni fissate alla partenza: ${esc(portoniSettingsText(sheet))}. ` : ""}${fmtNamedCount(completedRows, "eseguita", "eseguite")} · ${fmtNamedCount(anomalyRows, "con anomalie", "con anomalie")} · ${fmtNamedCount(skippedRows, "saltata", "saltate")} · ${fmtNamedCount(pendingRows, "da compilare", "da compilare")}</small>`;
+      : sheet.runStatus === "draft" ? "Scheda manuale, nessuna acquisizione da riprendere" : "Acquisizione SISTER conclusa");
+  $("portoniRunSummary").innerHTML = `<span>Motore Portoni</span><b>${esc(cursor)}</b><small>${sheet.runSettings ? `Impostazioni fissate alla partenza: ${esc(portoniSettingsText(sheet))}. ` : ""}${acquisitionState ? `${esc(acquisitionState.detail)}. ` : ""}${fmtNamedCount(completedRows, "eseguita", "eseguite")} · ${fmtNamedCount(anomalyRows, "con anomalie", "con anomalie")} · ${fmtNamedCount(skippedRows, "saltata", "saltate")} · ${fmtNamedCount(pendingRows, "da compilare", "da compilare")}</small>`;
   $("portoniRows").innerHTML = sheet.rows.map((row) => `<tr data-portoni-row="${esc(row.id)}">
     <td><b>${esc(row.sisterNames).replaceAll("\n", "<br>")}</b></td>
     <td><textarea data-portoni-field="actualNames" aria-label="Nominativi effettivi">${esc(row.actualNames)}</textarea></td>
@@ -2551,10 +2612,14 @@ function renderRefinementArchive() {
     refinementJobsRenderKey = renderKey;
     $("refinementJobsList").innerHTML = jobs.length ? jobs.map((job) => {
       const progress = refinementRunState(job),
+        acquisitionProgress = job.acquisition?.acquisitionProgress,
+        acquisitionState = statoAcquisizione(acquisitionProgress),
+        acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed"),
         place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
         settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili",
-        canResume = !state.active && job.status !== "completed";
-      return `<article class="ledger-row job-item ${progress.started ? "is-running" : "is-not-started"}"><span class="ledger-mark${progress.started ? " has-tooltip" : ""}"${progress.started ? ` tabindex="0" data-tooltip="La ripresa parte dalla prima riga aperta e non ripete quelle concluse."` : ""}>${progress.started ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small></span><span class="ledger-figure">${fmtCount(progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state">${esc(progress.label)}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri dati</button>${canResume ? `<button class="text-button" data-resume-job="${job.id}">${progress.started ? "Riprendi dal punto salvato" : "Avvia rifinitura"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
+        canResume = !state.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
+        help = acquisitionState?.detail ?? (progress.started ? "La ripresa parte dalla prima riga aperta e non ripete quelle concluse." : "");
+      return `<article class="ledger-row job-item ${acquisitionIncomplete || progress.started ? "is-running" : "is-not-started"}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || progress.started ? "!" : ""}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small>${badgeAcquisizione(job.acquisition)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"><b>${esc(acquisitionState?.title ?? progress.label)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri record</button>${acquisitionIncomplete && !state.active ? `<button class="text-button" data-resume-acquisition="${job.id}">Continua acquisizione</button>` : ""}${canResume ? `<button class="text-button" data-resume-job="${job.id}">${progress.started ? "Riprendi rifinitura" : "Avvia rifinitura"}</button>` : ""}<button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina</button></span></article>`;
     }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le lavorazioni ordinarie non compariranno qui.</p>`;
     $("refinementCompletedList").innerHTML = completed.length ? completed.map((item) => {
       const job = item.job,
@@ -2986,7 +3051,7 @@ document.addEventListener("click", async (event) => {
         const checkpoint = appState?.streetRun?.checkpoint,
           resume = Boolean(checkpoint && ["paused", "failed", "running"].includes(checkpoint.status)),
           street = resume ? checkpoint.requestedStreet : $("streetRunInput").value.trim(),
-          dryRun = resume ? checkpoint.mode !== "live" : $("dryRunToggle").checked;
+          dryRun = resume ? (checkpoint.runSettings?.keepAcquisition ?? checkpoint.mode !== "live") : $("dryRunToggle").checked;
         if (!street) throw new Error("Inserisci la via esatta");
         if (
           !dryRun &&
@@ -3188,6 +3253,9 @@ document.addEventListener("click", async (event) => {
         await openImportDialog(target.dataset.resumeJob);
         return true;
       }
+      if (target.dataset.resumeAcquisition) {
+        return window.propertyWorker.resumeAcquisition(target.dataset.resumeAcquisition);
+      }
       if (target.dataset.importActivity) {
         if (importOptionsLocked) return true;
         importActivityMode = target.dataset.importActivity;
@@ -3294,7 +3362,7 @@ document.addEventListener("click", async (event) => {
           contentId = refinementDetail ? "refinementDetailContent" : "detailContent";
         $(panelId).classList.remove("is-hidden");
         $(contentId).innerHTML =
-          `<div class="run-settings-snapshot"><span>Motore ${esc(engineLabel)}</span><b>Impostazioni fissate alla partenza</b><small>${esc(settings)}</small></div><div class="import-progress-summary"><b>${esc(progressCopy.headline)}</b><small>${esc(progressCopy.detail)} · ${fmtNamedCount(detail.people.length, "proprietario", "proprietari")} · ${fmtNamedCount(detail.ownerships.length, "quota", "quote")}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div>${detail.properties.map((p, index) => { const rowState = importPropertyRowState(p, index, progress, ledgerById.get(p.id)); return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-number">${fmtCount(index + 1)}</span><span><b>${esc(p.address ?? p.cadastral_key)}</b><small>${esc(p.cadastral_key)}</small></span><span class="completion-label${rowState.tooltip ? " has-tooltip" : ""}"${rowState.tooltip ? ` tabindex="0" data-tooltip="${esc(rowState.tooltip)}" aria-label="${esc(`${rowState.label}: ${rowState.tooltip}`)}"` : ""}>${esc(rowState.label)}</span></div>`; }).join("")}`;
+          `<div class="run-settings-snapshot"><span>Motore ${esc(engineLabel)}</span><b>Impostazioni fissate alla partenza</b><small>${esc(settings)}</small>${badgeAcquisizione(detail.job?.acquisition)}</div>${dettaglioAcquisizione(detail.job?.acquisition)}<div class="import-progress-summary"><b>Import Cloud · ${esc(progressCopy.headline)}</b><small>${esc(progressCopy.detail)} · ${fmtNamedCount(detail.people.length, "proprietario", "proprietari")} · ${fmtNamedCount(detail.ownerships.length, "quota", "quote")}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div>${detail.properties.map((p, index) => { const rowState = importPropertyRowState(p, index, progress, ledgerById.get(p.id)); return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-number">${fmtCount(index + 1)}</span><span><b>${esc(p.address ?? p.cadastral_key)}</b><small>${esc(p.cadastral_key)}</small></span><span class="completion-label${rowState.tooltip ? " has-tooltip" : ""}"${rowState.tooltip ? ` tabindex="0" data-tooltip="${esc(rowState.tooltip)}" aria-label="${esc(`${rowState.label}: ${rowState.tooltip}`)}"` : ""}>${esc(rowState.label)}</span></div>`; }).join("")}`;
         goTo(panelId);
         return true;
       }
@@ -3610,6 +3678,12 @@ window.propertyWorker.onState(async (state) => {
     }
   }
 });
+// Il registro e' il punto di partenza del prodotto: le nuove acquisizioni
+// vengono dopo, come azione secondaria. Spostarlo qui evita di duplicare o
+// scollegare il markup e conserva tutti gli handler esistenti.
+const acquisitionRegistry = $("jobs");
+const newAcquisitionRules = $("runControls");
+if (acquisitionRegistry && newAcquisitionRules) newAcquisitionRules.before(acquisitionRegistry);
 setRunSlide(selectedRunSlide);
 window.propertyWorker
   .getState()

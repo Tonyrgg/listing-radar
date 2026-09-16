@@ -445,7 +445,9 @@ La strategia primaria è `bulk_exact_variants`:
 5. acquisire l'intero elenco immobili restituito da ciascuna variante e
    ricontrollare localmente il civico, senza dipendere dall'ordine SISTER;
 6. leggere i proprietari con paracadute per singola riga;
-7. salvare un checkpoint dopo ogni variante.
+7. creare il record della via prima della lettura e salvare un checkpoint
+   atomico dopo ogni riga, con posizione, chiave catastale, nominativi letti,
+   esito ed eventuale anomalia; la fine variante e' un checkpoint ulteriore.
 
 I suffissi alfabetici dei civici sono parte dell'identità: `195/C` viene
 compilato nel CRM separando **Civico `195`** e **Lettera `C`**, non accorpato
@@ -468,10 +470,15 @@ Prova live del 24 agosto 2026 su `VIA TOMMASO TRAETTA`:
 
 La scansione civico per civico e la regola dei 50 civici vuoti restano come strategia `civic_fallback` diagnostica, non come percorso desktop predefinito.
 
-### Dry-run e run reale
+### Acquisizione conservata e import immediato
 
-- Dry-run: legge SISTER, immobili e proprietari, salva solo il checkpoint locale e non modifica Tecnocloud.
-- Run reale: salva progressivamente l'acquisizione in un job Supabase; soltanto dopo il completamento e la validazione dei dati avvia l'import automatico in Tecnocloud.
+- **Acquisisci e conserva** crea subito un job Supabase, salva progressivamente
+  dati e checkpoint e si ferma prima di Tecnocloud. Non e' un dry-run: il
+  record resta nel registro e puo' essere ripreso o importato un altro giorno.
+- **Acquisisci e importa** usa la stessa persistenza atomica e, soltanto dopo
+  completamento e validazione, avvia automaticamente Tecnocloud.
+- I checkpoint `dry_run` storici restano riprendibili in compatibilita', ma non
+  sono il percorso normale del desktop.
 - Una variante fallita non viene interpretata come vuota e mette in pausa la run sulla stessa variante.
 - Una run reale incompleta resta salvata e correggibile; non avvia l'import.
 
@@ -496,6 +503,16 @@ mostrata nel tooltip. Contatori, dettaglio della pausa e cursore di ripartenza
 sono tutti calcolati dallo stesso ledger persistito: con due finestre la prima
 riga aperta puo' precedere altre righe gia' concluse, che alla ripresa vengono
 saltate senza essere importate di nuovo.
+
+Il desktop parte dal **Registro operativo**, non dal modulo di avvio. Ogni
+record mostra come badge le impostazioni immutabili, distingue l'acquisizione
+SISTER dall'import Cloud e offre l'azione coerente con la fase: `Continua
+acquisizione`, `Avvia import` o `Riprendi import`. La posizione e il numero di
+righe concluse sono dati separati: se la terza riga e' quella corrente, la UI
+mostra `riga 3 di N` e, separatamente, quante righe precedenti sono state
+salvate. Il checkpoint completo e' conservato anche nel job, quindi una
+specifica acquisizione puo' essere ripresa dal proprio record senza dipendere
+dall'ultimo lavoro aperto nel processo desktop.
 
 ### Schede Portoni
 

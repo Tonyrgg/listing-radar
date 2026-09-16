@@ -57,6 +57,12 @@ describe("Ricerca nominativo nel lookup", () => {
         </body>` });
       });
       await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const navigationWaits: Array<unknown> = [];
+      const originalGoto = page.goto.bind(page);
+      page.goto = ((url, options) => {
+        navigationWaits.push(options?.waitUntil);
+        return originalGoto(url, options);
+      }) as typeof page.goto;
       const progress: string[] = [];
       const found = await new TecnocloudUiV2Port(page).listPropertiesByStreet("via cesare cantù", (item) => progress.push(`${item.phase}:${item.current}/${item.total}`));
       expect(found.map((property) => property.id)).toEqual(["property-1", "property-2"]);
@@ -64,6 +70,7 @@ describe("Ricerca nominativo nel lookup", () => {
       expect(applied).toEqual(["|via cesare cantù"]);
       expect(page.url()).not.toContain("global-search");
       expect(progress).toContain("reading:2/2");
+      expect(navigationWaits).toEqual(["commit", "commit", "commit"]);
     } finally {
       await browser.close();
     }

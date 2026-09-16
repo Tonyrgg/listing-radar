@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
+  summarizeStreetAcquisition,
 } from "../src/desktop/state-projection.js";
 import type { SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
 
@@ -35,7 +36,12 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(main).not.toContain("MAX_ACQUISIZIONI_CONSERVATE");
     expect(main).not.toContain("assertSpazioPerConservare");
     expect(renderer).toContain('$("jobCount").textContent = String(conservate)');
-    expect(renderer).toContain("Run mai avviata");
+    expect(renderer).toContain("Pronta per l'import");
+    expect(renderer).toContain("Continua acquisizione");
+    expect(renderer).toContain("data-resume-acquisition");
+    expect(main).toContain('ipcMain.handle("desktop:resume-acquisition"');
+    expect(main).toContain("acquisitionCheckpoint: checkpoint");
+    expect(main).toContain('status: "paused"');
     expect(renderer).toContain("Prima riga aperta");
     expect(renderer).toContain("ancora aperte");
     expect(renderer).toContain("non sono consecutive");
@@ -117,5 +123,61 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(projected?.totalAcceptedProperties).toBe(2_000);
     expect(checkpoint.uniquePropertyKeys).toHaveLength(2);
     expect(checkpoint.results[0]?.propertyKeys).toHaveLength(2);
+  });
+
+  it("separa posizione corrente e righe concluse nell'acquisizione", () => {
+    const checkpoint: SisterStreetRunCheckpoint = {
+      version: 4,
+      strategy: "bulk_exact_variants",
+      mode: "live",
+      importJobId: "job-1",
+      requestedStreet: "VIA TEST",
+      municipality: "BITONTO",
+      status: "paused",
+      startedAt: "2026-09-16T10:00:00.000Z",
+      updatedAt: "2026-09-16T10:01:00.000Z",
+      completedAt: null,
+      nextCivicNumber: 1,
+      currentVariantIndex: 0,
+      emptyWindow: 0,
+      consecutiveEmptyByVariant: {},
+      variants: [{ key: "test", sourceId: "1", value: "1", text: "VIA TEST" }],
+      results: [{
+        civicNumber: null,
+        variantKey: "test",
+        variantSourceId: "1",
+        outcome: "paused",
+        rawRecords: 150,
+        acceptedProperties: 2,
+        propertyKeys: ["p1", "p2"],
+        ownersRead: 2,
+        skippedPropertyRows: 0,
+        warnings: [],
+        elapsedMs: 1000,
+        recordLedger: [
+          { index: 1, key: "p1", label: "Via Test 1", ownerNames: ["LUIGI VERDI"], status: "completed", anomaly: null, completedAt: "2026-09-16T10:00:10.000Z" },
+          { index: 2, key: "p2", label: "Via Test 2", ownerNames: ["ANNA BIANCHI"], status: "completed", anomaly: null, completedAt: "2026-09-16T10:00:20.000Z" },
+        ],
+        cursor: { position: 3, total: 150, key: "p3", label: "Via Test 3", ownerNames: ["MARIO ROSSI"] },
+      }],
+      totalRawRecords: 150,
+      totalAcceptedOccurrences: 2,
+      totalAcceptedProperties: 2,
+      uniquePropertyKeys: ["p1", "p2"],
+      totalOwnersRead: 2,
+      totalSkippedPropertyRows: 0,
+      lastError: null,
+      inferredLastUsefulCivic: null,
+    };
+
+    expect(summarizeStreetAcquisition(checkpoint)).toEqual(expect.objectContaining({
+      state: "paused",
+      position: 3,
+      total: 150,
+      completed: 2,
+      remaining: 148,
+      currentLabel: "Via Test 3",
+      currentOwnerNames: ["MARIO ROSSI"],
+    }));
   });
 });

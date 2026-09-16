@@ -123,8 +123,16 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       }).run("VIA TEST", first);
 
       expect(first).toMatchObject({ status: "paused", totalAcceptedProperties: 1, totalOwnersRead: 1 });
+      expect(first.results[0]?.recordLedger).toMatchObject([{
+        index: 1,
+        ownerNames: ["ROSSI MARIO"],
+        status: "completed",
+      }]);
+      expect(first.results[0]?.cursor).toMatchObject({ position: 2, total: 2 });
       expect(firstAcquired).toEqual(["100"]);
       expect(resumed).toMatchObject({ status: "completed", totalAcceptedProperties: 2, totalOwnersRead: 2 });
+      expect(resumed.results[0]?.recordLedger).toHaveLength(2);
+      expect(resumed.results[0]?.cursor).toBeNull();
       expect(resumedAcquired).toEqual(["200"]);
       expect(await page.locator('select[name="indirizzoSel"]').count()).toBe(1);
     } finally {

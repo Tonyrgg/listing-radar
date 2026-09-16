@@ -1833,6 +1833,31 @@ dialog[open] {
  * dove si torna, quindi non deve sembrare un capitolo nuovo. */
 .run-keepsakes { margin-top: var(--lr-space-5); }
 
+.acquisition-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.acquisition-badges > span {
+  border: 1px solid color-mix(in srgb, var(--lr-accent) 38%, transparent);
+  border-radius: 999px;
+  color: var(--lr-ink-2);
+  font-family: var(--lr-font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.ledger-state > b,
+.ledger-state > small { display: block; }
+.ledger-state > small { margin-top: 4px; color: var(--lr-ink-3); line-height: 1.35; }
+.acquisition-detail { margin-block: var(--lr-space-3); }
+.acquisition-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--lr-space-3); margin-bottom: var(--lr-space-2); }
+.acquisition-detail h3 { margin: 2px 0 3px; }
+
 .network-toggle-row {
   grid-column: 1 / -1;
   display: grid;
@@ -3367,9 +3392,9 @@ body[data-fase="finita"] .run-launcher { display: none; }
 .ledger-row {
   display: grid;
   align-items: center;
-  gap: var(--lr-space-4);
+  gap: var(--lr-space-3);
   padding: 0 var(--lr-space-4);
-  grid-template-columns: 24px minmax(0, 1fr) 96px 108px minmax(0, 1.1fr) auto;
+  grid-template-columns: 24px minmax(260px, 1.2fr) 72px 92px minmax(220px, 1fr) minmax(140px, auto);
 }
 
 .ledger-head {
@@ -3452,7 +3477,7 @@ body[data-fase="finita"] .run-launcher { display: none; }
   white-space: nowrap;
 }
 
-.ledger-place small { color: var(--lr-ink-3); font-family: var(--lr-font-mono); }
+.ledger-place small { color: var(--lr-ink-3); font-family: var(--lr-font-mono); line-height: 1.45; }
 
 .ledger-figure {
   font-family: var(--lr-font-mono);
@@ -3463,18 +3488,18 @@ body[data-fase="finita"] .run-launcher { display: none; }
 
 .ledger-state {
   min-width: 0;
-  overflow: hidden;
   color: var(--lr-ink-2);
   font-size: var(--lr-text-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .ledger-actions {
   display: flex;
   flex: none;
-  gap: var(--lr-space-3);
-  justify-content: flex-end;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
 }
 
 @media (max-width: 1000px) {

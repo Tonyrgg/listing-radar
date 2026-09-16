@@ -49,6 +49,51 @@ export type CompletedImportSummary = {
   skippedPeople: number;
 };
 
+export type AcquisitionProgressSummary = {
+  state: "running" | "paused" | "completed" | "failed";
+  position: number | null;
+  total: number;
+  totalIsFinal: boolean;
+  completed: number;
+  completedWithAnomalies: number;
+  skipped: number;
+  remaining: number;
+  currentLabel: string | null;
+  currentOwnerNames: string[];
+  variant: number;
+  variants: number;
+};
+
+/** A single, deterministic vocabulary for every acquisition counter shown by the UI. */
+export function summarizeStreetAcquisition(
+  checkpoint: SisterStreetRunCheckpoint,
+): AcquisitionProgressSummary {
+  const records = checkpoint.results.flatMap((result) => result.recordLedger ?? []);
+  const activeResult = checkpoint.results.find((result) => result.cursor)
+    ?? checkpoint.results.find((result) => result.outcome === "paused")
+    ?? null;
+  const knownTotal = checkpoint.results.reduce((sum, result) => sum + Number(result.rawRecords || 0), 0);
+  const completed = records.filter((record) => record.status === "completed").length;
+  const completedWithAnomalies = records.filter((record) => record.status === "completed_with_anomalies").length;
+  const skipped = records.filter((record) => record.status === "skipped").length;
+  const handled = completed + completedWithAnomalies + skipped;
+  const cursor = activeResult?.cursor ?? null;
+  return {
+    state: checkpoint.status,
+    position: cursor?.position ?? (checkpoint.status === "completed" ? knownTotal : handled ? handled + 1 : null),
+    total: knownTotal,
+    totalIsFinal: checkpoint.status === "completed" || checkpoint.currentVariantIndex >= checkpoint.variants.length - 1,
+    completed,
+    completedWithAnomalies,
+    skipped,
+    remaining: Math.max(0, knownTotal - handled),
+    currentLabel: cursor?.label ?? null,
+    currentOwnerNames: cursor?.ownerNames ?? [],
+    variant: Math.min(checkpoint.currentVariantIndex + 1, Math.max(1, checkpoint.variants.length)),
+    variants: checkpoint.variants.length,
+  };
+}
+
 type CompletedGraph = {
   properties: Array<{
     id: string;

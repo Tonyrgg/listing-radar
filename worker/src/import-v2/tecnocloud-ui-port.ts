@@ -369,7 +369,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   private async navigate(pathname: string): Promise<void> {
-    await this.page.goto(this.url(pathname), { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // Lightning can keep the document lifecycle open while its application
+    // shell is already committed and usable. Waiting for domcontentloaded here
+    // produced false 30s timeouts, especially after returning from a record
+    // detail. The destination UI is verified by every caller, so navigation
+    // only needs an acknowledged document commit.
+    await this.page.goto(this.url(pathname), { waitUntil: "commit", timeout: 30_000 });
     await this.assertSession();
   }
 
@@ -401,7 +406,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async openPerson(personId: string): Promise<void> {
     if (!sameCrmRecordId(recordIdFromUrl(this.page.url(), "account"), personId)) {
-      await this.page.goto(this.personUrl(personId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await this.page.goto(this.personUrl(personId), { waitUntil: "commit", timeout: 30_000 });
     }
     await this.assertSession();
     await this.page.locator("body").waitFor({ state: "visible", timeout: 10_000 });
@@ -1338,7 +1343,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async openProperty(propertyId: string): Promise<void> {
     if (!sameCrmRecordId(recordIdFromUrl(this.page.url(), "immobile"), propertyId)) {
-      await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "commit", timeout: 30_000 });
     }
     await this.assertSession();
     await this.page.getByText("Indirizzo Completo Immobile", { exact: false }).first().waitFor({ state: "visible", timeout: 20_000 });

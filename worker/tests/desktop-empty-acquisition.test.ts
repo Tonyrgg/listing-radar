@@ -5,11 +5,8 @@ import { describe, expect, it } from "vitest";
 import { WorkerRepository } from "../src/services/repository.js";
 
 /**
- * Una run che muore al primo passo non deve lasciare un'acquisizione finta.
- *
- * La lavorazione nasce prima della run e `setJobContext` la porta subito a
- * «running»: se poi la run si ferma — SISTER non preparato, nessun seme da cui
- * partire — quella riga restava fra le «Pronte da importare» con zero immobili.
+ * Anche una run che si ferma prima della prima riga e' un fatto operativo:
+ * il registro la conserva con zero elementi e con la causa del blocco.
  */
 describe("acquisizioni interrotte senza nulla dentro", () => {
   it("conta immobili e persone della lavorazione senza scaricarne le righe", async () => {
@@ -53,11 +50,12 @@ describe("acquisizioni interrotte senza nulla dentro", () => {
     await expect(repository.countAcquisition("job-1")).resolves.toEqual({ properties: 0, people: 0 });
   });
 
-  it("elimina la lavorazione vuota e conserva quella con immobili già raccolti", () => {
+  it("conserva anche la lavorazione vuota e aggiorna i totali reali", () => {
     const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
 
     expect(main).toContain("async function chiudiAcquisizioneInterrotta(jobId: string | null, motivo: string)");
-    expect(main).toMatch(/if \(!totali\.properties\) \{\s*await repo\.deleteJob\(jobId\);/);
+    expect(main).toMatch(/if \(!totali\.properties\) \{\s*await repo\.updateJob\(jobId,/);
+    expect(main).toContain("Acquisizione interrotta prima della prima riga");
     /* Con qualcosa dentro la riga resta, ma con i totali veri: durante la run
      * non vengono aggiornati, e mostrerebbe zero immobili pur avendone. */
     expect(main).toMatch(/total_properties: totali\.properties,\s*total_people: totali\.people,\s*status: "paused",/);
@@ -71,6 +69,15 @@ describe("acquisizioni interrotte senza nulla dentro", () => {
     /* Anche fermare la run a mano lasciava la stessa riga vuota. */
     expect(main).toContain(`await chiudiAcquisizioneInterrotta(streetImportJobId, "Run via interrotta dall'operatore.");`);
     expect(main).toContain("let networkImportJobId: string | null = null;");
+  });
+
+  it("crea il record della via prima di collegarsi a Chrome", () => {
+    const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
+    const street = main.slice(main.indexOf("async function runSisterStreet("), main.indexOf("async function runPortoni("));
+    const record = street.indexOf('createJob("automatic")');
+    const browser = street.indexOf("connectToChrome(config.CHROME_CDP_URL");
+    expect(record).toBeGreaterThan(-1);
+    expect(browser).toBeGreaterThan(record);
   });
 
   it("legge i semi della rete prima di aprire il browser e di creare la lavorazione", () => {
