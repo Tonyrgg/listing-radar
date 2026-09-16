@@ -75,19 +75,11 @@
           <div id="checksGrid" class="checks-grid is-hidden"></div>
         </section>
 
-        <nav class="worker-flow" aria-label="Percorso del lavoro">
-          <ol>
-            <li data-worker-flow="prepare"><span>1</span><div><b>Prepara</b><small>Scegli regole e sorgente</small></div></li>
-            <li data-worker-flow="acquire"><span>2</span><div><b>Acquisisci</b><small>Leggi e conserva da SISTER</small></div></li>
-            <li data-worker-flow="review"><span>3</span><div><b>Verifica</b><small>Controlla la coda salvata</small></div></li>
-            <li data-worker-flow="import"><span>4</span><div><b>Importa</b><small>Scrivi e verifica nel Cloud</small></div></li>
-          </ol>
-        </nav>
-
         <section id="operationConsole" class="operation-console" aria-label="Operazione in corso">
           <header class="operation-console-header"><div><p class="eyebrow">Centro operativo</p><h2>Operazione in corso</h2></div><span class="operation-console-live"><i></i>Live</span></header>
-          <div id="operationConsoleBody" class="operation-console-body"></div>
+          <div id="operationConsoleBody" class="operation-console-body"><div id="operationConsoleMain" class="operation-console-main"></div><aside class="operation-queue-pane"><header><div><p class="eyebrow">Coda della run</p><h3 id="operationQueueTitle">Record in lavorazione</h3></div><strong id="operationQueuePosition">—</strong></header><div id="operationQueue" class="operation-queue"><p class="empty-message">La coda comparirà quando parte la lavorazione.</p></div></aside></div>
         </section>
+        <section id="runAlertsPanel" class="run-alerts-panel is-hidden" aria-live="polite"><header><div><p class="eyebrow">Questa run</p><h2>Errori e avvertenze</h2></div><span id="runAlertCount" class="count">0</span></header><div id="runAlertList"></div></section>
 
         <section id="commandMonitor" class="command-monitor is-idle" aria-live="polite" aria-atomic="true">
           <div class="command-monitor-indicator"><span></span></div>
@@ -418,7 +410,7 @@
 
         <section id="jobs" class="jobs-card run-keepsakes">
           <header><div><p class="eyebrow">1 · Registro operativo</p><h2>Acquisizioni raccolte</h2><p>Qui nasce e resta ogni lavoro: acquisisci oggi, controlla o importa quando vuoi, riprendi dal punto esatto anche un altro giorno.</p></div><span id="jobCount" class="count">0</span></header>
-          <div class="ledger"><div class="ledger-head"><span></span><span>Acquisizione</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna acquisizione raccolta. Preparane una: il record verrà creato prima di iniziare a leggere SISTER.</p></div></div>
+          <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Acquisizione</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna acquisizione raccolta. Preparane una: il record verrà creato prima di iniziare a leggere SISTER.</p></div></div>
         </section>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
@@ -444,7 +436,7 @@
           <div class="section-body refinement-layout">
             <section class="refinement-card">
               <header><div><p class="eyebrow">1 · Registro Rifinitura</p><h2>Rifiniture salvate</h2><p>Qui compaiono soltanto le vie acquisite per la rifinitura. Impostazioni, avanzamento e anomalie restano fissati alla singola run.</p></div><span id="refinementJobCount" class="count">0</span></header>
-              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="refinementJobsList"><p class="empty-message">Nessuna rifinitura salvata.</p></div></div>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Rifinitura</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="refinementJobsList"><p class="empty-message">Nessuna rifinitura salvata.</p></div></div>
             </section>
             <section class="refinement-card">
               <header>
@@ -600,16 +592,23 @@
     <dialog id="importDialog" class="review-dialog">
       <div class="dialog-shell wide">
         <header><div><p class="eyebrow">Prima di importare</p><h2 id="importDialogTitle">Controlla cosa stai per scrivere</h2><p id="importDialogMeta"></p></div><button class="icon-button" data-import-dialog="close" aria-label="Chiudi">×</button></header>
-        <div class="import-settings" aria-label="Opzioni di questa importazione">
+        <div class="dialog-scroll-region"><div id="importCapabilities" class="run-capabilities" aria-label="Dati disponibili in questa acquisizione"></div><div class="import-settings" aria-label="Opzioni di questa importazione">
           <div class="import-setting-row">
             <div class="activity-mode-copy"><b>Attività nel gestionale</b><small id="importActivityHelp">Puoi cambiarla adesso: vale per questa importazione.</small></div>
             <div class="segmented activity-mode-choices" id="importActivityChoices" role="radiogroup" aria-label="Attività nel gestionale per questo import"><button type="button" data-import-activity="direct_contact" role="radio" aria-checked="true" class="is-selected">Autocompila</button><button type="button" data-import-activity="plain" role="radio" aria-checked="false">Generica</button><button type="button" data-import-activity="killer" role="radio" aria-checked="false">Killer</button><button type="button" data-import-activity="none" role="radio" aria-checked="false">Nessuna</button></div>
           </div>
           <label class="import-setting-row" for="importCoOwnersToggle"><div class="activity-mode-copy"><b>Importa i comproprietari</b><small>Collega tutti gli intestatari SISTER con la rispettiva quota.</small></div><input id="importCoOwnersToggle" type="checkbox" checked /></label>
           <label class="import-setting-row" for="importParallelCloudToggle"><div class="activity-mode-copy"><b>Due finestre Cloud</b><small>Distribuisce gli immobili indipendenti su due pagine; quelli collegati restano insieme.</small></div><input id="importParallelCloudToggle" type="checkbox" /></label>
-        </div>
-        <div id="importDialogContent" class="review-content"></div>
+        </div><div id="importDialogContent" class="review-content"></div></div>
         <footer><p id="importDialogWarning">L'import scrive davvero nel gestionale.</p><div><button class="button secondary" data-import-dialog="close">Torna indietro</button><button class="button primary" data-import-dialog="confirm">Importa adesso</button></div></footer>
+      </div>
+    </dialog>
+
+    <dialog id="jobDetailDialog" class="review-dialog">
+      <div class="dialog-shell wide detail-dialog-shell">
+        <header><div><p id="jobDetailEyebrow" class="eyebrow">Dettaglio lavoro</p><h2 id="jobDetailTitle">Immobili e proprietari</h2><p id="jobDetailMeta"></p></div><button class="icon-button" data-job-detail="close" aria-label="Chiudi">×</button></header>
+        <div id="jobDetailContent" class="dialog-scroll-region review-content"></div>
+        <footer><p id="jobDetailFooterNote">Impostazioni e avanzamento appartengono a questa run.</p><div><button class="button secondary" data-job-detail="close">Chiudi</button><button id="jobDetailPrimary" class="button primary is-hidden">Riprendi</button></div></footer>
       </div>
     </dialog>
 

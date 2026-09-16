@@ -609,33 +609,50 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (canonicalTaxCode(submittedTerm) !== expected) {
           throw new ImportV2Error("La ricerca CF è partita senza il codice fiscale confermato. Import in pausa senza creare duplicati.", "global_portal", { global: true });
         }
-        const links = this.page.locator('a[data-refid="recordId"][data-recordid][href*="/s/account/"]').filter({ visible: true });
+        // Lightning cambia periodicamente gli attributi interni dei risultati.
+        // Il percorso del record e' l'unica prova stabile; il CF verra' comunque
+        // riletto nella scheda prima di accettare il nominativo.
+        const links = this.page.locator('a[data-recordid][href*="/s/account/"], a[data-refid="recordId"][href*="/s/account/"], [data-recordid] a[href*="/s/account/"]').filter({ visible: true });
         let unique: Array<{ id: string; href: string }> = [];
         let signature = "";
         let stable = 0;
         let confirmedEmpty = false;
-        for (let wait = 0; wait < 60 && stable < 3; wait += 1) {
-          await this.assertSession();
-          await this.assertSearchHealthy(requests.failed());
-          const records = await links.evaluateAll((elements) => elements.flatMap((element) => {
-            const href = element.getAttribute("href") ?? "";
-            const id = element.getAttribute("data-recordid") ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
-            return id ? [{ id, href }] : [];
-          }));
-          unique = [...new Map(records.map((record) => [record.id, record])).values()];
-          // Read the result components themselves: body.innerText can join
-          // Clienti and 0 without whitespace, or omit nested shadow-root text.
-          const emptyClients = this.page.getByText(/Clienti\s*[:(]?\s*0\s*\)?\s*risultat[io]\b/i).filter({ visible: true });
-          const emptyMessages = this.page.getByText(/^(?:Nessun risultato|Non (?:sono stati trovati|è stato trovato|e stato trovato) risultat[io])/i).filter({ visible: true });
-          const queryEmpty = (await emptyMessages.allTextContents()).some(message =>
-            normalized(message).includes(expected) && !/\bIMMOBILI\b|\bRICHIESTE\b|\bATTIVITA\b/.test(normalized(message)));
-          const ready = await this.page.getByText("Risultati di ricerca", { exact: false }).filter({ visible: true }).count() > 0;
-          confirmedEmpty = (ready && await emptyClients.count() > 0) || queryEmpty;
-          const busy = requests.pending() || await this.searchIsBusy();
-          const currentSignature = busy ? "loading" : unique.length ? JSON.stringify(unique.map((record) => record.id).sort()) : confirmedEmpty ? "empty" : "loading";
-          stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
-          signature = currentSignature;
-          if (stable < 3) await this.pauseAwareWait(200);
+        for (let attempt = 0; attempt < 2 && stable < 3; attempt += 1) {
+          for (let wait = 0; wait < 35 && stable < 3; wait += 1) {
+            await this.assertSession();
+            await this.assertSearchHealthy(requests.failed());
+            const records = await links.evaluateAll((elements) => elements.flatMap((element) => {
+              const href = element.getAttribute("href") ?? "";
+              const id = element.getAttribute("data-recordid") ?? element.closest("[data-recordid]")?.getAttribute("data-recordid") ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
+              return id && !/^Account$/i.test(id) ? [{ id, href }] : [];
+            }));
+            unique = [...new Map(records.map((record) => [record.id, record])).values()];
+            const emptyClients = this.page.getByText(/Clienti\s*[:(]?\s*0\s*\)?(?:\s*risultat[io])?\b/i).filter({ visible: true });
+            const emptyMessages = this.page.getByText(/^(?:Nessun risultato|Non (?:sono stati trovati|è stato trovato|e stato trovato) risultat[io])/i).filter({ visible: true });
+            const queryEmpty = (await emptyMessages.allTextContents()).some(message =>
+              normalized(message).includes(expected) && !/\bIMMOBILI\b|\bRICHIESTE\b|\bATTIVITA\b/.test(normalized(message)));
+            const ready = await this.page.getByText("Risultati di ricerca", { exact: false }).filter({ visible: true }).count() > 0;
+            confirmedEmpty = (ready && await emptyClients.count() > 0) || queryEmpty;
+            // Una richiesta Lightning di telemetria puo' restare aperta anche
+            // quando il risultato e' gia' stabile. Conta solo lo spinner della
+            // superficie, poi verifica ogni CF aprendo il record.
+            // Uno zero non e' definitivo mentre la richiesta che puo' ancora
+            // popolare i Clienti e' aperta. Un record visibile, invece, e'
+            // prova sufficiente anche se Lightning tiene viva la telemetria.
+            const busy = await this.searchIsBusy() || (!unique.length && requests.pending());
+            const currentSignature = busy ? "loading" : unique.length ? JSON.stringify(unique.map((record) => record.id).sort()) : confirmedEmpty ? "empty" : "loading";
+            stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
+            signature = currentSignature;
+            if (stable < 3) await this.pauseAwareWait(200);
+          }
+          if (stable >= 3) break;
+          // Un solo recupero controllato: ricarica esattamente la stessa
+          // ricerca CF, senza cambiare query e senza creare alcun nominativo.
+          requests.stop();
+          requests = this.watchSearchRequests();
+          await this.page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+          signature = "";
+          stable = 0;
         }
         if (stable < 3 || (!unique.length && !confirmedEmpty)) {
           throw new ImportV2Error("La ricerca CF non ha confermato né un nominativo né l'assenza di risultati. Import in pausa sulla ricerca corrente.", "global_portal", { global: true });
