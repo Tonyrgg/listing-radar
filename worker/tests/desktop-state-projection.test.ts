@@ -141,7 +141,7 @@ describe("proiezione leggera dello stato desktop", () => {
       currentVariantIndex: 0,
       emptyWindow: 0,
       consecutiveEmptyByVariant: {},
-      variants: [{ key: "test", sourceId: "1", value: "1", text: "VIA TEST" }],
+      variants: [{ key: "test", sourceId: "1", value: "1", text: "VIA TEST", occurrence: 0 }],
       results: [{
         civicNumber: null,
         variantKey: "test",

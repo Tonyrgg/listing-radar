@@ -21,6 +21,24 @@ const baseState = {
     total_properties: 3, processed_properties: 2, total_people: 1,
     saved_at: new Date().toISOString(), import_started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     acquisition: { kind: "street", importOptions: { activityMode: "plain", importCoOwners: true, parallelCrmWindows: false } },
+  }, {
+    id: "77777777-7777-4777-8777-777777777777", mode: "automatic", status: "paused",
+    current_step: "ready", last_completed_step: null,
+    municipality: "BITONTO", street: "Via Raffaele Comes", civic_number: null,
+    total_properties: 2, processed_properties: 0, total_people: 2,
+    saved_at: new Date().toISOString(), import_started_at: null, updated_at: new Date().toISOString(),
+    acquisition: {
+      engine: "lavorazione", strategy: "bulk_exact_variants",
+      runSettings: { street: "Via Raffaele Comes", expandAllOwners: true, keepAcquisition: true, filters: { residentialOnly: true } },
+      importOptions: { activityMode: "killer", importCoOwners: true, parallelCrmWindows: true },
+      acquisitionProgress: {
+        state: "paused", position: 3, total: 150, totalIsFinal: true,
+        completed: 2, completedWithAnomalies: 0, skipped: 0, remaining: 148,
+        currentLabel: "Via Raffaele Comes 8 · F. 42 · P. 180 · S. 3",
+        currentOwnerNames: ["Mario Rossi"], variant: 1, variants: 1,
+      },
+      acquisitionCheckpoint: { results: [{ recordLedger: [] }] },
+    },
   }], completedImports: [], version: "0.5.0",
   streetRun: { active: false, cancelling: false, checkpoint: null, lastError: null },
   refinement: {
@@ -197,6 +215,8 @@ await page.screenshot({ path: path.join(output, "ready-mobile.png"), fullPage: t
 const readyMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.setViewportSize({ width: 1440, height: 1000 });
 const stoppedRunVisible = await page.getByText(/Interrotta · 2 eseguite.*1 aperta/).count();
+const exactAcquisitionCursorVisible = await page.getByText("Riparte dalla riga 3 di 150", { exact: true }).count();
+const exactAcquisitionOwnerVisible = await page.getByText(/Prossimo record: Mario Rossi/).count();
 await page.locator('[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
 await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
 const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
@@ -324,7 +344,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -332,6 +352,7 @@ const failures = [
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible < 1 ? ["Stato o riga di ripartenza della run non visibili"] : []),
+  ...(exactAcquisitionCursorVisible !== 1 || exactAcquisitionOwnerVisible < 1 ? ["Checkpoint SISTER esatto o prossimo nominativo non visibili"] : []),
   ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || lockedImportExplanationVisible < 1 ? ["Le impostazioni della run interrotta non sono visibili e bloccate"] : []),
   ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== true || workerCalls.resumeJobValues?.parallelCrmWindows !== false
     ? ["La ripresa non conserva le tre impostazioni originarie"] : []),

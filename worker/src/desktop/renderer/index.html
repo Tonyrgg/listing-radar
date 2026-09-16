@@ -403,7 +403,7 @@
 
         <section id="jobs" class="jobs-card run-keepsakes">
           <header><div><p class="eyebrow">1 · Registro operativo</p><h2>Acquisizioni raccolte</h2><p>Qui nasce e resta ogni lavoro: acquisisci oggi, controlla o importa quando vuoi, riprendi dal punto esatto anche un altro giorno.</p></div><span id="jobCount" class="count">0</span></header>
-          <div class="ledger"><div class="ledger-head"><span></span><span>Acquisizione</span><span>Righe</span><span>Proprietari</span><span>Posizione esatta</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna acquisizione raccolta. Preparane una: il record verrà creato prima di iniziare a leggere SISTER.</p></div></div>
+          <div class="ledger"><div class="ledger-head"><span></span><span>Acquisizione</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="jobsList" class="jobs-list"><p class="empty-message">Nessuna acquisizione raccolta. Preparane una: il record verrà creato prima di iniziare a leggere SISTER.</p></div></div>
         </section>
 
         <!-- Adesso: quello che sta succedendo, e cosa serve da te. -->
@@ -428,8 +428,12 @@
           <summary>Rifinitura vie già importate</summary>
           <div class="section-body refinement-layout">
             <section class="refinement-card">
+              <header><div><p class="eyebrow">1 · Registro Rifinitura</p><h2>Rifiniture salvate</h2><p>Qui compaiono soltanto le vie acquisite per la rifinitura. Impostazioni, avanzamento e anomalie restano fissati alla singola run.</p></div><span id="refinementJobCount" class="count">0</span></header>
+              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Righe note</span><span>Proprietari salvati</span><span>Posizione esatta</span><span></span></div><div id="refinementJobsList"><p class="empty-message">Nessuna rifinitura salvata.</p></div></div>
+            </section>
+            <section class="refinement-card">
               <header>
-                <div><p class="eyebrow">Verifica property-first</p><h2>Rifinisci una via esistente</h2><p>Confronta il catasto SISTER con l’inventario completo degli immobili già presenti nel Cloud. Non crea nuove schede immobili.</p></div>
+                <div><p class="eyebrow">2 · Nuova acquisizione</p><h2>Rifinisci una via esistente</h2><p>Confronta il catasto SISTER con l’inventario completo degli immobili già presenti nel Cloud. Non crea nuove schede immobili.</p></div>
                 <span id="refinementBadge" class="status-pill is-idle"><span></span>Pronto</span>
               </header>
               <div class="refinement-launcher">
@@ -448,11 +452,7 @@
               <p id="refinementError" class="street-registry-error is-hidden" role="alert"></p>
             </section>
             <section class="refinement-card">
-              <header><div><p class="eyebrow">Coda Rifinitura</p><h2>Rifiniture salvate</h2><p>Qui compaiono soltanto le vie acquisite per la rifinitura. Impostazioni, avanzamento e anomalie restano fissati alla singola run.</p></div><span id="refinementJobCount" class="count">0</span></header>
-              <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Immobili</span><span>Nominativi</span><span>Stato</span><span></span></div><div id="refinementJobsList"><p class="empty-message">Nessuna rifinitura salvata.</p></div></div>
-            </section>
-            <section class="refinement-card">
-              <header><div><p class="eyebrow">Archivio Rifinitura</p><h2>Rifiniture concluse</h2><p>Una memoria separata dalle importazioni ordinarie, con il riepilogo di ogni immobile verificato.</p></div><span id="refinementCompletedCount" class="count">0</span></header>
+              <header><div><p class="eyebrow">3 · Archivio Rifinitura</p><h2>Rifiniture concluse</h2><p>Una memoria separata dalle importazioni ordinarie, con il riepilogo di ogni immobile verificato.</p></div><span id="refinementCompletedCount" class="count">0</span></header>
               <div class="ledger"><div class="ledger-head"><span></span><span>Via</span><span>Immobili</span><span>Nominativi</span><span>Esito</span><span></span></div><div id="refinementCompletedList"><p class="empty-message">Le rifiniture concluse compariranno qui.</p></div></div>
               <footer class="completed-imports-footer"><button id="refinementCompletedLoadMore" class="button secondary is-hidden">Carica altre rifiniture</button></footer>
             </section>
@@ -472,7 +472,16 @@
           <summary>Schede Portoni</summary>
           <div class="section-body portoni-layout">
             <section class="portoni-card">
-              <header><div><p class="eyebrow">Nuova scheda</p><h2>Acquisisci un portone</h2><p>Legge da SISTER gli immobili della via, li ordina per civico e abbina i soli recapiti presenti nel file Excel. Il gestionale non viene aperto.</p></div><span id="portoniBadge" class="status-pill is-idle"><span></span>Pronto</span></header>
+              <header><div><p class="eyebrow">1 · Registro Portoni</p><h2>Schede raccolte</h2><p>Ogni acquisizione resta riprendibile e modificabile; ogni PDF generato è una fotografia pronta da stampare.</p></div><span id="portoniCount" class="count">0</span></header>
+              <div id="portoniHistory" class="portoni-history"><p class="empty-message">Nessuna scheda raccolta. Il record verrà creato prima di iniziare a leggere SISTER.</p></div>
+            </section>
+            <section id="portoniEditor" class="portoni-card is-hidden">
+              <header><div><p class="eyebrow">2 · Record selezionato</p><h2 id="portoniEditorTitle">Portoni</h2><p>Correggi i dati operativi. I valori SISTER restano visibili come riferimento.</p></div><div class="portoni-actions"><button id="portoniSave" class="button secondary">Salva bozza</button><button id="portoniGenerate" class="button primary">Genera PDF</button><button id="portoniToggle" class="icon-button portoni-toggle" aria-label="Comprimi tabella" aria-expanded="true">⌃</button></div></header>
+              <div id="portoniRunSummary" class="run-settings-snapshot"></div>
+              <div id="portoniEditorBody"><div class="portoni-table-wrap"><table class="portoni-table"><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Esito</th><th>Data visita</th><th>Note</th><th>Stato</th></tr></thead><tbody id="portoniRows"></tbody></table></div></div>
+            </section>
+            <section class="portoni-card">
+              <header><div><p class="eyebrow">3 · Nuova acquisizione</p><h2>Acquisisci un portone</h2><p>Legge da SISTER gli immobili della via, li ordina per civico e abbina i soli recapiti presenti nel file Excel. Il gestionale non viene aperto.</p></div><span id="portoniBadge" class="status-pill is-idle"><span></span>Pronto</span></header>
               <div class="portoni-launcher"><label>Via completa<input id="portoniStreet" type="text" autocomplete="off" placeholder="es. via luigi castellucci" /></label><button id="portoniBlank" class="button secondary">Crea scheda vuota</button><button id="portoniCancel" class="button danger is-hidden">Metti in pausa</button><button id="portoniStart" class="button primary">Acquisisci da SISTER</button></div>
               <fieldset class="street-run-filters portoni-filters">
                 <legend>Affina il portone <small>Facoltativo: scegli categorie, piano e intervallo civici.</small></legend>
@@ -484,15 +493,6 @@
               </fieldset>
               <div id="portoniProgress" class="street-run-progress is-hidden"><span></span></div>
               <p id="portoniError" class="street-registry-error is-hidden" role="alert"></p>
-            </section>
-            <section id="portoniEditor" class="portoni-card is-hidden">
-              <header><div><p class="eyebrow">Scheda modificabile</p><h2 id="portoniEditorTitle">Portoni</h2><p>Correggi i dati operativi. I valori SISTER restano visibili come riferimento.</p></div><div class="portoni-actions"><button id="portoniSave" class="button secondary">Salva bozza</button><button id="portoniGenerate" class="button primary">Genera PDF</button><button id="portoniToggle" class="icon-button portoni-toggle" aria-label="Comprimi tabella" aria-expanded="true">⌃</button></div></header>
-              <div id="portoniRunSummary" class="run-settings-snapshot"></div>
-              <div id="portoniEditorBody"><div class="portoni-table-wrap"><table class="portoni-table"><thead><tr><th>Nominativi SISTER</th><th>Nominativi effettivi</th><th>Civico e scala</th><th>Piano e interno</th><th>Telefono</th><th>Esito</th><th>Data visita</th><th>Note</th><th>Stato</th></tr></thead><tbody id="portoniRows"></tbody></table></div></div>
-            </section>
-            <section class="portoni-card">
-              <header><div><p class="eyebrow">Archivio locale</p><h2>Cronologia Portoni</h2><p>Ogni scheda resta modificabile; ogni PDF generato è una fotografia pronta da stampare.</p></div><span id="portoniCount" class="count">0</span></header>
-              <div id="portoniHistory" class="portoni-history"><p class="empty-message">Le schede compariranno qui.</p></div>
             </section>
           </div>
         </details>

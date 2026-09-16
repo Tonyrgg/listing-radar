@@ -509,8 +509,10 @@ record mostra come badge le impostazioni immutabili, distingue l'acquisizione
 SISTER dall'import Cloud e offre l'azione coerente con la fase: `Continua
 acquisizione`, `Avvia import` o `Riprendi import`. La posizione e il numero di
 righe concluse sono dati separati: se la terza riga e' quella corrente, la UI
-mostra `riga 3 di N` e, separatamente, quante righe precedenti sono state
-salvate. Il checkpoint completo e' conservato anche nel job, quindi una
+mostra `Riparte dalla riga 3 di N`, il prossimo nominativo quando e' gia' stato
+letto e, separatamente, quante righe precedenti sono state salvate. Anche
+Rifinitura e Portoni mostrano il proprio registro prima del modulo per una
+nuova acquisizione. Il checkpoint completo e' conservato anche nel job, quindi una
 specifica acquisizione puo' essere ripresa dal proprio record senza dipendere
 dall'ultimo lavoro aperto nel processo desktop.
 

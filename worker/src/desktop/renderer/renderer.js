@@ -1307,16 +1307,18 @@ function badgeAcquisizione(acquisition) {
 function statoAcquisizione(progress) {
   if (!progress || progress.state === "completed") return null;
   const handled = Number(progress.completed || 0) + Number(progress.completedWithAnomalies || 0) + Number(progress.skipped || 0);
+  const action = progress.state === "running" ? "In lettura alla riga" : progress.state === "failed" ? "Interrotta alla riga" : "Riparte dalla riga";
   const position = progress.position && progress.total
-    ? `Fermo alla riga ${fmtCount(progress.position)} di ${fmtCount(progress.total)}${progress.totalIsFinal === false ? " note finora" : ""}`
+    ? `${action} ${fmtCount(progress.position)} di ${fmtCount(progress.total)}${progress.totalIsFinal === false ? " note finora" : ""}`
     : progress.total
       ? `${fmtCount(handled)} di ${fmtCount(progress.total)} righe gestite`
       : "Preparazione SISTER salvata";
-  const owner = progress.currentOwnerNames?.length ? ` · ${progress.currentOwnerNames.join(", ")}` : "";
-  const current = progress.currentLabel ? ` · ${progress.currentLabel}` : "";
+  const owner = progress.currentOwnerNames?.length ? progress.currentOwnerNames.join(", ") : "";
+  const current = progress.currentLabel ?? "";
+  const next = owner || current ? `Prossimo record: ${[owner, current].filter(Boolean).join(" · ")} · ` : "";
   return {
     title: position,
-    detail: `${fmtNamedCount(progress.completed, "salvata", "salvate")} · ${fmtNamedCount(progress.completedWithAnomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(progress.skipped, "esclusa", "escluse")} · ${fmtNamedCount(progress.remaining, "mancante", "mancanti")}${owner}${current}`,
+    detail: `${next}${fmtNamedCount(progress.completed, "salvata", "salvate")} · ${fmtNamedCount(progress.completedWithAnomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(progress.skipped, "esclusa", "escluse")} · ${fmtNamedCount(progress.remaining, "mancante", "mancanti")}`,
   };
 }
 
