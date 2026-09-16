@@ -43,6 +43,9 @@ describe("controlli di arresto desktop", () => {
     expect(main).toContain("propertyActivityMode: () => activityModeOverride ?? preferences.propertyActivityMode");
     expect(main).toContain("importCoOwners: () => importCoOwnersOverride ?? preferences.importCoOwners");
     expect(main).toContain("crmConcurrency: () => (parallelCrmWindowsOverride ?? preferences.parallelCrmWindows) ? 2 : 1");
+    expect(main).toContain("withResumedImportConcurrency(job.acquisition, chosen.parallelCrmWindows)");
+    expect(main).not.toContain("parallelCrmWindowsOverride = false");
+    expect(runner).not.toContain("La rifinitura usa una sola finestra Cloud");
     expect(renderer).toContain("parallelCrmWindows: toggle.checked");
     expect(renderer).toContain("importCoOwners,");
     expect(renderer).toContain("parallelCrmWindows: importParallelCloud");

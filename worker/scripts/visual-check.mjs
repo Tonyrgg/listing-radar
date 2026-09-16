@@ -219,8 +219,15 @@ const initialTheme = await page.locator("html").getAttribute("data-theme");
 await page.locator("#themeToggle").click();
 const darkThemeApplied = await page.locator("html").getAttribute("data-theme") === "dark";
 await page.locator("#themeToggle").click();
+await page.setViewportSize({ width: 1600, height: 1000 });
 await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
 const inspectorSelectionVisible = await page.locator("#inspectorTitle").getByText("BITONTO · Via Test", { exact: true }).count();
+await page.locator("#inspectorClose").click();
+const inspectorCloseWorks = await page.locator("body.inspector-closed").count() === 1 && !(await page.locator("#workspaceInspector").isVisible());
+await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
+const inspectorReopens = await page.locator("#workspaceInspector").isVisible();
+await page.setViewportSize({ width: 1440, height: 1000 });
+const mergedRunSetup = await page.locator(".run-launcher > #runControls").count();
 const stoppedRunVisible = await page.getByText(/Interrotta · 2 eseguite.*1 aperta/).count();
 const exactAcquisitionCursorVisible = await page.getByText("Riparte dalla riga 3 di 150", { exact: true }).count();
 const exactAcquisitionOwnerVisible = await page.getByText(/Prossimo record: Mario Rossi/).count();
@@ -229,8 +236,9 @@ await page.locator("#importDialog").screenshot({ path: path.join(output, "resume
 const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
 const nonContiguousProgressExplained = await page.getByText("Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute.", { exact: true }).count();
 const importKillerChoiceVisible = await page.locator('[data-import-activity="killer"]:visible').count();
-const lockedImportChoices = await page.locator("#importDialog [data-import-activity], #importCoOwnersToggle, #importParallelCloudToggle").evaluateAll((elements) => elements.every((element) => element.disabled));
-const lockedImportExplanationVisible = await page.getByText("Impostazioni bloccate alla partenza", { exact: false }).count();
+const lockedImportChoices = await page.locator("#importDialog [data-import-activity], #importCoOwnersToggle").evaluateAll((elements) => elements.every((element) => element.disabled));
+const resumableParallelChoice = !(await page.locator("#importParallelCloudToggle").isDisabled());
+const lockedImportExplanationVisible = await page.getByText("Attività e comproprietari restano quelli fissati alla partenza", { exact: false }).count();
 const importKillerHelpVisible = 0;
 await page.locator('[data-import-dialog="confirm"]').click();
 await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .row-overflow > summary').click();
@@ -238,6 +246,16 @@ await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] [dat
 await page.locator("#jobDetailDialog").screenshot({ path: path.join(output, "stopped-import-detail.png") });
 const detailRestartRowVisible = await page.getByText(/Prima riga aperta: 1 di 3/).count();
 const civicMarkersVisible = await page.locator("#jobDetailDialog .detail-row-civic").count();
+const detailAccordionsVisible = await page.locator("#jobDetailDialog .detail-accordion").count();
+const detailParallelChoiceVisible = await page.locator("#jobDetailParallelToggle").count();
+const civicMarkerHasPhantomP = await page.locator("#jobDetailDialog .detail-row-civic").evaluateAll((elements) => elements.some((element) => /\dP$/i.test(element.textContent?.replace(/\s+/g, "") ?? "")));
+const detailRowsOrdered = await page.locator("#jobDetailDialog .detail-property-list .import-detail-row").evaluateAll((rows) => {
+  const values = rows.map((row) => ({
+    rank: row.classList.contains("is-done") || row.classList.contains("is-anomaly") ? 0 : row.classList.contains("is-skipped") ? 1 : 2,
+    civic: Number(row.querySelector(".detail-row-civic")?.textContent?.match(/\d+/)?.[0] ?? Number.MAX_SAFE_INTEGER),
+  }));
+  return values.every((value, index) => !index || value.rank > values[index - 1].rank || (value.rank === values[index - 1].rank && value.civic >= values[index - 1].civic));
+});
 await page.locator('[data-job-detail="close"]').last().click();
 await page.locator('[data-scroll="refinement"]').click();
 await page.locator("#refinement").screenshot({ path: path.join(output, "refinement.png") });
@@ -354,17 +372,18 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
-  ...(!sideNavigationVisible || initialTheme !== "light" || !darkThemeApplied || inspectorSelectionVisible !== 1 ? ["Guscio, tema o ispettore del registro non funzionanti"] : []),
+  ...(!sideNavigationVisible || initialTheme !== "light" || !darkThemeApplied || inspectorSelectionVisible !== 1 || !inspectorCloseWorks || !inspectorReopens || mergedRunSetup !== 1 ? ["Guscio, tema, ispettore o configurazione unificata non funzionanti"] : []),
   ...([readyOverflow, readyMobileOverflow, refinementOverflow, historyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
   ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible < 1 || civicMarkersVisible < 1 ? ["Stato, civico o riga di ripartenza della run non visibili"] : []),
   ...(exactAcquisitionCursorVisible !== 1 || exactAcquisitionOwnerVisible < 1 ? ["Checkpoint SISTER esatto o prossimo nominativo non visibili"] : []),
-  ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || lockedImportExplanationVisible < 1 ? ["Le impostazioni della run interrotta non sono visibili e bloccate"] : []),
+  ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || !resumableParallelChoice || lockedImportExplanationVisible < 1 ? ["Le impostazioni fisse o la concorrenza modificabile della run interrotta non sono corrette"] : []),
+  ...(detailAccordionsVisible !== 2 || detailParallelChoiceVisible !== 1 || civicMarkerHasPhantomP || !detailRowsOrdered ? ["Accordion SISTER/Cloud, toggle di ripresa, ordine o civici nel dettaglio non corretti"] : []),
   ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== true || workerCalls.resumeJobValues?.parallelCrmWindows !== false
     ? ["La ripresa non conserva le tre impostazioni originarie"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),

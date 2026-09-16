@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { importRunOptions, withImportRunOptions, withLockedImportRunOptions } from "../src/desktop/import-run-options.js";
+import { importRunOptions, withImportRunOptions, withLockedImportRunOptions, withResumedImportConcurrency } from "../src/desktop/import-run-options.js";
 import { summarizeJobImportProgress } from "../src/desktop/state-projection.js";
 import type { JobRow, PropertyRow } from "../src/services/repository.js";
 
@@ -88,6 +88,23 @@ describe("opzioni e avanzamento degli import conservati", () => {
       importCoOwners: false,
       parallelCrmWindows: false,
     }, "2026-09-15T09:00:00.000Z");
+
+    expect(resumed.importOptions).toEqual({
+      activityMode: "killer",
+      importCoOwners: true,
+      parallelCrmWindows: true,
+      selectedAt: "2026-09-15T08:00:00.000Z",
+      lockedAt: "2026-09-15T08:00:00.000Z",
+    });
+  });
+
+  it("consente di cambiare soltanto il numero di finestre alla ripresa", () => {
+    const locked = withLockedImportRunOptions({}, {
+      activityMode: "killer",
+      importCoOwners: true,
+      parallelCrmWindows: false,
+    }, "2026-09-15T08:00:00.000Z");
+    const resumed = withResumedImportConcurrency(locked, true);
 
     expect(resumed.importOptions).toEqual({
       activityMode: "killer",

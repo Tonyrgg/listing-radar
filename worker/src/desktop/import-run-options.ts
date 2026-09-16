@@ -67,3 +67,24 @@ export function withLockedImportRunOptions(
     },
   };
 }
+
+/**
+ * Dopo l'avvio il contenuto della run non può cambiare: attività e
+ * comproprietari dipendono dai dati raccolti. La concorrenza, invece, è una
+ * scelta di esecuzione e può passare in sicurezza da una a due finestre (o
+ * viceversa) a ogni ripresa, senza alterare il checkpoint.
+ */
+export function withResumedImportConcurrency(
+  acquisition: Record<string, unknown> | null | undefined,
+  parallelCrmWindows: boolean,
+): Record<string, unknown> {
+  const existing = (acquisition?.importOptions ?? null) as (Partial<ImportRunOptions> & { selectedAt?: string; lockedAt?: string }) | null;
+  if (!existing) return { ...(acquisition ?? {}) };
+  return {
+    ...(acquisition ?? {}),
+    importOptions: {
+      ...existing,
+      parallelCrmWindows,
+    },
+  };
+}

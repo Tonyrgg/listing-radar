@@ -71,7 +71,7 @@ import {
   type BrowserConnectionStability,
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
-import { importRunOptions, withLockedImportRunOptions, type ImportRunOptions } from "./import-run-options.js";
+import { importRunOptions, withLockedImportRunOptions, withResumedImportConcurrency, type ImportRunOptions } from "./import-run-options.js";
 import {
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
@@ -3244,7 +3244,6 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
   if (effectiveRefinementStreet) {
     activityModeOverride = "plain";
     importCoOwnersOverride = true;
-    parallelCrmWindowsOverride = false;
     refinementActive = true;
     refinementStreet = effectiveRefinementStreet;
     refinementError = null;
@@ -3861,13 +3860,17 @@ function registerIpc() {
         ? values.parallelCrmWindows
         : previous.parallelCrmWindows,
     };
-    const chosen = job.import_started_at ? previous : requested;
+    const chosen: ImportRunOptions = job.import_started_at
+      ? { ...previous, parallelCrmWindows: requested.parallelCrmWindows }
+      : requested;
     const startedAt = job.import_started_at ?? new Date().toISOString();
     await repo.updateJob(jobId, {
       ...(job.saved_at || job.import_started_at
         ? { import_started_at: startedAt }
         : {}),
-      acquisition: withLockedImportRunOptions(job.acquisition, chosen, startedAt),
+      acquisition: job.import_started_at
+        ? withResumedImportConcurrency(job.acquisition, chosen.parallelCrmWindows)
+        : withLockedImportRunOptions(job.acquisition, chosen, startedAt),
     });
     activityModeOverride = chosen.activityMode;
     importCoOwnersOverride = chosen.importCoOwners;

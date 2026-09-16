@@ -639,12 +639,23 @@ export class PropertyWorkerRunner {
         }
         const graph = await this.repository.loadGraph(job.id);
         const propertyById = new Map(graph.properties.map((property) => [property.id, property]));
+        const globalPositionByPropertyId = new Map(graph.properties.map((property, index) => [property.id, index + 1]));
+        const terminalAtStart = graph.properties.filter((property) => {
+          const flow = property.raw_payload?.property_flow as { stage?: unknown } | undefined;
+          const importV2 = property.raw_payload?.import_v2 as { state?: unknown } | undefined;
+          return ["completed", "synced", "dry_run", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
+            || flow?.stage === "completed"
+            || flow?.stage === "skipped"
+            || importV2?.state === "completed";
+        }).length;
+        const completedThisRun = new Set<string>();
         const activityTasks = buildPropertyActivityTasks(graph);
         let refinementInventory: CrmPropertySummary[] | null = null;
         if (this.refinementStreet) {
-          if (crmV2Ports.length !== 1) {
-            throw new WorkerError("La rifinitura usa una sola finestra Cloud per mantenere ordinato l’inventario della via", "failed");
-          }
+          /* L'inventario della via viene letto una sola volta dalla pagina
+           * primaria. Dopo questa fotografia immutabile, anche la rifinitura
+           * può distribuire su due pagine immobili indipendenti senza
+           * duplicare il conteggio o perdere l'ordine del checkpoint. */
           refinementInventory = await crmV2Ports[0]!.listPropertiesByStreet(this.refinementStreet, (inventoryProgress) => {
             const property = graph.properties[0];
             if (!property) return;
@@ -684,16 +695,17 @@ export class PropertyWorkerRunner {
            * all'interfaccia sullo stesso canale gia' usato dall'acquisizione. */
           const property = propertyById.get(progress.propertyId);
           if (!property) return;
+          if (progress.stage === "completed") completedThisRun.add(progress.propertyId);
           const lane = progress.workerCount && progress.workerCount > 1
             ? `Finestra ${progress.workerIndex}/${progress.workerCount} · `
             : "";
           const retry = progress.attempt && progress.attempt > 1
             ? ` · tentativo ${progress.attempt}/${progress.maxAttempts ?? "?"} dopo: ${progress.previousFailure?.message.split("\n")[0] ?? "errore transitorio"}`
             : "";
-          this.emitPropertyProgress(job, property, progress.index, progress.total, progress.stage, `${lane}${IMPORT_V2_STAGE_MESSAGES[progress.stage]}${retry}`, {
+          this.emitPropertyProgress(job, property, globalPositionByPropertyId.get(progress.propertyId) ?? progress.index, graph.properties.length, progress.stage, `${lane}${IMPORT_V2_STAGE_MESSAGES[progress.stage]}${retry}`, {
             workerIndex: progress.workerIndex,
             workerCount: progress.workerCount,
-            completed: progress.completed,
+            completed: terminalAtStart + completedThisRun.size,
             attempt: progress.attempt,
             maxAttempts: progress.maxAttempts,
             previousFailure: progress.previousFailure,
@@ -732,7 +744,15 @@ export class PropertyWorkerRunner {
             await this.repository.updatePersonProcessing(person.id, { processing_status: "quarantined" });
           }
         }
-        await this.repository.updateJob(job.id, { processed_properties: result.completed.length });
+        const completedPropertyCount = after.properties.filter((property) => {
+          const payload = property.raw_payload ?? {};
+          const flow = payload.property_flow as { stage?: unknown } | undefined;
+          const importV2 = payload.import_v2 as { state?: unknown } | undefined;
+          return ["completed", "synced", "dry_run"].includes(property.processing_status)
+            || flow?.stage === "completed"
+            || importV2?.state === "completed";
+        }).length;
+        await this.repository.updateJob(job.id, { processed_properties: completedPropertyCount });
         if (result.paused) {
           const operatorPause = result.paused.failure?.kind === "operator_pause"
             || result.paused.failure?.details.pauseRequested === true;

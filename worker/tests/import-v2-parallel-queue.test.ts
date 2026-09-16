@@ -88,4 +88,26 @@ describe("coda Import V2 su due finestre", () => {
       { propertyId: "p3", index: 3, workerCount: 2 },
     ]);
   });
+
+  it("espone un conteggio complessivo univoco, non il contatore delle singole finestre", async () => {
+    const engine = ({
+      run: async (source: SourceProperty, onStage?: (stage: "completed") => void) => {
+        onStage?.("completed");
+        return completed(source.sourcePropertyId);
+      },
+    }) as unknown as ImportV2Engine;
+    const aggregate: number[] = [];
+
+    await runImportV2ParallelBatch(
+      [engine, engine],
+      [property("p1", ["A"]), property("p2", ["B"]), property("p3", ["C"])],
+      (item) => {
+        if (item.stage === "completed") aggregate.push(item.completed ?? 0);
+      },
+    );
+
+    expect(aggregate).toHaveLength(3);
+    expect([...aggregate].sort((left, right) => left - right)).toEqual([1, 2, 3]);
+    expect(Math.max(...aggregate)).toBe(3);
+  });
 });
