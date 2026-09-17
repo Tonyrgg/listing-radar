@@ -1381,7 +1381,21 @@ function renderOperationQueue() {
     const current = index === currentIndex;
     return `<div class="operation-queue-row ${current ? "is-current" : handled ? "is-handled" : ""}"${current ? ' aria-current="true"' : ""}><span class="queue-civic"><small>Civico</small>${esc(civicLabel(property))}</span><span><b>${esc(property.address ?? property.cadastral_key)}</b><small>${esc(property.cadastral_key)}</small></span><i aria-hidden="true">${handled ? "✓" : current ? "●" : ""}</i></div>`;
   }).join("");
-  requestAnimationFrame(() => container.querySelector(".operation-queue-row.is-current")?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  requestAnimationFrame(() => {
+    const currentRow = container.querySelector(".operation-queue-row.is-current");
+    if (!currentRow) return;
+    const containerRect = container.getBoundingClientRect();
+    const rowRect = currentRow.getBoundingClientRect();
+    const centeredTop = container.scrollTop
+      + rowRect.top
+      - containerRect.top
+      - ((container.clientHeight - rowRect.height) / 2);
+    const maximumTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTo({
+      top: Math.max(0, Math.min(maximumTop, centeredTop)),
+      behavior: "auto",
+    });
+  });
 }
 
 async function refreshOperationQueue(force = false) {

@@ -150,6 +150,40 @@ await page.addInitScript(({ initialState, details }) => {
       jobs: [{ id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "running", current_step: "properties_processed", last_completed_step: "acquisition_reviewed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", updated_at: new Date().toISOString() }] };
     listeners.forEach((callback) => callback(state));
   };
+  window.__showLongPropertyState = () => {
+    details.properties = Array.from({ length: 40 }, (_, index) => ({
+      id: `11111111-1111-4111-8111-${String(index + 1).padStart(12, "0")}`,
+      municipality: "BITONTO",
+      sheet: "41",
+      parcel: "661",
+      subaltern: String(index + 1),
+      cadastral_key: `BITONTO|41|661|${index + 1}`,
+      category: "A/3",
+      address: `Via Francesco Muciaccia 3 · Interno ${index + 1}`,
+      processing_status: index < 24 ? "completed" : "normalized",
+      raw_payload: { property_flow: { version: 4, stage: index < 24 ? "completed" : "property_ready" } },
+    }));
+    state = {
+      ...state,
+      active: true,
+      requestArchive: { active: false },
+      mandateArchive: { active: false },
+      activeJobId: "33333333-3333-4333-8333-333333333333",
+      currentStep: "properties_processed",
+      lastError: null,
+      propertyProgress: {
+        propertyId: details.properties[24].id,
+        index: 25,
+        completed: 24,
+        total: 40,
+        address: details.properties[24].address,
+        stage: "long-queue-regression",
+        message: "Creo il record nel gestionale",
+      },
+      jobs: [{ id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "running", current_step: "properties_processed", last_completed_step: "acquisition_reviewed", municipality: "BITONTO", street: "Via Francesco Muciaccia", civic_number: null, updated_at: new Date().toISOString() }],
+    };
+    listeners.forEach((callback) => callback(state));
+  };
   window.__showUpdateState = () => {
     state = { ...state, active: false, softwareUpdate: { status: "available", currentVersion: "0.6.0", availableVersion: "0.7.0", percent: null, transferred: null, total: null, message: "Versione 0.7.0 disponibile", checkedAt: new Date().toISOString() } };
     listeners.forEach((callback) => callback(state));
@@ -364,6 +398,30 @@ await page.getByRole("button", { name: "Salta immobile" }).click();
 const workerCalls = await page.evaluate(() => window.__workerCalls());
 const propertyMonitorVisible = await page.getByText("Importazione di 7 immobili", { exact: true }).count();
 await page.screenshot({ path: path.join(output, "property-progress.png"), fullPage: false });
+await page.locator("#operationConsole").scrollIntoViewIfNeeded();
+await page.evaluate(() => {
+  const consoleTop = document.querySelector("#operationConsole")?.getBoundingClientRect().top ?? 0;
+  window.scrollBy(0, consoleTop - 72);
+});
+const operationPageScrollBefore = await page.evaluate(() => window.scrollY);
+await page.evaluate(() => window.__showLongPropertyState());
+await page.waitForFunction(() => document.querySelectorAll("#operationQueue .operation-queue-row").length === 40);
+await page.waitForTimeout(500);
+const operationQueueStability = await page.evaluate((pageScrollBefore) => {
+  const queue = document.querySelector("#operationQueue");
+  const current = queue?.querySelector(".operation-queue-row.is-current");
+  const main = document.querySelector("#operationConsoleMain");
+  if (!queue || !current || !main) return { pageDelta: Number.POSITIVE_INFINITY, mainScrollTop: -1, queueScrollTop: 0, centerDelta: Number.POSITIVE_INFINITY };
+  const queueRect = queue.getBoundingClientRect();
+  const currentRect = current.getBoundingClientRect();
+  return {
+    pageDelta: Math.abs(window.scrollY - pageScrollBefore),
+    mainScrollTop: main.scrollTop,
+    queueScrollTop: queue.scrollTop,
+    centerDelta: Math.abs((currentRect.top + currentRect.height / 2) - (queueRect.top + queueRect.height / 2)),
+  };
+}, operationPageScrollBefore);
+await page.locator("#operationConsole").screenshot({ path: path.join(output, "operation-long-queue.png") });
 await page.evaluate(() => window.__showRetryState());
 await page.screenshot({ path: path.join(output, "retry-monitor.png"), fullPage: false });
 const retryMonitorVisible = await page.locator("#retryMonitor:not(.is-hidden)").count();
@@ -386,7 +444,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -415,6 +473,8 @@ const failures = [
   ...(requestMonitorVisible < 1 ? ["Totale import richieste non visibile"] : []),
   ...(mandateMonitorVisible < 1 ? ["Totale import incarichi non visibile"] : []),
   ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
+  ...(!operationQueueStability || operationQueueStability.pageDelta > 10 || operationQueueStability.mainScrollTop !== 0 || operationQueueStability.queueScrollTop <= 0 || operationQueueStability.centerDelta > 2
+    ? ["La coda operativa muove ancora la colonna sinistra o non centra il record corrente"] : []),
   ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
   ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
   ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
