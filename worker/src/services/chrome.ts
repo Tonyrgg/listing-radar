@@ -123,7 +123,44 @@ function findMatchingPage(
   match: string,
   portal: WorkerPortal,
 ): DescribedPage | undefined {
-  return pages.find((page) => matchesWorkerPortal(page, match, portal));
+  const matches = pages.filter((page) => matchesWorkerPortal(page, match, portal));
+  const useful = matches.filter((page) => !/^(?:errore|pagina di login)$/i.test(page.title.trim()) && !/\/login(?:\.jsp)?(?:[?#]|$)/i.test(page.url));
+  return useful.find((page) => page.driveable) ?? useful[0] ?? matches.find((page) => page.driveable) ?? matches[0];
+}
+
+/**
+ * Riaggancia SISTER senza creare due sessioni concorrenti (che il portale
+ * bloccherebbe con lock.html). Conserva dalla cronologia l'ingresso stabile
+ * alla ricerca per indirizzo, chiude soltanto il target non pilotabile e lo
+ * riapre nella stessa sessione autenticata. La run rifara' poi la via esatta.
+ */
+async function recoverDriveableSisterPage(source: DescribedPage): Promise<DescribedPage | null> {
+  let session: Awaited<ReturnType<BrowserContext["newCDPSession"]>> | null = null;
+  let recovered: Page | null = null;
+  try {
+    session = await source.page.context().newCDPSession(source.page);
+    const history = await session.send("Page.getNavigationHistory");
+    const entry = [...history.entries].reverse().find((candidate) =>
+      /Ricerca per indirizzo/i.test(candidate.title)
+      || /\/Visure\/SceltaLink\.do\?[^#]*\blista=IND\b/i.test(candidate.url),
+    );
+    if (!entry) return null;
+    const context = source.page.context();
+    /* Manteniamo vivo Chrome con un target neutro: chiudere l'unica scheda
+     * terminerebbe l'intero processo prima di poterla ricreare. */
+    recovered = await context.newPage();
+    await session.detach();
+    session = null;
+    await source.page.close({ runBeforeUnload: false });
+    await recovered.goto(entry.url, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    return { title: await pageTitleWithin(recovered), url: recovered.url(), page: recovered, driveable: true };
+  } catch {
+    return recovered && !recovered.isClosed()
+      ? { title: await pageTitleWithin(recovered), url: recovered.url(), page: recovered, driveable: true }
+      : null;
+  } finally {
+    await session?.detach().catch(() => undefined);
+  }
 }
 
 export interface CrmChromeTab {
@@ -151,15 +188,14 @@ export async function connectToSisterChrome(cdpUrl: string, sisterMatch: string)
     );
   }
   const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  const sisterTab = findMatchingPage(pages, sisterMatch, "sister");
+  let sisterTab = findMatchingPage(pages, sisterMatch, "sister");
   if (!sisterTab) {
-    await browser.close().catch(() => undefined);
     throw new WorkerError("Scheda SISTER non trovata nel Chrome di lavoro", "needs_review", {
       missing: ["SISTER"], openTabs: pages.map(({ title, url }) => ({ title, url })),
     });
   }
+  if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
   if (!sisterTab.driveable) {
-    await browser.close().catch(() => undefined);
     throw new WorkerError("La scheda SISTER è aperta ma non pilotabile. Chiudila, riaprila e riprova.", "needs_review");
   }
   return { browser, pages, sisterPage: sisterTab.page };
@@ -181,8 +217,8 @@ export async function connectToChrome(
     );
   }
   const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  const sisterTab = findMatchingPage(described, sisterMatch, "sister");
-  const crmTab = findMatchingPage(described, crmMatch, "crm");
+  let sisterTab = findMatchingPage(described, sisterMatch, "sister");
+  let crmTab = findMatchingPage(described, crmMatch, "crm");
   const openTabs = described.map(({ title, url }) => ({ title, url }));
   if (!sisterTab || !crmTab) {
     throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
@@ -190,6 +226,7 @@ export async function connectToChrome(
       openTabs,
     });
   }
+  if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
   /* Una scheda riconosciuta ma non pilotabile non torna utilizzabile ne'
    * aspettando ne' ricaricandola: solo riaprirla le restituisce un target
    * sano. Fermarsi qui con il motivo esatto evita una run che parte e resta

@@ -89,6 +89,8 @@ export type SisterStreetRunCheckpoint = {
     engine: "lavorazione" | "rifinitura" | "portoni";
     lockedAt: string;
     expandAllOwners: boolean;
+    /** Se attivo insieme allo sviluppo, apre il portafoglio di ogni comproprietario della riga. */
+    expandCoOwners?: boolean;
     acquireOwners: boolean;
     /** Se true la raccolta si ferma nel registro prima dell'import Cloud. */
     keepAcquisition?: boolean;
@@ -118,6 +120,93 @@ export type SisterStreetRunCheckpoint = {
   inferredLastUsefulCivic: number | null;
 };
 
+export function hasRetryableAcquisitionRecords(checkpoint: SisterStreetRunCheckpoint | null | undefined): boolean {
+  return Boolean(checkpoint?.results.some((result) =>
+    result.recordLedger?.some((record) => record.status === "completed_with_anomalies"),
+  ));
+}
+
+/**
+ * Preferisce il checkpoint con il diario atomico piu' completo.
+ *
+ * Il Cloud puo' aver ricevuto l'ultimo aggiornamento prima della scrittura
+ * locale (per esempio durante un'interruzione di rete). Il file locale e il
+ * record Cloud descrivono la stessa run tramite importJobId: non dobbiamo
+ * mostrare una sola riga quando sul computer ne sono gia' state conservate 34.
+ */
+export function selectRicherStreetCheckpoint(
+  cloud: SisterStreetRunCheckpoint | null | undefined,
+  local: SisterStreetRunCheckpoint | null | undefined,
+): SisterStreetRunCheckpoint | undefined {
+  if (!cloud) return local ?? undefined;
+  if (!local) return cloud;
+  if (!cloud.importJobId || cloud.importJobId !== local.importJobId) return cloud;
+  const score = (checkpoint: SisterStreetRunCheckpoint) => {
+    const records = checkpoint.results.reduce((sum, result) => sum + (result.recordLedger?.length ?? 0), 0);
+    const cursors = checkpoint.results.filter((result) => result.cursor).length;
+    return records * 1_000_000
+      + checkpoint.totalRawRecords * 10_000
+      + checkpoint.totalAcceptedProperties * 100
+      + checkpoint.totalOwnersRead
+      + cursors;
+  };
+  if (score(local) !== score(cloud)) return score(local) > score(cloud) ? local : cloud;
+  return Date.parse(local.updatedAt) > Date.parse(cloud.updatedAt) ? local : cloud;
+}
+
+/**
+ * Riapre soltanto le righe anomale di un'acquisizione gia' percorsa.
+ * I record validi e quelli esclusi intenzionalmente dai filtri restano
+ * terminali; in questo modo la ripresa e' idempotente e non riparte da zero.
+ */
+export function prepareStreetAcquisitionRetry(
+  checkpoint: SisterStreetRunCheckpoint,
+): SisterStreetRunCheckpoint {
+  const firstRetryVariant = checkpoint.results.findIndex((result) =>
+    result.recordLedger?.some((record) => record.status === "completed_with_anomalies"),
+  );
+  if (firstRetryVariant < 0) return checkpoint;
+
+  const results = checkpoint.results.map((result) => {
+    const records = result.recordLedger ?? [];
+    const retryable = records.filter((record) => record.status === "completed_with_anomalies");
+    if (!retryable.length) return result;
+    const retained = records.filter((record) => record.status !== "completed_with_anomalies");
+    const first = [...retryable].sort((left, right) => left.index - right.index)[0]!;
+    return {
+      ...result,
+      outcome: "paused" as const,
+      ownersRead: retained
+        .filter((record) => record.status === "completed")
+        .reduce((sum, record) => sum + record.ownerNames.length, 0),
+      skippedPropertyRows: retained.filter((record) => record.status === "skipped").length,
+      warnings: result.warnings.filter((warning) => !/^Riga\s+.*\signorata:/i.test(warning)),
+      recordLedger: retained,
+      cursor: {
+        position: first.index,
+        total: result.rawRecords,
+        key: first.key,
+        label: first.label,
+        ownerNames: first.ownerNames,
+      },
+    };
+  });
+  const now = new Date().toISOString();
+  const ownersRead = results.reduce((sum, result) => sum + result.ownersRead, 0);
+  const skippedRows = results.reduce((sum, result) => sum + result.skippedPropertyRows, 0);
+  return {
+    ...checkpoint,
+    status: "paused",
+    completedAt: null,
+    updatedAt: now,
+    currentVariantIndex: firstRetryVariant,
+    results,
+    totalOwnersRead: ownersRead,
+    totalSkippedPropertyRows: skippedRows,
+    lastError: "Riprovo soltanto le righe SISTER concluse con anomalie; righe valide ed esclusioni restano conservate.",
+  };
+}
+
 type StreetRunOptions = {
   emptyWindow?: number;
   startCivic?: number;
@@ -126,6 +215,7 @@ type StreetRunOptions = {
   acquireOwners?: boolean;
   includeAllOwners?: boolean;
   expandAllOwners?: boolean;
+  expandCoOwners?: boolean;
   prepareSearchAutomatically?: boolean;
   strategy?: "bulk_exact_variants" | "civic_fallback";
   mode?: "dry_run" | "live";
@@ -188,6 +278,7 @@ export class SisterStreetRun {
   private readonly maxQueryAttempts: number;
   private readonly acquireOwners: boolean;
   private readonly expandAllOwners: boolean;
+  private readonly expandCoOwners: boolean;
   private readonly expandedOwnerKeys = new Set<string>();
   private readonly prepareSearchAutomatically: boolean;
   private readonly strategy: "bulk_exact_variants" | "civic_fallback";
@@ -207,6 +298,7 @@ export class SisterStreetRun {
     this.maxQueryAttempts = options.maxQueryAttempts ?? 3;
     this.acquireOwners = options.acquireOwners !== false;
     this.expandAllOwners = options.expandAllOwners === true;
+    this.expandCoOwners = options.expandCoOwners === true;
     this.prepareSearchAutomatically = options.prepareSearchAutomatically === true;
     this.strategy = options.strategy ?? "bulk_exact_variants";
     this.mode = options.mode ?? "dry_run";
@@ -244,6 +336,7 @@ export class SisterStreetRun {
             engine: this.engine,
             lockedAt: compatibleResume.startedAt,
             expandAllOwners: this.expandAllOwners,
+            expandCoOwners: this.expandCoOwners,
             acquireOwners: this.acquireOwners,
             keepAcquisition: this.options.keepAcquisition === true,
             filters: this.filters,
@@ -266,6 +359,7 @@ export class SisterStreetRun {
             engine: this.engine,
             lockedAt: now,
             expandAllOwners: this.expandAllOwners,
+            expandCoOwners: this.expandCoOwners,
             acquireOwners: this.acquireOwners,
             keepAcquisition: this.options.keepAcquisition === true,
             filters: this.filters,
@@ -488,6 +582,14 @@ export class SisterStreetRun {
     const url = this.page.url();
     const title = await this.page.title().catch(() => "");
     const password = await this.page.locator('input[type="password"]').count().catch(() => 0);
+    if (/\/lock\.html(?:[?#]|$)/i.test(url)) {
+      throw new WorkerError(
+        "SISTER ha bloccato una seconda scheda concorrente. Lascia aperta una sola scheda SISTER e premi Riprendi.",
+        "needs_review",
+        { portal: "SISTER", action: "concurrent-session-lock" },
+        true,
+      );
+    }
     if (/sessione[_-]?scaduta|login|accesso/i.test(url) || /sessione\s+scaduta/i.test(title) || password) {
       throw new WorkerError(
         "La sessione SISTER non è più attiva. Il cursore della via è stato salvato: accedi di nuovo e riprendi.",
@@ -915,10 +1017,11 @@ export class SisterStreetRun {
           });
           try {
             acquiredOwners = await this.adapter.extractOwners(property, this.expandAllOwners ? {
-              // La rete viene sviluppata da un solo intestatario per ciascun
-              // immobile della via. Gli altri intestatari restano comunque
-              // letti sulla scheda, ma non aprono ulteriori portafogli.
-              maxOwners: 1,
+              // Con i comproprietari attivi sviluppiamo ogni intestatario
+              // della riga; altrimenti ne apriamo uno solo. In entrambi i
+              // casi la chiave globale evita di rileggere lo stesso portafoglio
+              // ai civici successivi.
+              maxOwners: this.expandCoOwners ? undefined : 1,
               shouldExpand: (owner) => !this.expandedOwnerKeys.has(this.ownerExpansionKey(owner)),
               onProperties: async (owner, expandedProperties) => {
                 const ownerKey = this.ownerExpansionKey(owner);

@@ -29,6 +29,9 @@ import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../servi
 import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
 import { stepRequiresSister } from "../core/sister-requirement.js";
 import {
+  hasRetryableAcquisitionRecords,
+  prepareStreetAcquisitionRetry,
+  selectRicherStreetCheckpoint,
   SisterStreetRun,
   type SisterStreetRunCheckpoint,
   type SisterStreetRunProgress,
@@ -666,6 +669,11 @@ async function persistStreetRunCheckpoint(checkpoint: SisterStreetRunCheckpoint)
   await rename(temporary, target);
   if (engine === "rifinitura") refinementRunCheckpoint = checkpoint;
   else streetRunCheckpoint = checkpoint;
+}
+
+function localCheckpointForJob(jobId: string) {
+  return [streetRunCheckpoint, refinementRunCheckpoint]
+    .find((checkpoint) => checkpoint?.importJobId === jobId) ?? null;
 }
 
 async function loadNetworkRunCheckpoint() {
@@ -1620,6 +1628,8 @@ async function runSisterStreet(input: {
   // ordinarie rispettano invece la scelta esplicita di sviluppare i titolari.
   const expandAllOwners = resumeCheckpoint?.runSettings?.expandAllOwners
     ?? (input.refinement ? false : preferences.expandAllOwners);
+  const expandCoOwners = resumeCheckpoint?.runSettings?.expandCoOwners
+    ?? (input.refinement ? false : preferences.importCoOwners);
   const keepAcquisition = resumeCheckpoint?.runSettings?.keepAcquisition ?? input.dryRun;
   if (street.length < 4) throw new Error(input.refinement ? "Inserisci il nome completo della via in SISTER" : "Inserisci il nome completo della via");
   if (input.refinement && refinementCloudStreet.length < 4) throw new Error("Inserisci il nome completo della via nel Cloud");
@@ -1673,6 +1683,7 @@ async function runSisterStreet(input: {
       refinementCloudStreet: refinementCloudStreet || null,
       filters,
       expandAllOwners,
+      expandCoOwners,
       keepAcquisition,
     },
     importOptions: {
@@ -1766,6 +1777,7 @@ async function runSisterStreet(input: {
          * perde per strada, viene rifatta invece di fermare tutto. */
         prepareSearchAutomatically: true,
         expandAllOwners,
+        expandCoOwners,
         keepAcquisition,
         isCancelled: () => streetRunCancellationRequested,
         onPropertyAcquired: liveRepository && importJobId ? async (variant, property, owners) => {
@@ -3755,9 +3767,11 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:resume-acquisition", async (_event, jobId: string) => {
     if (streetRunActive || active) throw new Error("C'e gia una lavorazione in corso");
-    const job = await repository().getJob(String(jobId));
+    const repo = repository();
+    const job = await repo.getJob(String(jobId));
     const acquisition = job.acquisition ?? {};
-    const checkpoint = acquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
+    const cloudCheckpoint = acquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
+    let checkpoint = selectRicherStreetCheckpoint(cloudCheckpoint, localCheckpointForJob(job.id));
     if (!checkpoint || ![3, 4].includes(checkpoint.version)) {
       const settings = (acquisition.runSettings ?? {}) as Record<string, unknown>;
       const engine = acquisition.engine === "rifinitura" ? "rifinitura" : "lavorazione";
@@ -3773,9 +3787,22 @@ function registerIpc() {
       });
       return true;
     }
-    if (checkpoint.status === "completed") throw new Error("L'acquisizione SISTER e gia completa");
+    if (checkpoint.status === "completed") {
+      if (!hasRetryableAcquisitionRecords(checkpoint)) throw new Error("L'acquisizione SISTER e gia completa");
+      checkpoint = prepareStreetAcquisitionRetry(checkpoint);
+    }
     const engine = checkpoint.runSettings?.engine === "rifinitura" ? "rifinitura" : "lavorazione";
     await persistStreetRunCheckpoint(checkpoint);
+    await repo.updateJob(job.id, {
+      acquisition: {
+        ...acquisition,
+        acquisitionCheckpoint: checkpoint,
+        acquisitionProgress: summarizeStreetAcquisition(checkpoint),
+      },
+      status: "paused",
+      saved_at: new Date().toISOString(),
+      error_message: checkpoint.lastError,
+    });
     await runSisterStreet({
       street: checkpoint.requestedStreet,
       refinementCloudStreet: checkpoint.runSettings?.refinementCloudStreet
@@ -3986,7 +4013,22 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:get-job-details", async (_event, jobId: string) => {
     const repo = repository();
-    const [job, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
+    const [storedJob, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
+    const storedAcquisition = storedJob.acquisition ?? {};
+    const checkpoint = selectRicherStreetCheckpoint(
+      storedAcquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined,
+      localCheckpointForJob(storedJob.id),
+    );
+    const job = checkpoint
+      ? {
+          ...storedJob,
+          acquisition: {
+            ...storedAcquisition,
+            acquisitionCheckpoint: projectStreetCheckpointForRenderer(checkpoint),
+            acquisitionProgress: summarizeStreetAcquisition(checkpoint),
+          },
+        }
+      : storedJob;
     const anomalies = diagnosticErrors
       .filter((item) => item.jobId === jobId && typeof item.details.propertyId === "string")
       .map((item) => ({

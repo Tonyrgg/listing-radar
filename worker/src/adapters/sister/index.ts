@@ -168,6 +168,14 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
   }
 
   private async checkSession() {
+    if (/\/lock\.html(?:[?#]|$)/i.test(this.page.url())) {
+      throw new WorkerError(
+        "SISTER ha bloccato una seconda scheda concorrente. Lascia aperta una sola scheda SISTER e premi Riprendi.",
+        "needs_review",
+        { portal: "SISTER", action: "concurrent-session-lock" },
+        true,
+      );
+    }
     const expiredByUrl = /sessione[_-]?scaduta|login|accesso/i.test(this.page.url());
     const expiredByTitle = /sessione\s+scaduta|accesso/i.test(await this.page.title().catch(() => ""));
     const expiredByMarker = Boolean(this.selectors.sessionExpiredMarker)
@@ -407,6 +415,16 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         ? this.selectors.searchContext
         : CONTESTO_PERSONA;
       const context = parseSearchContext(await text(this.page, selettore));
+      if (!context.municipality && this.selectors.resultsTable) {
+        /* Alcune risposte del portafoglio soggetto omettono il Comune dal
+         * fieldset ma lo ripetono, in modo verificabile, in ogni Ubicazione.
+         * Non lo deduciamo dalla run: lo accettiamo solo quando la tabella
+         * visibile dichiara esplicitamente BITONTO (BA). */
+        const tableText = await text(this.page, this.selectors.resultsTable);
+        const visibleEvidence = tableText || await text(this.page, "body");
+        const explicitBitontoRows = await this.page.getByText(/BITONTO\s*\(\s*BA\s*\)/i).count();
+        if (/BITONTO\s*\(\s*BA\s*\)/i.test(visibleEvidence) || explicitBitontoRows > 0) context.municipality = "BITONTO";
+      }
       if (!context.municipality) {
         throw new WorkerError("Comune non riconosciuto nei risultati SISTER", "data_incomplete", { sourceUrl: this.page.url() });
       }

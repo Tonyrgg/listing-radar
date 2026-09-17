@@ -8,6 +8,11 @@ import {
   summarizeStreetAcquisition,
 } from "../src/desktop/state-projection.js";
 import type { SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
+import {
+  hasRetryableAcquisitionRecords,
+  prepareStreetAcquisitionRetry,
+  selectRicherStreetCheckpoint,
+} from "../src/services/sister-street-run.js";
 
 describe("proiezione leggera dello stato desktop", () => {
   it("usa i riepiloghi e le proiezioni leggere nei due canali IPC desktop", () => {
@@ -180,5 +185,64 @@ describe("proiezione leggera dello stato desktop", () => {
       currentLabel: "Via Test 3",
       currentOwnerNames: ["MARIO ROSSI"],
     }));
+  });
+
+  it("recupera solo le anomalie dal checkpoint locale piu completo", () => {
+    const base: SisterStreetRunCheckpoint = {
+      version: 4,
+      strategy: "bulk_exact_variants",
+      mode: "live",
+      importJobId: "job-recovery",
+      requestedStreet: "VIA TEST",
+      municipality: "BITONTO",
+      status: "completed",
+      startedAt: "2026-09-16T10:00:00.000Z",
+      updatedAt: "2026-09-16T10:02:00.000Z",
+      completedAt: "2026-09-16T10:02:00.000Z",
+      nextCivicNumber: 1,
+      currentVariantIndex: 1,
+      emptyWindow: 0,
+      consecutiveEmptyByVariant: {},
+      variants: [{ key: "test", sourceId: "1", value: "1", text: "VIA TEST", occurrence: 0 }],
+      results: [{
+        civicNumber: null,
+        variantKey: "test",
+        variantSourceId: "1",
+        outcome: "found",
+        rawRecords: 3,
+        acceptedProperties: 1,
+        propertyKeys: ["p1"],
+        filteredPropertyKeys: ["p3"],
+        ownersRead: 1,
+        skippedPropertyRows: 2,
+        warnings: ["Riga 2 ignorata: selettore non valido"],
+        elapsedMs: 1_000,
+        recordLedger: [
+          { index: 1, key: "p1", label: "Via Test 1", ownerNames: ["MARIO ROSSI"], status: "completed", anomaly: null, completedAt: "2026-09-16T10:00:10.000Z" },
+          { index: 2, key: "p2", label: "Via Test 2", ownerNames: [], status: "completed_with_anomalies", anomaly: "selettore non valido", completedAt: "2026-09-16T10:00:20.000Z" },
+          { index: 3, key: "p3", label: "Via Test 3", ownerNames: [], status: "skipped", anomaly: "non_strategic_category", completedAt: "2026-09-16T10:00:30.000Z" },
+        ],
+        cursor: null,
+      }],
+      totalRawRecords: 3,
+      totalAcceptedOccurrences: 1,
+      totalAcceptedProperties: 1,
+      uniquePropertyKeys: ["p1"],
+      totalOwnersRead: 1,
+      totalSkippedPropertyRows: 2,
+      lastError: null,
+      inferredLastUsefulCivic: null,
+    };
+    const stale = { ...base, updatedAt: "2026-09-16T10:01:00.000Z", results: [{ ...base.results[0]!, recordLedger: base.results[0]!.recordLedger?.slice(0, 1) }] };
+
+    expect(selectRicherStreetCheckpoint(stale, base)).toBe(base);
+    expect(hasRetryableAcquisitionRecords(base)).toBe(true);
+    const retry = prepareStreetAcquisitionRetry(base);
+    expect(retry).toMatchObject({ status: "paused", completedAt: null, currentVariantIndex: 0, totalSkippedPropertyRows: 1 });
+    expect(retry.results[0]?.recordLedger?.map((record) => [record.key, record.status])).toEqual([
+      ["p1", "completed"],
+      ["p3", "skipped"],
+    ]);
+    expect(retry.results[0]?.cursor).toMatchObject({ position: 2, total: 3, key: "p2" });
   });
 });

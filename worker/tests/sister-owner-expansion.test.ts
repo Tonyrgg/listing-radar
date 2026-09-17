@@ -9,7 +9,7 @@ import { sisterSelectors } from "../src/adapters/sister/selectors.js";
 
 const resultPage = (portfolio = false, owner = "") => `<!doctype html><body>
   <fieldset><legend>${portfolio ? "Soggetto selezionato" : "Dati della ricerca"}</legend>
-    ${portfolio ? `Cognome: ${owner} Immobili nel comune di: BITONTO Codice: A893` : "Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici"}
+    ${portfolio ? `Cognome: ${owner}` : "Comune: BITONTO Codice: A893 Indirizzo: VIA TEST Numeri civici"}
   </fieldset>
   <form name="SceltaVisuraImmSoggForm" action="${portfolio ? "/owners" : "/owners"}">
     <table class="listaIsp4">

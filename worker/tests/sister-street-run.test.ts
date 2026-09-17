@@ -32,7 +32,7 @@ function preparedAddressListPage(options: Array<{ text: string; value: string }>
 }
 
 describe("run lunga SISTER dalla pagina preparata manualmente", () => {
-  it("sviluppa un solo proprietario per immobile e prosegue fino al civico successivo", async () => {
+  it("con comproprietari attivi sviluppa ogni intestatario e prosegue fino al civico successivo", async () => {
     const portfolioVisits: string[] = [];
     const server = createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -99,6 +99,7 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       const expandedProperties: string[] = [];
       const checkpoint = await new SisterStreetRun(page, {
         expandAllOwners: true,
+        expandCoOwners: true,
         onPropertyAcquired: (_variant, property) => { sourceProperties.push(property.parcel); },
         onOwnerPropertiesAcquired: (_variant, _source, _owner, properties) => {
           expandedProperties.push(...properties.map((property) => property.parcel));
@@ -106,12 +107,12 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       }).run("VIA CESARE CANTU");
 
       expect(sourceProperties).toEqual(["100", "200"]);
-      expect(expandedProperties).toEqual(["701", "702"]);
-      expect(portfolioVisits).toHaveLength(2);
-      expect(portfolioVisits.every((visit) => visit.includes("intestatoSelezionato=PRIMO-"))).toBe(true);
-      expect(portfolioVisits.some((visit) => visit.includes("SECONDO-"))).toBe(false);
+      expect(expandedProperties).toEqual(["701", "701", "702", "702"]);
+      expect(portfolioVisits).toHaveLength(4);
+      expect(portfolioVisits.filter((visit) => visit.includes("intestatoSelezionato=PRIMO-")).length).toBe(2);
+      expect(portfolioVisits.filter((visit) => visit.includes("intestatoSelezionato=SECONDO-")).length).toBe(2);
       expect(checkpoint).toMatchObject({ status: "completed", totalAcceptedProperties: 4, totalOwnersRead: 4 });
-      expect(checkpoint.results[0]?.expandedOwnerKeys).toHaveLength(2);
+      expect(checkpoint.results[0]?.expandedOwnerKeys).toHaveLength(4);
     } finally {
       await browser.close();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

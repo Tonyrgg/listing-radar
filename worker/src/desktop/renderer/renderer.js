@@ -311,9 +311,6 @@ function renderWorkspaceInspector() {
   selectedInspectorJobId = job.id;
   const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Ricerca ${job.id.slice(0, 8)}`;
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
-  const acquisitionHandled = Number(acquisitionProgress?.completed ?? 0)
-    + Number(acquisitionProgress?.completedWithAnomalies ?? 0)
-    + Number(acquisitionProgress?.skipped ?? 0);
   const total = Number(job.import_progress?.total ?? job.total_properties ?? 0);
   const liveCompleted = job.id === appState.activeJobId && Number.isFinite(appState.propertyProgress?.completed)
     ? Number(appState.propertyProgress.completed ?? 0)
@@ -324,17 +321,18 @@ function renderWorkspaceInspector() {
   const skipped = Number(job.import_progress?.skipped ?? 0);
   const complete = job.status === "completed";
   const refinement = job.acquisition?.engine === "rifinitura" || job.acquisition?.strategy === "street_refinement";
-  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed");
+  const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
+  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable;
   $("inspectorTitle").textContent = place;
   $("inspectorSubtitle").textContent = refinement ? "Rifinitura salvata" : "Lavorazione salvata";
   const primary = complete
     ? `<button class="button secondary" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Apri riepilogo</button>`
     : acquisitionIncomplete
-      ? `<button class="button primary" data-resume-acquisition="${job.id}">Continua acquisizione</button>`
+      ? `<button class="button primary" data-resume-acquisition="${job.id}">${acquisitionRetryable ? "Riprova anomalie SISTER" : "Continua acquisizione"}</button>`
       : `<button class="button primary" data-resume-job="${job.id}">${job.import_started_at ? "Riprendi dal punto salvato" : refinement ? "Avvia rifinitura" : "Avvia import"}</button>`;
   $("inspectorBody").innerHTML = `
     <section class="inspector-section"><span class="inspector-status ${complete ? "is-complete" : job.import_started_at ? "is-paused" : "is-ready"}">${complete ? "Completata" : job.import_started_at ? "In pausa" : acquisitionIncomplete ? "Acquisizione incompleta" : "Pronta"}</span></section>
-    <section class="inspector-section inspector-phase"><p class="eyebrow">Acquisizione SISTER</p><b>${acquisitionProgress ? `${fmtCount(acquisitionHandled)} di ${fmtCount(acquisitionProgress.total ?? acquisitionHandled)} record conservati` : "Raccolta storica conservata"}</b><small>${acquisitionProgress ? esc(statoAcquisizione(acquisitionProgress)?.detail ?? "Acquisizione completata") : "Immobili, intestatari e quote disponibili nel record."}</small></section>
+    <section class="inspector-section inspector-phase"><p class="eyebrow">Acquisizione SISTER</p><b>${acquisitionProgress ? esc(acquisitionResultCopy(job.acquisition)) : "Raccolta storica conservata"}</b><small>${acquisitionProgress ? esc(statoAcquisizione(acquisitionProgress)?.detail ?? "Acquisizione percorsa") : "Immobili, intestatari e quote disponibili nel record."}</small></section>
     <section class="inspector-section inspector-phase"><p class="eyebrow">Import Cloud</p><progress class="inspector-progress" max="${Math.max(1, total)}" value="${handled}" aria-label="${fmtCount(handled)} di ${fmtCount(total)} righe concluse"></progress><b>${fmtCount(handled)} di ${fmtCount(total)} righe concluse</b><small>${remaining ? `${fmtCount(remaining)} righe ancora aperte; la posizione esatta è nel dettaglio.` : total ? "Tutte le righe risultano concluse" : "Import non ancora disponibile"}</small></section>
     <section class="inspector-section"><p class="eyebrow">Esito registrato</p><dl class="inspector-stats"><div><dt>Eseguite</dt><dd>${fmtCount(Math.max(0, handled - anomalies - skipped))}</dd></div><div><dt>Anomalie</dt><dd>${fmtCount(anomalies)}</dd></div><div><dt>Saltate</dt><dd>${fmtCount(skipped)}</dd></div><div><dt>Proprietari</dt><dd>${fmtCount(job.total_people ?? 0)}</dd></div></dl></section>
     <section class="inspector-section"><p class="eyebrow">Impostazioni fissate</p><p>${esc(riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili")}</p></section>
@@ -1582,13 +1580,49 @@ function statoAcquisizione(progress) {
   };
 }
 
-function dettaglioAcquisizione(acquisition) {
+function acquisitionRecords(acquisition) {
+  return (acquisition?.acquisitionCheckpoint?.results ?? []).flatMap((result) => result.recordLedger ?? []);
+}
+
+function acquisitionHasRetryableAnomalies(acquisition) {
+  return acquisitionRecords(acquisition).some((record) => record.status === "completed_with_anomalies");
+}
+
+function acquisitionResultCopy(acquisition) {
+  const records = acquisitionRecords(acquisition),
+    acquired = records.filter((record) => record.status === "completed").length,
+    retryable = records.filter((record) => record.status === "completed_with_anomalies").length,
+    excluded = records.filter((record) => record.status === "skipped").length;
+  if (!records.length) return "Nessun diario riga per riga disponibile";
+  return `${fmtNamedCount(records.length, "riga esaminata", "righe esaminate")} · ${fmtNamedCount(acquired, "acquisita", "acquisite")} · ${fmtNamedCount(retryable, "da riprovare", "da riprovare")} · ${fmtNamedCount(excluded, "esclusa dai filtri", "escluse dai filtri")}`;
+}
+
+function acquisitionAnomalyLabel(value) {
+  const labels = {
+    non_strategic_category: "Categoria esclusa da “Solo abitazioni”",
+    floor_out_of_range: "Piano fuori dai filtri scelti",
+    civic_out_of_range: "Civico fuori dall’intervallo scelto",
+  };
+  return labels[value] ?? value ?? "Nessun dettaglio registrato";
+}
+
+function dettaglioAcquisizione(acquisition, detail = {}) {
   const progress = acquisition?.acquisitionProgress;
   const checkpoint = acquisition?.acquisitionCheckpoint;
   if (!progress || !checkpoint) return "";
   const state = statoAcquisizione(progress);
-  const records = (checkpoint.results ?? []).flatMap((result) => result.recordLedger ?? []);
-  return `<section class="acquisition-detail"><header><div><p class="eyebrow">Acquisizione SISTER</p><h3>${esc(state?.title ?? "Acquisizione completata")}</h3><small>${esc(state?.detail ?? `${fmtCount(records.length)} righe registrate`)}</small></div>${badgeAcquisizione(acquisition)}</header>${records.map((record) => `<div class="detail-group import-detail-row ${record.status === "completed" ? "is-completed" : record.status === "skipped" ? "is-skipped" : "has-anomaly"}"><span class="detail-row-number">${fmtCount(record.index)}</span><span><b>${esc(record.ownerNames?.join(", ") || record.label)}</b><small>${esc(record.ownerNames?.length ? record.label : record.key)}</small></span><span class="completion-label${record.anomaly ? " has-tooltip" : ""}"${record.anomaly ? ` tabindex="0" data-tooltip="${esc(record.anomaly)}"` : ""}>${record.status === "completed" ? "Salvata" : record.status === "skipped" ? "Esclusa" : "Con anomalia"}</span></div>`).join("")}</section>`;
+  const records = acquisitionRecords(acquisition),
+    propertyByKey = new Map((detail.properties ?? []).map((property) => [property.cadastral_key, property])),
+    relationships = relationshipIndex(detail.people, detail.ownerships);
+  return `<section class="acquisition-detail"><header><div><p class="eyebrow">Acquisizione SISTER</p><h3>${esc(state?.title ?? "Acquisizione percorsa")}</h3><small>${esc(acquisitionResultCopy(acquisition))}</small></div>${badgeAcquisizione(acquisition)}</header><div class="acquisition-record-list">${records.map((record, recordIndex) => {
+    const property = propertyByKey.get(record.key),
+      owners = property
+        ? (relationships.ownershipsByPropertyId.get(property.id) ?? []).map((ownership) => ({ ownership, person: relationships.peopleById.get(ownership.person_id) })).filter((entry) => entry.person)
+        : [],
+      label = record.status === "completed" ? "Acquisita" : record.status === "skipped" ? "Esclusa" : "Da riprovare",
+      className = record.status === "completed" ? "is-completed" : record.status === "skipped" ? "is-skipped" : "has-anomaly";
+    return `<details class="acquisition-record ${className}"><summary><span class="detail-row-number">${fmtCount(recordIndex + 1)}</span><span><b>${esc(record.label)}</b><small>${esc(record.ownerNames?.join(", ") || (record.status === "completed" ? "Proprietari acquisiti" : "Proprietari non acquisiti"))}</small></span><span class="completion-label">${label}</span><i aria-hidden="true">⌄</i></summary><div class="acquisition-record-body"><dl><div><dt>Riferimento catastale</dt><dd>${esc(record.key)}</dd></div><div><dt>Esito SISTER</dt><dd>${esc(acquisitionAnomalyLabel(record.anomaly))}</dd></div></dl><div class="acquisition-owner-list"><b>Proprietari e quote</b>${owners.length ? owners.map(({ ownership, person }) => `<p><strong>${esc(person.full_name ?? "Senza nome")}</strong><span>${esc([ownership.right_type, ownership.share_percentage == null ? null : `${new Intl.NumberFormat("it-IT").format(ownership.share_percentage)}%`, person.tax_code].filter(Boolean).join(" · "))}</span></p>`).join("") : `<p><span>${esc(record.ownerNames?.join(", ") || "Non disponibili: la riga deve essere riprovata in SISTER.")}</span></p>`}</div></div></details>`;
+  }).join("")}</div></section>`;
 }
 
 function renderJobs() {
@@ -1614,7 +1648,8 @@ function renderJobs() {
         .map((job) => {
           const acquisitionProgress = job.acquisition?.acquisitionProgress,
             acquisitionState = statoAcquisizione(acquisitionProgress),
-            acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed"),
+            acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition),
+            acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable,
             canImport = !appState.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
             canResumeAcquisition = !appState.active && acquisitionIncomplete,
             tipo = ACQUISIZIONE_TIPO[job.acquisition?.kind] ?? null,
@@ -1763,7 +1798,8 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   const engineLabel = detail.ledger?.engine === "rifinitura" ? "Rifinitura" : "Lavorazione";
   const settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili";
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
-  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed");
+  const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
+  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable;
   const complete = job.status === "completed" || progress.state === "completed";
   jobDetailParallelCloud = job.acquisition?.importOptions?.parallelCrmWindows === true;
   const sortedRows = sortedDetailProperties(detail.properties, progress, ledgerById);
@@ -1775,7 +1811,7 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
       ? "La ripresa continua l’acquisizione SISTER dal checkpoint salvato."
       : "La ripresa usa le impostazioni fissate e salta ogni record già concluso.";
   if (!complete) {
-    primary.textContent = acquisitionIncomplete ? "Continua acquisizione" : job.import_started_at ? "Riprendi dal punto salvato" : refinementDetail ? "Avvia rifinitura" : "Avvia import";
+    primary.textContent = acquisitionRetryable ? "Riprova anomalie SISTER" : acquisitionIncomplete ? "Continua acquisizione" : job.import_started_at ? "Riprendi dal punto salvato" : refinementDetail ? "Avvia rifinitura" : "Avvia import";
     if (acquisitionIncomplete) primary.dataset.resumeAcquisition = jobId;
     else primary.dataset.resumeJob = jobId;
     primary.classList.remove("is-hidden");
@@ -1787,8 +1823,8 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
       ${!complete && !acquisitionIncomplete ? `<label class="import-setting-row detail-parallel-setting" for="jobDetailParallelToggle"><span><b>Due finestre Cloud</b><small>È l’unica impostazione modificabile alla ripresa. Il conteggio resta unico e ogni riga conclusa viene registrata una sola volta.</small></span><input id="jobDetailParallelToggle" type="checkbox" ${jobDetailParallelCloud ? "checked" : ""}></label>` : ""}
     </section>
     <details class="detail-accordion" ${acquisitionIncomplete ? "open" : ""}>
-      <summary><span><b>Acquisizione SISTER</b><small>${acquisitionProgress ? `${fmtCount(Number(acquisitionProgress.completed ?? 0) + Number(acquisitionProgress.completedWithAnomalies ?? 0) + Number(acquisitionProgress.skipped ?? 0))} di ${fmtCount(acquisitionProgress.total ?? 0)} record conservati` : `${fmtCount(detail.properties.length)} immobili conservati`}</small></span><i aria-hidden="true">⌄</i></summary>
-      <div class="detail-accordion-body">${dettaglioAcquisizione(job.acquisition) || `<p class="empty-message">Il record contiene i dati SISTER storici; non è disponibile un diario riga per riga per questa acquisizione.</p>`}</div>
+      <summary><span><b>Acquisizione SISTER</b><small>${acquisitionProgress ? esc(acquisitionResultCopy(job.acquisition)) : `${fmtCount(detail.properties.length)} immobili conservati`}</small></span><i aria-hidden="true">⌄</i></summary>
+      <div class="detail-accordion-body">${dettaglioAcquisizione(job.acquisition, detail) || `<p class="empty-message">Il record contiene i dati SISTER storici; non è disponibile un diario riga per riga per questa acquisizione.</p>`}</div>
     </details>
     <details class="detail-accordion" open>
       <summary><span><b>Import Cloud</b><small>${esc(progressCopy.headline)} · ${esc(progressCopy.detail)}</small></span><i aria-hidden="true">⌄</i></summary>
@@ -1821,6 +1857,13 @@ function importProgressPresentation(progress, properties = []) {
     nextRow = progress?.nextRow ?? (remaining ? 1 : null),
     laterRowsAlreadyDone = nextRow != null
       && properties.slice(nextRow).some((property) => importPropertyIsHandled(property));
+  if (total === 0) {
+    return {
+      headline: "Nessun immobile pronto per il Cloud",
+      detail: "L’acquisizione SISTER non ha ancora prodotto immobili completi",
+      note: "Apri Acquisizione SISTER e riprova le righe con anomalia prima di avviare l’import.",
+    };
+  }
   const headline = progress?.state === "completed"
     ? "Importazione completata"
     : progress?.state === "running"
