@@ -302,7 +302,14 @@ function renderWorkspaceInspector() {
     ...(appState.completedImports ?? []).map((entry) => entry.job ?? entry),
     ...(appState.refinement?.completedImports ?? []).map((entry) => entry.job ?? entry),
   ].filter(Boolean);
-  const job = jobs.find((entry) => entry.id === selectedInspectorJobId)
+  const workRunActive = Boolean(
+    appState.active || appState.streetRun?.active || appState.networkRun?.active || appState.refinement?.active,
+  );
+  const activeInspectorJob = workRunActive
+    ? jobs.find((entry) => entry.id === appState.activeJobId)
+    : null;
+  const job = activeInspectorJob
+    ?? jobs.find((entry) => entry.id === selectedInspectorJobId)
     ?? jobs.find((entry) => entry.id === appState.activeJobId)
     ?? null;
   if (!job) {
@@ -312,6 +319,7 @@ function renderWorkspaceInspector() {
     return;
   }
   selectedInspectorJobId = job.id;
+  const inspectorRunActive = Boolean(workRunActive && job.id === appState.activeJobId);
   const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Ricerca ${job.id.slice(0, 8)}`;
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
   const total = Number(job.import_progress?.total ?? job.total_properties ?? 0);
@@ -327,18 +335,42 @@ function renderWorkspaceInspector() {
   const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
   const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable;
   $("inspectorTitle").textContent = place;
-  $("inspectorSubtitle").textContent = refinement ? "Rifinitura salvata" : "Lavorazione salvata";
-  const primary = complete
-    ? `<button class="button secondary" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Apri riepilogo</button>`
-    : acquisitionIncomplete
-      ? `<button class="button primary" data-resume-acquisition="${job.id}">${acquisitionRetryable ? "Riprova anomalie SISTER" : "Continua acquisizione"}</button>`
-      : `<button class="button primary" data-resume-job="${job.id}">${job.import_started_at ? "Riprendi dal punto salvato" : refinement ? "Avvia rifinitura" : "Avvia import"}</button>`;
+  $("inspectorSubtitle").textContent = inspectorRunActive
+    ? refinement ? "Rifinitura in corso" : "Lavorazione in corso"
+    : refinement ? "Rifinitura salvata" : "Lavorazione salvata";
+  const primary = workRunActive
+    ? `<button class="button secondary" data-scroll="operationConsole">Apri centro operativo</button>`
+    : complete
+      ? `<button class="button secondary" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Apri riepilogo</button>`
+      : acquisitionIncomplete
+        ? `<button class="button primary" data-resume-acquisition="${job.id}">${acquisitionRetryable ? "Riprova anomalie SISTER" : "Continua acquisizione"}</button>`
+        : `<button class="button primary" data-resume-job="${job.id}">${job.import_started_at ? "Riprendi dal punto salvato" : refinement ? "Avvia rifinitura" : "Avvia import"}</button>`;
+  const liveProgress = appState.propertyProgress
+    ?? (appState.streetRun?.active ? appState.streetRun?.progress : null)
+    ?? (appState.networkRun?.active ? appState.networkRun?.progress : null)
+    ?? (appState.refinement?.active ? appState.refinement?.progress : null);
+  const liveIndex = Number(liveProgress?.index ?? liveProgress?.current ?? 0);
+  const liveTotal = Number(liveProgress?.total ?? total ?? 0);
+  const liveAddress = liveProgress?.address ?? null;
+  const liveMessage = liveProgress?.message
+    ?? (appState.active ? guide(appState.currentStep).doing : "Preparazione del prossimo record");
+  const currentSection = inspectorRunActive ? `
+    <section class="inspector-section inspector-current" aria-live="polite">
+      <p class="eyebrow">Adesso</p>
+      ${liveIndex ? `<span class="inspector-position">${fmtCount(liveIndex)} di ${fmtCount(liveTotal)}</span>` : ""}
+      <b>${esc(liveAddress ?? "Sto preparando il prossimo record")}</b>
+      <small>${esc(liveMessage)}</small>
+    </section>` : "";
+  const settingsSection = inspectorRunActive
+    ? `<details class="inspector-disclosure"><summary>Regole fissate per questa run</summary><p>${esc(riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili")}</p></details>`
+    : `<section class="inspector-section"><p class="eyebrow">Impostazioni fissate</p><p>${esc(riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili")}</p></section>`;
   $("inspectorBody").innerHTML = `
-    <section class="inspector-section"><span class="inspector-status ${complete ? "is-complete" : job.import_started_at ? "is-paused" : "is-ready"}">${complete ? "Completata" : job.import_started_at ? "In pausa" : acquisitionIncomplete ? "Acquisizione incompleta" : "Pronta"}</span></section>
+    <section class="inspector-section"><span class="inspector-status ${inspectorRunActive ? "is-running" : complete ? "is-complete" : job.import_started_at ? "is-paused" : "is-ready"}">${inspectorRunActive ? "In corso" : complete ? "Completata" : job.import_started_at ? "In pausa" : acquisitionIncomplete ? "Acquisizione incompleta" : "Pronta"}</span></section>
+    ${currentSection}
     <section class="inspector-section inspector-phase"><p class="eyebrow">Acquisizione SISTER</p><b>${acquisitionProgress ? esc(acquisitionResultCopy(job.acquisition)) : "Raccolta storica conservata"}</b><small>${acquisitionProgress ? esc(statoAcquisizione(acquisitionProgress)?.detail ?? "Acquisizione percorsa") : "Immobili, intestatari e quote disponibili nel record."}</small></section>
     <section class="inspector-section inspector-phase"><p class="eyebrow">Import Cloud</p><progress class="inspector-progress" max="${Math.max(1, total)}" value="${handled}" aria-label="${fmtCount(handled)} di ${fmtCount(total)} righe concluse"></progress><b>${fmtCount(handled)} di ${fmtCount(total)} righe concluse</b><small>${remaining ? `${fmtCount(remaining)} righe ancora aperte; la posizione esatta è nel dettaglio.` : total ? "Tutte le righe risultano concluse" : "Import non ancora disponibile"}</small></section>
     <section class="inspector-section"><p class="eyebrow">Esito registrato</p><dl class="inspector-stats"><div><dt>Eseguite</dt><dd>${fmtCount(Math.max(0, handled - anomalies - skipped))}</dd></div><div><dt>Anomalie</dt><dd>${fmtCount(anomalies)}</dd></div><div><dt>Saltate</dt><dd>${fmtCount(skipped)}</dd></div><div><dt>Proprietari</dt><dd>${fmtCount(job.total_people ?? 0)}</dd></div></dl></section>
-    <section class="inspector-section"><p class="eyebrow">Impostazioni fissate</p><p>${esc(riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili")}</p></section>
+    ${settingsSection}
     <div class="inspector-actions">${primary}<button class="button quiet" data-${refinement ? "refinement-detail-job" : "detail-job"}="${job.id}">Vedi tutte le righe</button></div>`;
 }
 function lockSecondaryPageActions(locked) {

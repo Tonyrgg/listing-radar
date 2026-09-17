@@ -4323,8 +4323,15 @@ body[data-worker-view="operations"] .workspace { display: block !important; }
 .inspector-section > p:not(.eyebrow) { color: var(--lr-ink-2); font-size: .8125rem; line-height: 1.5; }
 .inspector-status { justify-self: start; padding: 4px 9px; border: 1px solid var(--lr-line); border-radius: 999px; font-size: .6875rem; font-weight: 650; }
 .inspector-status.is-complete { border-color: var(--lr-ok); color: var(--lr-ok); }
+.inspector-status.is-running { border-color: var(--lr-accent); background: var(--lr-accent-soft); color: var(--lr-accent); }
 .inspector-status.is-paused { border-color: var(--lr-warn); color: var(--lr-warn); }
 .inspector-status.is-ready { border-color: var(--lr-info); color: var(--lr-info); }
+.inspector-current { position: relative; gap: 6px; }
+.inspector-current > b { padding-right: 62px; line-height: 1.35; }
+.inspector-position { position: absolute; top: 17px; right: 0; color: var(--lr-ink-2); font: 650 var(--lr-text-meta)/1.2 var(--lr-font-mono); }
+.inspector-disclosure { padding: 16px 0; border-bottom: 1px solid var(--lr-line-quiet); }
+.inspector-disclosure summary { color: var(--lr-ink-2); font-size: var(--lr-text-meta); font-weight: var(--lr-weight-medium); cursor: pointer; }
+.inspector-disclosure p { margin-top: 10px; color: var(--lr-ink-2); font-size: var(--lr-text-meta); line-height: 1.5; }
 .inspector-progress { width: 100%; height: 5px; overflow: hidden; border: 0; border-radius: 999px; background: var(--lr-raised); color: var(--lr-accent); appearance: none; }
 .inspector-progress::-webkit-progress-bar { border-radius: inherit; background: var(--lr-raised); }
 .inspector-progress::-webkit-progress-value { border-radius: inherit; background: var(--lr-accent); }

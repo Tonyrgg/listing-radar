@@ -393,6 +393,12 @@ const mandateMonitorVisible = await page.getByText("Importazione di 250 incarich
  * d'errore compare solo quando c'e qualcosa da sistemare. */
 await page.locator("#connectionPill").screenshot({ path: path.join(output, "connections.png") });
 await page.evaluate(() => window.__showPropertyState());
+await page.setViewportSize({ width: 1600, height: 1000 });
+const activeInspectorRunning = await page.locator("#workspaceInspector").getByText("In corso", { exact: true }).count();
+const activeInspectorCurrentRecord = await page.locator("#workspaceInspector").getByText("Via Borgo San Francesco 29 [2]", { exact: true }).count();
+const activeInspectorResumeHidden = await page.locator('#workspaceInspector button:has-text("Riprendi")').count() === 0;
+await page.locator("#workspaceInspector").screenshot({ path: path.join(output, "active-run-inspector.png") });
+await page.setViewportSize({ width: 1440, height: 1000 });
 await page.locator('#actionPanel [data-action="pause"]').click();
 await page.getByRole("button", { name: "Salta immobile" }).click();
 const workerCalls = await page.evaluate(() => window.__workerCalls());
@@ -444,7 +450,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -473,6 +479,8 @@ const failures = [
   ...(requestMonitorVisible < 1 ? ["Totale import richieste non visibile"] : []),
   ...(mandateMonitorVisible < 1 ? ["Totale import incarichi non visibile"] : []),
   ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
+  ...(activeInspectorRunning !== 1 || activeInspectorCurrentRecord !== 1 || !activeInspectorResumeHidden
+    ? ["La sidebar della run attiva non mostra il record corrente o espone ancora la ripresa"] : []),
   ...(!operationQueueStability || operationQueueStability.pageDelta > 10 || operationQueueStability.mainScrollTop !== 0 || operationQueueStability.queueScrollTop <= 0 || operationQueueStability.centerDelta > 2
     ? ["La coda operativa muove ancora la colonna sinistra o non centra il record corrente"] : []),
   ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
