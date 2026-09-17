@@ -1,8 +1,9 @@
 import { normalizeTaxCode } from "./normalize.js";
 
-export type BusinessOwnerReason = "business-tax-code" | "legal-form";
+export type BusinessOwnerReason = "business-tax-code" | "legal-form" | "public-entity";
 
 const LEGAL_FORM = /\b(?:SRL|SRLS|SPA|SAPA|SNC|SAS|SCARL|SOCIETA|COOPERATIVA|CONSORZIO|FONDAZIONE|ASSOCIAZIONE|IMPRESA|DITTA)\b/;
+const PUBLIC_ENTITY = /\b(?:COMUNE|PROVINCIA|REGIONE|MINISTERO|AGENZIA DEL DEMANIO|AZIENDA SANITARIA)\b/;
 
 function normalizeBusinessName(value: string): string {
   return value
@@ -23,7 +24,9 @@ function normalizeBusinessName(value: string): string {
 export function businessOwnerReason(fullName: string, taxCode: string | null): BusinessOwnerReason | null {
   const normalizedTaxCode = normalizeTaxCode(taxCode);
   if (/^\d{11}$/.test(normalizedTaxCode)) return "business-tax-code";
-  return LEGAL_FORM.test(normalizeBusinessName(fullName)) ? "legal-form" : null;
+  const normalizedName = normalizeBusinessName(fullName);
+  if (PUBLIC_ENTITY.test(normalizedName)) return "public-entity";
+  return LEGAL_FORM.test(normalizedName) ? "legal-form" : null;
 }
 
 export function isBusinessOwner(fullName: string, taxCode: string | null): boolean {

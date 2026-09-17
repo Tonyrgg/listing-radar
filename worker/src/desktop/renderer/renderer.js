@@ -174,7 +174,10 @@ let completedImportsRenderKey = null,
   operationQueueDetail = null,
   operationQueueKey = "",
   jobDetailJobId = null,
-  jobDetailParallelCloud = false;
+  jobDetailParallelCloud = false,
+  jobDetailLoaded = null,
+  jobDetailRefinement = false,
+  jobDetailEditing = false;
 /* Firma dell'ultima riga disegnata nel diario e quante ne sono a schermo:
  * servono a capire quali righe sono nuove senza ridisegnare le altre. */
 let attivitaCimaDisegnata = null,
@@ -1594,7 +1597,7 @@ function acquisitionResultCopy(acquisition) {
     retryable = records.filter((record) => record.status === "completed_with_anomalies").length,
     excluded = records.filter((record) => record.status === "skipped").length;
   if (!records.length) return "Nessun diario riga per riga disponibile";
-  return `${fmtNamedCount(records.length, "riga esaminata", "righe esaminate")} · ${fmtNamedCount(acquired, "acquisita", "acquisite")} · ${fmtNamedCount(retryable, "da riprovare", "da riprovare")} · ${fmtNamedCount(excluded, "esclusa dai filtri", "escluse dai filtri")}`;
+  return `${fmtNamedCount(records.length, "riga esaminata", "righe esaminate")} · ${fmtNamedCount(acquired, "acquisita", "acquisite")} · ${fmtNamedCount(retryable, "da riprovare", "da riprovare")} · ${fmtNamedCount(excluded, "esclusa", "escluse")}`;
 }
 
 function acquisitionAnomalyLabel(value) {
@@ -1606,7 +1609,7 @@ function acquisitionAnomalyLabel(value) {
   return labels[value] ?? value ?? "Nessun dettaglio registrato";
 }
 
-function dettaglioAcquisizione(acquisition, detail = {}) {
+function dettaglioAcquisizione(acquisition, detail = {}, jobId = "") {
   const progress = acquisition?.acquisitionProgress;
   const checkpoint = acquisition?.acquisitionCheckpoint;
   if (!progress || !checkpoint) return "";
@@ -1620,8 +1623,11 @@ function dettaglioAcquisizione(acquisition, detail = {}) {
         ? (relationships.ownershipsByPropertyId.get(property.id) ?? []).map((ownership) => ({ ownership, person: relationships.peopleById.get(ownership.person_id) })).filter((entry) => entry.person)
         : [],
       label = record.status === "completed" ? "Acquisita" : record.status === "skipped" ? "Esclusa" : "Da riprovare",
-      className = record.status === "completed" ? "is-completed" : record.status === "skipped" ? "is-skipped" : "has-anomaly";
-    return `<details class="acquisition-record ${className}"><summary><span class="detail-row-number">${fmtCount(recordIndex + 1)}</span><span><b>${esc(record.label)}</b><small>${esc(record.ownerNames?.join(", ") || (record.status === "completed" ? "Proprietari acquisiti" : "Proprietari non acquisiti"))}</small></span><span class="completion-label">${label}</span><i aria-hidden="true">⌄</i></summary><div class="acquisition-record-body"><dl><div><dt>Riferimento catastale</dt><dd>${esc(record.key)}</dd></div><div><dt>Esito SISTER</dt><dd>${esc(acquisitionAnomalyLabel(record.anomaly))}</dd></div></dl><div class="acquisition-owner-list"><b>Proprietari e quote</b>${owners.length ? owners.map(({ ownership, person }) => `<p><strong>${esc(person.full_name ?? "Senza nome")}</strong><span>${esc([ownership.right_type, ownership.share_percentage == null ? null : `${new Intl.NumberFormat("it-IT").format(ownership.share_percentage)}%`, person.tax_code].filter(Boolean).join(" · "))}</span></p>`).join("") : `<p><span>${esc(record.ownerNames?.join(", ") || "Non disponibili: la riga deve essere riprovata in SISTER.")}</span></p>`}</div></div></details>`;
+      className = record.status === "completed" ? "is-completed" : record.status === "skipped" ? "is-skipped" : "has-anomaly",
+      skipAction = record.status === "completed_with_anomalies" && jobId
+        ? `<button type="button" class="text-button is-destructive acquisition-skip" data-skip-sister-record="${esc(record.key)}" data-job-id="${esc(jobId)}">Escludi questa riga</button>`
+        : "";
+    return `<details class="acquisition-record ${className}"><summary><span class="detail-row-number">${fmtCount(recordIndex + 1)}</span><span><b>${esc(record.label)}</b><small>${esc(record.ownerNames?.join(", ") || (record.status === "completed" ? "Proprietari acquisiti" : "Proprietari non acquisiti"))}</small></span><span class="completion-label">${label}</span><i aria-hidden="true">⌄</i></summary><div class="acquisition-record-body"><dl><div><dt>Riferimento catastale</dt><dd>${esc(record.key)}</dd></div><div><dt>Esito SISTER</dt><dd>${esc(acquisitionAnomalyLabel(record.anomaly))}</dd></div>${skipAction ? `<div><dt>Azione</dt><dd>${skipAction}</dd></div>` : ""}</dl><div class="acquisition-owner-list"><b>Proprietari e quote</b>${owners.length ? owners.map(({ ownership, person }) => `<p><strong>${esc(person.full_name ?? "Senza nome")}</strong><span>${esc([ownership.right_type, ownership.share_percentage == null ? null : `${new Intl.NumberFormat("it-IT").format(ownership.share_percentage)}%`, person.tax_code].filter(Boolean).join(" · "))}</span></p>`).join("") : `<p><span>${esc(record.ownerNames?.join(", ") || (record.status === "skipped" ? "Riga esclusa dall’import." : "Non disponibili: correggi, riprova o escludi la riga."))}</span></p>`}</div></div></details>`;
   }).join("")}</div></section>`;
 }
 
@@ -1775,22 +1781,66 @@ async function openImportDialog(jobId, parallelOverride = null) {
     .join("")}`;
 }
 
+function jobDetailEditMarkup(detail) {
+  const { peopleById, ownershipsByPropertyId } = relationshipIndex(detail.people, detail.ownerships);
+  return `<form id="jobDetailEditForm" class="job-detail-edit"><header><div><p class="eyebrow">Modifica manuale</p><h3>Correggi i dati conservati</h3><small>Le modifiche restano nel record e saranno usate al prossimo import.</small></div></header><div class="job-detail-edit-list">${detail.properties.map((property) => {
+    const owners = (ownershipsByPropertyId.get(property.id) ?? []).map((ownership) => ({ ownership, person: peopleById.get(ownership.person_id) })).filter(({ person }) => person);
+    return `<article class="manual-property-card"><header><div><p class="eyebrow">Civico ${esc(civicLabel(property))}</p><h3>${esc(property.address ?? property.cadastral_key)}</h3></div><strong>${esc(property.cadastral_key)}</strong></header><div class="manual-property-columns"><section class="manual-property-column" data-property-id="${esc(property.id)}"><h4>Immobile</h4><div class="manual-grid">${input("sheet", "Foglio", property.sheet)}${input("parcel", "Particella", property.parcel)}${input("subaltern", "Subalterno", property.subaltern)}${input("category", "Categoria", property.category)}${input("address", "Indirizzo", property.address)}${input("class", "Classe", property.class)}${input("consistency", "Consistenza", property.consistency)}${input("cadastralIncome", "Rendita", property.cadastral_income, "number")}</div></section><section class="manual-owners-column"><h4>Proprietari e quote</h4>${owners.map(({ ownership, person }) => `<div class="manual-owner" data-person-id="${esc(person.id)}" data-ownership-id="${esc(ownership.id)}"><h5>${esc(person.full_name)}</h5><div class="manual-grid">${input("fullName", "Nome completo", person.full_name)}${input("taxCode", "Codice fiscale", person.tax_code)}${input("birthPlace", "Luogo di nascita", person.birth_place)}${input("birthProvince", "Provincia", person.birth_province)}${input("birthDate", "Data di nascita", person.birth_date, "date")}${input("sharePercentage", "Quota (%)", ownership.share_percentage ?? person.share_percentage, "number")}<input name="shareOriginal" type="hidden" value="${esc(person.share_original || "1/1")}" /></div></div>`).join("") || `<p class="empty-message">Nessun proprietario modificabile per questo immobile.</p>`}</section></div></article>`;
+  }).join("")}</div></form>`;
+}
+
+function correctionsPayload(form, jobId) {
+  const properties = [...form.querySelectorAll("[data-property-id]")].map((section) => ({
+    id: section.dataset.propertyId,
+    sheet: section.querySelector('[name="sheet"]').value,
+    parcel: section.querySelector('[name="parcel"]').value,
+    subaltern: section.querySelector('[name="subaltern"]').value,
+    category: section.querySelector('[name="category"]').value,
+    address: section.querySelector('[name="address"]').value || null,
+    class: section.querySelector('[name="class"]').value || null,
+    consistency: section.querySelector('[name="consistency"]').value || null,
+    cadastralIncome: nullableNumber(section.querySelector('[name="cadastralIncome"]').value),
+  }));
+  const people = [...form.querySelectorAll("[data-person-id]")].map((section) => ({
+    id: section.dataset.personId,
+    ownershipId: section.dataset.ownershipId,
+    fullName: section.querySelector('[name="fullName"]').value,
+    taxCode: section.querySelector('[name="taxCode"]').value || null,
+    birthPlace: section.querySelector('[name="birthPlace"]').value || null,
+    birthProvince: section.querySelector('[name="birthProvince"]').value || null,
+    birthDate: section.querySelector('[name="birthDate"]').value || null,
+    shareOriginal: section.querySelector('[name="shareOriginal"]').value,
+    sharePercentage: nullableNumber(section.querySelector('[name="sharePercentage"]').value),
+  }));
+  return { jobId, properties, people };
+}
+
 async function openJobDetailDialog(jobId, refinementDetail = false) {
   const dialog = $("jobDetailDialog");
   const knownJob = allSavedJobs().find((job) => job.id === jobId);
   jobDetailJobId = jobId;
+  jobDetailRefinement = refinementDetail;
+  jobDetailEditing = false;
+  jobDetailLoaded = null;
   $("jobDetailEyebrow").textContent = refinementDetail ? "Dettaglio Rifinitura" : "Dettaglio lavorazione";
   $("jobDetailTitle").textContent = [knownJob?.municipality, knownJob?.street, knownJob?.civic_number].filter(Boolean).join(" · ") || "Immobili e proprietari";
   $("jobDetailMeta").textContent = "Rileggo stato, checkpoint e anomalie registrate…";
   $("jobDetailContent").innerHTML = `<p class="empty-message">Carico il record…</p>`;
   const primary = $("jobDetailPrimary");
+  const retry = $("jobDetailRetry");
+  const edit = $("jobDetailEdit");
+  edit.textContent = "Modifica dati";
   primary.classList.add("is-hidden");
+  retry.classList.add("is-hidden");
+  edit.classList.add("is-hidden");
   delete primary.dataset.resumeJob;
   delete primary.dataset.resumeAcquisition;
+  delete retry.dataset.resumeAcquisition;
   if (!dialog.open) dialog.showModal();
 
   const detail = await window.propertyWorker.getJobDetails(jobId);
   if (jobDetailJobId !== jobId) return;
+  jobDetailLoaded = detail;
   const job = { ...(knownJob ?? {}), ...(detail.job ?? {}) };
   const progress = detail.progress ?? { state: "not_started", handled: 0, total: detail.properties.length, nextRow: 1 };
   const progressCopy = importProgressPresentation(progress, detail.properties);
@@ -1799,7 +1849,7 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   const settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili";
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
   const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
-  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable;
+  const acquisitionRunningIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed");
   const complete = job.status === "completed" || progress.state === "completed";
   jobDetailParallelCloud = job.acquisition?.importOptions?.parallelCrmWindows === true;
   const sortedRows = sortedDetailProperties(detail.properties, progress, ledgerById);
@@ -1807,31 +1857,42 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   $("jobDetailMeta").textContent = `${engineLabel} · ${progressCopy.headline} · ${fmtNamedCount(detail.properties.length, "immobile", "immobili")}`;
   $("jobDetailFooterNote").textContent = complete
     ? "La run è conclusa: il riepilogo resta consultabile e non modifica dati."
-    : acquisitionIncomplete
+    : acquisitionRunningIncomplete
       ? "La ripresa continua l’acquisizione SISTER dal checkpoint salvato."
+      : acquisitionRetryable
+        ? "Puoi riprovare o escludere le anomalie, oppure importare subito i soli record completi."
       : "La ripresa usa le impostazioni fissate e salta ogni record già concluso.";
   if (!complete) {
-    primary.textContent = acquisitionRetryable ? "Riprova anomalie SISTER" : acquisitionIncomplete ? "Continua acquisizione" : job.import_started_at ? "Riprendi dal punto salvato" : refinementDetail ? "Avvia rifinitura" : "Avvia import";
-    if (acquisitionIncomplete) primary.dataset.resumeAcquisition = jobId;
+    const hasImportableRecords = detail.properties.length > 0;
+    primary.textContent = acquisitionRunningIncomplete || !hasImportableRecords
+      ? acquisitionRetryable ? "Riprova anomalie SISTER" : "Continua acquisizione"
+      : job.import_started_at ? "Riprendi dal punto salvato" : refinementDetail ? "Avvia rifinitura" : "Inizia import";
+    if (acquisitionRunningIncomplete || !hasImportableRecords) primary.dataset.resumeAcquisition = jobId;
     else primary.dataset.resumeJob = jobId;
     primary.classList.remove("is-hidden");
+    if (acquisitionRetryable && !acquisitionRunningIncomplete && hasImportableRecords) {
+      retry.dataset.resumeAcquisition = jobId;
+      retry.classList.remove("is-hidden");
+    }
+    if (detail.properties.length) edit.classList.remove("is-hidden");
   }
   $("jobDetailContent").innerHTML = `
     <section class="detail-overview">
       <div class="run-settings-snapshot"><span>Motore ${esc(engineLabel)}</span><b>Impostazioni fissate alla partenza</b><small>${esc(settings)}</small></div>
       ${renderCapabilities(job.acquisition)}
-      ${!complete && !acquisitionIncomplete ? `<label class="import-setting-row detail-parallel-setting" for="jobDetailParallelToggle"><span><b>Due finestre Cloud</b><small>È l’unica impostazione modificabile alla ripresa. Il conteggio resta unico e ogni riga conclusa viene registrata una sola volta.</small></span><input id="jobDetailParallelToggle" type="checkbox" ${jobDetailParallelCloud ? "checked" : ""}></label>` : ""}
+      ${!complete && !acquisitionRunningIncomplete ? `<label class="import-setting-row detail-parallel-setting" for="jobDetailParallelToggle"><span><b>Due finestre Cloud</b><small>È l’unica impostazione modificabile alla ripresa. Il conteggio resta unico e ogni riga conclusa viene registrata una sola volta.</small></span><input id="jobDetailParallelToggle" type="checkbox" ${jobDetailParallelCloud ? "checked" : ""}></label>` : ""}
     </section>
-    <details class="detail-accordion" ${acquisitionIncomplete ? "open" : ""}>
+    <section class="detail-workspace-columns">
+    <details class="detail-accordion" open>
       <summary><span><b>Acquisizione SISTER</b><small>${acquisitionProgress ? esc(acquisitionResultCopy(job.acquisition)) : `${fmtCount(detail.properties.length)} immobili conservati`}</small></span><i aria-hidden="true">⌄</i></summary>
-      <div class="detail-accordion-body">${dettaglioAcquisizione(job.acquisition, detail) || `<p class="empty-message">Il record contiene i dati SISTER storici; non è disponibile un diario riga per riga per questa acquisizione.</p>`}</div>
+      <div class="detail-accordion-body">${dettaglioAcquisizione(job.acquisition, detail, jobId) || `<p class="empty-message">Il record contiene i dati SISTER storici; non è disponibile un diario riga per riga per questa acquisizione.</p>`}</div>
     </details>
     <details class="detail-accordion" open>
       <summary><span><b>Import Cloud</b><small>${esc(progressCopy.headline)} · ${esc(progressCopy.detail)}</small></span><i aria-hidden="true">⌄</i></summary>
       <div class="detail-accordion-body"><div class="import-progress-summary"><b>${fmtNamedCount(detail.properties.length, "immobile", "immobili")}</b><small>${fmtNamedCount(detail.people.length, "proprietario", "proprietari")} · ${fmtNamedCount(detail.ownerships.length, "quota", "quote")}</small>${progressCopy.note ? `<p>${esc(progressCopy.note)}</p>` : ""}</div><section class="detail-property-list" aria-label="Immobili della run">${sortedRows.map(({ property, rowState }) => {
         return `<div class="detail-group import-detail-row ${rowState.className}"><span class="detail-row-civic"><small>Civico</small>${esc(civicLabel(property))}</span><span><b>${esc(property.address ?? property.cadastral_key)}</b><small>${esc(property.cadastral_key)}</small></span><span class="completion-label${rowState.tooltip ? " has-tooltip" : ""}"${rowState.tooltip ? ` tabindex="0" data-tooltip="${esc(rowState.tooltip)}" aria-label="${esc(`${rowState.label}: ${rowState.tooltip}`)}"` : ""}>${esc(rowState.label)}</span></div>`;
       }).join("")}</section></div>
-    </details>`;
+    </details></section>`;
 }
 
 function relationshipIndex(people = [], ownerships = []) {
@@ -3299,6 +3360,8 @@ document.addEventListener("click", async (event) => {
   }
   if (target.dataset.jobDetail === "close") {
     jobDetailJobId = null;
+    jobDetailLoaded = null;
+    jobDetailEditing = false;
     $("jobDetailDialog").close();
     return;
   }
@@ -3327,6 +3390,35 @@ document.addEventListener("click", async (event) => {
   const command = commandIdentity(target);
   try {
     await executeButtonCommand(target, command, async () => {
+      if (target.id === "jobDetailEdit") {
+        if (!jobDetailJobId || !jobDetailLoaded) throw new Error("Dettaglio della lavorazione non disponibile");
+        if (!jobDetailEditing) {
+          jobDetailEditing = true;
+          $("jobDetailContent").innerHTML = jobDetailEditMarkup(jobDetailLoaded);
+          target.textContent = "Salva modifiche";
+          $("jobDetailFooterNote").textContent = "Controlla i campi modificati prima di salvare. Nessun dato Cloud viene scritto in questa fase.";
+          $("jobDetailPrimary").classList.add("is-hidden");
+          $("jobDetailRetry").classList.add("is-hidden");
+          return true;
+        }
+        const form = $("jobDetailEditForm");
+        await window.propertyWorker.saveManualCorrections(correctionsPayload(form, jobDetailJobId));
+        const currentJobId = jobDetailJobId;
+        const refinement = jobDetailRefinement;
+        target.textContent = "Modifica dati";
+        toast("Correzioni salvate nel record");
+        await openJobDetailDialog(currentJobId, refinement);
+        return true;
+      }
+      if (target.dataset.skipSisterRecord && target.dataset.jobId) {
+        await window.propertyWorker.skipAcquisitionRecord({
+          jobId: target.dataset.jobId,
+          recordKey: target.dataset.skipSisterRecord,
+        });
+        toast("Riga SISTER esclusa. Gli altri immobili restano pronti.");
+        await openJobDetailDialog(target.dataset.jobId, jobDetailRefinement);
+        return true;
+      }
       if (target.dataset.portoniOpen) {
         selectedPortoniId = target.dataset.portoniOpen;
         portoniRenderKey = null;

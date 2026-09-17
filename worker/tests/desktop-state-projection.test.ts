@@ -12,6 +12,7 @@ import {
   hasRetryableAcquisitionRecords,
   prepareStreetAcquisitionRetry,
   selectRicherStreetCheckpoint,
+  skipStreetAcquisitionRecord,
 } from "../src/services/sister-street-run.js";
 
 describe("proiezione leggera dello stato desktop", () => {
@@ -20,6 +21,7 @@ describe("proiezione leggera dello stato desktop", () => {
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
 
     expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
+    expect(main).toContain('ipcMain.handle("desktop:skip-acquisition-record"');
     expect(main).toContain("repo.listSavedJobImportCounts([...savedJobs, ...refinementJobs].map((job) => job.id))");
     expect(main).toContain("const savedPartitions = partitionPropertyJobs([...createdRefinementSeeds, ...allSavedJobs])");
     expect(main).toContain("repo.ensureCompletedWorkRefinement(job)");
@@ -45,6 +47,10 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(renderer).toContain("Pronta per l'import");
     expect(renderer).toContain("Continua acquisizione");
     expect(renderer).toContain("data-resume-acquisition");
+    expect(renderer).toContain("detail-workspace-columns");
+    expect(renderer).toContain("jobDetailEditMarkup");
+    expect(renderer).toContain("Inizia import");
+    expect(renderer).toContain("data-skip-sister-record");
     expect(main).toContain('ipcMain.handle("desktop:resume-acquisition"');
     expect(main).toContain("acquisitionCheckpoint: checkpoint");
     expect(main).toContain('status: "paused"');
@@ -244,5 +250,14 @@ describe("proiezione leggera dello stato desktop", () => {
       ["p3", "skipped"],
     ]);
     expect(retry.results[0]?.cursor).toMatchObject({ position: 2, total: 3, key: "p2" });
+
+    const skipped = skipStreetAcquisitionRecord(base, "p2");
+    expect(skipped.results[0]?.recordLedger?.map((record) => [record.key, record.status])).toEqual([
+      ["p1", "completed"],
+      ["p2", "skipped"],
+      ["p3", "skipped"],
+    ]);
+    expect(skipped.results[0]?.recordLedger?.[1]?.anomaly).toContain("Esclusa manualmente");
+    expect(hasRetryableAcquisitionRecords(skipped)).toBe(false);
   });
 });

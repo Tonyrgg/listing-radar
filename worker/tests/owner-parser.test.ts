@@ -79,6 +79,11 @@ Nuda proprieta'
 });
 
 describe("riconoscimento intestatari aziendali", () => {
+  it("riconosce gli enti pubblici anche con un identificativo non personale", () => {
+    expect(businessOwnerReason("COMUNE DI BITONTO", "80012340724")).toBe("business-tax-code");
+    expect(businessOwnerReason("COMUNE DI BITONTO", "ABC123")).toBe("public-entity");
+  });
+
   it("riconosce una partita IVA italiana di undici cifre", () => {
     const owner = parseOwnerBlock(`EDILE & IMMOBILIARE COCE S.R.L.\n07504350724\nProprietÃ \n1/1`);
     expect(owner.taxCode).toBe("07504350724");

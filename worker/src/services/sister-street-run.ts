@@ -207,6 +207,46 @@ export function prepareStreetAcquisitionRetry(
   };
 }
 
+/**
+ * Trasforma una singola anomalia SISTER in una esclusione esplicita.
+ * Il record resta nel diario, con la causa originale, ma non impedisce piu'
+ * l'import degli immobili completi gia' conservati.
+ */
+export function skipStreetAcquisitionRecord(
+  checkpoint: SisterStreetRunCheckpoint,
+  recordKey: string,
+): SisterStreetRunCheckpoint {
+  let changed = false;
+  const results = checkpoint.results.map((result) => {
+    const recordLedger = result.recordLedger?.map((record) => {
+      if (record.key !== recordKey || record.status !== "completed_with_anomalies") return record;
+      changed = true;
+      return {
+        ...record,
+        status: "skipped" as const,
+        anomaly: `Esclusa manualmente: ${record.anomaly ?? "anomalia SISTER non risolta"}`,
+        completedAt: new Date().toISOString(),
+      };
+    });
+    return recordLedger ? {
+      ...result,
+      recordLedger,
+      skippedPropertyRows: recordLedger.filter((record) => record.status === "skipped").length,
+    } : result;
+  });
+  if (!changed) throw new Error("La riga SISTER non e' piu' disponibile tra le anomalie da saltare");
+  const now = new Date().toISOString();
+  return {
+    ...checkpoint,
+    results,
+    updatedAt: now,
+    totalSkippedPropertyRows: results.reduce((sum, result) => sum + result.skippedPropertyRows, 0),
+    lastError: hasRetryableAcquisitionRecords({ ...checkpoint, results })
+      ? "Restano anomalie SISTER da correggere o escludere. Gli immobili completi possono comunque essere importati."
+      : null,
+  };
+}
+
 type StreetRunOptions = {
   emptyWindow?: number;
   startCivic?: number;
@@ -1010,6 +1050,7 @@ export class SisterStreetRun {
         let acquiredOwners: CadastralOwner[] = [];
         let propertyError: unknown = null;
         let skippedReason: string | null = null;
+        let intentionalSkip = false;
         for (let attempt = 1; attempt <= this.maxQueryAttempts; attempt += 1) {
           await this.options.onRetryTelemetry?.({
             operation: "Lettura proprietari SISTER", attempt, maximumAttempts: this.maxQueryAttempts,
@@ -1042,7 +1083,12 @@ export class SisterStreetRun {
             } : undefined);
             ownersRead += acquiredOwners.length;
             if (!acquiredOwners.length) {
-              skippedReason = "nessun proprietario interpretabile o nessuna corrispondenza trovata";
+              const sourceRowIndex = Number(property.sourceRef ?? property.rawPayload.rowIndex);
+              intentionalSkip = Number.isInteger(sourceRowIndex)
+                && this.adapter.hasIgnoredBusinessOnRow(sourceRowIndex);
+              skippedReason = intentionalSkip
+                ? "intestatario non persona fisica (ente o codice fiscale assimilabile a partita IVA)"
+                : "nessun proprietario interpretabile o nessuna corrispondenza trovata";
               break;
             }
             await publishPartial?.(snapshot("paused", {
@@ -1091,7 +1137,7 @@ export class SisterStreetRun {
             key: propertyKey,
             label: recordLabel(property),
             ownerNames: acquiredOwners.map((owner) => owner.fullName),
-            status: "completed_with_anomalies",
+            status: intentionalSkip ? "skipped" : "completed_with_anomalies",
             anomaly,
             completedAt: new Date().toISOString(),
           });

@@ -31,6 +31,7 @@ import { stepRequiresSister } from "../core/sister-requirement.js";
 import {
   hasRetryableAcquisitionRecords,
   prepareStreetAcquisitionRetry,
+  skipStreetAcquisitionRecord,
   selectRicherStreetCheckpoint,
   SisterStreetRun,
   type SisterStreetRunCheckpoint,
@@ -161,6 +162,10 @@ const manualCorrectionSchema = z.object({
 const removeJobPropertySchema = z.object({
   jobId: z.string().uuid(),
   propertyId: z.string().uuid(),
+});
+const skipAcquisitionRecordSchema = z.object({
+  jobId: z.string().uuid(),
+  recordKey: z.string().trim().min(1),
 });
 const internalConfigurationSchema = z.object({
   supabaseUrl: z.string().url(),
@@ -3813,6 +3818,35 @@ function registerIpc() {
       filters: checkpoint.runSettings?.filters ?? checkpoint.filters,
       refinement: engine === "rifinitura",
     });
+    return true;
+  });
+  ipcMain.handle("desktop:skip-acquisition-record", async (_event, rawValues: unknown) => {
+    if (streetRunActive || active) throw new Error("Metti prima in pausa la lavorazione");
+    const values = skipAcquisitionRecordSchema.parse(rawValues);
+    const repo = repository();
+    const job = await repo.getJob(values.jobId);
+    const acquisition = job.acquisition ?? {};
+    const checkpoint = selectRicherStreetCheckpoint(
+      acquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined,
+      localCheckpointForJob(job.id),
+    );
+    if (!checkpoint) throw new Error("Checkpoint SISTER non disponibile");
+    const updated = skipStreetAcquisitionRecord(checkpoint, values.recordKey);
+    await persistStreetRunCheckpoint(updated);
+    await repo.updateJob(job.id, {
+      acquisition: {
+        ...acquisition,
+        acquisitionCheckpoint: updated,
+        acquisitionProgress: summarizeStreetAcquisition(updated),
+      },
+      status: "paused",
+      saved_at: new Date().toISOString(),
+      error_message: updated.lastError,
+      error_details: { action: "sister-record-skipped", recordKey: values.recordKey },
+    });
+    lastError = updated.lastError;
+    pushActivity("Riga SISTER esclusa. Gli immobili completi restano pronti per l'import.", "warning");
+    await publishState();
     return true;
   });
   ipcMain.handle("desktop:start-refinement", async (_event, values: { sisterStreet?: string; cloudStreet?: string; street?: string; secondaryStreet?: string; resume?: boolean }) => {
