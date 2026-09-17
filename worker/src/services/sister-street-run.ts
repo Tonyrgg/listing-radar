@@ -5,6 +5,7 @@ import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { WorkerError } from "../core/errors.js";
 import {
   decideStreetProperty,
+  isStrategicNetworkCategory,
   normalizeStreetPropertyFilters,
   type StreetPropertyFilters,
 } from "../core/network-exploration.js";
@@ -1066,14 +1067,23 @@ export class SisterStreetRun {
               shouldExpand: (owner) => !this.expandedOwnerKeys.has(this.ownerExpansionKey(owner)),
               onProperties: async (owner, expandedProperties) => {
                 const ownerKey = this.ownerExpansionKey(owner);
+                // Il filtro della via viene applicato prima di aprire gli intestatari,
+                // mentre questi immobili arrivano da una seconda tabella (il
+                // portafoglio del proprietario). Applicare qui lo stesso criterio
+                // A/C evita che "Solo abitazioni" faccia comunque entrare locali
+                // C nella raccolta, nei contatori e nella successiva coda Cloud.
+                // Piano e range civici restano invece vincoli della via sorgente:
+                // non vanno estesi agli immobili del portafoglio fuori via.
+                const eligibleExpandedProperties = expandedProperties.filter((expandedProperty) =>
+                  isStrategicNetworkCategory(expandedProperty.category, this.filters.residentialOnly));
                 await publishPartial?.(snapshot("paused", {
                   ...cursor,
                   ownerNames: [owner.fullName],
                 }));
-                await this.options.onOwnerPropertiesAcquired?.(variant, property, owner, expandedProperties);
+                await this.options.onOwnerPropertiesAcquired?.(variant, property, owner, eligibleExpandedProperties);
                 this.expandedOwnerKeys.add(ownerKey);
                 if (!expandedOwnerKeys.includes(ownerKey)) expandedOwnerKeys.push(ownerKey);
-                for (const expandedProperty of expandedProperties) {
+                for (const expandedProperty of eligibleExpandedProperties) {
                   const expandedKey = buildCadastralKey(expandedProperty);
                   if (expandedPropertyKeySet.has(expandedKey)) continue;
                   expandedPropertyKeySet.add(expandedKey);

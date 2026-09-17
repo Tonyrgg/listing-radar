@@ -63,6 +63,7 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
             <table class="listaIsp4">
               <tr><th></th><th>Catasto</th><th>Titolarita</th><th>Ubicazione</th><th>Foglio</th><th>Particella</th><th>Sub</th><th>Classamento</th><th>Classe</th><th>Consistenza</th><th>Rendita</th></tr>
               <tr><td><input name="visImmSel" type="radio"></td><td>F</td><td>Proprieta' per 1/1</td><td>BITONTO(BA) VIA PORTAFOGLIO n. ${source}</td><td>51</td><td>70${source}</td><td>1</td><td>Cat.A/2</td><td>2</td><td>5 vani</td><td>400,00</td></tr>
+              <tr><td><input name="visImmSel" type="radio"></td><td>F</td><td>Proprieta' per 1/1</td><td>BITONTO(BA) VIA PORTAFOGLIO n. ${source}</td><td>51</td><td>80${source}</td><td>2</td><td>Cat.C/1</td><td>2</td><td>30 mq</td><td>500,00</td></tr>
             </table>
             <input name="indietro" type="submit" value="Indietro">
           </form>
@@ -100,6 +101,7 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       const checkpoint = await new SisterStreetRun(page, {
         expandAllOwners: true,
         expandCoOwners: true,
+        filters: { residentialOnly: true },
         onPropertyAcquired: (_variant, property) => { sourceProperties.push(property.parcel); },
         onOwnerPropertiesAcquired: (_variant, _source, _owner, properties) => {
           expandedProperties.push(...properties.map((property) => property.parcel));
@@ -107,6 +109,8 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       }).run("VIA CESARE CANTU");
 
       expect(sourceProperties).toEqual(["100", "200"]);
+      // I C/1 letti nel portafoglio non devono raggiungere salvataggio e coda
+      // Cloud quando la run e' stata fissata su "Solo abitazioni".
       expect(expandedProperties).toEqual(["701", "701", "702", "702"]);
       expect(portfolioVisits).toHaveLength(4);
       expect(portfolioVisits.filter((visit) => visit.includes("intestatoSelezionato=PRIMO-")).length).toBe(2);
