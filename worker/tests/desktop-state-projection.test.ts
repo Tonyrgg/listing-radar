@@ -16,7 +16,8 @@ describe("proiezione leggera dello stato desktop", () => {
 
     expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
     expect(main).toContain("repo.listSavedJobImportCounts([...savedJobs, ...refinementJobs].map((job) => job.id))");
-    expect(main).toContain("const savedPartitions = partitionPropertyJobs(allSavedJobs)");
+    expect(main).toContain("const savedPartitions = partitionPropertyJobs([...createdRefinementSeeds, ...allSavedJobs])");
+    expect(main).toContain("repo.ensureCompletedWorkRefinement(job)");
     expect(main).toContain("active: workImportActive");
     expect(main).toContain("jobs: refinementJobs");
     expect(renderer).toContain("job.import_progress?.handled");

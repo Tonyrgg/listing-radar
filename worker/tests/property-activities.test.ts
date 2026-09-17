@@ -7,6 +7,7 @@ import {
   directContactOrdinalForTask,
   isDirectContactNrOrdinal,
   propertyActivityDefinition,
+  propertyActivityModeForProperty,
   readPropertyActivityCheckpoint,
 } from "../src/services/property-activities.js";
 import type { PersonRow, PropertyRow } from "../src/services/repository.js";
@@ -161,6 +162,17 @@ describe("attività property-centric", () => {
       status: "Eseguito",
       description: "Non sa nulla",
     });
+  });
+
+  it("non crea attività sugli immobili sviluppati dal portafoglio del proprietario", () => {
+    expect(propertyActivityModeForProperty({}, "killer")).toBe("killer");
+    expect(propertyActivityModeForProperty({
+      owner_expansion: {
+        depth: 1,
+        ownerTaxCode: "RSSMRA70A01A893X",
+        sourcePropertyKey: "BITONTO|50|100|1",
+      },
+    }, "killer")).toBe("none");
   });
 
   it("mantiene stabile la risposta Killer sulla riga dell'immobile", () => {

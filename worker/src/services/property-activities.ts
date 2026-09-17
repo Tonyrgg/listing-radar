@@ -41,6 +41,19 @@ export const DIRECT_CONTACT_NR_INTERVALS = [7, 9, 11, 8, 10] as const;
  */
 export type PropertyActivityMode = "direct_contact" | "plain" | "killer" | "none";
 
+/**
+ * Gli immobili raccolti aprendo il portafoglio di un proprietario servono ad
+ * ampliare la sua rete immobiliare, non rappresentano visite effettuate sulla
+ * via in lavorazione. Vengono importati normalmente, ma non devono produrre
+ * attività nel gestionale.
+ */
+export function propertyActivityModeForProperty(
+  rawPayload: Record<string, unknown> | null | undefined,
+  requestedMode: PropertyActivityMode,
+): PropertyActivityMode {
+  return isRecord(rawPayload?.owner_expansion) ? "none" : requestedMode;
+}
+
 export interface PropertyActivityDefinition {
   contactMode: typeof PROPERTY_ACTIVITY_CONTACT_MODE | typeof DIRECT_CONTACT_MODE;
   status: typeof PROPERTY_ACTIVITY_STATUS | typeof DIRECT_CONTACT_STATUS;

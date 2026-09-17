@@ -15,11 +15,12 @@ import { PlaywrightCrmAdapter } from "../adapters/crm/index.js";
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
 import { sisterSelectors } from "../adapters/sister/selectors.js";
 import { loadConfig, type WorkerConfig } from "../config.js";
-import { sanitizeSensitiveText } from "../logger.js";
+import { logger, sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { auditImportRun, auditStreetRun, type RunAuditFinding } from "../services/run-auditor.js";
 import { buildPropertyRunLedger, partitionPropertyJobs, partitionPropertyRuns } from "../services/run-ledger.js";
+import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../services/refinement-seed.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
@@ -48,7 +49,7 @@ import { indexJobGraph } from "../services/job-graph.js";
 import type { PropertyActivityMode } from "../services/property-activities.js";
 import { collectCrmPersonSeeds } from "../adapters/crm/people.js";
 import { runTecnocloudV2ReadOnlyDiagnostic } from "../import-v2/diagnostics.js";
-import { WorkerRepository } from "../services/repository.js";
+import { WorkerRepository, type JobRow } from "../services/repository.js";
 import {
   StreetRegistryService,
   streetRunRegistryOutcome,
@@ -1118,8 +1119,27 @@ async function refreshSnapshotRemoteData() {
         12_000,
         "Aggiornamento riepilogo cloud",
       );
-      const savedPartitions = partitionPropertyJobs(allSavedJobs);
       const completedPartitions = partitionPropertyJobs(allCompletedJobs);
+      const knownRefinementSources = new Set(
+        [...allSavedJobs, ...allCompletedJobs]
+          .map((job) => refinementSourceJobId(job))
+          .filter((jobId): jobId is string => Boolean(jobId)),
+      );
+      const missingRefinementSeeds = completedPartitions.lavorazione
+        .slice(0, completedImportsLimit)
+        .filter((job) => canCreateCompletedWorkRefinement(job) && !knownRefinementSources.has(job.id));
+      const createdRefinementSeeds = (await Promise.all(missingRefinementSeeds.map(async (job) => {
+        try {
+          return await repo.ensureCompletedWorkRefinement(job);
+        } catch (error) {
+          logger.warn({
+            sourceJobId: job.id,
+            error: error instanceof Error ? error.message : String(error),
+          }, "Creazione automatica della rifinitura non completata");
+          return null;
+        }
+      }))).filter((job): job is JobRow => job !== null && job.status !== "completed");
+      const savedPartitions = partitionPropertyJobs([...createdRefinementSeeds, ...allSavedJobs]);
       const savedJobs = savedPartitions.lavorazione;
       const refinementJobs = savedPartitions.rifinitura;
       const completedJobs = completedPartitions.lavorazione.slice(0, completedImportsLimit);
@@ -3298,6 +3318,21 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
           await auditPersistedImport(auditedJobId, effectiveRefinementStreet ? "refinement" : "property-import");
         } catch (error) {
           pushActivity(`Sorveglianza automatica non completata: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
+        if (!effectiveRefinementStreet) {
+          try {
+            const sourceJob = await repository().getJob(auditedJobId);
+            if (canCreateCompletedWorkRefinement(sourceJob)) {
+              snapshotRemoteRevision += 1;
+              snapshotRemoteLoadedAt = 0;
+              pushActivity(`Preparo la scheda Rifinitura per ${sourceJob.street}`, "success");
+            }
+          } catch (error) {
+            pushActivity(
+              `Scheda Rifinitura non creata automaticamente: ${error instanceof Error ? error.message : String(error)}`,
+              "warning",
+            );
+          }
         }
       }
       if (cancelledJobId) {

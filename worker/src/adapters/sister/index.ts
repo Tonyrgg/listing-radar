@@ -37,6 +37,8 @@ export type SisterAdapterOptions = {
 export type OwnerPropertyExpansion = {
   shouldExpand: (owner: CadastralOwner) => boolean;
   onProperties: (owner: CadastralOwner, properties: CadastralProperty[]) => void | Promise<void>;
+  /** Limita agli intestatari iniziali indicati lo sviluppo della singola scheda catastale. */
+  maxOwners?: number;
 };
 
 const PERSON_SEARCH_CONTROL_TIMEOUT_MS = 8_000;
@@ -594,11 +596,20 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       }
       if (expansion) {
         this.require("ownerRadioWithinRow", "ownerPropertiesButton");
-        for (const expandable of expandableOwners) {
+        const maximumOwners = Math.max(0, Math.floor(expansion.maxOwners ?? Number.POSITIVE_INFINITY));
+        for (const expandable of expandableOwners.slice(0, maximumOwners)) {
           if (!expansion.shouldExpand(expandable.owner)) continue;
           if (this.options.isCancelled?.()) break;
           const currentOwnerRow = this.page.locator(this.selectors.ownerRows).nth(expandable.rowIndex);
           const ownerRadio = currentOwnerRow.locator(this.selectors.ownerRadioWithinRow);
+          if (await ownerRadio.count() !== 1) {
+            throw new WorkerError(
+              `SISTER non mostra una selezione valida per ${expandable.owner.fullName}`,
+              "portal_error",
+              { portal: "SISTER", action: "owner-expansion-radio-missing", ownerTaxCode: expandable.owner.taxCode },
+              true,
+            );
+          }
           await ownerRadio.check();
           if (!(await ownerRadio.isChecked())) {
             throw new WorkerError(

@@ -915,6 +915,10 @@ export class SisterStreetRun {
           });
           try {
             acquiredOwners = await this.adapter.extractOwners(property, this.expandAllOwners ? {
+              // La rete viene sviluppata da un solo intestatario per ciascun
+              // immobile della via. Gli altri intestatari restano comunque
+              // letti sulla scheda, ma non aprono ulteriori portafogli.
+              maxOwners: 1,
               shouldExpand: (owner) => !this.expandedOwnerKeys.has(this.ownerExpansionKey(owner)),
               onProperties: async (owner, expandedProperties) => {
                 const ownerKey = this.ownerExpansionKey(owner);

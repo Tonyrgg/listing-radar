@@ -30,6 +30,9 @@ describe("Rifinitura vie", () => {
     expect(renderer).toContain('update.activityItem.workspace === "rifinitura"');
     expect(renderer).toContain('sisterStreet: resume ? checkpoint.requestedStreet : $("refinementSisterStreet").value');
     expect(renderer).toContain('checkpoint.runSettings?.refinementCloudStreet ?? checkpoint.runSettings?.refinementSecondaryStreet ?? checkpoint.requestedStreet');
+    expect(renderer).toContain('refinementOrigin === "completed_lavorazione"');
+    expect(renderer).toContain("Lavorazione completata");
+    expect(renderer).toContain('data-resume-acquisition="${job.id}">Avvia rifinitura');
     expect(preload).toContain('ipcRenderer.invoke("desktop:start-refinement"');
   });
 });

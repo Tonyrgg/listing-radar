@@ -50,6 +50,18 @@ const baseState = {
       saved_at: new Date().toISOString(), import_started_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       acquisition: { engine: "rifinitura", strategy: "street_refinement", street: "Via Luigi Castellucci", activityMode: "plain", importCoOwners: true, parallelCrmWindows: false },
       import_progress: { total: 30, handled: 9, completed: 8, completedWithAnomalies: 1, skipped: 0 },
+    }, {
+      id: "88888888-8888-4888-8888-888888888888", mode: "automatic", status: "saved",
+      municipality: "BITONTO", street: "Via Cesare Cantu", civic_number: null,
+      total_properties: 0, total_people: 0, processed_properties: 0,
+      saved_at: new Date().toISOString(), import_started_at: null, updated_at: new Date().toISOString(),
+      acquisition: {
+        engine: "rifinitura", strategy: "street_refinement", refinementOrigin: "completed_lavorazione",
+        refinementSourceJobId: "99999999-9999-4999-8999-999999999999", refinementCloudStreet: "Via Cesare Cantu",
+        runSettings: { street: "Via Cesare Cantu", refinementCloudStreet: "Via Cesare Cantu", filters: { residentialOnly: false } },
+        importOptions: { activityMode: "plain", importCoOwners: true, parallelCrmWindows: false },
+      },
+      import_progress: { total: 0, handled: 0, completed: 0, completedWithAnomalies: 0, skipped: 0 },
     }], completedImports: [], completedImportsHasMore: false, diagnosticErrors: [],
   },
   portoni: { active: false, cancelling: false, progress: null, lastError: null, sheets: [{
@@ -262,6 +274,8 @@ await page.locator("#refinement").screenshot({ path: path.join(output, "refineme
 const refinementVisible = await page.locator("#refinementStart:visible").count();
 const refinementBoundaryVisible = await page.getByText("Non crea nuove schede immobili.", { exact: false }).count();
 const refinementArchiveVisible = await page.getByText("Via Luigi Castellucci", { exact: true }).count();
+const refinementOriginBadgeVisible = await page.getByText("Lavorazione completata", { exact: true }).count();
+const refinementSeedStartVisible = await page.locator('[data-resume-acquisition="88888888-8888-4888-8888-888888888888"]:visible').count();
 const refinementOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 await page.locator('[data-scroll="history"]').click();
 await page.locator("#diagnosticErrors").screenshot({ path: path.join(output, "automatic-run-auditor.png") });
@@ -372,7 +386,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -388,6 +402,7 @@ const failures = [
     ? ["La ripresa non conserva le tre impostazioni originarie"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
   ...(refinementVisible !== 1 || refinementBoundaryVisible < 1 || refinementArchiveVisible < 1 ? ["Pagina o archivio Rifinitura non visibile o confine operativo assente"] : []),
+  ...(refinementOriginBadgeVisible !== 1 || refinementSeedStartVisible !== 1 ? ["Badge o avvio della rifinitura derivata non visibile"] : []),
   ...(automaticAuditorVisible !== 1 || !automaticAuditorNoManualStart ? ["La sorveglianza automatica non è integrata nella Cronologia o conserva ancora un avvio manuale"] : []),
   ...(portoniCollapsed !== 1 || portoniFiltersVisible !== 1 ? ["Accordion o filtri Portoni non funzionanti"] : []),
   ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),

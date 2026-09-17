@@ -66,7 +66,9 @@ export const sisterSelectors: SisterSelectors = {
   ownerTaxCode: ":scope > td:nth-child(3)",
   ownerRightType: ":scope > td:nth-child(4)",
   ownerShare: ":scope > td:nth-child(5)",
-  ownerRadioWithinRow: 'input[name="intestatoSelezionato"]',
+  // SISTER usa anche un hidden chiamato `intestatoSelezionato`: cercare per
+  // nome prendeva quel campo e faceva fallire check() su ogni immobile.
+  ownerRadioWithinRow: 'input[type="radio"]:visible',
   ownerPropertiesButton: 'input[name="immobili"]',
   ownersBackButton: 'form[name="SceltaVisuraImmSoggForm"] input[name="indietro"]',
 };

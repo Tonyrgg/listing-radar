@@ -22,6 +22,7 @@ import {
   NO_ACTIVITY_DESCRIPTION,
   PROPERTY_ACTIVITY_STATUS,
   propertyActivityDefinition,
+  propertyActivityModeForProperty,
   type PropertyActivityMode,
   readPropertyActivityCheckpoint,
   type PropertyActivityDefinition,
@@ -684,7 +685,7 @@ export class PropertyWorkerRunner {
           } : {}),
         });
         const result = await coordinator.runJob(job, (property, owners) => {
-          const activityMode = this.propertyActivityMode();
+          const activityMode = propertyActivityModeForProperty(property.raw_payload, this.propertyActivityMode());
           const definition = propertyActivityDefinition(owners, activityDescriptionOrdinalForTask(activityTasks, property.id, activityMode), activityMode);
           return definition
             ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
@@ -1021,7 +1022,7 @@ export class PropertyWorkerRunner {
           for (const task of pending) {
             this.throwIfCancellationRequested(job.id);
             const property = asProperty(task.property);
-            const activityMode = this.propertyActivityMode();
+            const activityMode = propertyActivityModeForProperty(task.property.raw_payload, this.propertyActivityMode());
             const activityDefinition = propertyActivityDefinition(
               task.owners,
               activityDescriptionOrdinalForTask(tasks, task.property.id, activityMode),
@@ -1390,7 +1391,7 @@ export class PropertyWorkerRunner {
       let activeOwners = owners;
       // The operator can change this preference during a run. Freeze it only
       // for the property currently in flight, then read it again for the next.
-      const propertyActivityMode = this.propertyActivityMode();
+      const propertyActivityMode = propertyActivityModeForProperty(property.raw_payload, this.propertyActivityMode());
       const stageOrder = [
         "ready",
         "owner_contacts_ready",
@@ -2234,7 +2235,11 @@ export class PropertyWorkerRunner {
     if (!property.crm_record_id) throw new WorkerError("La scheda dell'immobile non è disponibile per creare l'attività", "data_incomplete", { propertyId: property.id });
     const existing = readPropertyActivityCheckpoint(property.raw_payload, this.config.WORKER_DRY_RUN, property.crm_record_id);
     if (existing) return;
-    const definition = propertyActivityDefinition(owners, directContactOrdinal, mode);
+    const definition = propertyActivityDefinition(
+      owners,
+      directContactOrdinal,
+      propertyActivityModeForProperty(property.raw_payload, mode),
+    );
     /* «Nessuna attività» non è un errore: si esce senza scrivere nel diario. */
     if (!definition) return;
     if (job.mode === "assisted") {

@@ -1854,6 +1854,19 @@ dialog[open] {
 .ledger-state > b,
 .ledger-state > small { display: block; }
 .ledger-state > small { margin-top: 4px; color: var(--lr-ink-3); line-height: 1.35; }
+.refinement-origin-badge {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 6px;
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--lr-ok) 45%, var(--lr-line));
+  border-radius: var(--lr-radius-pill);
+  background: color-mix(in srgb, var(--lr-ok) 10%, transparent);
+  color: var(--lr-ok);
+  font: 700 10px/1 var(--lr-font-mono);
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
 .acquisition-detail { margin-block: var(--lr-space-3); }
 .acquisition-detail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--lr-space-3); margin-bottom: var(--lr-space-2); }
 .acquisition-detail h3 { margin: 2px 0 3px; }

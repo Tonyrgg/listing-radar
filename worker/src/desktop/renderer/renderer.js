@@ -2919,6 +2919,11 @@ function refinementRunState(job) {
   return { total, started, label };
 }
 
+function isCompletedWorkRefinement(job) {
+  return job?.acquisition?.refinementOrigin === "completed_lavorazione"
+    && Boolean(job?.acquisition?.refinementSourceJobId);
+}
+
 function renderRefinementArchive() {
   const state = appState?.refinement ?? {},
     jobs = state.jobs ?? [],
@@ -2932,20 +2937,26 @@ function renderRefinementArchive() {
     refinementJobsRenderKey = renderKey;
     $("refinementJobsList").innerHTML = jobs.length ? jobs.map((job) => {
       const progress = refinementRunState(job),
+        completedWorkSeed = isCompletedWorkRefinement(job),
         acquisitionProgress = job.acquisition?.acquisitionProgress,
         acquisitionState = statoAcquisizione(acquisitionProgress),
         acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed"),
         place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
         settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili",
         canResume = !state.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
-        help = acquisitionState?.detail ?? (progress.started ? "La ripresa parte dalla prima riga aperta e non ripete quelle concluse." : "");
-      const primaryAction = acquisitionIncomplete && !state.active
+        help = acquisitionState?.detail
+          ?? (completedWorkSeed
+            ? "Questa via proviene da una Lavorazione conclusa. La Rifinitura partirà con una nuova acquisizione SISTER indipendente."
+            : progress.started ? "La ripresa parte dalla prima riga aperta e non ripete quelle concluse." : "");
+      const primaryAction = completedWorkSeed && !state.active && !acquisitionProgress
+        ? `<button class="row-primary" data-resume-acquisition="${job.id}">Avvia rifinitura</button>`
+        : acquisitionIncomplete && !state.active
         ? `<button class="row-primary" data-resume-acquisition="${job.id}">Continua acquisizione</button>`
         : canResume
           ? `<button class="row-primary" data-resume-job="${job.id}">${progress.started ? "Riprendi rifinitura" : "Avvia rifinitura"}</button>`
           : `<button class="row-primary is-secondary" data-refinement-detail-job="${job.id}">Apri record</button>`;
-      return `<article class="ledger-row job-item ${acquisitionIncomplete || progress.started ? "is-running" : "is-not-started"}" data-record-id="${job.id}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || progress.started ? "!" : ""}</span>${streetPreview(job.street ?? place)}<span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small>${renderCapabilities(job.acquisition, true)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"><b>${esc(acquisitionState?.title ?? progress.label)}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions">${primaryAction}<details class="row-overflow"><summary aria-label="Altre azioni" title="Altre azioni">•••</summary><div><button class="text-button" data-refinement-detail-job="${job.id}">Apri dettagli</button><button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina record</button></div></details></span></article>`;
-    }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le lavorazioni ordinarie non compariranno qui.</p>`;
+      return `<article class="ledger-row job-item ${acquisitionIncomplete || progress.started ? "is-running" : "is-not-started"}" data-record-id="${job.id}"><span class="ledger-mark${help ? " has-tooltip" : ""}"${help ? ` tabindex="0" data-tooltip="${esc(help)}"` : ""}>${acquisitionIncomplete || progress.started ? "!" : ""}</span>${streetPreview(job.street ?? place)}<span class="ledger-place"><b>${esc(place)}</b>${completedWorkSeed ? '<span class="refinement-origin-badge">Lavorazione completata</span>' : ""}<small>${esc(fmtDate(job.saved_at ?? job.created_at))} · ${esc(settings)}</small>${renderCapabilities(job.acquisition, true)}</span><span class="ledger-figure">${fmtCount(acquisitionProgress?.total ?? progress.total)}</span><span class="ledger-figure">${fmtCount(job.total_people ?? 0)}</span><span class="ledger-state"><b>${esc(acquisitionState?.title ?? (completedWorkSeed && !acquisitionProgress ? "Pronta per la rifinitura" : progress.label))}</b>${acquisitionState ? `<small>${esc(acquisitionState.detail)}</small>` : ""}</span><span class="ledger-actions">${primaryAction}<details class="row-overflow"><summary aria-label="Altre azioni" title="Altre azioni">•••</summary><div><button class="text-button" data-refinement-detail-job="${job.id}">Apri dettagli</button><button class="text-button is-destructive" data-cancel-job="${job.id}">Elimina record</button></div></details></span></article>`;
+    }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le vie concluse in Lavorazioni compariranno automaticamente qui.</p>`;
     $("refinementCompletedList").innerHTML = completed.length ? completed.map((item) => {
       const job = item.job,
         place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,

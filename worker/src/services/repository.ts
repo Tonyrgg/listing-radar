@@ -15,6 +15,7 @@ import {
 import { crmRequestFeatureRequirements, type RequestFeatureRequirement } from "./request-feature-requirements.js";
 import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
 import { isSupabaseProjectRestricted } from "./supabase-errors.js";
+import { canCreateCompletedWorkRefinement, completedWorkRefinementPayload } from "./refinement-seed.js";
 
 export type JobRow = {
   id: string;
@@ -181,6 +182,25 @@ export class WorkerRepository {
   async createJob(mode: WorkerMode): Promise<JobRow> {
     const { data, error } = await this.client.from("property_worker_jobs").insert({ mode, status: "ready", current_step: "ready" }).select("*").single();
     if (error) throw new Error(`Creazione job fallita: ${error.message}`);
+    return data as JobRow;
+  }
+
+  async ensureCompletedWorkRefinement(source: JobRow): Promise<JobRow | null> {
+    if (!canCreateCompletedWorkRefinement(source)) return null;
+    const { data: existing, error: lookupError } = await this.client
+      .from("property_worker_jobs")
+      .select("*")
+      .contains("acquisition", { refinementSourceJobId: source.id })
+      .limit(1)
+      .maybeSingle();
+    if (lookupError) throw new Error(`Verifica rifinitura derivata fallita: ${lookupError.message}`);
+    if (existing) return existing as JobRow;
+    const { data, error } = await this.client
+      .from("property_worker_jobs")
+      .insert(completedWorkRefinementPayload(source))
+      .select("*")
+      .single();
+    if (error) throw new Error(`Creazione rifinitura dalla lavorazione conclusa fallita: ${error.message}`);
     return data as JobRow;
   }
 

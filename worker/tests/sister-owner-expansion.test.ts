@@ -27,8 +27,8 @@ const ownersPage = `<!doctype html><body>
   <form name="SceltaIntestatiForm" action="/portfolio">
     <table class="listaIsp4">
       <tr><th></th><th>Nominativo o denominazione</th><th>Codice fiscale</th><th>Titolarita</th><th>Quota</th></tr>
-      <tr><td><input name="intestatoSelezionato" type="radio" value="ROSSI"></td><td>ROSSI MARIO nato a BITONTO (BA) il 01/01/1970</td><td>RSSMRA70A01A893X</td><td>Proprieta'</td><td>1/2</td></tr>
-      <tr><td><input name="intestatoSelezionato" type="radio" value="BIANCHI"></td><td>BIANCHI ANNA nata a BITONTO (BA) il 02/02/1980</td><td>BNCNNA80B42A893X</td><td>Proprieta'</td><td>1/2</td></tr>
+      <tr><td><input name="intestatoSelezionato" type="hidden" value="ROSSI-HIDDEN"><input name="ownerChoice" type="radio" value="ROSSI"></td><td>ROSSI MARIO nato a BITONTO (BA) il 01/01/1970</td><td>RSSMRA70A01A893X</td><td>Proprieta'</td><td>1/2</td></tr>
+      <tr><td><input name="intestatoSelezionato" type="hidden" value="BIANCHI-HIDDEN"><input name="ownerChoice" type="radio" value="BIANCHI"></td><td>BIANCHI ANNA nata a BITONTO (BA) il 02/02/1980</td><td>BNCNNA80B42A893X</td><td>Proprieta'</td><td>1/2</td></tr>
     </table>
     <input name="immobili" type="submit" value="Immobili">
   </form>
@@ -36,14 +36,14 @@ const ownersPage = `<!doctype html><body>
 </body>`;
 
 describe("sviluppo diretto dei proprietari SISTER", () => {
-  it("apre Immobili per ogni intestatario, raccoglie il portafoglio e torna alla riga originaria", async () => {
+  it("apre Immobili per un solo intestatario, conserva tutti i proprietari e torna alla riga originaria", async () => {
     const visits: string[] = [];
     const server = createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       visits.push(`${url.pathname}${url.search}`);
       response.setHeader("content-type", "text/html; charset=utf-8");
       if (url.pathname === "/owners") response.end(ownersPage);
-      else if (url.pathname === "/portfolio") response.end(resultPage(true, url.searchParams.get("intestatoSelezionato") ?? ""));
+      else if (url.pathname === "/portfolio") response.end(resultPage(true, url.searchParams.get("ownerChoice") ?? ""));
       else response.end(resultPage());
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -56,6 +56,7 @@ describe("sviluppo diretto dei proprietari SISTER", () => {
       const [source] = await adapter.extractProperties();
       const expanded: Array<{ taxCode: string | null; parcel: string; share: number | null }> = [];
       const owners = await adapter.extractOwners(source!, {
+        maxOwners: 1,
         shouldExpand: () => true,
         onProperties: (owner, properties) => {
           const selected = properties[0]!.rawPayload.expanded_owner_ownership as { sharePercentage: number | null };
@@ -66,12 +67,21 @@ describe("sviluppo diretto dei proprietari SISTER", () => {
       expect(owners.map((owner) => owner.taxCode)).toEqual(["RSSMRA70A01A893X", "BNCNNA80B42A893X"]);
       expect(expanded).toEqual([
         { taxCode: "RSSMRA70A01A893X", parcel: "701", share: 33.333333 },
-        { taxCode: "BNCNNA80B42A893X", parcel: "702", share: 33.333333 },
       ]);
-      expect(visits.filter((visit) => visit.startsWith("/portfolio"))).toEqual([
-        "/portfolio?intestatoSelezionato=ROSSI&immobili=Immobili",
-        "/portfolio?intestatoSelezionato=BIANCHI&immobili=Immobili",
-      ]);
+      const portfolioVisits = visits.filter((visit) => visit.startsWith("/portfolio"));
+      expect(portfolioVisits).toHaveLength(1);
+      expect(portfolioVisits[0]).toContain("ownerChoice=ROSSI");
+      expect(portfolioVisits[0]).not.toContain("ownerChoice=BIANCHI");
+      expect(new URL(page.url()).pathname).toBe("/results");
+
+      const fallbackExpansions: string[] = [];
+      await adapter.extractOwners(source!, {
+        maxOwners: 1,
+        shouldExpand: (owner) => owner.taxCode !== "RSSMRA70A01A893X",
+        onProperties: (owner) => { fallbackExpansions.push(owner.fullName); },
+      });
+      expect(fallbackExpansions).toEqual([]);
+      expect(visits.filter((visit) => visit.startsWith("/portfolio"))).toHaveLength(1);
       expect(new URL(page.url()).pathname).toBe("/results");
     } finally {
       await browser.close();
