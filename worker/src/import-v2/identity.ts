@@ -4,6 +4,7 @@ import { ImportV2Error } from "./errors.js";
 import type { CadastralIdentity, CrmPropertySummary, ImportV2Plan, SourceProperty } from "./model.js";
 import { isManagedOwnershipRight } from "./ownership-policy.js";
 import { isValidOwnershipShare } from "../services/acquisition-queue.js";
+import { stripSisterMunicipalityPrefix } from "../core/normalize.js";
 
 const DIACRITICS = /[\u0300-\u036f]/g;
 
@@ -303,7 +304,11 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
       details: { taxCodes: [...new Set(duplicateTaxCodes)] },
     });
   }
-  const normalizedSource: SourceProperty = { ...source, owners: normalizedOwners };
+  const normalizedSource: SourceProperty = {
+    ...source,
+    fullAddress: stripSisterMunicipalityPrefix(source.fullAddress, source.municipality),
+    owners: normalizedOwners,
+  };
   const stable = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(stable);
     if (value && typeof value === "object") {

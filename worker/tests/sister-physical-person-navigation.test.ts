@@ -173,7 +173,7 @@ describe("ricerca Persona fisica, dal menu agli immobili", () => {
       sheet: "49",
       parcel: "350",
       subaltern: "64",
-      address: "BITONTO(BA) VIA MARSALA n. 34 Piano 3",
+      address: "VIA MARSALA n. 34 Piano 3",
       class: "04",
       consistency: "6 vani",
       cadastralIncome: 836.66,

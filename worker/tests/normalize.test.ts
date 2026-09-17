@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, sameStreetAndCivic, selectSisterAddressForStreet, splitCivicNumberAndLetter, splitPersonName, splitStreetAndFirstCivic } from "../src/core/normalize.js";
+import { addressIdentity, buildCadastralKey, consolidateContacts, extractFirstCivicNumber, formatPersonName, formatShareForUi, genderFromTaxCode, normalizeTaxCode, parsePropertyAddress, parseShare, samePropertyAddress, samePropertyAddressWithMissingCivicSuffix, sameStreetAndCivic, selectSisterAddressForStreet, splitCivicNumberAndLetter, splitPersonName, splitStreetAndFirstCivic, stripSisterMunicipalityPrefix } from "../src/core/normalize.js";
 
 describe("normalizzazione codice fiscale", () => {
   it("rimuove spazi e caratteri invisibili e converte in maiuscolo", () => {
@@ -98,6 +98,14 @@ describe("confronto indirizzo immobile", () => {
     );
     expect(address).toBe("VIA DAVIDE DELLE CESE n. 2 Piano T.");
     expect(extractFirstCivicNumber(address)).toBe("2");
+  });
+  it("toglie comune e provincia anteposti da SISTER agli immobili sviluppati", () => {
+    expect(stripSisterMunicipalityPrefix(
+      "Bitonto(BA) Via Tenente Domenico Speranza, 15",
+      "BITONTO",
+    )).toBe("Via Tenente Domenico Speranza, 15");
+    expect(stripSisterMunicipalityPrefix("VIA FRANCESCO MUCIACCIA n. 3", "BITONTO"))
+      .toBe("VIA FRANCESCO MUCIACCIA n. 3");
   });
   it("riconosce via e civico identici nonostante punteggiatura e maiuscole", () => {
     expect(sameStreetAndCivic("Via Roma, 12/A", "VIA ROMA 12 A")).toBe(true);

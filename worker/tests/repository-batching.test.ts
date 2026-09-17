@@ -5,7 +5,7 @@ import { WorkerRepository, type PersonRow, type PropertyRow } from "../src/servi
 describe("persistenza alleggerita del grafo worker", () => {
   it.each([true, false])("carica anche i collegamenti a nominativi mancanti per rilevare acquisizioni parziali (altri nominativi: %s)", hasPeople => {
     const rows: Record<string, Array<Record<string, unknown>>> = {
-      property_worker_properties: [{ id: "property", raw_payload: null }],
+      property_worker_properties: [{ id: "property", municipality: "BITONTO", address: "Bitonto(BA) Via Tenente Domenico Speranza, 15", raw_payload: null }],
       property_worker_people: hasPeople ? [{ id: "known-person" }] : [],
       property_worker_ownerships: [
         { id: "valid", property_id: "property", person_id: "known-person" },
@@ -23,7 +23,10 @@ describe("persistenza alleggerita del grafo worker", () => {
     } };
     const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
     Object.defineProperty(repository, "client", { value: client });
-    return expect(repository.loadGraph("job")).resolves.toMatchObject({ ownerships: rows.property_worker_ownerships });
+    return expect(repository.loadGraph("job")).resolves.toMatchObject({
+      properties: [expect.objectContaining({ address: "Via Tenente Domenico Speranza, 15" })],
+      ownerships: rows.property_worker_ownerships,
+    });
   });
   it("considera riuscita anche la cancellazione di un job già assente", async () => {
     const selectedColumns: string[] = [];
@@ -83,6 +86,33 @@ describe("persistenza alleggerita del grafo worker", () => {
     expect(batchSizes).toEqual([100, 100, 5]);
     expect(saved.map((row) => row.subaltern)).toEqual(properties.map((row) => row.subaltern));
     expect(saved.every((row) => row.job_id === "job")).toBe(true);
+  });
+
+  it("salva senza duplicare comune e provincia nel campo indirizzo", async () => {
+    let savedAddress: unknown = null;
+    const client = {
+      from: () => ({
+        upsert: (payload: Record<string, unknown>) => ({
+          select: () => ({
+            single: async () => {
+              savedAddress = payload.address;
+              return { error: null, data: { ...payload, id: "property-1" } };
+            },
+          }),
+        }),
+      }),
+    };
+    const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
+    Object.defineProperty(repository, "client", { value: client });
+
+    await repository.insertProperties("job", [{
+      municipality: "BITONTO", sheet: "1", parcel: "2", subaltern: "3",
+      address: "BITONTO(BA) Via Tenente Domenico Speranza, 15",
+      censusZone: null, category: "A/3", class: null, consistency: null,
+      cadastralIncome: null, sourceRef: "0", rawPayload: {},
+    }], { updateJobTotal: false });
+
+    expect(savedAddress).toBe("Via Tenente Domenico Speranza, 15");
   });
 
   it("normalizza le righe già pulite in batch conservando gli aggiornamenti diversi", async () => {

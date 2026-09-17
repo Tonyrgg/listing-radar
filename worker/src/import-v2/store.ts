@@ -84,9 +84,11 @@ export class SupabaseImportV2Store implements ImportV2Store {
           });
         }
         const migrated = await this.client.from("property_worker_import_v2_items")
-          .update({ plan_fingerprint: plan.fingerprint })
+          .update({ plan_fingerprint: plan.fingerprint, plan })
           .eq("id", row.id);
         if (migrated.error) throw new Error(`Migrazione fingerprint Import V2 fallita: ${migrated.error.message}`);
+        row.plan = plan;
+        row.plan_fingerprint = plan.fingerprint;
       }
       const checkpoint = checkpointFromRow(row);
       /* Una ripresa esplicita è un nuovo tentativo operativo: conserva tutti

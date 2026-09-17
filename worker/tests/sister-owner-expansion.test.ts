@@ -54,19 +54,19 @@ describe("sviluppo diretto dei proprietari SISTER", () => {
       await page.goto(`http://127.0.0.1:${port}/results`);
       const adapter = new PlaywrightSisterAdapter(page, sisterSelectors);
       const [source] = await adapter.extractProperties();
-      const expanded: Array<{ taxCode: string | null; parcel: string; share: number | null }> = [];
+      const expanded: Array<{ taxCode: string | null; parcel: string; share: number | null; address: string | null }> = [];
       const owners = await adapter.extractOwners(source!, {
         maxOwners: 1,
         shouldExpand: () => true,
         onProperties: (owner, properties) => {
           const selected = properties[0]!.rawPayload.expanded_owner_ownership as { sharePercentage: number | null };
-          expanded.push({ taxCode: owner.taxCode, parcel: properties[0]!.parcel, share: selected.sharePercentage });
+          expanded.push({ taxCode: owner.taxCode, parcel: properties[0]!.parcel, share: selected.sharePercentage, address: properties[0]!.address });
         },
       });
 
       expect(owners.map((owner) => owner.taxCode)).toEqual(["RSSMRA70A01A893X", "BNCNNA80B42A893X"]);
       expect(expanded).toEqual([
-        { taxCode: "RSSMRA70A01A893X", parcel: "701", share: 33.333333 },
+        { taxCode: "RSSMRA70A01A893X", parcel: "701", share: 33.333333, address: "VIA ROSSI n. 7 Piano 1" },
       ]);
       const portfolioVisits = visits.filter((visit) => visit.startsWith("/portfolio"));
       expect(portfolioVisits).toHaveLength(1);

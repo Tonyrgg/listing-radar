@@ -3,6 +3,7 @@ import type { Locator, Page } from "playwright";
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { isOwnershipRight, parseOwnerBlock } from "../../core/owner-parser.js";
 import { businessOwnerReason, maskOwnerTaxCode } from "../../core/owner-kind.js";
+import { stripSisterMunicipalityPrefix } from "../../core/normalize.js";
 import { logger } from "../../logger.js";
 import type { CadastralOwner, CadastralProperty, SearchContext, SisterAdapter } from "../../types.js";
 import { sisterSelectors, type SisterSelectors } from "./selectors.js";
@@ -520,7 +521,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         sheet: raw.sheet,
         parcel: raw.parcel,
         subaltern: raw.subaltern,
-        address: raw.address || null,
+        address: stripSisterMunicipalityPrefix(raw.address, context.municipality) || null,
         censusZone: raw.censusZone || null,
         category,
         class: raw.class || null,

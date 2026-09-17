@@ -182,6 +182,27 @@ export function selectSisterAddressForStreet(
   return segment ?? raw;
 }
 
+/**
+ * Nell'elenco immobili di un soggetto SISTER antepone spesso il comune
+ * all'ubicazione (es. `BITONTO(BA) VIA ROMA n. 1`). Il comune e la provincia
+ * hanno gia' campi dedicati nel record: conservarli nell'indirizzo li farebbe
+ * finire anche nel campo via del Cloud.
+ */
+export function stripSisterMunicipalityPrefix(
+  value: string | null | undefined,
+  municipality: string | null | undefined,
+): string {
+  const raw = String(value ?? "").replace(/\s+/g, " ").trim();
+  const city = String(municipality ?? "").replace(/\s+/g, " ").trim();
+  if (!raw || !city) return raw;
+  const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stripped = raw.replace(
+    new RegExp(`^${escapedCity}\\s*(?:\\([A-Z]{2}\\))?\\s*(?:[-,;:]\\s*)?`, "i"),
+    "",
+  ).trim();
+  return stripped || raw;
+}
+
 export function splitStreetAndFirstCivic(value: string | null | undefined): { street: string; civicNumber: string | null } {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) return { street: "", civicNumber: null };

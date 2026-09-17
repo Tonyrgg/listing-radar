@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { buildCadastralKey, normalizeTaxCode } from "../core/normalize.js";
+import { buildCadastralKey, normalizeTaxCode, stripSisterMunicipalityPrefix } from "../core/normalize.js";
 import { normalizeCrmMandate, type CrmMandateArchiveItem, type CrmMandateDetail } from "../adapters/crm/mandates.js";
 import type { CrmRequestArchiveItem, CrmRequestDetail } from "../adapters/crm/requests.js";
 import type { CadastralOwner, CadastralProperty, ContactMatchResult, ErrorStatus, WorkflowStep, WorkerMode } from "../types.js";
@@ -755,7 +755,8 @@ export class WorkerRepository {
     const payloads = properties.map((property) => ({
       job_id: jobId, municipality: property.municipality, sheet: property.sheet,
       parcel: property.parcel, subaltern: property.subaltern, cadastral_key: buildCadastralKey(property),
-      address: property.address, census_zone: property.censusZone, category: property.category,
+      address: stripSisterMunicipalityPrefix(property.address, property.municipality) || null,
+      census_zone: property.censusZone, category: property.category,
       class: property.class, consistency: property.consistency, cadastral_income: property.cadastralIncome,
       raw_payload: property.rawPayload, processing_status: "extracted",
     }));
@@ -984,7 +985,13 @@ export class WorkerRepository {
       this.client.from("property_worker_people").select("*").eq("job_id", jobId),
     ]);
     if (properties.error || people.error) throw new Error("Impossibile ricostruire il job persistito");
-    const propertyRows = (properties.data as PropertyRow[]).sort((left, right) => {
+    const propertyRows = (properties.data as PropertyRow[]).map((property) => ({
+      ...property,
+      // Compatibilita' con le raccolte create prima della normalizzazione
+      // dell'elenco immobili per soggetto: UI e import ricevono subito la via
+      // pulita, mentre l'originale SISTER resta in raw_payload.rawCells.
+      address: stripSisterMunicipalityPrefix(property.address, property.municipality) || null,
+    })).sort((left, right) => {
       const leftOrder = Number(left.raw_payload?.sourceOrder ?? left.raw_payload?.rowIndex);
       const rightOrder = Number(right.raw_payload?.sourceOrder ?? right.raw_payload?.rowIndex);
       if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder)) return leftOrder - rightOrder;
