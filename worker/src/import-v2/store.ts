@@ -37,6 +37,7 @@ function checkpointFromRow(row: ImportV2ItemRow): ImportV2Checkpoint {
     ownershipVerifiedPersonIds: row.checkpoint?.ownershipVerifiedPersonIds ?? [],
     propertyResolution: row.checkpoint?.propertyResolution ?? null,
     crmPropertyId: row.checkpoint?.crmPropertyId ?? null,
+    activityEvidence: row.checkpoint?.activityEvidence ?? null,
     attempts: row.attempts,
     nextAttemptAt: row.next_attempt_at,
     lastError: row.last_error,
@@ -50,6 +51,7 @@ function checkpointPayload(checkpoint: ImportV2Checkpoint) {
     ownershipVerifiedPersonIds: checkpoint.ownershipVerifiedPersonIds ?? [],
     propertyResolution: checkpoint.propertyResolution,
     crmPropertyId: checkpoint.crmPropertyId,
+    activityEvidence: checkpoint.activityEvidence ?? null,
   };
 }
 

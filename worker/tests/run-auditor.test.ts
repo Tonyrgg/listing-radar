@@ -119,4 +119,33 @@ describe("sorveglianza automatica delle run", () => {
 
     expect(findings).toEqual([]);
   });
+
+  it("usa la prova Import V2 persistita senza richiedere il checkpoint legacy sulla proprieta", () => {
+    const findings = auditImportRun({
+      job: job as never,
+      graph: {
+        properties: [{ ...property, raw_payload: {} }] as never,
+        people: [] as never,
+        ownerships: [
+          { property_id: "property-1", person_id: "person-1" },
+          { property_id: "property-1", person_id: "person-2" },
+        ],
+      },
+      items: [{
+        ...item,
+        checkpoint: {
+          ...item.checkpoint,
+          activityEvidence: {
+            activityId: null,
+            outcome: "created",
+            descriptionVerified: true,
+            statusVerified: true,
+            expectedStatus: "Eseguito",
+          },
+        },
+      }] as never,
+    });
+
+    expect(findings).toEqual([]);
+  });
 });

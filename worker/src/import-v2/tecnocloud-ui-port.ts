@@ -612,7 +612,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         // Lightning cambia periodicamente gli attributi interni dei risultati.
         // Il percorso del record e' l'unica prova stabile; il CF verra' comunque
         // riletto nella scheda prima di accettare il nominativo.
-        const links = this.page.locator('a[data-recordid][href*="/s/account/"], a[data-refid="recordId"][href*="/s/account/"], [data-recordid] a[href*="/s/account/"]').filter({ visible: true });
+        // Lightning non espone sempre data-recordid sul link del risultato.
+        // L'href Account e' sufficiente per raccogliere candidati: il record
+        // viene comunque accettato soltanto dopo averne riletto il CF.
+        const links = this.page.locator('a[href*="/s/account/"]').filter({ visible: true });
         let unique: Array<{ id: string; href: string }> = [];
         let signature = "";
         let stable = 0;
@@ -655,7 +658,20 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           stable = 0;
         }
         if (stable < 3 || (!unique.length && !confirmedEmpty)) {
-          throw new ImportV2Error("La ricerca CF non ha confermato né un nominativo né l'assenza di risultati. Import in pausa sulla ricerca corrente.", "global_portal", { global: true });
+          throw new ImportV2Error(
+            "La ricerca CF non ha ancora confermato né un nominativo né l'assenza di risultati. Riprovo questa ricerca senza fermare gli altri immobili.",
+            "transient_portal",
+            {
+              retryable: true,
+              details: {
+                action: "person-tax-code-search-unconfirmed",
+                visibleCandidates: unique.length,
+                confirmedEmpty,
+                requestPending: requests.pending(),
+                searchBusy: await this.searchIsBusy(),
+              },
+            },
+          );
         }
         const matches: CrmPersonSnapshot[] = [];
         for (const record of unique) {

@@ -51,6 +51,16 @@ describe("Ricerca CF: assenza certa e portale non disponibile", () => {
     } finally { await browser.close(); }
   }, 15_000);
 
+  it("riconosce un risultato Lightning anche senza data-recordid sul link", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await searchFixture(page, `<h1>Risultati di ricerca</h1><section><h2>Clienti</h2><a href="${root}/account/found">Nome Collaudo</a></section>`);
+      const found = await new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode(cf);
+      expect(found.map(person => person.id)).toEqual(["found"]);
+    } finally { await browser.close(); }
+  }, 15_000);
+
   it("mette in pausa la coda quando la ricerca fallisce anche se mostra zero", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -71,7 +81,7 @@ describe("Ricerca CF: assenza certa e portale non disponibile", () => {
       const page = await browser.newPage();
       await searchFixture(page, body);
       await expect(new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode(cf)).rejects.toMatchObject({
-        kind: "global_portal", options: { global: true },
+        kind: "transient_portal", options: { retryable: true },
       });
     } finally { await browser.close(); }
   }, 20_000);

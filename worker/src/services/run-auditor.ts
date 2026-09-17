@@ -79,7 +79,15 @@ export function auditImportRun(input: {
       const checkpoint = item.checkpoint as Partial<ImportV2Checkpoint> | null;
       const expected = plan?.source.activity;
       const persisted = activityEvidence(property);
-      const coherent = expected?.enabled === true
+      const importV2Evidence = checkpoint?.activityEvidence;
+      const checkpointCoherent = expected?.enabled === true
+        && expected.status === "Eseguito"
+        && Boolean(checkpoint?.crmPropertyId)
+        && ["created", "existing"].includes(String(importV2Evidence?.outcome))
+        && importV2Evidence?.expectedStatus === "Eseguito"
+        && importV2Evidence?.descriptionVerified === true
+        && importV2Evidence?.statusVerified === true;
+      const legacyCoherent = expected?.enabled === true
         && expected.status === "Eseguito"
         && Boolean(checkpoint?.crmPropertyId)
         && Boolean(persisted)
@@ -88,16 +96,20 @@ export function auditImportRun(input: {
         && persisted?.description === expected.description
         && persisted?.contactMode === expected.contactMode
         && persisted?.crmPropertyId === checkpoint?.crmPropertyId;
-      if (!coherent) {
+      if (!checkpointCoherent && !legacyCoherent) {
         findings.push({
           code: "killer_activity_incoherent",
           status: "needs_review",
           propertyId: item.property_id,
-          message: "AttivitÃ  Killer incoerente: la run Ã¨ conclusa ma non Ã¨ provata un'attivitÃ  eseguita nel Cloud.",
+          message: "Attività Killer incoerente: la run è conclusa ma non è provata un'attività eseguita nel Cloud.",
           details: {
             expectedStatus: "Eseguito",
             plannedStatus: expected?.status ?? null,
             savedStatus: persisted?.status ?? null,
+            checkpointStatus: importV2Evidence?.expectedStatus ?? null,
+            checkpointOutcome: importV2Evidence?.outcome ?? null,
+            descriptionVerified: importV2Evidence?.descriptionVerified ?? null,
+            statusVerified: importV2Evidence?.statusVerified ?? null,
             plannedMode: expected?.contactMode ?? null,
             savedMode: persisted?.contactMode ?? null,
             cadastralKey: property?.cadastral_key,
