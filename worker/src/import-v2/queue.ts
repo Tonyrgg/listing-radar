@@ -1,5 +1,6 @@
 import type { ImportV2Failure, ImportV2Outcome, ImportV2Stage, SourceProperty } from "./model.js";
 import { ImportV2Engine } from "./engine.js";
+import { propertyAddressConflictKey } from "./identity.js";
 
 export type ImportV2BatchResult = {
   completed: ImportV2Outcome[];
@@ -45,12 +46,14 @@ export function partitionImportV2Work(
   const workerCount = Math.max(1, Math.min(Math.trunc(requestedWorkers) || 1, properties.length || 1));
   const items = properties.map((source, position) => {
     const property = materialize(source);
+    const addressKey = propertyAddressConflictKey(property.municipality, property.fullAddress);
     return {
       source,
       position,
       propertyId: property.sourcePropertyId,
       conflictKeys: [...new Set([
         ...property.owners.map((owner) => `PERSON:${owner.taxCode.replace(/\s+/g, "").toUpperCase()}`).filter((key) => key !== "PERSON:"),
+        ...(addressKey ? [`ADDRESS:${addressKey}`] : []),
         `PROPERTY:${[
           property.municipality,
           property.cadastral.urbanSection,

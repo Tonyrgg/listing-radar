@@ -609,6 +609,7 @@ async function recordRunAuditFindings(
   findings: RunAuditFinding[],
   context: { jobId: string | null; runType: string },
 ) {
+  let stored = 0;
   for (const finding of findings) {
     const alreadyStored = diagnosticErrors.some((item) => item.source === "run-auditor"
       && item.jobId === context.jobId
@@ -628,7 +629,9 @@ async function recordRunAuditFindings(
         ...finding.details,
       },
     });
+    stored += 1;
   }
+  return stored;
 }
 
 async function auditPersistedImport(jobId: string, runType: string) {
@@ -639,9 +642,9 @@ async function auditPersistedImport(jobId: string, runType: string) {
     repo.listImportV2Items(jobId),
   ]);
   const findings = auditImportRun({ job, graph, items });
-  await recordRunAuditFindings(findings, { jobId, runType });
-  if (findings.length) {
-    pushActivity(`Sorveglianza automatica: ${findings.length} ${findings.length === 1 ? "incoerenza conservata" : "incoerenze conservate"} in Cronologia`, "warning");
+  const stored = await recordRunAuditFindings(findings, { jobId, runType });
+  if (stored) {
+    pushActivity(`Sorveglianza automatica: ${stored} ${stored === 1 ? "incoerenza conservata" : "incoerenze conservate"} in Cronologia`, "warning");
   }
 }
 
@@ -3329,8 +3332,8 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       const message = error instanceof Error ? error.message : String(error);
       const alreadyReported = lastError === message;
       lastError = message;
-      pushActivity(message, "error");
       if (!alreadyReported) {
+        pushActivity(message, "error");
         void recordDiagnosticErrorSafely({
           source: "worker",
           status: "failed",

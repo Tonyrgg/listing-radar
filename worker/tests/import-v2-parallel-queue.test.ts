@@ -56,6 +56,22 @@ describe("coda Import V2 su due finestre", () => {
     expect(new Set(laneByProperty.values()).size).toBe(2);
   });
 
+  it("tiene sulla stessa finestra unita catastali diverse dello stesso civico", () => {
+    const first = property("p1", ["RSSMRA80A01A893P"]);
+    first.fullAddress = "VIA PIETRO GIANNONE n. 20 Piano 1";
+    const second = property("p2", ["VRDLGI81A01A893Q"]);
+    second.fullAddress = "VIA PIETRO GIANNONE n. 20 Piano 2";
+    second.cadastral = { ...second.cadastral, parcel: "2483", subaltern: "2" };
+    const third = property("p3", ["BNCLCU82A01A893R"]);
+    third.fullAddress = "VIA ALTAMURA n. 5 Piano T";
+
+    const work = partitionImportV2Work([first, second, third], 2);
+    const laneByProperty = new Map(work.flatMap((lane, laneIndex) => lane.map((item) => [item.propertyId, laneIndex] as const)));
+
+    expect(laneByProperty.get("p1")).toBe(laneByProperty.get("p2"));
+    expect(laneByProperty.get("p3")).not.toBe(laneByProperty.get("p1"));
+  });
+
   it("lavora davvero in parallelo e conserva gli indici globali", async () => {
     const active = new Set<number>();
     let maximumActive = 0;

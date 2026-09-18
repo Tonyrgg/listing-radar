@@ -3,7 +3,7 @@ import type { Locator, Page, Request, Response } from "playwright";
 import { ImportV2Error } from "./errors.js";
 import { assignPhonesToAvailableFields, PHONE_FIELD_LABELS, type PhoneFieldLabel } from "./contacts.js";
 import { normalizePhone } from "../core/normalize.js";
-import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
+import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, sameCrmPropertyAddress, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
 import type {
   CadastralIdentity,
@@ -1420,7 +1420,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.page.locator("label").filter({ hasText: /^\s*Catasto Foglio\s*$/i }).filter({ visible: true })
       .first().waitFor({ state: "visible", timeout: 15_000 });
     const addressField = this.page.locator('li.slds-page-header__detail-block:has(.slds-text-title:has-text("Indirizzo Completo Immobile")) c-output-field').filter({ visible: true });
-    const fullAddress = await addressField.count() ? await addressField.first().innerText() : await this.detailValue("Indirizzo Completo Immobile");
+    const [fullAddress, civicLetter] = await Promise.all([
+      addressField.count().then((count) => count ? addressField.first().innerText() : this.detailValue("Indirizzo Completo Immobile")),
+      this.detailValue("Lettera"),
+    ]);
     const headingField = this.page.locator("h1:visible, h2:visible").first();
     // A Lightning card need not expose an h1/h2. Optional decoration must not
     // spend the default 30-second locator timeout on every matching record.
@@ -1430,6 +1433,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       id: propertyId,
       displayName: heading.replace(/\s+/g, " ").trim(),
       fullAddress: fullAddress || null,
+      civicLetter: civicLetter || null,
       cadastral: await this.readCadastralIdentity(),
       importedFromRegistry,
     };
@@ -1794,14 +1798,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       // stop every fallback once the ordinary parcel field has already given
       // an exact result. In that case repeating the same query through
       // "Denom Particella" only reloads the list and the same record.
-      if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+      if (summaries.some((candidate) => sameCrmPropertyAddress(plan.source.fullAddress, candidate)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
       if (hasDenominationFilter) {
         const previous = new Set(found);
         for (const id of await search({ sheet, parcelDenomination: parcel, subaltern })) found.add(id);
         for (const id of found) if (!previous.has(id)) summaries.push(await this.readPropertySummary(id));
       }
-      if (summaries.some((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+      if (summaries.some((candidate) => sameCrmPropertyAddress(plan.source.fullAddress, candidate)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
       /* Se il catasto non restituisce un'identità esatta, il riscontro per
        * indirizzo resta sempre attivo: è una protezione anti-duplicato, non
@@ -2621,7 +2625,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.page.bringToFront();
       const description = plan.source.activity.description?.trim() || "Inserire attività";
       const before = await this.readActivityEvidence(propertyId, description, plan.source.activity.status);
-      if (before.found || this.submittedActivities.has(propertyId)) {
+      if (before.found) {
         return {
           activityId: null,
           outcome: "existing",
@@ -2629,6 +2633,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           statusVerified: before.statusVerified,
           expectedStatus: plan.source.activity.status,
         };
+      }
+      if (this.submittedActivities.has(propertyId)) {
+        throw new ImportV2Error("L'attività già inviata non è ancora verificabile nel Cloud. Import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
       }
       const card = before.card;
       const create = await this.one(card.getByRole("button", { name: "Nuovo", exact: true }).filter({ visible: true }), "Nuova attività");

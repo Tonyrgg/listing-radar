@@ -8,6 +8,7 @@ import {
   propertyNameToAddress,
   sameAddress,
   sameCadastralIdentity,
+  sameCrmPropertyAddress,
 } from "../src/import-v2/identity.js";
 import type { SourceProperty } from "../src/import-v2/model.js";
 
@@ -116,12 +117,22 @@ describe("Import V2 identity", () => {
     )).toBe(true);
   });
 
-  it("riusa l'indirizzo unico e richiede l'aggiornamento catastale", () => {
+  it("non sovrascrive una terna completa e diversa per il solo indirizzo", () => {
     const result = choosePropertyCandidate(source(), [{
       id: "address-only",
       displayName: "IM - Via Publio Virgilio Marone 2 [25] - Abbadessa",
       fullAddress: null,
       cadastral: { ...source().cadastral, parcel: "999" },
+    }]);
+    expect(result).toMatchObject({ kind: "create", candidate: null });
+  });
+
+  it("aggiorna dal solo indirizzo una scheda priva di catasto completo", () => {
+    const result = choosePropertyCandidate(source(), [{
+      id: "address-only",
+      displayName: "IM - Via Publio Virgilio Marone 2 [25] - Abbadessa",
+      fullAddress: null,
+      cadastral: { ...source().cadastral, parcel: "", subaltern: "" },
     }]);
     expect(result).toMatchObject({ kind: "address_update", candidate: { id: "address-only" } });
   });
@@ -197,6 +208,24 @@ describe("Import V2 identity", () => {
 
   it("non cambia il riconoscimento dell'indirizzo, che confronta a maiuscole normalizzate", () => {
     expect(sameAddress("VIA MARSALA n. 4 Piano T", "Via Marsala 4 [.], 70032 BITONTO (BA)")).toBe(true);
+  });
+
+  it.each([
+    ["VIA PIETRO GIANNONE n. 27-29 Piano T", "Via Pietro Giannone N. 27-29 . [.], 70032 BITONTO (BA)"],
+    ["VIA PIETRO GIANNONE n. 7-9-11 Piano T-S1", "Via Pietro Giannone N. 7-9-11 . [.], 70032 BITONTO (BA)"],
+    ["TRAVERSA DI VIA PIETRO NENNI AL 45 n. 41 Piano S1-T - 1-2", "Traversa Di Via Pietro Nenni Al 45 41 [.], 70032 BITONTO (BA)"],
+  ])("riconosce i civici composti della run reale", (sister, cloud) => {
+    expect(sameAddress(sister, cloud)).toBe(true);
+  });
+
+  it("integra la lettera letta dal campo Cloud nel confronto finale", () => {
+    const cloud = {
+      displayName: "Immobile IM - Via Pietro Giannone 16 [.]",
+      fullAddress: "Via Pietro Giannone 16 [.], 70032 BITONTO (BA)",
+      civicLetter: "A",
+    };
+    expect(sameCrmPropertyAddress("VIA PIETRO GIANNONE n. 16/A Piano 2", cloud)).toBe(true);
+    expect(sameCrmPropertyAddress("VIA PIETRO GIANNONE n. 16/B Piano 2", cloud)).toBe(false);
   });
 
   it("considera equivalenti i segni usati da SISTER per l'apostrofo nel nome via", () => {

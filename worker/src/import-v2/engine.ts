@@ -8,7 +8,7 @@ import {
   canonicalTaxCode,
   choosePropertyCandidate,
   formatPersonName,
-  sameAddress,
+  sameCrmPropertyAddress,
   sameCadastralIdentity,
 } from "./identity.js";
 import type {
@@ -342,7 +342,7 @@ export class ImportV2Engine {
       }
       case "ownerships_synced": {
         const property = await this.crm.readProperty(this.requirePropertyId(checkpoint));
-        if (!sameAddress(plan.source.fullAddress, property.fullAddress ?? property.displayName)
+        if (!sameCrmPropertyAddress(plan.source.fullAddress, property)
           || !sameCadastralIdentity(plan.source.cadastral, property.cadastral)) {
           throw new ImportV2Error("La rilettura dell'immobile non coincide con indirizzo e catasto SISTER", "verification_failed", { retryable: true });
         }
@@ -485,7 +485,7 @@ export class ImportV2Engine {
     // Both operations navigate the same Tecnocloud tab; overlapping them is a
     // race between two unrelated pages and was the source of random stalls.
     const cadastral = await this.crm.findPropertiesByCadastralIdentity(plan);
-    const exact = cadastral.filter((candidate) => sameAddress(plan.source.fullAddress, candidate.fullAddress ?? candidate.displayName)
+    const exact = cadastral.filter((candidate) => sameCrmPropertyAddress(plan.source.fullAddress, candidate)
       && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral));
     // The global search already covers all owners, including former owners.
     // Only an exact, unambiguous identity can avoid the linked-list fallback.

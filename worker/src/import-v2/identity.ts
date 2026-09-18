@@ -142,8 +142,9 @@ export function addressIdentity(value: unknown): AddressIdentity | null {
    * civico alcuno, e la verifica finale rifiutava un immobile appena creato
    * con l'indirizzo giusto. */
   raw = raw.replace(/\s+(?:EDIFICIO|SCALA)\b.*$/i, "").trim();
-  const normalized = plainWords(raw).replace(/\bN(?:UMERO)?\s+(?=\d)/, "");
-  const civicMatch = normalized.match(/^(.*?\D)\s+(\d+(?:\s*\/\s*[A-Z]|[A-Z])?)$/i);
+  const normalized = plainWords(raw);
+  const civicToken = String.raw`\d+(?:\s*\/?\s*[A-Z])?(?:\s*-\s*\d+(?:\s*\/?\s*[A-Z])?)*`;
+  const civicMatch = normalized.match(new RegExp(`^(.*?)\\s+(?:N(?:UMERO)?\\s+)?(${civicToken})$`, "i"));
   const missingCivicMatch = normalized.match(/^(.*?)\s+(?:N\s+)?(?:S\s*N\s*C|SNC|NC)$/i);
   if ((!civicMatch?.[1] || !civicMatch[2]) && !missingCivicMatch?.[1]) return null;
   return {
@@ -160,6 +161,35 @@ export function sameAddress(left: unknown, right: unknown): boolean {
   if (!a || !b || a.street !== b.street || a.civic !== b.civic) return false;
   if (a.location && b.location && a.location !== b.location) return false;
   return a.internal === b.internal || (!a.internal && !b.internal);
+}
+
+/**
+ * Il riepilogo indirizzo di Tecnocloud omette spesso la lettera del civico,
+ * anche se il campo `Lettera` della scheda la conserva. Il confronto con una
+ * scheda completa usa entrambe le evidenze senza rendere equivalenti, nelle
+ * ricerche generiche, 16/A e 16/B.
+ */
+export function sameCrmPropertyAddress(
+  sourceAddress: unknown,
+  candidate: Pick<CrmPropertySummary, "displayName" | "fullAddress" | "civicLetter">,
+): boolean {
+  const source = addressIdentity(sourceAddress);
+  const actual = addressIdentity(candidate.fullAddress ?? candidate.displayName);
+  if (!source || !actual) return false;
+  const letter = plainWords(candidate.civicLetter).replace(/[^A-Z0-9]/g, "");
+  const actualCivic = letter && !actual.civic.endsWith(letter) ? `${actual.civic}${letter}` : actual.civic;
+  if (source.street !== actual.street || source.civic !== actualCivic) return false;
+  if (source.location && actual.location && source.location !== actual.location) return false;
+  return source.internal === actual.internal || (!source.internal && !actual.internal);
+}
+
+/** Lock prudenziale per due finestre: tutte le unita' dello stesso civico
+ * restano nella stessa corsia, anche quando lettera o interno differiscono. */
+export function propertyAddressConflictKey(municipality: unknown, address: unknown): string | null {
+  const identity = addressIdentity(address);
+  if (!identity) return null;
+  const buildingCivic = identity.civic.replace(/[A-Z]/g, "");
+  return [plainWords(municipality), identity.street, buildingCivic].join("|");
 }
 
 function canonicalCadastralToken(value: unknown): string {
@@ -198,30 +228,23 @@ export function sameCadastralIdentity(left: CadastralIdentity | null, right: Cad
     && (expectedIncome == null || expectedIncome === canonicalIncome(right.income));
 }
 
-/**
- * In un condominio molte unita' condividono civico, foglio e particella: solo
- * il subalterno le separa. Quando entrambe le schede portano quelle tre
- * coordinate e il subalterno differisce, il candidato e' un'altra unita' dello
- * stesso stabile, non una versione incerta di questa.
- */
-function otherUnitInSameBuilding(left: CadastralIdentity | null, right: CadastralIdentity | null): boolean {
-  if (!left || !right) return false;
-  const sheet = canonicalCadastralToken(left.sheet);
-  const subaltern = canonicalCadastralToken(left.subaltern);
-  const candidateSheet = canonicalCadastralToken(right.sheet);
-  const candidateSubaltern = canonicalCadastralToken(right.subaltern);
-  if (!sheet || !subaltern || !candidateSheet || !candidateSubaltern || sheet !== candidateSheet) return false;
-  const parcels = parcelTokens(left);
-  const candidateParcels = parcelTokens(right);
-  if (!parcels.length || !candidateParcels.some((token) => parcels.includes(token))) return false;
-  return subaltern !== candidateSubaltern;
+function completeCadastralCoordinates(value: CadastralIdentity | null): boolean {
+  return Boolean(value
+    && canonicalCadastralToken(value.sheet)
+    && parcelTokens(value).length
+    && canonicalCadastralToken(value.subaltern));
+}
+
+function otherVerifiedCadastralUnit(left: CadastralIdentity | null, right: CadastralIdentity | null): boolean {
+  if (!completeCadastralCoordinates(left) || !completeCadastralCoordinates(right)) return false;
+  return !sameCadastralIdentity(left ? { ...left, income: null } : null, right ? { ...right, income: null } : null);
 }
 
 export function choosePropertyCandidate(source: SourceProperty, candidates: CrmPropertySummary[]):
   | { kind: "create"; candidate: null }
   | { kind: "exact" | "address_update" | "cadastral_update"; candidate: CrmPropertySummary } {
   const unique = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
-  const addressMatches = unique.filter((candidate) => sameAddress(source.fullAddress, candidate.fullAddress ?? candidate.displayName));
+  const addressMatches = unique.filter((candidate) => sameCrmPropertyAddress(source.fullAddress, candidate));
   const exact = addressMatches.filter((candidate) => sameCadastralIdentity(source.cadastral, candidate.cadastral));
   if (exact.length === 1) return { kind: "exact", candidate: exact[0]! };
   if (exact.length > 1) {
@@ -229,13 +252,12 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
       details: { candidateIds: exact.map((candidate) => candidate.id) },
     });
   }
-  /* Le altre unita' dello stesso stabile condividono indirizzo, foglio e
-   * particella: solo il subalterno le separa. Se ogni candidato dell'indirizzo
-   * e' una di quelle, il subalterno ha gia' sciolto l'ambiguita' e la scelta
-   * passa al catasto. Basta un candidato che potrebbe ancora essere questa
-   * unita' perche' valga la decisione di prima. */
+  /* Un indirizzo puo' contenere molte unita'. Se ogni candidato possiede una
+   * terna completa diversa, quelle terne provano immobili distinti e non si
+   * sovrascrivono. L'aggiornamento dal solo indirizzo resta ammesso soltanto
+   * per una scheda catastalmente incompleta. */
   const everyCandidateIsAnotherUnit = addressMatches.length > 0
-    && addressMatches.every((candidate) => otherUnitInSameBuilding(source.cadastral, candidate.cadastral));
+    && addressMatches.every((candidate) => otherVerifiedCadastralUnit(source.cadastral, candidate.cadastral));
   if (!everyCandidateIsAnotherUnit) {
     if (addressMatches.length === 1) return { kind: "address_update", candidate: addressMatches[0]! };
     if (addressMatches.length > 1) {

@@ -148,4 +148,52 @@ describe("sorveglianza automatica delle run", () => {
 
     expect(findings).toEqual([]);
   });
+
+  it("non segnala l'attivita disabilitata sugli immobili di espansione", () => {
+    const findings = auditImportRun({
+      job: job as never,
+      graph: { properties: [property] as never, people: [] as never, ownerships: [] },
+      items: [{
+        ...item,
+        plan: { source: { activity: { enabled: false, status: "Eseguito", description: null, contactMode: "Contatto diretto" } } },
+        checkpoint: {
+          ...item.checkpoint,
+          activityEvidence: {
+            activityId: null,
+            outcome: "disabled",
+            descriptionVerified: true,
+            statusVerified: true,
+            expectedStatus: "Eseguito",
+          },
+        },
+      }] as never,
+    });
+
+    expect(findings).toEqual([]);
+  });
+
+  it("segnala quando due immobili condividono la stessa identita Cloud", () => {
+    const findings = auditImportRun({
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: {
+        properties: [property, { ...property, id: "property-2", cadastral_key: "BITONTO|50|200|2" }] as never,
+        people: [] as never,
+        ownerships: [],
+      },
+      items: [
+        { ...item, checkpoint: { ...item.checkpoint, crmPropertyId: "a0VRD00000ABCdeAAA" } },
+        {
+          ...item,
+          id: "item-2",
+          property_id: "property-2",
+          checkpoint: { ...item.checkpoint, crmPropertyId: "a0VRD00000ABCdeBBB" },
+        },
+      ] as never,
+    });
+
+    expect(findings).toEqual([expect.objectContaining({
+      code: "crm_identity_reused",
+      details: expect.objectContaining({ propertyIds: ["property-1", "property-2"] }),
+    })]);
+  });
 });

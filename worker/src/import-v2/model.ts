@@ -83,6 +83,8 @@ export type CrmPropertySummary = {
   id: string;
   displayName: string;
   fullAddress: string | null;
+  /** Tecnocloud non include sempre la lettera del civico nell'indirizzo sintetico. */
+  civicLetter?: string | null;
   cadastral: CadastralIdentity | null;
   /** True/false when the property banner exposes the registry-import marker. */
   importedFromRegistry?: boolean;

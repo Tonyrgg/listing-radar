@@ -50,6 +50,29 @@ export function auditImportRun(input: {
   const importCoOwners = options?.importCoOwners !== false;
   const activityMode = String(options?.activityMode ?? "");
   const propertyById = new Map(input.graph.properties.map((property) => [property.id, property]));
+  const itemsByCrmProperty = new Map<string, ImportV2ItemRow[]>();
+  for (const item of input.items) {
+    const crmPropertyId = item.checkpoint?.crmPropertyId?.slice(0, 15);
+    if (!crmPropertyId) continue;
+    const grouped = itemsByCrmProperty.get(crmPropertyId) ?? [];
+    grouped.push(item);
+    itemsByCrmProperty.set(crmPropertyId, grouped);
+  }
+  for (const [crmPropertyId, grouped] of itemsByCrmProperty) {
+    const propertyIds = [...new Set(grouped.map((item) => item.property_id))];
+    if (propertyIds.length < 2) continue;
+    findings.push({
+      code: "crm_identity_reused",
+      status: "needs_review",
+      propertyId: propertyIds[0]!,
+      message: "La stessa scheda Cloud risulta associata a più immobili SISTER: la run non può considerarli importati separatamente.",
+      details: {
+        crmPropertyId,
+        propertyIds,
+        cadastralKeys: propertyIds.map((propertyId) => propertyById.get(propertyId)?.cadastral_key ?? null),
+      },
+    });
+  }
 
   for (const item of completedItems(input.items)) {
     const property = propertyById.get(item.property_id);
@@ -96,7 +119,8 @@ export function auditImportRun(input: {
         && persisted?.description === expected.description
         && persisted?.contactMode === expected.contactMode
         && persisted?.crmPropertyId === checkpoint?.crmPropertyId;
-      if (!checkpointCoherent && !legacyCoherent) {
+      const intentionallyDisabled = expected?.enabled === false && importV2Evidence?.outcome === "disabled";
+      if (!intentionallyDisabled && !checkpointCoherent && !legacyCoherent) {
         findings.push({
           code: "killer_activity_incoherent",
           status: "needs_review",

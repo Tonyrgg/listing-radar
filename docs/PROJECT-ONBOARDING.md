@@ -305,8 +305,11 @@ Per ogni immobile:
    con indirizzo e catasto coincidenti passa direttamente all'aggiornamento;
    in sua assenza estendere la ricerca alla via e alle liste complete degli
    immobili dei proprietari verificati, usando il pairing dell'indirizzo
-   prima di aprire le schede. I riscontri duplicati restano bloccanti;
-   il solo indirizzo univoco autorizza l'aggiornamento dei dati catastali;
+   prima di aprire le schede. I riscontri duplicati restano bloccanti. Il solo
+   indirizzo univoco autorizza l'aggiornamento catastale soltanto quando la
+   scheda Cloud non possiede gia' una terna completa e diversa: una terna
+   completa discordante prova che si tratta di un'altra unita' e non viene mai
+   sovrascritta;
 6. collegare e verificare tutti gli altri come `Comproprietario`;
 7. creare, se configurata, una sola attività dalla scheda immobile;
 8. salvare checkpoint e audit;

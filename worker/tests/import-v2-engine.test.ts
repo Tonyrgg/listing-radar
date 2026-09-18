@@ -486,7 +486,7 @@ describe("Import V2 engine", () => {
     expect((await new ImportV2Engine(crm, new MemoryStore()).run(property())).state).toBe("completed");
   });
 
-  it("aggiorna il catasto dell'immobile quando coincide soltanto l'indirizzo", async () => {
+  it("completa il catasto mancante quando coincide soltanto l'indirizzo", async () => {
     const crm = new FakeCrm();
     crm.people.set("existing-owner", {
       id: "existing-owner", taxCode: "RSSMRA80A01A893P", fullName: "Rossi Mario", birthDate: "1980-01-01",
@@ -494,7 +494,7 @@ describe("Import V2 engine", () => {
     });
     crm.properties.set("existing", {
       id: "existing", displayName: "IM - Arco Angarano 10 - Centro", fullAddress: "Arco Angarano 10, 70032 BITONTO (BA)",
-      cadastral: { ...property().cadastral, parcel: "999" },
+      cadastral: { ...property().cadastral, parcel: "", subaltern: "" },
       owners: [{ linkId: "link-old", personId: "existing-owner", taxCode: "RSSMRA80A01A893P", sharePercentage: 100, rightType: "Proprietà" }],
     });
     const outcome = await new ImportV2Engine(crm, new MemoryStore()).run(property());
@@ -502,6 +502,24 @@ describe("Import V2 engine", () => {
     expect(outcome.state).toBe("completed");
     expect(crm.properties).toHaveLength(1);
     expect(crm.properties.get("existing")?.cadastral).toEqual(property().cadastral);
+  });
+
+  it("non sovrascrive un altro immobile con catasto completo allo stesso indirizzo", async () => {
+    const crm = new FakeCrm();
+    crm.people.set("existing-owner", {
+      id: "existing-owner", taxCode: "RSSMRA80A01A893P", fullName: "Rossi Mario", birthDate: "1980-01-01",
+      birthPlace: "Bitonto", birthProvince: "BA", phones: [], emails: [],
+    });
+    crm.properties.set("existing", {
+      id: "existing", displayName: "IM - Arco Angarano 10 - Centro", fullAddress: "Arco Angarano 10, 70032 BITONTO (BA)",
+      cadastral: { ...property().cadastral, parcel: "999", subaltern: "2" },
+      owners: [{ linkId: "link-old", personId: "existing-owner", taxCode: "RSSMRA80A01A893P", sharePercentage: 100, rightType: "Propriet\u00e0" }],
+    });
+    const outcome = await new ImportV2Engine(crm, new MemoryStore()).run(property());
+
+    expect(outcome.state).toBe("completed");
+    expect(crm.properties).toHaveLength(2);
+    expect(crm.properties.get("existing")?.cadastral).toMatchObject({ parcel: "999", subaltern: "2" });
   });
 
   it("rimuove gli ex proprietari privati ma non tocca aziende e usufrutto", async () => {
