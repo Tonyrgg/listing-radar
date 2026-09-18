@@ -2392,8 +2392,10 @@ function renderStreetRun() {
   start.classList.toggle("is-hidden", active);
   cancel.classList.toggle("is-hidden", !active);
   cancel.disabled = Boolean(state.cancelling);
-  abandon.classList.toggle("is-hidden", !active);
-  abandon.textContent = "Interrompi";
+  abandon.classList.toggle("is-hidden", !active && !resumable);
+  abandon.classList.toggle("danger", active);
+  abandon.classList.toggle("secondary", !active);
+  abandon.textContent = active ? "Interrompi" : "Nuova acquisizione";
   abandon.disabled = Boolean(appState?.stoppingAll);
   if (!checkpoint || (!active && !resumable)) {
     $("streetRunSummary").classList.add("is-hidden");
@@ -3702,9 +3704,12 @@ document.addEventListener("click", async (event) => {
       if (target.id === "networkRunCancel")
         return window.propertyWorker.cancelNetworkRun();
       if (target.id === "streetRunAbandon") {
+        const activeStreetRun = Boolean(appState?.streetRun?.active);
         if (
           !window.confirm(
-            "Interrompere questa run via? L’operazione corrente verrà chiusa in sicurezza e potrai avviare subito una nuova acquisizione.",
+            activeStreetRun
+              ? "Interrompere questa run via? L’operazione corrente verrà chiusa in sicurezza e potrai avviare subito una nuova acquisizione."
+              : "Preparare una nuova acquisizione? La run in pausa resta nel Registro operativo e potrai riprenderla dal suo record.",
           )
         )
           return COMMAND_CANCELLED;

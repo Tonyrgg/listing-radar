@@ -211,8 +211,9 @@ export class WorkerRepository {
   }
 
   async getJob(id: string): Promise<JobRow> {
-    const { data, error } = await this.client.from("property_worker_jobs").select("*").eq("id", id).single();
-    if (error) throw new Error(`Job ${id} non trovato: ${error.message}`);
+    const { data, error } = await this.client.from("property_worker_jobs").select("*").eq("id", id).maybeSingle();
+    if (error) throw new Error(`Lettura job ${id} fallita: ${error.message}`);
+    if (!data) throw new Error(`Job ${id} non trovato nell'archivio Cloud`);
     return data as JobRow;
   }
 

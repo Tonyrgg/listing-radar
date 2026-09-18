@@ -26,6 +26,27 @@ export type PhoneFieldAssignment = {
   overflow: string[];
 };
 
+export function assignPhonesToAvailableFields(
+  phones: string[],
+  availableLabels: readonly PhoneFieldLabel[] = PHONE_FIELD_LABELS,
+): PhoneFieldAssignment {
+  const normalized = unique(phones.map(canonicalPhone).filter(Boolean));
+  const available = new Set(availableLabels);
+  const values = Object.fromEntries(PHONE_FIELD_LABELS.map((label) => [label, ""])) as Record<PhoneFieldLabel, string>;
+  const overflow: string[] = [];
+  const candidates = (phone: string): PhoneFieldLabel[] => phone.startsWith("3")
+    ? ["Cellulare", "Altro telefono", "Telefono Ufficio"]
+    : phone.startsWith("0")
+      ? ["Telefono fisso", "Telefono Ufficio", "Altro telefono"]
+      : ["Altro telefono", "Telefono Ufficio"];
+  for (const phone of normalized) {
+    const target = candidates(phone).find((label) => available.has(label) && !values[label]);
+    if (target) values[target] = phone;
+    else overflow.push(phone);
+  }
+  return { values, overflow };
+}
+
 /**
  * Tecnocloud distingue il cellulare dal fisso, quindi l'ordine della sorgente
  * non puo' decidere il campo. Per la numerazione italiana il prefisso 3 e'
@@ -33,19 +54,7 @@ export type PhoneFieldAssignment = {
  * campo neutro, mai spacciati per cellulari o fissi.
  */
 export function assignPhonesToFields(phones: string[]): PhoneFieldAssignment {
-  const normalized = unique(phones.map(canonicalPhone).filter(Boolean));
-  const mobiles = normalized.filter((phone) => phone.startsWith("3"));
-  const landlines = normalized.filter((phone) => phone.startsWith("0"));
-  const neutral = normalized.filter((phone) => !phone.startsWith("3") && !phone.startsWith("0"));
-  const values: Record<PhoneFieldLabel, string> = {
-    Cellulare: mobiles.shift() ?? "",
-    "Telefono fisso": landlines.shift() ?? "",
-    "Telefono Ufficio": landlines.shift() ?? "",
-    "Altro telefono": "",
-  };
-  const remaining = [...mobiles, ...landlines, ...neutral];
-  values["Altro telefono"] = remaining.shift() ?? "";
-  return { values, overflow: remaining };
+  return assignPhonesToAvailableFields(phones);
 }
 
 /**

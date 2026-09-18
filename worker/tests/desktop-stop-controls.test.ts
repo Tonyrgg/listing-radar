@@ -33,6 +33,7 @@ describe("controlli di arresto desktop", () => {
     expect(html).toContain('data-activity-mode="none"');
     expect(html).toContain("Pausa dopo questo immobile");
     expect(html).toContain('id="streetRunAbandon"');
+    expect(html).toContain("Nuova acquisizione");
     expect(preload).toContain('stopAll: () => ipcRenderer.invoke("desktop:stop-all")');
     expect(preload).toContain('setStopAfterNextImport: (enabled) => ipcRenderer.invoke("desktop:set-stop-after-next-import", enabled)');
     expect(preload).toContain('abandonStreetRun: () => ipcRenderer.invoke("desktop:abandon-street-run")');
@@ -55,6 +56,8 @@ describe("controlli di arresto desktop", () => {
     expect(runner).toContain("this.propertyActivityMode()");
     expect(runner).toContain("this.isStopAfterNextImportRequested(job.id)");
     expect(renderer).toContain("Riprendi dal punto salvato");
+    expect(renderer).toContain('active ? "Interrompi" : "Nuova acquisizione"');
+    expect(renderer).toContain("La run in pausa resta nel Registro operativo");
     expect(renderer).toContain("Metti in pausa e conserva");
     expect(main).toContain('status: "acquisition_skipped"');
     expect(main).toContain("continuo con gli elementi validi");

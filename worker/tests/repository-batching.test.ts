@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import { WorkerRepository, type PersonRow, type PropertyRow } from "../src/services/repository.js";
 
 describe("persistenza alleggerita del grafo worker", () => {
+  it("distingue un job assente da un risultato Supabase non coercibile", async () => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
+    Object.defineProperty(repository, "client", { value: { from: () => query } });
+
+    await expect(repository.getJob("job-assente")).rejects.toThrow("Job job-assente non trovato nell'archivio Cloud");
+  });
+
   it.each([true, false])("carica anche i collegamenti a nominativi mancanti per rilevare acquisizioni parziali (altri nominativi: %s)", hasPeople => {
     const rows: Record<string, Array<Record<string, unknown>>> = {
       property_worker_properties: [{ id: "property", municipality: "BITONTO", address: "Bitonto(BA) Via Tenente Domenico Speranza, 15", raw_payload: null }],

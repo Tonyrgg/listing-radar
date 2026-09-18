@@ -1730,7 +1730,20 @@ async function runSisterStreet(input: {
         error_message: "Acquisizione creata; attendo la lettura SISTER.",
       });
     } else if (liveRepository && streetImportJobId) {
-      const existingJob = await liveRepository.getJob(streetImportJobId);
+      let existingJob: Awaited<ReturnType<typeof liveRepository.getJob>>;
+      try {
+        existingJob = await liveRepository.getJob(streetImportJobId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!input.resume || !/non trovato nell'archivio Cloud/i.test(message)) throw error;
+        await archiveStreetRunCheckpoint(
+          "Checkpoint locale separato da un job non più presente nell'archivio Cloud",
+          requestedEngine,
+        );
+        throw new Error(
+          "La run salvata non esiste più nell'archivio Cloud. Il checkpoint locale è stato archiviato: ora puoi avviare una nuova lavorazione dal modulo.",
+        );
+      }
       const existingAcquisition = existingJob.acquisition ?? {};
       acquisitionMetadata = {
         ...acquisitionMetadata,

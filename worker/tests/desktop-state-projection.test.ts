@@ -40,6 +40,7 @@ describe("proiezione leggera dello stato desktop", () => {
     const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
     const html = readFileSync(new URL("../src/desktop/renderer/index.html", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("../src/desktop/renderer/styles.css", import.meta.url), "utf8");
 
     expect(main).not.toContain("MAX_ACQUISIZIONI_CONSERVATE");
     expect(main).not.toContain("assertSpazioPerConservare");
@@ -62,6 +63,10 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(html).toContain('id="expandAllOwnersToggle"');
     expect(renderer).toContain("Espansione a un livello di tutti i proprietari attiva");
     expect(main).toContain("expandAllOwners,");
+    expect(styles).toContain("#jobDetailContent { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }");
+    expect(styles).toContain(".detail-workspace-columns .detail-accordion:last-child .detail-accordion-body { grid-template-rows: auto minmax(0, 1fr); }");
+    expect(styles).toMatch(/\.detail-property-list\s*\{[\s\S]*?overflow-y:\s*auto/);
+    expect(styles).toMatch(/\.acquisition-record-list\s*\{[\s\S]*?overflow-y:\s*auto/);
   });
 
   it("riassume un grafo grande senza inviare immobili, persone e quote al renderer", () => {

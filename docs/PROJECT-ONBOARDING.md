@@ -650,10 +650,13 @@ La modalità «Segui una rete di proprietari» parte da codici fiscali verificat
 
 **I filtri decidono cosa si acquisisce, mai dove si passa.** Di ogni persona visitata vengono letti tutti gli immobili e tutti i loro comproprietari, che entrano in coda a prescindere da come l'immobile e' stato giudicato: anche un box o un immobile fuori dai criteri dice con chi si possiede, ed e' un ramo della rete. Prima i comproprietari venivano accodati solo dopo che l'immobile aveva superato ogni barriera, e con un requisito stretto l'esplorazione moriva subito dopo i punti di partenza. L'eta' del proprietario si legge dalla data che SISTER stampa e, quando manca, si decodifica dal codice fiscale, che la contiene per costruzione. Quando la coda si esaurisce senza aver raggiunto l'obiettivo, altri punti di partenza vengono ripescati fra i Clienti del gestionale escludendo chi è già stato visitato; se non ne restano, l'esplorazione si chiude. Gli immobili esclusi da questi filtri non consumano il limite della coda. Un dato necessario ma assente, come piano o data di nascita, non viene inventato: quando il relativo filtro è attivo l'immobile viene escluso e conteggiato nel primo motivo di scarto deterministico applicabile.
 
-La preparazione delle tre run resta orientata a una nuova operazione quando non
-esiste un lavoro sospeso. Se il relativo motore ha un checkpoint in pausa, la
-sua sezione mostra invece via, impostazioni bloccate e comando esplicito di
-ripresa; checkpoint di motori diversi non vengono mai proposti nello stesso
+La preparazione delle tre run resta orientata a una nuova operazione. Se il
+relativo motore ha un checkpoint in pausa, la sua sezione mostra via,
+impostazioni bloccate e comando esplicito di ripresa, ma offre anche `Nuova
+acquisizione`: il checkpoint locale viene archiviato e il lavoro resta nel
+Registro operativo, da cui potra' essere ripreso. Un riferimento locale a un
+job Cloud ormai assente viene chiuso automaticamente invece di bloccare il
+modulo. Checkpoint di motori diversi non vengono mai proposti nello stesso
 percorso. Risultati conclusi e documenti restano consultabili in Cronologia.
 
 ## 11. Sessione SISTER

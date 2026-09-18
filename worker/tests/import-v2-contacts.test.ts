@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignPhonesToFields, personWriteModel } from "../src/import-v2/contacts.js";
+import { assignPhonesToAvailableFields, assignPhonesToFields, personWriteModel } from "../src/import-v2/contacts.js";
 import type { CrmPersonSnapshot, SourceOwner } from "../src/import-v2/model.js";
 
 const owner: SourceOwner = {
@@ -92,6 +92,21 @@ describe("Import V2 contact and overwrite policy", () => {
       "Telefono fisso": "",
       "Telefono Ufficio": "",
       "Altro telefono": "3492222222",
+    });
+  });
+
+  it("usa Telefono Ufficio come campo neutro quando Altro telefono non e' disponibile", () => {
+    expect(assignPhonesToAvailableFields(
+      ["3331111111", "3492222222", "0801111111"],
+      ["Cellulare", "Telefono fisso", "Telefono Ufficio"],
+    )).toEqual({
+      values: {
+        Cellulare: "3331111111",
+        "Telefono fisso": "0801111111",
+        "Telefono Ufficio": "3492222222",
+        "Altro telefono": "",
+      },
+      overflow: [],
     });
   });
 });

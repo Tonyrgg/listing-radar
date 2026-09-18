@@ -1,7 +1,7 @@
 import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
-import { assignPhonesToFields, PHONE_FIELD_LABELS } from "./contacts.js";
+import { assignPhonesToAvailableFields, PHONE_FIELD_LABELS, type PhoneFieldLabel } from "./contacts.js";
 import { normalizePhone } from "../core/normalize.js";
 import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
@@ -597,7 +597,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           typingRequests.stop();
         }
         if (typingStable < 3) {
-          throw new ImportV2Error("Il CF non è rimasto stabile nella barra di ricerca", "global_portal", { global: true });
+          throw new ImportV2Error("Il CF non è rimasto stabile nella barra di ricerca", "transient_portal", {
+            retryable: true,
+            details: { action: "person-tax-code-input-unstable", expected },
+          });
         }
         // Type-ahead requests have settled. Observe only requests started by
         // the submitted search so navigation does not turn an abort into an
@@ -1110,17 +1113,22 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
     }
 
-    const phoneAssignment = assignPhonesToFields(desired.phones);
+    const phoneFields = new Map<PhoneFieldLabel, Locator>();
+    for (const label of PHONE_FIELD_LABELS) {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const field = this.page.getByLabel(new RegExp(`^\\s*${escaped}\\s*$`, "i")).filter({ visible: true });
+      if (await field.count() === 1) phoneFields.set(label, field.first());
+    }
+    const phoneAssignment = assignPhonesToAvailableFields(desired.phones, [...phoneFields.keys()]);
     if (phoneAssignment.overflow.length) {
-      throw new ImportV2Error("Più numeri disponibili dei campi telefono Tecnocloud", "unsupported_case", {
-        details: { phoneCount: desired.phones.length, overflow: phoneAssignment.overflow },
+      throw new ImportV2Error("Più numeri disponibili dei campi telefono visibili in Tecnocloud", "unsupported_case", {
+        details: { phoneCount: desired.phones.length, availableFields: [...phoneFields.keys()], overflow: phoneAssignment.overflow },
       });
     }
     for (const label of PHONE_FIELD_LABELS) {
-      const field = this.page.getByLabel(label, { exact: true }).filter({ visible: true });
+      const field = phoneFields.get(label);
       const value = phoneAssignment.values[label];
-      if (await field.count() === 1) await this.replaceInputValue(field, value, label);
-      else if (value) throw new ImportV2Error(`Campo ${label} non disponibile`, "transient_portal", { retryable: true });
+      if (field) await this.replaceInputValue(field, value, label);
     }
     await this.clearPreferredPhone();
     const emailLabels = ["Email", "Email Secondaria"];
