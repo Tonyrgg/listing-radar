@@ -302,6 +302,33 @@ const detailRowsOrdered = await page.locator("#jobDetailDialog .detail-property-
   }));
   return values.every((value, index) => !index || value.rank > values[index - 1].rank || (value.rank === values[index - 1].rank && value.civic >= values[index - 1].civic));
 });
+await page.locator("#jobDetailDialog .detail-accordion:first-child .detail-accordion-body").evaluate((body) => {
+  if (!body.querySelector(".acquisition-record-list")) {
+    body.innerHTML = `<section class="acquisition-detail"><header><div><h3>Acquisizione percorsa</h3><p>30 righe esaminate</p></div></header><div class="acquisition-record-list"></div></section>`;
+  }
+  const list = body.querySelector(".acquisition-record-list");
+  const template = document.createElement("details");
+  template.className = "acquisition-record is-completed";
+  template.innerHTML = `<summary><span>1</span><span><b>VIA TEST n. 1</b><small>Mario Rossi</small></span><span class="completion-label">Acquisita</span><i>⌄</i></summary>`;
+  for (let index = 0; index < 30; index += 1) list.append(template.cloneNode(true));
+});
+await page.locator("#jobDetailDialog .detail-property-list").evaluate((list) => {
+  const row = list.lastElementChild;
+  if (!row) return;
+  for (let index = 0; index < 24; index += 1) list.append(row.cloneNode(true));
+});
+const detailListScrollability = await page.locator("#jobDetailDialog .acquisition-record-list, #jobDetailDialog .detail-property-list").evaluateAll((lists) => lists.map((list) => {
+  const overflowY = getComputedStyle(list).overflowY;
+  list.scrollTop = list.scrollHeight;
+  return {
+    overflowY,
+    clientHeight: list.clientHeight,
+    scrollHeight: list.scrollHeight,
+    scrollTop: list.scrollTop,
+    scrollable: ["auto", "scroll"].includes(overflowY) && list.scrollHeight > list.clientHeight && list.scrollTop > 0,
+  };
+}));
+const detailListsScrollable = detailListScrollability.length === 2 && detailListScrollability.every((list) => list.scrollable);
 await page.locator('[data-job-detail="close"]').last().click();
 await page.locator('[data-scroll="refinement"]').click();
 await page.locator("#refinement").screenshot({ path: path.join(output, "refinement.png") });
@@ -450,7 +477,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, detailListScrollability, detailListsScrollable, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -462,6 +489,7 @@ const failures = [
   ...(exactAcquisitionCursorVisible !== 1 || exactAcquisitionOwnerVisible < 1 ? ["Checkpoint SISTER esatto o prossimo nominativo non visibili"] : []),
   ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || !resumableParallelChoice || lockedImportExplanationVisible < 1 ? ["Le impostazioni fisse o la concorrenza modificabile della run interrotta non sono corrette"] : []),
   ...(detailAccordionsVisible !== 2 || detailParallelChoiceVisible !== 1 || civicMarkerHasPhantomP || !detailRowsOrdered ? ["Accordion SISTER/Cloud, toggle di ripresa, ordine o civici nel dettaglio non corretti"] : []),
+  ...(!detailListsScrollable ? ["Le liste SISTER e Import Cloud nel dettaglio non scorrono in modo indipendente"] : []),
   ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== true || workerCalls.resumeJobValues?.parallelCrmWindows !== false
     ? ["La ripresa non conserva le tre impostazioni originarie"] : []),
   ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),

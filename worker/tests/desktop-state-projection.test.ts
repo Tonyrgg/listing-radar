@@ -63,10 +63,10 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(html).toContain('id="expandAllOwnersToggle"');
     expect(renderer).toContain("Espansione a un livello di tutti i proprietari attiva");
     expect(main).toContain("expandAllOwners,");
-    expect(styles).toContain("#jobDetailContent { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }");
+    expect(styles).toMatch(/#jobDetailContent\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\)[^}]*min-height:\s*0[^}]*overflow:\s*hidden/);
     expect(styles).toContain(".detail-workspace-columns .detail-accordion:last-child .detail-accordion-body { grid-template-rows: auto minmax(0, 1fr); }");
-    expect(styles).toMatch(/\.detail-property-list\s*\{[\s\S]*?overflow-y:\s*auto/);
-    expect(styles).toMatch(/\.acquisition-record-list\s*\{[\s\S]*?overflow-y:\s*auto/);
+    expect(styles).toMatch(/\.detail-property-list\s*\{[^}]*max-height:\s*min\(46vh, 520px\)[^}]*overflow-y:\s*auto/);
+    expect(styles).toMatch(/\.acquisition-record-list\s*\{[^}]*max-height:\s*min\(46vh, 520px\)[^}]*overflow-y:\s*auto/);
   });
 
   it("riassume un grafo grande senza inviare immobili, persone e quote al renderer", () => {
