@@ -129,7 +129,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
     } finally { await browser.close(); }
   }, 90_000);
 
-  it("una ricerca CF fallita ferma il batch sul primo immobile, senza scartare i successivi", async () => {
+  it("una ricerca CF fallita chiude il batch saltando gli immobili coinvolti per la rifinitura", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
@@ -145,8 +145,10 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
       const [source] = importV2Sources({ id: "job" }, graph, () => ({ enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }));
       const store = new WorkflowMemoryStore();
       const result = await runImportV2Batch(new ImportV2Engine(new TecnocloudUiV2Port(page), store), [source!, { ...source!, sourcePropertyId: "next" }]);
-      expect(result).toMatchObject({ completed: [], quarantined: [], paused: { propertyId: source!.sourcePropertyId, stage: "planned" } });
-      expect(store.checkpoints.has("next")).toBe(false);
+      expect(result).toMatchObject({ completed: [], paused: null });
+      expect(result.quarantined.map((checkpoint) => checkpoint.propertyId)).toEqual([source!.sourcePropertyId, "next"]);
+      expect(result.quarantined.every((checkpoint) => checkpoint.failure?.message.startsWith("Saltato, da rifinire:"))).toBe(true);
+      expect(store.checkpoints.has("next")).toBe(true);
       expect(fixture.writes).toEqual([]);
     } finally { await browser.close(); }
   }, 20_000);
@@ -173,7 +175,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
     } finally { await browser.close(); }
   }, 15_000);
 
-  it("riprende dopo il salvataggio del nominativo senza ricrearlo né riscriverlo", async () => {
+  it("la ripresa esplicita rifinisce il checkpoint saltato senza duplicare scritture", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
@@ -189,7 +191,9 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
       const sources = importV2Sources({ id: "job" }, graph, () => ({ enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" }));
       const store = new WorkflowMemoryStore();
       const stopped = await runImportV2Batch(new ImportV2Engine(new TecnocloudUiV2Port(page), store), sources);
-      expect(stopped).toMatchObject({ completed: [], quarantined: [], paused: { stage: "people_synced" } });
+      expect(stopped).toMatchObject({ completed: [], paused: null });
+      expect(stopped.quarantined).toHaveLength(1);
+      expect(stopped.quarantined[0]).toMatchObject({ stage: "people_synced", state: "quarantined" });
       expect(fixture.writes).toEqual(["person:create"]);
       fixture.failPropertySearch = false;
       const resumed = await runImportV2Batch(new ImportV2Engine(new TecnocloudUiV2Port(page), store), sources);

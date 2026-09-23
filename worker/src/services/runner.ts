@@ -52,10 +52,10 @@ const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
 };
 
 export function assertImportV2BatchComplete(result: ImportV2BatchResult): void {
-  if (!result.quarantined.length) return;
-  const first = result.quarantined[0]!;
+  if (!result.paused) return;
+  const first = result.paused;
   throw new WorkerError(
-    `Import V2 non completato: ${result.completed.length} immobili importati, ${result.quarantined.length} non importati. ${first.failure?.message ?? "Verifica non conclusa"}`,
+    `Run sospesa: ${first.failure?.message ?? "Interruzione richiesta"}`,
     "needs_review",
     {
       importV2: true,
@@ -729,7 +729,7 @@ export class PropertyWorkerRunner {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
             crm_record_id: outcome.crmPropertyId,
             processing_status: "quarantined",
-            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "quarantined", itemId: outcome.itemId, failure: outcome.failure } },
+            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "quarantined", terminalForRun: true, itemId: outcome.itemId, failure: outcome.failure } },
           });
           for (const person of outcome.syncedPeople) {
             await this.repository.updatePersonProcessing(person.sourcePersonId, { crm_record_id: person.crmPersonId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
@@ -749,7 +749,7 @@ export class PropertyWorkerRunner {
           const payload = property.raw_payload ?? {};
           const flow = payload.property_flow as { stage?: unknown } | undefined;
           const importV2 = payload.import_v2 as { state?: unknown } | undefined;
-          return ["completed", "synced", "dry_run"].includes(property.processing_status)
+          return ["completed", "synced", "dry_run", "quarantined"].includes(property.processing_status)
             || flow?.stage === "completed"
             || importV2?.state === "completed";
         }).length;
@@ -1178,7 +1178,7 @@ export class PropertyWorkerRunner {
       }
       case "verified": {
         const graph = await this.repository.loadGraph(job.id);
-        const activePropertyIds = new Set(graph.properties.filter((property) => !isAcquisitionExcluded(property)).map((property) => property.id));
+        const activePropertyIds = new Set(graph.properties.filter((property) => !isAcquisitionExcluded(property) && property.processing_status !== "quarantined").map((property) => property.id));
         const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
         const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
         const pending = [

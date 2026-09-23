@@ -20,6 +20,7 @@ import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecov
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
 import { auditImportRun, auditStreetRun, type RunAuditFinding } from "../services/run-auditor.js";
 import { buildPropertyRunLedger, partitionPropertyJobs, partitionPropertyRuns } from "../services/run-ledger.js";
+import { mergedRunIds } from "../services/run-merge.js";
 import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../services/refinement-seed.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
@@ -1135,7 +1136,8 @@ async function refreshSnapshotRemoteData() {
         12_000,
         "Aggiornamento riepilogo cloud",
       );
-      const completedPartitions = partitionPropertyJobs(allCompletedJobs);
+      const mergedChildren = new Set(allCompletedJobs.flatMap(mergedRunIds));
+      const completedPartitions = partitionPropertyJobs(allCompletedJobs.filter((job) => !mergedChildren.has(job.id)));
       const knownRefinementSources = new Set(
         [...allSavedJobs, ...allCompletedJobs]
           .map((job) => refinementSourceJobId(job))
@@ -1208,7 +1210,7 @@ async function refreshSnapshotRemoteData() {
           const cached = completedSummaryCache.get(job.id);
           const summary = cached?.version === version
             ? cached.summary
-            : summarizeCompletedGraph(await repo.loadGraph(job.id));
+            : summarizeCompletedGraph(await repo.loadRunArchive(job));
           if (cached?.version !== version) completedSummaryCache.set(job.id, { version, summary });
           return { job, ...summary };
         })),
@@ -4061,9 +4063,17 @@ function registerIpc() {
     activePrompts?.respond(values.promptId, values.decision);
     return true;
   });
+  ipcMain.handle("desktop:merge-completed-runs", async (_event, values: { targetId: string; sourceId: string }) => {
+    if (active) throw new Error("Attendi la fine della lavorazione in corso prima di unire i record.");
+    await repository().mergeCompletedRuns(values.targetId, values.sourceId);
+    completedSummaryCache.clear();
+    await publishState();
+    return true;
+  });
   ipcMain.handle("desktop:get-job-details", async (_event, jobId: string) => {
     const repo = repository();
-    const [storedJob, graph] = await Promise.all([repo.getJob(jobId), repo.loadGraph(jobId)]);
+    const storedJob = await repo.getJob(jobId);
+    const graph = await repo.loadRunArchive(storedJob);
     const storedAcquisition = storedJob.acquisition ?? {};
     const checkpoint = selectRicherStreetCheckpoint(
       storedAcquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined,
@@ -4080,7 +4090,7 @@ function registerIpc() {
         }
       : storedJob;
     const anomalies = diagnosticErrors
-      .filter((item) => item.jobId === jobId && typeof item.details.propertyId === "string")
+      .filter((item) => [jobId, ...mergedRunIds(storedJob)].includes(item.jobId ?? "") && typeof item.details.propertyId === "string")
       .map((item) => ({
         propertyId: String(item.details.propertyId),
         code: typeof item.details.auditCode === "string" ? item.details.auditCode : item.source,

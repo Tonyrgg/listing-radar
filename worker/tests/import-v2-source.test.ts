@@ -34,6 +34,12 @@ describe("Import V2 acquisition bridge", () => {
   const acquired = () => ({ properties: [structuredClone(property)], people: [structuredClone(person)],
     ownerships: [{ id: "link", property_id: property.id, person_id: person.id, share_percentage: 50 as number | null, right_type: "Proprietà" }] });
 
+  it("la ripresa non riapre un caso già chiuso come da rifinire", () => {
+    const graph = acquired();
+    graph.properties[0]!.raw_payload = { import_v2: { state: "quarantined", terminalForRun: true } };
+    expect(importV2Sources({ id: "job-id" }, graph, activity)).toEqual([]);
+  });
+
   it("valida le quote di ciascun immobile anche quando il nominativo è condiviso e la sua quota globale manca", () => {
     const graph = acquired();
     graph.people[0]!.share_percentage = null;

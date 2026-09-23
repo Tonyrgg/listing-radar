@@ -132,7 +132,7 @@ await page.addInitScript(({ initialState, details }) => {
     startMandateArchiveImport: async () => called("startMandateArchiveImport"), cancelMandateArchiveImport: async () => called("cancelMandateArchiveImport"),
     setAutoRetryEnabled: async () => called("setAutoRetryEnabled"), skipProperty: async () => { called("skipProperty"); return { pending: true }; },
     loadMoreCompleted: async () => true,
-    answerPrompt: async () => true, getJobDetails: async () => details, saveManualCorrections: async () => true,
+    answerPrompt: async () => true, getJobDetails: async (jobId) => state.completedImports?.find((item) => item.job?.id === jobId) ?? details, saveManualCorrections: async () => true,
     removeJobProperty: async () => ({ propertyId: details.properties[0].id, removedPersonIds: [details.people[0].id], remainingProperties: 0 }),
     saveInternalConfiguration: async () => true, revealFile: async () => true,
     checkUpdate: async () => true, downloadUpdate: async () => true, installUpdate: async () => true,
@@ -247,9 +247,10 @@ await page.addInitScript(({ initialState, details }) => {
     listeners.forEach((callback) => callback(state));
   };
   window.__showCompletedState = () => {
-    const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: "29", total_properties: 1, processed_properties: 1, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    const completedGraph = { ...details, job: completedJob, properties: details.properties.map((property) => ({ ...property, cadastral_key: "BITONTO|58|1234|7", raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
-    state = { ...state, active: false, cloudError: null, activeJobId: completedJob.id, currentStep: "completed", lastError: "Vecchio errore che non deve essere mostrato", jobs: [], completedImports: [{ ...completedGraph, job: completedJob }] };
+    const completedJob = { id: "33333333-3333-4333-8333-333333333333", mode: "automatic", status: "completed", current_step: "completed", last_completed_step: "completed", municipality: "BITONTO", street: "Via Borgo San Francesco", civic_number: null, total_properties: details.properties.length, processed_properties: details.properties.length, total_people: 1, processed_people: 1, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(), acquisition: { engine: "lavorazione", strategy: "bulk_exact_variants", runSettings: { street: "Via Borgo San Francesco", filters: { minCivicNumber: 20, maxCivicNumber: 40, residentialOnly: true } }, importOptions: { activityMode: "plain", importCoOwners: true, parallelCrmWindows: true } } };
+    const mergeJob = { ...completedJob, id: "44444444-4444-4444-8444-444444444445", completed_at: new Date(Date.now() - 86_400_000).toISOString(), updated_at: new Date(Date.now() - 86_400_000).toISOString(), acquisition: { ...completedJob.acquisition, runSettings: { ...completedJob.acquisition.runSettings, filters: { minCivicNumber: 1, maxCivicNumber: 20, residentialOnly: true } } } };
+    const completedGraph = { ...details, job: completedJob, progress: { state: "completed", handled: details.properties.length, total: details.properties.length, nextRow: details.properties.length + 1 }, properties: details.properties.map((property) => ({ ...property, cadastral_key: property.cadastral_key, raw_payload: { worker_activity: { state: "created" } }, processing_status: "synced" })), people: details.people.map((person) => ({ ...person, mobiles: ["3331234567"], landlines: [], emails: ["mario@example.test"] })) };
+    state = { ...state, active: false, cloudError: null, activeJobId: completedJob.id, currentStep: "completed", lastError: "Vecchio errore che non deve essere mostrato", jobs: [], completedImports: [{ ...completedGraph, job: completedJob }, { ...completedGraph, job: mergeJob }] };
     listeners.forEach((callback) => callback(state));
   };
 }, { initialState: baseState, details: graph });
@@ -470,6 +471,11 @@ await page.evaluate(() => window.__showCompletedState());
 await page.screenshot({ path: path.join(output, "completed-import.png"), fullPage: true });
 const successHeading = await page.getByRole("heading", { name: "Import eseguito con successo" }).count();
 const staleErrorVisible = await page.getByText("La pagina del portale è diversa da quella attesa", { exact: false }).count();
+await page.locator('.completed-session [data-detail-job="33333333-3333-4333-8333-333333333333"]').evaluate((element) => element.click());
+const completedFilterVisible = await page.getByText("Civici 20–40", { exact: false }).count();
+const completedMergeVisible = await page.locator("#mergeRunSource, [data-merge-run]").count();
+await page.locator("#jobDetailDialog").screenshot({ path: path.join(output, "completed-run-detail.png") });
+await page.locator('#jobDetailDialog [data-job-detail="close"]').first().click();
 await page.evaluate(() => window.__showErrorState());
 await page.getByRole("button", { name: "Correggi dati qui sotto" }).click();
 await page.screenshot({ path: path.join(output, "recovery.png"), fullPage: true });
@@ -477,7 +483,7 @@ await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazion
 await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
 const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
 const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, detailListScrollability, detailListsScrollable, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, removalConfirmationVisible, output }, null, 2));
+console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, detailListScrollability, detailListsScrollable, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, completedFilterVisible, completedMergeVisible, removalConfirmationVisible, output }, null, 2));
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
@@ -522,6 +528,7 @@ const failures = [
   ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
   ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),
   ...(staleErrorVisible !== 0 ? ["Errore obsoleto ancora visibile"] : []),
+  ...(completedFilterVisible < 1 || completedMergeVisible !== 2 ? ["Filtri o controllo unione non visibili nel riepilogo della lavorazione conclusa"] : []),
   ...(removalConfirmationVisible !== 1 ? ["Conferma rimozione immobile non visibile"] : []),
 ];
 if (failures.length) throw new Error(failures.join(" | "));

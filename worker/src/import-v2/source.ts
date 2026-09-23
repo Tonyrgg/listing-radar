@@ -45,7 +45,7 @@ export function importV2SourceFactories(
 ): Array<() => SourceProperty> {
   const queue = inspectAcquisitionQueue(graph);
   const people = queue.index.peopleById;
-  return queue.activeProperties.map((property) => () => {
+  return queue.activeProperties.filter((property) => (property.raw_payload?.import_v2 as { terminalForRun?: boolean } | undefined)?.terminalForRun !== true).map((property) => () => {
     const links = queue.index.ownershipsByPropertyId.get(property.id) ?? [];
     const owners = links.flatMap((ownership) => {
       const person = people.get(ownership.person_id);

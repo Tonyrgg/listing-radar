@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { chromium, type Locator } from "playwright";
 
 import { actionablePersonValidationMessages, chooseLookupRecordCandidate, choosePersonLookupCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
@@ -6,6 +6,45 @@ import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
 describe("Ricerca nominativo nel lookup", () => {
+  it("conferma Cliente nel modulo correlato anche con Quota in c-input-field", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<section role="dialog"><c-lookup><label>Cliente</label><div class="slds-combobox_container"><input placeholder="Cerca"><ul></ul></div></c-lookup><c-picklist><label>Ruolo</label><button>Comproprietario</button></c-picklist><c-input-field><label for="quota">Quota</label><input id="quota"></c-input-field></section>
+        <script>const i=document.querySelector('input'), u=document.querySelector('ul'); i.oninput=()=>{u.innerHTML='<li role="option" data-id="001RD00000ywHCnYAM">Mario Rossi</li>';};u.onclick=()=>{i.readOnly=true;i.parentElement.classList.add('slds-has-selection');u.innerHTML='';};</script>`);
+      const port = new TecnocloudUiV2Port(page);
+      const internal = port as unknown as { pick: (...args: unknown[]) => Promise<void>; fillOwnershipForm: (dialog: Locator, desired: unknown, select: boolean) => Promise<void> };
+      vi.spyOn(internal, "pick").mockResolvedValue();
+      await internal.fillOwnershipForm(page.locator('[role="dialog"]'), { personId: "001RD00000ywHCnYAM", taxCode: "RSSMRA80A01A893P", fullName: "Rossi Mario", phones: [], role: "Comproprietario", sharePercentage: 50 }, true);
+      expect(await page.locator('#quota').inputValue()).toBe("50");
+      expect(await page.locator('c-lookup input').getAttribute('readonly')).not.toBeNull();
+    } finally { await browser.close(); }
+  }, 15_000);
+
+  it("mantiene il principale Cloud quando SISTER propone per primo il comproprietario", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<body></body>" }));
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
+      const port = new TecnocloudUiV2Port(page);
+      const owners = [
+        { personId: "mario", taxCode: "RSSMRA80A01A893P", sharePercentage: 50, role: "Proprietario Principale", rightType: "Proprietà", linkId: "primary" },
+        { personId: "luca", taxCode: "VRDLCU82B02A893X", sharePercentage: 50, role: "Comproprietario", rightType: "Proprietà", linkId: "linked" },
+      ];
+      const internal = port as unknown as { readOwnerships: () => Promise<typeof owners>; syncPrimaryOwnership: (...args: unknown[]) => Promise<boolean>; addOwnership: (...args: unknown[]) => Promise<void>; deleteOwnership: (...args: unknown[]) => Promise<void> };
+      vi.spyOn(internal, "readOwnerships").mockResolvedValue(owners);
+      const sync = vi.spyOn(internal, "syncPrimaryOwnership").mockResolvedValue(false);
+      const add = vi.spyOn(internal, "addOwnership").mockResolvedValue();
+      const remove = vi.spyOn(internal, "deleteOwnership").mockResolvedValue();
+      await port.replaceManagedOwnerships("property", [...owners].reverse().map((o, i) => ({ ...o, fullName: o.personId, phones: [], role: i === 0 ? "Proprietario Principale" : "Comproprietario" })));
+      expect(sync.mock.calls[0]?.[1]).toMatchObject({ personId: "mario", role: "Proprietario Principale" });
+      expect(add).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      await expect(port.replaceManagedOwnerships("property", [{ personId: "other", taxCode: "RSSMRA80A01A893P", fullName: "Other", phones: [], sharePercentage: 100, role: "Proprietario Principale" }])).rejects.toThrow(/senza cambiare proprietario/);
+      expect(sync).toHaveBeenCalledTimes(1);
+    } finally { await browser.close(); }
+  });
   it("affianca all'ordine SISTER quello che il gestionale usa per proporre i record", () => {
     expect(personLookupTerms("Coviello Caterina", "CVLCRN36E57A893C"))
       .toEqual(["Caterina Coviello", "Coviello Caterina"]);

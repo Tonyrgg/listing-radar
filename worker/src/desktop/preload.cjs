@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   cancelJob: (jobId) => ipcRenderer.invoke("desktop:cancel-job", jobId),
   answerPrompt: (values) => ipcRenderer.invoke("desktop:answer-prompt", values),
   getJobDetails: (jobId) => ipcRenderer.invoke("desktop:get-job-details", jobId),
+  mergeCompletedRuns: (values) => ipcRenderer.invoke("desktop:merge-completed-runs", values),
   skipProperty: (values) => ipcRenderer.invoke("desktop:skip-property", values),
   loadMoreCompleted: () => ipcRenderer.invoke("desktop:load-more-completed"),
   saveManualCorrections: (values) => ipcRenderer.invoke("desktop:save-manual-corrections", values),

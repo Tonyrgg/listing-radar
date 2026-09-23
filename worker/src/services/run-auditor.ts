@@ -125,7 +125,7 @@ export function auditImportRun(input: {
           code: "killer_activity_incoherent",
           status: "needs_review",
           propertyId: item.property_id,
-          message: "Attività Killer incoerente: la run è conclusa ma non è provata un'attività eseguita nel Cloud.",
+          message: "Da rifinire: attività Killer non verificata nel Cloud per questo immobile. La run è conclusa; consulta il dettaglio.",
           details: {
             expectedStatus: "Eseguito",
             plannedStatus: expected?.status ?? null,

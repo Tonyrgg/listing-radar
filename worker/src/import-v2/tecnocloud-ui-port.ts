@@ -2385,8 +2385,11 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (selectPerson) {
       const component = await this.one(dialog.locator('c-lookup:has(label:text-is("Cliente"))').filter({ visible: true }), "Lookup Cliente comproprietario");
       const lookup = await this.one(component.locator('input[placeholder="Cerca"]').filter({ visible: true }), "Cliente comproprietario");
-      const dependent = dialog.locator('c-picklist:has(label:text-is("Ruolo")), lightning-input:has(label:text-is("Quota"))').filter({ visible: true });
-      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), dependent, 2, "Cliente comproprietario", desired.phones);
+      // Quota is also rendered inside c-input-field in the live modal. Its
+      // accessible field is stable; requiring a lightning-input wrapper made
+      // a successfully selected Client look uncommitted and cleared it again.
+      const dependent = dialog.getByLabel("Quota", { exact: true }).filter({ visible: true });
+      await this.fillPersonLookup(component, lookup, desired.personId, personLookupTerms(desired.fullName, desired.taxCode), dependent, 1, "Cliente comproprietario", desired.phones);
     }
     const role = dialog.locator('c-picklist:has(label:text-is("Ruolo"))').filter({ visible: true });
     await this.pick(role, desired.role, "Ruolo");
@@ -2476,11 +2479,23 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       // ma non devono neppure bloccare tutta la rifinitura. Se SISTER include
       // quel soggetto, editableLinkedOwnerships lo riconosce per id e lo
       // normalizza esplicitamente.
+      const currentPrimary = before.find((owner) => owner.role === "Proprietario Principale") ?? null;
+      if (!currentPrimary) throw new ImportV2Error("Proprietario principale Cloud non verificabile: nessuna modifica agli intestatari", "verification_failed");
+      // SISTER supplies shares, not the operator's choice of principal contact.
+      // Preserve that choice whenever the current owner is still in the source.
+      if (currentPrimary) {
+        const retained = desired.find((owner) => sameCrmRecordId(owner.personId, currentPrimary.personId));
+        if (!retained) {
+          throw new ImportV2Error("Proprietario principale Cloud assente dagli intestatari verificati: immobile da rifinire senza cambiare proprietario", "verification_failed", {
+            details: { currentPrimaryPersonId: currentPrimary.personId, expectedPersonIds: desired.map((owner) => owner.personId) },
+          });
+        }
+        desired = desired.map((owner) => ({ ...owner, role: owner === retained ? "Proprietario Principale" : "Comproprietario" }));
+      }
       const desiredPrimary = desired.filter((owner) => owner.role === "Proprietario Principale");
       if (desiredPrimary.length !== 1) {
         throw new ImportV2Error("La fonte deve identificare un solo proprietario principale", "invalid_source");
       }
-      const currentPrimary = before.find((owner) => owner.role === "Proprietario Principale") ?? null;
       /* Se il proprietario principale era gia' quello giusto la scheda non e'
        * stata toccata: rileggere i collegamenti darebbe la stessa risposta
        * appena letta. */

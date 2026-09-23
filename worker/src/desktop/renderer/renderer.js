@@ -1503,7 +1503,19 @@ function riassuntoAcquisizione(acquisition) {
   if (raccolta.expandAllOwners === true) pezzi.push("sviluppa tutti i proprietari");
   if (raccolta.filters?.residentialOnly === true) pezzi.push("solo abitazioni");
 
-  return pezzi.join(" · ");
+  pezzi.push(...filtriAcquisizione(acquisition));
+  if (acquisition.mergedRuns?.length) pezzi.push(...acquisition.mergedRuns.flatMap((run) => filtriAcquisizione(run.acquisition)));
+  return [...new Set(pezzi)].join(" · ");
+}
+
+function filtriAcquisizione(acquisition) {
+  const filters = acquisition?.runSettings?.filters ?? acquisition?.acquisitionSettings?.filters ?? acquisition?.acquisitionCheckpoint?.filters ?? acquisition?.filters ?? {};
+  return [
+    filters.minCivicNumber != null || filters.maxCivicNumber != null ? `Civici ${filters.minCivicNumber ?? "inizio"}–${filters.maxCivicNumber ?? "fine"}` : null,
+    filters.floorMode && filters.floorMode !== "any" && filters.floorValue != null ? `Piano ${filters.floorMode === "minimum" ? "da" : filters.floorMode === "maximum" ? "fino a" : "="} ${filters.floorValue}` : null,
+    filters.minOwnerAge != null || filters.maxOwnerAge != null ? `Età ${filters.minOwnerAge ?? "qualsiasi"}–${filters.maxOwnerAge ?? "qualsiasi"}` : null,
+    filters.minOwnerCount != null || filters.maxOwnerCount != null ? `Proprietari ${filters.minOwnerCount ?? "qualsiasi"}–${filters.maxOwnerCount ?? "qualsiasi"}` : null,
+  ].filter(Boolean);
 }
 
 function badgeAcquisizione(acquisition) {
@@ -1516,6 +1528,7 @@ function badgeAcquisizione(acquisition) {
     options.parallelCrmWindows === true ? "2 finestre Cloud" : "1 finestra Cloud",
     ATTIVITA_ETICHETTA[options.activityMode] ?? null,
     settings.filters?.residentialOnly === true ? "Solo abitazioni" : null,
+    ...filtriAcquisizione(acquisition),
   ].filter(Boolean);
   return `<span class="acquisition-badges">${badges.map((badge) => `<span>${esc(badge)}</span>`).join("")}</span>`;
 }
@@ -1885,6 +1898,8 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   const complete = job.status === "completed" || progress.state === "completed";
   jobDetailParallelCloud = job.acquisition?.importOptions?.parallelCrmWindows === true;
   const sortedRows = sortedDetailProperties(detail.properties, progress, ledgerById);
+  const problems = (detail.ledger?.rows ?? []).filter((row) => row.anomalies?.length || row.state === "skipped");
+  const mergeCandidates = (appState?.completedImports ?? []).map((item) => item.job).filter((other) => other.id !== jobId && other.status === "completed" && String(other.street ?? "").trim().toUpperCase() === String(job.street ?? "").trim().toUpperCase() && other.municipality === job.municipality);
   $("jobDetailTitle").textContent = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `${engineLabel} salvata`;
   $("jobDetailMeta").textContent = `${engineLabel} · ${progressCopy.headline} · ${fmtNamedCount(detail.properties.length, "immobile", "immobili")}`;
   $("jobDetailFooterNote").textContent = complete
@@ -1911,6 +1926,9 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   $("jobDetailContent").innerHTML = `
     <section class="detail-overview">
       <div class="run-settings-snapshot"><span>Motore ${esc(engineLabel)}</span><b>Impostazioni fissate alla partenza</b><small>${esc(settings)}</small></div>
+      ${complete && mergeCandidates.length && !refinementDetail ? `<div class="run-merge-control"><label for="mergeRunSource"><b>Unisci una lavorazione della stessa via</b><small>Immobili, quote, anomalie e filtri delle origini restano conservati.</small></label><select id="mergeRunSource">${mergeCandidates.map((other) => `<option value="${esc(other.id)}">${esc(filtriAcquisizione(other.acquisition).join(" · ") || "Via completa")} · ${esc(fmtDate(other.completed_at))}</option>`).join("")}</select><button class="button secondary" data-merge-run="${esc(jobId)}">Unisci record</button></div>` : ""}
+      ${job.acquisition?.mergedRuns?.length ? `<details class="run-merged-origins"><summary>${job.acquisition.mergedRuns.length} lavorazioni unite · origini e filtri conservati</summary>${job.acquisition.mergedRuns.map((run) => `<p>${esc(fmtDate(run.completedAt))} · ${esc(filtriAcquisizione(run.acquisition).join(" · ") || "Via completa")} <button class="text-button" data-detail-job="${esc(run.id)}">Apri origine</button></p>`).join("")}</details>` : ""}
+      ${problems.length ? `<details class="run-problems"><summary>${problems.length} immobili da rifinire${complete ? " · run conclusa" : ""}</summary><div class="run-problems-list">${problems.map((row) => `<p><b>${esc(row.label)}</b><small>${esc(row.anomalies.map((item) => item.message).join(" · ") || "Immobile saltato")}</small></p>`).join("")}</div></details>` : ""}
       ${renderCapabilities(job.acquisition)}
       ${!complete && !acquisitionRunningIncomplete ? `<label class="import-setting-row detail-parallel-setting" for="jobDetailParallelToggle"><span><b>Due finestre Cloud</b><small>È l’unica impostazione modificabile alla ripresa. Il conteggio resta unico e ogni riga conclusa viene registrata una sola volta.</small></span><input id="jobDetailParallelToggle" type="checkbox" ${jobDetailParallelCloud ? "checked" : ""}></label>` : ""}
     </section>
@@ -1939,7 +1957,7 @@ function relationshipIndex(people = [], ownerships = []) {
 }
 function importPropertyIsHandled(property) {
   const stage = property?.raw_payload?.property_flow?.stage;
-  return ["completed", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property?.processing_status)
+  return ["completed", "synced", "dry_run", "quarantined", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property?.processing_status)
     || stage === "completed"
     || stage === "skipped";
 }
@@ -2026,7 +2044,7 @@ function renderCompletedImports() {
 }
 function isSkippedProperty(property) {
   return (
-    ["skipped", "acquisition_skipped", "acquisition_failed"].includes(
+    ["skipped", "acquisition_skipped", "acquisition_failed", "quarantined"].includes(
       property?.processing_status,
     ) || property?.raw_payload?.property_flow?.stage === "skipped"
   );
@@ -2090,7 +2108,7 @@ function renderCompletedSessions() {
             skipText = stats.skippedProperties
               ? ` · ${stats.skippedProperties} immobili e ${stats.skippedPeople} nominativi saltati`
               : "";
-          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(peopleCount)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} immobili e ${fmtCount(stats.skippedPeople)} nominativi saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-completed-session="${job.id}">Apri sessione</button></span></article>`;
+          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">✓</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))} · ${esc(riassuntoAcquisizione(job.acquisition))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(peopleCount)}</span><span class="ledger-state">${stats.skippedProperties ? `Conclusa · ${fmtCount(stats.skippedProperties)} immobili da rifinire` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri riepilogo</button><button class="text-button" data-completed-session="${job.id}">Dati immobili</button></span></article>`;
         })
         .join("")
     : `<div class="completed-empty"><span>✓</span><div><b>Nessun import concluso</b><p>Le sessioni completate compariranno qui.</p></div></div>`;
@@ -3909,6 +3927,15 @@ document.addEventListener("click", async (event) => {
               ? undefined
               : target.dataset.prompt,
         });
+      if (target.dataset.mergeRun) {
+        const sourceId = $("mergeRunSource")?.value;
+        if (!sourceId) return false;
+        await window.propertyWorker.mergeCompletedRuns({ targetId: target.dataset.mergeRun, sourceId });
+        appState = await window.propertyWorker.getState();
+        render();
+        await openJobDetailDialog(target.dataset.mergeRun);
+        return true;
+      }
       if (target.dataset.detailJob || target.dataset.refinementDetailJob) {
         const refinementDetail = Boolean(target.dataset.refinementDetailJob);
         selectedInspectorJobId = target.dataset.refinementDetailJob ?? target.dataset.detailJob;

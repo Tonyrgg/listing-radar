@@ -105,7 +105,7 @@ type CompletedGraph = {
 };
 
 function isSkippedProperty(property: CompletedGraph["properties"][number]) {
-  return ["skipped", "acquisition_skipped", "acquisition_failed"].includes(property.processing_status)
+  return ["skipped", "acquisition_skipped", "acquisition_failed", "quarantined"].includes(property.processing_status)
     || property.raw_payload?.property_flow?.stage === "skipped";
 }
 

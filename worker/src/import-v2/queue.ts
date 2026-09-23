@@ -118,11 +118,16 @@ export async function runImportV2Batch(
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
   const deferred: Array<{ source: SourceProperty | (() => SourceProperty); position: number }> = [];
+  let unavailable: ImportV2Failure | null = null;
   for (const [position, source] of properties.entries()) {
     const property = typeof source === "function" ? source() : source;
-    const outcome = await engine.run(property, (stage, retry) => onProgress?.({
+    let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
       propertyId: property.sourcePropertyId, index: position + 1, total, stage, ...retry,
     }));
+    if (outcome.state === "paused" && outcome.failure && outcome.failure.kind !== "operator_pause") {
+      unavailable = outcome.failure;
+      outcome = await engine.deferForRefinement(property, unavailable);
+    }
     onOutcome?.(outcome);
     if (outcome.state === "completed") result.completed.push(outcome);
     else if (outcome.state === "quarantined" && outcome.failure?.details.lookupIndexPending === true) {
@@ -156,9 +161,13 @@ export async function runImportV2Batch(
   if (!result.paused) {
     for (const item of deferred) {
       const property = typeof item.source === "function" ? item.source() : item.source;
-      const outcome = await engine.run(property, (stage, retry) => onProgress?.({
+      let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
         propertyId: property.sourcePropertyId, index: item.position + 1, total, stage, ...retry,
       }));
+      if (outcome.state === "paused" && outcome.failure && outcome.failure.kind !== "operator_pause") {
+        unavailable = outcome.failure;
+        outcome = await engine.deferForRefinement(property, unavailable);
+      }
       onOutcome?.(outcome);
       if (outcome.state === "completed") result.completed.push(outcome);
       else if (outcome.state === "quarantined") result.quarantined.push(outcome);

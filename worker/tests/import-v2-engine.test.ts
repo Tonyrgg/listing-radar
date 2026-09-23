@@ -657,12 +657,14 @@ describe("Import V2 engine", () => {
       .toMatchObject({ index: 2, stage: "completed" });
   });
 
-  it("mette in pausa l'intera coda soltanto per un errore globale di sessione", async () => {
+  it("chiude le righe come da rifinire senza scritture quando la sessione non è disponibile", async () => {
     const crm = new FakeCrm();
     crm.sessionFailure = new ImportV2Error("session expired", "global_session", { global: true, retryable: true });
     const result = await runImportV2Batch(new ImportV2Engine(crm, new MemoryStore()), [property(), property("property-2")]);
 
-    expect(result.paused?.itemId).toBe("item-property-1");
+    expect(result.paused).toBeNull();
+    expect(result.quarantined).toHaveLength(2);
+    expect(crm.searches).toHaveLength(0);
     expect(result.completed).toHaveLength(0);
   });
 

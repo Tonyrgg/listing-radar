@@ -229,15 +229,39 @@ export class ImportV2Engine {
           this.throwIfInterruptionRequested();
           await this.store.save(checkpoint);
           await this.store.recordEvent(checkpoint, "retry_scheduled", { attempt: checkpoint.attempts, failure });
-          await this.crm.recover(checkpoint.stage, error);
+          try { await this.crm.recover(checkpoint.stage, error); }
+          catch (recoveryError) {
+            const recoveryFailure = failureFromError(recoveryError, checkpoint.stage, this.now());
+            if (recoveryFailure.global) await this.store.pause(checkpoint, recoveryFailure);
+            else await this.store.quarantine(checkpoint, recoveryFailure);
+            return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: recoveryFailure.global ? "paused" : "quarantined", stage: checkpoint.stage, failure: recoveryFailure };
+          }
           continue;
         }
         await this.store.quarantine(checkpoint, failure);
+        // Leave the next property a clean dialog context; never repeat a save.
+        await this.crm.recover(checkpoint.stage, error).catch(() => undefined);
         return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "quarantined", stage: checkpoint.stage, failure };
       }
     }
     onStage?.("completed", { attempt: 1, maxAttempts: this.maxTransientAttempts, previousFailure: null });
     return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "completed", stage: "completed", failure: null };
+  }
+
+  /** Close an unworkable row without sending any further writes to the CRM. */
+  async deferForRefinement(source: SourceProperty, cause: ImportV2Failure): Promise<ImportV2Outcome> {
+    let plan: ImportV2Plan;
+    try { plan = buildPlan(source); }
+    catch (error) {
+      const failure = failureFromError(error, "queued", this.now());
+      await this.store.quarantineSource(source, failure);
+      return { itemId: source.sourcePropertyId, propertyId: source.sourcePropertyId, crmPropertyId: null, syncedPeople: [], state: "quarantined", stage: "queued", failure };
+    }
+    const checkpoint = await this.store.loadOrCreate(plan);
+    if (checkpoint.stage === "completed") return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "completed", stage: "completed", failure: null };
+    const failure = { ...cause, stage: checkpoint.stage, message: `Saltato, da rifinire: ${cause.message}`, details: { ...cause.details, closedWithoutFurtherWrites: true } };
+    await this.store.quarantine(checkpoint, failure);
+    return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "quarantined", stage: checkpoint.stage, failure };
   }
 
   private async executeStage(checkpoint: ImportV2Checkpoint): Promise<ImportV2Checkpoint> {

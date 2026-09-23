@@ -70,14 +70,15 @@ function skipReason(property: PropertyRow): string | null {
   const payload = property.raw_payload ?? {};
   const skip = payload.skip_details as { reason?: unknown } | undefined;
   const acquisition = payload.acquisition as { reason?: unknown } | undefined;
-  const reason = skip?.reason ?? acquisition?.reason;
+  const failure = property.raw_payload?.import_v2 as { failure?: { message?: unknown } } | undefined;
+  const reason = failure?.failure?.message ?? skip?.reason ?? acquisition?.reason;
   return typeof reason === "string" && reason.trim() ? reason.trim() : null;
 }
 
 function rawState(property: PropertyRow): "pending" | "completed" | "skipped" {
   const flowStage = String((property.raw_payload?.property_flow as { stage?: unknown } | undefined)?.stage ?? "");
   const importState = String((property.raw_payload?.import_v2 as { state?: unknown } | undefined)?.state ?? "");
-  if (skippedStatuses.has(property.processing_status) || flowStage === "skipped") return "skipped";
+  if (skippedStatuses.has(property.processing_status) || property.processing_status === "quarantined" || importState === "quarantined" || flowStage === "skipped") return "skipped";
   if (completedStatuses.has(property.processing_status) || flowStage === "completed" || importState === "completed") return "completed";
   return "pending";
 }

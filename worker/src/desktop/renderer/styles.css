@@ -4523,6 +4523,18 @@ input, select, textarea { border-radius: 8px !important; }
 .detail-dialog-shell { width: min(1500px, calc(100vw - 32px)) !important; height: min(92vh, 940px); }
 #jobDetailContent { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .detail-overview { display: grid; gap: 14px; }
+.run-merge-control { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr) auto; gap: 12px; align-items: end; padding: 12px 14px; border: 1px solid var(--lr-line-quiet); border-radius: var(--lr-radius-control); }
+.run-merge-control label { display: grid; gap: 3px; }
+.run-merge-control small,
+.run-merged-origins p small,
+.run-problems-list small { color: var(--lr-ink-2); }
+.run-merged-origins,
+.run-problems { border: 1px solid var(--lr-line-quiet); border-radius: var(--lr-radius-control); }
+.run-merged-origins > summary,
+.run-problems > summary { min-height: 44px; padding: 12px 14px; cursor: pointer; font-weight: var(--lr-weight-medium); }
+.run-merged-origins p { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--lr-line-quiet); }
+.run-problems-list { max-height: 25vh; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.run-problems-list p { display: grid; gap: 3px; padding: 10px 14px; border-top: 1px solid var(--lr-line-quiet); }
 .detail-workspace-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 14px; min-height: 0; overflow: hidden; }
 .detail-workspace-columns > .detail-accordion {
   display: flex;
@@ -4607,6 +4619,7 @@ input, select, textarea { border-radius: 8px !important; }
 .job-detail-edit > header h3 { margin: 2px 0; }
 .job-detail-edit-list { display: grid; align-content: start; gap: 14px; min-height: 0; overflow-y: auto; padding: 14px 4px 18px 0; overscroll-behavior: contain; scrollbar-gutter: stable; }
 @media (max-width: 760px) {
+  .run-merge-control { grid-template-columns: 1fr; }
   .acquisition-record-body { grid-template-columns: 1fr; padding-inline: 44px 8px; }
   #jobDetailContent { display: block; overflow-y: auto; }
   .detail-workspace-columns { grid-template-columns: 1fr; overflow: visible; }

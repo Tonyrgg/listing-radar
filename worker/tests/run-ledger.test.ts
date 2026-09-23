@@ -18,6 +18,12 @@ const property = (id: string, status: string, rawPayload: PropertyRow["raw_paylo
 });
 
 describe("registro atomico delle run", () => {
+  it("chiude la run con casi saltati da rifinire conservando il motivo", () => {
+    const ledger = buildPropertyRunLedger({ job: job(), properties: [property("1", "synced"), property("2", "quarantined", { import_v2: { state: "quarantined", failure: { message: "Lookup non verificato" } } })] });
+    expect(ledger.state).toBe("completed");
+    expect(ledger.counts).toMatchObject({ terminal: 2, skipped: 1, pending: 0 });
+    expect(ledger.rows[1]?.anomalies[0]?.message).toBe("Lookup non verificato");
+  });
   it("deriva contatore e cursore dalla stessa sequenza anche con righe concluse non consecutive", () => {
     const ledger = buildPropertyRunLedger({
       job: job(),

@@ -20,7 +20,7 @@ describe("proiezione leggera dello stato desktop", () => {
     const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
 
-    expect(main).toContain("summarizeCompletedGraph(await repo.loadGraph(job.id))");
+    expect(main).toContain("summarizeCompletedGraph(await repo.loadRunArchive(job))");
     expect(main).toContain('ipcMain.handle("desktop:skip-acquisition-record"');
     expect(main).toContain("repo.listSavedJobImportCounts([...savedJobs, ...refinementJobs].map((job) => job.id))");
     expect(main).toContain("const savedPartitions = partitionPropertyJobs([...createdRefinementSeeds, ...allSavedJobs])");

@@ -16,6 +16,7 @@ import { crmRequestFeatureRequirements, type RequestFeatureRequirement } from ".
 import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
 import { isSupabaseProjectRestricted } from "./supabase-errors.js";
 import { canCreateCompletedWorkRefinement, completedWorkRefinementPayload } from "./refinement-seed.js";
+import { mergeRunGraphs, mergedRunIds, validateRunMerge } from "./run-merge.js";
 
 export type JobRow = {
   id: string;
@@ -215,6 +216,27 @@ export class WorkerRepository {
     if (error) throw new Error(`Lettura job ${id} fallita: ${error.message}`);
     if (!data) throw new Error(`Job ${id} non trovato nell'archivio Cloud`);
     return data as JobRow;
+  }
+
+  async loadRunArchive(job: JobRow) {
+    const ids = [job.id, ...mergedRunIds(job)];
+    const graphs = await Promise.all(ids.map((id) => this.loadGraph(id)));
+    return ids.length === 1 ? graphs[0]! : mergeRunGraphs(graphs);
+  }
+
+  async mergeCompletedRuns(targetId: string, sourceId: string): Promise<void> {
+    if (targetId === sourceId) throw new Error("Scegli due lavorazioni diverse.");
+    const roots = await Promise.all([this.getJob(targetId), this.getJob(sourceId)]);
+    if (mergedRunIds(roots[0]!).includes(sourceId) || mergedRunIds(roots[1]!).includes(targetId)) throw new Error("Le lavorazioni appartengono già allo stesso record unito.");
+    const ids = [...new Set(roots.flatMap((job) => [job.id, ...mergedRunIds(job)]))];
+    const jobs = await Promise.all(ids.map((id) => this.getJob(id)));
+    validateRunMerge(jobs);
+    // One atomic metadata update, no moves/deletions of source rows or evidence.
+    await this.updateJob(targetId, { acquisition: {
+      ...roots[0]!.acquisition,
+      mergedRunIds: ids.filter((id) => id !== targetId),
+      mergedRuns: jobs.map((job) => ({ id: job.id, completedAt: job.completed_at, acquisition: { runSettings: job.acquisition?.runSettings, acquisitionSettings: job.acquisition?.acquisitionSettings, filters: job.acquisition?.filters, importOptions: job.acquisition?.importOptions } })),
+    } });
   }
 
   async listImportV2Items(jobId: string): Promise<ImportV2ItemRow[]> {
@@ -595,7 +617,7 @@ export class WorkerRepository {
   async listSavedJobImportCounts(jobIds: string[]): Promise<Map<string, { handled: number; total: number; completed: number; skipped: number }>> {
     const counts = new Map(jobIds.map((jobId) => [jobId, { handled: 0, total: 0, completed: 0, skipped: 0 }]));
     if (!jobIds.length) return counts;
-    const skippedStatuses = new Set(["skipped", "acquisition_skipped", "acquisition_failed"]);
+    const skippedStatuses = new Set(["skipped", "acquisition_skipped", "acquisition_failed", "quarantined"]);
     const completedStatuses = new Set(["completed", "synced", "dry_run"]);
     const pageSize = 1_000;
     for (let offset = 0; ; offset += pageSize) {
@@ -626,10 +648,19 @@ export class WorkerRepository {
   }
 
   async listCompletedJobs(limit = 30): Promise<JobRow[]> {
-    const { data, error } = await this.client
+    // Resolve all grouping heads before paginating, so an old child cannot
+    // reappear as a separate record on a later archive page.
+    const heads = await this.client.from("property_worker_jobs").select("id,acquisition")
+      .eq("status", "completed").not("acquisition->mergedRunIds", "is", null);
+    if (heads.error) throw new Error(`Lettura unioni archivio fallita: ${heads.error.message}`);
+    const hidden = [...new Set((heads.data ?? []).flatMap((job) => mergedRunIds(job as JobRow)))].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    let query = this.client
       .from("property_worker_jobs")
       .select("*")
-      .eq("status", "completed")
+      .eq("status", "completed");
+    if (hidden.length) query = query.not("id", "in", `(${hidden.join(",")})`);
+    const { data, error } = await query
+      .order("updated_at", { ascending: false })
       .order("completed_at", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`Lettura import completati fallita: ${error.message}`);

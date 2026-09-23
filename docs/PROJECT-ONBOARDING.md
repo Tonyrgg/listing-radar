@@ -417,7 +417,31 @@ Le telefonate di `Autocompila` non incrementano il contatore dei contatti dirett
 
 ### Paracadute e diagnostica
 
-Errori isolabili su una riga vengono ritentati due volte e poi messi in quarantena. Errori globali di sessione, identità del contesto o struttura fermano il job.
+Dal 23 settembre 2026 l'esaurimento dei tentativi Import V2 chiude il caso
+come `quarantined` (a schermo: saltato, da rifinire) e non rende incompleta
+la run. Il motivo resta nel payload dell'immobile e nel dettaglio della run;
+`terminalForRun` impedisce che una ripresa ordinaria lo rimetta in coda.
+Una sessione Cloud inutilizzabile chiude anche i restanti casi noti come
+da rifinire, senza ulteriori scritture. Una pausa richiesta dall'operatore
+resta invece una pausa. Errori di persistenza non vengono nascosti.
+La verifica finale controlla ancora tutti i casi dichiarati eseguiti;
+non equipara un caso saltato a un import riuscito.
+
+Il proprietario principale già presente nel Cloud viene conservato se è
+ancora fra gli intestatari SISTER verificati, indipendentemente dall'ordine
+e dalla quota. Se non è verificabile o manca dalla fonte, si isola il caso
+prima di modificare intestatari. Nel modulo Soggetto correlato il campo
+Quota si individua per etichetta accessibile, senza imporre un wrapper
+`lightning-input` specifico.
+
+Le lavorazioni concluse della stessa via possono essere unite dal riepilogo.
+L'unione è un record d'archivio composto: `acquisition.mergedRunIds` collega
+le origini e conserva checkpoint, filtri, quote ed esiti originali senza
+spostare o cancellare righe. Nella vista unita la stessa chiave catastale
+compare una volta, privilegiando un esito verificato; i record origine
+restano consultabili. I filtri civici e piano compaiono anche in archivio.
+
+Errori isolabili su una riga vengono ritentati due volte e poi messi in quarantena. L'acquisizione SISTER conserva separatamente le interruzioni di sessione e le varianti non lette: non considera mai vuota una fonte fallita.
 
 Il desktop conserva fino a 200 arresti in `worker-errors.json` nella cartella dati dell'app. Ogni voce contiene:
 

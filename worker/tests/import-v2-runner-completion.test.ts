@@ -83,25 +83,25 @@ function pausedByOperatorResult(): ImportV2BatchResult {
 }
 
 describe("esito finale Import V2", () => {
-  it("non dichiara riuscito un batch che ha accantonato l'immobile", () => {
+  it("la verifica finale esclude i casi da rifinire ma controlla ancora i casi eseguiti", async () => {
+    const runner = new PropertyWorkerRunner(config, { keepAlive: false });
+    const graph = { properties: [{ id: "p", processing_status: "quarantined", raw_payload: {} }], people: [{ id: "person", processing_status: "quarantined" }], ownerships: [{ id: "link", property_id: "p", person_id: "person", processing_status: "quarantined" }] };
+    Object.defineProperty(runner, "repository", { value: { loadGraph: vi.fn().mockResolvedValue(graph) } });
+    await expect((runner as unknown as { executeStep: Function }).executeStep("verified", { id: "job" }, {}, {}, {}, {})).resolves.toMatchObject({ verified: true });
+    graph.properties[0]!.processing_status = "normalized";
+    await expect((runner as unknown as { executeStep: Function }).executeStep("verified", { id: "job" }, {}, {}, {}, {})).rejects.toMatchObject({ status: "needs_review" });
+  });
+  it("chiude il batch con immobili accantonati da rifinire", () => {
     const result = quarantinedResult();
 
-    expect(() => assertImportV2BatchComplete(result)).toThrowError(/0 immobili importati, 1 non importati/);
-    try {
-      assertImportV2BatchComplete(result);
-    } catch (error) {
-      expect(error).toMatchObject({
-        status: "needs_review",
-        details: { importV2: true, propertyId: "property-1", completed: 0, quarantined: 1 },
-      });
-    }
+    expect(() => assertImportV2BatchComplete(result)).not.toThrow();
   });
 
   it("accetta soltanto un batch senza elementi accantonati", () => {
     expect(() => assertImportV2BatchComplete({ completed: [], quarantined: [], paused: null })).not.toThrow();
   });
 
-  it("lascia il job fermo e il contatore a zero quando il coordinatore accantona tutto", async () => {
+  it("conserva i casi accantonati e conclude anche quando nessun immobile è importabile", async () => {
     coordinatorRunJob.mockResolvedValueOnce(quarantinedResult());
     const graph = {
       properties: [{
@@ -131,7 +131,7 @@ describe("esito finale Import V2", () => {
       {},
       {},
       { findByTaxCode: vi.fn() },
-    )).rejects.toMatchObject({ status: "needs_review", details: { propertyId: "property-1" } });
+    )).resolves.toMatchObject({ completed: 0, quarantined: 1 });
 
     expect(repository.updatePropertyProcessing).toHaveBeenCalledWith(
       "property-1",
