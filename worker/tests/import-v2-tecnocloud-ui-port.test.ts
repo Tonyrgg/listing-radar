@@ -6,6 +6,21 @@ import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 
 describe("Ricerca nominativo nel lookup", () => {
+  it("seleziona per id verificato anche quando il nominativo resta fuori dai primi 20 risultati", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<section role="dialog"><c-lookup><label>Cliente</label><div class="slds-combobox_container"><input placeholder="Cerca"></div></c-lookup><label for="quota">Quota</label><input id="quota"></section>
+        <script>const lookup=document.querySelector('c-lookup'), input=lookup.querySelector('input'), container=lookup.querySelector('div');let selected='';Object.defineProperty(lookup,'value',{get(){return selected},set(value){selected=value;input.value='Rosa Antonia Mitolo';input.readOnly=true;container.classList.add('slds-has-selection')}});</script>`);
+      const port = new TecnocloudUiV2Port(page);
+      const internal = port as unknown as { fillPersonLookup: (component: Locator, input: Locator, personId: string, terms: string[], dependent: Locator, minimum: number, label: string) => Promise<void> };
+      const component = page.locator("c-lookup");
+      await internal.fillPersonLookup(component, component.locator("input"), "001RD00001DfsULYAZ", ["ROSA ANTONIA MITOLO"], page.locator("#quota"), 1, "Cliente comproprietario");
+      expect(await component.evaluate((element: HTMLElement & { value?: string }) => element.value)).toBe("001RD00001DfsULYAZ");
+      expect(await component.locator("input").getAttribute("readonly")).not.toBeNull();
+    } finally { await browser.close(); }
+  });
+
   it("conferma Cliente nel modulo correlato anche con Quota in c-input-field", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
@@ -1146,7 +1161,7 @@ describe("Tecnocloud UI V2", () => {
       await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
           <div>Indirizzo Completo Immobile</div>
           <article><h2>Soggetti collegati (1)</h2><table><tbody><tr id="owner-row">
-            <td><a href="/CRMImmobiliareLightning/s/account/001RD00000ywHCn">Secondo Test</a></td>
+            <td><a href="/CRMImmobiliareLightning/s/account/001RD00000ywHCn">Secondo Test</a><span>Ruolo: Comproprietario</span></td>
           </tr></tbody></table></article>
         </body>` }));
       await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
@@ -1155,6 +1170,54 @@ describe("Tecnocloud UI V2", () => {
         ownershipRow(propertyId: string, personId: string): Promise<Locator>;
       }).ownershipRow("property-1", "001RD00000ywHCnYAM");
       expect(await row.getAttribute("id")).toBe("owner-row");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("attende che Lightning monti la riga già conteggiata dei soggetti collegati", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <div>Indirizzo Completo Immobile</div>
+          <article><h2>Soggetti collegati (1)</h2><ul id="owners"></ul></article>
+          <script>setTimeout(()=>document.getElementById('owners').innerHTML='<li id="delayed-owner"><a href="/CRMImmobiliareLightning/s/account/001RD00000ywHCn">Secondo Test</a><span>Ruolo: Comproprietario</span></li>',350)</script>
+        </body>` }));
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const row = await (port as unknown as {
+        ownershipRow(propertyId: string, personId: string): Promise<Locator>;
+      }).ownershipRow("property-1", "001RD00000ywHCnYAM");
+      expect(await row.getAttribute("id")).toBe("delayed-owner");
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it("legge ruolo e quota dall'intera tile anche con una tabella annidata nel lookup", async () => {
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <div>Indirizzo Completo Immobile</div>
+          <article><h2>Soggetti collegati (1)</h2><ul><li data-id="ownership-row">
+            <table><tbody><tr><td><a href="/CRMImmobiliareLightning/s/account/owner-linked">Rosa Antonia Mitolo</a></td></tr></tbody></table>
+            <div>Ruolo: <span>Comproprietario</span></div>
+            <div>Quota: <span>11,33</span></div>
+            <c-menu data-recordid="relationship-1"></c-menu>
+          </li></ul></article>
+        </body>` }));
+      await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/property-1");
+      const port = new TecnocloudUiV2Port(page);
+      const links = await (port as unknown as {
+        ownershipLinks(propertyId: string): Promise<Array<{ personId: string; linkId: string; text: string }>>;
+      }).ownershipLinks("property-1");
+      expect(links).toEqual([{
+        personId: "owner-linked",
+        linkId: "relationship-1",
+        text: "Rosa Antonia Mitolo Ruolo: Comproprietario Quota: 11,33",
+      }]);
     } finally {
       await browser.close();
     }

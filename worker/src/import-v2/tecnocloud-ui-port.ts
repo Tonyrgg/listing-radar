@@ -998,6 +998,44 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   ): Promise<void> {
     const terms = searchTerms.filter(Boolean);
     if (!terms.length) throw new ImportV2Error(`${label}: nessun testo di ricerca utilizzabile`, "invalid_source");
+    /* Il lookup live mostra al massimo 20 account ordinati per Name. Un
+     * nominativo gia' verificato per CF puo' quindi esistere ma non comparire
+     * mai nel menu (caso osservato su Via Domenico Urbano). c-lookup espone
+     * `value` come API pubblica e usa proprio l'id Salesforce, come il lookup
+     * Immobile gia' valorizzato nello stesso modulo. Preferiamo quindi l'id
+     * deterministico; la rilettura completa delle quote dopo il salvataggio
+     * resta la prova autorevole che il collegamento sia quello corretto. */
+    const directRequests = this.watchSearchRequests(personId);
+    try {
+      await component.evaluate((element, id) => {
+        const recordId = String(id);
+        (element as HTMLElement & { value?: string }).value = recordId;
+        /* Assegnare la public property aggiorna la pill del lookup; il form
+         * padre abilita Ruolo/Quota soltanto dopo lo stesso evento `change`
+         * emesso da una selezione utente reale. */
+        element.dispatchEvent(new CustomEvent("change", {
+          detail: { value: recordId, item: { Id: recordId } },
+          bubbles: true,
+          composed: true,
+        }));
+      }, personId);
+      let stableDirectCommit = 0;
+      for (let check = 0; check < 12 && stableDirectCommit < 2; check += 1) {
+        const selectedId = await component.evaluate((element) =>
+          String((element as HTMLElement & { value?: string }).value ?? ""));
+        const committed = sameCrmRecordId(selectedId, personId)
+          && await input.getAttribute("readonly") !== null
+          && await component.locator(".slds-combobox_container.slds-has-selection").count() === 1
+          && await dependentFields.count() >= minimumDependentFields
+          && !(await this.lookupIsBusy(component));
+        stableDirectCommit = committed ? stableDirectCommit + 1 : 0;
+        if (stableDirectCommit < 2) await this.pauseAwareWait(160);
+      }
+      await this.assertSearchHealthy(directRequests.failed());
+      if (stableDirectCommit >= 2) return;
+    } finally {
+      directRequests.stop();
+    }
     let termIndex = 0;
     let everProposed = false;
     for (let attempt = 0; attempt < terms.length; attempt += 1) {
@@ -2144,6 +2182,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async ownershipLinks(propertyId: string): Promise<Array<{ personId: string; linkId: string; text: string }>> {
     const card = await this.ownershipCard(propertyId);
+    const expectedCount = Number((await card.innerText()).match(/Soggetti collegati\s*\((\d+)\)/i)?.[1] ?? 0);
     let scope = card;
     const viewAll = card.getByText("Visualizza tutto", { exact: true }).filter({ visible: true });
     if (await viewAll.count() === 1) {
@@ -2151,13 +2190,57 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       scope = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetti collegati/i }), "Elenco soggetti collegati", 12_000);
     }
     const links = scope.locator('a[href*="/s/account/"]').filter({ visible: true });
+    if (expectedCount > 0) {
+      for (let attempt = 0; attempt < 50 && await links.count() < expectedCount; attempt += 1) {
+        await this.pauseAwareWait(160);
+      }
+      if (await links.count() < expectedCount) {
+        throw new ImportV2Error("Soggetti collegati conteggiati ma non ancora leggibili", "transient_portal", {
+          retryable: true,
+          details: { expectedCount, visibleLinks: await links.count() },
+        });
+      }
+      // The account link is mounted before the remaining fields of each
+      // Lightning tile. Reading immediately here produced null role/share and
+      // made an already-correct co-owner look stale. Require the mandatory
+      // role to exist and the complete rows to settle before parsing them.
+      let signature = "";
+      let stable = 0;
+      for (let attempt = 0; attempt < 50 && stable < 3; attempt += 1) {
+        const texts = await links.evaluateAll((nodes) => nodes.map((node) => {
+          const row = node.closest("li") ?? node.closest("tr") ?? node.parentElement?.parentElement ?? node.parentElement;
+          // Lightning values are rendered through nested LWC slots: innerText
+          // sees the composed UI, textContent only sees the empty slot hosts.
+          return ((row as HTMLElement | null)?.innerText ?? row?.textContent ?? "").replace(/\s+/g, " ").trim();
+        }));
+        const current = JSON.stringify(texts);
+        const complete = texts.length >= expectedCount && texts.every((text) => /Ruolo\s*:\s*\S+/i.test(text));
+        stable = complete && current === signature ? stable + 1 : 0;
+        signature = current;
+        if (stable < 3) await this.pauseAwareWait(160);
+      }
+      if (stable < 3) {
+        throw new ImportV2Error("Dettagli dei soggetti collegati non ancora leggibili", "transient_portal", {
+          retryable: true,
+          details: { expectedCount },
+        });
+      }
+    }
     const result = await links.evaluateAll((nodes) => nodes.map((node) => {
       const href = node.getAttribute("href") ?? "";
-      const row = node.closest("tr") ?? node.closest("li") ?? node.parentElement?.parentElement ?? node.parentElement;
+      // The live related-list nests the account lookup inside component
+      // internals. The enclosing `li` is the whole ownership tile (including
+      // Ruolo, Quota and the relationship id), while a nested `tr` can contain
+      // only the lookup value.
+      const row = node.closest("li") ?? node.closest("tr") ?? node.parentElement?.parentElement ?? node.parentElement;
       const personId = node.getAttribute("data-recordid") ?? node.getAttribute("data-id") ?? href.match(/\/s\/account\/([^/?#]+)/i)?.[1] ?? "";
       const linkId = row?.querySelector("[data-recordid],[data-id]")?.getAttribute("data-recordid")
         ?? row?.querySelector("[data-recordid],[data-id]")?.getAttribute("data-id") ?? `link-${personId}`;
-      return { personId, linkId, text: (row?.textContent ?? node.textContent ?? "").replace(/\s+/g, " ").trim() };
+      return {
+        personId,
+        linkId,
+        text: ((row as HTMLElement | null)?.innerText ?? row?.textContent ?? node.textContent ?? "").replace(/\s+/g, " ").trim(),
+      };
     }));
     const modal = this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetti collegati/i });
     if (await modal.count()) {
@@ -2319,9 +2402,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       return indexes.length === 1 ? links.nth(indexes[0]!) : ownerScope.locator("a.__worker-no-match__");
     };
     let link = await matchingLinks(scope);
-    let row = await link.count() === 1
-      ? (await link.locator("xpath=ancestor::tr[1]").count() ? link.locator("xpath=ancestor::tr[1]") : link.locator("xpath=../.."))
-      : null;
+    // The card count is rendered before its account anchors. Keep resolving
+    // the dynamic locator instead of freezing the initial "no match" result.
+    for (let attempt = 0; attempt < 50 && await link.count() !== 1; attempt += 1) {
+      await this.pauseAwareWait(160);
+      link = await matchingLinks(scope);
+    }
+    const relationshipRow = async (candidate: Locator): Promise<Locator> => {
+      const listItem = candidate.locator("xpath=ancestor::li[1]");
+      if (await listItem.count()) return listItem;
+      const tableRow = candidate.locator("xpath=ancestor::tr[1]");
+      return await tableRow.count() ? tableRow : candidate.locator("xpath=../..");
+    };
+    let row = await link.count() === 1 ? await relationshipRow(link) : null;
     const hasAction = async (candidate: Locator | null) => Boolean(candidate && await candidate.locator([
       'button[aria-haspopup="menu"]',
       'button[title*="Azioni" i]',
@@ -2335,9 +2428,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await viewAll.click({ force: true });
         scope = await this.one(this.page.locator('[role="dialog"]:visible').filter({ hasText: /Soggetti collegati/i }), "Elenco soggetti collegati", 12_000);
         link = await matchingLinks(scope);
-        row = await link.count() === 1
-          ? (await link.locator("xpath=ancestor::tr[1]").count() ? link.locator("xpath=ancestor::tr[1]") : link.locator("xpath=../.."))
-          : null;
+        row = await link.count() === 1 ? await relationshipRow(link) : null;
       }
     }
     await link.first().waitFor({ state: "visible", timeout: 10_000 });
@@ -2419,9 +2510,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await dialog.waitFor({ state: "hidden", timeout: 8_000 });
       }
       await this.waitForCloudStable(saveRequests, "Salvataggio comproprietario");
-      if (outcome === "unclosed" && await dialog.isVisible().catch(() => false)) {
-        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
-      }
+      // Anche quando la modale si chiude, la related list resta spesso col
+      // vecchio DOM per alcuni secondi. Riaprire l'immobile rende la rilettura
+      // una verifica Cloud e non una fotografia precedente al salvataggio.
+      await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
     } finally {
       saveRequests.stop();
     }
@@ -2435,16 +2527,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const saveRequests = this.watchSearchRequests();
     try {
       await save.click();
-      let dialogClosed = true;
-      try {
-        await dialog.waitFor({ state: "hidden", timeout: 4_000 });
-      } catch {
-        dialogClosed = false;
-      }
+      await dialog.waitFor({ state: "hidden", timeout: 4_000 }).catch(() => undefined);
       await this.waitForCloudStable(saveRequests, "Aggiornamento comproprietario");
-      if (!dialogClosed && await dialog.isVisible().catch(() => false)) {
-        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
-      }
+      await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
     } finally {
       saveRequests.stop();
     }
