@@ -345,8 +345,11 @@ il testo è contiguo (`Clienti0 risultati`), tra parentesi o in shadow root;
 un messaggio globale di assenza deve riferirsi al CF cercato. Le ricerche CF
 e immobili aspettano richieste pendenti e indicatori di caricamento. Una
 pagina vuota non prova l'assenza dell'immobile. Errori di rete, messaggi di
-errore o risultati non confermati mettono in pausa il batch corrente, senza
-creare schede sulla base di un'assenza presunta né accantonare tutta la via.
+errore o risultati non confermati vengono riprovati sul singolo immobile;
+esauriti i tentativi, quel record passa in rifinitura e la via continua. Solo
+una sessione scaduta o una scheda Cloud realmente non utilizzabile può fermare
+la relativa corsia. Non creare mai schede sulla base di un'assenza presunta e
+non accantonare tutta la via per un errore circoscritto.
 Gli stati `acquisition_skipped` e `acquisition_failed` sono esclusi dal ponte
 V2 anche se manca il corrispondente metadato nel payload storico.
 

@@ -2,6 +2,33 @@ import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js
 import type { JobRow, PropertyRow } from "../services/repository.js";
 import { buildPropertyRunLedger, type RunLedgerAnomaly } from "../services/run-ledger.js";
 
+function acquisitionFilters(acquisition: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!acquisition) return {};
+  const runSettings = acquisition.runSettings as Record<string, unknown> | undefined;
+  const acquisitionSettings = acquisition.acquisitionSettings as Record<string, unknown> | undefined;
+  const checkpoint = acquisition.acquisitionCheckpoint as Record<string, unknown> | undefined;
+  return (runSettings?.filters
+    ?? acquisitionSettings?.filters
+    ?? checkpoint?.filters
+    ?? acquisition.filters
+    ?? {}) as Record<string, unknown>;
+}
+
+/** A range containing one civic is part of the run identity, not just a filter. */
+export function exactCivicNumber(acquisition: Record<string, unknown> | null | undefined): string | null {
+  const filters = acquisitionFilters(acquisition);
+  const minimum = filters.minCivicNumber;
+  const maximum = filters.maxCivicNumber;
+  if (minimum == null || maximum == null || String(minimum).trim() !== String(maximum).trim()) return null;
+  return String(minimum).trim() || null;
+}
+
+/** Once Cloud import started, a stale SISTER cursor must never take control again. */
+export function canResumeStreetAcquisition(job: Pick<JobRow, "status" | "import_started_at" | "acquisition">): boolean {
+  if (job.status === "completed" || job.import_started_at) return false;
+  return true;
+}
+
 export type JobImportProgress = {
   state: "not_started" | "running" | "stopped" | "completed";
   handled: number;

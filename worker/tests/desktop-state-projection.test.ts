@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  canResumeStreetAcquisition,
+  exactCivicNumber,
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
   summarizeStreetAcquisition,
@@ -16,6 +18,17 @@ import {
 } from "../src/services/sister-street-run.js";
 
 describe("proiezione leggera dello stato desktop", () => {
+  it("conserva il civico esatto e non riapre SISTER dopo l'avvio dell'import", () => {
+    const acquisition = {
+      acquisitionProgress: { state: "paused" },
+      runSettings: { filters: { minCivicNumber: 47, maxCivicNumber: 47 } },
+    };
+    expect(exactCivicNumber(acquisition)).toBe("47");
+    expect(exactCivicNumber({ runSettings: { filters: { minCivicNumber: 1, maxCivicNumber: 20 } } })).toBeNull();
+    expect(canResumeStreetAcquisition({ status: "paused", import_started_at: null, acquisition })).toBe(true);
+    expect(canResumeStreetAcquisition({ status: "paused", import_started_at: "2026-09-25T08:00:00.000Z", acquisition })).toBe(false);
+  });
+
   it("usa i riepiloghi e le proiezioni leggere nei due canali IPC desktop", () => {
     const main = readFileSync(new URL("../src/desktop/main.ts", import.meta.url), "utf8");
     const renderer = readFileSync(new URL("../src/desktop/renderer/renderer.js", import.meta.url), "utf8");
@@ -48,6 +61,11 @@ describe("proiezione leggera dello stato desktop", () => {
     expect(renderer).toContain("Pronta per l'import");
     expect(renderer).toContain("Continua acquisizione");
     expect(renderer).toContain("data-resume-acquisition");
+    expect(renderer).toContain("function civicNumberFromJob(job)");
+    expect(renderer).toContain("function jobAcquisitionIncomplete(job)");
+    expect(renderer).toContain("da rifinire · run conclusa");
+    expect(main).toContain("civicNumber: exactCivicNumber(acquisitionMetadata)");
+    expect(main).toContain("if (!canResumeStreetAcquisition(job))");
     expect(renderer).toContain("detail-workspace-columns");
     expect(renderer).toContain("jobDetailEditMarkup");
     expect(renderer).toContain("Inizia import");

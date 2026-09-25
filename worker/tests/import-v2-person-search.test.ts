@@ -61,13 +61,13 @@ describe("Ricerca CF: assenza certa e portale non disponibile", () => {
     } finally { await browser.close(); }
   }, 15_000);
 
-  it("mette in pausa la coda quando la ricerca fallisce anche se mostra zero", async () => {
+  it("isola il nominativo quando la ricerca fallisce anche se mostra zero", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
       await searchFixture(page, '<h1>Risultati di ricerca</h1><section>Clienti 0 risultati</section><div role="alert">Errore durante la ricerca</div>');
       await expect(new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode(cf)).rejects.toMatchObject({
-        kind: "global_portal", options: { global: true },
+        kind: "transient_portal", options: { retryable: true },
       });
     } finally { await browser.close(); }
   }, 15_000);
@@ -92,7 +92,9 @@ describe("Ricerca CF: assenza certa e portale non disponibile", () => {
       const page = await browser.newPage();
       await searchFixture(page, '<h1>Risultati di ricerca</h1><section>Clienti 0 risultati</section><script>fetch("/failed-search")</script>');
       await page.route(`${origin}/failed-search`, route => route.fulfill({ status: 503, body: "unavailable" }));
-      await expect(new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode(cf)).rejects.toMatchObject({ kind: "global_portal" });
+      await expect(new TecnocloudUiV2Port(page).searchPeopleByExactTaxCode(cf)).rejects.toMatchObject({
+        kind: "transient_portal", options: { retryable: true },
+      });
     } finally { await browser.close(); }
   });
 

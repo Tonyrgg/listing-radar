@@ -452,7 +452,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       let stable = 0;
       for (let check = 0; check < 100 && stable < 4; check += 1) {
         await this.assertSession();
-        await this.assertSearchHealthy(requests.failed());
+        await this.assertSearchHealthy(requests.failed(), true);
         const reactivated = await reactivate.count() === 0
           && await archivedWarning.count() === 0
           && !requests.pending()
@@ -610,7 +610,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         await this.page.waitForURL(/\/s\/global-search\//i, { timeout: 20_000 });
         const submittedTerm = decodeURIComponent(new URL(this.page.url()).pathname.match(/\/s\/global-search\/([^/?#]*)/i)?.[1] ?? "").trim();
         if (canonicalTaxCode(submittedTerm) !== expected) {
-          throw new ImportV2Error("La ricerca CF è partita senza il codice fiscale confermato. Import in pausa senza creare duplicati.", "global_portal", { global: true });
+          throw new ImportV2Error("La ricerca CF è partita senza il codice fiscale confermato. Riprovo questo immobile senza fermare gli altri.", "transient_portal", { retryable: true });
         }
         // Lightning cambia periodicamente gli attributi interni dei risultati.
         // Il percorso del record e' l'unica prova stabile; il CF verra' comunque
@@ -681,7 +681,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           await this.page.goto(new URL(record.href, this.page.url()).toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
           const snapshot = await this.readCurrentPerson(record.id, expected);
           if (!canonicalTaxCode(snapshot.taxCode)) {
-            throw new ImportV2Error("Il risultato della ricerca non espone un CF verificabile", "global_portal", { global: true });
+            throw new ImportV2Error("Il risultato della ricerca non espone un CF verificabile", "transient_portal", {
+              retryable: true,
+              details: { action: "person-result-tax-code-unverifiable", recordId: record.id, expected },
+            });
           }
           if (canonicalTaxCode(snapshot.taxCode) === expected) matches.push(snapshot);
         }
@@ -690,8 +693,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       } catch (error) {
         if (error instanceof ImportV2Error) throw error;
         await this.assertSession();
-        throw new ImportV2Error("Ricerca CF non completata: import in pausa, nessun nominativo creato senza verifica.", "global_portal", {
-          global: true,
+        throw new ImportV2Error("Ricerca CF non completata: riprovo questo immobile senza fermare gli altri.", "transient_portal", {
+          retryable: true,
         });
       } finally { requests?.stop(); }
     });
@@ -748,10 +751,13 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return await this.page.locator('lightning-spinner:visible, .slds-spinner:visible, [role="progressbar"]:visible, [aria-busy="true"]:visible').count() > 0;
   }
 
-  private async assertSearchHealthy(requestFailed: boolean): Promise<void> {
+  private async assertSearchHealthy(requestFailed: boolean, writeOutcomeUncertain = false): Promise<void> {
     const alerts = await this.page.locator('[role="alert"]:visible, .slds-notify_toast.slds-theme_error:visible').allTextContents();
     if (requestFailed || alerts.some(text => /errore|error|riprova|impossibile|non disponibile/i.test(text))) {
-      throw new ImportV2Error("Tecnocloud non ha completato la ricerca: import in pausa senza creare duplicati o saltare nominativi.", "global_portal", { global: true });
+      if (writeOutcomeUncertain) {
+        throw new ImportV2Error("Tecnocloud non ha confermato la scrittura: import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
+      }
+      throw new ImportV2Error("Tecnocloud non ha completato la ricerca: riprovo questo immobile senza fermare gli altri.", "transient_portal", { retryable: true });
     }
   }
 
@@ -1570,7 +1576,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           onProgress?.({ phase: "loading", current: records ? records.split("|").length : 0, total: records ? records.split("|").length : 0 });
           if (stable < 4) await this.pauseAwareWait(250);
         }
-        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: rifinitura in pausa prima di aggiornare schede.", "global_portal", { global: true });
+        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: accantono questo immobile e continuo la rifinitura.", "transient_portal", { retryable: true });
       } finally { requests.stop(); }
 
       const unique = [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
@@ -1789,7 +1795,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           prior = signature;
           if (stable < 4) await this.pauseAwareWait(250);
         }
-        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: import in pausa prima di creare o aggiornare schede.", "global_portal", { global: true });
+        if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: accantono questo immobile e continuo l'import.", "transient_portal", { retryable: true });
         return [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
       };
       type SearchFilters = {
@@ -2767,7 +2773,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         let saveStable = 0;
         for (let wait = 0; wait < 80 && saveStable < 4; wait += 1) {
           await this.assertSession();
-          await this.assertSearchHealthy(saveRequests.failed());
+          await this.assertSearchHealthy(saveRequests.failed(), true);
           const settled = !saveRequests.pending() && !(await this.searchIsBusy());
           saveStable = settled ? saveStable + 1 : 0;
           if (saveStable < 4) await this.pauseAwareWait(250, false);

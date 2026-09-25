@@ -79,6 +79,8 @@ import {
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
 import { importRunOptions, withLockedImportRunOptions, withResumedImportConcurrency, type ImportRunOptions } from "./import-run-options.js";
 import {
+  canResumeStreetAcquisition,
+  exactCivicNumber,
   projectStreetCheckpointForRenderer,
   summarizeCompletedGraph,
   summarizeJobImportProgress,
@@ -707,12 +709,15 @@ async function archiveStreetRunCheckpoint(reason: string, engine: "lavorazione" 
   if (!checkpoint) return null;
   if (checkpoint.importJobId) {
     try {
-      await repository().updateJob(checkpoint.importJobId, {
-        status: "paused",
-        saved_at: new Date().toISOString(),
-        error_message: reason,
-        error_details: { action: "street-run-abandoned", checkpointStatus: checkpoint.status },
-      });
+      const job = await repository().getJob(checkpoint.importJobId);
+      if (canResumeStreetAcquisition(job)) {
+        await repository().updateJob(checkpoint.importJobId, {
+          status: "paused",
+          saved_at: new Date().toISOString(),
+          error_message: reason,
+          error_details: { action: "street-run-abandoned", checkpointStatus: checkpoint.status },
+        });
+      }
     } catch {
       pushActivity("Checkpoint locale archiviato; lo stato cloud del job non era raggiungibile", "warning");
     }
@@ -1725,7 +1730,7 @@ async function runSisterStreet(input: {
       await liveRepository.setJobContext(importJob.id, {
         municipality: "BITONTO",
         street,
-        civicNumber: null,
+        civicNumber: exactCivicNumber(acquisitionMetadata),
         sourceUrl: "",
       });
       await liveRepository.updateJob(importJob.id, {
@@ -1779,7 +1784,7 @@ async function runSisterStreet(input: {
         await liveRepository.setJobContext(importJobId, {
           municipality: "BITONTO",
           street,
-          civicNumber: null,
+          civicNumber: exactCivicNumber(acquisitionMetadata),
           sourceUrl: tabs.sisterPage.url(),
         });
       }
@@ -3793,6 +3798,9 @@ function registerIpc() {
     const repo = repository();
     const job = await repo.getJob(String(jobId));
     const acquisition = job.acquisition ?? {};
+    if (!canResumeStreetAcquisition(job)) {
+      throw new Error("L'acquisizione SISTER e gia chiusa: riprendi l'import Cloud dal punto salvato");
+    }
     const cloudCheckpoint = acquisition.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
     let checkpoint = selectRicherStreetCheckpoint(cloudCheckpoint, localCheckpointForJob(job.id));
     if (!checkpoint || ![3, 4].includes(checkpoint.version)) {

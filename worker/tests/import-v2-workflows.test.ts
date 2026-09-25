@@ -129,7 +129,7 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
     } finally { await browser.close(); }
   }, 90_000);
 
-  it("una ricerca CF fallita chiude il batch saltando gli immobili coinvolti per la rifinitura", async () => {
+  it("una ricerca CF fallita accantona ogni immobile senza chiudere il resto del batch", async () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
@@ -147,7 +147,8 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
       const result = await runImportV2Batch(new ImportV2Engine(new TecnocloudUiV2Port(page), store), [source!, { ...source!, sourcePropertyId: "next" }]);
       expect(result).toMatchObject({ completed: [], paused: null });
       expect(result.quarantined.map((checkpoint) => checkpoint.propertyId)).toEqual([source!.sourcePropertyId, "next"]);
-      expect(result.quarantined.every((checkpoint) => checkpoint.failure?.message.startsWith("Saltato, da rifinire:"))).toBe(true);
+      expect(result.quarantined.every((checkpoint) => checkpoint.failure?.kind === "transient_portal")).toBe(true);
+      expect(result.quarantined.every((checkpoint) => checkpoint.failure?.details.closedWithoutFurtherWrites !== true)).toBe(true);
       expect(store.checkpoints.has("next")).toBe(true);
       expect(fixture.writes).toEqual([]);
     } finally { await browser.close(); }

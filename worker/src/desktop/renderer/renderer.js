@@ -320,7 +320,7 @@ function renderWorkspaceInspector() {
   }
   selectedInspectorJobId = job.id;
   const inspectorRunActive = Boolean(workRunActive && job.id === appState.activeJobId);
-  const place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Ricerca ${job.id.slice(0, 8)}`;
+  const place = [job.municipality, job.street, civicNumberFromJob(job)].filter(Boolean).join(" · ") || `Ricerca ${job.id.slice(0, 8)}`;
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
   const total = Number(job.import_progress?.total ?? job.total_properties ?? 0);
   const liveCompleted = job.id === appState.activeJobId && Number.isFinite(appState.propertyProgress?.completed)
@@ -333,7 +333,7 @@ function renderWorkspaceInspector() {
   const complete = job.status === "completed";
   const refinement = job.acquisition?.engine === "rifinitura" || job.acquisition?.strategy === "street_refinement";
   const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
-  const acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable;
+  const acquisitionIncomplete = jobAcquisitionIncomplete(job);
   $("inspectorTitle").textContent = place;
   $("inspectorSubtitle").textContent = inspectorRunActive
     ? refinement ? "Rifinitura in corso" : "Lavorazione in corso"
@@ -1117,7 +1117,7 @@ function renderLastRun() {
     return;
   }
   const job = ultimo.job;
-  const luogo = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ")
+  const luogo = [job.municipality, job.street, civicNumberFromJob(job)].filter(Boolean).join(" · ")
     || `Lavorazione ${job.id.slice(0, 8)}`;
   panel.innerHTML = `
     <div class="run-last-head">
@@ -1518,6 +1518,26 @@ function filtriAcquisizione(acquisition) {
   ].filter(Boolean);
 }
 
+function civicNumberFromJob(job) {
+  if (job?.civic_number) return job.civic_number;
+  const filters = job?.acquisition?.runSettings?.filters
+    ?? job?.acquisition?.acquisitionSettings?.filters
+    ?? job?.acquisition?.acquisitionCheckpoint?.filters
+    ?? job?.acquisition?.filters
+    ?? {};
+  return filters.minCivicNumber != null
+    && filters.maxCivicNumber != null
+    && String(filters.minCivicNumber).trim() === String(filters.maxCivicNumber).trim()
+      ? String(filters.minCivicNumber).trim()
+      : null;
+}
+
+function jobAcquisitionIncomplete(job) {
+  if (job?.status === "completed" || job?.import_started_at) return false;
+  const progress = job?.acquisition?.acquisitionProgress;
+  return Boolean(progress && progress.state !== "completed") || acquisitionHasRetryableAnomalies(job?.acquisition);
+}
+
 function badgeAcquisizione(acquisition) {
   if (!acquisition || typeof acquisition !== "object") return "";
   const settings = acquisition.runSettings ?? acquisition.acquisitionSettings ?? {};
@@ -1700,12 +1720,12 @@ function renderJobs() {
           const acquisitionProgress = job.acquisition?.acquisitionProgress,
             acquisitionState = statoAcquisizione(acquisitionProgress),
             acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition),
-            acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed") || acquisitionRetryable,
+            acquisitionIncomplete = jobAcquisitionIncomplete(job),
             canImport = !appState.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
             canResumeAcquisition = !appState.active && acquisitionIncomplete,
             tipo = ACQUISIZIONE_TIPO[job.acquisition?.kind] ?? null,
             luogo =
-              [job.municipality, job.street, job.civic_number]
+              [job.municipality, job.street, civicNumberFromJob(job)]
                 .filter(Boolean)
                 .join(" · "),
             place = luogo || tipo || `Ricerca ${job.id.slice(0, 8)}`,
@@ -1717,8 +1737,8 @@ function renderJobs() {
             anomalies = Math.min(handled, Number(job.import_progress?.completedWithAnomalies ?? 0)),
             skipped = Math.min(handled, Number(job.import_progress?.skipped ?? 0)),
             executed = Math.max(0, Number(job.import_progress?.completed ?? handled - skipped) - anomalies),
-            runState = acquisitionState?.title ?? (imported
-              ? "Importazione completata"
+            runState = acquisitionIncomplete ? acquisitionState?.title : (imported
+              ? `${fmtNamedCount(executed, "importato", "importati")} · ${fmtNamedCount(anomalies + skipped, "da rifinire", "da rifinire")} · run conclusa`
               : inProgress
                 ? `Interrotta · ${fmtNamedCount(executed, "eseguita", "eseguite")} · ${fmtNamedCount(anomalies, "con anomalia", "con anomalie")} · ${fmtNamedCount(skipped, "saltata", "saltate")} · ${fmtNamedCount(Math.max(0, total - handled), "aperta", "aperte")}`
                 : `Pronta per l'import · ${fmtNamedCount(total, "riga", "righe")}`);
@@ -1894,13 +1914,13 @@ async function openJobDetailDialog(jobId, refinementDetail = false) {
   const settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili";
   const acquisitionProgress = job.acquisition?.acquisitionProgress;
   const acquisitionRetryable = acquisitionHasRetryableAnomalies(job.acquisition);
-  const acquisitionRunningIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed");
+  const acquisitionRunningIncomplete = jobAcquisitionIncomplete(job);
   const complete = job.status === "completed" || progress.state === "completed";
   jobDetailParallelCloud = job.acquisition?.importOptions?.parallelCrmWindows === true;
   const sortedRows = sortedDetailProperties(detail.properties, progress, ledgerById);
   const problems = (detail.ledger?.rows ?? []).filter((row) => row.anomalies?.length || row.state === "skipped");
   const mergeCandidates = (appState?.completedImports ?? []).map((item) => item.job).filter((other) => other.id !== jobId && other.status === "completed" && String(other.street ?? "").trim().toUpperCase() === String(job.street ?? "").trim().toUpperCase() && other.municipality === job.municipality);
-  $("jobDetailTitle").textContent = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `${engineLabel} salvata`;
+  $("jobDetailTitle").textContent = [job.municipality, job.street, civicNumberFromJob(job)].filter(Boolean).join(" · ") || `${engineLabel} salvata`;
   $("jobDetailMeta").textContent = `${engineLabel} · ${progressCopy.headline} · ${fmtNamedCount(detail.properties.length, "immobile", "immobili")}`;
   $("jobDetailFooterNote").textContent = complete
     ? "La run è conclusa: il riepilogo resta consultabile e non modifica dati."
@@ -2023,7 +2043,7 @@ function renderCompletedImports() {
           const job = item.job,
             { peopleById, ownershipsByPropertyId } = relationshipIndex(item.people, item.ownerships),
             place =
-              [job.municipality, job.street, job.civic_number]
+              [job.municipality, job.street, civicNumberFromJob(job)]
                 .filter(Boolean)
                 .join(" · ") || `Import ${job.id.slice(0, 8)}`;
           return `<section class="completed-import"><header><div><span class="completed-check">✓</span><div><h3>${esc(place)}</h3><p>Concluso ${fmtDate(job.completed_at ?? job.updated_at)} · ${item.properties.length} immobili · ${item.people.length} nominativi</p></div></div><button class="text-button" data-detail-job="${job.id}">Apri riepilogo</button></header><div class="completed-property-list">${item.properties
@@ -2100,7 +2120,7 @@ function renderCompletedSessions() {
         .map((item) => {
           const job = item.job,
             place =
-              [job.municipality, job.street, job.civic_number]
+              [job.municipality, job.street, civicNumberFromJob(job)]
                 .filter(Boolean)
                 .join(" · ") || `Import ${job.id.slice(0, 8)}`,
             stats = completedSessionStats(item),
@@ -2108,7 +2128,7 @@ function renderCompletedSessions() {
             skipText = stats.skippedProperties
               ? ` · ${stats.skippedProperties} immobili e ${stats.skippedPeople} nominativi saltati`
               : "";
-          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">✓</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))} · ${esc(riassuntoAcquisizione(job.acquisition))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(peopleCount)}</span><span class="ledger-state">${stats.skippedProperties ? `Conclusa · ${fmtCount(stats.skippedProperties)} immobili da rifinire` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri riepilogo</button><button class="text-button" data-completed-session="${job.id}">Dati immobili</button></span></article>`;
+          return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">✓</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))} · ${esc(riassuntoAcquisizione(job.acquisition))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(peopleCount)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.completedProperties)} importati · ${fmtCount(stats.skippedProperties)} da rifinire · run conclusa` : `${fmtCount(stats.completedProperties)} importati · run conclusa senza anomalie`}</span><span class="ledger-actions"><button class="text-button" data-detail-job="${job.id}">Apri riepilogo</button><button class="text-button" data-completed-session="${job.id}">Dati immobili</button></span></article>`;
         })
         .join("")
     : `<div class="completed-empty"><span>✓</span><div><b>Nessun import concluso</b><p>Le sessioni completate compariranno qui.</p></div></div>`;
@@ -3110,8 +3130,8 @@ function renderRefinementArchive() {
         completedWorkSeed = isCompletedWorkRefinement(job),
         acquisitionProgress = job.acquisition?.acquisitionProgress,
         acquisitionState = statoAcquisizione(acquisitionProgress),
-        acquisitionIncomplete = Boolean(acquisitionProgress && acquisitionProgress.state !== "completed"),
-        place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
+        acquisitionIncomplete = jobAcquisitionIncomplete(job),
+        place = [job.municipality, job.street, civicNumberFromJob(job)].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
         settings = riassuntoAcquisizione(job.acquisition) || "Impostazioni storiche non disponibili",
         canResume = !state.active && job.status !== "completed" && !acquisitionIncomplete && Number(job.total_properties ?? 0) > 0,
         help = acquisitionState?.detail
@@ -3129,7 +3149,7 @@ function renderRefinementArchive() {
     }).join("") : `<p class="empty-message">Nessuna rifinitura salvata. Le vie concluse in Lavorazioni compariranno automaticamente qui.</p>`;
     $("refinementCompletedList").innerHTML = completed.length ? completed.map((item) => {
       const job = item.job,
-        place = [job.municipality, job.street, job.civic_number].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
+        place = [job.municipality, job.street, civicNumberFromJob(job)].filter(Boolean).join(" · ") || `Rifinitura ${job.id.slice(0, 8)}`,
         stats = completedSessionStats(item);
       return `<article class="ledger-row completed-session ${stats.skippedProperties ? "has-skipped" : ""}"><span class="ledger-mark">${stats.skippedProperties ? "!" : "✓"}</span><span class="ledger-place"><b>${esc(place)}</b><small>${esc(fmtDate(job.completed_at ?? job.updated_at))} · ${esc(riassuntoAcquisizione(job.acquisition))}</small></span><span class="ledger-figure">${fmtCount(stats.completedProperties)}</span><span class="ledger-figure">${fmtCount(item.peopleCount ?? item.people?.length ?? 0)}</span><span class="ledger-state">${stats.skippedProperties ? `${fmtCount(stats.skippedProperties)} saltati` : "Conclusa senza salti"}</span><span class="ledger-actions"><button class="text-button" data-refinement-detail-job="${job.id}">Apri sessione</button></span></article>`;
     }).join("") : `<p class="empty-message">Le rifiniture concluse compariranno qui, separate dagli import.</p>`;
@@ -3796,7 +3816,7 @@ document.addEventListener("click", async (event) => {
           ),
           job = detail.job,
           place =
-            [job.municipality, job.street, job.civic_number]
+            [job.municipality, job.street, civicNumberFromJob(job)]
               .filter(Boolean)
               .join(" · ") || `Import ${job.id.slice(0, 8)}`,
           stats = completedSessionStats(detail),
