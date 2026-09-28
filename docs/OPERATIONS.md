@@ -1,6 +1,6 @@
 # Uso quotidiano
 
-La migration `0010` è applicata al progetto Cloud dal 28 settembre 2026 e Vercel ha riportato riuscito il deploy del commit applicativo `5f05e49`. Il flusso è stato verificato su Supabase locale isolato; il percorso autenticato nell'app online resta da collaudare.
+Le migration `0001`–`0011` sono applicate al progetto Cloud e Vercel ha riportato riuscito il deploy web del commit `63906ae` il 28 settembre 2026. Il flusso è stato verificato su Supabase locale isolato anche con login reale; il percorso autenticato nell'app online resta da collaudare.
 
 1. Aprire `/acquisition/today`: appuntamenti, follow-up scaduti e lead A prima delle verifiche. Aprire ogni lead e registrare attività ed esito.
 2. Durante la zona aprire `/acquisition/zone`, filtrare località/via/priorità e usare Quick Add da `/acquisition` per cartelli, immobili vuoti, lavori o altre notizie. Indicare almeno indirizzo, motore e segnale; programmare la prossima azione.
@@ -27,6 +27,7 @@ persona o immobile per leggere la cronologia contestuale. In
 mostra il mese precedente senza copiarlo. Chiudere il mese controllando
 attività, conversioni e `/acquisition/stale`.
 
-La migration `0011` è stata collaudata su Supabase locale isolato. Questa
-documentazione non attesta ancora che sia applicata al progetto Cloud o che
-la UI autenticata online sia stata verificata.
+La migration `0011` è stata collaudata su Supabase locale isolato e applicata
+al progetto Cloud. Le viste e funzioni Cloud rispondono via API; `/logbook`,
+`/logbook/month` e `/acquisition/stale` rispondono con redirect al login per
+visitatori anonimi. La UI autenticata online non è ancora stata verificata.
