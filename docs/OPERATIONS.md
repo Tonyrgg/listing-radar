@@ -1,6 +1,6 @@
 # Uso quotidiano
 
-La migration `0010` è applicata al progetto Cloud dal 28 settembre 2026. Questa procedura diventa disponibile nell'app online dopo il rilascio della web app. Il flusso è stato verificato su Supabase locale isolato.
+La migration `0010` è applicata al progetto Cloud dal 28 settembre 2026 e Vercel ha riportato riuscito il deploy del commit applicativo `5f05e49`. Il flusso è stato verificato su Supabase locale isolato; il percorso autenticato nell'app online resta da collaudare.
 
 1. Aprire `/acquisition/today`: appuntamenti, follow-up scaduti e lead A prima delle verifiche. Aprire ogni lead e registrare attività ed esito.
 2. Durante la zona aprire `/acquisition/zone`, filtrare località/via/priorità e usare Quick Add da `/acquisition` per cartelli, immobili vuoti, lavori o altre notizie. Indicare almeno indirizzo, motore e segnale; programmare la prossima azione.
