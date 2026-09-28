@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 const baseUrl = process.env.ACQUISITION_TEST_BASE_URL;
 const email = process.env.ACQUISITION_TEST_EMAIL;
@@ -39,10 +40,62 @@ test("manual sign to today queue, follow-up, acquisition and mandate", async ({p
   await expect(page).toHaveURL(/\/acquisition\/[0-9a-f-]+$/);
   const leadUrl = page.url();
   await expect(page.getByRole("heading",{name:address})).toBeVisible();
+  let propertyId:string|undefined;
+  const dbUrl = process.env.ACQUISITION_TEST_SUPABASE_URL;
+  const dbKey = process.env.ACQUISITION_TEST_SERVICE_ROLE_KEY;
+  if (dbUrl && dbKey) {
+    const db = createClient(dbUrl,dbKey,{auth:{persistSession:false}});
+    const location = await db.from("locations").insert({raw_text:address,locality:"Palombaio",
+      scope_state:"IN_SCOPE"}).select("id").single();
+    expect(location.error).toBeNull();
+    const property = await db.from("properties").insert({primary_location_id:location.data!.id})
+      .select("id").single();
+    expect(property.error).toBeNull();
+    const createdPropertyId = property.data!.id as string;
+    propertyId = createdPropertyId;
+    await page.getByRole("textbox",{name:"Collega immobile V2 per ID"}).fill(createdPropertyId);
+    await page.getByRole("button",{name:"Collega",exact:true}).click();
+    await expect(page.getByRole("link",{name:"Immobile V2"})).toBeVisible();
+  }
 
   await page.goto(`${baseUrl}/acquisition/today`);
-  await expect(page.getByText(address)).toBeVisible();
+  await expect(page.getByRole("link",{name:new RegExp(address)}).first()).toBeVisible();
+  await page.getByText("+ Registra attività").click();
+  const diaryForm = page.locator("details form");
+  await diaryForm.locator('[name="lead_id"]').selectOption({label:address});
+  await diaryForm.locator('[name="event_type"]').selectOption("phone_call");
+  await diaryForm.locator('[name="outcome"]').selectOption("attempted");
+  await diaryForm.locator('[name="note"]').fill("Tentativo rapido dal cockpit");
+  await diaryForm.locator('[name="next_action_type"]').fill("follow_up");
+  await diaryForm.locator('[name="next_action_at"]').fill(romeInput(new Date(Date.now()+86400000)));
+  await Promise.all([
+    page.waitForResponse(response=>response.request().method() === "POST"
+      && response.url().includes("/acquisition/today")),
+    diaryForm.getByRole("button",{name:"Registra"}).click(),
+  ]);
+  await page.goto(`${baseUrl}/acquisition/today`);
+  await page.getByText("+ Registra attività").click();
+  const signForm = page.locator("details form");
+  await signForm.locator('[name="lead_id"]').selectOption({label:address});
+  await signForm.locator('[name="event_type"]').selectOption("private_sign");
+  await signForm.locator('[name="note"]').fill("Cartello controllato");
+  await signForm.locator('[name="next_action_type"]').fill("property_check");
+  await signForm.locator('[name="next_action_at"]').fill(romeInput(new Date(Date.now()+172800000)));
+  await Promise.all([
+    page.waitForResponse(response=>response.request().method() === "POST"
+      && response.url().includes("/acquisition/today")),
+    signForm.getByRole("button",{name:"Registra"}).click(),
+  ]);
   await page.goto(leadUrl);
+  await expect(page.getByText("Tentativo rapido dal cockpit")).toBeVisible();
+  await expect(page.getByText("Cartello controllato")).toBeVisible();
+  await expect(page.getByRole("textbox",{name:"Tipo azione"})).toHaveValue("property_check");
+  if (propertyId) {
+    await page.goto(`${baseUrl}/casa/${propertyId}#diario`);
+    await expect(page.getByRole("heading",{name:"Diario della casa"})).toBeVisible();
+    await expect(page.getByText("Tentativo rapido dal cockpit")).toBeVisible();
+    await page.goto(leadUrl);
+  }
 
   const activity = page.locator("form").filter({has:page.getByRole("heading",{name:"Registra attività"})});
   await activity.locator('[name="activity_type"]').selectOption("phone_call");
@@ -51,8 +104,24 @@ test("manual sign to today queue, follow-up, acquisition and mandate", async ({p
   await activity.locator('[name="next_action_at"]').fill(romeInput(new Date(Date.now()+86400000)));
   await activity.getByRole("button",{name:"Registra"}).click();
   await expect(page.locator("main > header")).toContainText("FOLLOW_UP");
-  await expect(page.locator("section").filter({has:page.getByRole("heading",{name:"Timeline"})}))
-    .toContainText("phone_call");
+  await expect(page.locator("section").filter({has:page.getByRole("heading",{name:"Diario dell’opportunità"})}))
+    .toContainText("Telefonata");
+
+  const contactHref = await page.getByRole("link",{name:/Diario di Proprietario collaudo/}).getAttribute("href");
+  expect(contactHref).toBeTruthy();
+  await page.goto(`${baseUrl}${contactHref}`);
+  await expect(page.getByRole("heading",{name:"Diario della persona"})).toBeVisible();
+  await expect(page.locator("article").getByText("Telefonata",{exact:true}).first()).toBeVisible();
+  await page.goto(`${baseUrl}/logbook?filter=calls`);
+  await expect(page.getByRole("heading",{name:"Diario",exact:true})).toBeVisible();
+  await expect(page.getByRole("link",{name:new RegExp(address)}).first()).toBeVisible();
+  await page.goto(leadUrl);
+  await page.getByRole("button",{name:"+ Focus del mese"}).click();
+  await page.goto(`${baseUrl}/logbook/month`);
+  await expect(page.getByRole("link",{name:address}).first()).toBeVisible();
+  await page.goto(`${baseUrl}/cerca?q=${encodeURIComponent(address)}`);
+  await expect(page.getByRole("link",{name:new RegExp(address)}).first()).toBeVisible();
+  await page.goto(leadUrl);
 
   const booking = page.locator("form").filter({has:page.getByRole("button",{name:"Fissa acquisizione"})});
   await booking.locator('[name="scheduled_at"]').fill(romeInput(new Date(Date.now()+86400000)));

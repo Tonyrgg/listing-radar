@@ -20,3 +20,24 @@
 `property_requests` mantiene cliente, criteri, stato e match; la migration 0010 aggiunge `needs_to_sell_first`, `property_to_sell_id`, `sale_situation_notes`. Le altre entità CRM e del worker restano distinte.
 
 Tutte le nuove tabelle hanno RLS: lettura per utenti autenticati e scrittura service role usata dalle server actions dopo `requireUser()`. Non è consentito accesso anonimo ai dati commerciali.
+
+## Diario universale e Focus
+
+La migration `0011` aggiunge `logbook_entries` (attività senza lead e match
+buyer significativi) e `monthly_focus` (un soggetto per riga e mese). I loro
+FK possono riferirsi a `properties` V2, `acquisition_contacts`, `clients`,
+`acquisition_leads` e `property_requests`; le tabelle originali restano
+intatte. `logbook_entries.dedupe_key` è univoca per eventi automatici.
+
+`universal_logbook` è una vista `UNION ALL`: legge `events`, segnali manuali,
+attività, appuntamenti, lead, richieste e `logbook_entries`. Il segnale che
+punta a un `event_id` V2 non crea un secondo evento nella vista. L'attività
+`system_signal` e quella `appointment` sono wrapper esclusi. I match del
+portafoglio non usano `properties.id`: il loro `portfolio_property_id` resta
+nel JSON di `logbook_entries.metadata`.
+
+`monthly_focus_overview` aggiunge nome, stato, prossima azione e ultimo
+movimento. `logbook_month_summary` aggrega per mese civile italiano.
+`acquisition_stale` individua scadenze, azioni assenti e lead fermi. Le due
+viste trasversali sono concesse solo a `service_role` dopo autenticazione nel
+server; il browser non riceve accesso diretto ai dati CRM storici.

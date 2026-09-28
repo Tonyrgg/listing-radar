@@ -3,6 +3,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { readNow } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "KPI acquisizioni" };
 type KpiSnapshot = {
   metrics: {
     new_signals: number; verified_signals: number; new_leads: number;

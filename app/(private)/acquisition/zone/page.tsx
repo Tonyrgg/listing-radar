@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Zona acquisizioni" };
 export default async function ZonePage({searchParams}: {searchParams: Promise<{locality?:string; street?:string; priority?:string; status?:string; signal?:string; to_verify?:string; follow_up?:string}>}) {
   const filters = await searchParams;
   const db = getSupabaseServiceClient();

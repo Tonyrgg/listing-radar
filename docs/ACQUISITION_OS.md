@@ -19,3 +19,18 @@ Le attività registrano tipo, esito, nota, autore e data. Un'attività può prog
 La vista Oggi è paginata a 50 elementi e ordina nel database: acquisizioni odierne, azioni scadute, lead A, azioni odierne e B prossimi alla scadenza. I tentativi di contatto richiedono un contatto collegato non bloccato e con le fonti sensibili già revisionate.
 
 I KPI sono aggregazioni SQL senza limite di righe nel periodo, suddivise per fonte e tipo segnale. Le acquisizioni svolte e gli incarichi usano la data di completamento; quelle fissate usano la data di creazione. I tassi mostrati sono rapporti fra eventi nello stesso periodo, non conversioni di coorte.
+
+## Diario e cockpit
+
+La vista `universal_logbook` della migration `0011` porta eventi V2, notizie,
+telefonate, appuntamenti, richieste e attività manuali in una cronologia
+comune. La registrazione di una chiamata su un lead continua a scrivere
+`acquisition_activities`; appare subito nelle timeline di opportunità,
+persona, immobile, Diario e mese. Un ribasso collegato a un lead appare come
+un singolo evento di mercato. I match buyer forti sono registrati una volta
+al primo superamento della soglia 90; ricalcoli ordinari non creano rumore.
+
+`/acquisition/today` presenta scaduti, azioni del giorno, Focus, zona e
+anomalie senza prossima azione. Il Focus mensile richiede una selezione
+esplicita anche nel mese successivo. `/acquisition/stale` permette soglie
+modificabili per A/B/C. Vedere `docs/UNIVERSAL_LOGBOOK.md` per il modello.

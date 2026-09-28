@@ -8,6 +8,7 @@ import { getProperty } from "@/lib/matching/repository";
 import { vistaCasa } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleUnavailable } from "@/app/(private)/lifecycle/_components/ui";
+import { PropertyLogbook } from "@/components/property-logbook";
 
 import { SchedaMercato } from "./mercato";
 import { SchedaNostra } from "./nostra";
@@ -40,7 +41,8 @@ export default async function CasaPage({
   ]);
 
   if (vistaMercato.available && vistaMercato.data) {
-    return <SchedaMercato detail={vistaMercato.data} user={user} now={now} />;
+    return <><SchedaMercato detail={vistaMercato.data} user={user} now={now} />
+      <PropertyLogbook propertyId={id}/></>;
   }
 
   /* Se non è una casa osservata, può essere una che teniamo noi: gli

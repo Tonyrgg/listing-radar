@@ -3,6 +3,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { createSignalAction } from "./actions";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Notizie e acquisizioni" };
 const engines = ["fsbo_radar","crm_mining","buyer_to_seller","abandoned_property",
   "building_event","smart_zone","professional_network","neighborhood_intelligence",
   "property_intelligence","succession","private_sign","condominium_works","moving",
@@ -46,7 +47,7 @@ export default async function AcquisitionPage() {
     </form>
     <section><h2 className="mb-3 text-lg font-semibold">Pipeline recente</h2>
       <div className="space-y-2">{leads?.map(lead=><Link key={lead.id} href={`/acquisition/${lead.id}`}
-        className="block rounded border p-3 hover:bg-gray-50"><strong>{lead.address}</strong> · {lead.locality}
+        className="block rounded border p-3 hover:bg-[var(--lr-raised)]"><strong>{lead.address}</strong> · {lead.locality}
         <span className="ml-3">{lead.status} · {lead.priority} · {lead.source_type}</span>
         {lead.possible_duplicate_of && <span className="ml-3">Possibile duplicato</span>}
         {!lead.next_action_at && !["WON","FUTURE","NOT_INTERESTED","LOST"].includes(lead.status) &&

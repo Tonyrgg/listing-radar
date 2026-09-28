@@ -2,9 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { utcToRomeLocalInput } from "@/lib/acquisition/time";
+import { parseMonth,type LogbookEvent } from "@/lib/logbook";
+import { LogbookEventRow } from "@/components/logbook-event-row";
+import { FocusToggle } from "@/components/focus-toggle";
 import { addActivityAction,attachContactAction,bookAcquisitionAction,completeAcquisitionAction,linkPropertyAction,reviewContactAction,updateLeadAction,verifySignalAction } from "../actions";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Opportunità acquisizione" };
 const states = ["NEW","VERIFY","TO_CONTACT","CONTACTED","CONVERSATION","FOLLOW_UP",
   "ACQUISITION_BOOKED","ACQUISITION_DONE","WON","FUTURE","NOT_INTERESTED","LOST"];
 const activityTypes = ["phone_call","whatsapp","sms","email","in_person","zone_visit",
@@ -12,14 +16,17 @@ const activityTypes = ["phone_call","whatsapp","sms","email","in_person","zone_v
 export default async function LeadPage({params}:{params:Promise<{id:string}>}) {
   const {id} = await params;
   const db = getSupabaseServiceClient();
-  const [leadResult, signalsResult,activitiesResult,appointmentsResult,requestsResult] = await Promise.all([
+  const month = parseMonth();
+  const [leadResult, signalsResult,eventsResult,appointmentsResult,requestsResult,focusResult] = await Promise.all([
     db.from("acquisition_leads").select("*,acquisition_contacts(*)").eq("id",id).maybeSingle(),
     db.from("acquisition_signals").select("*").eq("lead_id",id).order("observed_at",{ascending:false}).limit(100),
-    db.from("acquisition_activities").select("*").eq("lead_id",id).order("occurred_at",{ascending:false}).limit(100),
+    db.from("universal_logbook").select("id,event_category,event_type,source_type,property_id,contact_id,client_id,lead_id,request_id,occurred_at,title,description,outcome,importance,requires_action,next_action_type,next_action_at,address,locality,person_name,automatic,sensitive")
+      .eq("lead_id",id).order("occurred_at",{ascending:false}).limit(100),
     db.from("acquisition_appointments").select("*").eq("lead_id",id).order("scheduled_at",{ascending:false}).limit(20),
     db.from("acquisition_lead_requests").select("request_id").eq("lead_id",id).limit(100),
+    db.from("monthly_focus").select("id").eq("month_start",`${month}-01`).eq("lead_id",id).limit(1),
   ]);
-  for (const result of [leadResult,signalsResult,activitiesResult,appointmentsResult,requestsResult])
+  for (const result of [leadResult,signalsResult,eventsResult,appointmentsResult,requestsResult,focusResult])
     if (result.error) throw new Error(`Scheda acquisizione: ${result.error.message}`);
   const lead = leadResult.data;
   if (!lead) notFound();
@@ -28,8 +35,12 @@ export default async function LeadPage({params}:{params:Promise<{id:string}>}) {
     ...(requestsResult.data ?? []).map(row=>row.request_id)])];
   const openAppointment = appointmentsResult.data?.find(x=>!x.completed_at);
   return <main className="space-y-6 p-4 md:p-6"><Link href="/acquisition" className="underline">Notizie</Link>
-    <header><h1 className="text-2xl font-semibold">{lead.address}</h1><p>{lead.locality} · {lead.source_type} · {lead.status}</p>
-      {lead.property_id && <Link href={`/lifecycle/archive/${lead.property_id}`} className="underline">Immobile V2</Link>}
+    <header><div className="flex flex-wrap items-center justify-between gap-2">
+      <h1 className="text-2xl font-semibold">{lead.address}</h1>
+      <FocusToggle month={month} entity="lead" id={id} active={!!focusResult.data?.length}/>
+      </div><p>{lead.locality} · {lead.source_type} · {lead.status}</p>
+      {lead.property_id && <Link href={`/casa/${lead.property_id}#diario`} className="underline">Immobile V2</Link>}
+      {contact && <Link href={`/contacts/${contact.id}`} className="ml-3 underline">Diario di {contact.full_name}</Link>}
       {requestIds.map((requestId,index)=><Link key={requestId} href={`/requests/${requestId}`}
         className="ml-3 underline">Richiesta buyer {index+1}</Link>)}
       {lead.possible_duplicate_of && <p>Possibile duplicato: <Link href={`/acquisition/${lead.possible_duplicate_of}`} className="underline">confronta</Link></p>}
@@ -115,7 +126,9 @@ export default async function LeadPage({params}:{params:Promise<{id:string}>}) {
         <select name="verification_status" defaultValue={x.verification_status} className="border p-1">
           {["unverified","verified","rejected"].map(s=><option key={s}>{s}</option>)}</select>
         <button className="border p-1">Salva</button></form></div>)}</section>
-    <section><h2 className="text-lg font-semibold">Timeline</h2>{activitiesResult.data?.map(x=><p key={x.id} className="border-b py-2">
-      {new Date(x.occurred_at).toLocaleString("it-IT",{timeZone:"Europe/Rome"})} · {x.activity_type} · {x.outcome} · {x.note}</p>)}</section>
+    <section><h2 className="text-lg font-semibold">Diario dell’opportunità</h2>
+      {(eventsResult.data as LogbookEvent[] ?? []).map(x=><LogbookEventRow key={x.id} event={x}/>)}
+      <Link href={`/logbook?lead=${id}`} className="mt-2 inline-block text-sm underline">Tutto lo storico →</Link>
+    </section>
   </main>;
 }

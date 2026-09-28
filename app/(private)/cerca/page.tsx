@@ -53,7 +53,7 @@ export default async function CercaPage({
       <PageHeader
         eyebrow="Cerca"
         title={termine ? `“${termine}”` : "Cerca in tutto"}
-        description="Case osservate sul mercato, case che teniamo noi, clienti e zone: tutto insieme, senza dover sapere dove sta."
+        description="Case, opportunità, persone, richieste e zone in un'unica ricerca."
         actions={
           termine ? (
             <Chip tone={risultati.quante ? "neutral" : "warn"}>
@@ -67,7 +67,7 @@ export default async function CercaPage({
         <Ricerca
           label="Cerca in tutto"
           defaultValue={termine}
-          placeholder="via, zona, nome di un cliente, agenzia…"
+          placeholder="via, zona, nome, telefono, agenzia…"
         />
       </form>
 
@@ -88,6 +88,28 @@ export default async function CercaPage({
           />
         </Card>
       ) : null}
+
+      {risultati.leads.length ? <Card>
+        <CardHeader title="Opportunità di acquisizione" meta="Notizie e prossime azioni."/>
+        {risultati.leads.map(lead=><Link key={lead.id} href={`/acquisition/${lead.id}`}
+          className="block border-t border-[var(--lr-line-quiet)] px-3 py-2.5 text-sm first:border-t-0 hover:bg-[var(--lr-raised)]">
+          <strong>{lead.address}</strong> · {lead.locality} · {lead.priority} · {lead.status}
+        </Link>)}
+      </Card> : null}
+
+      {risultati.contacts.length || risultati.buyers.length ? <Card>
+        <CardHeader title="Persone" meta="Contatti acquisizione e clienti CRM."/>
+        {risultati.contacts.map(person=><Link key={`contact:${person.id}`}
+          href={`/contacts/${person.id}`}
+          className="block border-t border-[var(--lr-line-quiet)] px-3 py-2.5 text-sm first:border-t-0 hover:bg-[var(--lr-raised)]">
+          <strong>{person.full_name}</strong> · {person.phone ?? person.role}
+        </Link>)}
+        {risultati.buyers.map(person=><Link key={`client:${person.id}`}
+          href={`/contacts/${person.id}`}
+          className="block border-t border-[var(--lr-line-quiet)] px-3 py-2.5 text-sm first:border-t-0 hover:bg-[var(--lr-raised)]">
+          <strong>{person.full_name ?? "Cliente CRM"}</strong> · {person.phone ?? ""}
+        </Link>)}
+      </Card> : null}
 
       {risultati.case.length ? (
         <Card>

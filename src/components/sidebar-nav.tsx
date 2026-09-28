@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch, ClipboardList } from "lucide-react";
+import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch, ClipboardList, NotebookTabs } from "lucide-react";
 
 /**
  * Cinque destinazioni, più le impostazioni tenute separate in fondo.
@@ -12,17 +12,31 @@ import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch, ClipboardList } fr
 const primaryItems = [
   {
     href: "/acquisition/today",
+    label: "Oggi",
+    hint: "Il lavoro da fare",
+    icon: Inbox,
+    owns: ["/acquisition/today"],
+  },
+  {
+    href: "/acquisition",
     label: "Acquisizioni",
-    hint: "Notizie e prossime azioni",
+    hint: "Notizie e opportunità",
     icon: ClipboardList,
     owns: ["/acquisition"],
   },
   {
     href: "/dashboard",
-    label: "Oggi",
-    hint: "Il lavoro aperto",
-    icon: Inbox,
+    label: "Mercato",
+    hint: "Cambi e occasioni",
+    icon: Radar,
     owns: ["/dashboard", "/incoming", "/reports"],
+  },
+  {
+    href: "/logbook",
+    label: "Diario",
+    hint: "Storico e Focus",
+    icon: NotebookTabs,
+    owns: ["/logbook", "/contacts", "/cerca"],
   },
   {
     href: "/listings",
@@ -65,6 +79,7 @@ const settingsItem = {
 } as const;
 
 function isActive(pathname: string, owns: readonly string[]) {
+  if (pathname.startsWith("/acquisition/today") && owns.includes("/acquisition")) return false;
   return owns.some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
 
