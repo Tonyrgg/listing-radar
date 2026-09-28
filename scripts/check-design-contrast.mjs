@@ -68,7 +68,7 @@ const RULES = [
 ];
 
 const themes = [
-  ["scuro", readTokens(readBlock(":root {"))],
+  ["scuro", readTokens(readBlock(':root[data-theme="dark"]'))],
   ["chiaro", readTokens(readBlock(':root[data-theme="light"]'))],
 ];
 

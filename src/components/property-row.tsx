@@ -125,11 +125,11 @@ export function PropertyRow({
       <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-center gap-1.5">
         {/* Chi vende: un'icona e un nome, senza etichette in più. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
             {daPrivato ? (
-              <UserRound aria-hidden="true" className="size-3.5 text-[var(--lr-warn)]" />
+              <UserRound aria-hidden="true" className="size-3.5 shrink-0 text-[var(--lr-warn)]" />
             ) : (
-              <Building2 aria-hidden="true" className="size-3.5" />
+              <Building2 aria-hidden="true" className="size-3.5 shrink-0" />
             )}
             {daPrivato ? (
               <span className="text-[var(--lr-warn)]">Da privato</span>

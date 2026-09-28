@@ -59,7 +59,7 @@ Il tono dell'interfaccia è sobrio, operativo e affidabile. Evitare dashboard de
 
 ### Web app
 
-- Next.js 16.2.9 con App Router;
+- Next.js 16.3.6 con App Router;
 - React 19.2;
 - TypeScript;
 - Tailwind CSS 4 e CSS Modules dove opportuno;
@@ -125,6 +125,9 @@ Route Next.js. Le aree private sono sotto `app/(private)/`.
 Route principali (dopo la riscrittura del 25 agosto 2026):
 
 - `/dashboard` — «Oggi»: le fasce del lavoro aperto;
+- `/acquisition/today` — coda commerciale di appuntamenti, follow-up e lead;
+- `/acquisition` — Quick Add delle notizie e pipeline acquisizione;
+- `/acquisition/zone`, `/acquisition/kpi` — lavoro territoriale e misure;
 - `/incoming` — annunci da completare arrivati dalle email;
 - `/reports` — «Giorno per giorno»: i movimenti di mercato raccolti per data;
 - `/fonti` — «Di chi ti puoi fidare oggi»: salute e inventario di ogni agenzia.
@@ -163,6 +166,7 @@ Componenti condivisi, shell, navigazioni, mappe, matching e primitive UI. Un Ser
 ### `src/lib/`
 
 - `property-lifecycle/`: adapter, bootstrap, identity, lifecycle, opportunity, building, persistenza e read model V2;
+- `acquisition/`: regole di contatto e fuso orario del funnel commerciale; route e azioni sono in `app/(private)/acquisition/`, modello e uso in `docs/ACQUISITION_OS.md`;
 - `matching/`: motore, scoring, spiegazioni, importer e repository commerciale;
 - `scrapers/`: provider del Listing Radar legacy;
 - `listings/`: identità, scoring, completezza e upsert legacy;

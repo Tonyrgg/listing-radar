@@ -11,11 +11,11 @@
   --lr-font-sans: "Instrument Sans", "Segoe UI", sans-serif;
   --lr-font-mono: "IBM Plex Mono", "Cascadia Mono", monospace;
   /* Daylight workspace: neutral, calm and precise on office monitors. */
-  --lr-canvas: #f1f4f2;
+  --lr-canvas: #e3eae6;
   --lr-surface: #ffffff;
-  --lr-raised: #e9efec;
+  --lr-raised: #dfe8e2;
 
-  --lr-line: #9caeaa;
+  --lr-line: #72827f;
   --lr-line-quiet: #d7e0dd;
 
   --lr-ink: #16363a;
@@ -99,7 +99,7 @@
    * guardia `:not([data-theme="light"])` lascia vincere la scelta esplicita. */
   :root:not([data-theme="light"]) {
     --lr-canvas: #10282e;
-    --lr-surface: #17353c;
+    --lr-surface: #19383f;
     --lr-raised: #22464e;
     --lr-line: #91a8ac;
     --lr-line-quiet: #35555b;
@@ -132,10 +132,10 @@
 }
 
 :root[data-theme="light"] {
-  --lr-canvas: #f1f4f2;
+  --lr-canvas: #e3eae6;
   --lr-surface: #ffffff;
-  --lr-raised: #e9efec;
-  --lr-line: #9caeaa;
+  --lr-raised: #dfe8e2;
+  --lr-line: #72827f;
   --lr-line-quiet: #d7e0dd;
   --lr-ink: #16363a;
   --lr-ink-2: #3f5c61;
@@ -166,7 +166,7 @@
 
 :root[data-theme="dark"] {
   --lr-canvas: #10282e;
-  --lr-surface: #17353c;
+  --lr-surface: #19383f;
   --lr-raised: #22464e;
   --lr-line: #91a8ac;
   --lr-line-quiet: #35555b;

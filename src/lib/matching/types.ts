@@ -81,6 +81,9 @@ export interface InternalZone {
 
 export interface PropertyRequest {
   id: string;
+  needs_to_sell_first?: "yes" | "no" | "unknown";
+  property_to_sell_id?: string | null;
+  sale_situation_notes?: string | null;
   client_id: string | null;
   title: string | null;
   contract_type: ContractType;

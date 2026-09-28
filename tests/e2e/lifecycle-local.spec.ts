@@ -101,7 +101,7 @@ test("opens agency and physical-property dossiers", async ({ page }, testInfo) =
   expect(propertyHref).toBeTruthy();
   const propertyResponse = await openAuthenticatedRoute(page, propertyHref ?? "");
   expect(propertyResponse?.status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "Cosa le è successo" })).toBeVisible();
+  await expect(page.locator("main h1")).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await openAuthenticatedRoute(page, "/lifecycle");

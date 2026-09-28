@@ -196,17 +196,17 @@ export function RigaDiCasa({
         {/* Chi la tiene: un'icona e un nome, senza etichette in più. */}
         {mostraChi ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
               {riga.chi === "privato" || riga.chi === "noi" ? (
                 <UserRound
                   aria-hidden="true"
                   className={clsx(
-                    "size-3.5",
+                    "size-3.5 shrink-0",
                     riga.chi === "privato" ? "text-[var(--lr-warn)]" : "text-[var(--lr-ink)]",
                   )}
                 />
               ) : (
-                <Building2 aria-hidden="true" className="size-3.5" />
+                <Building2 aria-hidden="true" className="size-3.5 shrink-0" />
               )}
               {riga.chi === "noi" ? (
                 <span className="font-medium text-[var(--lr-ink)]">La teniamo noi</span>

@@ -75,7 +75,7 @@ export default async function AscensoriPage() {
   return (
     <div className="space-y-5">
       <MatchingSectionHeader
-        eyebrow="Portafoglio"
+        eyebrow="Commerciale"
         title="L'ascensore delle nostre case"
         description={
           mancanti

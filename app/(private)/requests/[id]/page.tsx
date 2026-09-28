@@ -45,6 +45,7 @@ import type { Client, MatchClassification, PropertyRequest } from "@/lib/matchin
 import styles from "../requests.module.css";
 
 import type { Metadata } from "next";
+import { createSignalAction, updateSellFirstAction } from "@/app/(private)/acquisition/actions";
 
 export const metadata: Metadata = { title: "Dettaglio richiesta" };
 
@@ -73,6 +74,29 @@ export default async function RequestDetailPage({
 
   return (
     <div className={styles.page}>
+      <section className="mb-4 rounded border p-4">
+        <h2 className="font-semibold">Deve vendere prima di acquistare?</h2>
+        <form action={updateSellFirstAction.bind(null,id)} className="flex flex-wrap gap-2">
+          <select name="needs_to_sell_first" defaultValue={request.needs_to_sell_first ?? "unknown"} className="border p-2">
+            <option value="unknown">Da verificare</option><option value="yes">Sì</option><option value="no">No</option>
+          </select>
+          <input name="sale_situation_notes" defaultValue={request.sale_situation_notes ?? ""} placeholder="Note situazione" className="border p-2" />
+          <input name="property_to_sell_id" defaultValue={request.property_to_sell_id ?? ""} placeholder="ID immobile V2 da vendere" className="border p-2" />
+          <button className="border p-2">Salva</button>
+        </form>
+        {request.needs_to_sell_first === "yes" && <form action={createSignalAction} className="mt-3 flex flex-wrap gap-2">
+          <input type="hidden" name="request_id" value={id} />
+          <input type="hidden" name="source_type" value="buyer_to_seller" />
+          <input type="hidden" name="signal_type" value="buyer_needs_to_sell" />
+            <select name="locality" className="border p-2" aria-label="Località immobile da vendere">
+              <option>Bitonto</option><option>Palombaio</option><option>Mariotto</option>
+            </select>
+          <input type="hidden" name="priority" value="B" />
+          {request.property_to_sell_id && <input type="hidden" name="property_id" value={request.property_to_sell_id} />}
+          <input required name="address" placeholder="Indirizzo dell'immobile da vendere" className="border p-2" />
+          <button className="border p-2">Crea notizia seller</button>
+        </form>}
+      </section>
       <header className={styles.detailHeader}>
         <Link className={styles.backLink} href="/requests">
           <ArrowLeft aria-hidden="true" className="size-4" /> Tutte le richieste

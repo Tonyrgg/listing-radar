@@ -56,7 +56,7 @@ export default async function TodayPage() {
       <PageHeader
         eyebrow={oggi.charAt(0).toUpperCase() + oggi.slice(1)}
         title="Oggi"
-        actions={<QuickRequestButton />}
+        actions={<div className="flex gap-2"><Link href="/acquisition/today" className={buttonClass("quiet", { compact: true })}>Coda acquisizioni</Link><QuickRequestButton /></div>}
       />
 
       {/* Fascia 0 — quanto puoi fidarti di quello che stai per leggere. */}

@@ -3,13 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch } from "lucide-react";
+import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch, ClipboardList } from "lucide-react";
 
 /**
  * Cinque destinazioni, più le impostazioni tenute separate in fondo.
  * Ogni sezione porta dentro le proprie sotto-pagine: niente più orfani.
  */
 const primaryItems = [
+  {
+    href: "/acquisition/today",
+    label: "Acquisizioni",
+    hint: "Notizie e prossime azioni",
+    icon: ClipboardList,
+    owns: ["/acquisition"],
+  },
   {
     href: "/dashboard",
     label: "Oggi",

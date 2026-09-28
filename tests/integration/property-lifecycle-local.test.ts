@@ -1107,6 +1107,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     const queued = await queue.enqueue({
       jobType: "SYNC_AGENCY",
       agencyId: agency.id,
+      priority: 1_000_000,
       dedupeKey: "integration:queue-claim",
     });
     const claimed = await queue.claim("integration-worker", 60);
@@ -1117,6 +1118,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     const expiring = await queue.enqueue({
       jobType: "SYNC_AGENCY",
       agencyId: agency.id,
+      priority: 1_000_000,
       maxAttempts: 1,
       dedupeKey: "integration:queue-expired-final-attempt",
     });
@@ -1126,7 +1128,11 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       .update({ lease_expires_at: "2020-01-01T00:00:00.000Z" })
       .eq("id", expiring.id);
     expect(expiredLease.error).toBeNull();
-    expect(await queue.claim("integration-recovery-worker", 60)).toBeNull();
+    const recovered = await queue.claim("integration-recovery-worker", 60);
+    expect(recovered?.id).not.toBe(expiring.id);
+    if (recovered) {
+      await queue.complete(recovered.id, "integration-recovery-worker");
+    }
     const deadLetter = await db
       .from("lifecycle_jobs")
       .select("status")

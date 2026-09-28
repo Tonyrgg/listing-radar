@@ -623,6 +623,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         let signature = "";
         let stable = 0;
         let confirmedEmpty = false;
+        let unconfirmedSettled = 0;
         for (let attempt = 0; attempt < 2 && stable < 3; attempt += 1) {
           for (let wait = 0; wait < 35 && stable < 3; wait += 1) {
             await this.assertSession();
@@ -646,6 +647,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
             // popolare i Clienti e' aperta. Un record visibile, invece, e'
             // prova sufficiente anche se Lightning tiene viva la telemetria.
             const busy = await this.searchIsBusy() || (!unique.length && requests.pending());
+            // A rendered search page with no client proof, spinner, or pending
+            // request is ambiguous. Retry this property promptly instead of
+            // waiting through two full polling windows and timing out.
+            unconfirmedSettled = ready && !busy && !unique.length && !confirmedEmpty
+              ? unconfirmedSettled + 1 : 0;
+            if (unconfirmedSettled >= 8) {
+              throw new ImportV2Error(
+                "La ricerca CF mostra una schermata ambigua senza risultati verificabili. Riprovo questo immobile.",
+                "transient_portal", { retryable: true, details: { action: "person-tax-code-search-ambiguous" } },
+              );
+            }
             const currentSignature = busy ? "loading" : unique.length ? JSON.stringify(unique.map((record) => record.id).sort()) : confirmedEmpty ? "empty" : "loading";
             stable = currentSignature !== "loading" && currentSignature === signature ? stable + 1 : 0;
             signature = currentSignature;

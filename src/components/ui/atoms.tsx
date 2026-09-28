@@ -174,11 +174,11 @@ export function Fonte({
 }>) {
   return (
     <span
-      className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap", className)}
+      className={clsx("inline-flex max-w-full min-w-0 items-center gap-1.5", className)}
       title={note ?? healthTitle[health]}
     >
       <span aria-hidden="true" className={clsx("size-1.5 shrink-0 rounded-full", healthDot[health])} />
-      <span>{name}</span>
+      <span className="min-w-0 truncate">{name}</span>
     </span>
   );
 }
