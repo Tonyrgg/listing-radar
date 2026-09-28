@@ -196,6 +196,10 @@ npm test
 npm run build
 ```
 
+`npm run test:ci` esegue i test senza Chrome reale. Le suite browser restano in
+`npm test` per la verifica sulla macchina di lavoro; dopo modifiche alla ricerca
+cliente eseguire anche `npx vitest run tests/import-v2-person-search.test.ts --testTimeout=20000 --maxWorkers=1`.
+
 Gli stessi comandi `worker:*` sono disponibili anche dalla root del progetto.
 
 Il check verifica configurazione, file e colonne Excel, Supabase/migration, collegamento CDP, schede aperte e presenza apparente delle sessioni. Elenca titolo e URL delle schede senza stampare cookie o token.

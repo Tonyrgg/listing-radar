@@ -14,9 +14,18 @@ import { defineConfig } from "vitest/config";
  */
 const browserBackedTests = [
   "tests/adapters.test.ts",
+  "tests/chrome-tab-driveability.test.ts",
   "tests/crm-person-seeds.test.ts",
+  "tests/import-v2-collapsed-merge.test.ts",
+  "tests/import-v2-filter-drawer.test.ts",
+  "tests/import-v2-person-search.test.ts",
+  "tests/import-v2-tecnocloud-ui-port.test.ts",
+  "tests/import-v2-workflows.test.ts",
   "tests/mandates.test.ts",
+  "tests/portoni.test.ts",
   "tests/requests.test.ts",
+  "tests/sister-keepalive.test.ts",
+  "tests/sister-owner-expansion.test.ts",
   "tests/sister-physical-person-navigation.test.ts",
   "tests/sister-street-run.test.ts",
 ];
