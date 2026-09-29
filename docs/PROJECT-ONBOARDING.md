@@ -589,6 +589,14 @@ lavorazioni ordinarie conservano il percorso storico e possono continuare a
 creare un immobile quando tutte le verifiche anti-duplicato ne provano
 l'assenza.
 
+Nella Via completa ordinaria il nome in SISTER è obbligatorio per la ricerca;
+«Nome da importare nel Cloud» è facoltativo. Se compilato, il worker lo usa
+come nome della via negli immobili acquisiti da quella ricerca, conservando
+civico e dettagli e lasciando l'indirizzo SISTER nell'archivio. Gli immobili
+raccolti sviluppando i proprietari mantengono il loro indirizzo. La scelta
+resta nel job e nel checkpoint, quindi vale anche dopo la ripresa o l'import
+di un'acquisizione conservata. Se il campo è vuoto si importa il nome SISTER.
+
 ### Sorveglianza automatica delle run
 
 Il collaudatore non è una lavorazione e non ha una scheda o un comando manuale.

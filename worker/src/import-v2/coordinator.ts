@@ -27,7 +27,7 @@ export class ImportV2Coordinator {
   ) {}
 
   async runJob(
-    job: Pick<JobRow, "id">,
+    job: Pick<JobRow, "id"> & Partial<Pick<JobRow, "acquisition">>,
     activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
     onProgress?: (progress: ImportV2Progress) => void,
     shouldPauseAfterItem?: () => boolean,

@@ -95,6 +95,8 @@ export type SisterStreetRunCheckpoint = {
     acquireOwners: boolean;
     /** Se true la raccolta si ferma nel registro prima dell'import Cloud. */
     keepAcquisition?: boolean;
+    /** Nome facoltativo della via da scrivere nel Cloud per le lavorazioni ordinarie. */
+    importStreet?: string | null;
     filters: StreetPropertyFilters;
     /** Dizione usata esclusivamente nel filtro Indirizzo del Cloud. */
     refinementCloudStreet?: string | null;
@@ -263,6 +265,7 @@ type StreetRunOptions = {
   importJobId?: string | null;
   filters?: Partial<StreetPropertyFilters>;
   engine?: "lavorazione" | "rifinitura" | "portoni";
+  importStreet?: string | null;
   refinementCloudStreet?: string | null;
   keepAcquisition?: boolean;
   /** @deprecated Compatibilita con i checkpoint storici. */
@@ -404,6 +407,7 @@ export class SisterStreetRun {
             acquireOwners: this.acquireOwners,
             keepAcquisition: this.options.keepAcquisition === true,
             filters: this.filters,
+            importStreet: this.options.importStreet?.replace(/\s+/g, " ").trim() || null,
             refinementCloudStreet: this.options.refinementCloudStreet?.replace(/\s+/g, " ").trim()
               || this.options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim()
               || null,

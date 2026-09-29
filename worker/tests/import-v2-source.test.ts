@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { importV2SourceFactories, importV2Sources } from "../src/import-v2/source.js";
+import { addressForImport, importV2SourceFactories, importV2Sources } from "../src/import-v2/source.js";
 import { inspectAcquisitionQueue } from "../src/services/acquisition-queue.js";
 import { buildPlan } from "../src/import-v2/identity.js";
 import { ImportV2Engine } from "../src/import-v2/engine.js";
@@ -23,6 +23,30 @@ const person: PersonRow = {
 };
 
 describe("Import V2 acquisition bridge", () => {
+  it("usa il nome Cloud scelto per la via acquisita, conserva il civico e non cambia le espansioni", () => {
+    const graph = acquired();
+    graph.properties[0]!.address = "Via Cesare Cantu n. 12 INTERNO 3";
+    graph.properties[0]!.raw_payload = { long_run: { variantId: "1" } };
+    graph.properties.push({ ...property, id: "expanded", address: "Via Roma 8", raw_payload: { owner_expansion: { depth: 1 } } });
+    graph.ownerships.push({ ...graph.ownerships[0]!, id: "expanded-link", property_id: "expanded" });
+    const job = { id: "job-id", acquisition: { runSettings: { street: "Via Cesare Cantù", importStreet: "Via Cesare Cantù" } } };
+    expect(importV2Sources(job, graph, activity).map(source => source.fullAddress)).toEqual([
+      "Via Cesare Cantù n. 12 INTERNO 3", "Via Roma 8",
+    ]);
+    expect(graph.properties[0]!.address).toBe("Via Cesare Cantu n. 12 INTERNO 3");
+  });
+
+  it("non sostituisce vie simili o diverse", () => {
+    expect(addressForImport("Via Romana 7", "Via Roma", "Via Roma Nuova")).toBe("Via Romana 7");
+    expect(addressForImport("Via Roma 7", "Via Roma", "Via Roma Nuova")).toBe("Via Roma Nuova 7");
+    const graph = acquired();
+    graph.properties[0]!.address = "Via Romana 7";
+    graph.properties[0]!.raw_payload = { long_run: { variantId: "1" } };
+    const [source] = importV2Sources({ id: "job-id", acquisition: { runSettings: {
+      street: "Via Roma", importStreet: "Via Roma Nuova",
+    } } }, graph, activity);
+    expect(source?.acquisitionError).toMatch(/non corrisponde/);
+  });
   it.each(["acquisition_skipped", "acquisition_failed", "skipped"])("rispetta lo stato %s anche senza metadati nel payload", status => {
     expect(importV2Sources({ id: "job-id" }, {
       properties: [{ ...property, processing_status: status, raw_payload: null }],

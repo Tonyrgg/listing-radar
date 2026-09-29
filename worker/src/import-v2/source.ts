@@ -2,6 +2,7 @@ import type { JobRow, PersonRow, PropertyRow } from "../services/repository.js";
 import type { SourceProperty } from "./model.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inspectAcquisitionQueue, type AcquiredGraph } from "../services/acquisition-queue.js";
+import { normalizeSisterStreet } from "../core/street-scan.js";
 export type { AcquiredGraph } from "../services/acquisition-queue.js";
 
 export type ActivitySource = SourceProperty["activity"];
@@ -10,6 +11,19 @@ export type ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: Set<number>
 function optionalString(value: unknown): string | null {
   const result = typeof value === "string" ? value.trim() : "";
   return result || null;
+}
+
+/** Cambia solo la via acquisita in questa run, lasciando civico e dettagli SISTER intatti. */
+export function addressForImport(address: string, sisterStreet: string, importStreet: string): string {
+  const expected = normalizeSisterStreet(sisterStreet);
+  if (!expected || !importStreet.trim()) return address;
+  for (let end = 1; end <= address.length; end += 1) {
+    if (normalizeSisterStreet(address.slice(0, end)) !== expected) continue;
+    const suffix = address.slice(end);
+    if (!/^\s*(?:,?\s*(?:N(?:\.|°|º)?\s*)?\d|,?\s*S\.?\s*N\.?\s*C\.?|$)/i.test(suffix)) continue;
+    return `${importStreet.trim()}${suffix}`;
+  }
+  return address;
 }
 
 function rawCadastralValue(property: PropertyRow, ...keys: string[]): string | null {
@@ -24,7 +38,7 @@ function rawCadastralValue(property: PropertyRow, ...keys: string[]): string | n
 
 /** Converts the persisted acquisition contract without importing any V1 state. */
 export function importV2Sources(
-  job: Pick<JobRow, "id">,
+  job: Pick<JobRow, "id"> & Partial<Pick<JobRow, "acquisition">>,
   graph: AcquiredGraph,
   activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
   evidence: ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: new Set() },
@@ -38,14 +52,24 @@ export function importV2Sources(
  * to the next untouched property without altering an in-flight checkpoint.
  */
 export function importV2SourceFactories(
-  job: Pick<JobRow, "id">,
+  job: Pick<JobRow, "id"> & Partial<Pick<JobRow, "acquisition">>,
   graph: AcquiredGraph,
   activityFor: (property: PropertyRow, owners: PersonRow[]) => ActivitySource,
   evidence: ImportV2AcquisitionEvidence = { businessOwnerRowIndexes: new Set() },
 ): Array<() => SourceProperty> {
   const queue = inspectAcquisitionQueue(graph);
   const people = queue.index.peopleById;
+  const settings = job.acquisition?.runSettings;
+  const runSettings = settings && typeof settings === "object" ? settings as Record<string, unknown> : {};
+  const sisterStreet = optionalString(runSettings.street);
+  const importStreet = optionalString(runSettings.importStreet);
   return queue.activeProperties.filter((property) => (property.raw_payload?.import_v2 as { terminalForRun?: boolean } | undefined)?.terminalForRun !== true).map((property) => () => {
+    const useImportStreet = Boolean(sisterStreet && importStreet && property.raw_payload?.long_run);
+    const fullAddress = useImportStreet
+      ? addressForImport(property.address ?? "", sisterStreet!, importStreet!)
+      : property.address ?? "";
+    const addressMismatch = useImportStreet && fullAddress === property.address
+      && normalizeSisterStreet(sisterStreet!) !== normalizeSisterStreet(importStreet!);
     const links = queue.index.ownershipsByPropertyId.get(property.id) ?? [];
     const owners = links.flatMap((ownership) => {
       const person = people.get(ownership.person_id);
@@ -67,10 +91,13 @@ export function importV2SourceFactories(
     });
     return {
       sourcePropertyId: property.id,
-      ...(queue.invalidProperties.has(property.id) ? { acquisitionError: queue.invalidProperties.get(property.id)! } : {}),
+      ...(queue.invalidProperties.has(property.id) || addressMismatch ? {
+        acquisitionError: queue.invalidProperties.get(property.id)
+          ?? "L'indirizzo SISTER non corrisponde alla via scelta: controlla il nome prima dell'import Cloud",
+      } : {}),
       jobId: job.id,
       municipality: property.municipality,
-      fullAddress: property.address ?? "",
+      fullAddress,
       cadastral: {
         urbanSection: rawCadastralValue(property, "urbanSection", "sezioneUrbana", "sezione"),
         sheet: property.sheet,

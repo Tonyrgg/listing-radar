@@ -2411,15 +2411,18 @@ function renderStreetRun() {
     cancel = $("streetRunCancel"),
     abandon = $("streetRunAbandon"),
     input = $("streetRunInput"),
+    importName = $("streetImportName"),
     dryToggle = $("dryRunToggle"),
     streetFilterInputs = ["streetFloorMode", "streetFloorValue", "streetMinCivic", "streetMaxCivic", "streetResidentialOnly"]
       .map((id) => $(id));
   if (resumable) {
     input.value = checkpoint.requestedStreet ?? input.value;
+    importName.value = checkpoint.runSettings?.importStreet ?? "";
     dryToggle.checked = checkpoint.runSettings?.keepAcquisition ?? checkpoint.mode !== "live";
   }
   dryToggle.disabled = active || resumable;
   input.disabled = active || resumable;
+  importName.disabled = active || resumable;
   for (const control of streetFilterInputs) control.disabled = active || resumable;
   $("streetFloorValue").disabled = active || resumable || $("streetFloorMode").value === "any";
   $("streetRunStartLabel").textContent = resumable ? "Riprendi dal punto salvato" : dryToggle.checked ? "Acquisisci e conserva" : "Acquisisci e importa";
@@ -3647,6 +3650,7 @@ document.addEventListener("click", async (event) => {
           return COMMAND_CANCELLED;
         return window.propertyWorker.startStreetRun({
           street,
+          importStreet: resume ? checkpoint.runSettings?.importStreet ?? "" : $("streetImportName").value.trim(),
           resume,
           dryRun,
           filters: {

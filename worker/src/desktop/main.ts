@@ -1612,6 +1612,7 @@ async function runMandateArchiveImport(resumeRunId?: string) {
 
 async function runSisterStreet(input: {
   street: string;
+  importStreet?: string;
   refinementCloudStreet?: string;
   resume: boolean;
   dryRun: boolean;
@@ -1624,6 +1625,8 @@ async function runSisterStreet(input: {
   const requestedEngine = input.refinement ? "rifinitura" : "lavorazione";
   const engineCheckpoint = requestedEngine === "rifinitura" ? refinementRunCheckpoint : streetRunCheckpoint;
   const resumeCheckpoint = input.resume ? engineCheckpoint ?? undefined : undefined;
+  const importStreet = String(input.resume ? resumeCheckpoint?.runSettings?.importStreet ?? "" : input.importStreet ?? "")
+    .replace(/\s+/g, " ").trim();
   if (input.resume && !resumeCheckpoint) throw new Error(`Non esiste una scansione ${requestedEngine} da riprendere`);
   if (resumeCheckpoint?.runSettings?.engine && resumeCheckpoint.runSettings.engine !== requestedEngine) {
     throw new Error(`Il checkpoint appartiene al motore ${resumeCheckpoint.runSettings.engine} e non può essere ripreso da ${requestedEngine}`);
@@ -1647,6 +1650,7 @@ async function runSisterStreet(input: {
     ?? (input.refinement ? false : preferences.importCoOwners);
   const keepAcquisition = resumeCheckpoint?.runSettings?.keepAcquisition ?? input.dryRun;
   if (street.length < 4) throw new Error(input.refinement ? "Inserisci il nome completo della via in SISTER" : "Inserisci il nome completo della via");
+  if (importStreet && importStreet.length < 4) throw new Error("Inserisci il nome completo della via da importare nel Cloud");
   if (input.refinement && refinementCloudStreet.length < 4) throw new Error("Inserisci il nome completo della via nel Cloud");
   /* "Acquisisci e conserva" non e' un dry-run: i dati devono nascere nel
    * registro e sopravvivere a chiusure o giornate diverse. Manteniamo il vero
@@ -1695,6 +1699,7 @@ async function runSisterStreet(input: {
     runSettings: {
       lockedAt: resumeCheckpoint?.runSettings?.lockedAt ?? new Date().toISOString(),
       street,
+      importStreet: input.refinement ? null : importStreet || null,
       refinementCloudStreet: refinementCloudStreet || null,
       filters,
       expandAllOwners,
@@ -1791,6 +1796,7 @@ async function runSisterStreet(input: {
       const scanner = new SisterStreetRun(tabs.sisterPage, {
         strategy: "bulk_exact_variants",
         engine: requestedEngine,
+        importStreet: input.refinement ? null : importStreet || null,
         refinementCloudStreet: refinementCloudStreet || null,
         mode: longRunMode,
         importJobId,
@@ -3789,8 +3795,8 @@ function registerIpc() {
     await publishState();
     return stopAfterNextImportRequested;
   });
-  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
-    await runSisterStreet({ street: String(values.street ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false, filters: values.filters });
+  ipcMain.handle("desktop:start-street-run", async (_event, values: { street?: string; importStreet?: string; resume?: boolean; dryRun?: boolean; filters?: Partial<StreetPropertyFilters> }) => {
+    await runSisterStreet({ street: String(values.street ?? ""), importStreet: String(values.importStreet ?? ""), resume: values.resume === true, dryRun: values.dryRun !== false, filters: values.filters });
     return true;
   });
   ipcMain.handle("desktop:resume-acquisition", async (_event, jobId: string) => {
@@ -3809,6 +3815,7 @@ function registerIpc() {
       const savedStreet = String(settings.street ?? job.street ?? "");
       await runSisterStreet({
         street: savedStreet,
+        importStreet: typeof settings.importStreet === "string" ? settings.importStreet : undefined,
         refinementCloudStreet: typeof settings.refinementCloudStreet === "string" ? settings.refinementCloudStreet : undefined,
         resume: false,
         dryRun: settings.keepAcquisition !== false,
