@@ -1,6 +1,7 @@
 import type { ImportV2Failure, ImportV2Outcome, ImportV2Stage, SourceProperty } from "./model.js";
 import { ImportV2Engine } from "./engine.js";
 import { propertyAddressConflictKey } from "./identity.js";
+import { isRecoverableImportFailure } from "./recovery-policy.js";
 
 export type ImportV2BatchResult = {
   completed: ImportV2Outcome[];
@@ -118,22 +119,18 @@ export async function runImportV2Batch(
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
   const deferred: Array<{ source: SourceProperty | (() => SourceProperty); position: number }> = [];
-  let unavailable: ImportV2Failure | null = null;
   for (const [position, source] of properties.entries()) {
     const property = typeof source === "function" ? source() : source;
-    let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
+    const outcome = await engine.run(property, (stage, retry) => onProgress?.({
       propertyId: property.sourcePropertyId, index: position + 1, total, stage, ...retry,
     }));
-    if (outcome.state === "paused" && outcome.failure && !["operator_pause", "cloud_unavailable"].includes(outcome.failure.kind)) {
-      unavailable = outcome.failure;
-      outcome = await engine.deferForRefinement(property, unavailable);
-    }
     onOutcome?.(outcome);
     if (outcome.state === "completed") result.completed.push(outcome);
-    else if (outcome.state === "quarantined" && outcome.failure?.details.lookupIndexPending === true) {
-      /* Salesforce indicizza i Clienti appena creati con ritardo. Continuare
-       * la coda dà tempo al Cloud senza bloccare il throughput; il checkpoint
-       * conserva persona e immobile già verificati per il secondo passaggio. */
+    else if (outcome.state === "quarantined" && (outcome.failure?.details.lookupIndexPending === true
+      || (outcome.failure?.retryable && isRecoverableImportFailure(outcome.failure)))) {
+      /* Un indice appena creato o un errore locale transitorio può risolversi
+       * mentre procede la coda. Il secondo passaggio conserva i checkpoint
+       * verificati e resta limitato a una sola riprova per immobile. */
       deferred.push({ source, position });
     }
     else if (outcome.state === "quarantined") result.quarantined.push(outcome);
@@ -161,13 +158,9 @@ export async function runImportV2Batch(
   if (!result.paused) {
     for (const item of deferred) {
       const property = typeof item.source === "function" ? item.source() : item.source;
-      let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
+      const outcome = await engine.run(property, (stage, retry) => onProgress?.({
         propertyId: property.sourcePropertyId, index: item.position + 1, total, stage, ...retry,
       }));
-      if (outcome.state === "paused" && outcome.failure && !["operator_pause", "cloud_unavailable"].includes(outcome.failure.kind)) {
-        unavailable = outcome.failure;
-        outcome = await engine.deferForRefinement(property, unavailable);
-      }
       onOutcome?.(outcome);
       if (outcome.state === "completed") result.completed.push(outcome);
       else if (outcome.state === "quarantined") result.quarantined.push(outcome);

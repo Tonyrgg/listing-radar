@@ -34,9 +34,16 @@ export function failureFromError(error: unknown, stage: ImportV2Stage, now = new
       occurredAt: now.toISOString(),
     };
   }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Target page, context or browser has been closed/i.test(message)) {
+    return {
+      kind: "global_portal", message: "La finestra Tecnocloud si è chiusa. Import sospeso; i checkpoint restano disponibili.",
+      retryable: true, global: true, stage, details: { browserClosed: true }, occurredAt: now.toISOString(),
+    };
+  }
   return {
     kind: "transient_portal",
-    message: error instanceof Error ? error.message : String(error),
+    message,
     retryable: true,
     global: false,
     stage,

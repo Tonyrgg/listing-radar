@@ -278,7 +278,7 @@ describe("Import V2 engine", () => {
     expect(outcome).toMatchObject({
       state: "quarantined",
       stage: "planned",
-      failure: { kind: "unsupported_case" },
+      failure: { kind: "unsupported_case", details: { refinementNotPresent: true } },
     });
     expect(crm.people.size).toBe(0);
     expect(crm.properties.size).toBe(0);
@@ -680,15 +680,36 @@ describe("Import V2 engine", () => {
       .toMatchObject({ index: 2, stage: "completed" });
   });
 
-  it("chiude le righe come da rifinire senza scritture quando la sessione non è disponibile", async () => {
+  it("sospende la coda senza accantonare altri immobili quando la sessione non è disponibile", async () => {
     const crm = new FakeCrm();
     crm.sessionFailure = new ImportV2Error("session expired", "global_session", { global: true, retryable: true });
     const result = await runImportV2Batch(new ImportV2Engine(crm, new MemoryStore()), [property(), property("property-2")]);
 
-    expect(result.paused).toBeNull();
-    expect(result.quarantined).toHaveLength(2);
+    expect(result.paused).toMatchObject({ propertyId: "property-1", failure: { kind: "global_session" } });
+    expect(result.quarantined).toHaveLength(0);
     expect(crm.searches).toHaveLength(0);
     expect(result.completed).toHaveLength(0);
+  });
+
+  it("sospende la coda se la pagina Cloud si chiude, senza classificare gli altri immobili come falliti", async () => {
+    class ClosedPageCrm extends FakeCrm {
+      override async assertSession() { throw new Error("locator.count: Target page, context or browser has been closed"); }
+    }
+    const result = await runImportV2Batch(new ImportV2Engine(new ClosedPageCrm(), new MemoryStore()), [property(), property("property-2")]);
+    expect(result.paused).toMatchObject({ propertyId: "property-1", failure: { kind: "global_portal", details: { browserClosed: true } } });
+    expect(result.quarantined).toHaveLength(0);
+  });
+
+  it("riprova a fine coda un errore tecnico senza perdere il checkpoint", async () => {
+    class OneTimeoutCrm extends FakeCrm {
+      failures = 1;
+      override async assertSession() {
+        if (this.failures-- > 0) throw new ImportV2Error("Filtro immobili in ritardo", "transient_portal", { retryable: true });
+      }
+    }
+    const result = await runImportV2Batch(new ImportV2Engine(new OneTimeoutCrm(), new MemoryStore(), { maxTransientAttempts: 1 }), [property()]);
+    expect(result.completed).toHaveLength(1);
+    expect(result.quarantined).toHaveLength(0);
   });
 
   it("ferma la coda dopo l'immobile corrente conservando il completato", async () => {

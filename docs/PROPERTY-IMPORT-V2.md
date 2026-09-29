@@ -100,9 +100,16 @@ recovery.
 - Local recovery closes only unfinished dialogs. It does not navigate to the
   Tecnocloud home: the retried operation opens its own required record, avoiding
   an unrelated full-page refresh before every attempt.
-- Exhausted property-local errors quarantine only that property and the batch
-  continues.
-- Login expiry or a portal-wide outage pauses the batch.
+- Exhausted transient property-local errors receive one final pass after the
+  other properties. If they still fail, they remain pending for a later resume;
+  they are not counted as imported or marked terminal. Previously terminal
+  transient failures are eligible on an explicit resume.
+- Login expiry, a closed CRM browser/page or a portal-wide outage pauses the
+  batch without quarantining properties that have not been attempted.
+- Identity ambiguity, conflicting primary owners and incomplete acquisition
+  evidence remain review cases. Refinement deliberately updates only existing
+  CRM properties: SISTER rows absent from its confirmed street inventory are
+  labelled "Non presente in Cloud", not presented as an import success.
 - Every quarantine retains stage, reason, evidence and audit events.
 - A batch containing even one quarantined property is incomplete: quarantined
   items never increase the completed counter and the desktop must not show the

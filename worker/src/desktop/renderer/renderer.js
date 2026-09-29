@@ -1977,6 +1977,7 @@ function relationshipIndex(people = [], ownerships = []) {
 }
 function importPropertyIsHandled(property) {
   const stage = property?.raw_payload?.property_flow?.stage;
+  if (property?.processing_status === "quarantined" && ["transient_portal", "global_portal", "cloud_unavailable"].includes(property?.raw_payload?.import_v2?.failure?.kind)) return false;
   return ["completed", "synced", "dry_run", "quarantined", "skipped", "acquisition_skipped", "acquisition_failed"].includes(property?.processing_status)
     || stage === "completed"
     || stage === "skipped";
@@ -2014,6 +2015,12 @@ function importProgressPresentation(progress, properties = []) {
 }
 function importPropertyRowState(property, index, progress, ledgerRow = null) {
   const anomalyText = (ledgerRow?.anomalies ?? []).map((item) => item.message).join(" · ");
+  if (property?.raw_payload?.import_v2?.failure?.details?.refinementNotPresent === true) {
+    return { className: "is-skipped", label: "Non presente in Cloud", tooltip: "La rifinitura aggiorna soltanto immobili già esistenti nel Cloud." };
+  }
+  if (property?.processing_status === "quarantined" && ["transient_portal", "global_portal", "cloud_unavailable"].includes(property?.raw_payload?.import_v2?.failure?.kind)) {
+    return { className: "is-anomaly", label: "Da riprovare", tooltip: property.raw_payload.import_v2.failure.message ?? anomalyText };
+  }
   if (ledgerRow?.state === "completed_with_anomalies") return { className: "is-anomaly", label: "Eseguito con anomalie", tooltip: anomalyText };
   if (ledgerRow?.state === "skipped") return { className: "is-skipped", label: "Saltato", tooltip: anomalyText };
   if (ledgerRow?.state === "completed" || importPropertyIsHandled(property)) return { className: "is-done", label: "Eseguito", tooltip: "" };

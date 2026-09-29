@@ -36,6 +36,7 @@ import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
 import type { CrmPropertySummary, ImportV2Failure, ImportV2Stage } from "../import-v2/model.js";
+import { isRecoverableImportFailure } from "../import-v2/recovery-policy.js";
 
 /** Cosa sta facendo il worker adesso, detto all'operatore. */
 const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
@@ -52,7 +53,14 @@ const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
 };
 
 export function assertImportV2BatchComplete(result: ImportV2BatchResult): void {
-  if (!result.paused) return;
+  const recoverable = result.quarantined.filter((outcome) => isRecoverableImportFailure(outcome.failure));
+  if (!result.paused && !recoverable.length) return;
+  if (!result.paused) {
+    throw new WorkerError(
+      `Import V2 incompleto: ${recoverable.length} immobili con errore tecnico da riprovare`,
+      "needs_review", { importV2: true, retryableProperties: recoverable.map((outcome) => outcome.propertyId) }, true,
+    );
+  }
   const first = result.paused;
   throw new WorkerError(
     `Run sospesa: ${first.failure?.message ?? "Interruzione richiesta"}`,
@@ -733,10 +741,11 @@ export class PropertyWorkerRunner {
           }
         }
         for (const outcome of result.quarantined) {
+          const recoverable = isRecoverableImportFailure(outcome.failure);
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
             crm_record_id: outcome.crmPropertyId,
             processing_status: "quarantined",
-            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: "quarantined", terminalForRun: true, itemId: outcome.itemId, failure: outcome.failure } },
+            raw_payload: { ...(propertyById.get(outcome.propertyId)?.raw_payload ?? {}), import_v2: { state: recoverable ? "retryable" : "quarantined", terminalForRun: !recoverable, itemId: outcome.itemId, failure: outcome.failure } },
           });
           for (const person of outcome.syncedPeople) {
             await this.repository.updatePersonProcessing(person.sourcePersonId, { crm_record_id: person.crmPersonId, processing_status: this.config.WORKER_DRY_RUN ? "dry_run" : "synced" });
@@ -755,8 +764,9 @@ export class PropertyWorkerRunner {
         const completedPropertyCount = after.properties.filter((property) => {
           const payload = property.raw_payload ?? {};
           const flow = payload.property_flow as { stage?: unknown } | undefined;
-          const importV2 = payload.import_v2 as { state?: unknown } | undefined;
-          return ["completed", "synced", "dry_run", "quarantined"].includes(property.processing_status)
+          const importV2 = payload.import_v2 as { state?: unknown; failure?: ImportV2Failure } | undefined;
+          return (["completed", "synced", "dry_run"].includes(property.processing_status)
+            || (property.processing_status === "quarantined" && !isRecoverableImportFailure(importV2?.failure)))
             || flow?.stage === "completed"
             || importV2?.state === "completed";
         }).length;
@@ -766,7 +776,8 @@ export class PropertyWorkerRunner {
             || result.paused.failure?.details.pauseRequested === true;
           throw new WorkerError(
             result.paused.failure?.message ?? "Import V2 in pausa",
-            operatorPause ? "paused" : result.paused.failure?.kind === "global_session" ? "session_expired" : "portal_error",
+            operatorPause || result.paused.failure?.kind === "global_portal"
+              ? "paused" : result.paused.failure?.kind === "global_session" ? "session_expired" : "portal_error",
             { importV2: true, failure: result.paused.failure, ...(operatorPause ? { pauseRequested: true } : {}) },
             true,
           );
@@ -1185,7 +1196,12 @@ export class PropertyWorkerRunner {
       }
       case "verified": {
         const graph = await this.repository.loadGraph(job.id);
-        const activePropertyIds = new Set(graph.properties.filter((property) => !isAcquisitionExcluded(property) && property.processing_status !== "quarantined").map((property) => property.id));
+        const activePropertyIds = new Set(graph.properties.filter((property) => {
+          if (isAcquisitionExcluded(property)) return false;
+          if (property.processing_status !== "quarantined") return true;
+          const prior = property.raw_payload?.import_v2 as { failure?: ImportV2Failure } | undefined;
+          return isRecoverableImportFailure(prior?.failure);
+        }).map((property) => property.id));
         const activeOwnerships = graph.ownerships.filter((ownership) => activePropertyIds.has(ownership.property_id));
         const activePersonIds = new Set(activeOwnerships.map((ownership) => ownership.person_id));
         const pending = [

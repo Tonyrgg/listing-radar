@@ -64,6 +64,14 @@ describe("Import V2 acquisition bridge", () => {
     expect(importV2Sources({ id: "job-id" }, graph, activity)).toEqual([]);
   });
 
+  it("riapre i vecchi casi marcati terminali solo per un errore tecnico", () => {
+    const graph = acquired();
+    graph.properties[0]!.processing_status = "quarantined";
+    graph.properties[0]!.raw_payload = { import_v2: { state: "quarantined", terminalForRun: true,
+      failure: { kind: "transient_portal", message: "Filtri immobili non disponibile" } } };
+    expect(importV2Sources({ id: "job-id" }, graph, activity)).toHaveLength(1);
+  });
+
   it("valida le quote di ciascun immobile anche quando il nominativo è condiviso e la sua quota globale manca", () => {
     const graph = acquired();
     graph.people[0]!.share_percentage = null;

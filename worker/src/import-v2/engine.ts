@@ -320,7 +320,7 @@ export class ImportV2Engine {
             throw new ImportV2Error(
               "Immobile non presente nell’inventario Cloud della via: la rifinitura non crea nuove schede",
               "unsupported_case",
-              { details: { sourcePropertyId: plan.source.sourcePropertyId, cadastral: plan.source.cadastral } },
+              { details: { sourcePropertyId: plan.source.sourcePropertyId, cadastral: plan.source.cadastral, refinementNotPresent: true } },
             );
           }
           propertyResolution = choice.kind === "create"

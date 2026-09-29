@@ -33,12 +33,12 @@ const config = {
   SISTER_KEEPALIVE_URL: undefined,
 } satisfies WorkerConfig;
 
-function quarantinedResult(): ImportV2BatchResult {
+function quarantinedResult(kind: "transient_portal" | "verification_failed" = "transient_portal"): ImportV2BatchResult {
   const failure = {
     message: "Luogo di nascita digitato ma non selezionato dal lookup",
-    kind: "transient_portal" as const,
+    kind,
     stage: "people_resolved" as const,
-    retryable: true,
+    retryable: kind === "transient_portal",
     global: false,
     details: {},
     occurredAt: "2026-09-02T14:40:25.529Z",
@@ -91,17 +91,16 @@ describe("esito finale Import V2", () => {
     graph.properties[0]!.processing_status = "normalized";
     await expect((runner as unknown as { executeStep: Function }).executeStep("verified", { id: "job" }, {}, {}, {}, {})).rejects.toMatchObject({ status: "needs_review" });
   });
-  it("chiude il batch con immobili accantonati da rifinire", () => {
-    const result = quarantinedResult();
-
-    expect(() => assertImportV2BatchComplete(result)).not.toThrow();
+  it("non dichiara concluso un batch con errori tecnici recuperabili", () => {
+    expect(() => assertImportV2BatchComplete(quarantinedResult())).toThrow(/incompleto/);
+    expect(() => assertImportV2BatchComplete(quarantinedResult("verification_failed"))).not.toThrow();
   });
 
   it("accetta soltanto un batch senza elementi accantonati", () => {
     expect(() => assertImportV2BatchComplete({ completed: [], quarantined: [], paused: null })).not.toThrow();
   });
 
-  it("conserva i casi accantonati e conclude anche quando nessun immobile è importabile", async () => {
+  it("conserva i casi tecnici da riprovare senza contarli come importati", async () => {
     coordinatorRunJob.mockResolvedValueOnce(quarantinedResult());
     const graph = {
       properties: [{
@@ -131,11 +130,13 @@ describe("esito finale Import V2", () => {
       {},
       {},
       { findByTaxCode: vi.fn() },
-    )).resolves.toMatchObject({ completed: 0, quarantined: 1 });
+    )).rejects.toMatchObject({ status: "needs_review", details: { retryableProperties: ["property-1"] } });
 
     expect(repository.updatePropertyProcessing).toHaveBeenCalledWith(
       "property-1",
-      expect.objectContaining({ processing_status: "quarantined" }),
+      expect.objectContaining({ processing_status: "quarantined", raw_payload: expect.objectContaining({
+        import_v2: expect.objectContaining({ state: "retryable", terminalForRun: false }),
+      }) }),
     );
     expect(repository.updateJob).toHaveBeenCalledWith("job-1", { processed_properties: 0 });
   });

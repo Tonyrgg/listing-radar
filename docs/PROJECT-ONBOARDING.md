@@ -424,13 +424,14 @@ Le telefonate di `Autocompila` non incrementano il contatore dei contatti dirett
 
 ### Paracadute e diagnostica
 
-Dal 23 settembre 2026 l'esaurimento dei tentativi Import V2 chiude il caso
-come `quarantined` (a schermo: saltato, da rifinire) e non rende incompleta
-la run. Il motivo resta nel payload dell'immobile e nel dettaglio della run;
-`terminalForRun` impedisce che una ripresa ordinaria lo rimetta in coda.
-Una sessione Cloud inutilizzabile chiude anche i restanti casi noti come
-da rifinire, senza ulteriori scritture. Una pausa richiesta dall'operatore
-resta invece una pausa. Errori di persistenza non vengono nascosti.
+I conflitti di identità, proprietario o dati SISTER restano `quarantined`
+con motivo nel payload e `terminalForRun`: non autorizzano scritture CRM
+incerte. Un errore tecnico transitorio viene riprovato una volta a fine coda;
+se persiste, il caso resta recuperabile alla ripresa e la run resta incompleta.
+Una finestra Cloud chiusa, una sessione scaduta o un guasto globale sospendono
+la coda senza accantonare gli immobili successivi non tentati. I vecchi casi
+marcati terminali solo per un errore tecnico possono rientrare in una ripresa
+esplicita. Errori di persistenza non vengono nascosti.
 La verifica finale controlla ancora tutti i casi dichiarati eseguiti;
 non equipara un caso saltato a un import riuscito.
 

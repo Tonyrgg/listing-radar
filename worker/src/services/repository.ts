@@ -15,6 +15,8 @@ import {
 import { crmRequestFeatureRequirements, type RequestFeatureRequirement } from "./request-feature-requirements.js";
 import { inferRequestZonePreferences, type RequestInferenceZone } from "./request-zone-inference.js";
 import { isSupabaseProjectRestricted } from "./supabase-errors.js";
+import { isRecoverableImportFailure } from "../import-v2/recovery-policy.js";
+import type { ImportV2Failure } from "../import-v2/model.js";
 import { canCreateCompletedWorkRefinement, completedWorkRefinementPayload } from "./refinement-seed.js";
 import { mergeRunGraphs, mergedRunIds, validateRunMerge } from "./run-merge.js";
 
@@ -620,6 +622,16 @@ export class WorkerRepository {
     const skippedStatuses = new Set(["skipped", "acquisition_skipped", "acquisition_failed", "quarantined"]);
     const completedStatuses = new Set(["completed", "synced", "dry_run"]);
     const pageSize = 1_000;
+    const retryableIds = new Set<string>();
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await this.client.from("property_worker_import_v2_items")
+        .select("property_id,last_error").in("job_id", jobIds).eq("status", "quarantined")
+        .order("property_id", { ascending: true }).range(offset, offset + pageSize - 1);
+      if (error) throw new Error(`Conteggio casi tecnici Import V2 fallito: ${error.message}`);
+      const rows = (data ?? []) as Array<{ property_id: string; last_error: ImportV2Failure | null }>;
+      for (const row of rows) if (isRecoverableImportFailure(row.last_error)) retryableIds.add(row.property_id);
+      if (rows.length < pageSize) break;
+    }
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await this.client
         .from("property_worker_properties")
@@ -634,6 +646,7 @@ export class WorkerRepository {
         const count = counts.get(row.job_id);
         if (!count) continue;
         count.total += 1;
+        if (row.processing_status === "quarantined" && retryableIds.has(row.id)) continue;
         if (skippedStatuses.has(row.processing_status)) {
           count.handled += 1;
           count.skipped += 1;

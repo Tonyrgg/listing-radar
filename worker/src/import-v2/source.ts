@@ -3,6 +3,8 @@ import type { SourceProperty } from "./model.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { inspectAcquisitionQueue, type AcquiredGraph } from "../services/acquisition-queue.js";
 import { normalizeSisterStreet } from "../core/street-scan.js";
+import { isRecoverableImportFailure } from "./recovery-policy.js";
+import type { ImportV2Failure } from "./model.js";
 export type { AcquiredGraph } from "../services/acquisition-queue.js";
 
 export type ActivitySource = SourceProperty["activity"];
@@ -63,7 +65,10 @@ export function importV2SourceFactories(
   const runSettings = settings && typeof settings === "object" ? settings as Record<string, unknown> : {};
   const sisterStreet = optionalString(runSettings.street);
   const importStreet = optionalString(runSettings.importStreet);
-  return queue.activeProperties.filter((property) => (property.raw_payload?.import_v2 as { terminalForRun?: boolean } | undefined)?.terminalForRun !== true).map((property) => () => {
+  return queue.activeProperties.filter((property) => {
+    const prior = property.raw_payload?.import_v2 as { terminalForRun?: boolean; failure?: ImportV2Failure } | undefined;
+    return prior?.terminalForRun !== true || isRecoverableImportFailure(prior.failure);
+  }).map((property) => () => {
     const useImportStreet = Boolean(sisterStreet && importStreet && property.raw_payload?.long_run);
     const fullAddress = useImportStreet
       ? addressForImport(property.address ?? "", sisterStreet!, importStreet!)
