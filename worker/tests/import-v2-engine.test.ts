@@ -219,6 +219,29 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("pausa sul 525 dell'audit dopo il checkpoint e riprende senza rifare lo stadio", async () => {
+    class InterruptedAuditStore extends MemoryStore {
+      failOnce = true;
+      override async recordEvent(checkpoint: ImportV2Checkpoint, event: string) {
+        if (this.failOnce && event === "stage_completed") {
+          this.failOnce = false;
+          throw new Error("Audit Import V2 fallito: Supabase temporaneamente non raggiungibile (HTTP 525)");
+        }
+        await super.recordEvent(checkpoint, event);
+      }
+    }
+    const store = new InterruptedAuditStore();
+    const crm = new FakeCrm();
+    const source = property();
+    const first = await runImportV2Batch(new ImportV2Engine(crm, store), [source, property("property-2")]);
+    expect(first.paused).toMatchObject({ propertyId: source.sourcePropertyId, stage: "planned", failure: { kind: "cloud_unavailable" } });
+    expect(first.quarantined).toHaveLength(0);
+    expect(store.checkpoints.get(source.sourcePropertyId)?.stage).toBe("planned");
+    expect(crm.people.size).toBe(0);
+    const resumed = await new ImportV2Engine(crm, store).run(source);
+    expect(resumed.state).toBe("completed");
+    expect(store.events[0]).toBe("stage_completed");
+  });
   it("risolve prima l'immobile dall'inventario della via e non usa le ricerche immobiliari storiche", async () => {
     class PropertyFirstCrm extends FakeCrm {
       override async findPropertiesByCadastralIdentity(): Promise<CrmPropertySnapshot[]> {

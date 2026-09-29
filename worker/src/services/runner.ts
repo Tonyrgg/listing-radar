@@ -712,6 +712,13 @@ export class PropertyWorkerRunner {
             previousFailure: progress.previousFailure,
           });
         }, () => this.isStopAfterNextImportRequested(job.id));
+        if (result.paused?.failure?.kind === "cloud_unavailable") {
+          // The per-property checkpoint is already persisted. Do not turn a
+          // Supabase outage into a skipped property or touch Tecnocloud again.
+          throw new WorkerError(result.paused.failure.message, "paused", {
+            importV2: true, cloudUnavailable: true, failure: result.paused.failure,
+          }, false);
+        }
         for (const outcome of result.completed) {
           await this.repository.updatePropertyProcessing(outcome.propertyId, {
             crm_record_id: outcome.crmPropertyId,

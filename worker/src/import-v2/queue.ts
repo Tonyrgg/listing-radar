@@ -124,7 +124,7 @@ export async function runImportV2Batch(
     let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
       propertyId: property.sourcePropertyId, index: position + 1, total, stage, ...retry,
     }));
-    if (outcome.state === "paused" && outcome.failure && outcome.failure.kind !== "operator_pause") {
+    if (outcome.state === "paused" && outcome.failure && !["operator_pause", "cloud_unavailable"].includes(outcome.failure.kind)) {
       unavailable = outcome.failure;
       outcome = await engine.deferForRefinement(property, unavailable);
     }
@@ -164,7 +164,7 @@ export async function runImportV2Batch(
       let outcome: ImportV2Outcome = unavailable ? await engine.deferForRefinement(property, unavailable) : await engine.run(property, (stage, retry) => onProgress?.({
         propertyId: property.sourcePropertyId, index: item.position + 1, total, stage, ...retry,
       }));
-      if (outcome.state === "paused" && outcome.failure && outcome.failure.kind !== "operator_pause") {
+      if (outcome.state === "paused" && outcome.failure && !["operator_pause", "cloud_unavailable"].includes(outcome.failure.kind)) {
         unavailable = outcome.failure;
         outcome = await engine.deferForRefinement(property, unavailable);
       }

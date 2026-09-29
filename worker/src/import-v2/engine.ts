@@ -1,4 +1,5 @@
 import { personWriteModel } from "./contacts.js";
+import { isTransientCloudError } from "./cloud-retry.js";
 import { failureFromError, ImportV2Error } from "./errors.js";
 import {
   buildPlan,
@@ -197,6 +198,19 @@ export class ImportV2Engine {
     }
 
     let checkpoint = await this.store.loadOrCreate(plan);
+    // A saved transition may have lost its audit response during a gateway
+    // outage. Reconcile that deterministic event before any further CRM work.
+    if (checkpoint.stage !== "queued") {
+      try {
+        await this.store.recordEvent(checkpoint, "stage_completed", { stage: checkpoint.stage });
+      } catch (error) {
+        const failure = failureFromError(new ImportV2Error(
+          error instanceof Error ? error.message : "Audit Cloud non raggiungibile",
+          "cloud_unavailable", { global: true, retryable: true },
+        ), checkpoint.stage, this.now());
+        return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "paused", stage: checkpoint.stage, failure };
+      }
+    }
     while (checkpoint.stage !== "completed") {
       try {
         onStage?.(checkpoint.stage, {
@@ -212,8 +226,14 @@ export class ImportV2Engine {
         checkpoint.nextAttemptAt = null;
         checkpoint.updatedAt = this.now().toISOString();
         await this.store.save(checkpoint);
-        await this.store.recordEvent(checkpoint, "stage_completed", { stage: checkpoint.stage });
       } catch (error) {
+        if (isTransientCloudError(error)) {
+          const failure = failureFromError(new ImportV2Error(
+            error instanceof Error ? error.message : "Supabase temporaneamente non raggiungibile",
+            "cloud_unavailable", { global: true, retryable: true },
+          ), checkpoint.stage, this.now());
+          return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "paused", stage: checkpoint.stage, failure };
+        }
         const failure = failureFromError(error, checkpoint.stage, this.now());
         checkpoint.attempts += 1;
         checkpoint.lastError = failure;
@@ -242,6 +262,15 @@ export class ImportV2Engine {
         // Leave the next property a clean dialog context; never repeat a save.
         await this.crm.recover(checkpoint.stage, error).catch(() => undefined);
         return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "quarantined", stage: checkpoint.stage, failure };
+      }
+      try {
+        await this.store.recordEvent(checkpoint, "stage_completed", { stage: checkpoint.stage });
+      } catch (error) {
+        const failure = failureFromError(new ImportV2Error(
+          error instanceof Error ? error.message : "Audit Cloud non raggiungibile",
+          "cloud_unavailable", { global: true, retryable: true },
+        ), checkpoint.stage, this.now());
+        return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "paused", stage: checkpoint.stage, failure };
       }
     }
     onStage?.("completed", { attempt: 1, maxAttempts: this.maxTransientAttempts, previousFailure: null });

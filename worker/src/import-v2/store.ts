@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 import { ImportV2Error } from "./errors.js";
+import { cloudErrorMessage, cloudRequest } from "./cloud-retry.js";
 import { buildPlan } from "./identity.js";
 import type {
   ImportV2Checkpoint,
@@ -67,9 +69,9 @@ export class SupabaseImportV2Store implements ImportV2Store {
       stage: "queued",
       status: "queued",
     };
-    const existing = await this.client.from("property_worker_import_v2_items")
-      .select("*").eq("property_id", plan.source.sourcePropertyId).maybeSingle();
-    if (existing.error) throw new Error(`Lettura checkpoint Import V2 fallita: ${existing.error.message}`);
+    const existing = await cloudRequest(() => this.client.from("property_worker_import_v2_items")
+      .select("*").eq("property_id", plan.source.sourcePropertyId).maybeSingle());
+    if (existing.error) throw new Error(`Lettura checkpoint Import V2 fallita: ${cloudErrorMessage(existing.error)}`);
     if (existing.data) {
       const row = existing.data as ImportV2ItemRow;
       if (row.plan_fingerprint !== plan.fingerprint) {
@@ -83,10 +85,10 @@ export class SupabaseImportV2Store implements ImportV2Store {
             details: { previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
           });
         }
-        const migrated = await this.client.from("property_worker_import_v2_items")
+        const migrated = await cloudRequest(() => this.client.from("property_worker_import_v2_items")
           .update({ plan_fingerprint: plan.fingerprint, plan })
-          .eq("id", row.id);
-        if (migrated.error) throw new Error(`Migrazione fingerprint Import V2 fallita: ${migrated.error.message}`);
+          .eq("id", row.id));
+        if (migrated.error) throw new Error(`Migrazione fingerprint Import V2 fallita: ${cloudErrorMessage(migrated.error)}`);
         row.plan = plan;
         row.plan_fingerprint = plan.fingerprint;
       }
@@ -106,7 +108,7 @@ export class SupabaseImportV2Store implements ImportV2Store {
 
   async save(checkpoint: ImportV2Checkpoint): Promise<void> {
     const completed = checkpoint.stage === "completed";
-    const result = await this.client.from("property_worker_import_v2_items").update({
+    const result = await cloudRequest(() => this.client.from("property_worker_import_v2_items").update({
       stage: checkpoint.stage,
       status: completed ? "completed" : "running",
       checkpoint: checkpointPayload(checkpoint),
@@ -114,43 +116,48 @@ export class SupabaseImportV2Store implements ImportV2Store {
       next_attempt_at: checkpoint.nextAttemptAt,
       last_error: checkpoint.lastError,
       completed_at: completed ? checkpoint.updatedAt : null,
-    }).eq("id", checkpoint.itemId);
-    if (result.error) throw new Error(`Salvataggio checkpoint Import V2 fallito: ${result.error.message}`);
+    }).eq("id", checkpoint.itemId));
+    if (result.error) throw new Error(`Salvataggio checkpoint Import V2 fallito: ${cloudErrorMessage(result.error)}`);
   }
 
   async recordEvent(checkpoint: ImportV2Checkpoint, event: string, details: Record<string, unknown> = {}): Promise<void> {
-    const result = await this.client.from("property_worker_import_v2_events").insert({
+    const eventKey = createHash("sha256").update(JSON.stringify([
+      checkpoint.itemId, checkpoint.stage, event,
+      event === "stage_completed" ? null : details,
+    ])).digest("hex");
+    const result = await cloudRequest(() => this.client.from("property_worker_import_v2_events").upsert({
       item_id: checkpoint.itemId,
       job_id: checkpoint.jobId,
       property_id: checkpoint.propertyId,
       stage: checkpoint.stage,
       event_name: event,
       details,
-    });
-    if (result.error) throw new Error(`Audit Import V2 fallito: ${result.error.message}`);
+      event_key: eventKey,
+    }, { onConflict: "event_key", ignoreDuplicates: true }));
+    if (result.error) throw new Error(`Audit Import V2 fallito: ${cloudErrorMessage(result.error)}`);
   }
 
   async quarantine(checkpoint: ImportV2Checkpoint, failure: ImportV2Failure): Promise<void> {
-    const result = await this.client.from("property_worker_import_v2_items").update({
+    const result = await cloudRequest(() => this.client.from("property_worker_import_v2_items").update({
       status: "quarantined",
       stage: checkpoint.stage,
       checkpoint: checkpointPayload(checkpoint),
       attempts: checkpoint.attempts,
       last_error: failure,
-    }).eq("id", checkpoint.itemId);
-    if (result.error) throw new Error(`Accantonamento Import V2 fallito: ${result.error.message}`);
+    }).eq("id", checkpoint.itemId));
+    if (result.error) throw new Error(`Accantonamento Import V2 fallito: ${cloudErrorMessage(result.error)}`);
     await this.recordEvent(checkpoint, "quarantined", { failure });
   }
 
   async pause(checkpoint: ImportV2Checkpoint, failure: ImportV2Failure): Promise<void> {
-    const result = await this.client.from("property_worker_import_v2_items").update({
+    const result = await cloudRequest(() => this.client.from("property_worker_import_v2_items").update({
       status: "paused",
       stage: checkpoint.stage,
       checkpoint: checkpointPayload(checkpoint),
       attempts: checkpoint.attempts,
       last_error: failure,
-    }).eq("id", checkpoint.itemId);
-    if (result.error) throw new Error(`Pausa Import V2 fallita: ${result.error.message}`);
+    }).eq("id", checkpoint.itemId));
+    if (result.error) throw new Error(`Pausa Import V2 fallita: ${cloudErrorMessage(result.error)}`);
     await this.recordEvent(checkpoint, "paused", { failure });
   }
 

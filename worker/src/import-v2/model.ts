@@ -156,6 +156,7 @@ export type ImportV2FailureKind =
   | "invalid_source"
   | "ambiguous_identity"
   | "transient_portal"
+  | "cloud_unavailable"
   | "operator_pause"
   | "global_session"
   | "global_portal"

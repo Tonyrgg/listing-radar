@@ -4,6 +4,28 @@ import type { ImportV2Checkpoint } from "../src/import-v2/model.js";
 import { buildPlan } from "../src/import-v2/identity.js";
 
 describe("checkpoint Import V2", () => {
+  it("ripete l'audit 525 con la stessa chiave idempotente", async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const client = { from(table: string) {
+      expect(table).toBe("property_worker_import_v2_events");
+      return { upsert: async (payload: Record<string, unknown>, options: Record<string, unknown>) => {
+        expect(options).toEqual({ onConflict: "event_key", ignoreDuplicates: true });
+        payloads.push(payload);
+        return payloads.length === 1
+          ? { error: { message: "525: SSL handshake failed", code: "525" } }
+          : { error: null };
+      } };
+    } };
+    const checkpoint = {
+      itemId: "item-1", jobId: "job-1", propertyId: "property-1", stage: "planned",
+      updatedAt: "2026-09-29T12:50:15.000Z",
+    } as ImportV2Checkpoint;
+    const store = new SupabaseImportV2Store(client as never);
+    await store.recordEvent(checkpoint, "stage_completed", { stage: "planned" });
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0]?.event_key).toBe(payloads[1]?.event_key);
+    expect(String(payloads[0]?.event_key)).toHaveLength(64);
+  });
   it("conserva la prova verificata dell'attivita Cloud", async () => {
     let saved: Record<string, unknown> | null = null;
     const client = {

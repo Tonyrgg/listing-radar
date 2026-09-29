@@ -87,6 +87,14 @@ recovery.
 
 ## Recovery
 
+- If Supabase returns a temporary gateway/network error (including Cloudflare
+  HTTP 525), checkpoint and audit writes are retried with bounded backoff.
+  Audit retries use a stable event key, so an uncertain response cannot create
+  duplicate transitions. If the Cloud remains unavailable, the batch pauses
+  without quarantining properties or repeating a CRM stage. A later resume
+  rereads the saved checkpoint and reconciles its audit before further CRM work.
+  A failed gateway page is summarized in the error instead of displayed as HTML.
+
 - Transient element or portal errors trigger a bounded local recovery from the
   current checkpoint, not a full run restart.
 - Local recovery closes only unfinished dialogs. It does not navigate to the
