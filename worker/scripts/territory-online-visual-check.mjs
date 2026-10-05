@@ -43,7 +43,14 @@ try {
   await page.evaluate(id => window.territory.annotate({ streetId: id, note: 'Correzione conservata senza rete', attention: true }), streetId);
   await memoryUntil(page, m => Boolean(m.error) && !m.syncing);
   assert.equal((await page.evaluate(id => window.territory.detail(id), streetId)).memory.note, 'Correzione conservata senza rete');
+  await page.locator('#cloud-memory').click();
+  await page.locator('#memory-push').click();
+  await page.waitForFunction(() => document.querySelector('#memory-result').textContent && !document.querySelector('#memory-push').disabled);
+  const syncError=await page.locator('#memory-result').textContent();
+  assert.ok(!syncError.includes('Error invoking remote method'),'L’errore mostra il messaggio utile senza dettagli IPC');
+  assert.equal((await page.evaluate(id => window.territory.detail(id), streetId)).memory.note, 'Correzione conservata senza rete');
   await page.screenshot({ path: path.join(output, '01-offline-memory.png') });
+  await page.locator('#memory-close').click();
   await application.close(); application = null;
   await unlink(`${cloudFile}.offline`);
   page = await launch(first); await synced(page, 3);

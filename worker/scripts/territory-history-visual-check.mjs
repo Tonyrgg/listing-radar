@@ -58,6 +58,7 @@ try {
   const review = await page.evaluate(() => window.territory.historyReview());
   assert.equal(review.filter(r => r.canAssociate).length, 147);
   // All authorisations below affect a temporary profile only; never apply to CRM.
+  await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#test-settings').click();
   const settings = await page.evaluate(() => window.territory.testSettings());
   const testRecord = settings.records.find(r => r.eligible);
@@ -81,6 +82,7 @@ try {
   const row = review.find(r => r.canAssociate);
   const street = restored.streets.find(s => !s.needsReview && s.geometry);
   await page.locator('#detail-close').click();
+  await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator("#history-review").click();
   await page.locator("#history-search").fill(row.address);
   await page.locator(`[data-associate="${row.propertyId}"]`).click();

@@ -42,7 +42,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     try {
       sync = await openOnlineMemory(store, options.profileDirectory, options.onlineCredentials());
       await sync.reconcile(); memoryError = null;
-    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Memoria online.`; }
+    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Sincronizzazione.`; }
     finally {
       syncing = false; publish();
       if (memoryError && !closing) {

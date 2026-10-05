@@ -4788,3 +4788,6 @@ body[data-worker-view="worker-v2"] .workspace > :not(#worker-v2) { display: none
 #workerV2Status { padding: 24px; max-width: 75ch; }
 #workerV2Retry { margin: 0 24px; }
 @media(max-width:1250px) { body[data-worker-view="worker-v2"] .app-layout { grid-template-columns: 204px minmax(0, 1fr); } }
+
+/* V2 uses a separate browser session; the daily-session indicator is not its status. */
+body[data-worker-view="worker-v2"] .connection-pill { display: none; }

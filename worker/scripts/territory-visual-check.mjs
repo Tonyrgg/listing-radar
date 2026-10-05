@@ -58,6 +58,7 @@ try {
     const original = L.Path.prototype.setStyle;
     L.Path.prototype.setStyle = function (style) { window.checkedPaths.add(this); return original.call(this, style); };
   });
+  await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#refresh').click();
   await page.waitForFunction(() => window.checkedPaths.size > 500);
   const widePaths = () => page.evaluate(() => [...window.checkedPaths].filter(p => p._map && p.options.weight > 2).length);
@@ -93,8 +94,9 @@ try {
   await page.waitForTimeout(350);
   assert.equal(await page.locator('#hover').isVisible(), false, 'Il popup scompare dopo l’uscita');
   await page.screenshot({ path: path.join(output, '00-map-full.png') });
+  await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#network-setup').click();
-  await page.getByRole('heading', { name: 'La rete esiste già.', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Rete delle vie', exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, '00-network-setup.png') });
   await page.locator('#detail-close').click();
   const rawStreet = snapshot.streets.find(s => {
@@ -104,6 +106,7 @@ try {
   });
   assert.ok(rawStreet, 'La rete iniziale include un tracciato mai acquisito');
   const emptyOfficial = snapshot.streets.find(s => s.catalogKind !== 'network' && !s.needsReview && !s.geometry);
+  await page.locator('#catalog-filters').evaluate(el => { el.open = true; });
   await page.locator('#catalog-kind').selectOption('network');
   await page.locator('#search').fill(rawStreet.name);
   await page.locator(`[data-street="${rawStreet.id}"]`).click();
@@ -136,6 +139,7 @@ try {
   assert.equal(await page.locator('#street-note').inputValue(), 'Dossier iniziale, prima di qualsiasi analisi');
   await page.getByRole('button', { name: 'Salva annotazioni', exact: true }).click();
   await until(page, async id => (await window.territory.detail(id)).memory.note.includes('Dossier iniziale'), rawStreet.id);
+  await page.locator('[data-disclosure="network-link"]>summary').click();
   await page.locator('#network-official').fill(`${emptyOfficial.name} · Codvia ${emptyOfficial.id}`);
   await page.getByRole('button', { name: 'Conferma associazione', exact: true }).click();
   await until(page, async id => Boolean((await window.territory.detail(id)).street.geometry), emptyOfficial.id);
@@ -146,6 +150,7 @@ try {
   assert.equal((await page.evaluate(() => window.territory.snapshot())).activeRun, null);
   await page.screenshot({ path: path.join(output, '00-network-linked.png') });
   await page.locator('#detail-close').click();
+  await page.locator('#catalog-filters').evaluate(el => { el.open = true; });
   await page.locator('#catalog-kind').selectOption('');
   const street = snapshot.streets.find(s => s.geometry && s.name.includes("CASTELLUCCI")) ?? snapshot.streets.find(s => s.geometry);
   await page.locator("#search").fill(street.name);

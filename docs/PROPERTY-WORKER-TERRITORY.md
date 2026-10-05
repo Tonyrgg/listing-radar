@@ -14,7 +14,7 @@ La sezione Worker V2 usa il progetto Supabase già configurato nelle preferenze 
 
 Al primo collegamento un profilo vuoto recupera l'archivio online; uno con lavoro già presente lo carica soltanto se la revisione consente di farlo. Note, correzioni e associazioni vengono sincronizzate automaticamente, così come le lavorazioni concluse o messe in pausa. La chiusura attende il checkpoint e tenta un ultimo salvataggio. Durante una run i checkpoint restano locali; il trasferimento avviene quando il motore torna inattivo.
 
-**Memoria online** mostra l'ultimo salvataggio e permette di caricare o recuperare esplicitamente. Senza rete il lavoro locale resta conservato e la mancata sincronizzazione è visibile; il sistema riprova dopo 30 secondi e si può anche usare il pulsante o riaprire V2. Un conflitto non sovrascrive né la correzione locale né quella remota. Il recupero conserva una copia precedente del ledger. Non vengono sincronizzate credenziali, sessioni Chrome, percorso Excel o autorizzazioni alle schede di prova.
+**Archivio sincronizzato / Sincronizzazione da verificare** mostra l'ultimo salvataggio e permette di caricare o recuperare esplicitamente. Senza rete il lavoro locale resta conservato e la mancata sincronizzazione è visibile; il sistema riprova dopo 30 secondi e si può anche usare il pulsante o riaprire V2. Un conflitto non sovrascrive né la correzione locale né quella remota. Il recupero conserva una copia precedente del ledger. Non vengono sincronizzate credenziali, sessioni Chrome, percorso Excel o autorizzazioni alle schede di prova.
 
 Il trasferimento iniziale di manutenzione si esegue, a worker chiuso e schema già aggiornato, con `npm.cmd --prefix worker run territory:setup-online -- --apply`. Usa esclusivamente `.env.local` ignorato, salva una copia precedente e rilegge lo stato remoto prima di confermare. Non tocca le tabelle del worker precedente.
 
@@ -26,7 +26,7 @@ Worker V2 riusa `%APPDATA%\ListingRadarTerritoryLab-live`, inclusi i 928 immobil
 
 La mappa vive in un renderer isolato all'interno della stessa finestra: non riceve i comandi o le credenziali della shell quotidiana. Cambiare sezione conserva anche una scheda con modifiche aperte. Tema e dimensioni seguono l'app; la chiusura mette in pausa una run V2 e attende il checkpoint. Durante una run V2 non può partire un secondo motore; **Arresta processo** mette in pausa soltanto V2, conservando i checkpoint quotidiani precedenti. L'installazione di un aggiornamento è bloccata finché la run V2 è attiva.
 
-Per il collaudo reale premere **Apri Chrome V2**, accedere manualmente a SISTER e Tecnocloud nel browser dedicato, aprire una via e acquisire o confrontare i dati. In **Prove** scegliere gli immobili concordati e confermare le autorizzazioni; solo successivamente applicare il piano sugli immobili selezionati. Il Chrome quotidiano sulla 9222 resta escluso. La nuova sezione è in collaudo: non vengono eliminate funzioni precedenti o eseguite scritture sul gestionale all'apertura.
+Per il collaudo reale premere **Apri Chrome V2**, accedere manualmente a SISTER e Tecnocloud nel browser dedicato, aprire una via e acquisire o confrontare i dati. In **Strumenti → Schede autorizzate** scegliere gli immobili concordati e confermare le autorizzazioni; solo successivamente applicare il piano sugli immobili selezionati. Il Chrome quotidiano sulla 9222 resta escluso. La nuova sezione è in collaudo: non vengono eliminate funzioni precedenti o eseguite scritture sul gestionale all'apertura.
 
 Il laboratorio separato continua a essere disponibile per le prove simulate:
 
@@ -45,7 +45,7 @@ La modalità iniziale simula gli immobili e il gestionale, usando il motore Impo
 All'apertura la mappa occupa lo spazio disponibile, senza sidebar di dettaglio. Il pulsante **Rete** apre il riepilogo del setup in una modale. Ogni voce ha già una scheda privata con data di registrazione, anche con zero immobili e zero operazioni. I filtri distinguono inventario ufficiale, tracciati della rete propria e vie ancora da lavorare; la mappa segue gli stessi filtri. Non occorre acquisire una via per aprirla, annotarla o segnalarla.
 
 1. Passare su una via per evidenziare il tracciato e leggere stato, ultimo controllo e immobili conservati. Il riepilogo permette di segnarla «da verificare».
-2. Cliccare il tracciato per mantenere aperto il riepilogo, poi **Apri scheda** per aprire la modale con Dossier, Immobili e Storico. Una voce dell'elenco apre direttamente la stessa modale. **Chiudi**, Escape o il clic fuori riportano alla mappa; con modifiche aperte occorre prima salvare o annullare. **Aggiorna scheda** aggiorna la vista senza scartare i moduli modificati. Rete, Prove e Storico da associare usano la stessa finestra, lasciando libera la mappa quando viene chiusa.
+2. Cliccare il tracciato per mantenere aperto il riepilogo, poi **Apri scheda** per aprire la modale con Dossier, Immobili e Storico. Una voce dell'elenco apre direttamente la stessa modale. **Chiudi**, Escape o il clic fuori riportano alla mappa; con modifiche aperte occorre prima salvare o annullare. **Aggiorna scheda** aggiorna la vista senza scartare i moduli modificati. Le viste sotto Strumenti (Rete delle vie, Schede autorizzate e Storico da associare) usano la stessa finestra, lasciando libera la mappa quando viene chiusa.
 3. Acquisire la via. Le letture vengono conservate durante il lavoro, con checkpoint per la ripresa.
 4. Confrontare con il gestionale. I duplicati e le ricerche incomplete richiedono verifica; non autorizzano nuove schede.
 5. Nella scheda Immobili selezionare i casi pronti e applicare il piano. La presenza viene ricontrollata immediatamente prima della scrittura.
@@ -107,7 +107,7 @@ npm.cmd --prefix worker run territory:setup-sync
 
 Il comando legge lo stato del progetto Supabase locale e salva la configurazione privata nel profilo. Non stampa le chiavi e non usa le credenziali del progetto remoto. Per la simulazione aggiungere `-- --simulation`.
 
-Il pulsante **Memoria** permette di caricare o recuperare l'archivio. Le modifiche locali e i conflitti tra revisioni bloccano la sostituzione automatica. Prima di un recupero viene conservata una copia dell'archivio precedente. Le operazioni recuperate in corso diventano da riprendere. Se la risposta di un salvataggio va persa, un nuovo caricamento riconosce i dati già salvati senza duplicarli. Un lock del profilo impedisce scrittori concorrenti sullo stesso archivio.
+Il pulsante **Sincronizzazione** permette di caricare o recuperare l'archivio. Le modifiche locali e i conflitti tra revisioni bloccano la sostituzione automatica. Prima di un recupero viene conservata una copia dell'archivio precedente. Le operazioni recuperate in corso diventano da riprendere. Se la risposta di un salvataggio va persa, un nuovo caricamento riconosce i dati già salvati senza duplicarli. Un lock del profilo impedisce scrittori concorrenti sullo stesso archivio.
 
 In alternativa, a laboratorio chiuso:
 
@@ -162,7 +162,7 @@ Il file creato è `%APPDATA%\ListingRadarTerritoryLab-live\live-config.json`:
 
 La chiave di un immobile ha formato `BITONTO|sezione|foglio|particella|subalterno`, con sezione vuota quando assente: per esempio `BITONTO||49|1243|34`. Il confronto non distingue mai un immobile solo dal nome della via o dell'intestatario. Sono scrivibili soltanto le identità autorizzate con tutti gli intestatari autorizzati. La creazione richiede anche `allowCreate: true`. Nessuna credenziale va inserita nel file.
 
-La configurazione può essere aggiornata direttamente dal pulsante **Prove** in `Avvia Territorio Storico.cmd`:
+La configurazione può essere aggiornata direttamente dal pulsante **Strumenti → Schede autorizzate** in `Avvia Territorio Storico.cmd`:
 
 1. Cercare l'immobile per indirizzo, catasto o intestatario e controllare i dati. Le schede incomplete e simulate non sono autorizzabili.
 2. Selezionare una o due schede per il primo collaudo (massimo dieci). Aprire gli intestatari per verificare quali anagrafiche verranno coinvolte.
@@ -208,3 +208,13 @@ Il passaggio al worker distribuito resta subordinato al collaudo reale, alla ris
 `npm.cmd --prefix worker run worker-v2:visual-check` verifica l'integrazione usando il vero entry desktop, profili temporanei e servizi esterni esclusi. Controlla una sola finestra, isolamento dei renderer, ritorno alle sezioni precedenti senza perdere moduli, tema, geometria della vista, blocco del secondo motore, arresto sicuro, riapertura e storico copiato con 928 immobili e scritture disabilitate. Le schermate e il risultato sono in `.runtime/worker-v2-ui-check/`.
 
 `npm.cmd --prefix worker run territory:online-visual-check` verifica la sincronizzazione automatica, una modifica senza rete, la ripresa al riavvio e il recupero da un secondo profilo vuoto. Usa un cloud fittizio su file e copie temporanee dei 928 immobili; tutti i portali sono esclusi. Risultati in `.runtime/territory-online-ui-check/`. `tests/integration/territory-migration.test.ts` verifica migrazione, RLS e revisioni su PostgreSQL incorporato, senza dipendere da Docker.
+
+## Interfaccia operativa V2 (0.34.1)
+
+Ricerca delle vie etichettata, filtri richiudibili con reset, ordine A–Z/priorità/import meno recenti e caricamento incrementale. L’elenco è percorribile con le frecce; a schermo ridotto Chiudi o Escape riportano alla mappa.
+
+Il Dossier mostra Acquisisci → Confronta → Controlla e applica e il prossimo passo derivato dagli esiti. Se esistono immobili pronti e altri incerti si procede al controllo dei primi; gli incerti restano esclusi. Durante il processo avanzamento e Pausa restano visibili dentro la modale.
+
+In Immobili si cerca per indirizzo, catasto o intestatario e si filtra l’esito. Seleziona pronti opera sulle righe filtrate; Deseleziona svuota la scelta. Il riepilogo distingue nuove schede, aggiornamenti e selezionati fuori dai filtri. Le schede senza autorizzazione offrono Scegli per il collaudo: apre le autorizzazioni, senza abilitarle automaticamente.
+
+Note e correzioni hanno Salva/Annulla e stato non salvato; nessun refresh le scarta. I dettagli aperti, il focus da tastiera e la posizione di lettura restano conservati negli aggiornamenti. L’analisi dei componenti e i criteri sono in [PROPERTY-WORKER-V2-DESIGN.md](PROPERTY-WORKER-V2-DESIGN.md).
