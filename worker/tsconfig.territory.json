@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.desktop.json",
+  "compilerOptions": { "outDir": "dist-territory" },
+  "include": ["src/territory/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-desktop", "dist-territory", "tests"]
+}

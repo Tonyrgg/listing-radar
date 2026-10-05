@@ -4777,3 +4777,14 @@ body[data-fase="lavora"][data-worker-view="operations"] .workspace > .run-alerts
   .ledger-state,
   .ledger-actions { grid-column: 2; }
 }
+
+/* Worker V2 has an isolated native view; the legacy workspace stays mounted. */
+body:not([data-worker-view="worker-v2"]) #worker-v2 { display: none; }
+body[data-worker-view="worker-v2"] .app-layout { grid-template-columns: 236px minmax(0, 1fr); }
+body[data-worker-view="worker-v2"] .workspace-inspector { display: none; }
+body[data-worker-view="worker-v2"] .workspace { padding: 0; min-width: 0; }
+body[data-worker-view="worker-v2"] .workspace > :not(#worker-v2) { display: none; }
+.worker-v2-viewport { height: calc(100dvh - 64px); min-height: 480px; padding: 0; }
+#workerV2Status { padding: 24px; max-width: 75ch; }
+#workerV2Retry { margin: 0 24px; }
+@media(max-width:1250px) { body[data-worker-view="worker-v2"] .app-layout { grid-template-columns: 204px minmax(0, 1fr); } }

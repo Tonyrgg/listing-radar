@@ -187,6 +187,7 @@ const MAX_RIGHE_DIARIO = 300;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 const SECTION_LABELS = {
+  'worker-v2': ["Territorio e archivio", "Worker V2"],
   operations: ["Registro operativo", "Lavorazioni"],
   refinement: ["Verifica e aggiornamento", "Rifinitura"],
   portoni: ["Raccolta territoriale", "Portoni"],
@@ -265,11 +266,30 @@ function revealSection(node) {
 function goTo(id) {
   const node = revealSection(document.getElementById(id));
   if (!node) return;
-  const view = node.closest("details.section")?.id ?? "operations";
+  const view = id === 'worker-v2' ? id : node.closest("details.section")?.id ?? "operations";
   document.body.dataset.workerView = view;
   markActiveNav(view);
   node.scrollIntoView({ behavior: "smooth", block: "start" });
+  void updateWorkerV2Viewport();
 }
+
+let workerV2Update = 0;
+async function updateWorkerV2Viewport() {
+  if (!window.propertyWorker.workerV2Viewport) return;
+  const version = ++workerV2Update;
+  const viewport = $('workerV2Viewport'), visible = document.body.dataset.workerView === 'worker-v2';
+  const rect = viewport.getBoundingClientRect();
+  try {
+    await window.propertyWorker.workerV2Viewport({ visible, theme: document.documentElement.dataset.theme, bounds: { x: Math.max(0, Math.round(rect.x)), y: Math.max(0, Math.round(rect.y)), width: Math.max(0, Math.round(rect.width)), height: Math.max(0, Math.round(rect.height)) } });
+    if (version === workerV2Update) $('workerV2Retry').classList.add('is-hidden');
+  } catch (error) {
+    if (version !== workerV2Update) return;
+    $('workerV2Status').textContent = `Worker V2 non disponibile: ${error.message}. Chiudi l'eventuale laboratorio Territorio aperto e riprova.`;
+    $('workerV2Retry').classList.remove('is-hidden');
+  }
+}
+new ResizeObserver(() => { void updateWorkerV2Viewport(); }).observe($('workerV2Viewport'));
+new MutationObserver(() => { void updateWorkerV2Viewport(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 /* La tappa «Cronologia» dice quanto ha gia in memoria, come le altre tappe
  * dicono il proprio stato: e lo stesso numero mostrato dentro la sezione. */
 function updateHistoryNavHint() {
@@ -2807,6 +2827,7 @@ function renderSoftwareUpdate() {
 
 function renderStopAll() {
   const canStop =
+    Boolean(appState?.workerV2Active) ||
     Boolean(appState?.active) ||
     Boolean(appState?.requestArchive?.active) ||
     Boolean(appState?.mandateArchive?.active) ||
@@ -3318,6 +3339,7 @@ function render() {
     appState.stoppingAll,
   );
   const anyOperationActive = Boolean(
+    appState.workerV2Active ||
     workOperationActive || appState.refinement?.active || appState.requestArchive?.active ||
     appState.mandateArchive?.active || appState.portoni?.active,
   );
@@ -3592,6 +3614,7 @@ document.addEventListener("click", async (event) => {
         goTo(target.dataset.scroll);
         return true;
       }
+      if (target.id === 'workerV2Retry') return updateWorkerV2Viewport();
       if (target.dataset.action === "toggle-checks") {
         const grid = $("checksGrid");
         const aperto = grid.classList.toggle("is-hidden");

@@ -1,19 +1,33 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.33.68",
+  "version": "0.34.0",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
   "type": "module",
   "main": "dist-desktop/desktop/main.js",
   "scripts": {
+    "territory:prepare": "tsx scripts/prepare-territory.ts",
+    "territory:compile": "tsc -p tsconfig.territory.json && npm run territory:prepare",
+    "territory:dev": "npm run territory:compile && electron dist-territory/territory/main.js",
+    "territory:live": "npm run territory:compile && electron dist-territory/territory/main.js --territory-live",
+    "territory:setup-live": "node scripts/setup-territory-live.mjs",
+    "territory:setup-network": "tsx scripts/setup-territory-network.ts",
+    "territory:history": "tsx scripts/territory-history.ts",
+    "territory:setup-sync": "tsx scripts/setup-territory-sync.ts",
+    "territory:setup-online": "tsx scripts/setup-territory-online.ts",
+    "territory:sync": "tsx scripts/territory-sync.ts",
+    "territory:visual-check": "node scripts/territory-visual-check.mjs",
+    "territory:history-visual-check": "node scripts/territory-history-visual-check.mjs",
+    "worker-v2:visual-check": "node scripts/worker-v2-visual-check.mjs",
+    "territory:online-visual-check": "node scripts/territory-online-visual-check.mjs",
     "start": "tsx src/cli.ts start",
     "worker:start": "tsx src/cli.ts start",
     "worker:start:assisted": "tsx src/cli.ts start --mode assisted",
     "worker:start:auto": "tsx src/cli.ts start --mode automatic",
     "worker:resume": "tsx src/cli.ts resume",
     "worker:check": "tsx src/cli.ts check",
-    "desktop:compile": "tsc -p tsconfig.desktop.json",
+    "desktop:compile": "tsc -p tsconfig.desktop.json && npm run territory:prepare -- --desktop",
     "desktop:dev": "npm run desktop:compile && electron .",
     "desktop:prepare-config": "node scripts/prepare-bundled-config.mjs",
     "desktop:build": "npm run desktop:prepare-config && npm run desktop:compile && electron-builder --win nsis && node scripts/prune-local-releases.mjs",
@@ -71,6 +85,14 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "dist-desktop/territory/renderer",
+        "to": "territory/renderer"
+      },
+      {
+        "from": "dist-desktop/territory/preload.cjs",
+        "to": "territory/preload.cjs"
+      },
       {
         "from": "src/desktop/renderer",
         "to": "renderer"

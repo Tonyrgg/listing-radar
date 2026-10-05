@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Territorio · Property Worker</title>
+  <link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css">
+  <script defer src="vendor/leaflet.js"></script><script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">⌖</span><div><strong>Property Worker</strong><span>Territorio</span></div></div><div id="environment" class="environment">Laboratorio locale</div><div class="actions"><button id="open-browser" hidden>Apri Chrome V2</button><button id="network-setup">Rete</button><button id="test-settings" hidden>Prove</button><button id="cloud-memory" hidden>Memoria</button><button id="history-review" hidden>Storico da verificare</button><button id="refresh" class="quiet">Aggiorna vista</button></div></header>
+  <div id="notice" class="notice">Le vie sono reali. Immobili e gestionale sono simulati; il lavoro di prova resta conservato in questo laboratorio.</div>
+  <main class="workspace">
+    <aside id="catalog" class="catalog" aria-label="Ricerca delle vie">
+      <div class="catalog-heading"><h1>Da una via,<br>tutto il lavoro.</h1><p>Seleziona sulla mappa o cerca per nome.</p></div>
+      <label class="sr-only" for="search">Cerca una via</label><input id="search" type="search" placeholder="Cerca una via…" autocomplete="off">
+      <label class="sr-only" for="catalog-kind">Rete delle vie</label><select id="catalog-kind"><option value="">Vie e tracciati</option><option value="official">Inventario ufficiale</option><option value="network">Rete propria da associare</option></select>
+      <div class="filters"><label>Stato<select id="status"><option value="">Tutti gli stati</option><option value="unseen">Mai acquisite</option><option value="acquired">Acquisite</option><option value="review">Da verificare</option><option value="paused">Da riprendere</option><option value="completed">Allineate</option></select></label><label>Località<select id="locality"><option value="">Tutto il comune</option><option>Bitonto</option><option>Palombaio</option><option>Mariotto</option></select></label></div>
+      <p id="result-count" class="meta"></p><div id="streets" class="street-list"></div>
+      <footer class="catalog-footer">Inventario del Comune di Bitonto · CC BY 4.0<br>Rete OpenStreetMap · ODbL 1.0 · schede indipendenti dalle acquisizioni.</footer>
+    </aside>
+    <section class="map-region" aria-label="Mappa delle vie di Bitonto">
+      <div id="map"></div>
+      <div class="map-toolbar"><button id="home">Centra Bitonto</button><button id="toggle-list" class="mobile-only">Cerca via</button></div>
+      <div id="hover" class="hover-panel" hidden></div>
+      <div class="map-legend" aria-label="Colore per età dell'ultimo import nella run più recente"><strong>Ultimo import</strong><span class="dot never"></span>Nessun import datato <span class="dot recent"></span>≤30 giorni <span class="dot aging"></span>31–90 giorni <span class="dot stale"></span>Oltre 90 giorni</div>
+      <div id="run-progress" class="run-progress" hidden></div>
+      <div id="map-offline" class="map-offline" hidden>Cartografia non raggiungibile. Vie e archivio restano disponibili.</div>
+    </section>
+  </main>
+  <dialog id="detail-dialog" aria-labelledby="dialog-title"><header class="dialog-bar"><h2 id="dialog-title">Scheda della via</h2><div class="actions"><button id="detail-refresh" class="quiet">Aggiorna scheda</button><button id="detail-close" autofocus>Chiudi</button></div></header><section id="inspector" class="inspector" aria-label="Contenuto della scheda"></section></dialog>
+  <div id="feedback" role="status" aria-live="polite" hidden></div>
+  <dialog id="memory-dialog"><h2 id="memory-title">Memoria condivisa di prova</h2><p id="memory-description" class="explanation">Archivio nell'ambiente locale separato. Un conflitto conserva le tue modifiche e richiede un confronto.</p><p id="memory-date" class="meta"></p><div class="actions"><button id="memory-push" class="primary">Carica memoria</button><button id="memory-pull">Recupera memoria</button><button id="memory-close">Chiudi</button></div><p id="memory-result" role="status"></p></dialog>
+</body></html>

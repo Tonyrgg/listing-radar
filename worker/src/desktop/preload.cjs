@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("propertyWorker", {
+  workerV2Viewport: (value) => ipcRenderer.invoke("desktop:worker-v2-viewport", value),
   getState: () => ipcRenderer.invoke("desktop:get-state"),
   recordUiAction: (values) => ipcRenderer.invoke("desktop:record-ui-action", values),
   runChecks: () => ipcRenderer.invoke("desktop:run-checks"),

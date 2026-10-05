@@ -5,6 +5,7 @@
 /worker/node_modules
 /worker/dist
 /worker/dist-desktop
+/worker/dist-territory
 /worker/release
 /worker/generated/worker-config.json
 /worker/coverage

@@ -77,6 +77,10 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 - Excel tramite `xlsx` per i recapiti;
 - Vitest con fixture HTML e browser Chrome headless.
 
+Il laboratorio Territorio ha un entry Electron separato (`worker/src/territory/main.ts`), un archivio locale distinto e nessun accesso al canale aggiornamenti. Il setup crea i dossier dall'inventario ufficiale e da una rete pubblica di tracciati, prima delle acquisizioni; hover e apertura funzionano anche sulle vie mai lavorate. Le associazioni al Codvia sono esplicite e conservano i dati precedenti. Lo storico viene recuperato con un comando esplicito di sola lettura; la memoria condivisa del laboratorio separato usa Supabase locale, con controllo delle revisioni. Il laboratorio simulato resta separato dal worker distribuito. Per avvio, recupero dello storico, copertura delle geometrie e collaudo sulle schede reali concordate leggere `docs/PROPERTY-WORKER-TERRITORY.md`.
+
+Dal 5 ottobre 2026 lo stesso runtime è integrato anche nella sezione **Worker V2** dell'app desktop, tramite un `WebContentsView` con preload dedicato (`desktop/worker-v2.ts`, `territory/session.ts`). Le sezioni precedenti restano disponibili, il profilo Territorio già recuperato viene riusato, le run concorrenti sono escluse e Chrome V2 usa soltanto la porta 9223. L'avvio locale completo è `worker/Avvia Worker con V2.cmd`; la pubblicazione sul canale rimane un'operazione distinta. La build desktop prepara e include inventario, cartografia e preload V2 nelle risorse dell'installer. La 0.34.0 distribuisce la nuova sezione e sincronizza automaticamente la memoria reale nel Supabase già configurato nelle preferenze protette di Windows; copie locali, revisioni e backup impediscono sovrascritture automatiche in conflitto. La migrazione 0013 è stata applicata al nuovo progetto online autorizzato, senza modificare tabelle del worker precedente.
+
 ### Database e infrastruttura
 
 - Supabase/PostgreSQL con RLS;

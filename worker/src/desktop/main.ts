@@ -77,6 +77,7 @@ import {
   type BrowserConnectionStability,
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
+import { WorkerV2Host } from "./worker-v2.js";
 import { importRunOptions, withLockedImportRunOptions, withResumedImportConcurrency, type ImportRunOptions } from "./import-run-options.js";
 import {
   canResumeStreetAcquisition,
@@ -194,6 +195,7 @@ const portoniRowSchema = z.object({
 const savePortoniSchema = z.object({ id: z.string().min(1), rows: z.array(portoniRowSchema) });
 
 let mainWindow: BrowserWindow | null = null;
+let workerV2: WorkerV2Host | null = null;
 let preferences: Preferences = defaultPreferences;
 let activePrompts: DesktopPromptController | null = null;
 let activeJobId: string | null = null;
@@ -352,7 +354,7 @@ const completedSummaryCache = new Map<string, {
 }>();
 let publishStatePromise: Promise<void> | null = null;
 let publishStateQueued = false;
-let operationReservation: "worker" | "street" | "network" | "requests" | "mandates" | "portoni" | "import-v2-diagnostics" | null = null;
+let operationReservation: "worker" | "worker-v2" | "street" | "network" | "requests" | "mandates" | "portoni" | "import-v2-diagnostics" | null = null;
 
 type ConnectionCheck = BrowserConnectionCheck | {
   id: string;
@@ -742,7 +744,7 @@ async function archiveStreetRunCheckpoint(reason: string, engine: "lavorazione" 
 }
 
 function refreshStoppingAll() {
-  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive && !portoniActive) stoppingAll = false;
+  if (!active && !requestImportActive && !mandateImportActive && !streetRunActive && !networkRunActive && !portoniActive && !workerV2?.active) stoppingAll = false;
 }
 
 /**
@@ -1286,6 +1288,7 @@ async function stateSnapshot() {
   const refinementDiagnosticErrors = diagnosticErrors.filter(isRefinementDiagnostic);
   return {
     active: workImportActive,
+    workerV2Active: workerV2?.active ?? false,
     stoppingAll,
     activeJobId: workImportActive ? activeJobId : null,
     cancellingJobId: workImportActive ? cancellingJobId : null,
@@ -1423,7 +1426,7 @@ function initializeDesktopUpdater() {
     currentVersion: app.getVersion(),
     packaged: app.isPackaged,
     updateDirectory: path.join(app.getPath("temp"), "PropertyDataWorkerUpdates"),
-    isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive,
+    isWorkerActive: () => active || requestImportActive || mandateImportActive || streetRunActive || networkRunActive || portoniActive || Boolean(workerV2?.active),
     quitApp: () => app.quit(),
     onState: (state) => {
       if (state.status !== previousStatus) {
@@ -3440,6 +3443,13 @@ async function abandonStreetRun() {
 }
 
 async function stopEverything() {
+  if (workerV2?.active) {
+    stoppingAll = true; void publishState();
+    await workerV2.pause(); refreshStoppingAll();
+    pushActivity("Worker V2 in pausa con avanzamento conservato", "warning");
+    await publishState();
+    return { stopped: true, pending: stoppingAll, actions: ["Worker V2 in pausa con avanzamento conservato"] };
+  }
   clearAutoRetry();
   clearRetryMonitor();
   const actions: string[] = [];
@@ -3687,14 +3697,35 @@ async function createWindow() {
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   mainWindow.removeMenu();
+  const v2TestDirectory = !app.isPackaged ? process.env.TERRITORY_LAB_DATA_DIR : undefined;
+  if (v2TestDirectory && (!path.isAbsolute(v2TestDirectory) || !/territory/i.test(path.basename(v2TestDirectory)))) throw new Error("Directory di prova Worker V2 non valida");
+  workerV2 = new WorkerV2Host(mainWindow, {
+    assetDirectory: app.isPackaged ? path.join(process.resourcesPath, "territory") : path.join(workerRoot, "dist-desktop/territory"),
+    profileDirectory: v2TestDirectory ?? path.join(app.getPath("appData"), "ListingRadarTerritoryLab-live"),
+    simulation: Boolean(v2TestDirectory && process.env.WORKER_V2_SIMULATION === "1"),
+    contactsExcelPath: preferences.contactsExcelPath,
+    ...(!v2TestDirectory ? { onlineCredentials: () => {
+      if (archivedDatabaseConfigurationNeedsRefresh()) throw new Error(ARCHIVED_DATABASE_CONFIGURATION_MESSAGE);
+      const environment = internalEnvironment();
+      return { url: environment.NEXT_PUBLIC_SUPABASE_URL ?? "", key: environment.SUPABASE_SERVICE_ROLE_KEY ?? "" };
+    } } : {}),
+    beforeStart: () => reserveOperation("worker-v2"),
+    afterIdle: () => releaseOperationReservation("worker-v2"),
+    changed: () => { void publishState(); },
+  });
   const rendererPath = app.isPackaged
     ? path.join(process.resourcesPath, "renderer", "index.html")
     : path.join(workerRoot, "src", "desktop", "renderer", "index.html");
-  await mainWindow.loadFile(rendererPath);
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  await mainWindow.loadFile(rendererPath);
 }
 
 function registerIpc() {
+  ipcMain.handle("desktop:worker-v2-viewport", (event, value) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Richiesta non autorizzata");
+    if (!workerV2) throw new Error("Worker V2 non ancora pronto");
+    return workerV2.update(value);
+  });
   ipcMain.handle("desktop:get-state", () => stateSnapshot());
   ipcMain.handle("desktop:record-ui-action", async (_event, rawValues: unknown) => {
     const values = uiActionSchema.parse(rawValues);
