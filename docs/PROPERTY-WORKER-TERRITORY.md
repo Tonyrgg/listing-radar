@@ -233,6 +233,22 @@ Le scelte si fissano all'avvio della run e compaiono nello Storico e nel riepilo
 
 `npm.cmd --prefix worker run territory:online-visual-check` verifica la sincronizzazione automatica, una modifica senza rete, la ripresa al riavvio e il recupero da un secondo profilo vuoto. Usa un cloud fittizio su file e copie temporanee dei 928 immobili; tutti i portali sono esclusi. Risultati in `.runtime/territory-online-ui-check/`. `tests/integration/territory-migration.test.ts` verifica migrazione, RLS e revisioni su PostgreSQL incorporato, senza dipendere da Docker.
 
+## Recupero degli indirizzi storici (0.34.6)
+
+Il riconoscimento della via separa il civico esplicito SISTER anche con suffissi
+numerici (`110/13`, `172/5`) e toglie i dettagli del lotto. Queste regole servono
+solo all'associazione della memoria territoriale: l'identità CRM resta invariata.
+All'apertura, dopo l'aggiornamento del catalogo, le righe storiche irrisolte vengono
+recuperate solo quando il nome ufficiale è univoco. Restano conservati indirizzo,
+date, prove di import e correzioni umane; omonimi, righe escluse e import parziali
+non vengono risolti automaticamente. Un inventario incompleto resta incompleto.
+
+Verifica del 6 ottobre 2026 su una copia isolata del profilo reale: 15 righe
+riconosciute, 1.007 → 1.019 immobili, nessuna scrittura CRM. Restano 89 righe con
+Codvia omonimi, 45 indirizzi da verificare e 40 righe escluse in origine. Il CSV
+ufficiale scaricato per l'audit coincide con quello già in uso. Il collaudo reale
+richiede ancora la scelta esplicita delle schede e l'accesso al Chrome V2.
+
 ## Interfaccia operativa V2 (0.34.1)
 
 Ricerca delle vie etichettata, filtri richiudibili con reset, ordine A–Z/priorità/import meno recenti e caricamento incrementale. L’elenco è percorribile con le frecce; a schermo ridotto Chiudi o Escape riportano alla mappa.

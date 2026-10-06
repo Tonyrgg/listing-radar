@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { adoptHistory, associateHistory, hydrateHistoryProgress } from "../src/territory/history.js";
+import { adoptHistory, associateHistory, hydrateHistoryProgress, matchHistoricalStreet, resolveRecognizedHistory } from "../src/territory/history.js";
 import { exportHistory, historyReadOnlyFetch, historyRows, type HistorySnapshot } from "../src/territory/history-source.js";
 import { TerritoryStore } from "../src/territory/store.js";
 import { effectiveSource, streetSummary, type Street } from "../src/territory/model.js";
@@ -176,6 +176,61 @@ describe("Recupero dello storico senza replay delle vecchie scritture", () => {
     await adoptHistory(store, data);
     expect(effectiveSource(Object.values(store.read().units)[0]!).fullAddress).toBe("Via della prova 30");
     expect(Object.values(store.read().units)[0]!.observations).toHaveLength(3);
+  });
+});
+describe("Identificazione della via nello storico SISTER", () => {
+  function source(address: string) {
+    const data = snapshot(), entry = data.jobs[0]!;
+    return { ...importV2Sources(entry.job, entry.graph, () => ({ enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" }))[0]!, fullAddress: address };
+  }
+  it("riconosce civici con suffissi numerici, senza allargare l'identità CRM", async () => {
+    const { store } = await setup(); const data = snapshot();
+    data.jobs[0]!.graph.properties[0]!.address = "Via della prova n. 110/13 Piano 1";
+    expect((await adoptHistory(store, data)).issues).toBe(0);
+    expect(effectiveSource(Object.values(store.read().units)[0]!).fullAddress).toBe("Via della prova n. 110/13 Piano 1");
+    expect((await adoptHistory(store, data)).addedObservations).toBe(0);
+  });
+  it("separa il lotto e i dettagli dall'indirizzo della via", () => {
+    expect(matchHistoricalStreet(source("Via della prova n. SNC Lotto 1 Scala A Piano 1-2"), [street])).toEqual([street]);
+  });
+  it("non sceglie un Codvia quando il nome è duplicato", () => {
+    const homonym = { ...street, id: "21" };
+    expect(matchHistoricalStreet(source("Via della prova n. 110/13 Piano 1"), [street, homonym])).toEqual([street, homonym]);
+  });
+  it("conserva i numeri che fanno parte del nome di una traversa", () => {
+    const traverse = { ...street, name: "Traversa al numero 126 di via Palombaio", sisterName: "TRAVERSA AL NUMERO 126 DI VIA PALOMBAIO" };
+    expect(matchHistoricalStreet(source("TRAVERSA AL NUMERO 126 DI VIA PALOMBAIO n. 4 Piano 4"), [street, traverse])).toEqual([traverse]);
+  });
+  it("non associa indirizzi multipli alla sola ultima via", () => {
+    expect(matchHistoricalStreet(source("Via diversa n. 49; Via della prova n. 11 Piano T"), [street])).toEqual([]);
+  });
+  it("all'apertura recupera righe già conservate, con prove e date originali", async () => {
+    const { store, directory } = await setup([]);
+    await adoptHistory(store, snapshot());
+    expect(store.read().history![0]!.issues).toHaveLength(1);
+    const reopened = await TerritoryStore.open(directory, [street]);
+    const state = reopened.read(), unit = Object.values(state.units)[0]!;
+    expect(state.history![0]).toMatchObject({ associated: 1, issues: [] });
+    expect(unit.observations[0]).toMatchObject({ at: "2026-08-01T10:00:00Z", importedAt: "2026-08-01T11:00:00Z", crmId: "crm-1", importVerified: true });
+    expect(resolveRecognizedHistory(state)).toBe(0);
+    expect(state.runs).toHaveLength(0);
+    expect(state.checkpoints).toEqual({});
+  });
+  it("il recupero lascia gli omonimi in revisione e conserva le scelte manuali", async () => {
+    const { store } = await setup([street, { ...street, id: "21" }]);
+    await adoptHistory(store, snapshot());
+    let state = store.read(); expect(resolveRecognizedHistory(state)).toBe(0);
+    state.historicalStreetMappings = { "property-old": "21" };
+    expect(resolveRecognizedHistory(state)).toBe(1);
+    expect(Object.values(state.units)[0]!.streetIds).toEqual(["21"]);
+    expect(state.historicalStreetMappings).toEqual({ "property-old": "21" });
+  });
+  it("attende gli import parziali prima di recuperare associazioni", async () => {
+    const { store } = await setup([]); await adoptHistory(store, snapshot());
+    const state = store.read(); state.streets = [street];
+    state.checkpoints["partial"] = { stage: "property_synced" } as any;
+    expect(resolveRecognizedHistory(state)).toBe(0);
+    expect(state.history![0]!.issues).toHaveLength(1);
   });
 });
 describe("Sicurezza della lettura e del profilo", () => {

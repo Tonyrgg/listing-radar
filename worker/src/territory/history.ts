@@ -120,12 +120,38 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
 export function matchHistoricalStreet(source: SourceProperty, streets: Street[], explicit?: string) {
   if (explicit) { const street = streets.find(s => s.id === explicit && !s.needsReview && s.catalogKind !== "network"); if (!street) throw new Error("Codvia esplicito non valido"); return [street]; }
   const address = stripSisterMunicipalityPrefix(source.fullAddress, source.municipality);
+  // The explicit SISTER civic delimiter also covers numeric suffixes (110/13)
+  // and lots. It identifies the street only; CRM address identity stays strict.
+  const withoutDetails = address.replace(/\s+(?:PIANO|SCALA|EDIFICIO|INTERNO|LOTTO)\b.*$/i, "").trim();
+  const explicitCivic = withoutDetails.match(/^(.*?)\s+(?:N\.?|NUMERO)\s+(?:\d+(?:\s*\/\s*(?:\d+|[A-Z])|\s*[A-Z])?(?:\s*-\s*\d+(?:\s*\/\s*(?:\d+|[A-Z])|\s*[A-Z])?)*|NC|SNC|S\.?\s*N\.?\s*C\.?)$/i);
   const identity = addressIdentity(address);
   // Street memory can recognise an exact official name without a civic.
   // This does not relax the stricter CRM property identity comparison.
-  const name = normalizeSisterStreet(identity?.street ?? address.replace(/\s+(?:PIANO|SCALA|EDIFICIO|INTERNO)\b.*$/i, "").trim());
+  const name = normalizeSisterStreet(explicitCivic?.[1] ?? identity?.street ?? withoutDetails);
   if (!name) return [];
   return streets.filter(s => s.catalogKind !== "network" && !s.needsReview && [s.name, s.sisterName].some(n => normalizeSisterStreet(n) === name));
+}
+
+/** Revisit unresolved rows after catalogue/parser updates, using unique names only. */
+export function resolveRecognizedHistory(state: TerritoryState) {
+  if (state.runs.some(run => run.state === "running") || Object.values(state.checkpoints).some(c => c.stage !== "completed")) return 0;
+  let resolved = 0;
+  const at = new Date().toISOString();
+  for (const job of state.history ?? []) {
+    job.issues = job.issues.filter(issue => {
+      if (!issue.source || !issue.at) return true;
+      const matches = matchHistoricalStreet(issue.source, state.streets, state.historicalStreetMappings?.[issue.propertyId]);
+      if (matches.length !== 1) return true;
+      const street = matches[0]!;
+      insertObservation(state, issue.source, issue.propertyId, job.id, street.id, issue.at, at, issue.verifiedAt ?? null, issue.crmId ?? null, issue.importVerified ?? Boolean(issue.verifiedAt && issue.crmId), issue.activityEligible ?? false);
+      job.associated++;
+      if (!job.streetIds.includes(street.id)) job.streetIds.push(street.id);
+      state.events.push({ id: randomUUID(), streetId: street.id, at, text: "Indirizzo storico riconosciuto: nome ufficiale univoco", unitKey: unitKey(issue.source) });
+      resolved++;
+      return false;
+    });
+  }
+  return resolved;
 }
 
 /** Imports observations, never resumes or replays the stable worker's checkpoints. */
