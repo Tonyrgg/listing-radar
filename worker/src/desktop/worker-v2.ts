@@ -5,6 +5,9 @@ import { existsSync } from "node:fs";
 import { z } from "zod";
 import { openTerritorySession } from "../territory/session.js";
 import type { OnlineCredentials } from "../territory/online-memory.js";
+import { queueAcquisition } from "../territory/acquisition-inbox.js";
+import type { HistorySnapshot } from "../territory/history-source.js";
+import type { JobRow } from "../services/repository.js";
 
 export const workerV2Viewport = z.object({ visible: z.boolean(), theme: z.enum(["light", "dark"]), bounds: z.object({ x: z.number().int().min(0).max(20000), y: z.number().int().min(0).max(20000), width: z.number().int().min(0).max(20000), height: z.number().int().min(0).max(20000) }) });
 type Viewport = z.infer<typeof workerV2Viewport>;
@@ -16,6 +19,7 @@ export class WorkerV2Host {
   private opening: Promise<void> | null = null;
   private disposed = false;
   private viewport: Viewport | null = null;
+  private memoryQueue: Promise<unknown> = Promise.resolve();
   constructor(private readonly parent: BrowserWindow, private readonly options: {
     assetDirectory: string; profileDirectory: string; simulation?: boolean;
     contactsExcelPath?: string; beforeStart: () => void; afterIdle: () => void; changed: () => void;
@@ -33,12 +37,28 @@ export class WorkerV2Host {
   async update(value: unknown) {
     this.viewport = workerV2Viewport.parse(value);
     if (!this.viewport.visible) { this.view?.setVisible(false); return { ready: Boolean(this.session) }; }
-    if (!this.session) {
-      this.opening ??= this.open().finally(() => { this.opening = null; });
-      await this.opening;
-    }
+    await this.ensureOpen();
     this.layout();
     return { ready: true };
+  }
+  private async ensureOpen() {
+    if (this.disposed) throw new Error("Worker V2 chiuso: memoria in attesa del prossimo avvio");
+    if (!this.session) { this.opening ??= this.open().finally(() => { this.opening = null; }); await this.opening; }
+  }
+  async remember(snapshot?: HistorySnapshot) {
+    if (this.options.simulation) return;
+    const operation = this.memoryQueue.then(async () => {
+      if (snapshot) await queueAcquisition(this.options.profileDirectory, snapshot);
+      await this.ensureOpen();
+      await this.session!.consumeDailyMemory();
+    });
+    this.memoryQueue = operation.catch(() => undefined);
+    return operation;
+  }
+  async needsAcquisition(job: JobRow) {
+    if (this.options.simulation || ["ready", "running", "processing", "in_progress"].includes(job.status)) return false;
+    await this.ensureOpen();
+    return !this.session!.hasAcquisitionVersion(job.id, job.updated_at);
   }
   private layout() {
     if (!this.view || !this.viewport || this.parent.isDestroyed()) return;
@@ -79,6 +99,7 @@ export class WorkerV2Host {
     return { alreadyOpen: false };
   }
   async close() {
+    await this.memoryQueue;
     await this.opening?.catch(() => undefined);
     await this.session?.close(); this.session = null;
     if (this.view) { if (!this.parent.isDestroyed()) this.parent.contentView.removeChildView(this.view); this.view.webContents.close(); this.view = null; }

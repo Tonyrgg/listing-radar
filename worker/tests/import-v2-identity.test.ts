@@ -44,6 +44,17 @@ const source = (overrides: Partial<SourceProperty> = {}): SourceProperty => ({
 });
 
 describe("Import V2 identity", () => {
+  it("riconosce lo stesso insieme di proprietari in ordine diverso senza cambiare il piano operativo", () => {
+    const input = source();
+    input.owners[0]!.sharePercentage = 50;
+    input.owners.push({ ...input.owners[0]!, sourcePersonId: "person-2", taxCode: "BNCNNA80B42A893J", fullName: "Bianchi Anna" });
+    const first = buildPlan(input);
+    const second = buildPlan({ ...input, owners: [...input.owners].reverse() });
+    expect(second.fingerprint).toBe(first.fingerprint);
+    expect(first.source.owners.map(o => o.sourcePersonId)).toEqual(["person-1", "person-2"]);
+    expect(second.source.owners.map(o => o.sourcePersonId)).toEqual(["person-2", "person-1"]);
+    expect(buildPlan({ ...input, owners: input.owners.map(o => ({ ...o, sharePercentage: 25 })) }).fingerprint).not.toBe(first.fingerprint);
+  });
   it.each([null, 0, -1, 101, NaN])("rifiuta una quota %s anche per sorgenti che non passano dal database", share => {
     const input = source();
     input.owners[0]!.sharePercentage = share;

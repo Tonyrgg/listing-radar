@@ -75,21 +75,22 @@ export class SupabaseImportV2Store implements ImportV2Store {
     if (existing.data) {
       const row = existing.data as ImportV2ItemRow;
       if (row.plan_fingerprint !== plan.fingerprint) {
-        // Releases up to 0.33.13 included the mutable activity choice in the
-        // fingerprint. Recompute the stored source with the current identity
-        // rules before declaring that acquisition evidence changed.
-        const compatibleLegacyFingerprint = row.plan
-          && buildPlan(row.plan.source).fingerprint === plan.fingerprint;
+        // Older fingerprints included activity or database ownership order.
+        // Recompute both sources before declaring their evidence changed.
+        const storedPlan = row.plan && buildPlan(row.plan.source);
+        const compatibleLegacyFingerprint = storedPlan?.fingerprint === plan.fingerprint;
         if (!compatibleLegacyFingerprint) {
           throw new ImportV2Error("L'acquisizione è cambiata dopo l'inizio dell'import", "invalid_source", {
-            details: { previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
+            details: { action: "import-v2-source-identity", propertyId: plan.source.sourcePropertyId, jobId: plan.source.jobId, previousFingerprint: row.plan_fingerprint, currentFingerprint: plan.fingerprint },
           });
         }
         const migrated = await cloudRequest(() => this.client.from("property_worker_import_v2_items")
-          .update({ plan_fingerprint: plan.fingerprint, plan })
+          .update({ plan_fingerprint: plan.fingerprint, plan: storedPlan })
           .eq("id", row.id));
         if (migrated.error) throw new Error(`Migrazione fingerprint Import V2 fallita: ${cloudErrorMessage(migrated.error)}`);
-        row.plan = plan;
+        // Keep the original activity and equal-share primary owner, including
+        // when the database returns the same owners in another order.
+        row.plan = storedPlan;
         row.plan_fingerprint = plan.fingerprint;
       }
       const checkpoint = checkpointFromRow(row);

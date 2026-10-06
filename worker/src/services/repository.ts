@@ -1025,12 +1025,22 @@ export class WorkerRepository {
   }
 
   async loadGraph(jobId: string) {
+    const readRows = async (table: string, field: string, ids: string | string[]) => {
+      const rows: Array<Record<string, unknown>> = [];
+      for (let start = 0; ; start += 500) {
+        let query = this.client.from(table).select("*").order("created_at", { ascending: true }).order("id", { ascending: true }).range(start, start + 499);
+        query = Array.isArray(ids) ? query.in(field, ids) : query.eq(field, ids);
+        const result = await query;
+        if (result.error) throw new Error(`Impossibile ricostruire il grafo persistito: ${result.error.message}`);
+        rows.push(...result.data);
+        if (result.data.length < 500) return rows;
+      }
+    };
     const [properties, people] = await Promise.all([
-      this.client.from("property_worker_properties").select("*").eq("job_id", jobId).order("created_at", { ascending: true }),
-      this.client.from("property_worker_people").select("*").eq("job_id", jobId),
+      readRows("property_worker_properties", "job_id", jobId),
+      readRows("property_worker_people", "job_id", jobId),
     ]);
-    if (properties.error || people.error) throw new Error("Impossibile ricostruire il job persistito");
-    const propertyRows = (properties.data as PropertyRow[]).map((property) => ({
+    const propertyRows = (properties as PropertyRow[]).map((property) => ({
       ...property,
       // Compatibilita' con le raccolte create prima della normalizzazione
       // dell'elenco immobili per soggetto: UI e import ricevono subito la via
@@ -1044,15 +1054,10 @@ export class WorkerRepository {
       if (Number.isFinite(rightOrder)) return 1;
       return 0;
     });
-    const peopleRows = people.data as PersonRow[];
+    const peopleRows = people as PersonRow[];
     let ownershipRows: Array<Record<string, unknown>> = [];
-    if (propertyRows.length) {
-      const ownerships = await this.client
-        .from("property_worker_ownerships")
-        .select("*")
-        .in("property_id", propertyRows.map((row) => row.id));
-      if (ownerships.error) throw new Error("Impossibile ricostruire le comproprietà del job persistito");
-      ownershipRows = ownerships.data as Array<Record<string, unknown>>;
+    for (let start = 0; start < propertyRows.length; start += 100) {
+      ownershipRows.push(...await readRows("property_worker_ownerships", "property_id", propertyRows.slice(start, start + 100).map(row => row.id)));
     }
     return {
       properties: propertyRows,

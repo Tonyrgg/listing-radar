@@ -99,7 +99,7 @@ export function summarizeStreetAcquisition(
   const activeResult = checkpoint.results.find((result) => result.cursor)
     ?? checkpoint.results.find((result) => result.outcome === "paused")
     ?? null;
-  const knownTotal = checkpoint.results.reduce((sum, result) => sum + Number(result.rawRecords || 0), 0);
+  const knownTotal = checkpoint.results.reduce((sum, result) => sum + Number(result.rawRecords || result.cursor?.total || 0), 0);
   const completed = records.filter((record) => record.status === "completed").length;
   const completedWithAnomalies = records.filter((record) => record.status === "completed_with_anomalies").length;
   const skipped = records.filter((record) => record.status === "skipped").length;
@@ -109,7 +109,7 @@ export function summarizeStreetAcquisition(
     state: checkpoint.status,
     position: cursor?.position ?? (checkpoint.status === "completed" ? knownTotal : handled ? handled + 1 : null),
     total: knownTotal,
-    totalIsFinal: checkpoint.status === "completed" || checkpoint.currentVariantIndex >= checkpoint.variants.length - 1,
+    totalIsFinal: checkpoint.status === "completed",
     completed,
     completedWithAnomalies,
     skipped,
@@ -119,6 +119,13 @@ export function summarizeStreetAcquisition(
     variant: Math.min(checkpoint.currentVariantIndex + 1, Math.max(1, checkpoint.variants.length)),
     variants: checkpoint.variants.length,
   };
+}
+
+/** Repair the presentation of old failed cursors without changing saved evidence. */
+export function projectJobAcquisition(job: JobRow): JobRow {
+  const checkpoint = job.acquisition?.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
+  if (!checkpoint?.results) return job;
+  return { ...job, acquisition: { ...job.acquisition, acquisitionProgress: summarizeStreetAcquisition(checkpoint), acquisitionCheckpoint: projectStreetCheckpointForRenderer(checkpoint) } };
 }
 
 type CompletedGraph = {
@@ -165,6 +172,7 @@ export function projectStreetCheckpointForRenderer(
     uniquePropertyKeys: [],
     results: checkpoint.results.map((result) => ({
       ...result,
+      inventoryProperties: undefined,
       propertyKeys: [],
       expandedPropertyKeys: [],
       expandedOwnerKeys: [],

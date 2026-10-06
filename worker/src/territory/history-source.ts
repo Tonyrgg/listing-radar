@@ -58,3 +58,26 @@ export async function exportHistory(client: SupabaseClient, source: string): Pro
   });
   return snapshot;
 }
+
+/** A stable read of one daily acquisition; never resumes or writes its job. */
+export async function exportAcquisition(client: SupabaseClient, source: string, jobId: string): Promise<HistorySnapshot> {
+  const job = (await historyRows<JobRow>(client, "property_worker_jobs", { field: "id", value: jobId }))[0];
+  const snapshot: HistorySnapshot = { version: 1, readOnly: true, source, exportedAt: new Date().toISOString(), jobs: [], skippedJobIds: [] };
+  if (!job || ["ready", "running", "processing", "in_progress"].includes(job.status)) { snapshot.skippedJobIds.push(jobId); return snapshot; }
+  const scope = { field: "job_id", value: jobId };
+  const [properties, people, items, steps] = await Promise.all([
+    historyRows<PropertyRow>(client, "property_worker_properties", scope),
+    historyRows<PersonRow>(client, "property_worker_people", scope),
+    historyRows<HistoryJob["items"][number]>(client, "property_worker_import_v2_items", scope),
+    historyRows<{ step_name: string; output_data: Record<string, unknown> | null }>(client, "property_worker_steps", scope),
+  ]);
+  const ownerships: AcquiredGraph["ownerships"] = [];
+  for (let offset = 0; offset < properties.length; offset += 100) ownerships.push(...await historyRows<AcquiredGraph["ownerships"][number]>(client, "property_worker_ownerships", { field: "property_id", value: properties.slice(offset, offset + 100).map(p => p.id) }));
+  const current = (await historyRows<JobRow>(client, "property_worker_jobs", { field: "id", value: jobId }))[0];
+  if (!current || current.updated_at !== job.updated_at || current.status !== job.status) { snapshot.skippedJobIds.push(jobId); return snapshot; }
+  const ignoredBusinessRows = steps.filter(s => s.step_name === "owners_extracted").flatMap(s => Array.isArray(s.output_data?.ignoredBusinesses) ? s.output_data.ignoredBusinesses.flatMap((row: unknown) => {
+    const index = Number((row as { rowIndex?: number } | null)?.rowIndex); return Number.isInteger(index) ? [index] : [];
+  }) : []);
+  if (properties.length || job.acquisition?.acquisitionCheckpoint) snapshot.jobs.push({ job, graph: { properties, people, ownerships }, items, ignoredBusinessRows });
+  return snapshot;
+}

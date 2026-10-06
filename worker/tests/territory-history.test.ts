@@ -8,6 +8,8 @@ import { exportHistory, historyReadOnlyFetch, historyRows, type HistorySnapshot 
 import { TerritoryStore } from "../src/territory/store.js";
 import { effectiveSource, streetSummary, type Street } from "../src/territory/model.js";
 import { lockTerritoryProfile } from "../src/territory/profile-lock.js";
+import { buildPlan } from "../src/import-v2/identity.js";
+import { importV2Sources } from "../src/import-v2/source.js";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
@@ -19,6 +21,63 @@ const snapshot = (): HistorySnapshot => ({ version: 1, readOnly: true, source: "
 }] });
 async function setup(streets: Street[] = [street]) { const directory = await mkdtemp(path.join(os.tmpdir(), "territory-history-")); directories.push(directory); return { store: await TerritoryStore.open(directory, streets), directory }; }
 describe("Recupero dello storico senza replay delle vecchie scritture", () => {
+  it("una prova d'import precedente non certifica intestatari cambiati nella stessa raccolta", async () => {
+    const { store } = await setup(); const data = snapshot(), entry = data.jobs[0]!;
+    entry.items[0]!.plan = buildPlan(importV2Sources(entry.job, entry.graph, () => ({ enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" }))[0]!);
+    await adoptHistory(store, data);
+    expect(streetSummary(store.read(), street).progress.imported).toBe(1);
+    entry.graph.people[0]!.full_name = "Intestatario cambiato";
+    await adoptHistory(store, data);
+    expect(store.read().history![0]!.imported).toBe(0);
+    expect(streetSummary(store.read(), street).progress.imported).toBe(0);
+    expect(Object.values(store.read().units)[0]!.observations[0]!.importVerified).toBe(true);
+  });
+  it("associa alla memoria la via ufficiale anche quando SISTER non indica il civico", async () => {
+    const { store } = await setup(); const data = snapshot();
+    data.jobs[0]!.graph.properties[0]!.address = "VIA DELLA PROVA Piano 1";
+    await adoptHistory(store, data);
+    expect(store.read().history![0]!.associated).toBe(1);
+    expect(store.read().history![0]!.issues).toEqual([]);
+  });
+  it("riprendere oggi un vecchio import non sovrascrive la sorgente di una raccolta più recente", async () => {
+    const { store } = await setup(); const older = snapshot(), newer = snapshot();
+    older.jobs[0]!.graph.properties[0]!.raw_payload = {};
+    Object.assign(older.jobs[0]!.graph.properties[0]!, { created_at: "2026-08-01T10:00:00Z", updated_at: "2026-10-06T12:00:00Z" });
+    const entry = newer.jobs[0]!;
+    entry.job = { ...entry.job, id: "new-job", created_at: "2026-10-05T10:00:00Z", updated_at: "2026-10-05T11:00:00Z" };
+    entry.graph.properties[0] = { ...entry.graph.properties[0]!, id: "new-property", job_id: "new-job", category: "A/2" };
+    entry.graph.people[0] = { ...entry.graph.people[0]!, id: "new-person", job_id: "new-job" };
+    entry.graph.ownerships[0] = { ...entry.graph.ownerships[0]!, property_id: "new-property", person_id: "new-person" };
+    entry.items = [];
+    await adoptHistory(store, newer); await adoptHistory(store, older);
+    expect(effectiveSource(Object.values(store.read().units)[0]!).category).toBe("A/2");
+    expect(streetSummary(store.read(), street).progress).toMatchObject({ acquisitionRunId: "history:new-job", imported: 0 });
+  });
+  it("usa l'inventario SISTER intero come denominatore, senza duplicati né immobili di altre vie", async () => {
+    const { store } = await setup(); const data = snapshot();
+    const inventory = [
+      { municipality: "BITONTO", sheet: "49", parcel: "123", subaltern: "4", address: "Via della prova 12", category: "A/3" },
+      { municipality: "BITONTO", sheet: "49", parcel: "124", subaltern: "5", address: "Via della prova 14", category: "C/6" },
+    ];
+    data.jobs[0]!.job.acquisition = { acquisitionCheckpoint: { status: "completed", results: [{ outcome: "found", inventoryProperties: [...inventory, inventory[0]] }] } };
+    await adoptHistory(store, data);
+    expect(streetSummary(store.read(), street).progress).toMatchObject({ total: 2, imported: 1, percent: 50 });
+    expect(Object.values(store.read().units)).toHaveLength(1);
+    const repeated = await adoptHistory(store, data); expect(repeated.addedObservations).toBe(0);
+    data.jobs[0]!.job.acquisition = { acquisitionCheckpoint: { status: "paused", results: [{ outcome: "failed", inventoryProperties: inventory }] } };
+    await adoptHistory(store, data);
+    expect(streetSummary(store.read(), street).progress).toMatchObject({ total: null, observed: 2, percent: null });
+  });
+  it("un portafoglio sviluppato su un'altra via non dimostra un inventario completo per quella via", async () => {
+    const other = { ...street, id: "21", name: "Via Laterale", sisterName: "VIA LATERALE" };
+    const { store } = await setup([street, other]); const data = snapshot();
+    const entry = data.jobs[0]!;
+    entry.graph.properties.push({ ...entry.graph.properties[0]!, id: "expanded", parcel: "999", address: "Via Laterale 1" });
+    entry.graph.ownerships.push({ ...entry.graph.ownerships[0]!, id: "expanded-link", property_id: "expanded" });
+    entry.job.acquisition = { acquisitionCheckpoint: { status: "completed", results: [{ outcome: "found", inventoryProperties: [{ municipality: "BITONTO", sheet: "49", parcel: "123", subaltern: "4", address: "Via della prova 12", category: "A/3" }] }] } };
+    await adoptHistory(store, data);
+    expect(streetSummary(store.read(), other).progress).toMatchObject({ total: null, observed: 1, percent: null });
+  });
   it("aggiorna le vecchie prove dal file locale senza modificare valutazioni e correzioni", async () => {
     const { store, directory } = await setup(); const data = snapshot(); await adoptHistory(store, data);
     const original = store.read(); const unit = Object.values(original.units)[0]!;

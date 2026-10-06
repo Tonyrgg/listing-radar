@@ -4,6 +4,8 @@ Applicazione Node.js locale separata dalla web app Listing Radar. Si collega a u
 
 Non gestisce login, credenziali, SPID/CIE, OTP o CAPTCHA. Le sessioni SISTER e gestionale devono essere aperte manualmente in Chrome.
 
+La **0.34.2** recupera le acquisizioni SISTER con contatori azzerati e gli import bloccati dal solo riordino dei proprietari. Le acquisizioni ordinarie e le prove d'import alimentano automaticamente la memoria Worker V2 anche a sezione chiusa. Dettagli e procedura per le run conservate: [recupero acquisizioni](../docs/PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
+
 ## Applicazione desktop Windows
 
 L'uso normale avviene tramite l'app desktop. Da `worker/`:

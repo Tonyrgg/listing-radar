@@ -78,11 +78,13 @@ import {
 } from "./connection-detection.js";
 import { DesktopPromptController, type DesktopPrompt } from "./prompts.js";
 import { WorkerV2Host } from "./worker-v2.js";
+import { exportAcquisition, historyClient } from "../territory/history-source.js";
 import { importRunOptions, withLockedImportRunOptions, withResumedImportConcurrency, type ImportRunOptions } from "./import-run-options.js";
 import {
   canResumeStreetAcquisition,
   exactCivicNumber,
   projectStreetCheckpointForRenderer,
+  projectJobAcquisition,
   summarizeCompletedGraph,
   summarizeJobImportProgress,
   summarizeStreetAcquisition,
@@ -1165,8 +1167,8 @@ async function refreshSnapshotRemoteData() {
         }
       }))).filter((job): job is JobRow => job !== null && job.status !== "completed");
       const savedPartitions = partitionPropertyJobs([...createdRefinementSeeds, ...allSavedJobs]);
-      const savedJobs = savedPartitions.lavorazione;
-      const refinementJobs = savedPartitions.rifinitura;
+      const savedJobs = savedPartitions.lavorazione.map(projectJobAcquisition);
+      const refinementJobs = savedPartitions.rifinitura.map(projectJobAcquisition);
       const completedJobs = completedPartitions.lavorazione.slice(0, completedImportsLimit);
       const refinementCompletedJobs = completedPartitions.rifinitura.slice(0, completedImportsLimit);
       next.completedImportsHasMore = completedPartitions.lavorazione.length > completedImportsLimit;
@@ -1944,7 +1946,7 @@ async function runSisterStreet(input: {
             streetRunError = null;
           } else {
             const message = result.status !== "completed"
-              ? "Run via sospesa: l'acquisizione resta salvata e riprendibile."
+              ? `Run via sospesa: ${result.lastError ?? "l'acquisizione resta salvata e riprendibile."}`
               : "Run via acquisita, ma alcuni dati obbligatori richiedono una correzione prima dell'import.";
             await liveRepository.updateJob(result.importJobId, {
               ...totals,
@@ -2049,6 +2051,7 @@ async function runSisterStreet(input: {
       await chiudiAcquisizioneInterrotta(streetImportJobId, "Run via interrotta dall'operatore.");
     }
     refreshStoppingAll();
+    void rememberDailyAcquisition(streetImportJobId);
     await publishState();
     if (jobToImport) {
       try {
@@ -2701,6 +2704,7 @@ async function runSisterNetwork(input: { settings: Partial<NetworkExplorationSet
     networkRunCancellationRequested = false;
     networkRunProgress = null;
     refreshStoppingAll();
+    void rememberDailyAcquisition(networkImportJobId);
     await publishState();
     if (jobToImport) {
       try {
@@ -3000,6 +3004,7 @@ function handleRunnerEvent(event: RunnerEvent) {
     }
     pushActivity("Import eseguito con successo", "success");
   } else if (event.type === "job-archived") {
+    void rememberDailyAcquisition(event.jobId);
     clearAutoRetry();
     clearRetryMonitor();
     automaticRetryInFlight = null;
@@ -3363,6 +3368,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
       const cancelledJobId = cancellingJobId && cancellingJobId === activeJobId ? cancellingJobId : null;
       const auditedJobId = !cancelledJobId ? activeJobId : null;
       if (auditedJobId) {
+        void rememberDailyAcquisition(auditedJobId);
         try {
           await auditPersistedImport(auditedJobId, effectiveRefinementStreet ? "refinement" : "property-import");
         } catch (error) {
@@ -3718,6 +3724,32 @@ async function createWindow() {
     : path.join(workerRoot, "src", "desktop", "renderer", "index.html");
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   await mainWindow.loadFile(rendererPath);
+  // Restore pending handoffs and saved acquisitions even if V2 is never opened.
+  if (!v2TestDirectory) void rememberSavedAcquisitions();
+}
+
+async function rememberDailyAcquisition(jobId: string | null) {
+  if (!jobId || !workerV2) return;
+  try {
+    const config = workerConfig();
+    const snapshot = await exportAcquisition(historyClient(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY), config.NEXT_PUBLIC_SUPABASE_URL, jobId);
+    if (snapshot.jobs.length) await workerV2.remember(snapshot);
+  } catch (error) {
+    pushActivity(`Memoria V2 da aggiornare: ${error instanceof Error ? error.message : String(error)}. L'acquisizione originale resta conservata.`, "warning");
+  }
+}
+
+async function rememberSavedAcquisitions() {
+  try {
+    await workerV2?.remember();
+    const jobs = await repository().listSavedJobs(200);
+    for (const job of jobs) {
+      if (mainWindow?.isDestroyed()) break;
+      if (await workerV2?.needsAcquisition(job)) await rememberDailyAcquisition(job.id);
+    }
+  } catch (error) {
+    pushActivity(`Recupero memoria V2 in attesa: ${error instanceof Error ? error.message : String(error)}`, "warning");
+  }
 }
 
 function registerIpc() {

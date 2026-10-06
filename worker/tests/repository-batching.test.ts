@@ -3,6 +3,23 @@ import { describe, expect, it } from "vitest";
 import { WorkerRepository, type PersonRow, type PropertyRow } from "../src/services/repository.js";
 
 describe("persistenza alleggerita del grafo worker", () => {
+  it("non tronca a mille righe gli immobili, i nominativi o le comproprietà", async () => {
+    const rows: Record<string, Array<Record<string, unknown>>> = {
+      property_worker_properties: Array.from({ length: 1_102 }, (_, i) => ({ id: `property-${i}`, job_id: "job", municipality: "BITONTO", address: "Via Test 1", raw_payload: { sourceOrder: i } })),
+      property_worker_people: Array.from({ length: 1_102 }, (_, i) => ({ id: `person-${i}`, job_id: "job" })),
+      property_worker_ownerships: Array.from({ length: 1_102 }, (_, i) => ({ id: `link-${i}`, property_id: "property-0", person_id: `person-${i}` })),
+    };
+    const client = { from: (table: string) => {
+      let start = 0, end = Infinity, filter = (_: Record<string, unknown>) => true;
+      const query = { select: () => query, order: () => query, range: (left: number, right: number) => { start = left; end = right; return query; }, eq: (field: string, value: string) => { filter = row => row[field] === value; return query; }, in: (field: string, values: string[]) => { filter = row => values.includes(String(row[field])); return query; }, then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows[table]!.filter(filter).slice(start, end + 1), error: null }).then(resolve) };
+      return query;
+    } };
+    const repository = Object.create(WorkerRepository.prototype) as WorkerRepository;
+    Object.defineProperty(repository, "client", { value: client });
+    const graph = await repository.loadGraph("job");
+    expect(graph.properties).toHaveLength(1_102); expect(graph.people).toHaveLength(1_102); expect(graph.ownerships).toHaveLength(1_102);
+    expect(graph.properties.at(-1)?.id).toBe("property-1101");
+  });
   it("distingue un job assente da un risultato Supabase non coercibile", async () => {
     const query = {
       select: () => query,
@@ -28,6 +45,7 @@ describe("persistenza alleggerita del grafo worker", () => {
       let data = rows[table]!;
       const query = {
         select: () => query, eq: () => query, order: () => query,
+        range: () => query,
         in: (column: string, ids: string[]) => { data = data.filter(row => ids.includes(String(row[column]))); return query; },
         then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data, error: null }).then(resolve),
       };

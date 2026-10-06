@@ -19,6 +19,12 @@ export function importProgress(state: TerritoryState, streetIds: string[], now =
     ...state.runs.filter(r => r.operation === "scan" && streetIds.includes(r.streetId)).reverse().map(r => ({ id: r.id, at: r.startedAt, complete: r.state === "completed", keys: [...new Set(r.itemKeys)] })),
     ...(state.history ?? []).filter(h => h.streetIds.some(id => streetIds.includes(id))).map(h => {
       const rows = observations(`history:${h.id}`);
+      if (h.inventoryByStreet) {
+        const keys = streetIds.flatMap(id => h.inventoryByStreet?.[id] ?? []);
+        // Expanded owner portfolios on other streets are useful observations,
+        // but do not become complete street inventories by association.
+        return { id: `history:${h.id}`, at: h.acquiredAt ?? h.at, complete: Boolean(h.inventoryComplete) && keys.length > 0, keys: [...new Set(keys.length ? keys : rows.map(r => r.unit.key))] };
+      }
       const unresolved = h.issues.some(issue => {
         const address = issue.source?.fullAddress ?? issue.address;
         const identity = address && addressIdentity(stripSisterMunicipalityPrefix(address, "BITONTO"));
@@ -36,7 +42,8 @@ export function importProgress(state: TerritoryState, streetIds: string[], now =
     if (!imported.has(key) || (date && (!imported.get(key) || Date.parse(date) > Date.parse(imported.get(key)!)))) imported.set(key, date);
   };
   if (cohort) {
-    for (const { unit, observation } of observations(cohort.id)) if (observation.crmId && observation.importVerified) add(unit.key, observation.importedAt);
+    const currentObservations = new Map(observations(cohort.id).map(row => [row.unit.key, row]));
+    for (const { unit, observation } of currentObservations.values()) if (observation.crmId && observation.importVerified) add(unit.key, observation.importedAt);
     for (const run of state.runs) if (run.operation === "apply" && run.acquisitionRunId === cohort.id) for (const [key, proof] of Object.entries(run.imports ?? {})) if (proof.crmId) add(key, proof.at);
   }
   const lastImportedAt = [...imported.values()].filter(valid).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;

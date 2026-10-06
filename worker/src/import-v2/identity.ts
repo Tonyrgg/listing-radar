@@ -344,7 +344,12 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
   // existing checkpoint keeps its stored plan; excluding this field lets a
   // paused item resume safely while later untouched items use a new choice.
   const { activity: _activity, ...fingerprintSource } = normalizedSource;
-  const canonical = JSON.stringify(stable(fingerprintSource));
+  // PostgREST does not guarantee ownership row order. Identity concerns the
+  // same owner set; the operational plan retains SISTER order for share ties.
+  const canonical = JSON.stringify(stable({
+    ...fingerprintSource,
+    owners: [...fingerprintSource.owners].sort((left, right) => left.sourcePersonId.localeCompare(right.sourcePersonId)),
+  }));
   return {
     version: 2,
     fingerprint: createHash("sha256").update(canonical).digest("hex"),

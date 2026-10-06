@@ -1,19 +1,27 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { normalizeSisterStreet } from "../core/street-scan.js";
 import { stripSisterMunicipalityPrefix } from "../core/normalize.js";
-import { addressIdentity } from "../import-v2/identity.js";
+import { addressIdentity, buildPlan } from "../import-v2/identity.js";
 import { importV2Sources } from "../import-v2/source.js";
 import { isAcquisitionExcluded } from "../services/acquisition-queue.js";
 import type { SourceProperty } from "../import-v2/model.js";
 import type { HistorySnapshot, HistoryJob } from "./history-source.js";
 import { type HistoricalWork, type Street, type TerritoryState, unitKey, latest } from "./model.js";
 import type { TerritoryStore } from "./store.js";
+import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { territoryDigest } from "./sync.js";
 
 export type HistoryMappings = Record<string, string>;
+const sourceRevision = (source: SourceProperty) => territoryDigest({ ...source, owners: [...source.owners].sort((a, b) => a.sourcePersonId.localeCompare(b.sourcePersonId)) });
 const timestamp = (value: string | null | undefined, fallback: string) => value && Number.isFinite(Date.parse(value)) ? value : fallback;
-const importProof = (item: HistoryJob["items"][number] | undefined, property: HistoryJob["graph"]["properties"][number], job: HistoryJob["job"]) => {
+const importProof = (item: HistoryJob["items"][number] | undefined, property: HistoryJob["graph"]["properties"][number], job: HistoryJob["job"], source: SourceProperty) => {
   const crmId = item?.checkpoint?.crmPropertyId ?? property.crm_record_id ?? null;
-  const verified = item?.stage === "completed" && item.status === "completed" && !item.last_error && Boolean(crmId);
+  let compatible = true;
+  if (item?.plan) {
+    try { compatible = buildPlan(item.plan.source).fingerprint === buildPlan(source).fingerprint; }
+    catch { compatible = false; }
+  }
+  const verified = compatible && item?.stage === "completed" && item.status === "completed" && !item.last_error && Boolean(crmId);
   const date = item?.completed_at ?? job.completed_at;
   return { crmId, verified, at: verified && date && Number.isFinite(Date.parse(date)) ? date : null };
 };
@@ -21,6 +29,41 @@ const acquisitionComplete = (job: HistoryJob["job"]) => job.status === "complete
 function historicalSources(entry: HistoryJob) {
   const graph = { ...entry.graph, properties: entry.graph.properties.map(p => ({ ...p, raw_payload: { ...p.raw_payload, import_v2: undefined } })) };
   return new Map(importV2Sources(entry.job, graph, () => ({ enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" }), { businessOwnerRowIndexes: new Set(entry.ignoredBusinessRows) }).map(source => [source.sourcePropertyId, source]));
+}
+
+/** The inventory precedes filtering. Duplicate result rows count as one unit. */
+function acquisitionInventory(entry: HistoryJob, state: TerritoryState, sources: Map<string, SourceProperty>) {
+  const checkpoint = entry.job.acquisition?.acquisitionCheckpoint as SisterStreetRunCheckpoint | undefined;
+  if (!checkpoint?.results?.length) return null;
+  const inventory: Record<string, string[]> = {};
+  let unresolved = false;
+  const add = (municipality: string, sheet: string, parcel: string, subaltern: string, address: string | null) => {
+    if (municipality.toUpperCase() !== "BITONTO" || !sheet || !parcel || !address) { unresolved = true; return; }
+    const source = [...sources.values()].find(source => source.municipality === municipality && source.cadastral.sheet === sheet && source.cadastral.parcel === parcel && source.cadastral.subaltern === subaltern);
+    const probe: SourceProperty = source ?? { sourcePropertyId: "inventory", jobId: entry.job.id, municipality, fullAddress: address, cadastral: { sheet, parcel, subaltern, income: null, urbanSection: null, parcelDenomination: null }, category: "", propertyClass: null, consistency: null, owners: [], activity: { enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" } };
+    const matches = matchHistoricalStreet({ ...probe, fullAddress: address }, state.streets);
+    if (matches.length !== 1) { unresolved = true; return; }
+    // A cadastral lot without a subaltern can be counted in the inventory,
+    // while remaining blocked by Import V2's stricter writing requirements.
+    const key = [municipality, probe.cadastral.urbanSection ?? "", sheet, parcel, subaltern].map(x => x.trim().toUpperCase()).join("|");
+    (inventory[matches[0]!.id] ??= []).push(key);
+  };
+  let available = false;
+  for (const result of checkpoint.results) {
+    if (result.inventoryProperties) {
+      available = true;
+      for (const property of result.inventoryProperties) add(property.municipality, property.sheet, property.parcel, property.subaltern, property.address);
+    } else if (result.recordLedger?.length) {
+      available = true;
+      for (const row of result.recordLedger) {
+        const [municipality, sheet, parcel, subaltern] = row.key.split("|");
+        add(municipality ?? "", sheet ?? "", parcel ?? "", subaltern ?? "", row.label.split(" · F. ")[0] ?? null);
+      }
+    } else if (result.outcome !== "empty") unresolved = true;
+  }
+  if (!available) return null;
+  for (const id of Object.keys(inventory)) inventory[id] = [...new Set(inventory[id])];
+  return { inventory, complete: checkpoint.status === "completed" && !unresolved && checkpoint.results.every(result => ["found", "empty"].includes(result.outcome)) };
 }
 
 /** Upgrade only evidence already present in a local export, without replay or reassessment. */
@@ -33,12 +76,12 @@ export function hydrateHistoryProgress(state: TerritoryState, snapshot: HistoryS
     const sources = historicalSources(entry), items = new Map(entry.items.map(i => [i.property_id, i]));
     for (const property of entry.graph.properties) {
       const source = sources.get(property.id); if (!source) continue;
-      const revision = createHash("sha256").update(JSON.stringify(source)).digest("hex");
-      const proof = importProof(items.get(property.id), property, entry.job);
+      const revision = sourceRevision(source);
+      const proof = importProof(items.get(property.id), property, entry.job, source);
       if (!proof.verified || !proof.crmId) continue;
-      const issue = record.issues.find(i => i.propertyId === property.id && i.source && createHash("sha256").update(JSON.stringify(i.source)).digest("hex") === revision);
+      const issue = record.issues.find(i => i.propertyId === property.id && i.source && sourceRevision(i.source) === revision);
       if (issue) { issue.importVerified = true; issue.verifiedAt = proof.at; issue.crmId = proof.crmId; }
-      for (const unit of Object.values(state.units)) for (const observation of unit.observations) if (observation.runId === `history:${entry.job.id}` && observation.historyPropertyId === property.id && observation.historyRevision === revision) {
+      for (const unit of Object.values(state.units)) for (const observation of unit.observations) if (observation.runId === `history:${entry.job.id}` && observation.historyPropertyId === property.id && sourceRevision(observation.source) === revision) {
         observation.importVerified = true; observation.crmId = proof.crmId;
         if (!observation.importedAt || (proof.at && Date.parse(proof.at) > Date.parse(observation.importedAt))) observation.importedAt = proof.at;
       }
@@ -50,8 +93,9 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
   const key = unitKey(source);
   const unit = state.units[key] ??= { key, streetIds: [], observations: [], corrections: {}, note: "", assessment: null, importedAt: null, crmId: null };
   if (!unit.streetIds.includes(streetId)) unit.streetIds.push(streetId);
-  const revision = createHash("sha256").update(JSON.stringify(source)).digest("hex");
-  const added = !unit.observations.some(o => o.historyPropertyId === propertyId && o.historyRevision === revision);
+  const revision = sourceRevision(source);
+  const sameObservation = (o: typeof unit.observations[number]) => o.runId === `history:${jobId}` && o.historyPropertyId === propertyId && sourceRevision(o.source) === revision;
+  const added = !unit.observations.some(sameObservation);
   if (added) {
     unit.observations.push({ at, runId: `history:${jobId}`, streetId, source, origin: "sister", historyPropertyId: propertyId, historyRevision: revision });
     unit.observations.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -60,7 +104,7 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
       unit.assessment = { kind: "unknown", reason: verified ? "Import precedente concluso; serve una rilettura attuale del gestionale." : "Acquisizione precedente recuperata; presenza nel gestionale ancora da verificare.", checkedAt: exportedAt, candidateId: crmId, sourceId: source.sourcePropertyId };
     }
   }
-  const observation = unit.observations.find(o => o.historyPropertyId === propertyId && o.historyRevision === revision)!;
+  const observation = unit.observations.find(sameObservation)!;
   observation.streetId ??= streetId;
   if (verified && crmId) { observation.importVerified = true; observation.crmId = crmId; if (!observation.importedAt || (verifiedAt && Date.parse(verifiedAt) >= Date.parse(observation.importedAt))) observation.importedAt = verifiedAt; }
   if (verified && crmId) unit.crmId ??= crmId;
@@ -71,8 +115,10 @@ export function matchHistoricalStreet(source: SourceProperty, streets: Street[],
   if (explicit) { const street = streets.find(s => s.id === explicit && !s.needsReview && s.catalogKind !== "network"); if (!street) throw new Error("Codvia esplicito non valido"); return [street]; }
   const address = stripSisterMunicipalityPrefix(source.fullAddress, source.municipality);
   const identity = addressIdentity(address);
-  if (!identity) return [];
-  const name = normalizeSisterStreet(identity.street);
+  // Street memory can recognise an exact official name without a civic.
+  // This does not relax the stricter CRM property identity comparison.
+  const name = normalizeSisterStreet(identity?.street ?? address.replace(/\s+(?:PIANO|SCALA|EDIFICIO|INTERNO)\b.*$/i, "").trim());
+  if (!name) return [];
   return streets.filter(s => s.catalogKind !== "network" && !s.needsReview && [s.name, s.sisterName].some(n => normalizeSisterStreet(n) === name));
 }
 
@@ -94,17 +140,21 @@ export async function adoptHistory(store: TerritoryStore, snapshot: HistorySnaps
       const byId = new Map(items.map(item => [item.property_id, item]));
       // Completed/unsupported import markers do not delete the acquisition history.
       const sources = historicalSources(entry);
+      const inventory = acquisitionInventory(entry, state, sources);
+      if (inventory) { record.inventoryByStreet = inventory.inventory; record.inventoryComplete = inventory.complete; record.streetIds.push(...Object.keys(inventory.inventory)); }
       const jobStreet = state.streets.filter(s => s.catalogKind !== "network" && !s.needsReview && normalizeSisterStreet(s.sisterName) === normalizeSisterStreet(job.street ?? ""));
-      if (jobStreet.length === 1) record.streetIds.push(jobStreet[0]!.id);
+      if (jobStreet.length === 1 && !record.streetIds.includes(jobStreet[0]!.id)) record.streetIds.push(jobStreet[0]!.id);
       for (const property of graph.properties) {
         if (property.municipality.trim().toUpperCase() !== "BITONTO") { record.issues.push({ propertyId: property.id, address: property.address, reason: "Fuori dal Comune di Bitonto" }); continue; }
         const source = sources.get(property.id);
         if (!source || isAcquisitionExcluded(property)) { record.issues.push({ propertyId: property.id, address: property.address, reason: "Riga esclusa nell'acquisizione originale; conservata nello storico" }); continue; }
         try { unitKey(source); } catch { record.issues.push({ propertyId: property.id, address: property.address, reason: "Identità catastale incompleta" }); continue; }
         const item = byId.get(property.id);
-        const { crmId: historicalCrmId, verified, at: verifiedAt } = importProof(item, property, job);
+        const { crmId: historicalCrmId, verified, at: verifiedAt } = importProof(item, property, job, source);
         const row = property as typeof property & { updated_at?: string; created_at?: string };
-        const at = timestamp(row.updated_at ?? row.created_at ?? job.started_at ?? job.created_at, record.at);
+        // CRM checkpoint updates are not new SISTER observations. An older
+        // import resumed today must never outrank yesterday's acquisition.
+        const at = timestamp(row.created_at ?? job.started_at ?? job.created_at, record.acquiredAt ?? record.at);
         if (verified) { record.imported++; report.importedEvidence++; }
         const explicit = mappings[property.id] ?? state.historicalStreetMappings?.[property.id];
         const matches = matchHistoricalStreet(source, state.streets, explicit);

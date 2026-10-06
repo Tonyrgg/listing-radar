@@ -12,6 +12,8 @@ import { TerritorySync, type TerritorySyncConfig } from "./sync.js";
 import { testSettings, configureTestSettings } from "./test-settings.js";
 import { openOnlineMemory, type OnlineCredentials } from "./online-memory.js";
 import { sanitizeSensitiveText } from "../logger.js";
+import { consumeAcquisitions } from "./acquisition-inbox.js";
+import { adoptHistory } from "./history.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -59,6 +61,16 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   const channels: string[] = [];
   const notify = () => { publish(); scheduleSync(); };
   let store: TerritoryStore;
+  const consumeDailyMemory = async () => {
+    if (!options.live || closing || application.hasActiveRun) return;
+    if (syncTask) await syncTask;
+    if (syncing) throw new Error("Memoria V2 occupata: acquisizione conservata in attesa");
+    syncing = true;
+    try {
+      const count = await consumeAcquisitions(options.profileDirectory, snapshot => adoptHistory(store, snapshot));
+      if (count) notify();
+    } finally { syncing = false; }
+  };
   try {
     releaseProfile = lockTerritoryProfile(options.profileDirectory);
     if (options.live) {
@@ -88,6 +100,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       if (config.profileKind !== application.origin) throw new Error("Il profilo della memoria condivisa non corrisponde al laboratorio");
       sync = new TerritorySync(store, options.profileDirectory, config);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try { await consumeDailyMemory(); }
+    catch (error) { memoryError = `Acquisizioni V2 conservate in attesa: ${error instanceof Error ? sanitizeSensitiveText(error.message) : "memoria occupata"}`; }
     const handle = (name: string, handler: (value: unknown) => unknown) => {
       channels.push(`territory:${name}`);
       ipcMain.handle(`territory:${name}`, (event, value) => {
@@ -151,6 +165,11 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
 
     return {
       application,
+      consumeDailyMemory,
+      hasAcquisitionVersion: (jobId: string, version: string | undefined) => {
+        const record = store.read().history?.find(record => record.id === jobId);
+        return Boolean(record && version && record.at === version);
+      },
       get syncing() { return syncing; },
       async close() {
         if (syncing && !syncTask) throw new Error("Attendi il salvataggio della memoria Worker V2");

@@ -1,5 +1,7 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+Dal 6 ottobre 2026, la **0.34.2** alimenta la memoria anche dalle acquisizioni quotidiane delle sezioni precedenti, a V2 chiuso, conservando inventario e prove d'import. Il recupero delle due run di via Palmiro Togliatti e le regole dei conteggi sono documentati in [PROPERTY-WORKER-ACQUISITION-RECOVERY.md](PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
+
 Il nuovo flusso parte dalla via e mantiene insieme acquisizione, confronto e applicazione agli immobili selezionati. La stessa applicazione riconosce tramite catasto le schede presenti e crea quelle mancanti soltanto dopo una ricerca completa. Ora è consultabile anche nella sezione **Worker V2** della stessa applicazione desktop: Lavorazioni, Rifinitura e gli altri flussi restano disponibili durante il passaggio graduale. Archivio, autorizzazioni e Chrome V2 rimangono distinti da quelli quotidiani.
 
 ## Stato al 5 ottobre 2026

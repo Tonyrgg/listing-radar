@@ -70,6 +70,8 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 
 ### Property Data Worker
 
+Dal 6 ottobre 2026 la 0.34.2 collega anche le acquisizioni ordinarie alla memoria V2, senza richiedere l'apertura della nuova sezione. Il passaggio locale è durevole e usa il medesimo store; conflitti e prove d'import conservano le protezioni esistenti. Diagnosi, recupero delle run conservate e conteggi: [PROPERTY-WORKER-ACQUISITION-RECOVERY.md](PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
+
 - Node.js e TypeScript;
 - Electron per l'app Windows;
 - Playwright collegato a Chrome tramite CDP;

@@ -3061,11 +3061,11 @@ function progressoCheckpointSister(checkpoint) {
   if (!checkpoint) return null;
   const records = (checkpoint.results ?? []).flatMap((result) => result.recordLedger ?? []);
   const cursor = (checkpoint.results ?? []).find((result) => result.cursor)?.cursor ?? null;
-  const total = (checkpoint.results ?? []).reduce((sum, result) => sum + Number(result.rawRecords || 0), 0);
+  const total = (checkpoint.results ?? []).reduce((sum, result) => sum + Number(result.rawRecords || result.cursor?.total || 0), 0);
   const completed = records.filter((record) => record.status === "completed").length;
   const completedWithAnomalies = records.filter((record) => record.status === "completed_with_anomalies").length;
   const skipped = records.filter((record) => record.status === "skipped").length;
-  return { state: checkpoint.status, position: cursor?.position ?? null, total, totalIsFinal: checkpoint.status === "completed" || checkpoint.currentVariantIndex >= (checkpoint.variants?.length ?? 1) - 1, completed, completedWithAnomalies, skipped, remaining: Math.max(0, total - records.length), currentLabel: cursor?.label ?? null, currentOwnerNames: cursor?.ownerNames ?? [] };
+  return { state: checkpoint.status, position: cursor?.position ?? null, total, totalIsFinal: checkpoint.status === "completed", completed, completedWithAnomalies, skipped, remaining: Math.max(0, total - records.length), currentLabel: cursor?.label ?? null, currentOwnerNames: cursor?.ownerNames ?? [] };
 }
 
 function renderPortoni() {

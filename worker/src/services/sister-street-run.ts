@@ -24,6 +24,8 @@ import {
 export type StreetQueryOutcome = "empty" | "found" | "failed" | "paused";
 
 export type SisterStreetQueryResult = {
+  /** Complete property table, before operational filters and owner expansion. */
+  inventoryProperties?: Array<Pick<CadastralProperty, "municipality" | "sheet" | "parcel" | "subaltern" | "address" | "category">>;
   civicNumber: number | null;
   variantKey: string;
   variantSourceId: string;
@@ -122,6 +124,25 @@ export type SisterStreetRunCheckpoint = {
   lastError: string | null;
   inferredLastUsefulCivic: number | null;
 };
+
+/** Recover counters erased by older failed-query payloads, using saved row evidence. */
+export function restoreStreetAcquisitionEvidence(checkpoint: SisterStreetRunCheckpoint): SisterStreetRunCheckpoint {
+  const results = checkpoint.results.map(result => {
+    if (result.rawRecords || !result.recordLedger?.length) return result;
+    const records = result.recordLedger;
+    const propertyKeys = [...new Set([...result.propertyKeys, ...records.filter(record => record.status === "completed").map(record => record.key)])];
+    return {
+      ...result,
+      rawRecords: Math.max(result.cursor?.total ?? 0, ...records.map(record => record.index)),
+      propertyKeys,
+      acceptedProperties: new Set([...propertyKeys, ...(result.expandedPropertyKeys ?? [])]).size,
+      ownersRead: Math.max(result.ownersRead, records.reduce((sum, record) => sum + record.ownerNames.length, 0)),
+      skippedPropertyRows: Math.max(result.skippedPropertyRows, records.filter(record => record.status !== "completed").length),
+    };
+  });
+  const uniquePropertyKeys = [...new Set(results.flatMap(result => [...result.propertyKeys, ...(result.expandedPropertyKeys ?? [])]))];
+  return { ...checkpoint, results, uniquePropertyKeys, totalRawRecords: results.reduce((sum, result) => sum + result.rawRecords, 0), totalAcceptedOccurrences: results.reduce((sum, result) => sum + result.acceptedProperties, 0), totalAcceptedProperties: uniquePropertyKeys.length, totalOwnersRead: results.reduce((sum, result) => sum + result.ownersRead, 0), totalSkippedPropertyRows: results.reduce((sum, result) => sum + result.skippedPropertyRows, 0) };
+}
 
 export function hasRetryableAcquisitionRecords(checkpoint: SisterStreetRunCheckpoint | null | undefined): boolean {
   return Boolean(checkpoint?.results.some((result) =>
@@ -351,6 +372,7 @@ export class SisterStreetRun {
   }
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
+    if (resume) resume = restoreStreetAcquisitionEvidence(resume);
     await this.options.onProgress?.({
       phase: "preparing", variantIndex: 0, variantTotal: 0, variantSourceId: null,
       current: 0, total: 0, address: null,
@@ -444,7 +466,7 @@ export class SisterStreetRun {
           const variant = variants[checkpoint.currentVariantIndex];
           if (!variant) break;
           const previousPartial = checkpoint.results.find((entry) =>
-            entry.variantKey === variant.key && entry.civicNumber == null && entry.outcome === "paused");
+            entry.variantKey === variant.key && entry.civicNumber == null && ["paused", "failed"].includes(entry.outcome));
           const publishPartial: PartialResultPublisher = async (partial) => {
             checkpoint = this.withQueryResult(checkpoint, partial, false);
             await this.publish(checkpoint);
@@ -512,7 +534,7 @@ export class SisterStreetRun {
         const previousPartial = checkpoint.results.find((entry) =>
           entry.variantKey === variant.key
           && entry.civicNumber === checkpoint.nextCivicNumber
-          && entry.outcome === "paused");
+          && ["paused", "failed"].includes(entry.outcome));
         const publishPartial: PartialResultPublisher = async (partial) => {
           checkpoint = this.withQueryResult(checkpoint, partial, false);
           await this.publish(checkpoint);
@@ -589,8 +611,23 @@ export class SisterStreetRun {
       entry.variantKey === incoming.variantKey && entry.civicNumber === incoming.civicNumber
     ));
     const result: SisterStreetQueryResult = {
+      ...(incoming.outcome === "failed" && prior ? prior : {}),
       ...incoming,
+      // A failed request has no new acquisition evidence. Keep everything
+      // already read, rather than replacing persisted counters with zero.
+      ...(incoming.outcome === "failed" && prior ? {
+        rawRecords: prior.rawRecords || prior.cursor?.total || 0,
+        acceptedProperties: prior.acceptedProperties,
+        propertyKeys: prior.propertyKeys,
+        expandedPropertyKeys: prior.expandedPropertyKeys,
+        expandedOwnerKeys: prior.expandedOwnerKeys,
+        filteredPropertyKeys: prior.filteredPropertyKeys,
+        filterSkips: prior.filterSkips,
+        ownersRead: prior.ownersRead,
+        skippedPropertyRows: prior.skippedPropertyRows,
+      } : {}),
       recordLedger: incoming.recordLedger ?? prior?.recordLedger,
+      inventoryProperties: incoming.inventoryProperties ?? prior?.inventoryProperties,
       cursor: incoming.cursor === undefined ? prior?.cursor : incoming.cursor,
     };
     const results = [
@@ -784,6 +821,11 @@ export class SisterStreetRun {
   ): Promise<SisterStreetQueryResult> {
     let lastError: unknown = null;
     let lastRecoveryError: unknown = null;
+    let retainedPartial = previousPartial;
+    const retainPartial: PartialResultPublisher = async partial => {
+      retainedPartial = structuredClone(partial);
+      await publishPartial?.(partial);
+    };
     for (let attempt = 1; attempt <= this.maxQueryAttempts; attempt += 1) {
       const startedAt = Date.now();
       await this.options.onRetryTelemetry?.({
@@ -813,8 +855,8 @@ export class SisterStreetRun {
           startedAt,
           variantIndex,
           variantTotal,
-          previousPartial,
-          publishPartial,
+          retainedPartial,
+          retainPartial,
         );
         await this.options.onRetryTelemetry?.({
           operation: "Interrogazione SISTER della via", attempt, maximumAttempts: this.maxQueryAttempts,
@@ -861,11 +903,18 @@ export class SisterStreetRun {
       variantKey: variant.key,
       variantSourceId: variant.sourceId,
       outcome: "failed",
-      rawRecords: 0,
-      acceptedProperties: 0,
-      propertyKeys: [],
-      ownersRead: 0,
-      skippedPropertyRows: 0,
+      rawRecords: retainedPartial?.rawRecords || retainedPartial?.cursor?.total || 0,
+      acceptedProperties: retainedPartial?.acceptedProperties ?? 0,
+      propertyKeys: retainedPartial?.propertyKeys ?? [],
+      expandedPropertyKeys: retainedPartial?.expandedPropertyKeys,
+      expandedOwnerKeys: retainedPartial?.expandedOwnerKeys,
+      filteredPropertyKeys: retainedPartial?.filteredPropertyKeys,
+      filterSkips: retainedPartial?.filterSkips,
+      ownersRead: retainedPartial?.ownersRead ?? 0,
+      skippedPropertyRows: retainedPartial?.skippedPropertyRows ?? 0,
+      recordLedger: retainedPartial?.recordLedger,
+      inventoryProperties: retainedPartial?.inventoryProperties,
+      cursor: retainedPartial?.cursor,
       warnings: [`${civicNumber == null ? `Variante ${variant.sourceId}` : `Civico ${civicNumber}`} non verificat${civicNumber == null ? "a" : "o"} dopo ${this.maxQueryAttempts} tentativi: ${message}`],
       elapsedMs: 0,
     };
@@ -905,6 +954,9 @@ export class SisterStreetRun {
       );
     }
     if (explicitEmpty) {
+      if (previousPartial?.rawRecords || previousPartial?.recordLedger?.length) {
+        throw new WorkerError("SISTER ora mostra una ricerca vuota per una variante già acquisita: conservo le righe note e attendo un riscontro", "needs_review", { portal: "SISTER", action: "street-run-source-changed" }, true);
+      }
       await this.returnToAddressList();
       return {
         civicNumber,
@@ -961,6 +1013,7 @@ export class SisterStreetRun {
       snapshotWarnings: string[] = warnings,
     ): SisterStreetQueryResult => ({
       civicNumber,
+      inventoryProperties: properties.map(({ municipality, sheet, parcel, subaltern, address, category }) => ({ municipality, sheet, parcel, subaltern, address, category })),
       variantKey: variant.key,
       variantSourceId: variant.sourceId,
       outcome,
@@ -978,6 +1031,7 @@ export class SisterStreetRun {
       recordLedger: [...recordLedger].sort((left, right) => left.index - right.index),
       cursor,
     });
+    await publishPartial?.(snapshot("paused", null));
     if (this.acquireOwners) {
       await this.options.onProgress?.({
         phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
@@ -1187,9 +1241,8 @@ export class SisterStreetRun {
       phase: "returning", variantIndex, variantTotal, variantSourceId: variant.sourceId,
       current: properties.length, total: properties.length, address: null,
     });
-    await this.adapter.ensureResultsPage();
-    await this.returnToAddressList();
-    return {
+    const completedResult: SisterStreetQueryResult = {
+      inventoryProperties: properties.map(({ municipality, sheet, parcel, subaltern, address, category }) => ({ municipality, sheet, parcel, subaltern, address, category })),
       civicNumber,
       variantKey: variant.key,
       variantSourceId: variant.sourceId,
@@ -1208,6 +1261,14 @@ export class SisterStreetRun {
       recordLedger: [...recordLedger].sort((left, right) => left.index - right.index),
       cursor: null,
     };
+    // Returning to the search form is navigation, not part of the acquired
+    // evidence. Commit the finished variant before attempting that navigation.
+    await publishPartial?.(completedResult);
+    try { await this.adapter.ensureResultsPage(); await this.returnToAddressList(); }
+    catch (error) {
+      completedResult.warnings.push(`Lettura conclusa; ritorno alla ricerca da ripristinare: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return completedResult;
   }
 
   private ownerExpansionKey(owner: CadastralOwner) {

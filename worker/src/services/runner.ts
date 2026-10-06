@@ -37,6 +37,7 @@ import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { ImportV2BatchResult } from "../import-v2/queue.js";
 import type { CrmPropertySummary, ImportV2Failure, ImportV2Stage } from "../import-v2/model.js";
 import { isRecoverableImportFailure } from "../import-v2/recovery-policy.js";
+import { ImportV2Error } from "../import-v2/errors.js";
 
 /** Cosa sta facendo il worker adesso, detto all'operatore. */
 const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
@@ -151,6 +152,7 @@ function isRejectedTaxCodeError(error: unknown): boolean {
 
 function asWorkerError(error: unknown): WorkerError {
   if (error instanceof WorkerError) return error;
+  if (error instanceof ImportV2Error) return new WorkerError(error.message, "needs_review", { ...error.options.details, importV2: true, failureKind: error.kind });
   if (isRecord(error) && typeof error.status === "string" && isRecord(error.details)) {
     return new WorkerError(
       typeof error.message === "string" ? error.message : String(error),
@@ -410,9 +412,7 @@ export class PropertyWorkerRunner {
           }
           if (step === "completed") break;
         } catch (error) {
-          let workerError = error instanceof WorkerError
-            ? error
-            : new WorkerError(error instanceof Error ? error.message : String(error), "failed");
+          let workerError = asWorkerError(error);
           if (workerError.status === "paused" && this.isPauseRequested(job.id) && workerError.details.pauseRequested !== true) {
             workerError = new WorkerError(workerError.message, "paused", { ...workerError.details, pauseRequested: true });
           }

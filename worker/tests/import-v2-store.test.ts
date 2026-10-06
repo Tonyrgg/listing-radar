@@ -4,6 +4,31 @@ import type { ImportV2Checkpoint } from "../src/import-v2/model.js";
 import { buildPlan } from "../src/import-v2/identity.js";
 
 describe("checkpoint Import V2", () => {
+  it("migra l'ordine DB variabile conservando piano, attività, principale e checkpoint già verificati", async () => {
+    const source = {
+      sourcePropertyId: "property", jobId: "job", municipality: "BITONTO", fullAddress: "Via Test 1",
+      cadastral: { sheet: "41", parcel: "542", subaltern: "8", income: null, urbanSection: null, parcelDenomination: null },
+      category: "A/3", propertyClass: "2", consistency: "4 vani", hasBusinessOwners: false,
+      activity: { enabled: true, description: "Scelta originale", contactMode: "Telefonata" as const, status: "Da eseguire" as const },
+      owners: [
+        { sourcePersonId: "person-b", taxCode: "RSSMRA70A01A893X", fullName: "Rossi Mario", birthDate: null, birthPlace: null, birthProvince: null, rightType: "Proprietà", sharePercentage: 50, contacts: { phones: [], emails: [] } },
+        { sourcePersonId: "person-a", taxCode: "BNCNNA80B42A893J", fullName: "Bianchi Anna", birthDate: null, birthPlace: null, birthProvince: null, rightType: "Proprietà", sharePercentage: 50, contacts: { phones: [], emails: [] } },
+      ],
+    };
+    const original = buildPlan(source);
+    const row = { id: "item", job_id: "job", property_id: "property", plan_fingerprint: "old-order-sensitive-hash", plan: original, stage: "completed", status: "completed", checkpoint: { crmPropertyId: "verified-property", ownershipVerifiedPersonIds: ["verified-owner"] }, attempts: 2, next_attempt_at: null, last_error: null, updated_at: "2026-10-05T15:50:00Z" };
+    const updates: unknown[] = [];
+    const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: row, error: null }), update: (value: unknown) => { updates.push(value); return { eq: async () => ({ error: null }) }; } };
+    const store = new SupabaseImportV2Store({ from: () => query } as never);
+    const current = buildPlan({ ...source, owners: [...source.owners].reverse(), activity: { ...source.activity, enabled: false } });
+    const loaded = await store.loadOrCreate(current);
+    expect(loaded).toMatchObject({ stage: "completed", crmPropertyId: "verified-property", ownershipVerifiedPersonIds: ["verified-owner"] });
+    expect(loaded.plan?.source.owners[0]?.sourcePersonId).toBe("person-b");
+    expect(loaded.plan?.source.activity).toEqual(original.source.activity);
+    expect(updates).toHaveLength(1);
+    await expect(store.loadOrCreate(buildPlan({ ...source, cadastral: { ...source.cadastral, subaltern: "99" } }))).rejects.toThrow("L'acquisizione è cambiata");
+    expect(updates).toHaveLength(1);
+  });
   it("ripete l'audit 525 con la stessa chiave idempotente", async () => {
     const payloads: Array<Record<string, unknown>> = [];
     const client = { from(table: string) {

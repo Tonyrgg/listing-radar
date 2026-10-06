@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.34.1",
+  "version": "0.34.2",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -20,6 +20,7 @@
     "territory:visual-check": "node scripts/territory-visual-check.mjs",
     "territory:history-visual-check": "node scripts/territory-history-visual-check.mjs",
     "worker-v2:visual-check": "node scripts/worker-v2-visual-check.mjs",
+    "worker-v2:memory-check": "node scripts/acquisition-memory-check.mjs",
     "territory:online-visual-check": "node scripts/territory-online-visual-check.mjs",
     "start": "tsx src/cli.ts start",
     "worker:start": "tsx src/cli.ts start",
