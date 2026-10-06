@@ -738,6 +738,16 @@ dialog #memory-result {
   border-top: 1px solid var(--lr-line-quiet);
   padding-top: 8px;
 }
+.operation-options {
+  margin: 16px 0;
+  border-top: 1px solid var(--lr-line-quiet);
+  padding-top: 8px;
+}
+.operation-options > summary { padding: 10px 0; }
+.operation-options fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
+.operation-fields { display: flex; flex-wrap: wrap; gap: 14px 16px; }
+.operation-fields label { display: grid; gap: 6px; flex: 1 1 210px; min-width: 0; font-weight: var(--lr-weight-medium); }
+.operation-fields input, .operation-fields select { width: 100%; min-width: 0; }
 .archive-details > summary {
   padding: 10px 0;
 }

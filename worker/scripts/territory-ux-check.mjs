@@ -1,5 +1,5 @@
 import { _electron as electron } from "playwright";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -56,6 +56,16 @@ try {
   await page.locator(`[data-street="${street.id}"]`).focus();
   await page.keyboard.press("Enter");
   await page.locator("#tab-dossier").waitFor();
+  await page.locator('[data-disclosure="options-scan"] > summary').click();
+  await page.locator("#scan-floor-mode").selectOption("exact");
+  await page.locator("#scan-floor").fill("0");
+  await page.locator("#scan-min-civic").fill("2");
+  await page.locator("#scan-max-civic").fill("12");
+  await page.evaluate(id => window.territory.annotate({ streetId: id, note: "Opzioni in preparazione", attention: false }), street.id);
+  await until(page, () => document.querySelector("#street-note")?.value === "Opzioni in preparazione");
+  assert.equal(await page.locator("#scan-floor").inputValue(), "0");
+  assert.equal(await page.locator("#scan-max-civic").inputValue(), "12");
+  await page.locator("#scan-floor-mode").selectOption("any");
   await page.locator('[data-operation="scan"]').click();
   // Hidden Electron throttles animation frames to 1 fps: the 720 ms fixture
   // ends before Playwright's two-frame stability wait. Check visibility and
@@ -82,6 +92,9 @@ try {
     street.id,
   );
   await page.locator('[data-operation="compare"]').click();
+  const scanRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.find(r => r.operation === "scan"), street.id);
+  assert.equal(scanRun.settings.filters.minCivicNumber, 2);
+  assert.equal(scanRun.settings.filters.maxCivicNumber, 12);
   await until(
     page,
     async (id) => {
@@ -150,6 +163,13 @@ try {
     ),
   );
   await page.locator("#unit-filter").selectOption("review");
+  await page.locator('[data-disclosure="options-apply"] > summary').click();
+  await page.locator("#import-policy").selectOption("existing_only");
+  assert.equal(await page.locator("#apply").isDisabled(), true);
+  assert.ok((await page.locator("#selection-help").textContent()).includes("deseleziona"));
+  await page.locator("#import-policy").selectOption("create_update");
+  await page.locator("#import-activity").selectOption("plain");
+  assert.ok((await page.locator("#selection-help").textContent()).includes("attività da eseguire"));
   assert.equal(await page.locator(".unit").count(), 2);
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
@@ -170,6 +190,23 @@ try {
   );
   await page.locator("#clear-selection").click();
   assert.equal(await page.locator("#apply").isDisabled(), true);
+  await page.locator("#unit-filter").selectOption("ready");
+  await page.locator("#select-all").click();
+  await page.screenshot({ path: path.join(output, "import-options.png") });
+  await page.locator("#apply").click();
+  await until(page, async id => {
+    const run = (await window.territory.detail(id)).runs.at(-1);
+    return run.operation === "apply" && run.state === "completed";
+  }, street.id);
+  const importedRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.at(-1), street.id);
+  assert.equal(importedRun.handled, 3);
+  assert.equal(importedRun.settings.activityMode, "plain");
+  assert.equal(importedRun.settings.includeCoOwners, true);
+  const ledger = JSON.parse(await readFile(path.join(profile, "territory-ledger.json"), "utf8"));
+  assert.equal(Object.keys(ledger.virtualActivities).length, 3);
+  await page.locator("#tab-history").click();
+  assert.ok((await page.locator(".runs-list").textContent()).includes("attività da eseguire"));
+  await page.locator("#tab-units").click();
   await page.locator("#unit-filter").selectOption("");
   await page.locator("#unit-search").fill("LAB");
   assert.equal(await page.locator(".unit").count(), 6);
@@ -262,6 +299,9 @@ try {
         filteredSelection: true,
         dirtyProtection: true,
         pauseInModal: true,
+        operationOptionsPersisted: true,
+        existingOnlySelectionGuard: true,
+        importWithPendingActivities: true,
         responsive: true,
         errors,
       },

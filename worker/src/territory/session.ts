@@ -14,6 +14,7 @@ import { openOnlineMemory, type OnlineCredentials } from "./online-memory.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { consumeAcquisitions } from "./acquisition-inbox.js";
 import { adoptHistory } from "./history.js";
+import { runSettingsSchema, runSettings } from "./run-options.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -149,14 +150,30 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
       if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");
-      const v = z.object({ streetId: id, operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional() }).parse(value);
+      const v = z.object({ streetId: id, operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (options.live && v.operation === "apply") {
-        const result = await dialog.showMessageBox(options.parent, { type: "warning", title: "Schede di prova concordate", message: `Applicare le modifiche a ${v.selected.length || "gli"} immobili selezionati nel gestionale reale?`, detail: "Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti degli intestatari. Sono ammessi solo gli immobili nella lista di prova. Consulta il piano e le correzioni prima di continuare.", buttons: ["Torna al piano", "Applica alle schede di prova"], defaultId: 0, cancelId: 0 });
+        const state = store.read();
+        const prior = v.resumeId ? state.runs.find(r => r.id === v.resumeId) : undefined;
+        const settings = runSettings(prior?.settings ?? v.settings);
+        const activityCount = settings.activityMode === "plain" ? (prior?.itemKeys ?? v.selected).filter(key => {
+          if (prior?.applySources?.[key]) return prior.applySources[key].activity.enabled;
+          const observation = state.units[key]?.observations.at(-1);
+          return observation && (observation.activityEligible ?? !observation.historyPropertyId);
+        }).length : 0;
+        const activityText = settings.activityMode === "plain"
+          ? `Il piano prevede ${activityCount} attività Telefonata, Da eseguire, esclusi immobili di rete o di provenienza storica incerta.`
+          : "Nessuna nuova attività.";
+        const result = await dialog.showMessageBox(options.parent, {
+          type: "warning", title: "Schede di prova concordate",
+          message: `Applicare le modifiche a ${prior?.itemKeys.length ?? v.selected.length} immobili selezionati nel gestionale reale?`,
+          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Creazioni e aggiornamenti secondo il confronto."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} Sono ammessi solo gli immobili nella lista di prova. Consulta il piano e le correzioni prima di continuare.`,
+          buttons: ["Torna al piano", "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
+        });
         if (result.response !== 1) return null;
       }
       options.beforeStart?.();
       try {
-        const run = await application.start(v.streetId, v.operation, v.selected, v.resumeId);
+        const run = await application.start(v.streetId, v.operation, v.selected, v.resumeId, v.settings);
         void application.waitForIdle().finally(() => { options.afterIdle?.(); notify(); });
         return run;
       } catch (error) { options.afterIdle?.(); throw error; }

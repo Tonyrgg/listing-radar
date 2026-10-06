@@ -85,6 +85,8 @@ try {
   const historical = path.join(directory, 'territory-history'); await mkdir(historical);
   const original = path.join(process.env.APPDATA, 'ListingRadarTerritoryLab-live');
   await copyFile(path.join(original, 'territory-ledger.json'), path.join(historical, 'territory-ledger.json'));
+  const expectedUnitKeys = Object.keys(JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8')).units).sort();
+  assert.ok(expectedUnitKeys.length > 0, 'La copia reale contiene immobili da recuperare');
   await copyFile(path.join(original, 'history-snapshot.json'), path.join(historical, 'history-snapshot.json'));
   await writeFile(path.join(historical, 'sync-config.json'), JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'offline-test-key', workspaceId: '11111111-1111-4111-8111-111111111111', ownerId: '22222222-2222-4222-8222-222222222222', profileKind: 'live' }), { mode: 0o600 });
   ({ shell, page } = await launch(historical, false));
@@ -93,7 +95,7 @@ try {
   const config = JSON.parse(await readFile(path.join(historical, 'live-config.json'), 'utf8'));
   assert.equal(config.allowedCadastralKeys.length, 0); assert.equal(config.allowedTaxCodes.length, 0); assert.equal(config.allowCreate, false);
   const ledger = JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8'));
-  assert.equal(Object.keys(ledger.units).length, 928);
+  assert.deepEqual(Object.keys(ledger.units).sort(), expectedUnitKeys, 'Il recupero conserva tutte le identità della copia, anche dopo nuove acquisizioni quotidiane');
   await page.locator('#open-browser').waitFor({ state: 'visible' });
   await page.locator('#cloud-memory').click();
   await page.locator('#memory-push').click();
@@ -103,7 +105,7 @@ try {
   await page.screenshot({ path: path.join(output, '02-recovered-real-profile.png') });
   await application.close(); application = null;
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: 928, sharedMemoryOfflineSupported: true, realWritesEnabled: false, errors }, null, 2));
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: expectedUnitKeys.length, sharedMemoryOfflineSupported: true, realWritesEnabled: false, errors }, null, 2));
   console.log(`Worker V2 integrato verificato: ${output}`);
 } catch (error) {
   if (application) for (const [i, page] of application.context().pages().entries()) await page.screenshot({ path: path.join(output, `failure-${i}.png`) }).catch(() => {});

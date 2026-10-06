@@ -14,6 +14,7 @@ import { territoryDigest } from "./sync.js";
 export type HistoryMappings = Record<string, string>;
 const sourceRevision = (source: SourceProperty) => territoryDigest({ ...source, owners: [...source.owners].sort((a, b) => a.sourcePersonId.localeCompare(b.sourcePersonId)) });
 const timestamp = (value: string | null | undefined, fallback: string) => value && Number.isFinite(Date.parse(value)) ? value : fallback;
+const activityEligible = (property: HistoryJob["graph"]["properties"][number]) => !property.raw_payload?.owner_expansion;
 const importProof = (item: HistoryJob["items"][number] | undefined, property: HistoryJob["graph"]["properties"][number], job: HistoryJob["job"], source: SourceProperty) => {
   const crmId = item?.checkpoint?.crmPropertyId ?? property.crm_record_id ?? null;
   let compatible = true;
@@ -78,6 +79,10 @@ export function hydrateHistoryProgress(state: TerritoryState, snapshot: HistoryS
       const source = sources.get(property.id); if (!source) continue;
       const revision = sourceRevision(source);
       const proof = importProof(items.get(property.id), property, entry.job, source);
+      const eligible = activityEligible(property);
+      const historicalIssue = record.issues.find(i => i.propertyId === property.id);
+      if (historicalIssue) historicalIssue.activityEligible = eligible;
+      for (const unit of Object.values(state.units)) for (const observation of unit.observations) if (observation.runId === `history:${entry.job.id}` && observation.historyPropertyId === property.id && sourceRevision(observation.source) === revision) observation.activityEligible = eligible;
       if (!proof.verified || !proof.crmId) continue;
       const issue = record.issues.find(i => i.propertyId === property.id && i.source && sourceRevision(i.source) === revision);
       if (issue) { issue.importVerified = true; issue.verifiedAt = proof.at; issue.crmId = proof.crmId; }
@@ -89,7 +94,7 @@ export function hydrateHistoryProgress(state: TerritoryState, snapshot: HistoryS
   }
 }
 
-function insertObservation(state: TerritoryState, source: SourceProperty, propertyId: string, jobId: string, streetId: string, at: string, exportedAt: string, verifiedAt: string | null, crmId: string | null, verified = Boolean(verifiedAt && crmId)) {
+function insertObservation(state: TerritoryState, source: SourceProperty, propertyId: string, jobId: string, streetId: string, at: string, exportedAt: string, verifiedAt: string | null, crmId: string | null, verified = Boolean(verifiedAt && crmId), eligible = false) {
   const key = unitKey(source);
   const unit = state.units[key] ??= { key, streetIds: [], observations: [], corrections: {}, note: "", assessment: null, importedAt: null, crmId: null };
   if (!unit.streetIds.includes(streetId)) unit.streetIds.push(streetId);
@@ -97,7 +102,7 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
   const sameObservation = (o: typeof unit.observations[number]) => o.runId === `history:${jobId}` && o.historyPropertyId === propertyId && sourceRevision(o.source) === revision;
   const added = !unit.observations.some(sameObservation);
   if (added) {
-    unit.observations.push({ at, runId: `history:${jobId}`, streetId, source, origin: "sister", historyPropertyId: propertyId, historyRevision: revision });
+    unit.observations.push({ at, runId: `history:${jobId}`, streetId, source, origin: "sister", activityEligible: eligible, historyPropertyId: propertyId, historyRevision: revision });
     unit.observations.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     if (latest(unit).historyPropertyId === propertyId) {
       unit.sourceVersionId = randomUUID();
@@ -106,6 +111,7 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
   }
   const observation = unit.observations.find(sameObservation)!;
   observation.streetId ??= streetId;
+  observation.activityEligible = eligible;
   if (verified && crmId) { observation.importVerified = true; observation.crmId = crmId; if (!observation.importedAt || (verifiedAt && Date.parse(verifiedAt) >= Date.parse(observation.importedAt))) observation.importedAt = verifiedAt; }
   if (verified && crmId) unit.crmId ??= crmId;
   if (verifiedAt && crmId && (!unit.importedAt || Date.parse(verifiedAt) >= Date.parse(unit.importedAt))) { unit.importedAt = verifiedAt; unit.crmId = crmId; }
@@ -158,12 +164,12 @@ export async function adoptHistory(store: TerritoryStore, snapshot: HistorySnaps
         if (verified) { record.imported++; report.importedEvidence++; }
         const explicit = mappings[property.id] ?? state.historicalStreetMappings?.[property.id];
         const matches = matchHistoricalStreet(source, state.streets, explicit);
-        if (matches.length !== 1) { record.issues.push({ propertyId: property.id, address: property.address, reason: matches.length ? "Nome presente su più Codvia: serve un'associazione esplicita" : "Via da associare all'inventario ufficiale", source, at, verifiedAt, crmId: historicalCrmId, importVerified: verified }); continue; }
+        if (matches.length !== 1) { record.issues.push({ propertyId: property.id, address: property.address, reason: matches.length ? "Nome presente su più Codvia: serve un'associazione esplicita" : "Via da associare all'inventario ufficiale", source, at, verifiedAt, crmId: historicalCrmId, importVerified: verified, activityEligible: activityEligible(property) }); continue; }
         const street = matches[0]!;
         if (explicit) (state.historicalStreetMappings ??= {})[property.id] = street.id;
         if (!record.streetIds.includes(street.id)) record.streetIds.push(street.id);
         record.associated++;
-        if (insertObservation(state, source, property.id, job.id, street.id, at, snapshot.exportedAt, verifiedAt, historicalCrmId, verified)) report.addedObservations++;
+        if (insertObservation(state, source, property.id, job.id, street.id, at, snapshot.exportedAt, verifiedAt, historicalCrmId, verified, activityEligible(property))) report.addedObservations++;
       }
       const prior = state.history.findIndex(h => h.id === job.id);
       if (prior < 0) state.history.push(record); else state.history[prior] = record;
@@ -185,7 +191,7 @@ export async function associateHistory(store: TerritoryStore, propertyId: string
     if (!job || !issue?.source || !issue.at) throw new Error("Questa riga non può essere associata: resta conservata nello storico");
     if (state.runs.some(r => r.state === "running") || Object.values(state.checkpoints).some(c => c.stage !== "completed")) throw new Error("Concludi prima le operazioni parziali del laboratorio");
     const now = new Date().toISOString();
-    insertObservation(state, issue.source, propertyId, job.id, street.id, issue.at, now, issue.verifiedAt ?? null, issue.crmId ?? null, issue.importVerified ?? Boolean(issue.verifiedAt && issue.crmId));
+    insertObservation(state, issue.source, propertyId, job.id, street.id, issue.at, now, issue.verifiedAt ?? null, issue.crmId ?? null, issue.importVerified ?? Boolean(issue.verifiedAt && issue.crmId), issue.activityEligible ?? false);
     job.issues = job.issues.filter(i => i.propertyId !== propertyId); job.associated++;
     (state.historicalStreetMappings ??= {})[propertyId] = street.id;
     if (!job.streetIds.includes(street.id)) job.streetIds.push(street.id);

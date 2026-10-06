@@ -57,6 +57,61 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   const selected = new Set(),
     layers = new Map();
   const dirtyForms = new Set();
+  const operationDrafts = new Map();
+  function optionsForStreet() {
+    if (!operationDrafts.has(selectedStreet)) {
+      const scan = [...detail.runs].reverse().find(r => r.operation === "scan" && r.settings)?.settings;
+      const apply = [...detail.runs].reverse().find(r => r.operation === "apply" && r.settings)?.settings;
+      operationDrafts.set(selectedStreet, {
+        filters: { residentialOnly: false, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null, ...scan?.filters },
+        includeCoOwners: apply?.includeCoOwners ?? true,
+        importPolicy: apply?.importPolicy ?? "create_update",
+        activityMode: apply?.activityMode ?? "none",
+      });
+    }
+    return operationDrafts.get(selectedStreet);
+  }
+  function optionsSummary(run) {
+    const s = run.settings;
+    if (!s) return "Opzioni originali conservate nel checkpoint";
+    if (run.operation === "scan") {
+      const f = s.filters;
+      const floors = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
+      return `${f.residentialOnly ? "Categorie A" : "Categorie A e C"}${f.floorMode !== "any" ? ` · ${floors[f.floorMode]} ${f.floorValue}` : " · tutti i piani"}${f.minCivicNumber !== null || f.maxCivicNumber !== null ? ` · civici ${f.minCivicNumber ?? "inizio"}–${f.maxCivicNumber ?? "fine"}` : " · tutti i civici"}`;
+    }
+    if (run.operation === "compare") return "Sola lettura del gestionale";
+    return `${s.importPolicy === "existing_only" ? "Solo schede esistenti" : "Creazioni e aggiornamenti"} · ${s.includeCoOwners ? "tutti gli intestatari" : "solo principale"} · ${s.activityMode === "plain" ? "attività da eseguire" : "nessuna attività"}`;
+  }
+  function operationOptions(operation, disabled) {
+    const settings = optionsForStreet(), f = settings.filters;
+    const option = (value, label, current) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
+    const number = (id, label, value, min, max) => `<label for="${id}">${label}<input id="${id}" type="number" step="1" min="${min}" max="${max}" value="${value ?? ""}"></label>`;
+    return `<details class="operation-options" data-disclosure="options-${operation}"><summary>${operation === "scan" ? "Filtri della prossima acquisizione" : "Opzioni del prossimo import"}</summary><form id="options-${operation}"><fieldset ${disabled}><legend class="sr-only">${operation === "scan" ? "Filtri SISTER" : "Regole import"}</legend><div class="operation-fields">${operation === "scan" ? `<label for="scan-category">Categorie<select id="scan-category">${option("all", "Abitazioni e categoria C (box, locali…)", f.residentialOnly ? "homes" : "all")}${option("homes", "Solo categoria A", f.residentialOnly ? "homes" : "all")}</select></label><label for="scan-floor-mode">Piano<select id="scan-floor-mode">${Object.entries({ any: "Tutti i piani", exact: "Piano esatto", minimum: "Da questo piano", maximum: "Fino a questo piano" }).map(([v,l])=>option(v,l,f.floorMode)).join("")}</select></label>${number("scan-floor", "Numero piano (0 = terra)", f.floorValue, -10, 100)}${number("scan-min-civic", "Civico iniziale (facoltativo)", f.minCivicNumber, 0, 999999)}${number("scan-max-civic", "Civico finale (facoltativo)", f.maxCivicNumber, 0, 999999)}` : `<label for="import-policy">Schede da gestire<select id="import-policy">${option("create_update", "Crea o aggiorna secondo il confronto", settings.importPolicy)}${option("existing_only", "Aggiorna soltanto schede esistenti", settings.importPolicy)}</select></label><label for="import-owners">Intestatari<select id="import-owners">${option("all", "Tutti gli intestatari acquisiti", settings.includeCoOwners ? "all" : "primary")}${option("primary", "Solo il principale", settings.includeCoOwners ? "all" : "primary")}</select></label><label for="import-activity">Attività nel gestionale<select id="import-activity">${option("none", "Nessuna attività", settings.activityMode)}${option("plain", "Telefonata da eseguire", settings.activityMode)}</select></label>`}</div><p class="explanation">${operation === "scan" ? "I filtri limitano la lettura dei proprietari. Il totale della via usa l'inventario SISTER prima dei filtri. Piani o civici non riconoscibili restano esclusi se il filtro è attivo." : "Il principale è scelto dal motore in base alle quote. Gli altri collegamenti già presenti sono conservati. L’attività, se richiesta, resta da eseguire e non registra un contatto effettuato. Gli immobili raccolti dalla rete proprietari, o con provenienza storica da verificare, non generano attività."} Le scelte si fissano all’avvio; Riprendi mantiene quelle della run originale.</p></fieldset></form></details>`;
+  }
+  function bindOperationOptions(operation) {
+    const form = $(`options-${operation}`);
+    if (!form) return;
+    const settings = optionsForStreet();
+    form.onsubmit = event => event.preventDefault();
+    const numberValue = id => $(id).value === "" ? null : Number($(id).value);
+    const update = () => {
+      if (operation === "scan") {
+        settings.filters = { residentialOnly: $("scan-category").value === "homes", floorMode: $("scan-floor-mode").value, floorValue: numberValue("scan-floor"), minCivicNumber: numberValue("scan-min-civic"), maxCivicNumber: numberValue("scan-max-civic") };
+        $("scan-floor").disabled = settings.filters.floorMode === "any" || Boolean(snapshot.activeRun);
+        $("scan-floor").required = settings.filters.floorMode !== "any";
+        const f = settings.filters;
+        $("scan-max-civic").setCustomValidity(f.minCivicNumber !== null && f.maxCivicNumber !== null && f.minCivicNumber > f.maxCivicNumber ? "Il civico finale deve essere maggiore o uguale a quello iniziale" : "");
+      } else {
+        settings.importPolicy = $("import-policy").value;
+        settings.includeCoOwners = $("import-owners").value === "all";
+        settings.activityMode = $("import-activity").value;
+        updateSelection();
+      }
+    };
+    form.oninput = update;
+    form.onchange = update;
+    update();
+  }
   let hoverId = null,
     hideTimer = null,
     feedbackTimer = null;
@@ -756,7 +811,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Acquisisci via</button><button class="${step === 1 && !paused ? "primary" : ""}" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button>${step === 2 ? '<button id="open-units" class="primary">Controlla immobili</button>' : ""}</div>`;
     if (tab === "dossier") {
       $("detail-body").innerHTML =
-        `<div class="dossier-grid"><section class="work-card">${workflow}<span class="eyebrow">Prossimo passo</span><h3>${paused ? "Riprendi il lavoro" : s.needsReview ? "Identifica la via" : step === 0 ? "Costruisci l’archivio" : step === 1 ? "Prepara il piano" : "Controlla gli esiti"}</h3><p class="explanation">${guidance}</p>${resume}${actions}${snapshot.activeRun ? '<p class="explanation">Un’operazione è in corso. Puoi seguirla e sospenderla dal riepilogo sopra.</p>' : ""}<p class="explanation">Il confronto prepara un piano; l’applicazione riguarda solo gli immobili che selezioni.</p></section><section class="notes-card"><h3>Annotazioni della via</h3><form id="memory-form"><div class="field"><label for="street-note">Contesto per il prossimo controllo</label><textarea id="street-note" rows="4" placeholder="Contatti, verifiche o indicazioni utili…">${escape(detail.memory.note)}</textarea></div><label class="check-label"><input id="attention" type="checkbox" ${detail.memory.attention ? "checked" : ""}>Segna la via da verificare</label><div class="form-actions"><button type="submit">Salva annotazioni</button><button type="button" data-cancel>Annulla</button></div></form><p class="explanation">La segnalazione è manuale e resta distinta dall’esito delle lavorazioni.</p></section></div><details class="archive-details" data-disclosure="archive"><summary>Dettagli dell’archivio e del tracciato</summary><p class="explanation">${s.count} immobili conservati · ${s.unresolved} da gestire<br>Scheda creata: ${date(s.registeredAt)}<br>Ultima lettura: ${date(s.lastObservationAt)}<br>Acquisizione completa: ${s.lastScanAt ? date(s.lastScanAt) : "non eseguita"}<br>${s.geometry ? escape(s.geometryEvidence || "Tracciato disponibile") : "Tracciato non disponibile: la via resta accessibile dalla ricerca."}</p></details>`;
+        `<div class="dossier-grid"><section class="work-card">${workflow}<span class="eyebrow">Prossimo passo</span><h3>${paused ? "Riprendi il lavoro" : s.needsReview ? "Identifica la via" : step === 0 ? "Costruisci l’archivio" : step === 1 ? "Prepara il piano" : "Controlla gli esiti"}</h3><p class="explanation">${guidance}</p>${resume}${operationOptions("scan", disabled)}${actions}${snapshot.activeRun ? '<p class="explanation">Un’operazione è in corso. Puoi seguirla e sospenderla dal riepilogo sopra.</p>' : ""}<p class="explanation">Il confronto prepara un piano; l’applicazione riguarda solo gli immobili che selezioni.</p></section><section class="notes-card"><h3>Annotazioni della via</h3><form id="memory-form"><div class="field"><label for="street-note">Contesto per il prossimo controllo</label><textarea id="street-note" rows="4" placeholder="Contatti, verifiche o indicazioni utili…">${escape(detail.memory.note)}</textarea></div><label class="check-label"><input id="attention" type="checkbox" ${detail.memory.attention ? "checked" : ""}>Segna la via da verificare</label><div class="form-actions"><button type="submit">Salva annotazioni</button><button type="button" data-cancel>Annulla</button></div></form><p class="explanation">La segnalazione è manuale e resta distinta dall’esito delle lavorazioni.</p></section></div><details class="archive-details" data-disclosure="archive"><summary>Dettagli dell’archivio e del tracciato</summary><p class="explanation">${s.count} immobili conservati · ${s.unresolved} da gestire<br>Scheda creata: ${date(s.registeredAt)}<br>Ultima lettura: ${date(s.lastObservationAt)}<br>Acquisizione completa: ${s.lastScanAt ? date(s.lastScanAt) : "non eseguita"}<br>${s.geometry ? escape(s.geometryEvidence || "Tracciato disponibile") : "Tracciato non disponibile: la via resta accessibile dalla ricerca."}</p></details>`;
       if ($("open-units")) $("open-units").onclick = () => switchTab("units");
       $("memory-form").oninput = (event) => markDirty(event.currentTarget);
       $("memory-form").onsubmit = safe(async (event) => {
@@ -817,7 +872,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="unknown">Da confrontare (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>${rows.length} immobili visibili · ${counts.ready} selezionabili · ${counts.review} da verificare</p><div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Questa via non ha ancora immobili"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Avvia un’acquisizione dal Dossier per iniziare."}</p><button id="unit-empty-action">${detail.units.length ? "Azzera filtri immobili" : "Vai al Dossier"}</button></div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona pronti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="apply" class="primary" ${disabled || !selected.size ? "disabled" : ""}>${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="unknown">Da confrontare (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>${rows.length} immobili visibili · ${counts.ready} selezionabili · ${counts.review} da verificare</p>${detail.units.length ? operationOptions("apply", disabled) : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Questa via non ha ancora immobili"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Avvia un’acquisizione dal Dossier per iniziare."}</p><button id="unit-empty-action">${detail.units.length ? "Azzera filtri immobili" : "Vai al Dossier"}</button></div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona pronti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="apply" class="primary" ${disabled || !selected.size ? "disabled" : ""}>${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -850,7 +905,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             "Salva o annulla le modifiche prima di cambiare selezione.",
             true,
           );
-        for (const u of rows) if (ready(u)) selected.add(u.key);
+        for (const u of rows) if (ready(u) && (optionsForStreet().importPolicy !== "existing_only" || u.assessment?.kind !== "create")) selected.add(u.key);
         renderDetail();
       };
       $("clear-selection").onclick = () => {
@@ -937,7 +992,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .reverse()
             .map(
               (run) =>
-                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.handled} immobili</p><p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
+                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.handled} immobili</p><p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
             )
             .join("") ||
           '<li class="explanation">Nessuna operazione su questa via.</li>'
@@ -990,6 +1045,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         });
         await refresh();
       });
+    bindOperationOptions("scan");
+    bindOperationOptions("apply");
     modalProgress();
     draftStatus();
     if (state) restore($("inspector"), state);
@@ -1018,6 +1075,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const records = detail.units.filter((u) => selected.has(u.key)),
       visible = new Set(unitRows().map((u) => u.key)),
       hidden = records.filter((u) => !visible.has(u.key)).length;
+    const settings = optionsForStreet();
+    const blockedCreation = settings.importPolicy === "existing_only" && records.some(u => u.assessment?.kind === "create");
     $("selection-count").textContent = qty(
       selected.size,
       "immobile selezionato",
@@ -1025,7 +1084,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     );
     $("selection-plan").textContent =
       `${qty(records.filter((u) => u.assessment?.kind === "create").length, "nuova scheda", "nuove schede")} · ${qty(records.filter((u) => u.assessment?.kind === "update").length, "aggiornamento", "aggiornamenti")}${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
-    $("apply").disabled = !selected.size || Boolean(snapshot.activeRun);
+    $("apply").disabled = !selected.size || Boolean(snapshot.activeRun) || blockedCreation;
     $("apply").textContent =
       `${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})`;
     $("clear-selection").disabled = !selected.size;
@@ -1033,8 +1092,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       `Solo selezionati (${selected.size})`;
     $("selection-help").textContent = snapshot.activeRun
       ? "Attendi o sospendi l’operazione in corso."
+      : blockedCreation ? "Hai scelto solo schede esistenti: deseleziona gli immobili da creare, oppure cambia la regola d’import."
       : selected.size
-        ? `${snapshot.origin === "simulation" ? "Piano simulato" : "Solo schede autorizzate"}: controlla la selezione. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
+        ? `${snapshot.origin === "simulation" ? "Piano simulato" : "Solo schede autorizzate"}: ${optionsSummary({ operation: "apply", settings })}. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
         : "Seleziona gli immobili pronti. I casi dubbi restano esclusi.";
   }
   function modalProgress() {
@@ -1071,7 +1131,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         "Salva o annulla le modifiche prima di avviare il processo.",
         true,
       );
+    const form = $(`options-${operation}`);
+    if (form && !form.checkValidity()) {
+      form.closest("details").open = true;
+      form.reportValidity();
+      return;
+    }
     const runId = await api.start({
+      settings: operation === "scan" ? { filters: optionsForStreet().filters } : operation === "apply" ? { includeCoOwners: optionsForStreet().includeCoOwners, importPolicy: optionsForStreet().importPolicy, activityMode: optionsForStreet().activityMode } : undefined,
       streetId: selectedStreet,
       operation,
       selected: operation === "apply" ? [...selected] : [],

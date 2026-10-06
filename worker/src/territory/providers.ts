@@ -1,17 +1,20 @@
 ﻿import { randomUUID } from "node:crypto";
 import type { CrmPersonSnapshot, CrmPropertySnapshot, CrmPropertySummary, ImportV2Plan, SourceProperty } from "../import-v2/model.js";
-import type { MergeRequest, OwnershipWrite, TecnocloudV2Port } from "../import-v2/ports.js";
+import type { MergeRequest, OwnershipWrite, OwnershipSyncOptions, TecnocloudV2Port } from "../import-v2/ports.js";
+import { isManagedCrmOwnership } from "../import-v2/ownership-policy.js";
 import type { PersonWriteModel } from "../import-v2/contacts.js";
 import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { Street } from "./model.js";
 import { TerritoryStore } from "./store.js";
+import { decideStreetProperty, type StreetPropertyFilters } from "../core/network-exploration.js";
+import { runSettings } from "./run-options.js";
 
 export type ScanSink = (source: SourceProperty) => Promise<void>;
 export interface TerritoryProvider {
   origin: "simulation" | "live";
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
   endOperation?(): void;
-  scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean): Promise<boolean>;
+  scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters): Promise<boolean>;
   candidates(street: Street, source: SourceProperty): Promise<{ rows: CrmPropertySummary[]; complete: boolean }>;
   port(): Promise<TecnocloudV2Port>;
   canWrite(key: string, source?: SourceProperty): boolean;
@@ -28,12 +31,19 @@ export class SimulationProvider implements TerritoryProvider {
   constructor(private readonly store: TerritoryStore, private readonly delayMs = 120) {}
   canWrite() { return true; }
   authorizeWrite() {}
-  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean) {
+  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters = runSettings().filters) {
     const prior = checkpoint as { next?: number } | null;
+    const inventoryProperties = Array.from({ length: 6 }, (_, i) => {
+      const source = simulationSource(street, i + 1, runId);
+      return { municipality: source.municipality, sheet: source.cadastral.sheet, parcel: source.cadastral.parcel, subaltern: source.cadastral.subaltern, address: source.fullAddress, category: source.category };
+    });
+    const checkpointAt = (next: number) => ({ next, results: [{ outcome: "found", inventoryProperties }] });
     for (let index = prior?.next ?? 1; index <= 6; index++) {
       if (paused()) return false;
       if (this.delayMs) await new Promise(resolve => setTimeout(resolve, this.delayMs));
       const source = simulationSource(street, index, runId);
+      const eligible = decideStreetProperty({ ...source.cadastral, municipality: source.municipality, address: `${street.name} N. ${index * 2} Piano ${index - 1}`, category: source.category!, class: source.propertyClass, consistency: source.consistency, cadastralIncome: source.cadastral.income, censusZone: null, rawPayload: {} }, filters).eligible;
+      if (!eligible) { await save(checkpointAt(index + 1)); continue; }
       await sink(source);
       await this.store.change(state => {
         if (index !== 3 && index !== 4) return;
@@ -43,7 +53,7 @@ export class SimulationProvider implements TerritoryProvider {
           state.virtualCrm[id] ??= { id, displayName: source.fullAddress, fullAddress: source.fullAddress, cadastral: source.cadastral, owners: [] };
         }
       });
-      await save({ next: index + 1 });
+      await save(checkpointAt(index + 1));
     }
     return true;
   }
@@ -70,10 +80,27 @@ class VirtualCrmPort implements TecnocloudV2Port {
   async updateProperty(id: string, plan: ImportV2Plan) {
     return this.store.change(s => { const p: CrmPropertySnapshot = { id, displayName: plan.source.fullAddress, fullAddress: plan.source.fullAddress, cadastral: plan.source.cadastral, owners: s.virtualCrm[id]?.owners ?? [] }; s.virtualCrm[id] = p; return structuredClone(p); });
   }
-  async replaceManagedOwnerships(id: string, desired: OwnershipWrite[]) {
-    return this.store.change(s => { const p = s.virtualCrm[id]; if (!p) throw new Error("Scheda di prova assente"); p.owners = desired.map(d => ({ linkId: randomUUID(), personId: d.personId, taxCode: d.taxCode, sharePercentage: d.sharePercentage, rightType: "Propriet\u00e0", role: d.role })); return { propertyId: id, owners: structuredClone(p.owners), removedPersonIds: [] }; });
+  async replaceManagedOwnerships(id: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}) {
+    return this.store.change(s => {
+      const p = s.virtualCrm[id]; if (!p) throw new Error("Scheda di prova assente");
+      const desiredIds = new Set(desired.map(d => d.personId));
+      const preserved = p.owners.filter(owner => !desiredIds.has(owner.personId) && (options.keepUnlistedManagedOwners || !isManagedCrmOwnership(owner)));
+      const removedPersonIds = p.owners.filter(owner => !desiredIds.has(owner.personId) && !preserved.includes(owner)).map(owner => owner.personId);
+      p.owners = [...preserved, ...desired.map(d => ({ linkId: randomUUID(), personId: d.personId, taxCode: d.taxCode, sharePercentage: d.sharePercentage, rightType: "Propriet\u00e0", role: d.role }))];
+      return { propertyId: id, owners: structuredClone(p.owners), removedPersonIds };
+    });
   }
   async readProperty(id: string) { const p = this.store.read().virtualCrm[id]; if (!p) throw new Error("Scheda di prova assente"); return p; }
-  async ensureActivity() { return { activityId: null, outcome: "disabled" as const }; }
+  async ensureActivity(propertyId: string, plan: ImportV2Plan) {
+    if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled" as const };
+    return this.store.change(s => {
+      const activities = s.virtualActivities ??= {};
+      const key = `${propertyId}|${plan.source.sourcePropertyId}`;
+      if (activities[key]) return { activityId: activities[key].id, outcome: "existing" as const };
+      const id = randomUUID();
+      activities[key] = { id, propertyId, activity: structuredClone(plan.source.activity) };
+      return { activityId: id, outcome: "created" as const };
+    });
+  }
   async recover() {}
 }

@@ -57,6 +57,20 @@ describe("Schede reali scelte esplicitamente nel laboratorio", () => {
     provider.configure(configureTestSettings(store.read(), config, [], false));
     expect(provider.canWrite(key, source)).toBe(false);
   });
+  it("trasmette piano e civici al runner SISTER, lasciando prioritari i filtri del checkpoint", async () => {
+    const provider = new LiveProvider(base, () => false);
+    const filters = normalizeStreetPropertyFilters({ residentialOnly: true, floorMode: "exact", floorValue: 0, minCivicNumber: 2, maxCivicNumber: 20 });
+    const scopes: StreetPropertyFilters[] = [];
+    vi.spyOn(provider as unknown as { tabs(): Promise<ChromeTabs> }, "tabs").mockResolvedValue({ sisterPage: {} } as ChromeTabs);
+    vi.spyOn(SisterStreetRun.prototype, "run").mockImplementation(async function (this: SisterStreetRun) {
+      scopes.push((this as unknown as { filters: StreetPropertyFilters }).filters);
+      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0 } as SisterStreetRunCheckpoint;
+    });
+    await provider.scan(street, "new", null, async () => {}, async () => {}, () => false, filters);
+    const priorFilters = normalizeStreetPropertyFilters({ residentialOnly: false, minCivicNumber: 30 });
+    await provider.scan(street, "old", { results: [], runSettings: { filters: priorFilters } }, async () => {}, async () => {}, () => false, filters);
+    expect(scopes).toEqual([filters, priorFilters]);
+  });
   it("non ammette record simulati, sconosciuti, incompleti o duplicati", async () => {
     const { store, key } = await setup();
     expect(() => configureTestSettings(store.read(), base, ["sconosciuto"], true)).toThrow();

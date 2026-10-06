@@ -8,6 +8,7 @@ import { isBusinessOwner } from "../core/owner-kind.js";
 import type { SourceProperty, CrmPropertySummary } from "../import-v2/model.js";
 import { unitKey, type Street } from "./model.js";
 import type { ScanSink, TerritoryProvider } from "./providers.js";
+import type { StreetPropertyFilters } from "../core/network-exploration.js";
 
 export type LiveConfig = { cdpUrl: string; sisterTabMatch: string; crmTabMatch: string; contactsExcelPath?: string; allowedCadastralKeys: string[]; allowedTaxCodes: string[]; allowCreate: boolean };
 export function validateLiveConfig(value: LiveConfig): LiveConfig {
@@ -51,7 +52,7 @@ export class LiveProvider implements TerritoryProvider {
     const byCadastre = await port.findPropertiesByCadastralIdentity(buildPlan(source));
     return { rows: [...byStreet, ...byCadastre], complete: true };
   }
-  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean) {
+  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters) {
     if (street.needsReview) throw new Error("Via ufficiale da verificare prima dell'acquisizione");
     const tabs = await this.tabs();
     let contacts: ExcelContactsAdapter | null = null;
@@ -60,7 +61,7 @@ export class LiveProvider implements TerritoryProvider {
     const runner = new SisterStreetRun(tabs.sisterPage, {
       acquireOwners: true, includeAllOwners: true, expandAllOwners: false,
       // The street inventory includes dwellings and category C (e.g. garages).
-      filters: prior?.runSettings?.filters ?? prior?.filters ?? { residentialOnly: false },
+      filters: prior?.runSettings?.filters ?? prior?.filters ?? filters ?? { residentialOnly: false },
       strategy: "bulk_exact_variants", prepareSearchAutomatically: true, keepAcquisition: true,
       // Live is SISTER acquisition here, never a CRM write or a stable worker job.
       mode: "live", importJobId: runId, isCancelled: paused, onCheckpoint: save,

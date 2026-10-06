@@ -14,7 +14,9 @@ const snapshot = { version: 1, readOnly: true, source: 'https://example.test', e
 }] };
 let app;
 async function launch() {
-  app = await electron.launch({ args: [path.join(root, 'scripts/fixtures/acquisition-memory-host.cjs')], env: { ...process.env, WORKER_MEMORY_ROOT: root, WORKER_MEMORY_PROFILE: profile, WORKER_MEMORY_DESKTOP_DIR: desktop } });
+  const env = { ...process.env, WORKER_MEMORY_ROOT: root, WORKER_MEMORY_PROFILE: profile, WORKER_MEMORY_DESKTOP_DIR: desktop };
+  delete env.ELECTRON_RUN_AS_NODE;
+  app = await electron.launch({ args: [path.join(root, 'scripts/fixtures/acquisition-memory-host.cjs')], env });
   await app.firstWindow();
   await app.evaluate(async () => { while (!global.memoryTest) await new Promise(resolve => setTimeout(resolve, 10)); });
 }

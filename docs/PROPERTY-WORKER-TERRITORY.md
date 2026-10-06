@@ -192,7 +192,7 @@ Accedere manualmente a SISTER e Tecnocloud nelle due schede del Chrome di prova.
 npm.cmd --prefix worker run territory:live
 ```
 
-Acquisizione e confronto sono separati dalle scritture. Per il primo collaudo conservare lo stato iniziale delle schede concordate, provare un aggiornamento e una creazione se autorizzata, ripetere per controllare l'assenza di duplicati e verificare i dati effettivamente salvati. Le attività commerciali restano disabilitate in questo laboratorio. Non usare le sessioni del worker quotidiano e non provarlo su schede scelte autonomamente.
+Acquisizione e confronto sono separati dalle scritture. Per il primo collaudo conservare lo stato iniziale delle schede concordate, provare un aggiornamento e una creazione se autorizzata, ripetere per controllare l'assenza di duplicati e verificare i dati effettivamente salvati. Le attività sono disabilitate inizialmente; la 0.34.4 permette di scegliere una Telefonata da eseguire, da includere esplicitamente nel collaudo. Non usare le sessioni del worker quotidiano e non provarlo su schede scelte autonomamente.
 
 ## Verifiche automatiche
 
@@ -211,10 +211,20 @@ Il collaudo dello storico richiede l'esportazione già adottata e Supabase local
 
 La sezione V2 e la memoria online sono già distribuite. La sostituzione dei flussi quotidiani resta subordinata al collaudo reale e alla copertura delle vie necessarie al lavoro. Il laboratorio simulato rimane distinto.
 
+## Opzioni operative della 0.34.4
+
+Nel Dossier, **Filtri della prossima acquisizione** permette di scegliere categorie A oppure A/C, piano esatto/minimo/massimo e intervallo dei civici. I piani e i civici non riconoscibili sono esclusi quando il relativo filtro è attivo. Il denominatore della via resta l'inventario SISTER precedente ai filtri, inclusi gli immobili senza proprietari ancora letti.
+
+In Immobili, **Opzioni del prossimo import** permette di creare o aggiornare secondo il confronto, oppure di aggiornare solo schede esistenti; di lavorare tutti gli intestatari oppure solo il principale; e di lasciare disabilitate le attività oppure creare una Telefonata **Da eseguire**. Il principale viene scelto dal motore secondo le quote; l'esclusione dei comproprietari conserva i collegamenti già presenti. Se sono selezionate schede da creare con la regola "solo esistenti", l'applicazione resta bloccata e spiega cosa deselezionare. Anche il controllo del gestionale immediatamente prima delle scritture deve trovare la scheda.
+
+Le attività non dichiarano contatti già effettuati. Gli immobili provenienti dall'espansione della rete proprietari ne restano esclusi; se lo storico non permette di verificarne la provenienza, le attività restano escluse fino a una nuova lettura. Il recupero del file storico locale riporta questa evidenza senza alterare le prove d'import. Le modalità storiche che registrano contatti già eseguiti non sono ancora esposte in V2.
+
+Le scelte si fissano all'avvio della run e compaiono nello Storico e nel riepilogo della ripresa. Anche le sorgenti d'import e la scelta delle attività vengono conservate per unità: un errore dopo il salvataggio e una riapertura riprendono lo stesso piano, senza duplicare l'attività. Le opzioni nel form riguardano la prossima run, non cambiano una ripresa. Le bozze restano durante refresh e cambi di tab; alla riapertura si riparte dalle scelte delle ultime run avviate. Non sono trasferite autorizzazioni o credenziali e non serve una nuova migration.
+
 ## Cosa resta prima della sostituzione del worker precedente
 
 1. Eseguire il collaudo completo sulle schede reali concordate: acquisizione A/C, confronto, aggiornamento, creazione autorizzata, ripetizione senza duplicati, pausa e riavvio. Verificare nel gestionale catasto, intestatari, quote e recapiti effettivamente salvati. I test simulati non sostituiscono questa prova.
-2. Completare le opzioni operative quotidiane ancora assenti dal flusso della mappa: attività commerciali (qui sono disabilitate), scelta dei filtri di acquisizione e delle regole d'import. Le autorizzazioni attuali sono limitate al collaudo, non a tutte le schede.
+2. Collaudare sui portali reali i filtri e le regole disponibili nella 0.34.4, comprese le attività da eseguire. Decidere separatamente l'uso delle modalità storiche che registrano contatti già effettuati. Le autorizzazioni attuali restano limitate al collaudo, non a tutte le schede.
 3. Risolvere le associazioni storiche e cartografiche delle vie su cui si vuole lavorare. Una scheda senza geometria è già apribile dalla ricerca; un tracciato senza Codvia richiede associazione esplicita prima della lettura SISTER. Non è necessario associare ogni tratto pubblico per iniziare il collaudo.
 4. Definire la gestione delle run precedenti ancora aperte: l'adozione conserva dati e prove, ma non trasferisce il motore o i checkpoint di import quotidiani nel motore V2. Queste run vanno riprese dalla loro Cronologia; la mappa offre un nuovo confronto e un'applicazione distinta, con le sue autorizzazioni.
 5. Dopo prove reali riuscite, ampliare consapevolmente il perimetro operativo e usare V2 su alcune vie prima di rimuovere Lavorazioni/Rifinitura. Confermare sincronizzazione e ripartenza con dati reali, mantenendo backup e revisioni.

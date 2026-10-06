@@ -21,6 +21,16 @@ const snapshot = (): HistorySnapshot => ({ version: 1, readOnly: true, source: "
 }] });
 async function setup(streets: Street[] = [street]) { const directory = await mkdtemp(path.join(os.tmpdir(), "territory-history-")); directories.push(directory); return { store: await TerritoryStore.open(directory, streets), directory }; }
 describe("Recupero dello storico senza replay delle vecchie scritture", () => {
+  it("conserva e recupera l'esclusione delle attività sugli immobili della rete proprietari", async () => {
+    const { store } = await setup(); const data = snapshot();
+    data.jobs[0]!.graph.properties[0]!.raw_payload = { owner_expansion: { personId: "person-old" } };
+    await adoptHistory(store, data);
+    const unit = Object.values(store.read().units)[0]!;
+    expect(unit.observations[0]!.activityEligible).toBe(false);
+    await store.change(s => { delete s.units[unit.key]!.observations[0]!.activityEligible; });
+    await store.change(s => hydrateHistoryProgress(s, data));
+    expect(store.read().units[unit.key]!.observations[0]!.activityEligible).toBe(false);
+  });
   it("una prova d'import precedente non certifica intestatari cambiati nella stessa raccolta", async () => {
     const { store } = await setup(); const data = snapshot(), entry = data.jobs[0]!;
     entry.items[0]!.plan = buildPlan(importV2Sources(entry.job, entry.graph, () => ({ enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" }))[0]!);
