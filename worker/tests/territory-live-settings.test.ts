@@ -5,7 +5,7 @@ import path from "node:path";
 import { TerritoryStore } from "../src/territory/store.js";
 import { TerritoryApplication } from "../src/territory/application.js";
 import { SimulationProvider, simulationSource } from "../src/territory/providers.js";
-import { LiveProvider, type LiveConfig } from "../src/territory/live-provider.js";
+import { LiveProvider, validateLiveConfig, type LiveConfig } from "../src/territory/live-provider.js";
 import { configureTestSettings, testSettings } from "../src/territory/test-settings.js";
 import { unitKey, type Street } from "../src/territory/model.js";
 import type { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
@@ -26,6 +26,29 @@ async function setup() {
   return { store, source, key };
 }
 describe("Schede reali scelte esplicitamente nel laboratorio", () => {
+  it("usa il Chrome di lavoro solo con il collegamento affidato dal desktop", async () => {
+    const { store, source, key } = await setup();
+    const browser = { cdpUrl: "http://127.0.0.1:9222", sisterTabMatch: "sister", crmTabMatch: "cloud" };
+    const config = { ...base, ...browser };
+    expect(() => validateLiveConfig(config)).toThrow("9223");
+    expect(() => new LiveProvider(config, () => false)).toThrow("9223");
+    const provider = new LiveProvider(config, () => false, browser);
+    expect(provider.canWrite(key, source)).toBe(false);
+    provider.configure(configureTestSettings(store.read(), config, [key], false, browser));
+    expect(provider.canWrite(key, source)).toBe(true);
+    expect(() => provider.authorizeWrite(source, "create")).toThrow("solo aggiornamenti");
+    for (const cdpUrl of ["http://remote.example:9222", "http://127.0.0.1:9223", "http://127.0.0.1:9222/?token=test", "http://user:password@127.0.0.1:9222"]) {
+      expect(() => validateLiveConfig({ ...config, cdpUrl }, browser)).toThrow();
+    }
+    expect(validateLiveConfig({ ...base, cdpUrl: "http://localhost:9223" }).cdpUrl).toBe("http://localhost:9223");
+  });
+  it("rilascia il collegamento CDP quando termina l'operazione", async () => {
+    const provider = new LiveProvider(base, () => false), close = vi.fn().mockResolvedValue(undefined);
+    (provider as unknown as { tabsPromise: Promise<ChromeTabs> | null }).tabsPromise = Promise.resolve({ browser: { close } } as unknown as ChromeTabs);
+    provider.endOperation(); await Promise.resolve();
+    expect(close).toHaveBeenCalledOnce();
+    expect((provider as unknown as { tabsPromise: Promise<ChromeTabs> | null }).tabsPromise).toBeNull();
+  });
   it("acquisisce abitazioni e box nelle nuove run, conservando i filtri di una run ripresa", async () => {
     const provider = new LiveProvider(base, () => false), scopes: boolean[] = [];
     vi.spyOn(provider as unknown as { tabs(): Promise<ChromeTabs> }, "tabs").mockResolvedValue({ sisterPage: {} } as ChromeTabs);

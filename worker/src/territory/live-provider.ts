@@ -11,10 +11,12 @@ import type { ScanSink, TerritoryProvider } from "./providers.js";
 import type { StreetPropertyFilters } from "../core/network-exploration.js";
 
 export type LiveConfig = { cdpUrl: string; sisterTabMatch: string; crmTabMatch: string; contactsExcelPath?: string; allowedCadastralKeys: string[]; allowedTaxCodes: string[]; allowCreate: boolean };
-export function validateLiveConfig(value: LiveConfig): LiveConfig {
+export type LiveBrowserConfig = Pick<LiveConfig, "cdpUrl" | "sisterTabMatch" | "crmTabMatch">;
+export function validateLiveConfig(value: LiveConfig, workBrowser?: LiveBrowserConfig): LiveConfig {
   // A different CDP port alone does not authorise real writes. The allowlist is empty by default.
   const url = new URL(value.cdpUrl);
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || url.port !== "9223" || (url.pathname !== "/" && url.pathname !== "")) throw new Error("Il laboratorio usa solo Chrome locale sulla porta 9223. Il Chrome quotidiano sulla 9222 è escluso.");
+  const expected = new URL(workBrowser?.cdpUrl ?? "http://127.0.0.1:9223");
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.port !== expected.port || url.pathname !== "/") throw new Error(workBrowser ? "Worker V2 deve usare il Chrome di lavoro configurato nell’app." : "Il laboratorio usa solo Chrome locale sulla porta 9223. Il Chrome quotidiano sulla 9222 è escluso.");
   if (!value.sisterTabMatch || !value.crmTabMatch || !Array.isArray(value.allowedCadastralKeys) || !Array.isArray(value.allowedTaxCodes) || typeof value.allowCreate !== "boolean") throw new Error("Configurazione di prova incompleta: servono immobili, intestatari e scelta sulle nuove schede");
   if (![...value.allowedCadastralKeys, ...value.allowedTaxCodes].every(v => typeof v === "string" && v.trim().length > 0)) throw new Error("Lista delle schede di prova non valida");
   return { ...value, allowedCadastralKeys: value.allowedCadastralKeys.map(v => v.trim().toUpperCase()), allowedTaxCodes: value.allowedTaxCodes.map(v => v.trim().toUpperCase()) };
@@ -27,10 +29,14 @@ export class LiveProvider implements TerritoryProvider {
   private config: LiveConfig;
   private comparing = false;
   private inventory = new Map<string, Promise<CrmPropertySummary[]>>();
-  constructor(config: LiveConfig, private readonly paused: () => boolean) { this.config = validateLiveConfig(config); }
-  configure(config: LiveConfig) { this.config = validateLiveConfig(config); this.endOperation(); }
+  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig) { this.config = validateLiveConfig(config, workBrowser); }
+  configure(config: LiveConfig) { this.config = validateLiveConfig(config, this.workBrowser); this.endOperation(); }
   beginOperation(operation: "scan" | "compare" | "apply") { this.inventory.clear(); this.comparing = operation === "compare"; }
-  endOperation() { this.inventory.clear(); this.comparing = false; }
+  endOperation() {
+    this.inventory.clear(); this.comparing = false;
+    const connection = this.tabsPromise; this.tabsPromise = null;
+    void connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
+  }
   private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => { this.tabsPromise = null; throw error; }); }
   canWrite(key: string, source?: SourceProperty) { return this.config.allowedCadastralKeys.includes(key) && Boolean(source && source.owners.length && source.owners.every(owner => this.config.allowedTaxCodes.includes(owner.taxCode.trim().toUpperCase()))); }
   authorizeWrite(source: SourceProperty, kind: "create" | "update") {

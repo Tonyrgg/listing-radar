@@ -2,7 +2,7 @@
 
 Dal 6 ottobre 2026, la **0.34.2** alimenta la memoria anche dalle acquisizioni quotidiane delle sezioni precedenti, a V2 chiuso, conservando inventario e prove d'import. Il recupero delle due run di via Palmiro Togliatti e le regole dei conteggi sono documentati in [PROPERTY-WORKER-ACQUISITION-RECOVERY.md](PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
 
-Il nuovo flusso parte dalla via e mantiene insieme acquisizione, confronto e applicazione agli immobili selezionati. La stessa applicazione riconosce tramite catasto le schede presenti e crea quelle mancanti soltanto dopo una ricerca completa. Ora è consultabile anche nella sezione **Worker V2** della stessa applicazione desktop: Lavorazioni, Rifinitura e gli altri flussi restano disponibili durante il passaggio graduale. Archivio, autorizzazioni e Chrome V2 rimangono distinti da quelli quotidiani.
+Il nuovo flusso parte dalla via e mantiene insieme acquisizione, confronto e applicazione agli immobili selezionati. La stessa applicazione riconosce tramite catasto le schede presenti e crea quelle mancanti soltanto dopo una ricerca completa. Ora è consultabile anche nella sezione **Worker V2** della stessa applicazione desktop: Lavorazioni, Rifinitura e gli altri flussi restano disponibili durante il passaggio graduale. Archivio e autorizzazioni rimangono distinti da quelli quotidiani; dalla **0.34.7** la sezione integrata riusa lo stesso Chrome di lavoro.
 
 ## Stato al 5 ottobre 2026
 
@@ -28,7 +28,9 @@ Worker V2 riusa `%APPDATA%\ListingRadarTerritoryLab-live`, inclusi i 928 immobil
 
 La mappa vive in un renderer isolato all'interno della stessa finestra: non riceve i comandi o le credenziali della shell quotidiana. Cambiare sezione conserva anche una scheda con modifiche aperte. Tema e dimensioni seguono l'app; la chiusura mette in pausa una run V2 e attende il checkpoint. Durante una run V2 non può partire un secondo motore; **Arresta processo** mette in pausa soltanto V2, conservando i checkpoint quotidiani precedenti. L'installazione di un aggiornamento è bloccata finché la run V2 è attiva.
 
-Per il collaudo reale premere **Apri Chrome V2**, accedere manualmente a SISTER e Tecnocloud nel browser dedicato, aprire una via e acquisire o confrontare i dati. In **Strumenti → Schede autorizzate** scegliere gli immobili concordati e confermare le autorizzazioni; solo successivamente applicare il piano sugli immobili selezionati. Il Chrome quotidiano sulla 9222 resta escluso. La nuova sezione è in collaudo: non vengono eliminate funzioni precedenti o eseguite scritture sul gestionale all'apertura.
+Per il collaudo reale premere **Apri Chrome di lavoro**: dalla **0.34.7** richiama lo stesso avvio usato da Lavorazioni e Rifinitura, con profilo `C:\ChromeListingRadar` e porta CDP configurata nel desktop (normalmente 9222). Se il browser è già aperto viene riusato. Accedere manualmente a SISTER e Tecnocloud, aprire una via e acquisire o confrontare i dati. In **Strumenti → Schede autorizzate** scegliere gli immobili concordati e confermare le autorizzazioni; solo successivamente applicare il piano sugli immobili selezionati. Il cambio browser conserva le liste di autorizzazione. La nuova sezione è in collaudo: non vengono eliminate funzioni precedenti o eseguite scritture sul gestionale all'apertura.
+
+Durante una run V2 il controllo periodico che mantiene attiva la sessione SISTER del desktop viene sospeso, come già avviene nelle lavorazioni quotidiane. A fine operazione V2 rilascia il proprio collegamento CDP senza chiudere Chrome; l'operazione successiva cerca nuovamente le schede. Il vincolo di un motore alla volta vale per il singolo PC. Non costituisce un blocco globale fra computer: con account distinti le nuove lavorazioni hanno job distinti. La ripresa dello stesso job da Cronologia su due PC non è protetta da un lease distribuito e va evitata. Un blocco su vie/job diversi richiede errore, ora e fase della run per essere diagnosticato; i timeout dei filtri CRM da soli non dimostrano un conflitto fra postazioni.
 
 Il laboratorio separato continua a essere disponibile per le prove simulate:
 
@@ -178,7 +180,7 @@ La configurazione può essere aggiornata direttamente dal pulsante **Strumenti �
 
 La lista dei CF viene ricavata dagli intestatari attuali delle schede scelte, senza ampliare automaticamente le autorizzazioni quando una successiva acquisizione o correzione cambia proprietario. Una creazione o un aggiornamento richiede comunque il confronto fresco e la conferma del piano. La configurazione di prova è locale al computer e non viene trasferita con la memoria Supabase.
 
-Aprire un Chrome di prova con profilo proprio; il laboratorio rifiuta la porta quotidiana 9222:
+Le istruzioni seguenti riguardano il laboratorio separato. Nell'app integrata usare **Apri Chrome di lavoro**. Il laboratorio mantiene un Chrome di prova con profilo proprio e rifiuta la porta quotidiana 9222. Se lo stesso profilo Territorio è stato aperto dall'app integrata, a entrambe le app chiuse impostare soltanto `cdpUrl` su `http://127.0.0.1:9223` in `live-config.json`, conservando le autorizzazioni; l'app integrata riadotta automaticamente il browser di lavoro alla prossima apertura.
 
 ```powershell
 $territoryChromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'

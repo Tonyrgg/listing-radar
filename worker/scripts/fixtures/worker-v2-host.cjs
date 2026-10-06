@@ -11,5 +11,13 @@ const sensitive = filename => /^\.env/.test(path.basename(String(filename))) || 
 fs.existsSync = function (filename) { return !sensitive(filename) && originalExists.apply(this, arguments); };
 fs.readFileSync = function (filename) { if (sensitive(filename)) throw Object.assign(new Error('Configuration excluded from test'), { code: 'ENOENT' }); return originalRead.apply(this, arguments); };
 syncBuiltinESMExports();
-global.fetch = async () => { throw new Error('External services excluded from integration test'); };
+global.__testWorkBrowserChecks = [];
+global.fetch = async input => {
+  // Opening an already running work browser must reuse it, without spawning Chrome.
+  if (String(input) === 'http://127.0.0.1:65531/json/version') {
+    global.__testWorkBrowserChecks.push(String(input));
+    return { ok: true };
+  }
+  throw new Error('External services excluded from integration test');
+};
 void import(pathToFileURL(path.join(process.env.WORKER_V2_TEST_ROOT, 'dist-desktop/desktop/main.js')).href);

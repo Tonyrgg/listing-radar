@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { resolveRecognizedHistory } from '../dist-desktop/territory/history.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.resolve(root, '../.runtime/worker-v2-ui-check');
@@ -85,7 +86,10 @@ try {
   const historical = path.join(directory, 'territory-history'); await mkdir(historical);
   const original = path.join(process.env.APPDATA, 'ListingRadarTerritoryLab-live');
   await copyFile(path.join(original, 'territory-ledger.json'), path.join(historical, 'territory-ledger.json'));
-  const expectedUnitKeys = Object.keys(JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8')).units).sort();
+  const expectedLedger = JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8'));
+  const priorUnitKeys = Object.keys(expectedLedger.units);
+  resolveRecognizedHistory(expectedLedger);
+  const expectedUnitKeys = Object.keys(expectedLedger.units).sort();
   assert.ok(expectedUnitKeys.length > 0, 'La copia reale contiene immobili da recuperare');
   await copyFile(path.join(original, 'history-snapshot.json'), path.join(historical, 'history-snapshot.json'));
   await writeFile(path.join(historical, 'sync-config.json'), JSON.stringify({ url: 'http://127.0.0.1:54321', key: 'offline-test-key', workspaceId: '11111111-1111-4111-8111-111111111111', ownerId: '22222222-2222-4222-8222-222222222222', profileKind: 'live' }), { mode: 0o600 });
@@ -94,9 +98,15 @@ try {
   assert.equal(recovered.origin, 'live');
   const config = JSON.parse(await readFile(path.join(historical, 'live-config.json'), 'utf8'));
   assert.equal(config.allowedCadastralKeys.length, 0); assert.equal(config.allowedTaxCodes.length, 0); assert.equal(config.allowCreate, false);
+  assert.equal(config.cdpUrl, 'http://127.0.0.1:65531', 'V2 usa lo stesso collegamento Chrome configurato nel desktop');
   const ledger = JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8'));
   assert.deepEqual(Object.keys(ledger.units).sort(), expectedUnitKeys, 'Il recupero conserva tutte le identità della copia, anche dopo nuove acquisizioni quotidiane');
+  assert.ok(priorUnitKeys.every(key => ledger.units[key]), 'Nessuna identità precedente viene persa');
   await page.locator('#open-browser').waitFor({ state: 'visible' });
+  await page.locator('#open-browser').click();
+  await page.getByText('Chrome di lavoro è già aperto. Verifica l’accesso a SISTER e Tecnocloud.', { exact: true }).waitFor();
+  await shell.evaluate(() => window.propertyWorker.openChrome());
+  assert.equal(await application.evaluate(() => global.__testWorkBrowserChecks.length), 2, 'V2 e Lavorazioni usano lo stesso avvio Chrome, riutilizzando il browser aperto');
   await page.locator('#cloud-memory').click();
   await page.locator('#memory-push').click();
   await page.waitForFunction(() => document.querySelector('#memory-result').textContent.includes('non raggiungibile'));

@@ -1268,8 +1268,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const result = await api.openBrowser();
     feedback(
       result.alreadyOpen
-        ? "Chrome V2 è già aperto. Verifica l’accesso a SISTER e Tecnocloud."
-        : "Chrome V2 aperto. Accedi a SISTER e Tecnocloud prima di acquisire o confrontare.",
+        ? "Chrome di lavoro è già aperto. Verifica l’accesso a SISTER e Tecnocloud."
+        : "Chrome di lavoro aperto. Accedi a SISTER e Tecnocloud prima di acquisire o confrontare.",
     );
   });
   $("detail-refresh").onclick = safe(refresh);
@@ -1380,7 +1380,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     testSelected.clear();
     next.selected.forEach((key) => testSelected.add(key));
     $("inspector").innerHTML =
-      `<header class="detail-header"><span class="eyebrow">Profilo separato</span><h2>Autorizzazioni al collaudo</h2><p class="explanation">Scegli gli immobili su cui autorizzi la prova. Solo questi immobili e i loro intestatari potranno essere scritti. Il salvataggio di questa scelta non modifica il gestionale.</p><label class="sr-only" for="test-search">Cerca schede di prova</label><input id="test-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(testFilter)}"></header><div class="detail-content tests-content"><form id="tests-form"><p id="test-count" class="meta"></p><div id="test-records"></div><div class="tests-controls"><label class="check-label"><input id="test-create" type="checkbox" ${next.allowCreate ? "checked" : ""}>Consenti anche nuove schede</label><p class="explanation">Se non selezionato, sono ammessi solo gli aggiornamenti di immobili già presenti. Ogni applicazione richiede un confronto nuovo e la conferma del piano.</p><label class="check-label"><input id="test-consent" type="checkbox">Autorizzo il collaudo sulle schede selezionate e sui loro intestatari.</label><div class="actions"><button id="test-save" class="primary">Salva scelta</button><button id="test-revoke" type="button">Disabilita scritture</button><button id="test-cancel" type="button">Annulla modifiche</button></div><p class="explanation">Per acquisire e confrontare, apri Chrome V2 e accedi a SISTER e Tecnocloud.</p></div></form></div>`;
+      `<header class="detail-header"><span class="eyebrow">Profilo separato</span><h2>Autorizzazioni al collaudo</h2><p class="explanation">Scegli gli immobili su cui autorizzi la prova. Solo questi immobili e i loro intestatari potranno essere scritti. Il salvataggio di questa scelta non modifica il gestionale.</p><label class="sr-only" for="test-search">Cerca schede di prova</label><input id="test-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(testFilter)}"></header><div class="detail-content tests-content"><form id="tests-form"><p id="test-count" class="meta"></p><div id="test-records"></div><div class="tests-controls"><label class="check-label"><input id="test-create" type="checkbox" ${next.allowCreate ? "checked" : ""}>Consenti anche nuove schede</label><p class="explanation">Se non selezionato, sono ammessi solo gli aggiornamenti di immobili già presenti. Ogni applicazione richiede un confronto nuovo e la conferma del piano.</p><label class="check-label"><input id="test-consent" type="checkbox">Autorizzo il collaudo sulle schede selezionate e sui loro intestatari.</label><div class="actions"><button id="test-save" class="primary">Salva scelta</button><button id="test-revoke" type="button">Disabilita scritture</button><button id="test-cancel" type="button">Annulla modifiche</button></div><p class="explanation">Per acquisire e confrontare, apri Chrome di lavoro e accedi a SISTER e Tecnocloud.</p></div></form></div>`;
     $("test-search").oninput = (event) => {
       testFilter = event.target.value;
       testLimit = 30;

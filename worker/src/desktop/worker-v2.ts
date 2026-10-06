@@ -1,13 +1,12 @@
-import { app, WebContentsView, type BrowserWindow } from "electron";
+import { WebContentsView, type BrowserWindow } from "electron";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { z } from "zod";
 import { openTerritorySession } from "../territory/session.js";
 import type { OnlineCredentials } from "../territory/online-memory.js";
 import { queueAcquisition } from "../territory/acquisition-inbox.js";
 import type { HistorySnapshot } from "../territory/history-source.js";
 import type { JobRow } from "../services/repository.js";
+import type { LiveBrowserConfig } from "../territory/live-provider.js";
 
 export const workerV2Viewport = z.object({ visible: z.boolean(), theme: z.enum(["light", "dark"]), bounds: z.object({ x: z.number().int().min(0).max(20000), y: z.number().int().min(0).max(20000), width: z.number().int().min(0).max(20000), height: z.number().int().min(0).max(20000) }) });
 type Viewport = z.infer<typeof workerV2Viewport>;
@@ -24,6 +23,7 @@ export class WorkerV2Host {
     assetDirectory: string; profileDirectory: string; simulation?: boolean;
     contactsExcelPath?: string; beforeStart: () => void; afterIdle: () => void; changed: () => void;
     onlineCredentials?: () => OnlineCredentials;
+    workBrowser: () => LiveBrowserConfig; openBrowser: () => Promise<unknown>;
   }) {
     parent.on("close", event => {
       if (this.disposed || (!this.session && !this.opening)) return;
@@ -87,16 +87,7 @@ export class WorkerV2Host {
   }
   private async openBrowser() {
     if (this.options.simulation) throw new Error("Il Chrome reale è escluso dalla simulazione");
-    try {
-      const response = await fetch("http://127.0.0.1:9223/json/version", { signal: AbortSignal.timeout(1500) });
-      if (response.ok) return { alreadyOpen: true };
-    } catch { /* Start only the dedicated browser, never the daily session. */ }
-    const executable = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean).map(directory => path.join(directory!, "Google/Chrome/Application/chrome.exe")).find(existsSync);
-    if (!executable) throw new Error("Google Chrome non trovato. Installa Chrome per il collaudo reale.");
-    const child = spawn(executable, ["--remote-debugging-port=9223", `--user-data-dir=${path.join(app.getPath("appData"), "ListingRadarWorkerV2Chrome")}`, "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore", windowsHide: true });
-    await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
-    child.unref();
-    return { alreadyOpen: false };
+    return this.options.openBrowser();
   }
   async close() {
     await this.memoryQueue;

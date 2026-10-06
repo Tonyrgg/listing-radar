@@ -3128,7 +3128,7 @@ function scheduleDesktopKeepAlive(delayMs?: number) {
 async function runDesktopKeepAlive() {
   try {
     const config = workerConfig();
-    if (streetRunActive || networkRunActive || portoniActive) {
+    if (streetRunActive || networkRunActive || portoniActive || workerV2?.active || operationReservation === "worker-v2") {
       sisterKeepAlive = {
         ...sisterKeepAlive,
         statusLabel: "disabled",
@@ -3648,6 +3648,35 @@ function findChromeExecutable() {
   return candidates.find((candidate) => candidate && path.isAbsolute(candidate) && existsSync(candidate));
 }
 
+function workBrowserConfiguration() {
+  const environment = { ...process.env, ...internalEnvironment() };
+  return {
+    cdpUrl: environment.CHROME_CDP_URL ?? "http://127.0.0.1:9222",
+    sisterTabMatch: environment.SISTER_TAB_MATCH ?? "sister",
+    crmTabMatch: environment.CRM_TAB_MATCH ?? "tecnocasa-group.my.site.com",
+  };
+}
+
+async function openWorkChrome() {
+  const { cdpUrl } = workBrowserConfiguration();
+  const url = new URL(cdpUrl);
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || !url.port || url.pathname !== "/" || url.search || url.hash || url.username || url.password) throw new Error("Configura un Chrome di lavoro locale prima di aprirlo.");
+  let alreadyOpen = false;
+  try { alreadyOpen = (await fetch(`${url.origin}/json/version`, { signal: AbortSignal.timeout(1500) })).ok; }
+  catch { /* Start the work profile only when its endpoint is unavailable. */ }
+  if (!alreadyOpen) {
+    const executable = findChromeExecutable();
+    if (!executable) throw new Error("Google Chrome non trovato");
+    const child = spawn(executable, [`--remote-debugging-port=${url.port}`, "--user-data-dir=C:\\ChromeListingRadar"], { detached: true, stdio: "ignore", windowsHide: true });
+    await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+    child.unref();
+  }
+  pushActivity(alreadyOpen ? "Chrome di lavoro già aperto" : "Chrome di lavoro avviato", "success");
+  scheduleBrowserChecks(250);
+  await publishState();
+  return { alreadyOpen };
+}
+
 async function runImportV2Diagnostics() {
   reserveOperation("import-v2-diagnostics");
   let tabs: Awaited<ReturnType<typeof connectToChrome>> | null = null;
@@ -3710,6 +3739,8 @@ async function createWindow() {
     profileDirectory: v2TestDirectory ?? path.join(app.getPath("appData"), "ListingRadarTerritoryLab-live"),
     simulation: Boolean(v2TestDirectory && process.env.WORKER_V2_SIMULATION === "1"),
     contactsExcelPath: preferences.contactsExcelPath,
+    workBrowser: workBrowserConfiguration,
+    openBrowser: openWorkChrome,
     ...(!v2TestDirectory ? { onlineCredentials: () => {
       if (archivedDatabaseConfigurationNeedsRefresh()) throw new Error(ARCHIVED_DATABASE_CONFIGURATION_MESSAGE);
       const environment = internalEnvironment();
@@ -3838,12 +3869,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:open-chrome", async () => {
-    const executable = findChromeExecutable();
-    if (!executable) throw new Error("Google Chrome non trovato");
-    spawn(executable, ["--remote-debugging-port=9222", "--user-data-dir=C:\\ChromeListingRadar"], { detached: true, stdio: "ignore" }).unref();
-    pushActivity("Chrome dedicato avviato", "success");
-    scheduleBrowserChecks(250);
-    await publishState();
+    await openWorkChrome();
     return true;
   });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {

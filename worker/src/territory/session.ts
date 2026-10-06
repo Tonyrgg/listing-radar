@@ -5,7 +5,7 @@ import { z } from "zod";
 import { TerritoryApplication } from "./application.js";
 import { TerritoryStore } from "./store.js";
 import { SimulationProvider } from "./providers.js";
-import { LiveProvider, validateLiveConfig, type LiveConfig } from "./live-provider.js";
+import { LiveProvider, validateLiveConfig, type LiveConfig, type LiveBrowserConfig } from "./live-provider.js";
 import type { Street } from "./model.js";
 import { lockTerritoryProfile } from "./profile-lock.js";
 import { TerritorySync, type TerritorySyncConfig } from "./sync.js";
@@ -23,6 +23,7 @@ export type TerritorySessionOptions = {
   profileDirectory: string; assetDirectory: string; live: boolean;
   contents: WebContents; parent: BrowserWindow; integrated?: boolean;
   contactsExcelPath?: string; openBrowser?: () => Promise<unknown>;
+  workBrowser?: () => LiveBrowserConfig;
   onlineCredentials?: () => OnlineCredentials;
   beforeStart?: () => void; afterIdle?: () => void; changed?: () => void;
 };
@@ -74,6 +75,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   };
   try {
     releaseProfile = lockTerritoryProfile(options.profileDirectory);
+    const workBrowser = options.integrated ? options.workBrowser?.() : undefined;
     if (options.live) {
       const defaults: LiveConfig = { cdpUrl: "http://127.0.0.1:9223", sisterTabMatch: "sister", crmTabMatch: "tecnocasa-group.my.site.com", allowedCadastralKeys: [], allowedTaxCodes: [], allowCreate: false, ...(options.contactsExcelPath ? { contactsExcelPath: options.contactsExcelPath } : {}) };
       try { await writeFile(path.join(options.profileDirectory, "live-config.json"), JSON.stringify(defaults, null, 2), { flag: "wx", mode: 0o600 }); }
@@ -85,13 +87,19 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     let provider;
     let liveConfig: LiveConfig | null = null;
     if (options.live) {
-      liveConfig = validateLiveConfig(JSON.parse(await readFile(path.join(options.profileDirectory, "live-config.json"), "utf8")) as LiveConfig);
+      const saved = JSON.parse(await readFile(path.join(options.profileDirectory, "live-config.json"), "utf8")) as LiveConfig;
+      liveConfig = validateLiveConfig({ ...saved, ...workBrowser }, workBrowser);
+      // The desktop's browser binding is authoritative; test identities stay unchanged.
+      if (workBrowser && JSON.stringify(saved) !== JSON.stringify(liveConfig)) {
+        const file = path.join(options.profileDirectory, "live-config.json");
+        await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
+      }
       if (!liveConfig.contactsExcelPath && options.contactsExcelPath) {
         liveConfig = { ...liveConfig, contactsExcelPath: options.contactsExcelPath };
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false);
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser);
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {
@@ -119,7 +127,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       if (!liveConfig || !(provider instanceof LiveProvider)) throw new Error("Le prove reali sono escluse dalla simulazione");
       if (application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione prima di cambiare le schede di prova");
       const choice = z.object({ keys: z.array(id).max(10), allowCreate: z.boolean(), confirmed: z.boolean() }).refine(v => !v.keys.length || v.confirmed, "Conferma le schede di prova prima di abilitarle").parse(value);
-      const config = configureTestSettings(store.read(), liveConfig, choice.keys, choice.allowCreate);
+      const config = configureTestSettings(store.read(), liveConfig, choice.keys, choice.allowCreate, workBrowser);
       syncing = true;
       try {
         const file = path.join(options.profileDirectory, "live-config.json");
