@@ -113,7 +113,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     update();
   }
   let hoverId = null,
-    hideTimer = null,
     feedbackTimer = null;
   let hoverPoint = null;
   let highlightedId = null,
@@ -127,7 +126,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     testConfig = null,
     testFilter = "";
   let networkView = false,
-    pinnedPreview = false,
     dialogOpener = null;
   const testSelected = new Set();
   let syncBusy = false,
@@ -525,27 +523,15 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     layers.get(id)?.setStyle(enabled ? hoverStroke : stroke);
   }
   function hidePreview() {
-    clearTimeout(hideTimer);
     highlight(highlightedId, false);
     hoverId = null;
-    pinnedPreview = false;
     $("hover").hidden = true;
   }
-  function scheduleHide() {
-    if (pinnedPreview) return;
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(hidePreview, 280);
-  }
-  function hover(street, point, pin = false, activate = true) {
+  function showPreview(street, point, activate = true) {
     if (!street || $("detail-dialog").open) return;
     if (activate) {
-      if (hoverId !== street.id) pinnedPreview = false;
-      if (pin) {
-        pinnedPreview = true;
-        selectedStreet = street.id;
-        renderList();
-      }
-      clearTimeout(hideTimer);
+      selectedStreet = street.id;
+      renderList();
       highlight(street.id, true);
     }
     hoverId = street.id;
@@ -581,14 +567,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   }
   $("hover").addEventListener("mouseenter", () => {
     highlight(highlightedId, false);
-    clearTimeout(hideTimer);
   });
-  $("hover").addEventListener("mouseleave", scheduleHide);
   L.DomEvent.disableClickPropagation($("hover"));
   L.DomEvent.disableScrollPropagation($("hover"));
   $("map").addEventListener("mouseleave", () => {
     highlight(highlightedId, false);
-    scheduleHide();
   });
   // Canvas throttles hover events. Check the active trace on every pointer move
   // so a fast exit followed by a stationary cursor cannot leave a wide stroke.
@@ -618,7 +601,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       });
       if (!onTrace) {
         highlight(highlightedId, false);
-        scheduleHide();
       }
     },
     { capture: true, passive: true },
@@ -1241,28 +1223,20 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           bubblingMouseEvents: false,
         });
         layer.geometryKey = geometryKey;
-        layer.on("mouseover", (event) =>
-          hover(
-            snapshot.streets.find((s) => s.id === street.id),
-            map.latLngToContainerPoint(event.latlng),
-          ),
-        );
-        layer.on("mousemove", (event) => {
+        layer.on("mouseover", () => {
+          if (!$("detail-dialog").open) highlight(street.id, true);
+        });
+        layer.on("mousemove", () => {
           if (highlightedId !== street.id)
-            hover(
-              snapshot.streets.find((s) => s.id === street.id),
-              map.latLngToContainerPoint(event.latlng),
-            );
+            if (!$("detail-dialog").open) highlight(street.id, true);
         });
         layer.on("mouseout", () => {
           highlight(street.id, false);
-          if (hoverId === street.id) scheduleHide();
         });
         layer.on("click", (event) =>
-          hover(
+          showPreview(
             snapshot.streets.find((s) => s.id === street.id),
             map.latLngToContainerPoint(event.latlng),
-            true,
           ),
         );
         layers.set(street.id, layer);
@@ -1280,7 +1254,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     }
     if (hoverId && hoverPoint && !$("hover").hidden) {
       const street = snapshot.streets.find((s) => s.id === hoverId);
-      if (street) hover(street, hoverPoint, false, false);
+      if (street) showPreview(street, hoverPoint, false);
       else hidePreview();
     }
     if (snapshot.error) feedback(snapshot.error, true);

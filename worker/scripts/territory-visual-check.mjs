@@ -75,24 +75,35 @@ try {
   }, snapshot.streets);
   const targets = [];
   for (const candidate of candidates) {
-    // Keep both targets outside each other's popup, which correctly captures the pointer.
+    // Keep both targets outside each other's click-opened popup.
     if (targets.some(t => Math.abs(t.x - candidate.x) < 340)) continue;
     await page.mouse.move(candidate.x, candidate.y); await page.waitForTimeout(60);
-    const id = await page.locator('#hover [data-open]').getAttribute('data-open').catch(() => null);
+    assert.equal(await page.locator('#hover').isVisible(), false, 'Hover does not open a popup');
+    if (await widePaths() !== 1) continue;
+    await page.mouse.click(candidate.x, candidate.y);
+    const id = await page.evaluate(() => !document.querySelector('#hover').hidden && document.querySelector('#hover [data-open]')?.dataset.open);
     if (id === candidate.id) targets.push(candidate);
+    if (await page.locator('#hover').isVisible()) await page.locator('#hover .preview-close').click();
     if (targets.length === 2) break;
-    await page.mouse.move(10, 130); await page.waitForTimeout(300);
+    await page.mouse.move(10, 130);
   }
-  assert.equal(targets.length, 2, 'Due vie distinte raggiungibili con il puntatore');
+  assert.equal(targets.length, 2, 'Two distinct streets reachable with the pointer');
   for (const target of [...targets, ...targets].reverse()) {
     await page.mouse.move(target.x, target.y); await page.waitForTimeout(60);
-    assert.equal(await page.locator('#hover [data-open]').getAttribute('data-open'), target.id);
-    assert.equal(await widePaths(), 1, 'Il passaggio rapido lascia larga soltanto la via sotto il cursore');
+    assert.equal(await page.locator('#hover').isVisible(), false, 'Rapid hover never opens a popup');
+    assert.equal(await widePaths(), 1, 'Only the hovered street is wide');
   }
+  await page.mouse.click(targets[0].x, targets[0].y);
+  assert.equal(await page.locator('#hover [data-open]').getAttribute('data-open'), targets[0].id, 'Click opens the street popup');
+  await page.mouse.move(targets[1].x, targets[1].y); await page.waitForTimeout(60);
+  assert.equal(await page.locator('#hover [data-open]').getAttribute('data-open'), targets[0].id, 'Hover elsewhere does not replace the selected popup');
+  assert.equal(await widePaths(), 1);
+  await page.mouse.click(targets[1].x, targets[1].y);
+  assert.equal(await page.locator('#hover [data-open]').getAttribute('data-open'), targets[1].id, 'Another click changes the popup street');
+  await page.locator('#hover .preview-close').click();
   await page.mouse.move(10, 130);
-  assert.equal(await widePaths(), 0, 'Uscendo dalla mappa tutte le vie tornano sottili subito');
-  await page.waitForTimeout(350);
-  assert.equal(await page.locator('#hover').isVisible(), false, 'Il popup scompare dopo l’uscita');
+  assert.equal(await widePaths(), 0, 'Leaving the map clears all wide strokes');
+  assert.equal(await page.locator('#hover').isVisible(), false, 'A closed popup stays closed');
   await page.screenshot({ path: path.join(output, '00-map-full.png') });
   await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#network-setup').click();
@@ -117,11 +128,13 @@ try {
   let networkPointer = null;
   for (const point of networkPoints) {
     await page.mouse.move(point.x, point.y);
+    assert.equal(await page.locator('#hover').isVisible(), false, 'Hover does not open a popup');
+    await page.mouse.click(point.x, point.y);
     if (await page.evaluate(id => !document.querySelector('#hover').hidden && document.querySelector('#hover [data-open]')?.dataset.open === id, rawStreet.id)) { networkPointer = point; break; }
+    if (await page.locator('#hover').isVisible()) await page.locator('#hover .preview-close').click();
   }
-  assert.ok(networkPointer, 'Hover disponibile sul tracciato della rete mai acquisito');
-  await page.screenshot({ path: path.join(output, '00-network-hover.png') });
-  await page.mouse.click(networkPointer.x, networkPointer.y);
+  assert.ok(networkPointer, 'Popup al clic disponibile sul tracciato della rete mai acquisito');
+  await page.screenshot({ path: path.join(output, '00-network-click.png') });
   assert.equal(await page.locator('#detail-dialog').isVisible(), false, 'Il clic sulla mappa apre il riepilogo, non la scheda');
   await page.mouse.move(310, 140);
   await page.waitForTimeout(400);
@@ -159,15 +172,18 @@ try {
   await page.screenshot({ path: path.join(output, "01-map.png") });
   await page.locator('#detail-close').click();
   assert.equal(await widePaths(), 0, 'Chiudere la scheda e ripristinare il focus non lascia vie larghe');
-  // Actual pointer events on the map, including the quick flag in the hover panel.
+  // Actual pointer events on the map, including the quick flag in the clicked popup.
   let hovered = false;
   for (const point of await mapPoints(page, street.geometry)) {
     await page.mouse.move(point.x, point.y);
+    assert.equal(await page.locator('#hover').isVisible(), false, 'Hover does not open a popup');
+    await page.mouse.click(point.x, point.y);
     hovered = await page.evaluate(id => !document.querySelector('#hover').hidden && document.querySelector('#hover [data-open]')?.dataset.open === id, street.id);
     if (hovered) break;
+    if (await page.locator('#hover').isVisible()) await page.locator('#hover .preview-close').click();
   }
-  assert.ok(hovered, "Il passaggio del mouse deve aprire il riepilogo della via");
-  await page.screenshot({ path: path.join(output, "02-hover.png") });
+  assert.ok(hovered, "Il clic deve aprire il riepilogo della via");
+  await page.screenshot({ path: path.join(output, "02-click-popup.png") });
   await page.locator("#hover [data-attention]").click();
   await until(page, async id => (await window.territory.detail(id)).memory.attention, street.id);
   await page.locator('#hover [data-open]').click();
@@ -314,7 +330,7 @@ try {
   await page.evaluate(() => [...window.checkedPaths].find(p => p._map)._map.setZoom(16, { animate: false }));
   await page.waitForTimeout(100); await verifyPixels();
   await application.close(); application = null;
-  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 50], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
+  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, popupOnlyOnClick: true, selectedPopupSurvivesHover: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 50], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
   console.log(`Collaudo Electron superato. Schermate: ${output}`);
 } catch (error) {
   if (application) {
