@@ -61,7 +61,7 @@ try {
   await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#refresh').click();
   await page.waitForFunction(() => window.checkedPaths.size > 500);
-  const widePaths = () => page.evaluate(() => [...window.checkedPaths].filter(p => p._map && p.options.weight > 2).length);
+  const widePaths = () => page.evaluate(() => [...window.checkedPaths].filter(p => p._map && p.options.weight > 4).length);
   assert.equal(await widePaths(), 0, 'Ogni via parte sottile, anche se selezionata');
   const candidates = await page.evaluate(streets => {
     const map = [...window.checkedPaths].find(p => p._map)._map;
@@ -251,7 +251,70 @@ try {
     await page.screenshot({ path: path.join(output, `07-map-${tone}.png`) });
     await application.close(); application = null;
   }
-  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, pinnedPreviewThin: true, modalCloseThin: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
+  // Mixed dates across acquisitions, entirely fictional and in the temporary ledger.
+  const mixed = structuredClone(ledger), mixedKeys = [], currentTime = Date.now();
+  const ago = days => new Date(currentTime - days * 86400000).toISOString();
+  const prototype = Object.values(mixed.units).find(u => u.streetIds.includes(street.id));
+  for (const [key, unit] of Object.entries(mixed.units)) if (unit.streetIds.includes(street.id)) delete mixed.units[key];
+  for (let i = 0; i < 100; i++) {
+    const unit = structuredClone(prototype), source = structuredClone(unit.observations.at(-1).source);
+    source.cadastral.subaltern = String(i + 1000); source.sourcePropertyId = `mixed:${i}`; source.jobId = 'mixed-new'; source.category = i < 70 ? 'A/3' : 'C/6';
+    unit.key = ['BITONTO', source.cadastral.urbanSection || '', source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern].join('|');
+    unit.observations = [{ at: ago(5), runId: 'mixed-new', streetId: street.id, source, origin: 'simulation' }];
+    unit.importedAt = null; unit.crmId = null; unit.assessment = null;
+    mixed.units[unit.key] = unit; mixedKeys.push(unit.key);
+  }
+  mixed.runs = mixed.runs.filter(r => r.streetId !== street.id);
+  const scanRecord = { id: 'mixed-old', streetId: street.id, origin: 'simulation', operation: 'scan', state: 'completed', startedAt: ago(150), endedAt: ago(150), itemKeys: mixedKeys, handled: 100, total: 100, error: null };
+  mixed.runs.push(scanRecord, { ...scanRecord, id: 'mixed-new', startedAt: ago(5), endedAt: ago(5) });
+  for (const [id, keys, days, cohort] of [['mixed-old-apply', mixedKeys.slice(33, 50), 120, 'mixed-old'], ['mixed-new-apply', mixedKeys.slice(0, 33), 1, 'mixed-new']]) mixed.runs.push({ ...scanRecord, id, operation: 'apply', acquisitionRunId: cohort, startedAt: ago(days), endedAt: ago(days), itemKeys: keys, handled: keys.length, imports: Object.fromEntries(keys.map(key => [key, { crmId: `mixed:${key}`, at: ago(days) }])) });
+  await writeFile(path.join(dataDirectory, 'territory-ledger.json'), JSON.stringify(mixed));
+  page = await launch();
+  const distribution = (await page.evaluate(id => window.territory.detail(id), street.id)).street.progress.distribution;
+  assert.deepEqual([distribution.recent, distribution.stale, distribution.never, distribution.percent], [33, 17, 50, 50]);
+  await page.evaluate(() => {
+    window.checkedPaths = new Set();
+    const original = L.Path.prototype.setStyle;
+    L.Path.prototype.setStyle = function (style) { window.checkedPaths.add(this); return original.call(this, style); };
+  });
+  await page.locator('#search').fill(street.name); await page.locator(`[data-street="${street.id}"]`).click();
+  const summary = page.locator('.detail-header .import-summary');
+  await summary.filter({ hasText: '50% · 50/100' }).waitFor();
+  assert.ok((await summary.textContent()).includes('33% · 33'));
+  assert.ok((await summary.textContent()).includes('17% · 17'));
+  assert.ok((await summary.textContent()).includes('50% · 50'));
+  await page.locator('#detail-close').click(); await page.mouse.move(10, 130);
+  await page.locator('#tools').evaluate(el => { el.open = true; }); await page.locator('#refresh').click();
+  await page.waitForTimeout(500);
+  const verifyPixels = async () => {
+    const samples = await page.evaluate(() => {
+      const layer = [...window.checkedPaths].find(p => p._map && new Set((p.options.importGradient || []).map(s => s.color)).size === 3);
+      const ctx = layer._renderer._ctx, bounds = layer._renderer._bounds, scale = L.Browser.retina ? 2 : 1;
+      return [.15, .4, .75].map(fraction => {
+        const distance = fraction * layer._importMetrics.total;
+        const edge = layer._importMetrics.edges.find(e => e.start + e.length >= distance);
+        const offset = (distance - edge.start) / edge.length;
+        const point = { x: edge.a.x + (edge.b.x - edge.a.x) * offset, y: edge.a.y + (edge.b.y - edge.a.y) * offset };
+        const pixel = [...ctx.getImageData(Math.round((point.x - bounds.min.x) * scale), Math.round((point.y - bounds.min.y) * scale), 1, 1).data];
+        const token = fraction < .33 ? '--lr-ok' : fraction < .5 ? '--lr-danger' : '--lr-data-muted';
+        const color = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+        return { pixel, color, weight: layer.options.weight };
+      });
+    });
+    for (const { pixel, color, weight } of samples) {
+      const expected = color.slice(1).match(/.{2}/g).map(x => parseInt(x, 16));
+      assert.ok(expected.every((c, i) => Math.abs(c - pixel[i]) < 4) && pixel[3] > 180, `Colore reale del canvas ${pixel} corrisponde al token ${color}`);
+      assert.equal(weight, 4, 'La via è visibile a 4 px senza hover');
+    }
+  };
+  await verifyPixels();
+  await page.screenshot({ path: path.join(output, '08-map-gradient-33-17-50.png') });
+  await page.evaluate(() => [...window.checkedPaths].find(p => p._map)._map.panBy([40, 20], { animate: false }));
+  await page.waitForTimeout(100); await verifyPixels();
+  await page.evaluate(() => [...window.checkedPaths].find(p => p._map)._map.setZoom(16, { animate: false }));
+  await page.waitForTimeout(100); await verifyPixels();
+  await application.close(); application = null;
+  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 50], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
   console.log(`Collaudo Electron superato. Schermate: ${output}`);
 } catch (error) {
   if (application) {

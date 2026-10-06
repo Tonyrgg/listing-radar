@@ -35,7 +35,7 @@ Intervento sull’intero renderer Territorio, integrato in Worker V2. La scheda 
 
 ## Regole che non cambiano
 
-- Percentuale = immobili importati / totale verificato della **ultima acquisizione**, mai totale storico. Totale incerto resta esplicitamente incerto.
+- Dal 0.34.3 il gradiente e la percentuale principale usano gli immobili dell'ultimo inventario completo e l'ultimo import verificato di ciascuno, anche in run precedenti. Il conteggio della sola acquisizione corrente rimane distinto. Totale incerto resta esplicitamente incerto.
 - Mancanza della data non significa assenza di import.
 - Segnalazione manuale e stato del processo sono informazioni separate.
 - Correzioni umane e letture originali restano conservate. Correggere impone un nuovo confronto.
@@ -57,3 +57,9 @@ Le due valutazioni indipendenti iniziali hanno concordato su frammentazione del 
 - Collaudi Electron Territorio, UX, integrazione V2/precedente, memoria online e interfaccia precedente passati. La prova online usa servizi finti e copie temporanee dell’archivio; nessuna applicazione al CRM reale.
 - Due revisioni finali indipendenti: font locali caricati, tab da tastiera, disclosure/focus/scroll conservati, azioni di autorizzazione sempre raggiungibili e nessun overflow. Corretti anche i problemi residui rilevati: percorso con pronti e incerti, catalogo mobile senza uscita, filtro selezionati, prefisso IPC nell’errore e controlli inutili nella scheda vuota.
 - Il rilevatore Impeccable restituisce un rilievo sul divisore del catalogo (`border-right:1px solid var(--lr-line-quiet)`): verificato come separatore strutturale neutro, non bordo decorativo accentato. Non è stato presentato come scansione priva di rilievi.
+
+### Gradiente per immobile, 0.34.3 (6 ottobre 2026)
+
+Tracciato 4 px al 90%, 8 px in hover. Gradiente continuo lungo la geometria completa: quote recenti, da riprendere per anzianità e mai importate/senza data. Elenco, popup e scheda mostrano le stesse quote; il rapporto della run corrente rimane distinto. Le transizioni brevi non rappresentano posizioni di immobili. Avanzamento e Pausa precedono il riepilogo che cambia altezza durante l'acquisizione.
+
+539 test CI superati e compilazione TypeScript riuscita. Controllo Electron dell'esempio 33/17/50 con lettura dei pixel del canvas, spostamento e zoom; regressioni su hover, note e restart. Verificati anche UX (Pausa/ripresa, focus, filtri e layout), integrazione nella finestra desktop e memoria a V2 chiuso. Il test Pausa usa un click reale subito dopo la verifica di visibilità, perché le finestre Electron nascoste renderizzano a 1 fps e la fixture termina in 720 ms, prima delle due frame richieste dall'attesa di stabilità Playwright. Nessuna scrittura nel gestionale reale.

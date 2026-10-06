@@ -6,6 +6,8 @@ Non gestisce login, credenziali, SPID/CIE, OTP o CAPTCHA. Le sessioni SISTER e g
 
 La **0.34.2** recupera le acquisizioni SISTER con contatori azzerati e gli import bloccati dal solo riordino dei proprietari. Le acquisizioni ordinarie e le prove d'import alimentano automaticamente la memoria Worker V2 anche a sezione chiusa. Dettagli e procedura per le run conservate: [recupero acquisizioni](../docs/PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
 
+La **0.34.3** rende le vie visibili a 4 px (8 px in hover) e ne colora il tracciato in proporzione agli immobili: ultimo import entro 30 giorni, da 31 a 90, oltre 90 e mai importati/senza data. Il totale proviene dall'ultimo inventario completo; gli import verificati di run precedenti rimangono nel gradiente. Popup, elenco e scheda mostrano conteggi e quote. Le nuove letture V2 includono categorie A/C; le riprese conservano i filtri iniziali. [Funzionamento e passaggi prima della sostituzione dei flussi precedenti](../docs/PROPERTY-WORKER-TERRITORY.md).
+
 ## Applicazione desktop Windows
 
 L'uso normale avviene tramite l'app desktop. Da `worker/`:

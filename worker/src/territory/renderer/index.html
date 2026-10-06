@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="fonts.css" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="vendor/leaflet.js"></script>
-    <script defer src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </head>
   <body>
     <header class="topbar">
@@ -131,10 +131,10 @@
         <div id="hover" class="hover-panel" hidden></div>
         <div
           class="map-legend"
-          aria-label="Colore per età dell'ultimo import nella run più recente"
+          aria-label="Quote di immobili per età dell'ultimo import verificato"
         >
-          <strong>Ultimo import</strong><span class="dot never"></span>Nessun
-          import datato <span class="dot recent"></span>≤30 giorni
+          <strong>Immobili della via</strong><span class="dot never"></span>Mai importati / data assente
+          <span class="dot recent"></span>≤30 giorni
           <span class="dot aging"></span>31–90 giorni
           <span class="dot stale"></span>Oltre 90 giorni
         </div>

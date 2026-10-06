@@ -70,6 +70,8 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 
 ### Property Data Worker
 
+Dal 6 ottobre 2026 la 0.34.3 rappresenta sulla mappa V2 le quote degli immobili per età dell'ultimo import verificato, anche in run precedenti, usando il totale dell'ultimo inventario completo. Tracciati 4 px / hover 8 px, conteggi leggibili e nuove acquisizioni A/C. Il conteggio della sola run corrente resta distinto; totali incerti non generano gradienti definitivi. Per i passaggi ancora necessari alla sostituzione operativa leggere `docs/PROPERTY-WORKER-TERRITORY.md`.
+
 Dal 6 ottobre 2026 la 0.34.2 collega anche le acquisizioni ordinarie alla memoria V2, senza richiedere l'apertura della nuova sezione. Il passaggio locale è durevole e usa il medesimo store; conflitti e prove d'import conservano le protezioni esistenti. Diagnosi, recupero delle run conservate e conteggi: [PROPERTY-WORKER-ACQUISITION-RECOVERY.md](PROPERTY-WORKER-ACQUISITION-RECOVERY.md).
 
 - Node.js e TypeScript;

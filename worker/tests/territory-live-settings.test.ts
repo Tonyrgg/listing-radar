@@ -9,9 +9,12 @@ import { LiveProvider, type LiveConfig } from "../src/territory/live-provider.js
 import { configureTestSettings, testSettings } from "../src/territory/test-settings.js";
 import { unitKey, type Street } from "../src/territory/model.js";
 import type { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
+import type { ChromeTabs } from "../src/services/chrome.js";
+import { SisterStreetRun, type SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
+import { isStrategicNetworkCategory, normalizeStreetPropertyFilters, type StreetPropertyFilters } from "../src/core/network-exploration.js";
 
 const directories: string[] = [];
-afterEach(async () => { await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 const street: Street = { id: "20", name: "Via della prova", sisterName: "VIA DELLA PROVA", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
 const base: LiveConfig = { cdpUrl: "http://127.0.0.1:9223", sisterTabMatch: "sister", crmTabMatch: "cloud", allowedCadastralKeys: [], allowedTaxCodes: [], allowCreate: false };
 async function setup() {
@@ -23,6 +26,21 @@ async function setup() {
   return { store, source, key };
 }
 describe("Schede reali scelte esplicitamente nel laboratorio", () => {
+  it("acquisisce abitazioni e box nelle nuove run, conservando i filtri di una run ripresa", async () => {
+    const provider = new LiveProvider(base, () => false), scopes: boolean[] = [];
+    vi.spyOn(provider as unknown as { tabs(): Promise<ChromeTabs> }, "tabs").mockResolvedValue({ sisterPage: {} } as ChromeTabs);
+    vi.spyOn(SisterStreetRun.prototype, "run").mockImplementation(async function (this: SisterStreetRun) {
+      const filters = (this as unknown as { filters: StreetPropertyFilters }).filters;
+      expect(isStrategicNetworkCategory("A/3", filters.residentialOnly)).toBe(true);
+      scopes.push(isStrategicNetworkCategory("C/6", filters.residentialOnly));
+      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0 } as SisterStreetRunCheckpoint;
+    });
+    const sink = async () => {}, save = async () => {};
+    await provider.scan(street, "new", null, sink, save, () => false);
+    const prior = { results: [], filters: normalizeStreetPropertyFilters({ residentialOnly: true }) };
+    await provider.scan(street, "old", prior, sink, save, () => false);
+    expect(scopes).toEqual([true, false]);
+  });
   it("autorizza solo le identità selezionate e i loro attuali intestatari", async () => {
     const { store, source, key } = await setup();
     const config = configureTestSettings(store.read(), base, [key], false);

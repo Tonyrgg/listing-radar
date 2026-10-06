@@ -57,7 +57,13 @@ try {
   await page.keyboard.press("Enter");
   await page.locator("#tab-dossier").waitFor();
   await page.locator('[data-operation="scan"]').click();
-  await page.locator("#detail-pause").click();
+  // Hidden Electron throttles animation frames to 1 fps: the 720 ms fixture
+  // ends before Playwright's two-frame stability wait. Check visibility and
+  // send a real pointer click immediately, then verify the persisted pause.
+  await page.locator("#detail-pause").waitFor({ state: "visible" });
+  const pauseBounds = await page.locator("#detail-pause").boundingBox();
+  assert.ok(pauseBounds && pauseBounds.width >= 44 && pauseBounds.height >= 44);
+  await page.mouse.click(pauseBounds.x + pauseBounds.width / 2, pauseBounds.y + pauseBounds.height / 2);
   await until(
     page,
     async (id) => {

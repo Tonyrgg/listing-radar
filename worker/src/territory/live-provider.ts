@@ -56,8 +56,11 @@ export class LiveProvider implements TerritoryProvider {
     const tabs = await this.tabs();
     let contacts: ExcelContactsAdapter | null = null;
     if (this.config.contactsExcelPath) { contacts = new ExcelContactsAdapter(this.config.contactsExcelPath); await contacts.load(); }
+    const prior = checkpoint as SisterStreetRunCheckpoint | undefined;
     const runner = new SisterStreetRun(tabs.sisterPage, {
       acquireOwners: true, includeAllOwners: true, expandAllOwners: false,
+      // The street inventory includes dwellings and category C (e.g. garages).
+      filters: prior?.runSettings?.filters ?? prior?.filters ?? { residentialOnly: false },
       strategy: "bulk_exact_variants", prepareSearchAutomatically: true, keepAcquisition: true,
       // Live is SISTER acquisition here, never a CRM write or a stable worker job.
       mode: "live", importJobId: runId, isCancelled: paused, onCheckpoint: save,
@@ -69,7 +72,6 @@ export class LiveProvider implements TerritoryProvider {
         await sink(source);
       },
     });
-    const prior = checkpoint as SisterStreetRunCheckpoint | undefined;
     const result = await runner.run(street.sisterName, prior && hasRetryableAcquisitionRecords(prior) ? prepareStreetAcquisitionRetry(prior) : prior);
     return result.status === "completed" && !result.lastError && result.totalSkippedPropertyRows === 0;
   }

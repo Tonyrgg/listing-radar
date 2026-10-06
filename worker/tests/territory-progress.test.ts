@@ -27,6 +27,49 @@ function apply(state: TerritoryState, keys: string[], days = 5, cohort = "scan")
   state.runs.push({ id: `apply:${state.runs.length}`, streetId: street.id, operation: "apply", origin: "simulation", state: "completed", startedAt: ago(days), endedAt: ago(days), total: keys.length, handled: keys.length, itemKeys: keys, error: null, acquisitionRunId: cohort, imports: Object.fromEntries(keys.map(key => [key, { at: ago(days), crmId: `crm:${key}` }])) });
 }
 describe("Età e percentuale import nell'ultima acquisizione", () => {
+  it("colora 100 unità dell'inventario: 33 recenti, 17 vecchie e 50 mai importate", () => {
+    const { state, keys, scan } = fixture(100);
+    state.runs.unshift({ ...scan, id: "scan-old", startedAt: ago(150), endedAt: ago(150) });
+    apply(state, keys.slice(33, 50), 120, "scan-old");
+    apply(state, keys.slice(0, 33), 1);
+    // 70 abitazioni + 30 box share the same cadastral denominator.
+    for (const key of keys.slice(70)) state.units[key]!.observations[0]!.source.category = "C/6";
+    const progress = importProgress(state, [street.id], now);
+    expect(progress).toMatchObject({ imported: 33, total: 100, percent: 33 });
+    expect(progress.distribution).toMatchObject({ total: 100, imported: 50, percent: 50, recent: 33, aging: 0, stale: 17, never: 50, undated: 0 });
+    apply(state, [keys[33]!], 0);
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 50, recent: 34, stale: 16, never: 50 });
+  });
+  it("il gradiente conserva import di run precedenti e ignora unità fuori dal nuovo inventario", () => {
+    const { state, keys, scan } = fixture();
+    apply(state, [keys[0]!, keys[1]!, keys[9]!], 5);
+    state.runs.push({ ...scan, id: "scan-new", startedAt: ago(2), endedAt: ago(2), itemKeys: keys.slice(0, 5) });
+    const progress = importProgress(state, [street.id], now);
+    expect(progress.percent).toBe(0);
+    expect(progress.distribution).toMatchObject({ total: 5, imported: 2, percent: 40, recent: 2, never: 3 });
+  });
+  it("il totale V2 usa anche i box dell'inventario SISTER privi di osservazioni complete", () => {
+    const { state, keys, scan } = fixture(2);
+    scan.checkpoint = { results: [{ outcome: "found", inventoryProperties: [...keys.map(key => {
+      const source = state.units[key]!.observations[0]!.source;
+      return { municipality: source.municipality, sheet: source.cadastral.sheet, parcel: source.cadastral.parcel, subaltern: source.cadastral.subaltern, address: source.fullAddress, category: source.category };
+    }), { municipality: "BITONTO", sheet: "LAB", parcel: street.id, subaltern: "3", address: `${street.name} 6`, category: "C/6" }] }] };
+    apply(state, [keys[0]!]);
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: 3, imported: 1, percent: 33, recent: 1, never: 2 });
+  });
+  it("nessun gradiente definitivo su un inventario parziale, neanche con prove d'import", () => {
+    const { state, keys, scan } = fixture();
+    scan.state = "paused"; apply(state, [keys[0]!]);
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: null, percent: null, recent: 1, never: 9 });
+  });
+  it("classifica ogni prova per data e distingue import senza data da immobili mai importati", () => {
+    const { state, keys, scan } = fixture(6); scan.startedAt = ago(150);
+    apply(state, [keys[0]!], 30); apply(state, [keys[1]!], 31); apply(state, [keys[2]!], 90); apply(state, [keys[3]!], 91);
+    Object.assign(state.units[keys[4]!]!.observations[0]!, { importVerified: true, crmId: "crm", importedAt: null });
+    // A found CRM ID and a mutable unit timestamp alone never prove an import.
+    Object.assign(state.units[keys[5]!]!, { crmId: "found", importedAt: ago(0) });
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 2, stale: 1, never: 1, undated: 1 });
+  });
   it("rispetta 30/31 e 90/91 giorni, senza colorare date mancanti o future", () => {
     for (const [days, tone] of [[0, "recent"], [30, "recent"], [31, "aging"], [59, "aging"], [60, "aging"], [90, "aging"], [91, "stale"]] as const) expect(importAge(ago(days), now)).toEqual({ ageDays: days, tone });
     for (const date of [null, "non-data", ago(-1)]) expect(importAge(date, now)).toEqual({ ageDays: null, tone: "never" });

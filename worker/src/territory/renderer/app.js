@@ -1,3 +1,4 @@
+import { gradientStops, importGradientRenderer } from "./import-gradient.js";
 /* The renderer receives data and explicit commands only, never filesystem or credentials. */
 (() => {
   const api = window.territory;
@@ -62,8 +63,8 @@
   let hoverPoint = null;
   let highlightedId = null,
     highlightSource = null;
-  const stroke = { weight: 2, opacity: 0.7 },
-    hoverStroke = { weight: 6, opacity: 1 };
+  const stroke = { weight: 4, opacity: 0.9 },
+    hoverStroke = { weight: 8, opacity: 1 };
   let historyView = false,
     historyRows = [],
     historyFilter = "";
@@ -178,7 +179,7 @@
   const map = L.map("map", {
     zoomControl: false,
     preferCanvas: true,
-    renderer: L.canvas({ tolerance: 5 }),
+    renderer: importGradientRenderer(L, { tolerance: 5 }),
   }).setView([41.11, 16.69], 15);
   L.control.zoom({ position: "bottomright" }).addTo(map);
   const tiles = L.tileLayer(
@@ -279,7 +280,7 @@
       .sort((a, b) => {
         const order = $("sort").value;
         if (order === "oldest") {
-          const diff = (b.progress.ageDays ?? -1) - (a.progress.ageDays ?? -1);
+          const diff = (b.progress.distribution.ageDays ?? -1) - (a.progress.distribution.ageDays ?? -1);
           if (diff) return diff;
         }
         if (order === "priority") {
@@ -305,22 +306,26 @@
     return `<span class="status">${escape(street.label)}</span>`;
   }
   function progressHtml(street, compact = false) {
-    const p = street.progress;
+    const p = street.progress, d = p.distribution;
     const coverage =
-      p.percent !== null
-        ? `${p.percent}% · ${p.imported}/${p.total} immobili importati`
+      d.percent !== null
+        ? `${d.percent}% · ${d.imported}/${d.total} immobili già importati`
         : !p.acquisitionRunId
           ? "Da acquisire"
           : p.total === 0
             ? "Nessun immobile nell’ultima acquisizione"
-            : `${p.imported} importati · ${p.observed} letti, totale da verificare`;
+            : `${d.imported} già importati · ${p.observed} letti, totale da verificare`;
     const age =
-      p.ageDays !== null
-        ? `Ultimo import: ${p.ageDays === 0 ? "oggi" : p.ageDays === 1 ? "1 giorno fa" : `${p.ageDays} giorni fa`}`
-        : p.imported
+      d.ageDays !== null
+        ? `Ultimo import: ${d.ageDays === 0 ? "oggi" : d.ageDays === 1 ? "1 giorno fa" : `${d.ageDays} giorni fa`}`
+        : d.imported
           ? "Data import non disponibile"
-          : "Nessun import nell’ultima acquisizione";
-    return `<${compact ? "span" : "div"} class="import-summary ${compact ? "meta" : ""}" data-import-tone="${p.tone}"><strong>${coverage}</strong>${p.acquisitionRunId || p.imported ? `<span>${age}</span>` : ""}${compact || !p.acquiredAt ? "" : `<span class="meta">Ultima acquisizione: ${date(p.acquiredAt)} · totale di questa acquisizione.</span>`}</${compact ? "span" : "div"}>`;
+          : "Nessun import verificato";
+    const buckets = [["recent", "Entro 30 giorni", d.recent], ["aging", "Da 31 a 90 giorni", d.aging], ["stale", "Oltre 90 giorni", d.stale], ["never", "Mai importati", d.never], ["never", "Importati senza data", d.undated]].filter(([, , count]) => count > 0);
+    const percentage = count => d.total ? `${Number((count / d.total * 100).toFixed(1)).toLocaleString("it-IT")}%` : "";
+    const distribution = d.total > 0 ? `<span class="import-distribution" role="img" aria-label="${escape(buckets.map(([, label, count]) => `${label}: ${percentage(count)}, ${count} immobili`).join("; "))}">${buckets.map(([tone, , count]) => `<span class="import-band ${tone}" style="flex-grow:${count}"></span>`).join("")}</span>${compact ? "" : `<span class="import-breakdown">${buckets.map(([tone, label, count]) => `<span><span class="dot ${tone}" aria-hidden="true"></span>${label}<strong>${percentage(count)} · ${count}</strong></span>`).join("")}</span>`}` : "";
+    const cohort = !compact && p.acquisitionRunId ? `<span class="meta">In questa acquisizione: ${p.imported}${p.total === null ? "" : `/${p.total}`} import verificati${p.percent === null ? "" : ` (${p.percent}%)`}. Gli import precedenti restano nel gradiente.</span>` : "";
+    return `<${compact ? "span" : "div"} class="import-summary ${compact ? "meta" : ""}" data-import-tone="${d.tone}"><strong>${coverage}</strong>${distribution}${p.acquisitionRunId || d.imported ? `<span>${age}</span>` : ""}${cohort}${compact || !p.acquiredAt ? "" : `<span class="meta">Inventario del ${date(p.acquiredAt)}${d.total === null ? " · incompleto, gradiente da determinare" : " · colori proporzionali, non posizioni degli immobili"}.</span>`}</${compact ? "span" : "div"}>`;
   }
   function renderList() {
     const streets = filtered(),
@@ -339,7 +344,7 @@
         .slice(0, listLimit)
         .map(
           (s) =>
-            `<button class="street-row ${selectedStreet === s.id ? "selected" : ""}" data-street="${escape(s.id)}" aria-current="${selectedStreet === s.id}" aria-label="${escape(s.name)}, ${escape(s.label)}, codice ${escape(s.id)}"><span class="dot ${s.progress.tone}" aria-hidden="true"></span><span><strong>${escape(s.name)}</strong><span class="meta">${escape(s.locality)} · ${escape(s.label)}${s.geometry ? "" : " · senza tracciato"}</span>${s.progress.acquisitionRunId ? progressHtml(s, true) : `<span class="meta">${s.count} immobili conservati</span>`}</span></button>`,
+            `<button class="street-row ${selectedStreet === s.id ? "selected" : ""}" data-street="${escape(s.id)}" aria-current="${selectedStreet === s.id}" aria-label="${escape(s.name)}, ${escape(s.label)}, codice ${escape(s.id)}"><span><strong>${escape(s.name)}</strong><span class="meta">${escape(s.locality)} · ${escape(s.label)}${s.geometry ? "" : " · senza tracciato"}</span>${s.progress.acquisitionRunId ? progressHtml(s, true) : `<span class="meta">${s.count} immobili conservati</span>`}</span></button>`,
         )
         .join("") ||
       '<div class="empty-state"><h3>Nessuna via trovata</h3><p>Cambia ricerca o azzera i filtri per vedere tutta la rete.</p><button id="empty-reset">Azzera ricerca e filtri</button></div>';
@@ -426,13 +431,15 @@
     for (const street of snapshot.streets) {
       const layer = layers.get(street.id);
       if (!layer) continue;
+      const stops = gradientStops(street.progress.distribution, c);
       layer.setStyle({
-        color: c[street.progress.tone],
+        color: stops[0].color,
+        importGradient: stops,
         ...(street.id === highlightedId ? hoverStroke : stroke),
       });
       const label =
-        map.getZoom() >= 16 && street.progress.percent !== null
-          ? `${street.progress.percent}%`
+        map.getZoom() >= 16 && street.progress.distribution.percent !== null
+          ? `${street.progress.distribution.percent}%`
           : null;
       if (layer.percentLabel !== label) {
         layer.unbindTooltip();
@@ -678,7 +685,7 @@
       $("tab-units").textContent = `Immobili ${s.count}`;
     } else
       $("inspector").innerHTML =
-        `<header class="detail-header">${header}</header><div id="detail-run" class="run-inline" hidden></div><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
+        `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
           ["dossier", "Dossier"],
           ["units", `Immobili ${s.count}`],
           ["history", "Storico"],
