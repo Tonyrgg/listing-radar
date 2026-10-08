@@ -268,19 +268,51 @@ try {
   await page.locator("#zone-form button").click();
   await until(page, async () => (await window.territory.queryCatalog()).zones.some(z => z.name === "Zona test UX"));
   const zone = await page.evaluate(async () => (await window.territory.queryCatalog()).zones.find(z => z.name === "Zona test UX"));
-  await page.locator("#q-zones").selectOption(zone.id);
-  await page.locator("#q-owners").selectOption(first.source.owners[0].taxCode);
-  await page.locator("#q-floors").selectOption("1");
-  await page.locator("#q-categories").selectOption("A/3");
-  await page.locator("#query-form button").first().click();
+  async function chooseFilter(id, value, search) {
+    await page.locator(id + " summary").click();
+    if (search) await page.locator(id + ' input[type="search"]').fill(search);
+    await page.locator(id + ' input[type="checkbox"][value="' + value + '"]').check();
+    await page.locator(id + " summary").click();
+  }
+  await chooseFilter("#q-zones", zone.id);
+  await chooseFilter("#q-owners", first.source.owners[0].taxCode, first.source.owners[0].taxCode);
+  await chooseFilter("#q-floors", "1");
+  await chooseFilter("#q-categories", "A/3");
+  await page.locator("#q-preview").click();
   await until(page, () => document.querySelectorAll("[data-query-unit]").length === 1);
+  await page.locator(".query-save > summary").click();
   await page.locator("#q-name").fill("Primi piani zona test"); await page.locator("#q-save").click();
   await until(page, async () => (await window.territory.queryCatalog()).saved.length === 1);
+  await page.locator("[data-query-select]").focus();
+  await page.keyboard.press("Space");
+  assert.equal(await page.evaluate(() => Boolean(document.activeElement.dataset.querySelect)), true, "La selezione conserva il focus da tastiera");
+  assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Selezione da tastiera");
   await page.locator("[data-query-unit] h3").click();
-  assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Clic sulla card seleziona l?immobile");
+  assert.equal(await page.locator("[data-query-select]:checked").count(), 0);
+  await page.locator("[data-query-unit] .owner-name strong").first().click();
+  assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Clic sulla card seleziona l’immobile");
   assert.equal(await page.locator("#q-apply").isDisabled(), true);
   await page.locator("#q-compare").click();
   await until(page, async () => !(await window.territory.snapshot()).activeRun && !(document.querySelector("#q-apply")?.disabled));
+  assert.equal(await page.locator(".query-card .unit-owners strong").count(), first.source.owners.length);
+  await chooseFilter("#q-localities", "Bitonto");
+  assert.equal(await page.locator("#q-compare").isDisabled(), true, "Filtri cambiati richiedono nuovi risultati");
+  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  await page.locator("#q-localities summary").click();
+  await page.locator("#q-localities [data-remove]").click();
+  await page.locator("#q-localities summary").click();
+  assert.equal(await page.locator("#q-apply").isDisabled(), false, "Ripristinare i filtri riabilita il risultato corrente");
+  await page.locator("#q-owners summary").click();
+  await page.locator('#q-owners input[type="search"]').fill("Nessun proprietario con questo nome");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#q-owners details").getAttribute("open"), "", "Invio nella ricerca non avvia una query");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#q-owners details").getAttribute("open"), null);
+  assert.equal(await page.locator("#q-owners .filter-chip").count(), 1, "La ricerca non cancella la selezione");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    await page.screenshot({ path: path.join(output, "query-" + theme + ".png") });
+  }
   await page.screenshot({ path: path.join(output, "query-combined.png") });
   for (const width of [1024, 390]) {
     await page.setViewportSize({ width, height: 760 });
@@ -289,7 +321,41 @@ try {
   }
   await page.locator("#detail-close").click(); await page.locator("#query-manager").click();
   assert.equal(await page.locator("#q-saved option").count(), 2, "Query salvata disponibile alla riapertura");
-  assert.equal(await page.locator("#q-zones option").count(), 1, "Zona conservata");
+  assert.equal(await page.locator("#q-zones .picker-option").count(), 1, "Zona conservata");
+  const missingId = await page.evaluate(() => window.territory.saveQuery({ name: "Proprietario non più presente", query: { ownerTaxCodes: ["BNCLGU80A01A662C"] } }));
+  await page.locator("#detail-close").click(); await page.locator("#query-manager").click();
+  await page.locator("#q-saved").selectOption(missingId);
+  await until(page, () => document.querySelector(".query-results-heading h3")?.textContent === "0 immobili trovati");
+  assert.ok((await page.locator("#q-owners .picker-value").textContent()).includes("Non più in archivio"), "Un criterio salvato mancante non scompare o diventa Tutti");
+  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  await page.locator("#q-reset").click();
+  await until(page, () => document.querySelectorAll("[data-query-unit]").length === 6);
+
+  await page.locator("#detail-close").click();
+  // Two co-owners are readable without opening any disclosure.
+  await page.setViewportSize({ width: 1600, height: 960 });
+  const owners = [
+    { ...first.source.owners[0], sharePercentage: 50 },
+    { ...first.source.owners[0], fullName: "Verdi Luisa", taxCode: "VRDLSU80A01A662B", sharePercentage: 50 },
+  ];
+  await page.evaluate(({ key, owners }) => window.territory.correct({ key, correction: { owners }, note: "Due intestatari di prova" }), { key: first.key, owners });
+  await page.locator('[data-street="' + street.id + '"]').click();
+  const property = page.locator('[data-unit="' + first.key + '"]');
+  await property.locator(".unit-owners").waitFor();
+  assert.equal(await property.locator(".owner-name strong").count(), 2);
+  assert.equal(await property.locator(".owner-share").first().textContent(), "50%");
+  assert.equal(await property.locator(".unit-comparison .status").textContent(), "Confronto da eseguire");
+  await property.locator('[data-disclosure$=":record"] > summary').click();
+  await property.locator('[data-disclosure$=":lifecycle"] > summary').click();
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    await property.scrollIntoViewIfNeeded();
+    await page.evaluate(() => { const card = document.querySelector("[data-unit]"); const dialog = document.querySelector("#detail-dialog"); dialog.scrollTop += card.getBoundingClientRect().top - dialog.getBoundingClientRect().top - 84; });
+    await page.screenshot({ path: path.join(output, "owners-details-" + theme + ".png") });
+  }
+  await page.setViewportSize({ width: 390, height: 760 });
+  assert.equal(await page.evaluate(() => document.querySelector("#detail-dialog").scrollWidth > document.querySelector("#detail-dialog").clientWidth + 1), false, "Intestatari e storico senza overflow");
+  await page.screenshot({ path: path.join(output, "owners-details-mobile.png") });
   await page.locator("#detail-close").click();
   await page.locator("#toggle-list").click();
   await page.locator("#search").fill("nessuna via corrispondente");

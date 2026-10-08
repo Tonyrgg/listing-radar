@@ -1,3 +1,4 @@
+import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { randomUUID } from "node:crypto";
 import { ImportV2Engine } from "../import-v2/engine.js";
 import { buildPlan } from "../import-v2/identity.js";
@@ -41,7 +42,7 @@ export class TerritoryApplication {
     streetId = street.id;
     const ids = relatedStreetIds(state, streetId);
     const summary = streetSummary(state, street);
-    return { street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => this.presentUnit(u)), runs: state.runs.filter(r => ids.includes(r.streetId) || r.selectionScope?.some(id => ids.includes(id))).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
+    return { street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => this.presentUnit(u)).sort((a, b) => compareSourceProperties(a.source, b.source)), runs: state.runs.filter(r => ids.includes(r.streetId) || r.selectionScope?.some(id => ids.includes(id))).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
   }
   async bindNetwork(networkId: string, officialId: string) {
     if (this.active) throw new Error("Attendi la fine dell'operazione prima di associare un tracciato");
@@ -145,7 +146,7 @@ export class TerritoryApplication {
   pause() { if (this.active) this.active.pause = true; this.changed(); }
   async waitForIdle() { await this.execution; }
   unitDetail(key: string) { const unit = this.store.read().units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit); }
-  private presentUnit(unit: Unit) { const source = effectiveSource(unit); return { ...unit, source, origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit) }; }
+  private presentUnit(unit: Unit) { const source = effectiveSource(unit); return { ...unit, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit) }; }
   queryCatalog() { return queryCatalog(this.store.read()); }
   query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return ["create", "update", "synced"].includes(u.assessment?.kind ?? "") && this.provider.canWrite(key, effectiveSource(u)); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
   async saveZone(name: string, streetIds: string[], id: string = randomUUID()) {

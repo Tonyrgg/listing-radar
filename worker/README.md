@@ -1,5 +1,7 @@
 # Property Data Worker
 
+La **0.34.9** ordina gli immobili della via per civico, piano e catasto. Gli intestatari sono visibili nelle card, separati da esiti e dettagli tecnici; il confronto di sola lettura distingue un confronto mancante da una ricerca incompleta. Query immobili usa filtri ricercabili con checkbox e selezioni rimovibili; dopo una modifica dei filtri occorre aggiornare i risultati prima di applicare.
+
 La **0.34.8** introduce lo storico di ogni immobile e la nuova scheda via: niente Dossier, scroll unico, card selezionabili e «Seleziona tutti» anche prima del confronto. In **Worker V2 → Query immobili** si gestiscono zone come gruppi di vie e combinazioni salvate di proprietari, categorie, piani e import. Le selezioni di più vie conservano il loro avanzamento e possono essere riprese. Gli import ordinari del desktop alimentano la memoria individuale; il confronto e le verifiche CRM restano attuali. [Flusso e limiti del collaudo](../docs/PROPERTY-WORKER-TERRITORY.md).
 
 Applicazione Node.js locale separata dalla web app Listing Radar. Si collega a un Chrome già aperto via CDP, legge i recapiti da Excel e persiste coda, avanzamento e audit nello stesso progetto Supabase della web app.

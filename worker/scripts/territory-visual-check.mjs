@@ -214,17 +214,19 @@ try {
   const units = page.locator(".unit");
   await units.nth(0).getByText("Correggi i dati conservati", { exact: true }).click();
   await units.nth(1).getByText("Correggi i dati conservati", { exact: true }).click();
-  const firstEdit = units.nth(0).locator("form[data-edit]");
-  const secondEdit = units.nth(1).locator("form[data-edit]");
+  const firstKey = await units.nth(0).getAttribute("data-unit");
+  const secondKey = await units.nth(1).getAttribute("data-unit");
+  const firstEdit = page.locator('[data-unit="' + firstKey + '"] form[data-edit]');
+  const secondEdit = page.locator('[data-unit="' + secondKey + '"] form[data-edit]');
   await firstEdit.locator('[name="address"]').fill(`${street.name} 20`);
   await secondEdit.locator('[name="address"]').fill(`${street.name} 22`);
   await firstEdit.getByRole("button", { name: "Salva correzioni", exact: true }).click();
-  await until(page, async id => (await window.territory.detail(id)).units[0].source.fullAddress.endsWith(" 20"), street.id);
+  await until(page, async ({ id, key }) => (await window.territory.detail(id)).units.find(u => u.key === key).source.fullAddress.endsWith(" 20"), { id: street.id, key: firstKey });
   assert.equal(await secondEdit.locator('[name="address"]').inputValue(), `${street.name} 22`, "Salvare una scheda non perde le modifiche in un'altra");
   await page.getByRole("button", { name: "Seleziona tutti", exact: true }).click();
   assert.equal(await secondEdit.locator('[name="address"]').inputValue(), `${street.name} 22`);
   await secondEdit.getByRole("button", { name: "Salva correzioni", exact: true }).click();
-  await until(page, async id => (await window.territory.detail(id)).units[1].source.fullAddress.endsWith(" 22"), street.id);
+  await until(page, async ({ id, key }) => (await window.territory.detail(id)).units.find(u => u.key === key).source.fullAddress.endsWith(" 22"), { id: street.id, key: secondKey });
   await page.getByRole("tab", { name: "Storico", exact: true }).click();
   await page.screenshot({ path: path.join(output, "04-history.png") });
   for (const width of [1024, 800, 390]) {
@@ -247,8 +249,9 @@ try {
   assert.equal(restored.memory.note, "Annotazione salvata durante il collaudo");
   assert.equal(restored.units.length, 6);
   assert.equal(restored.units.filter(u => u.assessment?.kind === "synced").length, 1);
-  assert.equal(restored.units[0].source.fullAddress, `${street.name} 20`);
-  assert.equal(restored.units[1].source.fullAddress, `${street.name} 22`);
+  assert.equal(restored.units.find(u => u.key === firstKey).source.fullAddress, `${street.name} 20`);
+  assert.equal(restored.units.find(u => u.key === secondKey).source.fullAddress, `${street.name} 22`);
+  assert.deepEqual(restored.units.map(u => u.position.civic), ["6", "8", "10", "12", "20", "22"], "Ordine per civico anche dopo correzione e riapertura");
   assert.equal(restored.street.progress.percent, 50, 'Le correzioni non cancellano le prove degli import');
   assert.equal(errors.length, 0, errors.join("\n"));
   const ledger = JSON.parse(await readFile(path.join(dataDirectory, "territory-ledger.json"), "utf8"));

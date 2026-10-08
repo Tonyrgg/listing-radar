@@ -1,5 +1,7 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+Dalla **0.34.9** gli immobili nella scheda via sono ordinati per civico (numero e lettera), piano e foglio/particella/subalterno; civici e piani mancanti seguono quelli noti. La posizione viene derivata dai dati conservati, senza cambiare le osservazioni SISTER. Intestatari e quote sono visibili senza accordion; dati immobile, acquisizioni, storico e correzioni hanno sezioni distinte. **Confronta gestionale** legge il CRM e prepara create/update/review: non scrive. **Confronto da eseguire** indica un piano mancante; **Confronto incompleto** una ricerca che non ha accertato la presenza, mai una prova di assenza. Query immobili combina checkbox ricercabili, conserva le selezioni durante la ricerca e richiede risultati aggiornati dopo un cambio di filtri. Salvataggio combinazioni, gruppi di vie e opzioni di applicazione restano disponibili come sezioni espandibili.
+
 ## Versione 0.34.8: immobili, scheda via e query
 
 La scheda via si apre direttamente sugli immobili: due colonne sul desktop, una su schermi piccoli, un solo scroll nella modale. Dossier e segnalazione manuale «da verificare» non fanno più parte del flusso di acquisizione. Restano il riepilogo dell'acquisizione, le note, i filtri SISTER e gli errori reali delle operazioni. Le card e «Seleziona tutti» funzionano anche prima del confronto; applicare richiede invece un piano valido, le autorizzazioni di collaudo e il rispetto della regola creazioni/aggiornamenti o solo esistenti.

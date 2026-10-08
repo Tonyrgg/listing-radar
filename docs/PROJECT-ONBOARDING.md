@@ -70,6 +70,8 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 
 ### Property Data Worker
 
+La 0.34.9 rende esplicita la gerarchia delle card V2 e mostra gli intestatari senza aprire dettagli. Gli immobili della via seguono civico, piano e catasto; le query usano filtri ricercabili e bloccano confronto/applicazione finché i risultati non corrispondono ai filtri. Nessuna modifica al motore di scrittura, alle autorizzazioni o allo schema database.
+
 La 0.34.8 aggiunge il registro del ciclo di vita del singolo immobile, alimentato anche dagli import ordinari del desktop: successo e checkpoint vengono conservati prima dell'avanzamento della run. La scheda via mostra gli immobili senza Dossier e con un unico scroll; card e selezione completa funzionano prima del confronto. Il gestore Query immobili combina gruppi di vie gestibili in V2, proprietari distinti per CF, categorie, piani e import, conserva le combinazioni e riprende selezioni su più vie. I nuovi campi sono nel JSON del workspace esistente; non richiedono modifiche SQL. Ricerche CRM attuali, riletture dopo le scritture e autorizzazioni di collaudo restano obbligatorie. Dettagli in `docs/PROPERTY-WORKER-TERRITORY.md`.
 
 La 0.34.5 apre il popup della via soltanto al clic. L'hover evidenzia il tracciato senza aprire o cambiare il riepilogo selezionato; Apri scheda continua a mostrare la modale del dossier.

@@ -19,7 +19,7 @@ async function setup() {
   let breakApply = false, broken = false, phase = "";
   const routes: [string, string][] = [];
   class Provider extends SimulationProvider {
-    override beginOperation(operation: string) { phase = operation; }
+    beginOperation(operation: string) { phase = operation; }
     override async candidates(s: Street, source: SourceProperty) {
       routes.push([s.id, source.cadastral.parcel]);
       if (breakApply && !broken && phase === "apply" && s.id === "b") { broken = true; throw new Error("Portale interrotto"); }

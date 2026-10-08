@@ -25,7 +25,7 @@ async function setup() {
 const source = () => simulationSource(street, 1, "old-job");
 function checkpoint(): ImportV2Checkpoint {
   const plan = buildPlan(source());
-  return { itemId: "item", jobId: plan.source.jobId, propertyId: plan.source.sourcePropertyId, plan, stage: "completed", people: [], syncedPeople: [], propertyResolution: { kind: "create", candidateIds: [] }, crmPropertyId: "crm", attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: "2026-10-07T10:00:00Z", activityEvidence: { activityId: null, outcome: "disabled" } };
+  return { itemId: "item", jobId: plan.source.jobId, propertyId: plan.source.sourcePropertyId, plan, stage: "completed", people: [], syncedPeople: [], propertyResolution: { kind: "create", propertyId: null, evidence: {} }, crmPropertyId: "crm", attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: "2026-10-07T10:00:00Z", activityEvidence: { activityId: null, outcome: "disabled" } };
 }
 const memory = (cp = checkpoint()): PropertyMemory => ({ version: 1, event: "stage_completed", at: cp.updatedAt, source: cp.plan!.source, checkpoint: cp });
 describe("memoria individuale degli immobili", () => {
