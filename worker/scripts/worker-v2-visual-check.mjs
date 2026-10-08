@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { hydrateUnitMemory } from '../dist-desktop/territory/unit-memory.js';
 import { resolveRecognizedHistory } from '../dist-desktop/territory/history.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,12 +46,13 @@ try {
   assert.equal(snapshot.streets.length, 2043);
   const street = snapshot.streets.find(s => s.geometry && s.name.includes('CASTELLUCCI'));
   await page.locator('#search').fill(street.name); await page.locator(`[data-street="${street.id}"]`).click();
+  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator('#street-note').fill('Nota aperta durante cambio sezione');
   await shell.locator('[data-scroll="refinement"]').click();
   assert.equal(await shell.locator('#refinement').isVisible(), true);
   await shell.locator('[data-scroll="worker-v2"]').click();
   assert.equal(await page.locator('#street-note').inputValue(), 'Nota aperta durante cambio sezione');
-  await page.getByRole('button', { name: 'Salva annotazioni', exact: true }).click();
+  await page.getByRole('button', { name: 'Salva note', exact: true }).click();
   await page.locator('#detail-close').click();
   await shell.locator('#themeToggle').click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
@@ -88,7 +90,7 @@ try {
   await copyFile(path.join(original, 'territory-ledger.json'), path.join(historical, 'territory-ledger.json'));
   const expectedLedger = JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8'));
   const priorUnitKeys = Object.keys(expectedLedger.units);
-  resolveRecognizedHistory(expectedLedger);
+  resolveRecognizedHistory(expectedLedger); hydrateUnitMemory(expectedLedger);
   const expectedUnitKeys = Object.keys(expectedLedger.units).sort();
   assert.ok(expectedUnitKeys.length > 0, 'La copia reale contiene immobili da recuperare');
   await copyFile(path.join(original, 'history-snapshot.json'), path.join(historical, 'history-snapshot.json'));

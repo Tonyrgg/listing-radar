@@ -23,6 +23,7 @@ function importDistribution(state: TerritoryState, keys: string[], total: number
   for (const key of inventory) for (const observation of state.units[key]?.observations ?? []) {
     if (observation.importVerified && observation.crmId) add(key, observation.importedAt);
   }
+  for (const key of inventory) for (const event of state.units[key]?.journal ?? []) if (event.kind === "import_completed" && event.crmId) add(key, event.at);
   for (const run of state.runs) if (run.operation === "apply") {
     for (const [key, proof] of Object.entries(run.imports ?? {})) if (proof.crmId) add(key, proof.at);
   }

@@ -3,7 +3,8 @@ import path from "node:path";
 import { z } from "zod";
 import { openTerritorySession } from "../territory/session.js";
 import type { OnlineCredentials } from "../territory/online-memory.js";
-import { queueAcquisition } from "../territory/acquisition-inbox.js";
+import { queueAcquisition, queuePropertyMemory } from "../territory/acquisition-inbox.js";
+import type { PropertyMemory } from "../import-v2/memory-store.js";
 import type { HistorySnapshot } from "../territory/history-source.js";
 import type { JobRow } from "../services/repository.js";
 import type { LiveBrowserConfig } from "../territory/live-provider.js";
@@ -54,6 +55,14 @@ export class WorkerV2Host {
     });
     this.memoryQueue = operation.catch(() => undefined);
     return operation;
+  }
+  async rememberProperty(memory: PropertyMemory) {
+    if (this.options.simulation) return;
+    // The local handoff is durable before the original import proceeds.
+    await queuePropertyMemory(this.options.profileDirectory, memory);
+    const operation = this.memoryQueue.then(async () => { await this.ensureOpen(); await this.session!.consumeDailyMemory(); });
+    this.memoryQueue = operation.catch(() => undefined);
+    // Adoption and online sync never hold up the daily CRM engine.
   }
   async needsAcquisition(job: JobRow) {
     if (this.options.simulation || ["ready", "running", "processing", "in_progress"].includes(job.status)) return false;

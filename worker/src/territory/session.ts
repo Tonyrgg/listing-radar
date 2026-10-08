@@ -12,9 +12,12 @@ import { TerritorySync, type TerritorySyncConfig } from "./sync.js";
 import { testSettings, configureTestSettings } from "./test-settings.js";
 import { openOnlineMemory, type OnlineCredentials } from "./online-memory.js";
 import { sanitizeSensitiveText } from "../logger.js";
-import { consumeAcquisitions } from "./acquisition-inbox.js";
-import { adoptHistory } from "./history.js";
+import { consumeAcquisitions, consumePropertyMemory } from "./acquisition-inbox.js";
+import { rememberCheckpoint } from "./unit-memory.js";
+import { adoptHistory, matchHistoricalStreet } from "./history.js";
+import { unitKey } from "./model.js";
 import { runSettingsSchema, runSettings } from "./run-options.js";
+import { unitQuerySchema } from "./query.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -69,8 +72,17 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     if (syncing) throw new Error("Memoria V2 occupata: acquisizione conservata in attesa");
     syncing = true;
     try {
-      const count = await consumeAcquisitions(options.profileDirectory, snapshot => adoptHistory(store, snapshot));
+      const facts = await consumePropertyMemory(options.profileDirectory, async memory => { await store.change(state => {
+        rememberCheckpoint(state, memory);
+        const matches = matchHistoricalStreet(memory.source, state.streets, state.historicalStreetMappings?.[memory.source.sourcePropertyId]);
+        const unit = state.units[unitKey(memory.source)]!;
+        if (matches.length === 1 && !unit.streetIds.includes(matches[0]!.id)) unit.streetIds.push(matches[0]!.id);
+      }); });
+      const count = facts + await consumeAcquisitions(options.profileDirectory, snapshot => adoptHistory(store, snapshot));
       if (count) notify();
+    } catch (error) {
+      memoryError = `Memoria immobili conservata in attesa: ${error instanceof Error ? sanitizeSensitiveText(error.message) : "archivio occupato"}`;
+      publish(); throw error;
     } finally { syncing = false; }
   };
   try {
@@ -116,7 +128,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       ipcMain.handle(`territory:${name}`, (event, value) => {
         if (event.sender !== options.contents || event.senderFrame !== options.contents.mainFrame) throw new Error("Richiesta non autorizzata");
         if (closing && !["snapshot", "detail", "sync-status", "pause"].includes(name)) throw new Error("Worker V2 si sta chiudendo: attendo il checkpoint");
-        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
+        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
         return handler(value);
       });
     };
@@ -151,6 +163,11 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       finally { syncing = false; notify(); }
     });
     handle("detail", value => application.detail(id.parse(value)));
+    handle("unit-detail", value => application.unitDetail(id.parse(value)));
+    handle("query-catalog", () => application.queryCatalog());
+    handle("query", value => { const v = z.object({ query: unitQuerySchema, limit: z.number().int().min(1).max(10000).default(100) }).parse(value); return application.query(v.query, v.limit); });
+    handle("save-zone", async value => { const v = z.object({ id: id.optional(), name: z.string().trim().min(1).max(80), streetIds: z.array(id).min(1).max(3000) }).parse(value); return application.saveZone(v.name, v.streetIds, v.id); });
+    handle("save-query", async value => { const v = z.object({ id: id.optional(), name: z.string().trim().min(1).max(80), query: unitQuerySchema }).parse(value); return application.saveQuery(v.name, v.query, v.id); });
     handle("bind-network", async value => { const v = z.object({ networkId: id, officialId: id }).parse(value); await application.bindNetwork(v.networkId, v.officialId); });
     handle("history-review", () => application.historyReview());
     handle("associate", async value => { const v = z.object({ propertyId: id, streetId: id }).parse(value); await application.associate(v.propertyId, v.streetId); });
@@ -158,7 +175,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
       if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");
-      const v = z.object({ streetId: id, operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
+      const v = z.object({ streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
+      if (!v.query && !v.streetId || v.query && (v.operation === "scan" || v.resumeId)) throw new Error("Scegli una via per acquisire, oppure una query per confrontare e applicare");
       if (options.live && v.operation === "apply") {
         const state = store.read();
         const prior = v.resumeId ? state.runs.find(r => r.id === v.resumeId) : undefined;
@@ -181,7 +199,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       options.beforeStart?.();
       try {
-        const run = await application.start(v.streetId, v.operation, v.selected, v.resumeId, v.settings);
+        const run = v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
         void application.waitForIdle().finally(() => { options.afterIdle?.(); notify(); });
         return run;
       } catch (error) { options.afterIdle?.(); throw error; }

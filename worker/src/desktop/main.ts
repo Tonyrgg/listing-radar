@@ -3341,6 +3341,7 @@ async function runWorker(input: { mode: WorkerMode; dryRun: boolean; jobId?: str
     crmConcurrency: () => (parallelCrmWindowsOverride ?? preferences.parallelCrmWindows) ? 2 : 1,
     isPropertySkipRequested: (jobId, propertyId) => activeJobId === jobId && skippingPropertyId === propertyId,
     refinementStreet: effectiveRefinementStreet,
+    propertyMemory: memory => workerV2?.rememberProperty(memory) ?? Promise.resolve(),
   });
   activeRunner = runner;
   pushActivity(input.jobId ? "Ripresa lavorazione richiesta" : "Nuova lavorazione richiesta");

@@ -13,6 +13,8 @@ import { relatedStreetIds } from "./model.js";
 import { importProgress } from "./progress.js";
 import { runSettings, sourceForApply } from "./run-options.js";
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { appendUnitEvent, rememberAcquisition, unitMemory } from "./unit-memory.js";
+import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: _sources, checkpoint: _checkpoint, ...run }: Run) => run;
@@ -39,7 +41,7 @@ export class TerritoryApplication {
     streetId = street.id;
     const ids = relatedStreetIds(state, streetId);
     const summary = streetSummary(state, street);
-    return { street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => ({ ...u, source: effectiveSource(u), origin: latest(u).origin, canWrite: this.provider.canWrite(u.key, effectiveSource(u)) })), runs: state.runs.filter(r => ids.includes(r.streetId)).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
+    return { street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => this.presentUnit(u)), runs: state.runs.filter(r => ids.includes(r.streetId) || r.selectionScope?.some(id => ids.includes(id))).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
   }
   async bindNetwork(networkId: string, officialId: string) {
     if (this.active) throw new Error("Attendi la fine dell'operazione prima di associare un tracciato");
@@ -73,17 +75,20 @@ export class TerritoryApplication {
       const checkpoint = state.checkpoints[source.sourcePropertyId];
       if (checkpoint && checkpoint.stage !== "completed") throw new Error("Import parziale: conserva il piano originale e riprendilo prima di cambiare i dati");
       unit.corrections = { ...unit.corrections, ...correction }; unit.note = note; unit.sourceVersionId = randomUUID(); unit.assessment = null;
+      appendUnitEvent(unit, ["corrected", unit.sourceVersionId], { kind: "corrected", at: now(), runId: "manual", origin: latest(unit).origin === "simulation" ? "simulation" : "live", source: effectiveSource(unit), note, message: "Correzione manuale conservata; serve un nuovo confronto" });
       for (const streetId of unit.streetIds) state.events.push({ id: randomUUID(), streetId, at: now(), text: "Correzione manuale conservata; serve un nuovo confronto", unitKey: key });
     });
     this.changed();
   }
-  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown): Promise<string> {
+  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown, batch?: { scope: string[]; routes: Record<string, string>; query: import("./query.js").UnitQuery }): Promise<string> {
     if (this.active) throw new Error("Una via è già in lavorazione. Mettila in pausa prima di avviarne un'altra.");
     const state = this.store.read(); const street = state.streets.find(s => s.id === streetId);
     if (!street) throw new Error("Via non trovata");
     if (street.linkedOfficialId) return this.start(street.linkedOfficialId, operation, selected, resumeId, settings);
     if (operation === "scan" && street.needsReview) throw new Error("Associa il tratto senza nome a una via ufficiale prima di acquisire");
     const ids = relatedStreetIds(state, streetId);
+    const scope = batch?.scope ?? (resumeId ? state.runs.find(r => r.id === resumeId)?.selectionScope : undefined);
+    if (scope) for (const id of scope) for (const related of relatedStreetIds(state, id)) if (!ids.includes(related)) ids.push(related);
     const unitKeys = Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => u.key);
     if (selected.some(key => !unitKeys.includes(key))) throw new Error("La selezione contiene immobili di un'altra via");
     if (new Set(selected).size !== selected.length) throw new Error("Seleziona ogni immobile una sola volta");
@@ -101,6 +106,7 @@ export class TerritoryApplication {
       if (operation === "apply" && !selected.length) throw new Error("Seleziona gli immobili da applicare");
       run = { id: randomUUID(), streetId, operation, origin: this.origin, state: "running", startedAt: now(), endedAt: null, error: null, handled: 0, total: operation === "scan" ? null : (selected.length ? selected.length : unitKeys.length), itemKeys: operation === "scan" ? [] : selected.length ? selected : unitKeys, acquisitionRunId: operation === "apply" ? importProgress(state, ids).acquisitionRunId : null };
       run.settings = runSettings(settings);
+      if (batch) { run.selectionScope = batch.scope; run.unitStreetIds = batch.routes; run.query = batch.query; }
     }
     if (operation !== "scan") {
       for (const key of run.itemKeys) {
@@ -138,8 +144,36 @@ export class TerritoryApplication {
   }
   pause() { if (this.active) this.active.pause = true; this.changed(); }
   async waitForIdle() { await this.execution; }
+  unitDetail(key: string) { const unit = this.store.read().units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit); }
+  private presentUnit(unit: Unit) { const source = effectiveSource(unit); return { ...unit, source, origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit) }; }
+  queryCatalog() { return queryCatalog(this.store.read()); }
+  query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return ["create", "update", "synced"].includes(u.assessment?.kind ?? "") && this.provider.canWrite(key, effectiveSource(u)); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
+  async saveZone(name: string, streetIds: string[], id: string = randomUUID()) {
+    if (this.active) throw new Error("Attendi la fine dell'operazione prima di modificare le zone");
+    await this.store.change(state => { const canonical = [...new Set(streetIds.map(id => state.streets.find(s => s.id === id)?.linkedOfficialId ?? id))]; if (!canonical.length || canonical.some(id => !state.streets.some(s => s.id === id && !s.needsReview))) throw new Error("Scegli almeno una via identificata"); (state.zones ??= {})[id] = { id, name, streetIds: canonical, updatedAt: now() }; }); this.changed(); return id;
+  }
+  async saveQuery(name: string, input: unknown, id: string = randomUUID()) {
+    if (this.active) throw new Error("Attendi la fine dell'operazione prima di salvare la query");
+    const query = unitQuerySchema.parse(input); queryUnitKeys(this.store.read(), query);
+    await this.store.change(state => { (state.savedQueries ??= {})[id] = { id, name, query, updatedAt: now() }; }); this.changed(); return id;
+  }
+  async startQuery(input: unknown, operation: "compare" | "apply", keys: string[], settings?: unknown) {
+    const state = this.store.read(), query = unitQuerySchema.parse(input), allowed = new Set(queryUnitKeys(state, query));
+    if (!keys.length || keys.some(key => !allowed.has(key))) throw new Error("La selezione non corrisponde più alla query: aggiorna i risultati");
+    const routes = keys.map(key => {
+      const unit = state.units[key]!, latestStreet = [...unit.observations].reverse().find(o => o.streetId)?.streetId;
+      const canonical = (id: string) => state.streets.find(s => s.id === (state.streets.find(s => s.id === id)?.linkedOfficialId ?? id) && !s.needsReview);
+      if (latestStreet && unit.streetIds.includes(latestStreet)) return canonical(latestStreet);
+      const matches = [...new Map(unit.streetIds.map(canonical).filter(s => s).map(s => [s!.id, s!])).values()];
+      return matches.length === 1 ? matches[0] : undefined;
+    });
+    if (routes.some(s => !s)) throw new Error("Associa alla via gli immobili senza posizione prima di avviare il confronto");
+    const scope = [...new Set(routes.map(s => s!.linkedOfficialId ?? s!.id))];
+    return this.start(scope[0]!, operation, keys, undefined, settings, { scope, query, routes: Object.fromEntries(keys.map((key, i) => [key, routes[i]!.id])) });
+  }
   private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch); }); this.changed(); }
   private async execute(run: Run) {
+    let currentKey: string | null = null;
     try {
       this.provider.beginOperation?.(run.operation);
       const street = this.store.read().streets.find(s => s.id === run.streetId)!;
@@ -153,6 +187,7 @@ export class TerritoryApplication {
             // A replay is harmless; a repaired SISTER row retains both readings.
             if (!unit.observations.some(o => o.runId === run.id && observationData(o.source) === observationData(source))) {
               unit.observations.push({ at: now(), runId: run.id, streetId: street.id, source, origin: this.origin === "simulation" ? "simulation" : "sister" });
+              rememberAcquisition(unit, unit.observations.at(-1)!);
               unit.sourceVersionId = source.sourcePropertyId; unit.assessment = null;
             }
             if (!currentRun.itemKeys.includes(key)) currentRun.itemKeys.push(key);
@@ -164,12 +199,15 @@ export class TerritoryApplication {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           if (this.isPaused()) { await this.updateRun(run.id, { state: "paused" }); return; }
           const key = run.itemKeys[index]!;
-          const unit = this.store.read().units[key]!; const source = run.applySources?.[key] ?? effectiveSource(unit);
+          currentKey = key;
+          const state = this.store.read(), unit = state.units[key]!; const source = run.applySources?.[key] ?? effectiveSource(unit);
+          const street = run.unitStreetIds?.[key] ? state.streets.find(s => s.id === run.unitStreetIds![key]) : run.selectionScope ? state.streets.find(s => unit.streetIds.some(id => id === s.id || state.networkBindings?.[id]?.officialId === s.id) && run.selectionScope!.includes(s.id))! : state.streets.find(s => s.id === run.streetId)!;
+          if (!street) throw new Error("Via non disponibile per questo immobile: nessuna scrittura");
           if (run.operation === "compare") {
             let assessment;
             try { const result = await this.provider.candidates(street, source); assessment = assess(source, result.rows, result.complete); }
             catch (error) { assessment = { ...assess(source, [], false), reason: sanitizeSensitiveText(error instanceof Error ? error.message : "Ricerca non riuscita") }; }
-            await this.store.change(s => { s.units[key]!.assessment = assessment; });
+            await this.store.change(s => { const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
           } else {
             // A plan is a preview, not permission to trust an old CRM read.
             const fresh = await this.provider.candidates(street, source);
@@ -177,7 +215,9 @@ export class TerritoryApplication {
             if (run.settings!.importPolicy === "existing_only" && assessment.kind === "create") throw new Error("Scheda esistente non trovata nella nuova lettura: nessuna creazione autorizzata da questa run");
             if (!this.provider.canWrite(key, source)) throw new Error("Scrittura non autorizzata per questo immobile");
             if (!["create", "update"].includes(assessment.kind)) {
-              await this.store.change(s => { s.units[key]!.assessment = assessment; });
+              await this.store.change(s => { const u = s.units[key]!; u.assessment = assessment;
+                appendUnitEvent(u, [run.id, key, "fresh_comparison", assessment.checkedAt], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
+                appendUnitEvent(u, [run.id, key, "plan_changed", assessment.checkedAt], { kind: "import_paused", at: assessment.checkedAt, runId: run.id, origin: run.origin, message: "La corrispondenza è cambiata: verifica il piano prima di riprendere" }); });
               await this.updateRun(run.id, { state: "paused", error: "La corrispondenza è cambiata: verifica il piano prima di riprendere." }); return;
             }
             const plan = buildPlan(source);
@@ -185,13 +225,13 @@ export class TerritoryApplication {
             const prior = this.store.read().checkpoints[source.sourcePropertyId];
             this.provider.authorizeWrite(source, prior?.propertyResolution?.kind === "create" && !prior.crmPropertyId ? "create" : assessment.kind as "create" | "update");
             const requireExisting = run.settings!.importPolicy === "existing_only" || (prior?.propertyResolution?.kind === "create" ? false : assessment.kind === "update");
-            const engine = new ImportV2Engine(await this.provider.port(), new TerritoryImportStore(this.store, street.id), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: run.settings!.includeCoOwners, propertyCandidates: async () => narrowed });
+            const engine = new ImportV2Engine(await this.provider.port(), new TerritoryImportStore(this.store, street.id, run.id), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: run.settings!.includeCoOwners, propertyCandidates: async () => narrowed });
             const outcome = await engine.run(plan.source);
             await this.store.change(s => {
               const u = s.units[key]!;
               u.assessment = { ...assessment, kind: outcome.state === "completed" ? "synced" : "review", reason: outcome.failure?.message ?? "Indirizzo, catasto e intestatari riletti e verificati.", candidateId: outcome.crmPropertyId };
               if (outcome.state === "completed") {
-                u.crmId = outcome.crmPropertyId; u.importedAt = now();
+                u.crmId = outcome.crmPropertyId; u.importedAt = s.runs.find(r => r.id === run.id)?.imports?.[key]?.at ?? now();
                 if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
               }
             });
@@ -203,6 +243,7 @@ export class TerritoryApplication {
       }
       await this.store.change(s => { s.events.push({ id: randomUUID(), streetId: street.id, at: now(), text: `${({ scan: "Acquisizione", compare: "Confronto", apply: "Applicazione" })[run.operation]} ${s.runs.find(r => r.id === run.id)?.state === "completed" ? "conclusa" : "conservata per la ripresa"}` }); });
     } catch (error) {
+      if (currentKey && run.operation === "apply") await this.store.change(state => { const unit = state.units[currentKey!]; if (unit) appendUnitEvent(unit, [run.id, currentKey, "operation_error", now()], { kind: "import_paused", at: now(), runId: run.id, origin: run.origin, message: sanitizeSensitiveText(error instanceof Error ? error.message : "Operazione interrotta") }); });
       await this.updateRun(run.id, { state: "paused", error: sanitizeSensitiveText(error instanceof Error ? error.message : "Operazione interrotta") });
     } finally { this.provider.endOperation?.(); }
   }

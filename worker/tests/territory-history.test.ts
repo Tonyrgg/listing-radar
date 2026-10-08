@@ -144,7 +144,8 @@ describe("Recupero dello storico senza replay delle vecchie scritture", () => {
   it("non fonde Codvia omonimi; un'associazione esplicita può risolverli", async () => {
     const { store } = await setup([street, { ...street, id: "21" }]);
     expect((await adoptHistory(store, snapshot())).issues).toBe(1);
-    expect(Object.keys(store.read().units)).toHaveLength(0);
+    expect(Object.keys(store.read().units)).toHaveLength(1);
+    expect(Object.values(store.read().units)[0]!.streetIds).toEqual([]);
     expect((await adoptHistory(store, snapshot(), { "property-old": "21" })).issues).toBe(0);
     expect(Object.values(store.read().units)[0]!.streetIds).toEqual(["21"]);
   });

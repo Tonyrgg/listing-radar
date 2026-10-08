@@ -143,6 +143,7 @@ try {
   await page.locator('#hover [data-open]').click();
   await page.getByRole('heading', { name: rawStreet.name, exact: true }).waitFor();
   assert.equal((await page.evaluate(id => window.territory.detail(id), rawStreet.id)).units.length, 0);
+  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator('#street-note').fill('Dossier iniziale, prima di qualsiasi analisi');
   await page.locator('#detail-close').click();
   assert.equal(await page.locator('#detail-dialog').isVisible(), true, 'Chiudi conserva la modifica aperta');
@@ -150,7 +151,7 @@ try {
   assert.equal(await page.locator('#detail-dialog').isVisible(), true, 'Escape conserva la modifica aperta');
   await page.locator('#detail-refresh').click();
   assert.equal(await page.locator('#street-note').inputValue(), 'Dossier iniziale, prima di qualsiasi analisi');
-  await page.getByRole('button', { name: 'Salva annotazioni', exact: true }).click();
+  await page.getByRole('button', { name: 'Salva note', exact: true }).click();
   await until(page, async id => (await window.territory.detail(id)).memory.note.includes('Dossier iniziale'), rawStreet.id);
   await page.locator('[data-disclosure="network-link"]>summary').click();
   await page.locator('#network-official').fill(`${emptyOfficial.name} · Codvia ${emptyOfficial.id}`);
@@ -159,7 +160,7 @@ try {
   await page.getByText('Annotazioni precedenti sul tracciato', { exact: true }).click();
   await page.locator(`[data-street="${emptyOfficial.id}"]`).waitFor();
   assert.equal(await page.locator(`[data-street="${rawStreet.id}"]`).count(), 0, 'Il tracciato associato apre una sola scheda');
-  assert.ok((await page.locator('#detail-body').textContent()).includes('Dossier iniziale, prima di qualsiasi analisi'));
+  assert.ok((await page.locator('#inspector').textContent()).includes('Dossier iniziale, prima di qualsiasi analisi'));
   assert.equal((await page.evaluate(() => window.territory.snapshot())).activeRun, null);
   await page.screenshot({ path: path.join(output, '00-network-linked.png') });
   await page.locator('#detail-close').click();
@@ -184,17 +185,18 @@ try {
   }
   assert.ok(hovered, "Il clic deve aprire il riepilogo della via");
   await page.screenshot({ path: path.join(output, "02-click-popup.png") });
-  await page.locator("#hover [data-attention]").click();
-  await until(page, async id => (await window.territory.detail(id)).memory.attention, street.id);
+  assert.equal(await page.locator("#hover [data-attention]").count(), 0);
   await page.locator('#hover [data-open]').click();
+  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator("#street-note").fill("Annotazione salvata durante il collaudo");
-  await page.getByRole("button", { name: "Salva annotazioni", exact: true }).click();
-  await page.getByRole("button", { name: "Acquisisci via", exact: true }).click();
+  await page.getByRole("button", { name: "Salva note", exact: true }).click();
+  await page.locator('[data-operation="scan"]').click();
   await idle(page, "scan");
   await page.getByRole("button", { name: "Confronta gestionale", exact: true }).click();
   await until(page, async id => { const d = await window.territory.detail(id); return d.runs.at(-1)?.operation === "compare" && d.runs.at(-1)?.state === "completed"; }, street.id);
   await page.getByRole("tab", { name: "Immobili 6", exact: true }).click();
-  await page.getByRole("button", { name: "Seleziona pronti", exact: true }).click();
+  await page.locator("#unit-filter").selectOption("ready");
+  await page.getByRole("button", { name: "Seleziona tutti", exact: true }).click();
   await page.getByRole("button", { name: "Prova piano (3)", exact: true }).click();
   await until(page, async id => { const d = await window.territory.detail(id); return d.runs.at(-1)?.operation === "apply" && d.runs.at(-1)?.state !== "running"; }, street.id);
   const detail = await page.evaluate(id => window.territory.detail(id), street.id);
@@ -219,7 +221,7 @@ try {
   await firstEdit.getByRole("button", { name: "Salva correzioni", exact: true }).click();
   await until(page, async id => (await window.territory.detail(id)).units[0].source.fullAddress.endsWith(" 20"), street.id);
   assert.equal(await secondEdit.locator('[name="address"]').inputValue(), `${street.name} 22`, "Salvare una scheda non perde le modifiche in un'altra");
-  await page.getByRole("button", { name: "Seleziona pronti", exact: true }).click();
+  await page.getByRole("button", { name: "Seleziona tutti", exact: true }).click();
   assert.equal(await secondEdit.locator('[name="address"]').inputValue(), `${street.name} 22`);
   await secondEdit.getByRole("button", { name: "Salva correzioni", exact: true }).click();
   await until(page, async id => (await window.territory.detail(id)).units[1].source.fullAddress.endsWith(" 22"), street.id);
@@ -255,7 +257,7 @@ try {
   for (const [days, tone] of [[35, 'aging'], [95, 'stale']]) {
     const shifted = structuredClone(ledger), shift = value => value ? new Date(Date.parse(value) - days * 86400000).toISOString() : value;
     for (const run of shifted.runs) { run.startedAt = shift(run.startedAt); run.endedAt = shift(run.endedAt); for (const proof of Object.values(run.imports || {})) proof.at = shift(proof.at); }
-    for (const unit of Object.values(shifted.units)) { unit.importedAt = shift(unit.importedAt); for (const observation of unit.observations) observation.at = shift(observation.at); }
+    for (const unit of Object.values(shifted.units)) { unit.importedAt = shift(unit.importedAt); for (const event of unit.journal || []) { event.at = shift(event.at); event.recordedAt = shift(event.recordedAt); } for (const observation of unit.observations) observation.at = shift(observation.at); }
     await writeFile(path.join(dataDirectory, 'territory-ledger.json'), JSON.stringify(shifted));
     page = await launch();
     const aged = await page.evaluate(id => window.territory.detail(id), street.id);
@@ -277,7 +279,7 @@ try {
     source.cadastral.subaltern = String(i + 1000); source.sourcePropertyId = `mixed:${i}`; source.jobId = 'mixed-new'; source.category = i < 70 ? 'A/3' : 'C/6';
     unit.key = ['BITONTO', source.cadastral.urbanSection || '', source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern].join('|');
     unit.observations = [{ at: ago(5), runId: 'mixed-new', streetId: street.id, source, origin: 'simulation' }];
-    unit.importedAt = null; unit.crmId = null; unit.assessment = null;
+    unit.importedAt = null; unit.crmId = null; unit.assessment = null; unit.journal = [];
     mixed.units[unit.key] = unit; mixedKeys.push(unit.key);
   }
   mixed.runs = mixed.runs.filter(r => r.streetId !== street.id);

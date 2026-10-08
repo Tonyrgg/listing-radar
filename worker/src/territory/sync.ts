@@ -71,7 +71,7 @@ export class TerritorySync {
     const [binding, remote] = await Promise.all([this.binding(), this.remote()]);
     if (remote && remote.revision > binding.revision) {
       const local = this.store.read();
-      const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length;
+      const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length;
       if (territoryDigest(local) === territoryDigest(remote.state) || (binding.localHash && territoryDigest(local) === binding.localHash) || (!binding.localHash && !hasWork)) return this.pull();
     }
     return this.push();
@@ -94,7 +94,7 @@ export class TerritorySync {
     if (!remote) throw new Error("Nessun archivio presente nella memoria condivisa");
     if (remote.revision < binding.revision) throw new Error("La memoria condivisa ha una revisione più vecchia. L'archivio locale resta conservato.");
     if (territoryDigest(local) === territoryDigest(remote.state)) { await this.remember(remote.revision, local); return { revision: remote.revision, changed: false }; }
-    const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length;
+    const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length;
     if ((binding.localHash && territoryDigest(local) !== binding.localHash) || (!binding.localHash && hasWork)) throw new Error("Ci sono dati o modifiche locali da conservare. Nessun archivio viene sostituito automaticamente.");
     const incoming = structuredClone(remote.state);
     for (const run of incoming.runs) if (run.state === "running") { run.state = "paused"; run.error = "Operazione recuperata dalla memoria condivisa: verifica la sessione e riprendi dal punto conservato."; }

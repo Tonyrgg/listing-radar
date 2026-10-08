@@ -5,6 +5,7 @@ import type { Street, TerritoryState } from "./model.js";
 import { applyNetworkBindings } from "./network.js";
 import { hydrateHistoryProgress, resolveRecognizedHistory } from "./history.js";
 import type { HistorySnapshot } from "./history-source.js";
+import { hydrateUnitMemory } from "./unit-memory.js";
 
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
 export class TerritoryStore {
@@ -37,6 +38,7 @@ export class TerritoryStore {
       for (const street of next.streets) { next.memories[street.id] ??= { note: "", attention: false, updatedAt: registeredAt, registeredAt }; next.memories[street.id]!.registeredAt ??= registeredAt; }
       applyNetworkBindings(next);
       resolveRecognizedHistory(next);
+      hydrateUnitMemory(next);
       for (const run of next.runs) if (run.state === "running") { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
     });
     return store;
@@ -54,6 +56,7 @@ export class TerritoryStore {
       const registeredAt = new Date().toISOString();
       for (const street of next.streets) next.memories[street.id] ??= structuredClone(this.state.memories[street.id] ?? { note: "", attention: false, updatedAt: registeredAt, registeredAt });
       applyNetworkBindings(next);
+      hydrateUnitMemory(next);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
       await rename(temporary, this.filename); this.state = next;

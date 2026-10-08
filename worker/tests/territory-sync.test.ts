@@ -30,6 +30,19 @@ async function setup() {
   return { store, directory, sync, remote: () => remote!, calls: () => calls, uncertain: () => { uncertain = true; }, conflict: () => { conflict = true; }, beforeRead: (f: () => Promise<void>) => { beforeRead = f; } };
 }
 describe("Memoria Territorio separata, revisioni e recupero", () => {
+  it("sincronizza gruppi di vie e query e non perde quelli creati prima della prima acquisizione", async () => {
+    const t = await setup();
+    await t.store.change(s => { s.zones = { centro: { id: "centro", name: "Centro", streetIds: [street.id], updatedAt: "2026-10-08T10:00:00Z" } }; });
+    await t.sync.push(); expect(t.remote().state.zones?.centro?.streetIds).toEqual([street.id]);
+    const directory = await mkdtemp(path.join(os.tmpdir(), "territory-zone-sync-")); directories.push(directory);
+    const fresh = await TerritoryStore.open(directory, [street]);
+    await fresh.change(s => { s.zones = { nuova: { id: "nuova", name: "Zona locale", streetIds: [street.id], updatedAt: "2026-10-08T11:00:00Z" } }; });
+    const client = { from: () => { const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: structuredClone(t.remote()), error: null }) }; return q; } } as unknown as SupabaseClient;
+    const receiving = new TerritorySync(fresh, directory, config, client);
+    await expect(receiving.pull()).rejects.toThrow("modifiche locali");
+    expect(fresh.read().zones?.nuova?.name).toBe("Zona locale");
+    await expect(receiving.reconcile()).rejects.toThrow();
+  });
   it("recupera uno storico precedente al setup mantenendo i nuovi dossier della rete", async () => {
     const t = await setup(); await t.sync.push();
     t.remote().revision++;

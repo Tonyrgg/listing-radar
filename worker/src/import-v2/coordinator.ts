@@ -12,6 +12,7 @@ import {
 import { SupabaseImportV2Store } from "./store.js";
 import type { TecnocloudV2Port } from "./ports.js";
 import type { JobRow, PersonRow, PropertyRow } from "../services/repository.js";
+import { PropertyMemoryStore, type PropertyMemorySink } from "./memory-store.js";
 
 export type ImportV2RepositoryBridge = {
   client: SupabaseClient;
@@ -24,6 +25,7 @@ export class ImportV2Coordinator {
     private readonly repository: ImportV2RepositoryBridge,
     private readonly crm: TecnocloudV2Port | TecnocloudV2Port[],
     private readonly engineOptions: Partial<ImportV2EngineOptions> = {},
+    private readonly memory?: PropertyMemorySink,
   ) {}
 
   async runJob(
@@ -38,13 +40,20 @@ export class ImportV2Coordinator {
     ]);
     const sources = importV2SourceFactories(job, graph, activityFor, evidence);
     const crmPorts = Array.isArray(this.crm) ? this.crm : [this.crm];
+    const store = () => {
+      const base = new SupabaseImportV2Store(this.repository.client);
+      return this.memory ? new PropertyMemoryStore(base, value => {
+        const row = graph.properties.find(p => p.id === value.source.sourcePropertyId) as (PropertyRow & { created_at?: string }) | undefined;
+        return this.memory!({ ...value, acquiredAt: row?.created_at });
+      }) : base;
+    };
     if (crmPorts.length === 1) {
-      const engine = new ImportV2Engine(crmPorts[0]!, new SupabaseImportV2Store(this.repository.client), this.engineOptions);
+      const engine = new ImportV2Engine(crmPorts[0]!, store(), this.engineOptions);
       return runImportV2Batch(engine, sources, onProgress, shouldPauseAfterItem);
     }
     let parallelPauseRequested = false;
     const upstreamInterruption = this.engineOptions.isInterruptionRequested;
-    const engines = crmPorts.map((crm) => new ImportV2Engine(crm, new SupabaseImportV2Store(this.repository.client), {
+    const engines = crmPorts.map((crm) => new ImportV2Engine(crm, store(), {
       ...this.engineOptions,
       isInterruptionRequested: () => parallelPauseRequested || Boolean(upstreamInterruption?.()),
     }));

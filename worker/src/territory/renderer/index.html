@@ -75,16 +75,7 @@
               <option value="network">Rete propria da associare</option>
             </select>
             <div class="filters">
-              <label
-                >Stato<select id="status">
-                  <option value="">Tutti gli stati</option>
-                  <option value="unseen">Mai acquisite</option>
-                  <option value="acquired">Acquisite</option>
-                  <option value="review">Da verificare</option>
-                  <option value="paused">Da riprendere</option>
-                  <option value="completed">Allineate</option>
-                </select></label
-              ><label
+              <select id="status" hidden aria-label="Filtro interno"><option value=""></option></select><label
                 >Località<select id="locality">
                   <option value="">Tutto il comune</option>
                   <option>Bitonto</option>
@@ -125,7 +116,7 @@
       <section class="map-region" aria-label="Mappa delle vie di Bitonto">
         <div id="map"></div>
         <div class="map-toolbar">
-          <button id="home">Centra Bitonto</button
+          <button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
           ><button id="toggle-list" class="mobile-only">Cerca via</button>
         </div>
         <div id="hover" class="hover-panel" hidden></div>

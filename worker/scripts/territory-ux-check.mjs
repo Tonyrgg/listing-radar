@@ -55,7 +55,7 @@ try {
   await page.locator("#search").fill(street.name);
   await page.locator(`[data-street="${street.id}"]`).focus();
   await page.keyboard.press("Enter");
-  await page.locator("#tab-dossier").waitFor();
+  await page.locator("#tab-units").waitFor();
   await page.locator('[data-disclosure="options-scan"] > summary').click();
   await page.locator("#scan-floor-mode").selectOption("exact");
   await page.locator("#scan-floor").fill("0");
@@ -91,6 +91,10 @@ try {
     },
     street.id,
   );
+  await page.locator("#select-all").click();
+  assert.equal(await page.locator("[data-unit-select]:checked").count(), 6, "Tutti selezionabili prima del confronto");
+  assert.equal(await page.locator("#apply").isDisabled(), true, "Nessun import senza un piano valido");
+  await page.locator("#clear-selection").click();
   await page.locator('[data-operation="compare"]').click();
   const scanRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.find(r => r.operation === "scan"), street.id);
   assert.equal(scanRun.settings.filters.minCivicNumber, 2);
@@ -106,27 +110,11 @@ try {
     },
     street.id,
   );
-  await page.locator("#open-units").waitFor();
-  assert.ok(
-    (await page.locator(".work-card").textContent()).includes(
-      "Controlla gli esiti",
-    ),
-    "I pronti conducono al controllo anche con una ricerca incompleta",
-  );
-  await page.locator("#tab-dossier").focus();
-  await page.keyboard.press("ArrowRight");
-  assert.equal(
-    await page.locator("#tab-units").getAttribute("aria-selected"),
-    "true",
-  );
-  assert.equal(
-    await page.evaluate(() => document.activeElement.id),
-    "tab-units",
-  );
-  assert.equal(
-    await page.locator("#detail-body").getAttribute("aria-labelledby"),
-    "tab-units",
-  );
+  assert.equal(await page.locator("#tab-dossier").count(), 0);
+  await page.locator("#tab-history").focus(); await page.keyboard.press("Home");
+  assert.equal(await page.locator("#tab-units").getAttribute("aria-selected"), "true");
+  assert.equal(await page.locator("#detail-body").getAttribute("aria-labelledby"), "tab-units");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#detail-body")).overflowY), "visible", "Un solo scroll per la modale");
   const disclosure = page.locator(".unit").first().locator("details").first();
   await disclosure.locator(":scope > summary").click();
   await disclosure.locator(":scope > summary").focus();
@@ -232,7 +220,7 @@ try {
   await page.locator("#tab-history").focus();
   await page.keyboard.press("Home");
   assert.equal(
-    await page.locator("#tab-dossier").getAttribute("aria-selected"),
+    await page.locator("#tab-units").getAttribute("aria-selected"),
     "true",
   );
   for (const theme of ["dark", "light"]) {
@@ -268,6 +256,41 @@ try {
     await page.screenshot({ path: path.join(output, `dossier-${width}.png`) });
   }
   await page.locator("#detail-close").click();
+
+  await page.setViewportSize({ width: 1600, height: 960 });
+  const first = await page.evaluate(async id => (await window.territory.detail(id)).units[0], street.id);
+  await page.evaluate(key => window.territory.correct({ key, correction: { address: "Via Luigi Castellucci N. 2 Piano 1" }, note: "Piano di prova" }), first.key);
+  await page.locator("#query-manager").click(); await page.locator("#query-form").waitFor();
+  await page.locator("#zone-form").evaluate(form => { form.closest("details").open = true; });
+  await page.locator("#zone-name").fill("Zona test UX");
+  await page.locator("#zone-street-search").fill(street.name);
+  await page.locator('#zone-street-list input[value="' + street.id + '"]').check();
+  await page.locator("#zone-form button").click();
+  await until(page, async () => (await window.territory.queryCatalog()).zones.some(z => z.name === "Zona test UX"));
+  const zone = await page.evaluate(async () => (await window.territory.queryCatalog()).zones.find(z => z.name === "Zona test UX"));
+  await page.locator("#q-zones").selectOption(zone.id);
+  await page.locator("#q-owners").selectOption(first.source.owners[0].taxCode);
+  await page.locator("#q-floors").selectOption("1");
+  await page.locator("#q-categories").selectOption("A/3");
+  await page.locator("#query-form button").first().click();
+  await until(page, () => document.querySelectorAll("[data-query-unit]").length === 1);
+  await page.locator("#q-name").fill("Primi piani zona test"); await page.locator("#q-save").click();
+  await until(page, async () => (await window.territory.queryCatalog()).saved.length === 1);
+  await page.locator("[data-query-unit] h3").click();
+  assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Clic sulla card seleziona l?immobile");
+  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  await page.locator("#q-compare").click();
+  await until(page, async () => !(await window.territory.snapshot()).activeRun && !(document.querySelector("#q-apply")?.disabled));
+  await page.screenshot({ path: path.join(output, "query-combined.png") });
+  for (const width of [1024, 390]) {
+    await page.setViewportSize({ width, height: 760 });
+    assert.equal(await page.evaluate(() => document.querySelector("#detail-dialog").scrollWidth > document.querySelector("#detail-dialog").clientWidth + 1), false, "Query senza overflow orizzontale");
+    await page.screenshot({ path: path.join(output, "query-" + width + ".png") });
+  }
+  await page.locator("#detail-close").click(); await page.locator("#query-manager").click();
+  assert.equal(await page.locator("#q-saved option").count(), 2, "Query salvata disponibile alla riapertura");
+  assert.equal(await page.locator("#q-zones option").count(), 1, "Zona conservata");
+  await page.locator("#detail-close").click();
   await page.locator("#toggle-list").click();
   await page.locator("#search").fill("nessuna via corrispondente");
   await page.locator("#close-list").click();
@@ -300,7 +323,7 @@ try {
         dirtyProtection: true,
         pauseInModal: true,
         operationOptionsPersisted: true,
-        existingOnlySelectionGuard: true,
+        existingOnlySelectionGuard: true, combinedQueries: true, streetZones: true, selectBeforeComparison: true,
         importWithPendingActivities: true,
         responsive: true,
         errors,

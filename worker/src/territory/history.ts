@@ -10,6 +10,7 @@ import { type HistoricalWork, type Street, type TerritoryState, unitKey, latest 
 import type { TerritoryStore } from "./store.js";
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { territoryDigest } from "./sync.js";
+import { hydrateUnitMemory, rememberHistoricalImport } from "./unit-memory.js";
 
 export type HistoryMappings = Record<string, string>;
 const sourceRevision = (source: SourceProperty) => territoryDigest({ ...source, owners: [...source.owners].sort((a, b) => a.sourcePersonId.localeCompare(b.sourcePersonId)) });
@@ -196,12 +197,14 @@ export async function adoptHistory(store: TerritoryStore, snapshot: HistorySnaps
         if (!record.streetIds.includes(street.id)) record.streetIds.push(street.id);
         record.associated++;
         if (insertObservation(state, source, property.id, job.id, street.id, at, snapshot.exportedAt, verifiedAt, historicalCrmId, verified, activityEligible(property))) report.addedObservations++;
+        if (verified && historicalCrmId) rememberHistoricalImport(state.units[unitKey(source)]!, job.id, source, verifiedAt, historicalCrmId, item?.checkpoint ?? undefined);
       }
       const prior = state.history.findIndex(h => h.id === job.id);
       if (prior < 0) state.history.push(record); else state.history[prior] = record;
       if (prior < 0) for (const streetId of record.streetIds) state.events.push({ id: randomUUID(), streetId, at: snapshot.exportedAt, text: `Storico recuperato: ${record.associated} immobili associati, ${record.imported} import precedenti conclusi` });
       report.jobs++; report.issues += record.issues.length;
     }
+    hydrateUnitMemory(state);
     report.units = Object.keys(state.units).length;
   });
   return report;

@@ -38,6 +38,7 @@ import type { ImportV2BatchResult } from "../import-v2/queue.js";
 import type { CrmPropertySummary, ImportV2Failure, ImportV2Stage } from "../import-v2/model.js";
 import { isRecoverableImportFailure } from "../import-v2/recovery-policy.js";
 import { ImportV2Error } from "../import-v2/errors.js";
+import type { PropertyMemorySink } from "../import-v2/memory-store.js";
 
 /** Cosa sta facendo il worker adesso, detto all'operatore. */
 const IMPORT_V2_STAGE_MESSAGES: Record<ImportV2Stage, string> = {
@@ -208,6 +209,7 @@ export interface RunnerOptions {
   isPropertySkipRequested?: (jobId: string, propertyId: string) => boolean;
   /** Nome della via nel Cloud; abilita la rifinitura existing-only. */
   refinementStreet?: string | null;
+  propertyMemory?: PropertyMemorySink;
 }
 
 export class PropertyWorkerRunner {
@@ -224,6 +226,7 @@ export class PropertyWorkerRunner {
   private readonly crmConcurrency: () => number;
   private readonly isPropertySkipRequested: (jobId: string, propertyId: string) => boolean;
   private readonly refinementStreet: string | null;
+  private readonly propertyMemory?: PropertyMemorySink;
 
   constructor(private readonly config: WorkerConfig, options: RunnerOptions = {}) {
     this.repository = new WorkerRepository(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
@@ -245,6 +248,7 @@ export class PropertyWorkerRunner {
       : () => Math.max(1, Math.min(2, Math.trunc(crmConcurrency) || 1));
     this.isPropertySkipRequested = options.isPropertySkipRequested ?? (() => false);
     this.refinementStreet = options.refinementStreet?.replace(/\s+/g, " ").trim() || null;
+    this.propertyMemory = this.config.WORKER_DRY_RUN ? undefined : options.propertyMemory;
   }
 
   async interrupt() {
@@ -691,7 +695,7 @@ export class PropertyWorkerRunner {
               sameCadastralIdentity({ ...plan.source.cadastral, income: null }, candidate.cadastral)),
             requireExistingProperty: true,
           } : {}),
-        });
+        }, this.propertyMemory);
         const result = await coordinator.runJob(job, (property, owners) => {
           const activityMode = propertyActivityModeForProperty(property.raw_payload, this.propertyActivityMode());
           const definition = propertyActivityDefinition(owners, activityDescriptionOrdinalForTask(activityTasks, property.id, activityMode), activityMode);
