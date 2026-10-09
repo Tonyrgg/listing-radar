@@ -1,3 +1,4 @@
+import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
 import { _electron as electron } from 'playwright';
 import { mkdtemp, mkdir, readFile, copyFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -32,7 +33,7 @@ async function launch(profile, simulation) {
   }
   assert.ok(page, 'La sezione usa un renderer dedicato nella stessa finestra');
   page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
-  await page.locator('.street-row').first().waitFor();
+  await streetSearchReady(page);
   return { shell, page };
 }
 try {
@@ -45,7 +46,7 @@ try {
   assert.equal(snapshot.integrated, true); assert.equal(snapshot.origin, 'simulation');
   assert.equal(snapshot.streets.length, 2043);
   const street = snapshot.streets.find(s => s.geometry && s.name.includes('CASTELLUCCI'));
-  await page.locator('#search').fill(street.name); await page.locator(`[data-street="${street.id}"]`).click();
+  await openStreet(page, street);
   await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator('#street-note').fill('Nota aperta durante cambio sezione');
   await shell.locator('[data-scroll="refinement"]').click();
@@ -109,6 +110,24 @@ try {
   await page.getByText('Chrome di lavoro è già aperto. Verifica l’accesso a SISTER e Tecnocloud.', { exact: true }).waitFor();
   await shell.evaluate(() => window.propertyWorker.openChrome());
   assert.equal(await application.evaluate(() => global.__testWorkBrowserChecks.length), 2, 'V2 e Lavorazioni usano lo stesso avvio Chrome, riutilizzando il browser aperto');
+  // Real missing-browser failure, confined to the cloned profile and closed fixture port.
+  const unavailableStreet = recovered.streets.find(s => s.geometry && s.catalogKind !== 'network' && !s.needsReview);
+  await openStreet(page, unavailableStreet);
+  await page.locator('[data-operation="scan"]').click();
+  await page.locator('#feedback[data-tone="warning"] [data-toast-browser]').waitFor();
+  assert.equal(await page.locator('#detail-dialog > #feedback').count(), 1, 'Il toast resta sopra la modale');
+  assert.equal(await page.locator('#feedback .toast-message').getAttribute('role'), 'alert');
+  assert.equal(await page.locator('.local-error').count(), 0, 'Chrome non aperto non aggiunge paragrafi nella scheda');
+  assert.ok(!(await page.locator('#feedback').textContent()).includes('remote-debugging-port'));
+  await page.screenshot({ path: path.join(output, '02-chrome-warning-toast.png') });
+  const browserChecksBeforeToast = await application.evaluate(() => global.__testWorkBrowserChecks.length);
+  await page.locator('#feedback [data-toast-browser]').click();
+  await page.getByText('Chrome di lavoro è già aperto. Verifica l’accesso a SISTER e Tecnocloud.', { exact: true }).waitFor();
+  assert.equal(await application.evaluate(() => global.__testWorkBrowserChecks.length), browserChecksBeforeToast + 1, 'Il toast usa l’avvio Chrome condiviso una sola volta');
+  await page.locator('#feedback .toast-close').click();
+  await page.locator('#detail-refresh').click();
+  assert.equal(await page.locator('#feedback').isVisible(), false, 'L’avviso chiuso non ricompare a ogni aggiornamento');
+  await page.locator('#detail-close').click();
   await page.locator('#cloud-memory').click();
   await page.locator('#memory-push').click();
   await page.waitForFunction(() => document.querySelector('#memory-result').textContent.includes('non raggiungibile'));
@@ -117,7 +136,7 @@ try {
   await page.screenshot({ path: path.join(output, '02-recovered-real-profile.png') });
   await application.close(); application = null;
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: expectedUnitKeys.length, sharedMemoryOfflineSupported: true, realWritesEnabled: false, errors }, null, 2));
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: expectedUnitKeys.length, sharedMemoryOfflineSupported: true, chromeWarningToast: true, toastOpensSharedBrowser: true, dismissedWarningStaysClosed: true, realWritesEnabled: false, errors }, null, 2));
   console.log(`Worker V2 integrato verificato: ${output}`);
 } catch (error) {
   if (application) for (const [i, page] of application.context().pages().entries()) await page.screenshot({ path: path.join(output, `failure-${i}.png`) }).catch(() => {});

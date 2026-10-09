@@ -1,3 +1,4 @@
+import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
 import { _electron as electron } from "playwright";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -18,7 +19,7 @@ async function launch() {
   const page = await application.firstWindow();
   page.setDefaultTimeout(15000);
   page.on("pageerror", e => errors.push(e.message));
-  await page.waitForFunction(() => Boolean(window.territory && document.querySelector(".street-row")), null, { timeout: 15000 });
+  await streetSearchReady(page);
   return page;
 }
 async function until(page, predicate, value) {
@@ -85,7 +86,7 @@ try {
     if (id === candidate.id) targets.push(candidate);
     if (await page.locator('#hover').isVisible()) await page.locator('#hover .preview-close').click();
     if (targets.length === 2) break;
-    await page.mouse.move(10, 130);
+    await page.mouse.move(10, 10);
   }
   assert.equal(targets.length, 2, 'Two distinct streets reachable with the pointer');
   for (const target of [...targets, ...targets].reverse()) {
@@ -101,7 +102,7 @@ try {
   await page.mouse.click(targets[1].x, targets[1].y);
   assert.equal(await page.locator('#hover [data-open]').getAttribute('data-open'), targets[1].id, 'Another click changes the popup street');
   await page.locator('#hover .preview-close').click();
-  await page.mouse.move(10, 130);
+  await page.mouse.move(10, 10);
   assert.equal(await widePaths(), 0, 'Leaving the map clears all wide strokes');
   assert.equal(await page.locator('#hover').isVisible(), false, 'A closed popup stays closed');
   await page.screenshot({ path: path.join(output, '00-map-full.png') });
@@ -117,10 +118,7 @@ try {
   });
   assert.ok(rawStreet, 'La rete iniziale include un tracciato mai acquisito');
   const emptyOfficial = snapshot.streets.find(s => s.catalogKind !== 'network' && !s.needsReview && !s.geometry);
-  await page.locator('#catalog-filters').evaluate(el => { el.open = true; });
-  await page.locator('#catalog-kind').selectOption('network');
-  await page.locator('#search').fill(rawStreet.name);
-  await page.locator(`[data-street="${rawStreet.id}"]`).click();
+  await openStreet(page, rawStreet);
   assert.equal(await page.locator('#detail-dialog').isVisible(), true);
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#detail-dialog').isVisible(), false);
@@ -158,17 +156,15 @@ try {
   await page.getByRole('button', { name: 'Conferma associazione', exact: true }).click();
   await until(page, async id => Boolean((await window.territory.detail(id)).street.geometry), emptyOfficial.id);
   await page.getByText('Annotazioni precedenti sul tracciato', { exact: true }).click();
-  await page.locator(`[data-street="${emptyOfficial.id}"]`).waitFor();
-  assert.equal(await page.locator(`[data-street="${rawStreet.id}"]`).count(), 0, 'Il tracciato associato apre una sola scheda');
+  const boundSnapshot = await page.evaluate(() => window.territory.snapshot());
+  assert.ok(boundSnapshot.streets.some(s => s.id === emptyOfficial.id));
+  assert.ok(!boundSnapshot.streets.some(s => s.id === rawStreet.id), 'Il tracciato associato apre una sola scheda');
   assert.ok((await page.locator('#inspector').textContent()).includes('Dossier iniziale, prima di qualsiasi analisi'));
   assert.equal((await page.evaluate(() => window.territory.snapshot())).activeRun, null);
   await page.screenshot({ path: path.join(output, '00-network-linked.png') });
   await page.locator('#detail-close').click();
-  await page.locator('#catalog-filters').evaluate(el => { el.open = true; });
-  await page.locator('#catalog-kind').selectOption('');
   const street = snapshot.streets.find(s => s.geometry && s.name.includes("CASTELLUCCI")) ?? snapshot.streets.find(s => s.geometry);
-  await page.locator("#search").fill(street.name);
-  await page.locator(`[data-street="${street.id}"]`).click();
+  await openStreet(page, street);
   await page.locator(".detail-header h2").waitFor();
   await page.screenshot({ path: path.join(output, "01-map.png") });
   await page.locator('#detail-close').click();
@@ -209,7 +205,7 @@ try {
   await page.locator('#detail-close').click();
   await page.locator('.street-percent-label').filter({ hasText: '50%' }).first().waitFor();
   await page.screenshot({ path: path.join(output, '03-map-import-progress.png') });
-  await page.locator(`[data-street="${street.id}"]`).click();
+  await openStreet(page, street);
   await page.getByRole('tab', { name: 'Immobili 6', exact: true }).click();
   const units = page.locator(".unit");
   await units.nth(0).getByText("Correggi i dati conservati", { exact: true }).click();
@@ -265,7 +261,7 @@ try {
     page = await launch();
     const aged = await page.evaluate(id => window.territory.detail(id), street.id);
     assert.equal(aged.street.progress.tone, tone); assert.equal(aged.street.progress.percent, 50);
-    await page.locator('#search').fill(street.name); await page.locator(`[data-street="${street.id}"]`).click();
+    await openStreet(page, street);
     assert.equal(await page.locator('.detail-header .import-summary').getAttribute('data-import-tone'), tone);
     await page.locator('#detail-close').click();
     await page.locator('.street-percent-label').filter({ hasText: '50%' }).first().waitFor();
@@ -298,13 +294,13 @@ try {
     const original = L.Path.prototype.setStyle;
     L.Path.prototype.setStyle = function (style) { window.checkedPaths.add(this); return original.call(this, style); };
   });
-  await page.locator('#search').fill(street.name); await page.locator(`[data-street="${street.id}"]`).click();
+  await openStreet(page, street);
   const summary = page.locator('.detail-header .import-summary');
   await summary.filter({ hasText: '50% · 50/100' }).waitFor();
   assert.ok((await summary.textContent()).includes('33% · 33'));
   assert.ok((await summary.textContent()).includes('17% · 17'));
   assert.ok((await summary.textContent()).includes('50% · 50'));
-  await page.locator('#detail-close').click(); await page.mouse.move(10, 130);
+  await page.locator('#detail-close').click(); await page.mouse.move(10, 10);
   await page.locator('#tools').evaluate(el => { el.open = true; }); await page.locator('#refresh').click();
   await page.waitForTimeout(500);
   const verifyPixels = async () => {
@@ -330,9 +326,9 @@ try {
   };
   await verifyPixels();
   await page.screenshot({ path: path.join(output, '08-map-gradient-33-17-50.png') });
-  await page.evaluate(() => [...window.checkedPaths].find(p => p._map)._map.panBy([40, 20], { animate: false }));
+  await page.evaluate(() => { [...window.checkedPaths].find(p => p._map)._map.panBy([40, 20], { animate: false }); });
   await page.waitForTimeout(100); await verifyPixels();
-  await page.evaluate(() => [...window.checkedPaths].find(p => p._map)._map.setZoom(16, { animate: false }));
+  await page.evaluate(() => { [...window.checkedPaths].find(p => p._map)._map.setZoom(16, { animate: false }); });
   await page.waitForTimeout(100); await verifyPixels();
   await application.close(); application = null;
   await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, popupOnlyOnClick: true, selectedPopupSurvivesHover: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 50], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));

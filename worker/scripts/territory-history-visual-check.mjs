@@ -1,3 +1,4 @@
+import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
 import { _electron as electron } from "playwright";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -27,7 +28,7 @@ async function launch(withLedger = false) {
   application = await electron.launch({ args: [path.join(root, "dist-territory/territory/main.js"), "--territory-live"], env });
   const page = await application.firstWindow(); page.setDefaultTimeout(20000);
   page.on("pageerror", e => errors.push(e.message));
-  await page.waitForFunction(() => Boolean(window.territory && document.querySelector(".street-row")));
+  await streetSearchReady(page);
   return page;
 }
 async function until(page, predicate, argument) {
@@ -95,8 +96,7 @@ try {
   const current = await page.evaluate(() => window.territory.historyReview());
   assert.ok(!current.some(r => r.propertyId === row.propertyId));
   await page.locator('#detail-close').click();
-  await page.locator("#search").fill(street.name);
-  await page.locator(`[data-street="${street.id}"]`).click();
+  await openStreet(page, street);
   await page.getByRole("tab", { name: "Storico", exact: true }).click();
   await page.screenshot({ path: path.join(output, "01-history.png") });
   await memory(page, "push");

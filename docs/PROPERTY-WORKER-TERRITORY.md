@@ -1,5 +1,7 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+La **0.34.10** elimina la sidebar delle vie: la ricerca è sopra la mappa, con risultati a tendina dopo 250 ms, selezione da mouse o tastiera e pulsante X. Selezionare una via ingrandisce il tracciato e apre il riepilogo; **Apri scheda** apre la modale. La ricerca lascia visibile l’intera rete. La scheda via usa icone coerenti per azioni, immobili, intestatari e storico; gli avvisi transitori sono toast chiudibili, con apertura di Chrome quando manca il browser. Le vie senza geometria restano accessibili, senza attribuire loro una posizione.
+
 Dalla **0.34.9** gli immobili nella scheda via sono ordinati per civico (numero e lettera), piano e foglio/particella/subalterno; civici e piani mancanti seguono quelli noti. La posizione viene derivata dai dati conservati, senza cambiare le osservazioni SISTER. Intestatari e quote sono visibili senza accordion; dati immobile, acquisizioni, storico e correzioni hanno sezioni distinte. **Confronta gestionale** legge il CRM e prepara create/update/review: non scrive. **Confronto da eseguire** indica un piano mancante; **Confronto incompleto** una ricerca che non ha accertato la presenza, mai una prova di assenza. Query immobili combina checkbox ricercabili, conserva le selezioni durante la ricerca e richiede risultati aggiornati dopo un cambio di filtri. Salvataggio combinazioni, gruppi di vie e opzioni di applicazione restano disponibili come sezioni espandibili.
 
 ## Versione 0.34.8: immobili, scheda via e query
@@ -62,10 +64,10 @@ La modalità iniziale simula gli immobili e il gestionale, usando il motore Impo
 
 ## Uso
 
-All'apertura la mappa occupa lo spazio disponibile, senza sidebar di dettaglio. Il pulsante **Rete** apre il riepilogo del setup in una modale. Ogni voce ha già una scheda privata con data di registrazione, anche con zero immobili e zero operazioni. I filtri distinguono inventario ufficiale, tracciati della rete propria e vie ancora da lavorare; la mappa segue gli stessi filtri. Non occorre acquisire una via per aprirla, annotarla o segnalarla.
+All'apertura la mappa occupa tutta la larghezza. La ricerca sopra la mappa trova nome, codice e località; dopo 250 ms mostra le corrispondenze a tendina. Il clic su un risultato, oppure frecce ed Enter, ingrandisce la via e apre il popup; X cancella la ricerca, Escape chiude la tendina. La ricerca non nasconde altre vie. Senza tracciato si apre il riepilogo senza spostare la mappa. Da **Strumenti → Rete delle vie** si possono cercare soltanto inventario ufficiale, tracciati da associare o vie mai acquisite; X azzera anche questo ambito. Ogni via ha già una scheda privata, anche con zero immobili e operazioni.
 
 1. Passare su una via per evidenziare soltanto il tracciato. Dalla 0.34.5 l'hover non apre popup e non cambia la via del riepilogo già selezionato.
-2. Cliccare il tracciato per aprire il riepilogo con stato, import e immobili conservati. Il riepilogo permette di segnarla «da verificare» e resta aperto quando il cursore si sposta; un nuovo clic su un'altra via lo aggiorna. **Apri scheda** apre la modale con Dossier, Immobili e Storico. Una voce dell'elenco apre direttamente la stessa modale. **Chiudi**, Escape o il clic fuori riportano alla mappa; con modifiche aperte occorre prima salvare o annullare. **Aggiorna scheda** aggiorna la vista senza scartare i moduli modificati. Le viste sotto Strumenti (Rete delle vie, Schede autorizzate e Storico da associare) usano la stessa finestra, lasciando libera la mappa quando viene chiusa.
+2. Cliccare il tracciato o scegliere una via dalla ricerca per aprire il riepilogo con acquisizione, import e immobili conservati. Il riepilogo resta aperto quando il cursore si sposta; un clic su un’altra via lo aggiorna. **Apri scheda** apre la modale con Immobili e Storico. **Chiudi**, Escape o il clic fuori riportano alla mappa; con modifiche aperte occorre prima salvare o annullare. **Aggiorna scheda** aggiorna la vista senza scartare i moduli modificati. Le viste sotto Strumenti usano la stessa finestra.
 3. Acquisire la via. Le letture vengono conservate durante il lavoro, con checkpoint per la ripresa.
 4. Confrontare con il gestionale. I duplicati e le ricerche incomplete richiedono verifica; non autorizzano nuove schede.
 5. Nella scheda Immobili selezionare i casi pronti e applicare il piano. La presenza viene ricontrollata immediatamente prima della scrittura.
@@ -220,6 +222,7 @@ npm.cmd --prefix worker test -- tests/territory.test.ts tests/territory-progress
 npm.cmd --prefix worker run test:ci
 npm.cmd --prefix worker run territory:compile
 npm.cmd --prefix worker run territory:visual-check
+npm.cmd --prefix worker run territory:search-check
 npm.cmd --prefix worker run territory:history-visual-check
 ```
 

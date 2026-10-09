@@ -1,3 +1,4 @@
+import { streetSearchReady } from "./fixtures/street-search.mjs";
 import { _electron as electron } from 'playwright';
 import { mkdir, mkdtemp, readFile, copyFile, writeFile, unlink } from 'node:fs/promises';
 import os from 'node:os';
@@ -17,7 +18,7 @@ async function launch(profile) {
   const env = { ...process.env, WORKER_V2_TEST_ROOT: root, TERRITORY_ONLINE_TEST_DIR: profile, TERRITORY_ONLINE_CLOUD_FILE: cloudFile }; delete env.ELECTRON_RUN_AS_NODE;
   application = await electron.launch({ args: [path.join(root, 'scripts/fixtures/online-memory-host.cjs')], env });
   const page = await application.firstWindow(); page.setDefaultTimeout(20000); page.on('pageerror', e => errors.push(e.message));
-  await page.locator('.street-row').first().waitFor(); return page;
+  await streetSearchReady(page); return page;
 }
 async function memoryUntil(page, predicate) {
   const deadline = Date.now() + 25000;

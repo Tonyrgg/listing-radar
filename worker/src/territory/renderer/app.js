@@ -1,3 +1,6 @@
+import { createStreetSearch } from "./street-search.js";
+import { icon, labelIcons } from "./icons.js";
+import { createToast, isBrowserWarning } from "./toast.js";
 import { unitHeadingHtml, ownerListHtml, comparisonHtml } from "./unit-card.js";
 import { unitHistoryHtml } from "./unit-history.js";
 import { createQueryPanel } from "./query-panel.js";
@@ -115,8 +118,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     form.onchange = update;
     update();
   }
-  let hoverId = null,
-    feedbackTimer = null;
+  let hoverId = null;
   let hoverPoint = null;
   let highlightedId = null,
     highlightSource = null;
@@ -132,7 +134,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     dialogOpener = null;
   const testSelected = new Set();
   let syncBusy = false,
-    listLimit = 200,
     testLimit = 30,
     historyLimit = 50;
   let unitSearch = "",
@@ -249,8 +250,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
   ).addTo(map);
+  map.attributionControl.addAttribution("Inventario Bitonto: CC BY 4.0 · Rete: ODbL 1.0");
+  let mapOfflineNotified = false;
   tiles.on("tileerror", () => {
-    $("map-offline").hidden = false;
+    if (!mapOfflineNotified) feedback("Cartografia non raggiungibile. Vie e archivio restano disponibili.", true);
+    mapOfflineNotified = true;
   });
   tiles.on("tileload", () => {
     $("map-offline").hidden = true;
@@ -270,18 +274,21 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       /Error invoking remote method ['"][^'"]+['"]: (?:Error: )?/g,
       "",
     );
-  function feedback(text, error = false) {
+  const toast = createToast($("feedback"), {
+    openBrowser: () => $("open-browser").onclick(),
+    canOpenBrowser: () => Boolean(snapshot?.integrated && snapshot.origin === "live"),
+  });
+  function feedback(text, error = false, options) {
     if (error) text = messageOf({ message: text });
-    clearTimeout(feedbackTimer);
-    $("feedback").textContent = text;
-    $("feedback").classList.toggle("error", error);
-    $("feedback").hidden = false;
-    feedbackTimer = setTimeout(
-      () => {
-        $("feedback").hidden = true;
-      },
-      error ? 10000 : 4000,
-    );
+    toast.show(text, error, options);
+  }
+  const notifiedRunErrors = new Map();
+  function notifyRunIssue(run) {
+    if (!run) return;
+    if (run.state === "running") { notifiedRunErrors.delete(run.id); return; }
+    if (!["paused", "failed"].includes(run.state) || !run.error || notifiedRunErrors.get(run.id) === run.error) return;
+    notifiedRunErrors.set(run.id, run.error);
+    feedback(run.error, true);
   }
   const safe = (handler) => async (event) => {
     const trigger = event?.currentTarget,
@@ -304,7 +311,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } catch (error) {
       const message = messageOf(error);
       feedback(message, true);
-      if (trigger?.isConnected && $("detail-dialog").contains(trigger)) {
+      if (!isBrowserWarning(message) && trigger?.isConnected && $("detail-dialog").contains(trigger)) {
         const node = document.createElement("p");
         node.className = "local-error";
         node.setAttribute("role", "alert");
@@ -321,48 +328,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       }
     }
   };
-  function filtered() {
-    const needle = $("search").value.trim().toLocaleLowerCase("it");
-    const kind = $("catalog-kind").value;
-    return snapshot.streets
-      .filter(
-        (s) =>
-          (!needle ||
-            `${s.name} ${s.id}`.toLocaleLowerCase("it").includes(needle)) &&
-          (!kind ||
-            (kind === "network"
-              ? s.catalogKind === "network"
-              : s.catalogKind !== "network")) &&
-          (!$("status").value || s.status === $("status").value) &&
-          (!$("locality").value || s.locality === $("locality").value),
-      )
-      .sort((a, b) => {
-        const order = $("sort").value;
-        if (order === "oldest") {
-          const diff = (b.progress.distribution.ageDays ?? -1) - (a.progress.distribution.ageDays ?? -1);
-          if (diff) return diff;
-        }
-        if (order === "priority") {
-          const rank = (x) =>
-            ({ paused: 0, review: 1, acquired: 2, unseen: 3, completed: 4 })[
-              x.status
-            ] ?? 5;
-          const diff = rank(a) - rank(b);
-          if (diff) return diff;
-        }
-        return (
-          Number(a.needsReview) - Number(b.needsReview) ||
-          a.name.localeCompare(b.name, "it") ||
-          a.id.localeCompare(b.id)
-        );
-      });
-  }
   const streetIdentity = (street) =>
     street.catalogKind === "network"
       ? `${escape(street.locality)} · Rete propria`
       : `${escape(street.locality)} · Codvia ${escape(street.id)}`;
   const acquisitionLabel = street => street.progress?.complete ? "Acquisizione completa" : street.progress?.acquiredAt ? "Acquisizione parziale" : "Nessuna acquisizione";
-  function statusHtml(street) { return `<span class="status">${acquisitionLabel(street)}</span>`; }
+  function statusHtml(street) { return `<span class="status icon-label">${icon(street.progress.complete ? "check" : "download")}${acquisitionLabel(street)}</span>`; }
   function progressHtml(street, compact = false) {
     const p = street.progress, d = p.distribution;
     const coverage =
@@ -386,105 +357,20 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const cohort = !compact && p.acquisitionRunId ? `<span class="meta">In questa acquisizione: ${p.imported}${p.total === null ? "" : `/${p.total}`} import verificati${p.percent === null ? "" : ` (${p.percent}%)`}. Gli import precedenti restano nel gradiente.</span>` : "";
     return `<${compact ? "span" : "div"} class="import-summary ${compact ? "meta" : ""}" data-import-tone="${d.tone}"><strong>${coverage}</strong>${distribution}${p.acquisitionRunId || d.imported ? `<span>${age}</span>` : ""}${compact ? "" : `<details data-disclosure="import-evidence"><summary>Distribuzione e acquisizione</summary>${breakdown}${cohort}`}${compact || !p.acquiredAt ? "" : `<span class="meta">Inventario del ${date(p.acquiredAt)}${d.total === null ? " · incompleto, gradiente da determinare" : " · colori proporzionali, non posizioni degli immobili"}.</span>`}${compact ? "" : "</details>"}</${compact ? "span" : "div"}>`;
   }
-  function renderList() {
-    const streets = filtered(),
-      active = document.activeElement;
-    const focused = active?.dataset.street,
-      scroll = $("streets").scrollTop;
-    if (highlightSource === "list") highlight(highlightedId, false);
-    $("result-count").textContent =
-      `${streets.length} vie · ${streets.filter((s) => s.geometry).length} in mappa`;
-    const count = ["status", "locality", "catalog-kind"].filter(
-      (id) => $(id).value,
-    ).length;
-    $("filter-count").textContent = count ? `(${count})` : "";
-    $("streets").innerHTML =
-      streets
-        .slice(0, listLimit)
-        .map(
-          (s) =>
-            `<button class="street-row ${selectedStreet === s.id ? "selected" : ""}" data-street="${escape(s.id)}" aria-current="${selectedStreet === s.id}" aria-label="${escape(s.name)}, ${acquisitionLabel(s)}, codice ${escape(s.id)}"><span><strong>${escape(s.name)}</strong><span class="meta">${escape(s.locality)} · ${acquisitionLabel(s)}${s.geometry ? "" : " · senza tracciato"}</span>${s.progress.acquisitionRunId ? progressHtml(s, true) : `<span class="meta">${s.count} immobili conservati</span>`}</span></button>`,
-        )
-        .join("") ||
-      '<div class="empty-state"><h3>Nessuna via trovata</h3><p>Cambia ricerca o azzera i filtri per vedere tutta la rete.</p><button id="empty-reset">Azzera ricerca e filtri</button></div>';
-    if (streets.length > listLimit) {
-      $("streets").insertAdjacentHTML(
-        "beforeend",
-        `<button class="load-more" id="more-streets">Mostra altre ${Math.min(200, streets.length - listLimit)} vie</button>`,
-      );
-      $("more-streets").onclick = () => {
-        listLimit += 200;
-        renderList();
-      };
-    }
-    if ($("empty-reset")) $("empty-reset").onclick = resetFilters;
-    const buttons = [...$("streets").querySelectorAll("[data-street]")];
-    const focusKey = [
-      focused,
-      catalogFocus,
-      selectedStreet,
-      buttons[0]?.dataset.street,
-    ].find((id) => buttons.some((b) => b.dataset.street === id));
-    buttons.forEach((button, i) => {
-      button.tabIndex = button.dataset.street === focusKey ? 0 : -1;
-      button.onclick = safe(() => choose(button.dataset.street));
-      button.onmouseenter = () => {
-        hidePreview();
-        highlight(button.dataset.street, true, "list");
-      };
-      button.onmouseleave = () => highlight(button.dataset.street, false);
-      button.onfocus = () => {
-        catalogFocus = button.dataset.street;
-        for (const row of buttons) row.tabIndex = row === button ? 0 : -1;
-        if (!$("detail-dialog").open && !restoringFocus)
-          highlight(button.dataset.street, true, "list");
-      };
-      button.onblur = () => highlight(button.dataset.street, false);
-      button.onkeydown = (event) => {
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
-          return;
-        event.preventDefault();
-        buttons[
-          event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? buttons.length - 1
-              : Math.max(
-                  0,
-                  Math.min(
-                    buttons.length - 1,
-                    i + (event.key === "ArrowDown" ? 1 : -1),
-                  ),
-                )
-        ].focus();
-      };
-    });
-    if (focused) {
-      restoringFocus = true;
-      buttons
-        .find((b) => b.dataset.street === focused)
-        ?.focus({ preventScroll: true });
-      restoringFocus = false;
-    }
-    $("streets").scrollTop = scroll;
-    const visible = new Set(streets.map((s) => s.id));
-    if (hoverId && !visible.has(hoverId)) hidePreview();
-    if (highlightedId && !visible.has(highlightedId))
-      highlight(highlightedId, false);
-    for (const [id, layer] of layers) {
-      if (visible.has(id)) layer.addTo(map);
-      else layer.remove();
-    }
-  }
-  let restoringFocus = false,
-    catalogFocus = null;
-  function resetFilters() {
-    for (const id of ["search", "status", "locality", "catalog-kind"])
-      $(id).value = "";
-    listLimit = 200;
-    renderList();
-    $("search").focus();
-  }
+  const streetSearch = createStreetSearch({
+    root: $("street-search"), getStreets: () => snapshot?.streets ?? [], escape,
+    onSelect: street => {
+      hidePreview(); selectedStreet = street.id;
+      const layer = layers.get(street.id);
+      if (layer) {
+        map.stop();
+        map.fitBounds(layer.getBounds(), { paddingTopLeft: [30, 90], paddingBottomRight: [30, 70], maxZoom: 18, animate: false });
+        showPreview(street, map.latLngToContainerPoint(layer.getBounds().getCenter()), false);
+      } else showPreview(street, L.point(20, document.querySelector(".map-toolbar").offsetHeight + 36), false);
+    },
+  });
+  L.DomEvent.disableClickPropagation($("street-search"));
+  L.DomEvent.disableScrollPropagation($("street-search"));
   function paint() {
     const c = colors();
     for (const street of snapshot.streets) {
@@ -537,13 +423,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (!street || $("detail-dialog").open) return;
     if (activate) {
       selectedStreet = street.id;
-      renderList();
+      streetSearch.setValue(street.name);
       highlight(street.id, true);
     }
     hoverId = street.id;
     hoverPoint = point;
     $("hover").innerHTML =
-      `<button class="preview-close quiet" aria-label="Chiudi riepilogo">×</button><span class="eyebrow">${streetIdentity(street)}</span><h3>${escape(street.name)}</h3>${progressHtml(street)}<p>${statusHtml(street)}<br>${street.count} immobili conservati · ${street.unresolved} da gestire</p><div class="actions"><button class="primary" data-open="${escape(street.id)}">Apri scheda</button></div>`;
+      `<button class="preview-close quiet" aria-label="Chiudi riepilogo">×</button><span class="eyebrow">${streetIdentity(street)}</span><h3>${escape(street.name)}</h3>${progressHtml(street)}${street.geometry ? "" : '<p class="meta">Tracciato non disponibile. La scheda della via è comunque accessibile.</p>'}<p>${statusHtml(street)}<br>${street.count} immobili conservati · ${street.unresolved} da gestire</p><div class="actions"><button class="primary" data-open="${escape(street.id)}">Apri scheda</button></div>`;
     const width = $("map").clientWidth,
       height = $("map").clientHeight;
     $("hover").hidden = false;
@@ -596,6 +482,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     },
     { capture: true, passive: true },
   );
+  map.on("resize", () => {
+    if (hoverId && hoverPoint && !$("hover").hidden) showPreview(snapshot?.streets.find(street => street.id === hoverId), hoverPoint, false);
+  });
   map.on("dragstart zoomstart", hidePreview);
   map.on("click", hidePreview);
   window.addEventListener("blur", hidePreview);
@@ -638,16 +527,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   $("detail-dialog").addEventListener("close", () => {
     networkView = testsView = historyView = false;
     document.body.append($("feedback"));
-    const target = dialogOpener?.isConnected
-      ? dialogOpener
-      : ([...$("streets").querySelectorAll("[data-street]")].find(
-          (b) => b.dataset.street === selectedStreet,
-        ) ?? $("search"));
-    restoringFocus = true;
-    (target.getClientRects().length ? target : $("home")).focus({
-      preventScroll: true,
-    });
-    restoringFocus = false;
+    if (dialogOpener?.isConnected && dialogOpener.getClientRects().length) dialogOpener.focus({ preventScroll: true });
+    else streetSearch.focus();
   });
   async function choose(id) {
     if (dirty) {
@@ -658,15 +539,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       return;
     }
     const chosen = await api.detail(id);
-    if (
-      chosen.street.id !== id ||
-      !filtered().some((s) => s.id === chosen.street.id)
-    ) {
-      $("catalog-kind").value = "";
-      $("status").value = "";
-      $("locality").value = "";
-      $("search").value = chosen.street.name;
-    }
+    streetSearch.setValue(chosen.street.name);
     historyView = false;
     testsView = false;
     networkView = false;
@@ -678,7 +551,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     renderedContext = null;
     hidePreview();
     $("detail-dialog").scrollTop = 0;
-    $("catalog")?.classList.remove("open");
     detail = chosen;
     renderDetail();
     openDialog("Scheda della via");
@@ -686,7 +558,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("inspector").scrollTop = 0;
     const layer = layers.get(selectedStreet);
     if (layer)
-      map.fitBounds(layer.getBounds(), { padding: [45, 45], maxZoom: 17 });
+      map.fitBounds(layer.getBounds(), { padding: [45, 45], maxZoom: 17, animate: false });
     else
       feedback(
         "Questa via è censita ma non ha ancora una geometria. La scheda e i processi sono disponibili.",
@@ -707,10 +579,10 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const sameContext = renderedContext === context && $("detail-body");
     renderedContext = context;
     $("inspector").classList.add("street-inspector");
-    const header = `<div class="street-context"><span class="eyebrow">${streetIdentity(s)}</span>${statusHtml(s)}</div><h2>${escape(s.name)}</h2>${progressHtml(s)}`;
+    const header = `<div class="street-context"><span class="eyebrow icon-label">${icon("street")}${streetIdentity(s)}</span>${statusHtml(s)}</div><h2>${escape(s.name)}</h2>${progressHtml(s)}`;
     if (sameContext) {
       $("inspector").querySelector(".detail-header").innerHTML = header;
-      $("tab-units").textContent = `Immobili ${s.count}`;
+      $("tab-units").innerHTML = `${icon("building")}Immobili ${s.count}`;
     } else
       $("inspector").innerHTML =
         `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-tools" class="street-tools"></div><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
@@ -750,7 +622,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       paused =
         latest && ["paused", "failed"].includes(latest.state) ? latest : null;
     const resume = paused
-      ? `<section class="run-item"><strong>${escape(operations[paused.operation])}: da riprendere</strong><p class="explanation">${escape(paused.error || "L’avanzamento è conservato.")}</p><button id="resume" class="primary" ${disabled}>Riprendi operazione</button></section>`
+      ? `<section class="run-item"><strong>${escape(operations[paused.operation])}: da riprendere</strong><p class="explanation">${escape(isBrowserWarning(paused.error || "") ? "Avanzamento conservato. Riprendi dopo aver aperto il browser di lavoro." : paused.error || "L’avanzamento è conservato.")}</p><button id="resume" class="primary" ${disabled}>Riprendi operazione</button></section>`
       : "";
     const counts = { unknown: 0, ready: 0, planned: 0, review: 0, aligned: 0 };
     for (const u of detail.units) {
@@ -1010,6 +882,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     bindOperationOptions("apply");
     modalProgress();
     draftStatus();
+    labelIcons($("inspector"));
+    notifyRunIssue(detail.runs.at(-1));
     if (state) restore($("inspector"), state);
   }
   function unitHtml(u) {
@@ -1113,6 +987,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (currentRequest !== request) return;
     snapshot = next;
     detail = nextDetail;
+    notifyRunIssue(detail?.runs.at(-1));
     $("archive-error").hidden = true;
     if (detail)
       for (const key of selected)
@@ -1219,7 +1094,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         layers.set(street.id, layer);
         layer.addTo(map);
       }
-    renderList();
+    streetSearch.refresh();
     paint();
     renderProgress();
     modalProgress();
@@ -1235,7 +1110,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (street) showPreview(street, hoverPoint, false);
       else hidePreview();
     }
-    if (snapshot.error) feedback(snapshot.error, true);
+    labelIcons(document);
+    if (snapshot.error) feedback(snapshot.error, true, { deduplicate: true });
+    else toast.reset();
     map.invalidateSize();
   }
   $("refresh").onclick = safe(async () => {
@@ -1277,16 +1154,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       .forEach((button) => {
         button.onclick = () => {
           const scope = button.dataset.networkScope;
-          $("catalog-kind").value = ["network", "official"].includes(scope)
-            ? scope
-            : "";
-          $("status").value = scope === "unseen" ? "unseen" : "";
-          $("search").value = "";
-          $("locality").value = "";
-          renderList();
           closeDialog();
-          $("catalog").classList.add("open");
-          $("search").focus();
+          streetSearch.showScope(scope);
         };
       });
   }
@@ -1573,37 +1442,6 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       });
   }
   $("home").onclick = () => map.setView([41.11, 16.69], 15);
-  function closeList() {
-    $("catalog").classList.remove("open");
-    $("toggle-list").setAttribute("aria-expanded", "false");
-    $("toggle-list").focus();
-  }
-  $("close-list").onclick = closeList;
-  $("toggle-list").setAttribute("aria-controls", "catalog");
-  $("toggle-list").setAttribute("aria-expanded", "false");
-  $("toggle-list").onclick = () => {
-    const open = $("catalog").classList.toggle("open");
-    $("toggle-list").setAttribute("aria-expanded", String(open));
-    if (open) $("search").focus();
-  };
-  document.addEventListener("keydown", (event) => {
-    if (
-      event.key === "Escape" &&
-      !$("detail-dialog").open &&
-      !$("memory-dialog").open &&
-      $("catalog").classList.contains("open")
-    ) {
-      event.preventDefault();
-      closeList();
-    }
-  });
-  for (const id of ["search", "status", "locality", "catalog-kind", "sort"])
-    $(id).addEventListener(id === "search" ? "input" : "change", () => {
-      if (snapshot) {
-        listLimit = 200;
-        renderList();
-      }
-    });
   let refreshTimer;
   api.onChange(() => {
     clearTimeout(refreshTimer);
@@ -1619,11 +1457,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (snapshot && !syncBusy)
       refresh().catch((error) => feedback(error.message, true));
   });
-  $("reset-filters").onclick = resetFilters;
   function archiveFailure(error) {
-    $("archive-error").hidden = false;
-    $("archive-error-text").textContent = messageOf(error);
-    $("result-count").textContent = "Caricamento non riuscito";
+    streetSearch.fail(messageOf(error));
   }
   $("retry-archive").onclick = safe(async () => {
     try {
@@ -1641,7 +1476,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       $("tools").querySelector("summary").focus();
     }
   });
-  const queryPanel = createQueryPanel({ api, escape, feedback, snapshot: () => snapshot,
+  const queryPanel = createQueryPanel({ api, escape, feedback, notifyRunIssue, snapshot: () => snapshot,
     open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); openDialog("Query immobili"); return true; },
     openUnit: async unit => { if (!unit.streetIds.length) return feedback("Associa questo immobile a una via dallo storico prima di lavorarlo.", true); await choose(unit.streetIds[0]); const card = [...$("inspector").querySelectorAll("[data-unit]")].find(c => c.dataset.unit === unit.key); if (card) { card.querySelector('[data-disclosure$=":record"]').open = true; card.scrollIntoView({ block: "start", behavior: "smooth" }); } }
   });

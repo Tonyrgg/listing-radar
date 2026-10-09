@@ -1,3 +1,4 @@
+import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
 import { _electron as electron } from "playwright";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -33,7 +34,7 @@ try {
   const page = await app.firstWindow();
   page.setDefaultTimeout(15000);
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.locator(".street-row").first().waitFor();
+  await streetSearchReady(page);
   await page.evaluate(() => document.fonts.ready);
   let fonts = await page.evaluate(() =>
     [...document.fonts].map((f) => ({ family: f.family, status: f.status })),
@@ -42,19 +43,23 @@ try {
     fonts.some((f) => f.family === "Instrument Sans" && f.status === "loaded"),
     "Font dell’interfaccia distribuito e caricato",
   );
+  assert.equal(await page.locator("#catalog").count(), 0, "Sidebar rimossa dal DOM");
+  assert.equal(await page.locator("#street-search-menu").isVisible(), false);
+  await page.locator("#search").focus();
   await page.locator("#more-streets").click();
-  assert.equal(
-    await page.locator(".street-row").count(),
-    400,
-    "L’intero catalogo è sfogliabile",
-  );
+  assert.equal(await page.locator(".street-row").count(), 80, "Il catalogo resta sfogliabile nella tendina");
   const snapshot = await page.evaluate(() => window.territory.snapshot());
   const street = snapshot.streets.find(
     (s) => s.geometry && s.name.includes("CASTELLUCCI"),
   );
   await page.locator("#search").fill(street.name);
-  await page.locator(`[data-street="${street.id}"]`).focus();
+  await page.locator('[data-street="' + street.id + '"]').waitFor();
+  await page.keyboard.press("ArrowDown");
+  const activeOption = await page.locator("#search").getAttribute("aria-activedescendant");
+  assert.equal(await page.locator("#" + activeOption).getAttribute("data-street"), street.id);
   await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#detail-dialog").isVisible(), false, "La ricerca apre il popup, non la modale");
+  await page.locator('#hover [data-open="' + street.id + '"]').click();
   await page.locator("#tab-units").waitFor();
   await page.locator('[data-disclosure="options-scan"] > summary').click();
   await page.locator("#scan-floor-mode").selectOption("exact");
@@ -339,7 +344,7 @@ try {
     { ...first.source.owners[0], fullName: "Verdi Luisa", taxCode: "VRDLSU80A01A662B", sharePercentage: 50 },
   ];
   await page.evaluate(({ key, owners }) => window.territory.correct({ key, correction: { owners }, note: "Due intestatari di prova" }), { key: first.key, owners });
-  await page.locator('[data-street="' + street.id + '"]').click();
+  await openStreet(page, street);
   const property = page.locator('[data-unit="' + first.key + '"]');
   await property.locator(".unit-owners").waitFor();
   assert.equal(await property.locator(".owner-name strong").count(), 2);
@@ -357,17 +362,14 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector("#detail-dialog").scrollWidth > document.querySelector("#detail-dialog").clientWidth + 1), false, "Intestatari e storico senza overflow");
   await page.screenshot({ path: path.join(output, "owners-details-mobile.png") });
   await page.locator("#detail-close").click();
-  await page.locator("#toggle-list").click();
   await page.locator("#search").fill("nessuna via corrispondente");
-  await page.locator("#close-list").click();
-  assert.equal(await page.locator("#catalog").isVisible(), false);
-  assert.equal(
-    await page.evaluate(() => document.activeElement.id),
-    "toggle-list",
-  );
-  await page.locator("#toggle-list").click();
+  await page.locator("#search-empty").waitFor({ state: "visible" });
   await page.keyboard.press("Escape");
-  assert.equal(await page.locator("#catalog").isVisible(), false);
+  assert.equal(await page.locator("#street-search-menu").isVisible(), false);
+  await page.locator("#clear-search").click();
+  assert.equal(await page.locator("#search").inputValue(), "");
+  assert.equal(await page.locator("#clear-search").isVisible(), false);
+  assert.equal(await page.evaluate(() => document.activeElement.id), "search");
   await page.screenshot({ path: path.join(output, "map-mobile.png") });
   assert.deepEqual(errors, []);
   fonts = await page.evaluate(() =>

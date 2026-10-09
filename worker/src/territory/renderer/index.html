@@ -44,80 +44,26 @@
       resta conservato in questo laboratorio.
     </div>
     <main class="workspace">
-      <aside id="catalog" class="catalog" aria-label="Ricerca delle vie">
-        <div class="catalog-heading">
-          <div class="catalog-title">
-            <h1>Vie e immobili</h1>
-            <button
-              id="close-list"
-              class="mobile-only quiet"
-              aria-label="Chiudi elenco delle vie"
-            >
-              Chiudi
-            </button>
-          </div>
-          <p>Scegli una via per aprire la sua scheda.</p>
-        </div>
-        <label for="search">Cerca una via</label
-        ><input
-          id="search"
-          type="search"
-          placeholder="Nome o codice della via…"
-          autocomplete="off"
-        />
-        <details class="catalog-filters" id="catalog-filters">
-          <summary>Filtra le vie <span id="filter-count"></span></summary>
-          <div class="filter-fields">
-            <label for="catalog-kind">Archivio delle vie</label
-            ><select id="catalog-kind">
-              <option value="">Vie e tracciati</option>
-              <option value="official">Inventario ufficiale</option>
-              <option value="network">Rete propria da associare</option>
-            </select>
-            <div class="filters">
-              <select id="status" hidden aria-label="Filtro interno"><option value=""></option></select><label
-                >Località<select id="locality">
-                  <option value="">Tutto il comune</option>
-                  <option>Bitonto</option>
-                  <option>Palombaio</option>
-                  <option>Mariotto</option>
-                </select></label
-              >
-            </div>
-            <button id="reset-filters" class="quiet">Azzera filtri</button>
-          </div>
-        </details>
-        <div class="catalog-results">
-          <p id="result-count" class="meta" role="status">
-            Caricamento delle vie…
-          </p>
-          <label class="sr-only" for="sort">Ordine delle vie</label
-          ><select id="sort">
-            <option value="name">A–Z</option>
-            <option value="priority">Da gestire prima</option>
-            <option value="oldest">Import meno recenti</option>
-          </select>
-        </div>
-        <div id="archive-error" class="empty-state" hidden>
-          <h3>Archivio non disponibile</h3>
-          <p id="archive-error-text"></p>
-          <button id="retry-archive">Riprova</button>
-        </div>
-        <div
-          id="streets"
-          class="street-list"
-          aria-label="Elenco delle vie"
-        ></div>
-        <footer class="catalog-footer">
-          Inventario del Comune di Bitonto · CC BY 4.0<br />Rete OpenStreetMap ·
-          ODbL 1.0 · schede indipendenti dalle acquisizioni.
-        </footer>
-      </aside>
       <section class="map-region" aria-label="Mappa delle vie di Bitonto">
         <div id="map"></div>
         <div class="map-toolbar">
+          <div id="street-search" class="street-search">
+            <label class="sr-only" for="search">Cerca una via</label>
+            <div class="street-search-input">
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+              <input id="search" type="text" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="streets" aria-expanded="false" placeholder="Cerca una via o un codice…" autocomplete="off" disabled>
+              <button id="clear-search" class="quiet" aria-label="Cancella ricerca della via" hidden>×</button>
+            </div>
+            <div id="street-search-menu" class="street-search-menu" hidden>
+              <p id="result-count" class="meta" role="status" aria-live="polite"></p>
+              <div id="archive-error" class="empty-state" hidden><p id="archive-error-text"></p><button id="retry-archive">Riprova</button></div>
+              <div id="streets" class="street-list" role="listbox" aria-label="Risultati della ricerca vie"></div>
+              <p id="search-empty" class="meta" hidden>Nessuna via trovata. Prova un altro nome o codice.</p>
+              <button id="more-streets" class="load-more quiet" hidden>Mostra altre vie</button>
+            </div>
+          </div>
           <button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
-          ><button id="toggle-list" class="mobile-only">Cerca via</button>
+          >
         </div>
         <div id="hover" class="hover-panel" hidden></div>
         <div
@@ -152,7 +98,7 @@
         aria-label="Contenuto della scheda"
       ></section>
     </dialog>
-    <div id="feedback" role="status" aria-live="polite" hidden></div>
+    <section id="feedback" aria-label="Notifiche" hidden></section>
     <dialog
       id="memory-dialog"
       aria-labelledby="memory-title"
