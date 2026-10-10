@@ -26,6 +26,21 @@ async function setup() {
   return { store, source, key };
 }
 describe("Schede reali scelte esplicitamente nel laboratorio", () => {
+  it("il desktop operativo supera la lista di collaudo conservando identità, perimetro e dati validi", async () => {
+    const { source, key } = await setup();
+    const browser = { cdpUrl: "http://127.0.0.1:9222", sisterTabMatch: "sister", crmTabMatch: "cloud" };
+    const provider = new LiveProvider({ ...base, ...browser }, () => false, browser, "operational");
+    expect(provider.canWrite(key, source)).toBe(true);
+    expect(() => provider.authorizeWrite(source, "create")).not.toThrow();
+    expect(() => provider.authorizeWrite(source, "update")).not.toThrow();
+    expect(provider.canWrite("BITONTO||49|ALTRO|1", source)).toBe(false);
+    expect(provider.canWrite(key, { ...source, municipality: "BARI" })).toBe(false);
+    expect(provider.canWrite(key, { ...source, owners: [] })).toBe(false);
+    expect(provider.canWrite(key, { ...source, owners: [{ ...source.owners[0]!, taxCode: "NONVALIDO" }] })).toBe(false);
+    expect(() => provider.authorizeWrite({ ...source, municipality: "BARI" }, "create")).toThrow();
+    expect(() => new LiveProvider(base, () => false, undefined, "operational")).toThrow("affidato dal desktop");
+    expect(new LiveProvider(base, () => false).canWrite(key, source)).toBe(false);
+  });
   it("usa il Chrome di lavoro solo con il collegamento affidato dal desktop", async () => {
     const { store, source, key } = await setup();
     const browser = { cdpUrl: "http://127.0.0.1:9222", sisterTabMatch: "sister", crmTabMatch: "cloud" };

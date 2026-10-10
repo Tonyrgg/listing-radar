@@ -20,11 +20,13 @@ export function createToast(root, { openBrowser, canOpenBrowser }) {
     if (event.target === root.parentElement) (document.querySelector("dialog[open]") || document.body).append(root);
   }, true);
   return {
-    show(message, error = false, { deduplicate = false } = {}) {
+    show(message, error = false, { deduplicate = false, runId = null } = {}) {
       const browser = isBrowserWarning(message), nextKey = `${error}:${message}`;
       if (deduplicate && nextKey === warningKey) return;
       if (deduplicate) warningKey = nextKey;
       dismiss();
+      if (runId) root.dataset.run = runId;
+      else delete root.dataset.run;
       root.dataset.tone = browser ? "warning" : error ? "error" : "info";
       root.classList.toggle("error", error && !browser);
       root.innerHTML = `${icon(browser ? "browser" : error ? "warning" : "info")}<div class="toast-copy"><p class="toast-message"></p>${browser && canOpenBrowser() ? '<button type="button" class="quiet" data-toast-browser>Apri Chrome di lavoro</button>' : ""}</div><button type="button" class="quiet toast-close" aria-label="Chiudi notifica">${icon("close")}</button>`;

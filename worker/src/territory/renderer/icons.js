@@ -30,6 +30,7 @@ export function icon(name) {
   return `<svg class="ui-icon" data-icon="${name}" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.info}</svg>`;
 }
 const labels = [
+  [/^Aggiorna da SISTER$/, "refresh"], [/^Impostazioni della via$/, "settings"], [/^Associa via ufficiale$/, "link"],
   [/^Acquisisci via$/, "download"], [/^Confronta (gestionale|selezionati)/, "search"],
   [/^(Applica selezionati|Prova piano)/, "play"], [/^Riprendi/, "play"], [/^Metti in pausa/, "pause"],
   [/^Immobili \d+$/, "building"], [/^Storico$/, "history"], [/^Seleziona tutti/, "selection"],

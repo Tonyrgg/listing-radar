@@ -1,4 +1,5 @@
 import { createStreetSearch } from "./street-search.js";
+import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
 import { createToast, isBrowserWarning } from "./toast.js";
 import { unitHeadingHtml, ownerListHtml, comparisonHtml } from "./unit-card.js";
@@ -285,10 +286,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   const notifiedRunErrors = new Map();
   function notifyRunIssue(run) {
     if (!run) return;
-    if (run.state === "running") { notifiedRunErrors.delete(run.id); return; }
+    if (["running", "completed"].includes(run.state)) {
+      if ($("feedback").dataset.run) toast.dismiss();
+      notifiedRunErrors.delete(run.id); return;
+    }
     if (!["paused", "failed"].includes(run.state) || !run.error || notifiedRunErrors.get(run.id) === run.error) return;
     notifiedRunErrors.set(run.id, run.error);
-    feedback(run.error, true);
+    feedback(run.error, true, { runId: run.id });
   }
   const safe = (handler) => async (event) => {
     const trigger = event?.currentTarget,
@@ -328,13 +332,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       }
     }
   };
-  const streetIdentity = (street) =>
-    street.catalogKind === "network"
-      ? `${escape(street.locality)} · Rete propria`
-      : `${escape(street.locality)} · Codvia ${escape(street.id)}`;
+  const streetIdentity = (street) => {
+    const place = ["Bitonto", "Palombaio", "Mariotto"].includes(street.locality) ? street.locality : "Comune di Bitonto";
+    return street.catalogKind === "network" ? `${escape(place)} · Tracciato della mappa` : `${escape(place)} · Codvia ${escape(street.id)}`;
+  };
   const acquisitionLabel = street => street.progress?.complete ? "Acquisizione completa" : street.progress?.acquiredAt ? "Acquisizione parziale" : "Nessuna acquisizione";
   function statusHtml(street) { return `<span class="status icon-label">${icon(street.progress.complete ? "check" : "download")}${acquisitionLabel(street)}</span>`; }
   function progressHtml(street, compact = false) {
+    if (!street.count && !street.progress.complete) return "";
     const p = street.progress, d = p.distribution;
     const coverage =
       d.percent !== null
@@ -429,7 +434,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     hoverId = street.id;
     hoverPoint = point;
     $("hover").innerHTML =
-      `<button class="preview-close quiet" aria-label="Chiudi riepilogo">×</button><span class="eyebrow">${streetIdentity(street)}</span><h3>${escape(street.name)}</h3>${progressHtml(street)}${street.geometry ? "" : '<p class="meta">Tracciato non disponibile. La scheda della via è comunque accessibile.</p>'}<p>${statusHtml(street)}<br>${street.count} immobili conservati · ${street.unresolved} da gestire</p><div class="actions"><button class="primary" data-open="${escape(street.id)}">Apri scheda</button></div>`;
+      `<button class="preview-close quiet" aria-label="Chiudi riepilogo">×</button><span class="eyebrow">${streetIdentity(street)}</span><h3>${escape(street.name)}</h3>${progressHtml(street)}${street.geometry ? "" : '<p class="meta">Tracciato non disponibile. La scheda della via è comunque accessibile.</p>'}<p>${statusHtml(street)}<br>${street.count || street.progress.complete ? `${street.count} immobili conservati · ${street.unresolved} da gestire` : ""}</p><div class="actions"><button class="primary" data-open="${escape(street.id)}">Apri scheda</button></div>`;
     const width = $("map").clientWidth,
       height = $("map").clientHeight;
     $("hover").hidden = false;
@@ -489,6 +494,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   map.on("click", hidePreview);
   window.addEventListener("blur", hidePreview);
   function openDialog(title) {
+    if (title !== "Scheda della via") delete $("detail-dialog").dataset.streetPhase;
     $("dialog-title").textContent = title;
     if (!$("detail-dialog").open) {
       dialogOpener = document.activeElement;
@@ -573,19 +579,26 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   }
   function renderDetail() {
     if (!detail) return;
-    const s = detail.street;
-    const context = `${s.id}:${tab}`,
+    const s = detail.street, view = streetViewState(detail, snapshot.activeRun);
+    $("detail-dialog").dataset.streetPhase = view.phase;
+    const context = `${s.id}:${view.hasInventory ? tab : view.phase}`,
       state = renderedContext === context ? remember($("inspector")) : null;
     const sameContext = renderedContext === context && $("detail-body");
     renderedContext = context;
     $("inspector").classList.add("street-inspector");
-    const header = `<div class="street-context"><span class="eyebrow icon-label">${icon("street")}${streetIdentity(s)}</span>${statusHtml(s)}</div><h2>${escape(s.name)}</h2>${progressHtml(s)}`;
-    if (sameContext) {
+    const badge = view.hasInventory ? statusHtml(s) : `<span class="status acquisition-state" data-phase="${view.phase}">${{ unacquired: "Mai acquisita", acquiring: "Acquisizione in corso", interrupted: "Acquisizione da riprendere" }[view.phase]}</span>`;
+    const header = `<div class="street-context"><span class="eyebrow">${streetIdentity(s)}</span>${badge}</div><h2>${escape(s.name)}</h2>${view.hasInventory ? progressHtml(s) : ""}`;
+    if (!view.hasInventory) {
+      const title = s.needsReview ? "Associa il tracciato a una via" : view.phase === "acquiring" ? "Acquisizione da SISTER in corso" : view.phase === "interrupted" ? "Riprendi la prima acquisizione" : "Acquisisci i dati di questa via";
+      const description = s.needsReview ? "Scegli la via ufficiale per leggere i suoi dati catastali." : view.phase === "interrupted" ? "Il lavoro già svolto è conservato. Riprendi dallo stesso punto." : "Leggi immobili e intestatari da SISTER e conservali nella memoria del Worker.";
+      const button = view.phase === "acquiring" ? "" : s.needsReview ? '<button id="first-associate" class="primary">Associa via ufficiale</button>' : view.phase === "interrupted" ? '<button id="resume" class="primary">Riprendi acquisizione</button>' : '<button class="primary" data-operation="scan">Acquisisci via</button>';
+      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">L’import in Tecnocloud si avvia in un passaggio successivo, dopo il confronto.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
+    } else if (sameContext) {
       $("inspector").querySelector(".detail-header").innerHTML = header;
       $("tab-units").innerHTML = `${icon("building")}Immobili ${s.count}`;
     } else
       $("inspector").innerHTML =
-        `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-tools" class="street-tools"></div><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
+        `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-actionbar" class="street-actionbar"></div><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
                     ["units", `Immobili ${s.count}`],
           ["history", "Storico"],
         ]
@@ -640,10 +653,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         : counts.unknown
           ? 1
           : 2;
-    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Acquisisci via</button><button class="${step === 1 && !paused ? "primary" : ""}" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’applicazione.</p>`;
+    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="${step === 1 && !paused ? "primary" : ""}" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’applicazione.</p>`;
     {
+      if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
-        `${resume}<div class="street-actions">${actions}</div><div class="street-secondary">${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
+        `<div class="street-secondary">${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
       if ($("open-units")) $("open-units").onclick = () => switchTab("units");
       $("memory-form").oninput = (event) => markDirty(event.currentTarget);
       $("memory-form").onsubmit = safe(async (event) => {
@@ -661,7 +675,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (s.catalogKind === "network") {
         $("street-tools").insertAdjacentHTML(
           "afterbegin",
-          `<details class="network-link" data-disclosure="network-link" ${s.needsReview ? "open" : ""}><summary>Collega il tracciato alla via ufficiale</summary><p class="explanation">Questa scheda appartiene alla rete propria e può conservare note e lavoro già da ora. Scegli un Codvia solo dopo aver verificato che il tracciato corrisponde alla via ufficiale. ${s.needsReview ? "Per un tratto senza nome, questa associazione abilita anche l’acquisizione." : ""}</p><form id="network-link-form"><label for="network-official">Via dell'inventario ufficiale</label><input id="network-official" list="network-official-options" required placeholder="Nome della via e Codvia"><datalist id="network-official-options">${snapshot.streets
+          `<details class="network-link" data-disclosure="network-link"><summary>Collega il tracciato alla via ufficiale</summary><p class="explanation">Questa scheda appartiene alla rete propria e può conservare note e lavoro già da ora. Scegli un Codvia solo dopo aver verificato che il tracciato corrisponde alla via ufficiale. ${s.needsReview ? "Per un tratto senza nome, questa associazione abilita anche l’acquisizione." : ""}</p><form id="network-link-form"><label for="network-official">Via dell'inventario ufficiale</label><input id="network-official" list="network-official-options" required placeholder="Nome della via e Codvia"><datalist id="network-official-options">${snapshot.streets
             .filter((s) => s.catalogKind !== "network" && !s.needsReview)
             .map(
               (s) =>
@@ -702,10 +716,16 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           `<details data-disclosure="linked-note"><summary>Annotazioni precedenti sul tracciato</summary><p class="explanation">${escape(memory.note)}</p></details>`,
         );
     }
-    if (tab === "units") {
+    if (!view.hasInventory) {
+      if ($("first-associate")) $("first-associate").onclick = () => {
+        $("inspector").querySelector(".street-settings").open = true;
+        $("inspector").querySelector(".network-link").open = true;
+        $("network-official").focus();
+      };
+    } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Pronti ad applicare (${counts.ready})</option><option value="unknown">Confronto da eseguire o incompleto (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>Ordine: civico, piano, catasto · ${rows.length} immobili visibili · ${counts.ready} pronti ad applicare · ${counts.review} da verificare</p>${detail.units.length ? operationOptions("apply", disabled) : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Questa via non ha ancora immobili"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Acquisisci la via per aggiungere immobili."}</p><button id="unit-empty-action">${detail.units.length ? "Azzera filtri immobili" : "Acquisisci via"}</button></div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="apply" class="primary" ${disabled || !selected.size ? "disabled" : ""}>${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Pronti ad applicare (${counts.ready})</option><option value="unknown">Confronto da eseguire o incompleto (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>Ordine: civico, piano, catasto · ${rows.length} immobili visibili · ${counts.ready} pronti ad applicare · ${counts.review} da verificare</p>${detail.units.length ? operationOptions("apply", disabled) : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="apply" class="primary" ${disabled || !selected.size ? "disabled" : ""}>${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -890,7 +910,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const s = u.source,
       decision = u.assessment?.kind || "unknown";
     const enabled = !snapshot.activeRun;
-    return `<article class="unit" data-unit="${escape(u.key)}" data-selected="${selected.has(u.key)}"><div class="unit-head"><label class="unit-select-label"><input type="checkbox" aria-label="Seleziona ${escape(s.fullAddress)}" data-unit-select="${escape(u.key)}" ${selected.has(u.key) ? "checked" : ""} ${enabled ? "" : "disabled"}></label><div>${unitHeadingHtml(u, escape)}</div></div>${ownerListHtml(s.owners, escape)}${comparisonHtml(u, escape)}${!u.canWrite && ["create", "update"].includes(decision) ? '<p class="meta">Scheda non autorizzata al collaudo</p><button class="quiet" data-authorize-key="' + escape(u.key) + '">Scegli per il collaudo</button>' : ""}<details data-disclosure="${escape(u.key)}:record"><summary>Dati immobile e acquisizioni</summary><div class="unit-detail-body"><table><tr><th scope="row">Categoria</th><td>${escape(s.category)}</td></tr><tr><th scope="row">Consistenza</th><td>${escape(s.consistency)}</td></tr><tr><th scope="row">Ultima acquisizione</th><td>${date(u.observations.at(-1)?.at)}</td></tr>${u.crmId ? `<tr><th scope="row">Scheda gestionale</th><td>${escape(u.crmId)}</td></tr><tr><th scope="row">Ultimo import concluso</th><td>${u.importedAt ? date(u.importedAt) : "Data non disponibile"}</td></tr>` : ""}</table><p>${escape(u.note)}</p><details data-disclosure="${escape(u.key)}:observations"><summary>Acquisizioni precedenti (${u.observations.length})</summary>${[
+    return `<article class="unit" data-unit="${escape(u.key)}" data-selected="${selected.has(u.key)}"><div class="unit-head"><label class="unit-select-label"><input type="checkbox" aria-label="Seleziona ${escape(s.fullAddress)}" data-unit-select="${escape(u.key)}" ${selected.has(u.key) ? "checked" : ""} ${enabled ? "" : "disabled"}></label><div>${unitHeadingHtml(u, escape)}</div></div>${ownerListHtml(s.owners, escape)}${comparisonHtml(u, escape)}${!snapshot.operational && !u.canWrite && ["create", "update"].includes(decision) ? '<p class="meta">Scheda non autorizzata al collaudo</p><button class="quiet" data-authorize-key="' + escape(u.key) + '">Scegli per il collaudo</button>' : ""}<details data-disclosure="${escape(u.key)}:record"><summary>Dati immobile e acquisizioni</summary><div class="unit-detail-body"><table><tr><th scope="row">Categoria</th><td>${escape(s.category)}</td></tr><tr><th scope="row">Consistenza</th><td>${escape(s.consistency)}</td></tr><tr><th scope="row">Ultima acquisizione</th><td>${date(u.observations.at(-1)?.at)}</td></tr>${u.crmId ? `<tr><th scope="row">Scheda gestionale</th><td>${escape(u.crmId)}</td></tr><tr><th scope="row">Ultimo import concluso</th><td>${u.importedAt ? date(u.importedAt) : "Data non disponibile"}</td></tr>` : ""}</table><p>${escape(u.note)}</p><details data-disclosure="${escape(u.key)}:observations"><summary>Acquisizioni precedenti (${u.observations.length})</summary>${[
       ...u.observations,
     ]
       .reverse()
@@ -925,9 +945,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("selection-help").textContent = snapshot.activeRun
       ? "Attendi o sospendi l’operazione in corso."
       : blockedCreation ? "Hai scelto solo schede esistenti: deseleziona gli immobili da creare, oppure cambia la regola d’import."
-      : records.some(u => !ready(u)) ? "Confronta i selezionati e autorizza le schede prima di applicare."
+      : records.some(u => !ready(u)) ? "Confronta i selezionati e completa i dati prima di applicare."
       : selected.size
-        ? `${snapshot.origin === "simulation" ? "Piano simulato" : "Solo schede autorizzate"}: ${optionsSummary({ operation: "apply", settings })}. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
+        ? `${snapshot.origin === "simulation" ? "Piano simulato" : snapshot.operational ? "Piano di import" : "Solo schede autorizzate"}: ${optionsSummary({ operation: "apply", settings })}. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
         : "Seleziona gli immobili pronti. I casi dubbi restano esclusi.";
   }
   function modalProgress() {
@@ -996,7 +1016,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     document.body.classList.toggle("integrated", Boolean(snapshot.integrated));
     $("open-browser").hidden =
       !snapshot.integrated || snapshot.origin !== "live";
-    $("test-settings").hidden = snapshot.origin !== "live";
+    $("test-settings").hidden = snapshot.origin !== "live" || snapshot.operational;
+    $("notice").hidden = Boolean(snapshot.operational);
+    document.body.classList.toggle("operational", Boolean(snapshot.operational));
     $("cloud-memory").hidden = !memory.configured;
     const online = memory.environment === "online";
     $("cloud-memory").textContent = online
@@ -1038,8 +1060,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("environment").textContent =
       snapshot.origin === "simulation"
         ? "Laboratorio locale · simulazione"
-        : snapshot.integrated
-          ? "Worker V2 · collaudo reale"
+        : snapshot.operational
+          ? "Worker V2"
           : "Worker V2 · collaudo reale";
     $("notice").textContent =
       snapshot.origin === "simulation"

@@ -29,7 +29,10 @@ export class LiveProvider implements TerritoryProvider {
   private config: LiveConfig;
   private comparing = false;
   private inventory = new Map<string, Promise<CrmPropertySummary[]>>();
-  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig) { this.config = validateLiveConfig(config, workBrowser); }
+  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test") {
+    if (writeAccess === "operational" && !workBrowser) throw new Error("La modalità operativa richiede il Chrome di lavoro affidato dal desktop");
+    this.config = validateLiveConfig(config, workBrowser);
+  }
   configure(config: LiveConfig) { this.config = validateLiveConfig(config, this.workBrowser); this.endOperation(); }
   beginOperation(operation: "scan" | "compare" | "apply") { this.inventory.clear(); this.comparing = operation === "compare"; }
   endOperation() {
@@ -38,10 +41,16 @@ export class LiveProvider implements TerritoryProvider {
     void connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
   private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => { this.tabsPromise = null; throw error; }); }
-  canWrite(key: string, source?: SourceProperty) { return this.config.allowedCadastralKeys.includes(key) && Boolean(source && source.owners.length && source.owners.every(owner => this.config.allowedTaxCodes.includes(owner.taxCode.trim().toUpperCase()))); }
+  canWrite(key: string, source?: SourceProperty) {
+    if (this.writeAccess === "operational") {
+      if (!source || source.municipality.trim().toUpperCase() !== "BITONTO" || unitKey(source) !== key) return false;
+      try { buildPlan(source); return true; } catch { return false; }
+    }
+    return this.config.allowedCadastralKeys.includes(key) && Boolean(source && source.owners.length && source.owners.every(owner => this.config.allowedTaxCodes.includes(owner.taxCode.trim().toUpperCase())));
+  }
   authorizeWrite(source: SourceProperty, kind: "create" | "update") {
-    if (source.municipality.trim().toUpperCase() !== "BITONTO" || !this.canWrite(unitKey(source), source)) throw new Error("Immobile o intestatari fuori dalle schede concordate");
-    if (kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
+    if (source.municipality.trim().toUpperCase() !== "BITONTO" || !this.canWrite(unitKey(source), source)) throw new Error(this.writeAccess === "operational" ? "Identità catastale o intestatari incompleti, oppure immobile fuori dal Comune di Bitonto" : "Immobile o intestatari fuori dalle schede concordate");
+    if (this.writeAccess === "test" && kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
   }
   async port() { return new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused }); }
   async candidates(street: Street, source: SourceProperty) {

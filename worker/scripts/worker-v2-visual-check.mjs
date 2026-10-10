@@ -1,4 +1,4 @@
-import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
+import { streetSearchReady, openStreet, openStreetSettings } from "./fixtures/street-search.mjs";
 import { _electron as electron } from 'playwright';
 import { mkdtemp, mkdir, readFile, copyFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -47,7 +47,7 @@ try {
   assert.equal(snapshot.streets.length, 2043);
   const street = snapshot.streets.find(s => s.geometry && s.name.includes('CASTELLUCCI'));
   await openStreet(page, street);
-  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
+  await openStreetSettings(page); await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator('#street-note').fill('Nota aperta durante cambio sezione');
   await shell.locator('[data-scroll="refinement"]').click();
   assert.equal(await shell.locator('#refinement').isVisible(), true);
@@ -99,6 +99,11 @@ try {
   ({ shell, page } = await launch(historical, false));
   const recovered = await page.evaluate(() => window.territory.snapshot());
   assert.equal(recovered.origin, 'live');
+  assert.equal(recovered.operational, true);
+  assert.equal(await page.locator('#notice').isVisible(), false, 'Nessun banner di collaudo nel desktop');
+  assert.equal(await page.locator('#test-settings').isVisible(), false, 'La lista di prova non limita il desktop operativo');
+  const operationalUnits = await page.evaluate(() => window.territory.query({ query: {}, limit: 100 }));
+  assert.ok(operationalUnits.units.some(unit => unit.canWrite), 'Immobili reali validi sono abilitati senza lista di collaudo');
   const config = JSON.parse(await readFile(path.join(historical, 'live-config.json'), 'utf8'));
   assert.equal(config.allowedCadastralKeys.length, 0); assert.equal(config.allowedTaxCodes.length, 0); assert.equal(config.allowCreate, false);
   assert.equal(config.cdpUrl, 'http://127.0.0.1:65531', 'V2 usa lo stesso collegamento Chrome configurato nel desktop');

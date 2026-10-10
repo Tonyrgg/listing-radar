@@ -1,4 +1,4 @@
-import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
+import { streetSearchReady, openStreet, openStreetSettings } from "./fixtures/street-search.mjs";
 import { _electron as electron } from "playwright";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -141,7 +141,7 @@ try {
   await page.locator('#hover [data-open]').click();
   await page.getByRole('heading', { name: rawStreet.name, exact: true }).waitFor();
   assert.equal((await page.evaluate(id => window.territory.detail(id), rawStreet.id)).units.length, 0);
-  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
+  await openStreetSettings(page); await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator('#street-note').fill('Dossier iniziale, prima di qualsiasi analisi');
   await page.locator('#detail-close').click();
   assert.equal(await page.locator('#detail-dialog').isVisible(), true, 'Chiudi conserva la modifica aperta');
@@ -155,6 +155,8 @@ try {
   await page.locator('#network-official').fill(`${emptyOfficial.name} · Codvia ${emptyOfficial.id}`);
   await page.getByRole('button', { name: 'Conferma associazione', exact: true }).click();
   await until(page, async id => Boolean((await window.territory.detail(id)).street.geometry), emptyOfficial.id);
+  await page.getByRole('heading', { name: emptyOfficial.name, exact: true }).waitFor();
+  await openStreetSettings(page);
   await page.getByText('Annotazioni precedenti sul tracciato', { exact: true }).click();
   const boundSnapshot = await page.evaluate(() => window.territory.snapshot());
   assert.ok(boundSnapshot.streets.some(s => s.id === emptyOfficial.id));
@@ -183,7 +185,7 @@ try {
   await page.screenshot({ path: path.join(output, "02-click-popup.png") });
   assert.equal(await page.locator("#hover [data-attention]").count(), 0);
   await page.locator('#hover [data-open]').click();
-  await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
+  await openStreetSettings(page); await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
   await page.locator("#street-note").fill("Annotazione salvata durante il collaudo");
   await page.getByRole("button", { name: "Salva note", exact: true }).click();
   await page.locator('[data-operation="scan"]').click();

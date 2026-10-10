@@ -88,6 +88,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   try {
     releaseProfile = lockTerritoryProfile(options.profileDirectory);
     const workBrowser = options.integrated ? options.workBrowser?.() : undefined;
+    const operational = Boolean(options.integrated && options.live && workBrowser);
     if (options.live) {
       const defaults: LiveConfig = { cdpUrl: "http://127.0.0.1:9223", sisterTabMatch: "sister", crmTabMatch: "tecnocasa-group.my.site.com", allowedCadastralKeys: [], allowedTaxCodes: [], allowCreate: false, ...(options.contactsExcelPath ? { contactsExcelPath: options.contactsExcelPath } : {}) };
       try { await writeFile(path.join(options.profileDirectory, "live-config.json"), JSON.stringify(defaults, null, 2), { flag: "wx", mode: 0o600 }); }
@@ -111,7 +112,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser);
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test");
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {
@@ -132,10 +133,11 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         return handler(value);
       });
     };
-    handle("snapshot", () => ({ ...application.snapshot(), integrated: options.integrated ?? false }));
+    handle("snapshot", () => ({ ...application.snapshot(), integrated: options.integrated ?? false, operational }));
     handle("open-browser", () => options.openBrowser?.() ?? Promise.reject(new Error("Apri il Chrome dedicato dalla procedura di collaudo")));
     handle("test-settings", () => liveConfig ? testSettings(store.read(), liveConfig) : { live: false });
     handle("configure-tests", async value => {
+      if (operational) throw new Error("Il Worker V2 integrato usa le selezioni operative, senza una lista di schede di prova");
       if (!liveConfig || !(provider instanceof LiveProvider)) throw new Error("Le prove reali sono escluse dalla simulazione");
       if (application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione prima di cambiare le schede di prova");
       const choice = z.object({ keys: z.array(id).max(10), allowCreate: z.boolean(), confirmed: z.boolean() }).refine(v => !v.keys.length || v.confirmed, "Conferma le schede di prova prima di abilitarle").parse(value);
@@ -190,10 +192,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
           ? `Il piano prevede ${activityCount} attività Telefonata, Da eseguire, esclusi immobili di rete o di provenienza storica incerta.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
-          type: "warning", title: "Schede di prova concordate",
+          type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",
           message: `Applicare le modifiche a ${prior?.itemKeys.length ?? v.selected.length} immobili selezionati nel gestionale reale?`,
-          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Creazioni e aggiornamenti secondo il confronto."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} Sono ammessi solo gli immobili nella lista di prova. Consulta il piano e le correzioni prima di continuare.`,
-          buttons: ["Torna al piano", "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
+          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Creazioni e aggiornamenti secondo il confronto."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Consulta il piano e le correzioni prima di continuare.`,
+          buttons: ["Torna al piano", operational ? "Applica agli immobili selezionati" : "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return null;
       }

@@ -1,6 +1,6 @@
 {
   "name": "listing-radar-property-worker",
-  "version": "0.34.10",
+  "version": "0.34.11",
   "description": "Applicazione desktop locale per il flusso Property Data Worker di Listing Radar",
   "author": "Listing Radar",
   "private": true,
@@ -59,7 +59,8 @@
     "requests:reconcile-features": "tsx scripts/reconcile-request-features.ts",
     "desktop:visual-check": "node scripts/visual-check.mjs",
     "territory:search-check": "node scripts/territory-search-check.mjs",
-    "territory:ux-check": "node scripts/territory-ux-check.mjs"
+    "territory:ux-check": "node scripts/territory-ux-check.mjs",
+    "territory:stage-check": "node scripts/territory-stage-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

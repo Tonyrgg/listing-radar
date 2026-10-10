@@ -70,6 +70,8 @@ Questa versione di Next.js contiene cambiamenti incompatibili con versioni prece
 
 ### Property Data Worker
 
+La 0.34.11 distingue le vie mai acquisite con una modale compatta e una sola azione SISTER; confronto, percentuali ed elenco compaiono quando esistono dati. Filtri, note e associazioni sono nelle impostazioni della via. Nel V2 integrato il desktop abilita l'accesso operativo tramite il proprio Chrome: non si applicano più le liste di prova, ma restano obbligatori identità catastale e intestatari validi, Comune di Bitonto, confronto attuale, checkpoint e conferma esplicita del piano. Questo accesso non è selezionabile dal renderer né dal file di configurazione. Il laboratorio separato mantiene le liste di collaudo. Acquisire da SISTER non avvia import automatici nel CRM.
+
 La 0.34.10 sostituisce la sidebar delle vie con una ricerca a tendina sopra la mappa (debounce 250 ms, tastiera e X). La selezione porta al tracciato e apre il popup; la scheda resta una modale esplicita. Icone condivise chiariscono azioni, immobili, intestatari ed esiti. Gli avvisi transitori sono toast chiudibili; Chrome non raggiungibile propone l’avvio del browser anche quando l’errore è conservato nella run, senza ripetersi a ogni refresh. Nessuna variazione alle acquisizioni, alla memoria o alle scritture CRM.
 
 La 0.34.9 rende esplicita la gerarchia delle card V2 e mostra gli intestatari senza aprire dettagli. Gli immobili della via seguono civico, piano e catasto; le query usano filtri ricercabili e bloccano confronto/applicazione finché i risultati non corrispondono ai filtri. Nessuna modifica al motore di scrittura, alle autorizzazioni o allo schema database.

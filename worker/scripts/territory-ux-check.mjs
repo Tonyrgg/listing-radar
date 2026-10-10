@@ -1,4 +1,4 @@
-import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
+import { streetSearchReady, openStreet, openStreetSettings } from "./fixtures/street-search.mjs";
 import { _electron as electron } from "playwright";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -60,8 +60,8 @@ try {
   await page.keyboard.press("Enter");
   assert.equal(await page.locator("#detail-dialog").isVisible(), false, "La ricerca apre il popup, non la modale");
   await page.locator('#hover [data-open="' + street.id + '"]').click();
-  await page.locator("#tab-units").waitFor();
-  await page.locator('[data-disclosure="options-scan"] > summary').click();
+  assert.equal(await page.locator("#tab-units").count(), 0, "Prima di acquisire non ci sono tab vuote");
+  await openStreetSettings(page); await page.locator('[data-disclosure="options-scan"] > summary').click();
   await page.locator("#scan-floor-mode").selectOption("exact");
   await page.locator("#scan-floor").fill("0");
   await page.locator("#scan-min-civic").fill("2");

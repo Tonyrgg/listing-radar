@@ -11,3 +11,7 @@ export async function openStreet(page, street) {
   await page.locator(`#hover [data-open="${street.id}"]`).click();
   await page.locator("#detail-dialog[open]").waitFor();
 }
+export async function openStreetSettings(page) {
+  const settings = page.locator(".street-settings");
+  if (!await settings.evaluate(element => element.open)) await settings.locator(":scope > summary").click();
+}
