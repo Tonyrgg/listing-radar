@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chromium } from "playwright";
 
-import { connectToChrome, createParallelCrmPage, CRM_WORKER_HOME_URL } from "../src/services/chrome.js";
+import { connectToChrome, connectToCrmChrome, createParallelCrmPage, CRM_WORKER_HOME_URL } from "../src/services/chrome.js";
 
 vi.mock("playwright", () => ({ chromium: { connectOverCDP: vi.fn() } }));
 
@@ -35,9 +35,10 @@ function browserWith(tabs: Array<{ playwrightUrl: string; target: FakeTarget }>)
     url: () => playwrightUrl,
     title: () => (playwrightUrl ? Promise.resolve(target.title) : new Promise<string>(() => undefined)),
     context: () => context,
+    close: vi.fn().mockResolvedValue(undefined),
   }));
   context.pages = () => pages;
-  return { contexts: () => [context] };
+  return { contexts: () => [context], close: vi.fn().mockResolvedValue(undefined) };
 }
 
 const healthyCrm = {
@@ -45,9 +46,112 @@ const healthyCrm = {
   target: { targetId: "crm-target", frameId: "crm-target", title: "Immobile Elenco", url: CRM_URL },
 };
 
+function crmRecoveryFixture() {
+  const browser = browserWith([
+    { playwrightUrl: SISTER_URL, target: { targetId: "sister", frameId: "sister", title: "SISTER", url: SISTER_URL } },
+    { playwrightUrl: "", target: { targetId: "crm", frameId: "prerender-frame", title: "Immobile", url: CRM_URL + "immobile/non-salvato" } },
+  ]);
+  const context = browser.contexts()[0]!;
+  const pages = (context.pages as () => Array<unknown>)();
+  const recovered = {
+    url: () => CRM_URL, title: async () => "Gestionale",
+    context: () => context,
+    goto: vi.fn().mockResolvedValue(undefined), evaluate: vi.fn().mockResolvedValue(true),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  const newPage = vi.fn().mockImplementation(async () => { pages.push(recovered); return recovered; });
+  context.newPage = newPage;
+  vi.mocked(chromium.connectOverCDP).mockResolvedValue(browser as never);
+  return { browser, original: pages[1] as { close: ReturnType<typeof vi.fn> }, recovered, newPage, context };
+}
+
 describe("schede Chrome pilotabili", () => {
   beforeEach(() => {
     vi.mocked(chromium.connectOverCDP).mockReset();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("riaggancia il gestionale nella stessa sessione senza toccare la scheda originale e lo riusa", async () => {
+    const { original, recovered, newPage, browser } = crmRecoveryFixture();
+    const tabs = await connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm");
+    expect(tabs.crmPage).toBe(recovered);
+    expect(tabs.pages.map(tab => tab.page)).toContain(recovered);
+    expect(recovered.goto).toHaveBeenCalledWith(CRM_WORKER_HOME_URL, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    expect(recovered.evaluate).toHaveBeenCalledOnce();
+    expect(original.close).not.toHaveBeenCalled();
+    expect(browser.close).not.toHaveBeenCalled();
+    expect((await connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm")).crmPage).toBe(recovered);
+    expect(newPage).toHaveBeenCalledOnce();
+  });
+
+  it("riaggancia anche durante una ripresa che richiede soltanto il gestionale", async () => {
+    const { recovered, original } = crmRecoveryFixture();
+    const tabs = await connectToCrmChrome("ws://127.0.0.1:9222/devtools/browser/fake", "crm");
+    expect(tabs.crmPage).toBe(recovered);
+    expect(original.close).not.toHaveBeenCalled();
+  });
+
+  it("non ricrea una scheda già sana", async () => {
+    const { context, newPage } = crmRecoveryFixture();
+    const pages = (context.pages as () => Array<unknown>)();
+    pages.splice(1, 1, { url: () => CRM_URL, title: async () => "Gestionale" });
+    await connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm");
+    expect(newPage).not.toHaveBeenCalled();
+  });
+
+  it("riusa l'accesso Tecnocloud nella stessa sessione senza moltiplicare schede dopo una scadenza", async () => {
+    const { context, newPage } = crmRecoveryFixture();
+    const login = { url: () => "https://ui.tecnocasa.com/login", title: async () => "Accedi", context: () => context };
+    (context.pages as () => Array<unknown>)().push(login);
+    expect((await connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm")).crmPage).toBe(login);
+    expect((await connectToCrmChrome("ws://127.0.0.1:9222/devtools/browser/fake", "crm")).crmPage).toBe(login);
+    expect(newPage).not.toHaveBeenCalled();
+  });
+
+  it("la creazione fallita di una nuova pagina non chiude quella originale", async () => {
+    const { newPage, original, browser } = crmRecoveryFixture();
+    newPage.mockRejectedValue(new Error("Chrome occupato"));
+    await expect(connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm")).rejects.toMatchObject({ details: { notDriveable: ["gestionale"] } });
+    expect(original.close).not.toHaveBeenCalled();
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("se il recupero fallisce chiude solo la propria nuova scheda e libera il collegamento", async () => {
+    const { recovered, original, browser } = crmRecoveryFixture();
+    recovered.goto.mockRejectedValue(new Error("Navigazione fallita"));
+    await expect(connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm")).rejects.toMatchObject({ details: { notDriveable: ["gestionale"] } });
+    expect(recovered.close).toHaveBeenCalledOnce();
+    expect(original.close).not.toHaveBeenCalled();
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("non considera recuperata una navigazione senza un contesto di esecuzione", async () => {
+    vi.useFakeTimers();
+    const { recovered, original, browser } = crmRecoveryFixture();
+    recovered.evaluate.mockImplementation(() => new Promise(() => undefined));
+    const result = expect(connectToCrmChrome("ws://127.0.0.1:9222/devtools/browser/fake", "crm")).rejects.toMatchObject({ details: { notDriveable: ["gestionale"] } });
+    await vi.runAllTimersAsync(); await result;
+    expect(original.close).not.toHaveBeenCalled();
+    expect(recovered.close).toHaveBeenCalledOnce();
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("non lascia l'avvio sospeso se il protocollo non risponde", async () => {
+    vi.useFakeTimers();
+    const { context, browser } = crmRecoveryFixture();
+    context.newCDPSession = async () => ({ send: () => new Promise(() => undefined), detach: vi.fn().mockResolvedValue(undefined) });
+    const result = expect(connectToChrome("ws://127.0.0.1:9222/devtools/browser/fake", "sister", "crm")).rejects.toMatchObject({ details: { missing: ["CRM"] } });
+    await vi.runAllTimersAsync(); await result;
+    expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it("non apre una destinazione arbitraria ricavata dal titolo di una scheda", async () => {
+    const { browser, newPage, context } = crmRecoveryFixture();
+    const pages = (context.pages as () => Array<{ target: FakeTarget }>)();
+    pages[1]!.target.url = "https://example.invalid/CRMImmobiliareLightning/s/";
+    await expect(connectToCrmChrome("ws://127.0.0.1:9222/devtools/browser/fake", "crm")).rejects.toMatchObject({ details: { notDriveable: ["gestionale"] } });
+    expect(newPage).not.toHaveBeenCalled();
+    expect(browser.close).toHaveBeenCalledOnce();
   });
 
   it("riconosce la scheda anche quando Playwright non ne espone l'indirizzo", async () => {

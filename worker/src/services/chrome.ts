@@ -31,6 +31,16 @@ export const CRM_MANDATE_ARCHIVE_URL = "https://tecnocasa-group.my.site.com/CRMI
 export const CRM_WORKER_HOME_URL = "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/";
 const PARALLEL_CRM_WINDOW_NAME = "listing-radar-parallel-crm";
 
+async function within<T>(operation: Promise<T>, timeoutMs = 3_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Chrome non risponde entro il tempo previsto")), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
 async function isMarkedParallelCrmPage(page: Page): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -86,11 +96,11 @@ export async function pageTitleWithin(
 async function targetIdentity(page: Page): Promise<{ title: string; url: string; driveable: boolean } | null> {
   let session: Awaited<ReturnType<BrowserContext["newCDPSession"]>> | null = null;
   try {
-    session = await page.context().newCDPSession(page);
-    const [target, tree] = await Promise.all([
+    session = await within(page.context().newCDPSession(page));
+    const [target, tree] = await within(Promise.all([
       session.send("Target.getTargetInfo"),
       session.send("Page.getFrameTree"),
-    ]);
+    ]));
     return {
       title: target.targetInfo.title ?? "",
       url: tree.frameTree.frame.url || target.targetInfo.url || "",
@@ -99,7 +109,7 @@ async function targetIdentity(page: Page): Promise<{ title: string; url: string;
   } catch {
     return null;
   } finally {
-    await session?.detach().catch(() => undefined);
+    if (session) await within(session.detach(), 500).catch(() => undefined);
   }
 }
 
@@ -163,6 +173,34 @@ async function recoverDriveableSisterPage(source: DescribedPage): Promise<Descri
   }
 }
 
+/**
+ * A prerendered CRM tab can have a different target and main-frame identity.
+ * Reloading that target does not repair Playwright's model. Open the stable
+ * CRM entry in the same authenticated context, preserving the original tab
+ * and any unsaved form. Future connections prefer this healthy tab, so the
+ * recovery does not create another window on each startup.
+ */
+async function recoverDriveableCrmPage(source: DescribedPage, pages: DescribedPage[]): Promise<DescribedPage | null> {
+  let recovered: Page | null = null;
+  try {
+    const original = new URL(source.url), home = new URL(CRM_WORKER_HOME_URL);
+    if (original.origin !== home.origin || !original.pathname.toLowerCase().startsWith("/crmimmobiliare")) return null;
+    // If authentication expired, reuse the login tab opened by a prior recovery.
+    // A retry must not keep creating tabs while the operator signs in manually.
+    const login = pages.find(candidate => candidate.driveable && candidate.page.context() === source.page.context()
+      && /^https:\/\/ui\.tecnocasa\.com\/login(?:[/?#]|$)/i.test(candidate.url));
+    if (login) return login;
+    recovered = await within(source.page.context().newPage(), 10_000);
+    await recovered.goto(CRM_WORKER_HOME_URL, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    // A returned navigation alone does not prove that the execution context works.
+    await within(recovered.evaluate(() => true));
+    return { title: await pageTitleWithin(recovered), url: recovered.url(), page: recovered, driveable: true };
+  } catch {
+    if (recovered) await within(recovered.close({ runBeforeUnload: false }), 1_000).catch(() => undefined);
+    return null;
+  }
+}
+
 export interface CrmChromeTab {
   browser: Browser;
   pages: Array<{ title: string; url: string; page: Page }>;
@@ -187,18 +225,20 @@ export async function connectToSisterChrome(cdpUrl: string, sisterMatch: string)
       { cause: error instanceof Error ? error.message : String(error) },
     );
   }
-  const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  let sisterTab = findMatchingPage(pages, sisterMatch, "sister");
-  if (!sisterTab) {
-    throw new WorkerError("Scheda SISTER non trovata nel Chrome di lavoro", "needs_review", {
-      missing: ["SISTER"], openTabs: pages.map(({ title, url }) => ({ title, url })),
-    });
-  }
-  if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
-  if (!sisterTab.driveable) {
-    throw new WorkerError("La scheda SISTER è aperta ma non pilotabile. Chiudila, riaprila e riprova.", "needs_review");
-  }
-  return { browser, pages, sisterPage: sisterTab.page };
+  try {
+    const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+    let sisterTab = findMatchingPage(pages, sisterMatch, "sister");
+    if (!sisterTab) {
+      throw new WorkerError("Scheda SISTER non trovata nel Chrome di lavoro", "needs_review", {
+        missing: ["SISTER"], openTabs: pages.map(({ title, url }) => ({ title, url })),
+      });
+    }
+    if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
+    if (!sisterTab.driveable) {
+      throw new WorkerError("La scheda SISTER è aperta ma non pilotabile. Chiudila, riaprila e riprova.", "needs_review");
+    }
+    return { browser, pages, sisterPage: sisterTab.page };
+  } catch (error) { await browser.close().catch(() => undefined); throw error; }
 }
 
 export async function connectToChrome(
@@ -216,36 +256,38 @@ export async function connectToChrome(
       { cause: error instanceof Error ? error.message : String(error) },
     );
   }
-  const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  let sisterTab = findMatchingPage(described, sisterMatch, "sister");
-  let crmTab = findMatchingPage(described, crmMatch, "crm");
-  const openTabs = described.map(({ title, url }) => ({ title, url }));
-  if (!sisterTab || !crmTab) {
-    throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
-      missing: [!sisterTab ? "SISTER" : null, !crmTab ? "CRM" : null].filter(Boolean),
-      openTabs,
-    });
-  }
-  if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
-  /* Una scheda riconosciuta ma non pilotabile non torna utilizzabile ne'
-   * aspettando ne' ricaricandola: solo riaprirla le restituisce un target
-   * sano. Fermarsi qui con il motivo esatto evita una run che parte e resta
-   * appesa alla prima azione sul portale. */
-  const notDriveable = [
-    !sisterTab.driveable ? "SISTER" : null,
-    !crmTab.driveable ? "gestionale" : null,
-  ].filter((label): label is string => label !== null);
-  if (notDriveable.length) {
-    const [subject, verb] = notDriveable.length > 1
-      ? [`le schede ${notDriveable.join(" e ")}`, "sono aperte ma non pilotabili. Chiudile, riaprile"]
-      : [`la scheda ${notDriveable[0]}`, "è aperta ma non pilotabile. Chiudila, riaprila"];
-    throw new WorkerError(
-      `Chrome non espone all'automazione ${subject}: ${verb} e riavvia.`,
-      "needs_review",
-      { notDriveable, openTabs },
-    );
-  }
-  return { browser, pages: described, sisterPage: sisterTab.page, crmPage: crmTab.page };
+  try {
+    const described = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+    let sisterTab = findMatchingPage(described, sisterMatch, "sister");
+    let crmTab = findMatchingPage(described, crmMatch, "crm");
+    const openTabs = described.map(({ title, url }) => ({ title, url }));
+    if (!sisterTab || !crmTab) {
+      throw new WorkerError("Schede richieste non trovate in Chrome", "needs_review", {
+        missing: [!sisterTab ? "SISTER" : null, !crmTab ? "CRM" : null].filter(Boolean),
+        openTabs,
+      });
+    }
+    if (!sisterTab.driveable) sisterTab = await recoverDriveableSisterPage(sisterTab) ?? sisterTab;
+    if (!crmTab.driveable) {
+      const recovered = await recoverDriveableCrmPage(crmTab, described);
+      if (recovered) { if (!described.includes(recovered)) described.push(recovered); crmTab = recovered; }
+    }
+    const notDriveable = [
+      !sisterTab.driveable ? "SISTER" : null,
+      !crmTab.driveable ? "gestionale" : null,
+    ].filter((label): label is string => label !== null);
+    if (notDriveable.length) {
+      const [subject, verb] = notDriveable.length > 1
+        ? [`le schede ${notDriveable.join(" e ")}`, "sono aperte ma non pilotabili. Chiudile, riaprile"]
+        : [`la scheda ${notDriveable[0]}`, "è aperta ma non pilotabile. Il riaggancio automatico non è riuscito. Riaprila"];
+      throw new WorkerError(
+        `Chrome non espone all'automazione ${subject}: ${verb} e riavvia.`,
+        "needs_review",
+        { notDriveable, openTabs },
+      );
+    }
+    return { browser, pages: described, sisterPage: sisterTab.page, crmPage: crmTab.page };
+  } catch (error) { await browser.close().catch(() => undefined); throw error; }
 }
 
 /** Connects to the worker-owned Chrome when a CRM-only maintenance task does not need SISTER. */
@@ -260,20 +302,28 @@ export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Prom
       { cause: error instanceof Error ? error.message : String(error) },
     );
   }
-  const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
-  let crmPage = findMatchingPage(pages, crmMatch, "crm")?.page;
-  crmPage ??= pages.find(({ title, url }) =>
-    /Universal Identity|Accedi/i.test(title) || /ui\.tecnocasa\.com\/login/i.test(url))?.page;
-  if (!crmPage) {
-    const context = browser.contexts()[0];
-    if (!context) throw new WorkerError("Nessun profilo Chrome disponibile", "session_expired");
-    crmPage = await context.newPage();
-    await crmPage.goto(CRM_WORKER_HOME_URL, {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
-    });
-  }
-  return { browser, pages, crmPage };
+  try {
+    const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
+    let crmTab = findMatchingPage(pages, crmMatch, "crm");
+    if (crmTab && !crmTab.driveable) {
+      const recovered = await recoverDriveableCrmPage(crmTab, pages);
+      if (!recovered) throw new WorkerError("Non riesco a riagganciare la scheda gestionale. Riaprila e riprendi: l'avanzamento è conservato.", "needs_review", { notDriveable: ["gestionale"] });
+      if (!pages.includes(recovered)) pages.push(recovered); crmTab = recovered;
+    }
+    let crmPage = crmTab?.page;
+    crmPage ??= pages.filter(page => page.driveable).find(({ title, url }) =>
+      /Universal Identity|Accedi/i.test(title) || /ui\.tecnocasa\.com\/login/i.test(url))?.page;
+    if (!crmPage) {
+      const context = browser.contexts()[0];
+      if (!context) throw new WorkerError("Nessun profilo Chrome disponibile", "session_expired");
+      crmPage = await context.newPage();
+      await crmPage.goto(CRM_WORKER_HOME_URL, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+    }
+    return { browser, pages, crmPage };
+  } catch (error) { await browser.close().catch(() => undefined); throw error; }
 }
 
 /** Apre una pagina aggiuntiva nella stessa sessione autenticata del Chrome di lavoro. */
@@ -318,7 +368,8 @@ async function connectToCrmArchiveChrome(
   }
   const pages = await Promise.all(browser.contexts().flatMap((context) => context.pages()).map(describePage));
   let archivePage: Page | undefined;
-  for (const candidate of pages.filter(({ url }) => {
+  for (const candidate of pages.filter(({ url, driveable }) => {
+    if (!driveable) return false;
     try {
       return new URL(url).toString() === archiveUrl;
     } catch {

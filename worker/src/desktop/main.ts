@@ -3151,7 +3151,7 @@ async function runDesktopKeepAlive() {
       publishTransientUpdate({ sisterKeepAlive });
       return;
     }
-    const tabs = await connectToChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH, config.CRM_TAB_MATCH);
+    const tabs = await connectToSisterChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH);
     try {
       updateKeepAliveState(await pingSisterSession(tabs.sisterPage, config.SISTER_KEEPALIVE_URL));
     } finally {
