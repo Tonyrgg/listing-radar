@@ -47,7 +47,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     for (const key of keys.slice(70)) state.units[key]!.observations[0]!.source.category = "C/6";
     const progress = importProgress(state, [street.id], now);
     expect(progress).toMatchObject({ imported: 33, total: 100, percent: 33 });
-    expect(progress.distribution).toMatchObject({ total: 100, imported: 50, percent: 50, recent: 33, aging: 0, stale: 17, never: 50, undated: 0 });
+    expect(progress.distribution).toMatchObject({ total: 100, imported: 50, percent: 50, recent: 33, aging: 0, stale: 17, never: 50, acquired: 50, unacquired: 0, undated: 0 });
     apply(state, [keys[33]!], 0);
     expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 50, recent: 34, stale: 16, never: 50 });
   });
@@ -57,7 +57,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     state.runs.push({ ...scan, id: "scan-new", startedAt: ago(2), endedAt: ago(2), itemKeys: keys.slice(0, 5) });
     const progress = importProgress(state, [street.id], now);
     expect(progress.percent).toBe(0);
-    expect(progress.distribution).toMatchObject({ total: 5, imported: 2, percent: 40, recent: 2, never: 3 });
+    expect(progress.distribution).toMatchObject({ total: 5, imported: 2, percent: 40, recent: 2, never: 3, acquired: 3, unacquired: 0 });
   });
   it("il totale V2 usa anche i box dell'inventario SISTER privi di osservazioni complete", () => {
     const { state, keys, scan } = fixture(2);
@@ -66,7 +66,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
       return { municipality: source.municipality, sheet: source.cadastral.sheet, parcel: source.cadastral.parcel, subaltern: source.cadastral.subaltern, address: source.fullAddress, category: source.category };
     }), { municipality: "BITONTO", sheet: "LAB", parcel: street.id, subaltern: "3", address: `${street.name} 6`, category: "C/6" }] }] };
     apply(state, [keys[0]!]);
-    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: 3, imported: 1, percent: 33, recent: 1, never: 2 });
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: 3, imported: 1, percent: 33, recent: 1, never: 2, acquired: 1, unacquired: 1 });
   });
   it("nessun gradiente definitivo su un inventario parziale, neanche con prove d'import", () => {
     const { state, keys, scan } = fixture();
@@ -79,7 +79,22 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     Object.assign(state.units[keys[4]!]!.observations[0]!, { importVerified: true, crmId: "crm", importedAt: null });
     // A found CRM ID and a mutable unit timestamp alone never prove an import.
     Object.assign(state.units[keys[5]!]!, { crmId: "found", importedAt: ago(0) });
-    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 2, stale: 1, never: 1, undated: 1 });
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 2, stale: 1, never: 1, acquired: 1, unacquired: 0, undated: 1 });
+  });
+  it("conserva il blu per fonti in quarantena e distingue le righe dell'inventario ancora da leggere", () => {
+    const { state, keys, scan } = fixture(100);
+    apply(state, keys.slice(0, 33), 1);
+    apply(state, keys.slice(33, 50), 120, "old");
+    scan.checkpoint = { results: [{ outcome: "found", inventoryProperties: keys.map(key => {
+      const source = state.units[key]!.observations[0]!.source;
+      return { municipality: source.municipality, sheet: source.cadastral.sheet, parcel: source.cadastral.parcel, subaltern: source.cadastral.subaltern, address: source.fullAddress, category: source.category };
+    }) }] };
+    const unit = state.units[keys[50]!]!;
+    unit.observations[0]!.origin = "sister";
+    unit.observations[0]!.source.owners[0]!.taxCode = "DA_COMPLETARE";
+    state.quarantine = { bad: { id: "bad", streetId: street.id, runId: scan.id, at: ago(5), reason: "Intestatario da correggere", address: unit.observations[0]!.source.fullAddress, cadastral: unit.observations[0]!.source.cadastral, source: unit.observations[0]!.source, unitKey: unit.key, origin: "scan", resolvedAt: null } };
+    for (const key of keys.slice(70)) delete state.units[key];
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: 100, imported: 50, recent: 33, stale: 17, never: 50, acquired: 20, unacquired: 30 });
   });
   it("rispetta 30/31 e 90/91 giorni, senza colorare date mancanti o future", () => {
     for (const [days, tone] of [[0, "recent"], [30, "recent"], [31, "aging"], [59, "aging"], [60, "aging"], [90, "aging"], [91, "stale"]] as const) expect(importAge(ago(days), now)).toEqual({ ageDays: days, tone });

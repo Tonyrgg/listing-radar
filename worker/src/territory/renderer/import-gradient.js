@@ -1,9 +1,14 @@
 /** Proportions describe the inventory, not the physical location of its houses. */
 export function gradientStops(distribution, palette) {
   const neutral = [{ at: 0, color: palette.never }, { at: 1, color: palette.never }];
-  if (!distribution?.total) return neutral;
-  const bands = ["recent", "aging", "stale", "never"].map(tone => ({
-    color: palette[tone], weight: tone === "never" ? distribution.never + distribution.undated : distribution[tone],
+  if (!distribution?.total) {
+    // An empty completed inventory or preserved source data proves acquisition,
+    // but an interrupted inventory cannot support proportional coverage.
+    const acquired = distribution?.total === 0 || (distribution?.acquired > 0 && !(distribution.imported > 0));
+    return acquired ? [{ at: 0, color: palette.acquired }, { at: 1, color: palette.acquired }] : neutral;
+  }
+  const bands = ["recent", "aging", "stale", "acquired", "never"].map(tone => ({
+    color: palette[tone], weight: tone === "never" ? (distribution.unacquired ?? Math.max(0, (distribution.never ?? 0) - (distribution.acquired ?? 0))) + (distribution.undated ?? 0) : distribution[tone],
   })).filter(band => band.weight > 0);
   if (!bands.length) return neutral;
   // Use counts, not rounded percentages. The entire trace always represents 100%.

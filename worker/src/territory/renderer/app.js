@@ -267,6 +267,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       token = (name) => s.getPropertyValue(name).trim();
     return {
       never: token("--lr-data-muted"),
+      acquired: token("--lr-data-1"),
       recent: token("--lr-ok"),
       aging: token("--lr-warn"),
       stale: token("--lr-danger"),
@@ -357,7 +358,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         : d.imported
           ? "Data import non disponibile"
           : "Nessun import verificato";
-    const buckets = [["recent", "Entro 30 giorni", d.recent], ["aging", "Da 31 a 90 giorni", d.aging], ["stale", "Oltre 90 giorni", d.stale], ["never", "Mai importati", d.never], ["never", "Importati senza data", d.undated]].filter(([, , count]) => count > 0);
+    const buckets = [["recent", "Cloud · entro 30 giorni", d.recent], ["aging", "Cloud · da 31 a 90 giorni", d.aging], ["stale", "Cloud · oltre 90 giorni", d.stale], ["acquired", "Acquisiti da SISTER · mai importati in Cloud", d.acquired], ["never", "Non ancora acquisiti", d.unacquired], ["never", "Import Cloud senza data", d.undated]].filter(([, , count]) => count > 0);
     const percentage = count => d.total ? `${Number((count / d.total * 100).toFixed(1)).toLocaleString("it-IT")}%` : "";
     const distribution = d.total > 0 ? `<span class="import-distribution" role="img" aria-label="${escape(buckets.map(([, label, count]) => `${label}: ${percentage(count)}, ${count} immobili`).join("; "))}">${buckets.map(([tone, , count]) => `<span class="import-band ${tone}" style="flex-grow:${count}"></span>`).join("")}</span>` : "";
     const breakdown = d.total > 0 ? `<span class="import-breakdown">${buckets.map(([tone, label, count]) => `<span><span class="dot ${tone}" aria-hidden="true"></span>${label}<strong>${percentage(count)} · ${count}</strong></span>`).join("")}</span>` : "";
@@ -389,6 +390,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         importGradient: stops,
         ...(street.id === highlightedId ? hoverStroke : stroke),
       });
+      // Neutral network traces must not obscure preserved acquisition/import data.
+      if (stops.some(stop => stop.color !== c.never)) layer.bringToFront();
       const label =
         map.getZoom() >= 16 && street.progress.distribution.percent !== null
           ? `${street.progress.distribution.percent}%`

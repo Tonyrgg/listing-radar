@@ -8,7 +8,7 @@ import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js
 const valid = (at: string | null | undefined): at is string => Boolean(at && Number.isFinite(Date.parse(at)));
 export type ImportDistribution = {
   total: number | null; imported: number; percent: number | null;
-  recent: number; aging: number; stale: number; never: number; undated: number;
+  recent: number; aging: number; stale: number; acquired: number; unacquired: number; never: number; undated: number;
   lastImportedAt: string | null; ageDays: number | null; tone: ReturnType<typeof importAge>["tone"];
 };
 
@@ -28,7 +28,11 @@ function importDistribution(state: TerritoryState, keys: string[], total: number
     for (const [key, proof] of Object.entries(run.imports ?? {})) if (proof.crmId) add(key, proof.at);
   }
   const lastImportedAt = [...proofs.values()].filter(valid).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
-  const distribution: ImportDistribution = { total, imported: proofs.size, percent: total ? Math.round(proofs.size / total * 100) : null, recent: 0, aging: 0, stale: 0, never: inventory.size - proofs.size, undated: 0, lastImportedAt, ...importAge(lastImportedAt, now) };
+  // Availability and quarantine do not erase a preserved SISTER acquisition.
+  // Inventory-only rows, however, do not prove that their full data was read.
+  const acquired = [...inventory].filter(key => !proofs.has(key) && state.units[key]?.observations.some(o => o.origin === "sister" || o.origin === "simulation")).length;
+  const never = inventory.size - proofs.size;
+  const distribution: ImportDistribution = { total, imported: proofs.size, percent: total ? Math.round(proofs.size / total * 100) : null, recent: 0, aging: 0, stale: 0, acquired, unacquired: never - acquired, never, undated: 0, lastImportedAt, ...importAge(lastImportedAt, now) };
   for (const at of proofs.values()) {
     const tone = importAge(at, now).tone;
     if (tone === "never") distribution.undated++;

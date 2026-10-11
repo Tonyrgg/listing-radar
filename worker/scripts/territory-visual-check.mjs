@@ -190,6 +190,14 @@ try {
   await page.getByRole("button", { name: "Salva note", exact: true }).click();
   await page.locator('[data-operation="scan"]').click();
   await idle(page, "scan");
+  const acquiredOnly = (await page.evaluate(id => window.territory.detail(id), street.id)).street.progress.distribution;
+  assert.deepEqual([acquiredOnly.imported, acquiredOnly.acquired, acquiredOnly.unacquired], [0, 6, 0]);
+  await page.waitForFunction(() => document.querySelector('.detail-header .import-band.acquired'));
+  assert.equal(await page.locator('.detail-header .import-band').count(), 1, 'La prima acquisizione senza Cloud ha solo la quota blu');
+  await page.waitForFunction(() => {
+    const blue = getComputedStyle(document.documentElement).getPropertyValue('--lr-data-1').trim();
+    return [...window.checkedPaths].some(p => p._map && p.options.importGradient?.every(s => s.color === blue));
+  });
   await page.getByRole("button", { name: "Confronta gestionale", exact: true }).click();
   await until(page, async id => { const d = await window.territory.detail(id); return d.runs.at(-1)?.operation === "compare" && d.runs.at(-1)?.state === "completed"; }, street.id);
   await page.getByRole("tab", { name: "Immobili 5", exact: true }).click();
@@ -281,7 +289,8 @@ try {
     unit.key = ['BITONTO', source.cadastral.urbanSection || '', source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern].join('|');
     unit.observations = [{ at: ago(5), runId: 'mixed-new', streetId: street.id, source, origin: 'simulation' }];
     unit.importedAt = null; unit.crmId = null; unit.assessment = null; unit.journal = [];
-    mixed.units[unit.key] = unit; mixedKeys.push(unit.key);
+    if (i < 70) mixed.units[unit.key] = unit;
+    mixedKeys.push(unit.key);
   }
   mixed.runs = mixed.runs.filter(r => r.streetId !== street.id);
   const scanRecord = { id: 'mixed-old', streetId: street.id, origin: 'simulation', operation: 'scan', state: 'completed', startedAt: ago(150), endedAt: ago(150), itemKeys: mixedKeys, handled: 100, total: 100, error: null };
@@ -290,7 +299,7 @@ try {
   await writeFile(path.join(dataDirectory, 'territory-ledger.json'), JSON.stringify(mixed));
   page = await launch();
   const distribution = (await page.evaluate(id => window.territory.detail(id), street.id)).street.progress.distribution;
-  assert.deepEqual([distribution.recent, distribution.stale, distribution.never, distribution.percent], [33, 17, 50, 50]);
+  assert.deepEqual([distribution.recent, distribution.stale, distribution.acquired, distribution.unacquired, distribution.percent], [33, 17, 20, 30, 50]);
   await page.evaluate(() => {
     window.checkedPaths = new Set();
     const original = L.Path.prototype.setStyle;
@@ -302,20 +311,28 @@ try {
   assert.ok((await summary.textContent()).includes('33% · 33'));
   assert.ok((await summary.textContent()).includes('17% · 17'));
   assert.ok((await summary.textContent()).includes('50% · 50'));
+  assert.ok((await summary.textContent()).includes('20% · 20'));
+  assert.ok((await summary.textContent()).includes('30% · 30'));
+  assert.match(await summary.locator('.import-distribution').getAttribute('aria-label'), /Acquisiti da SISTER.*20%.*Non ancora acquisiti.*30%/);
+  assert.equal(await summary.locator('.import-band.acquired').count(), 1);
   await page.locator('#detail-close').click(); await page.mouse.move(10, 10);
   await page.locator('#tools').evaluate(el => { el.open = true; }); await page.locator('#refresh').click();
   await page.waitForTimeout(500);
   const verifyPixels = async () => {
+    await page.waitForFunction(() => {
+      const layer = [...window.checkedPaths].find(p => p._map && new Set((p.options.importGradient || []).map(s => s.color)).size === 4);
+      return layer && !layer._renderer._redrawRequest;
+    });
     const samples = await page.evaluate(() => {
-      const layer = [...window.checkedPaths].find(p => p._map && new Set((p.options.importGradient || []).map(s => s.color)).size === 3);
+      const layer = [...window.checkedPaths].find(p => p._map && new Set((p.options.importGradient || []).map(s => s.color)).size === 4);
       const ctx = layer._renderer._ctx, bounds = layer._renderer._bounds, scale = L.Browser.retina ? 2 : 1;
-      return [.15, .4, .75].map(fraction => {
+      return [.15, .4, .6, .85].map(fraction => {
         const distance = fraction * layer._importMetrics.total;
         const edge = layer._importMetrics.edges.find(e => e.start + e.length >= distance);
         const offset = (distance - edge.start) / edge.length;
         const point = { x: edge.a.x + (edge.b.x - edge.a.x) * offset, y: edge.a.y + (edge.b.y - edge.a.y) * offset };
         const pixel = [...ctx.getImageData(Math.round((point.x - bounds.min.x) * scale), Math.round((point.y - bounds.min.y) * scale), 1, 1).data];
-        const token = fraction < .33 ? '--lr-ok' : fraction < .5 ? '--lr-danger' : '--lr-data-muted';
+        const token = fraction < .33 ? '--lr-ok' : fraction < .5 ? '--lr-danger' : fraction < .7 ? '--lr-data-1' : '--lr-data-muted';
         const color = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
         return { pixel, color, weight: layer.options.weight };
       });
@@ -327,13 +344,18 @@ try {
     }
   };
   await verifyPixels();
-  await page.screenshot({ path: path.join(output, '08-map-gradient-33-17-50.png') });
+  await page.screenshot({ path: path.join(output, '08-map-gradient-33-17-20-30.png') });
   await page.evaluate(() => { [...window.checkedPaths].find(p => p._map)._map.panBy([40, 20], { animate: false }); });
   await page.waitForTimeout(100); await verifyPixels();
   await page.evaluate(() => { [...window.checkedPaths].find(p => p._map)._map.setZoom(16, { animate: false }); });
   await page.waitForTimeout(100); await verifyPixels();
+  await page.setViewportSize({ width: 390, height: 900 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  const legend = await page.locator('.map-legend').boundingBox();
+  assert.ok(legend.x >= 0 && legend.x + legend.width <= 390 && legend.y + legend.height <= 900, 'Legenda con blu contenuta anche su schermo piccolo');
+  await page.screenshot({ path: path.join(output, '09-legend-blue-mobile.png') });
   await application.close(); application = null;
-  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, popupOnlyOnClick: true, selectedPopupSurvivesHover: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 50], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
+  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, streets: snapshot.streets.length, geometry: snapshot.streets.filter(s => s.geometry).length, setupBeforeAcquisition: true, networkAssociationPersisted: true, rapidHoverReset: true, popupOnlyOnClick: true, selectedPopupSurvivesHover: true, pinnedPreviewThin: true, modalCloseThin: true, mixedGradient: [33, 17, 20, 30], canvasPixelsAndPanZoom: true, units: restored.units.length, applied: 3, manualCorrections: 2, persisted: true, errors, dataDirectory }, null, 2));
   console.log(`Collaudo Electron superato. Schermate: ${output}`);
 } catch (error) {
   if (application) {

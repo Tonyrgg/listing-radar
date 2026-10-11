@@ -1,5 +1,7 @@
 # Property Data Worker
 
+La **0.34.14** distingue sulla mappa V2 gli immobili **acquisiti da SISTER ma mai importati in Cloud** con il blu. Le quote verde/giallo/rosso conservano gli import Cloud verificati anche in run precedenti; il grigio identifica le righe dell’inventario ancora prive di dati acquisiti e, separatamente nel riepilogo, gli import Cloud senza data. I dati acquisiti in quarantena restano blu. I tracciati con dati acquisiti o importati rimangono davanti alla rete grigia agli incroci. Barra, legenda e tracciati usano gli stessi conteggi, senza modificare gli archivi o avviare scritture CRM.
+
 La **0.34.13** conclude le letture SISTER con anomalie di singoli immobili, conservandole nella **Quarantena** della via e in **Strumenti → Quarantena**. Le interruzioni di sessione restano da riprendere. **Applica selezionati** confronta e crea/aggiorna nello stesso avvio, senza richiedere un confronto preliminare; le ambiguità prima delle scritture vengono accantonate. Il subalterno può restare vuoto, senza inventare valori o sovrascrivere un'altra unità. [Comportamento e verifiche](../docs/PROPERTY-WORKER-QUARANTINE.md).
 
 La **0.34.12** recupera automaticamente il gestionale quando la scheda è aperta ma non pilotabile: apre l'ingresso CRM nella stessa sessione, verifica che risponda e lo riusa anche nelle riprese. La scheda originale resta intatta, inclusi eventuali moduli non salvati. Il controllo periodico SISTER non dipende più dal gestionale. [Diagnosi e comportamento del recupero](../docs/PROPERTY-WORKER-CHROME-RECOVERY.md).

@@ -69,12 +69,14 @@
         <div id="hover" class="hover-panel" hidden></div>
         <div
           class="map-legend"
-          aria-label="Quote di immobili per età dell'ultimo import verificato"
+          aria-label="Acquisizione SISTER e quote di immobili per età dell'ultimo import Cloud verificato"
         >
-          <strong>Immobili della via</strong><span class="dot never"></span>Mai importati / data assente
-          <span class="dot recent"></span>≤30 giorni
-          <span class="dot aging"></span>31–90 giorni
-          <span class="dot stale"></span>Oltre 90 giorni
+          <strong>Immobili della via</strong>
+          <span class="legend-item"><span class="dot never" aria-hidden="true"></span>Non acquisiti / data Cloud assente</span>
+          <span class="legend-item"><span class="dot acquired" aria-hidden="true"></span>SISTER · mai in Cloud</span>
+          <span class="legend-item"><span class="dot recent" aria-hidden="true"></span>Cloud ≤30 giorni</span>
+          <span class="legend-item"><span class="dot aging" aria-hidden="true"></span>31–90 giorni</span>
+          <span class="legend-item"><span class="dot stale" aria-hidden="true"></span>Oltre 90 giorni</span>
         </div>
         <div id="run-progress" class="run-progress" hidden></div>
         <div id="map-offline" class="map-offline" hidden>

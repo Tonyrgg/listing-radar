@@ -275,8 +275,13 @@ h3 {
   font-size: var(--lr-text-label);
   max-width: calc(100% - 80px);
 }
+.map-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .map-legend .dot {
-  margin-left: 6px;
+  flex-shrink: 0;
 }
 .dot {
   display: inline-block;
@@ -296,6 +301,9 @@ h3 {
 }
 .dot.never {
   background: var(--lr-data-muted);
+}
+.dot.acquired {
+  background: var(--lr-data-1);
 }
 .hover-panel {
   position: absolute;
@@ -378,6 +386,7 @@ h3 {
 .import-band.recent { background: var(--lr-ok); }
 .import-band.aging { background: var(--lr-warn); }
 .import-band.stale { background: var(--lr-danger); }
+.import-band.acquired { background: var(--lr-data-1); }
 .import-summary .import-breakdown {
   display: grid;
   gap: 6px;
