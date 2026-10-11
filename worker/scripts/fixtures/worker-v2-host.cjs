@@ -20,4 +20,10 @@ global.fetch = async input => {
   }
   throw new Error('External services excluded from integration test');
 };
-void import(pathToFileURL(path.join(process.env.WORKER_V2_TEST_ROOT, 'dist-desktop/desktop/main.js')).href);
+void (async () => {
+  const { TerritoryApplication } = await import(pathToFileURL(path.join(process.env.WORKER_V2_TEST_ROOT, 'dist-desktop/territory/application.js')).href);
+  const original = TerritoryApplication.prototype.snapshot;
+  global.__v2SnapshotReads = 0;
+  TerritoryApplication.prototype.snapshot = function (...args) { global.__v2SnapshotReads++; return original.apply(this, args); };
+  await import(pathToFileURL(path.join(process.env.WORKER_V2_TEST_ROOT, 'dist-desktop/desktop/main.js')).href);
+})();

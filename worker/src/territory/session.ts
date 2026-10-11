@@ -73,12 +73,15 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     if (syncing) throw new Error("Memoria V2 occupata: acquisizione conservata in attesa");
     syncing = true;
     try {
-      const facts = await consumePropertyMemory(options.profileDirectory, async memory => { await store.change(state => {
-        rememberCheckpoint(state, memory);
-        const matches = matchHistoricalStreet(memory.source, state.streets, state.historicalStreetMappings?.[memory.source.sourcePropertyId]);
-        const unit = state.units[unitKey(memory.source)]!;
-        if (matches.length === 1 && !unit.streetIds.includes(matches[0]!.id)) unit.streetIds.push(matches[0]!.id);
-      }); });
+      const adoptMemories = async (memories: import("../import-v2/memory-store.js").PropertyMemory[]) => { await store.change(state => {
+        for (const memory of memories) {
+          rememberCheckpoint(state, memory);
+          const matches = matchHistoricalStreet(memory.source, state.streets, state.historicalStreetMappings?.[memory.source.sourcePropertyId]);
+          const unit = state.units[unitKey(memory.source)]!;
+          if (matches.length === 1 && !unit.streetIds.includes(matches[0]!.id)) unit.streetIds.push(matches[0]!.id);
+        }
+      }); };
+      const facts = await consumePropertyMemory(options.profileDirectory, memory => adoptMemories([memory]), adoptMemories);
       const count = facts + await consumeAcquisitions(options.profileDirectory, snapshot => adoptHistory(store, snapshot));
       if (count) notify();
     } catch (error) {
@@ -130,7 +133,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       ipcMain.handle(`territory:${name}`, (event, value) => {
         if (event.sender !== options.contents || event.senderFrame !== options.contents.mainFrame) throw new Error("Richiesta non autorizzata");
         if (closing && !["snapshot", "detail", "sync-status", "pause"].includes(name)) throw new Error("Worker V2 si sta chiudendo: attendo il checkpoint");
-        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
+        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove", "queue-clear"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
         return handler(value);
       });
     };
@@ -148,7 +151,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(config, null, 2), { mode: 0o600 });
         await rename(`${file}.tmp`, file);
-        provider.configure(config); liveConfig = config; notify();
+        provider.configure(config); liveConfig = config; application.refreshAuthorization();
         return { selected: config.allowedCadastralKeys.length, allowCreate: config.allowCreate };
       } finally { syncing = false; }
     });
@@ -169,6 +172,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("queue", () => application.importQueue());
     handle("queue-add", value => { const v = z.object({ keys: z.array(id).min(1).max(10000), streetId: id.optional() }).strict().parse(value); return application.enqueue(v.keys, v.streetId); });
     handle("queue-remove", value => { const v = z.object({ keys: z.array(id).min(1).max(10000) }).strict().parse(value); return application.dequeue(v.keys); });
+    handle("queue-clear", value => { const v = z.object({ revision: z.number().int().nonnegative() }).strict().parse(value); return application.clearQueue(v.revision); });
     handle("quarantine", () => application.quarantineList());
     handle("unit-detail", value => application.unitDetail(id.parse(value)));
     handle("query-catalog", () => application.queryCatalog());

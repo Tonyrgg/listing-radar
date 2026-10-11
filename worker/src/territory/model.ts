@@ -64,3 +64,16 @@ export function streetSummary(state: TerritoryState, street: Street) {
   return { ...street, acquisitionState: lastScan?.state ?? null, quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && streetIds.includes(q.streetId)).length, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds) };
 }
 export function relatedStreetIds(state: TerritoryState, id: string) { return [id, ...Object.entries(state.networkBindings ?? {}).filter(([, binding]) => binding.officialId === id).map(([networkId]) => networkId)]; }
+
+/** Index membership once. Keep all runs and streets for inventory recognition
+ * and cross-street import proofs, exactly as in the individual dossier. */
+export function streetSummaries(state: TerritoryState) {
+  const members = new Map<string, Record<string, Unit>>();
+  for (const unit of Object.values(state.units)) for (const id of unit.streetIds) {
+    const canonical = state.networkBindings?.[id]?.officialId ?? id;
+    let group = members.get(canonical);
+    if (!group) members.set(canonical, group = {});
+    group[unit.key] = unit;
+  }
+  return state.streets.filter(s => !s.linkedOfficialId).map(street => streetSummary({ ...state, units: members.get(street.id) ?? {} }, street));
+}

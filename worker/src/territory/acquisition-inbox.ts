@@ -49,12 +49,21 @@ export async function queuePropertyMemory(profile: string, memory: PropertyMemor
     await unlink(temporary);
   }
 }
-export async function consumePropertyMemory(profile: string, adopt: (memory: PropertyMemory) => Promise<void>) {
+export async function consumePropertyMemory(profile: string, adopt: (memory: PropertyMemory) => Promise<void>, adoptBatch?: (memories: PropertyMemory[]) => Promise<void>) {
   const folder = path.join(profile, "property-inbox"); let files: string[];
   try { files = (await readdir(folder)).filter(name => /^[a-f0-9]{64}\.json$/.test(name)); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0; throw error; }
   const records = await Promise.all(files.map(async name => ({ file: path.join(folder, name), value: JSON.parse(await readFile(path.join(folder, name), "utf8")) as PropertyMemory })));
   records.sort((a, b) => Date.parse(a.value.at) - Date.parse(b.value.at));
+  let batch: typeof records = [];
+  const flush = async () => {
+    if (!batch.length) return;
+    await adoptBatch!(batch.map(r => r.value));
+    // Acknowledge only after the caller's atomic ledger commit. A crash between
+    // commit and unlink replays idempotent facts, rather than losing evidence.
+    for (const record of batch) await unlink(record.file);
+    batch = [];
+  };
   for (const record of records) {
     if (record.value.version !== 1) throw new Error("Memoria immobile non riconosciuta");
     try { unitKey(record.value.source); if (record.value.source.municipality.trim().toUpperCase() !== "BITONTO") throw new Error("Fuori perimetro"); }
@@ -63,7 +72,9 @@ export async function consumePropertyMemory(profile: string, adopt: (memory: Pro
       const unresolved = path.join(profile, "property-unresolved"); await mkdir(unresolved, { recursive: true });
       await rename(record.file, path.join(unresolved, path.basename(record.file))); continue;
     }
-    await adopt(record.value); await unlink(record.file);
+    if (adoptBatch) { batch.push(record); if (batch.length === 50) await flush(); }
+    else { await adopt(record.value); await unlink(record.file); }
   }
+  if (adoptBatch) await flush();
   return records.length;
 }

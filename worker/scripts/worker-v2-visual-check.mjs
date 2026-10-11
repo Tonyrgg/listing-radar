@@ -51,7 +51,19 @@ try {
   await page.locator('#street-note').fill('Nota aperta durante cambio sezione');
   await shell.locator('[data-scroll="refinement"]').click();
   assert.equal(await shell.locator('#refinement').isVisible(), true);
+  // Instrument only the fixture main process. Hidden renderer updates must not
+  // calculate the map, even while ordinary imports feed the V2 memory.
+  await page.waitForTimeout(500);
+  await application.evaluate(() => { global.__v2SnapshotReads = 0; });
+  await application.evaluate(({ BrowserWindow }) => {
+    const view = BrowserWindow.getAllWindows()[0].contentView.children.at(-1);
+    for (let i = 0; i < 10; i++) view.webContents.send('territory:changed');
+  });
+  await page.waitForTimeout(500);
+  assert.equal(await application.evaluate(() => global.__v2SnapshotReads), 0, 'La vista nascosta non ricalcola la mappa');
   await shell.locator('[data-scroll="worker-v2"]').click();
+  await page.waitForTimeout(500);
+  assert.ok(await application.evaluate(() => global.__v2SnapshotReads) > 0, 'Il ritorno alla mappa recupera gli aggiornamenti');
   assert.equal(await page.locator('#street-note').inputValue(), 'Nota aperta durante cambio sezione');
   await page.getByRole('button', { name: 'Salva note', exact: true }).click();
   await page.locator('#detail-close').click();

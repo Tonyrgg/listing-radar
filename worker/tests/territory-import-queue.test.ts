@@ -31,6 +31,46 @@ async function setup() {
   return { app, store, directory, keys, routes, interrupt: () => { failure = true; } };
 }
 describe("Coda centrale degli import V2", () => {
+  it("svuota anche casi bloccati e conserva dati, piani incerti e prove dopo il riavvio", async () => {
+    const { app, store, directory, keys } = await setup();
+    await app.enqueue(keys);
+    await store.change(state => {
+      const source = effectiveSource(state.units[keys[0]!]!);
+      const plan = buildPlan(source);
+      state.checkpoints[source.sourcePropertyId] = { itemId: "uncertain", jobId: source.jobId, propertyId: source.sourcePropertyId, stage: "property_synced", plan, people: [], syncedPeople: [], propertyResolution: null, crmPropertyId: "uncertain-crm", attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: "2026-10-11T10:00:00Z" };
+      state.importQueue!.missing = { id: "missing", key: "missing", streetId: "a", addedAt: "2026-10-11T10:00:00Z" };
+    });
+    const before = store.read(), queue = app.importQueue();
+    expect(queue.entries.filter(e => e.problem)).toHaveLength(2);
+    expect(await app.clearQueue(queue.revision)).toBe(3);
+    const after = store.read();
+    expect(after.checkpoints).toEqual(before.checkpoints);
+    expect(after.runs).toEqual(before.runs);
+    expect(after.virtualCrm).toEqual(before.virtualCrm);
+    for (const key of keys) {
+      const { journal: oldJournal, ...oldData } = before.units[key]!;
+      const { journal: newJournal, ...newData } = after.units[key]!;
+      expect(newData).toEqual(oldData);
+      expect(newJournal!.slice(0, oldJournal!.length)).toEqual(oldJournal);
+      expect(newJournal!.at(-1)!.kind).toBe("queue_removed");
+    }
+    const reopened = await TerritoryStore.open(directory, streets);
+    expect(reopened.read().importQueue).toEqual({});
+    expect(reopened.read().checkpoints).toEqual(before.checkpoints);
+    await app.enqueue([keys[1]!]);
+    expect(app.importQueue().entries[0]!.id).not.toBe(before.importQueue![keys[1]!]!.id);
+  });
+  it("non svuota una coda cambiata dopo la conferma o occupata da un lavoro", async () => {
+    const { app, store, keys } = await setup();
+    await app.enqueue([keys[0]!]); const revision = app.importQueue().revision;
+    await app.enqueue([keys[1]!]); const before = store.read();
+    await expect(app.clearQueue(revision)).rejects.toThrow("cambiata");
+    expect(store.read()).toEqual(before);
+    await app.startQueue(keys);
+    await expect(app.clearQueue(store.revision)).rejects.toThrow("corso");
+    await app.waitForIdle();
+    expect(await app.clearQueue(store.revision)).toBe(0);
+  });
   it("conserva ordine e identità senza duplicare immobili o avviare scritture", async () => {
     const { app, store, directory, keys } = await setup();
     const before = store.read().virtualCrm;
@@ -68,6 +108,7 @@ describe("Coda centrale degli import V2", () => {
     await app.enqueue(keys); await app.startQueue(keys); await app.waitForIdle();
     expect(app.importQueue().entries).toHaveLength(0);
     expect(store.read().runs.at(-1)!.state).toBe("completed");
+    expect(store.read().runs.at(-1)!.handled).toBe(2);
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys);
     expect(routes).toEqual(["a", "b"]);
   });

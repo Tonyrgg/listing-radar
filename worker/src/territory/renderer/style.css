@@ -50,6 +50,10 @@ button.primary {
 button.primary:hover {
   background: var(--lr-accent-hover);
 }
+button.danger {
+  color: var(--lr-danger);
+  border-color: var(--lr-danger);
+}
 button.quiet {
   border-color: transparent;
   background: transparent;
@@ -1442,3 +1446,5 @@ button[aria-busy="true"] {
 .quarantine-item > button { margin-top: 12px; }
 
 .unit-edit-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.queue-heading { flex-wrap: wrap; }
+.queue-clear-confirmation .actions { margin-top: 24px; }

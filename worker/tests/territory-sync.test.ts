@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -30,6 +30,22 @@ async function setup() {
   return { store, directory, sync, remote: () => remote!, calls: () => calls, uncertain: () => { uncertain = true; }, conflict: () => { conflict = true; }, beforeRead: (f: () => Promise<void>) => { beforeRead = f; } };
 }
 describe("Memoria Territorio separata, revisioni e recupero", () => {
+  it("riusa l'impronta di stato senza ignorare modifiche, recuperi o commit falliti", async () => {
+    const { store, sync } = await setup(); await sync.push();
+    const read = vi.spyOn(store, "read");
+    expect((await sync.status()).pending).toBe(false);
+    await sync.status(); expect(read).toHaveBeenCalledTimes(1);
+    const revision = store.revision;
+    await expect(store.change(s => { s.events.push({ id: "bad", streetId: "123", at: "", text: "" }); throw new Error("abort"); })).rejects.toThrow("abort");
+    expect(store.revision).toBe(revision);
+    await sync.status(); expect(read).toHaveBeenCalledTimes(1);
+    await store.change(s => { s.memories[street.id]!.note = "Nuovo dato"; });
+    expect((await sync.status()).pending).toBe(true);
+    const replacement = store.read(); replacement.memories[street.id]!.note = "";
+    await store.replace(replacement);
+    expect((await sync.status()).pending).toBe(false);
+    vi.restoreAllMocks();
+  });
   it("sincronizza la coda persistente e conserva iscrizioni locali in caso di conflitto", async () => {
     const t = await setup();
     const entry = { id: "entry", key: "unit-key", streetId: street.id, addedAt: "2026-10-11T10:00:00Z" };

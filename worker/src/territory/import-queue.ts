@@ -4,7 +4,11 @@ import { runSettings } from "./run-options.js";
 
 export type ImportQueueEntry = { id: string; key: string; streetId: string; addedAt: string };
 export function queueStreet(state: TerritoryState, unit: Unit, preferred?: string) {
-  const canonical = (id: string) => state.streets.find(s => s.id === (state.streets.find(s => s.id === id)?.linkedOfficialId ?? id) && !s.needsReview);
+  const canonical = (id: string) => {
+    const street = state.streets.find(s => s.id === id);
+    const target = street?.linkedOfficialId ? state.streets.find(s => s.id === street.linkedOfficialId) : street;
+    return target?.needsReview ? undefined : target;
+  };
   const streets = [...new Map(unit.streetIds.map(canonical).filter(s => s).map(s => [s!.id, s!])).values()];
   if (preferred) return streets.find(s => s.id === canonical(preferred)?.id);
   const observed = [...unit.observations].reverse().find(o => o.streetId)?.streetId;

@@ -225,21 +225,15 @@ const esc = (value) =>
         c
       ],
   );
+const timeFormatter = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
+const dateFormatter = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const fmtTime = (value) =>
   value
-    ? new Intl.DateTimeFormat("it-IT", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(value))
+    ? timeFormatter.format(new Date(value))
     : "—";
 const fmtDate = (value) =>
   value
-    ? new Intl.DateTimeFormat("it-IT", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(value))
+    ? dateFormatter.format(new Date(value))
     : "—";
 const guide = (step) =>
   GUIDE[step] ?? {

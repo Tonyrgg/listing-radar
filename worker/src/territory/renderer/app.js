@@ -13,10 +13,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
 /* The renderer receives data and explicit commands only, never filesystem or credentials. */
 (() => {
   const api = window.territory;
+  let viewVisible = true, appearanceDirty = false;
   api.onAppearance?.((value) => {
+    const themeChanged = document.documentElement.dataset.theme !== value.theme;
+    appearanceDirty ||= themeChanged;
+    viewVisible = value.visible !== false;
     document.body.classList.toggle("integrated", value.integrated);
     document.documentElement.dataset.theme = value.theme;
-    if (snapshot) paint();
+    if (snapshot && appearanceDirty && viewVisible) { paint(); appearanceDirty = false; }
   });
   const $ = (id) => document.getElementById(id);
   const escape = (value) =>
@@ -31,14 +35,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           "'": "&#39;",
         })[c],
     );
-  const date = (value) =>
-    value
-      ? new Date(value).toLocaleString("it-IT", {
-          dateStyle: "short",
-          timeStyle: "short",
-          timeZone: "Europe/Rome",
-        })
-      : "Non ancora acquisita";
+  const dateFormatter = new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Rome" });
+  const date = (value) => {
+    if (!value) return "Non ancora acquisita";
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? dateFormatter.format(parsed) : "Data non disponibile";
+  };
   const qty = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const decisions = {
     unknown: "Confronto da eseguire o incompleto",
@@ -1003,12 +1005,23 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     });
     await refresh();
   }
-  async function refresh() {
+  let refreshTask = null, refreshAgain = false;
+  function refresh() {
+    if (refreshTask) { refreshAgain = true; return refreshTask; }
+    refreshTask = (async () => {
+      do { refreshAgain = false; await refreshOnce(); } while (refreshAgain && viewVisible);
+    })().finally(() => { refreshTask = null; });
+    return refreshTask;
+  }
+  async function refreshOnce() {
     const currentRequest = ++request;
+    const requestedStreet = selectedStreet;
     const next = await api.snapshot();
-    const nextDetail = selectedStreet ? await api.detail(selectedStreet) : null;
+    const dataChanged = !snapshot || next.revision !== snapshot.revision || next.presentationRevision !== snapshot.presentationRevision || next.minute !== snapshot.minute;
+    const runChanged = next.activeRun?.id !== snapshot?.activeRun?.id;
+    const nextDetail = requestedStreet ? dataChanged || !detail || detail.street.id !== requestedStreet ? await api.detail(requestedStreet) : detail : null;
     const memory = await api.syncStatus();
-    if (currentRequest !== request) return;
+    if (currentRequest !== request || requestedStreet !== selectedStreet) return;
     snapshot = next;
     detail = nextDetail;
     notifyRunIssue(detail?.runs.at(-1));
@@ -1072,6 +1085,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       snapshot.origin === "simulation"
         ? "Le vie sono reali. Immobili e gestionale sono simulati; il lavoro di prova resta conservato in questo laboratorio."
         : "Profilo di prova separato. Le scritture sono limitate alle identità catastali concordate; consulta il piano prima di applicare.";
+    if (!dataChanged && !runChanged && !next.error) return;
     const present = new Set(
       snapshot.streets.filter((s) => s.geometry).map((s) => s.id),
     );
@@ -1512,15 +1526,15 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   api.onChange(() => {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => {
-      refresh().catch((error) => feedback(error.message, true));
-    }, 80);
+      if (viewVisible) refresh().catch((error) => feedback(error.message, true));
+    }, 250);
   });
   setInterval(() => {
-    if (document.visibilityState === "visible" && !syncBusy)
+    if (viewVisible && document.visibilityState === "visible" && !syncBusy)
       refresh().catch((error) => feedback(error.message, true));
   }, 60000);
   window.addEventListener("focus", () => {
-    if (snapshot && !syncBusy)
+    if (viewVisible && snapshot && !syncBusy)
       refresh().catch((error) => feedback(error.message, true));
   });
   function archiveFailure(error) {

@@ -69,6 +69,7 @@ try {
   await form.evaluate(el => el.closest('details').open = true);
   await form.locator('[name=address]').fill(streets[0].name + ' N. 14 Piano 2');
   await form.locator('[name=note]').fill('Nota permanente dalla coda');
+  await page.locator('#queue-empty').click(); assert.equal(await page.locator('#queue-empty-confirm').count(), 0, 'Non svuota con correzioni non salvate');
   await page.locator('#queue-clear').click(); assert.equal(await form.locator('[name=note]').inputValue(), 'Nota permanente dalla coda', 'Selezione non perde modifiche');
   await form.getByRole('button', { name: 'Salva correzioni', exact: true }).click();
   await until(async key => (await window.territory.unitDetail(key)).note === 'Nota permanente dalla coda', first.key);
@@ -92,9 +93,31 @@ try {
   }
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.locator('#queue-search').fill(first.key);
+  await page.waitForFunction(() => document.querySelectorAll('#queue-content [data-unit]').length === 1);
   assert.equal(await page.locator('[data-unit]').count(), 1, 'Ricerca catastale nella coda');
   assert.ok((await page.locator('.queue-selection strong').textContent()).includes('1 fuori dalla ricerca'));
-  await page.locator('#queue-search').fill(''); await page.locator('#queue-continue').click();
+  await page.locator('#queue-empty').click();
+  assert.ok((await page.locator('.queue-clear-confirmation').textContent()).includes('tutti i 2 immobili'), 'La conferma comprende anche risultati nascosti');
+  await page.screenshot({ path: path.join(output, 'queue-clear-1600.png') });
+  await page.setViewportSize({ width: 390, height: 860 });
+  assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false, 'Conferma senza overflow');
+  await page.screenshot({ path: path.join(output, 'queue-clear-390.png') });
+  await page.locator('#queue-empty-cancel').click();
+  assert.equal((await page.evaluate(() => window.territory.queue())).entries.length, 2);
+  const beforeClear = JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8'));
+  await page.locator('#queue-empty').click(); await page.locator('#queue-empty-confirm').click();
+  await page.locator('.queue-empty').waitFor();
+  const afterClear = JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8'));
+  assert.deepEqual(afterClear.checkpoints, beforeClear.checkpoints);
+  assert.deepEqual(afterClear.virtualCrm, beforeClear.virtualCrm);
+  assert.deepEqual(Object.keys(afterClear.units), Object.keys(beforeClear.units));
+  assert.equal(afterClear.units[first.key].note, 'Nota permanente dalla coda');
+  await app.close(); app = null; await launch();
+  assert.equal((await page.evaluate(() => window.territory.queue())).entries.length, 0, 'Svuotamento conservato al riavvio');
+  await page.evaluate(keys => window.territory.enqueue({ keys }), [first.key, second.key]);
+  await page.locator('#queue-manager').click();
+  await page.setViewportSize({ width: 1600, height: 960 });
+  await page.locator('#queue-continue').click();
   assert.equal(await page.locator('[data-unit]').count(), 0, 'Il riepilogo separa le opzioni dalle card');
   assert.equal(await page.locator('.queue-review-list li').count(), 2);
   assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8')).virtualCrm, ledgerBefore.virtualCrm, 'Controllare il piano non scrive');
@@ -143,6 +166,6 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector('.map-toolbar').getBoundingClientRect().right <= innerWidth), true);
   await page.screenshot({ path: path.join(output, 'map-390.png') });
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, persistentQueue: true, multiStreet: true, permanentEdits: true, combinedStreetFilters: true, queryEnqueue: true, noPrematureWrites: true, verifiedImportsRemoved: true, guidedReview: true, stoppedBatchesDoNotBlock: true, archivedRunsDoNotAlert: true, errors }, null, 2));
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, persistentQueue: true, clearEntireQueue: true, clearConfirmation: true, clearPreservesDataAndHistory: true, multiStreet: true, permanentEdits: true, combinedStreetFilters: true, queryEnqueue: true, noPrematureWrites: true, verifiedImportsRemoved: true, guidedReview: true, stoppedBatchesDoNotBlock: true, archivedRunsDoNotAlert: true, errors }, null, 2));
   console.log('Coda persistente, filtri, correzioni permanenti e import centralizzato verificati in Electron simulato.');
 } finally { if (app) await app.close(); }

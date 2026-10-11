@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   queue: () => ipcRenderer.invoke('territory:queue'),
   enqueue: value => ipcRenderer.invoke('territory:queue-add', value),
   dequeue: value => ipcRenderer.invoke('territory:queue-remove', value),
+  clearQueue: value => ipcRenderer.invoke('territory:queue-clear', value),
   quarantine: () => ipcRenderer.invoke('territory:quarantine'),
   unitDetail: id => ipcRenderer.invoke('territory:unit-detail', id),
   queryCatalog: () => ipcRenderer.invoke('territory:query-catalog'),

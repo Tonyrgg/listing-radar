@@ -1,5 +1,41 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.17: svuotamento della coda e prestazioni
+
+**Coda immobili → Svuota coda** rimuove tutte le iscrizioni, comprese quelle nascoste dalla ricerca o bloccate per dati incompleti. La conferma mostra il totale; Annulla conserva la selezione. Immobili, correzioni permanenti, acquisizioni, date di import, storico e checkpoint incerti restano nell’archivio. Si può accodare di nuovo un immobile. Non è possibile svuotare durante un lavoro; il backend verifica atomicamente la revisione confermata e rifiuta una coda cambiata nel frattempo. Lo svuotamento resta conservato al riavvio e si sincronizza con l’archivio esistente, senza migrazioni SQL.
+
+Le ottimizzazioni riguardano:
+
+- Ricerca della via nella coda: elimina una ricerca annidata sul catalogo, preservando le associazioni ufficiali.
+- Mappa: indicizza le appartenenze degli immobili una volta; riusa il riepilogo finché non cambiano la revisione salvata, il lavoro attivo o il minuto. Il rinnovo temporale aggiorna l’età degli import. Le risposte sono copie indipendenti, non riferimenti modificabili all’archivio.
+- Sincronizzazione: l’impronta locale si ricalcola solo dopo un commit o un recupero. Il registro di sincronizzazione viene comunque riletto. Pull, push, conflitti e verifiche remote restano invariati.
+- Interfaccia: aggiornamenti serializzati, notifiche accorpate, nessun ridisegno per dati invariati, nessun refresh della vista V2 nascosta. Tornando alla mappa si recupera lo stato corrente. La shell del worker precedente si aggiorna al cambio del flag occupato, anziché a ogni checkpoint V2. Selezionare in coda mantiene le card e i form montati; ricerca con debounce 180 ms. I formati delle date sono riusati nelle due interfacce.
+- Persistenza: gli import ordinari consegnano fatti durevoli al V2; l’adozione li applica in blocchi di massimo 50 con un commit atomico. I file originali vengono rimossi soltanto dopo il commit; un’interruzione lascia fatti da rileggere senza duplicare lo storico. Nell’import V2 il completamento salva prova e audit insieme, e la transazione dell’esito conserva anche il cursore. Restano tutti i checkpoint intermedi e le riletture CRM.
+
+Misure locali sull’identica copia del profilo reale (1.350 immobili, 2.043 vie, archivio 5,88 MB), con tre letture per operazione:
+
+| Operazione | Prima | Dopo |
+| --- | --- | --- |
+| Coda, lettura backend | 1.129–1.323 ms | 34–38 ms |
+| Riepilogo mappa, prima lettura | 733–786 ms | circa 110 ms |
+| Riepilogo mappa invariato | 733–786 ms | circa 14 ms |
+| Stato sincronizzazione invariato | impronta ricalcolata a ogni refresh | circa 0,1–0,2 ms |
+| Costruzione HTML di 100 card con date | circa 22 ms | circa 2–4 ms |
+
+Sono misure di elaborazione locale: non misurano tempi SISTER/Tecnocloud, rete o layout del browser. Lo script verifica anche che il riepilogo indicizzato coincida con quello originale e che i due modi di costruire le card producano lo stesso HTML.
+
+Per ripetere il controllo, compilare Territorio e lanciare da root:
+
+```powershell
+npm.cmd --prefix worker run territory:compile
+node worker/scripts/territory-performance-check.mjs "$env:APPDATA/ListingRadarTerritoryLab-live"
+```
+
+Lo script usa una copia temporanea, verifica l’integrità dell’originale e stampa soltanto conteggi, dimensioni e durate. Non apre browser né contatta Supabase. Il collaudo Electron verifica conferma/annullamento, ricerca, conservazione delle correzioni, riavvio, vista nascosta e layout 390/1024/1600 px; le regressioni coprono anche coda cambiata, lavoro attivo, piani incerti e commit falliti. Nessuna prova scrive nel CRM reale.
+
+La regressione finale comprende **98 gruppi e 815 test** (i due file CRM con molte istanze Chrome vengono eseguiti separatamente), oltre ai collaudi Electron. Una copia successiva del profilo reale verifica lo svuotamento di 51 iscrizioni, mantenendo tutti i 1.350 immobili, checkpoint, dati e storico; l’originale rimane invariato.
+
+
 ## Versione 0.34.16: un ciclo per immobile, un percorso guidato
 
 Il flusso è **acquisisci da SISTER → scegli gli immobili → aggiungi alla coda → controlla il riepilogo → avvia import**. La scheda via propone selezione e accodamento; aggiornamento SISTER e consultazione facoltativa del CRM sono nelle impostazioni. Il confronto necessario avviene automaticamente dalla coda, prima di ogni scrittura. Nelle card si leggono indirizzo, civico/piano, catasto, ultimo import riuscito e intestatari; esiti tecnici e tentativi sono nei dettagli. Il filtro principale distingue mai importati, entro 30 giorni, da 31 a 90 e oltre 90.

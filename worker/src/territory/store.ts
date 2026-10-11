@@ -12,6 +12,9 @@ import { hydrateQuarantine } from "./quarantine.js";
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
 export class TerritoryStore {
   private queue: Promise<unknown> = Promise.resolve();
+  private committedRevision = 0;
+  /** Advances only after the atomic file replacement succeeds. */
+  get revision() { return this.committedRevision; }
   private constructor(private readonly filename: string, private state: TerritoryState) {}
   static async open(directory: string, streets: Street[]) {
     await mkdir(directory, { recursive: true });
@@ -65,7 +68,7 @@ export class TerritoryStore {
       hydrateImportQueue(next, true);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, this.filename); this.state = next;
+      await rename(temporary, this.filename); this.state = next; this.committedRevision++;
     });
     this.queue = operation.catch(() => undefined);
     await operation;
@@ -78,6 +81,7 @@ export class TerritoryStore {
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
       await rename(temporary, this.filename);
       this.state = next;
+      this.committedRevision++;
       return result;
     });
     this.queue = operation.catch(() => undefined);

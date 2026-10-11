@@ -36,6 +36,7 @@ function validateState(state: TerritoryState, kind: TerritorySyncConfig["profile
 }
 export class TerritorySync {
   private readonly client: SupabaseClient;
+  private digestCache: { revision: number; hash: string } | null = null;
   constructor(private readonly store: TerritoryStore, private readonly directory: string, private readonly config: TerritorySyncConfig, client?: SupabaseClient, approvedUrl?: string) {
     if (config.environment === "online") onlineSyncConfig(config, approvedUrl ?? "http://localhost"); else localSyncConfig(config);
     this.client = client ?? createClient(config.url, config.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15000) }) } });
@@ -67,7 +68,11 @@ export class TerritorySync {
     }
     return data;
   }
-  async status() { const binding = await this.binding(); return { configured: true, environment: this.config.environment ?? "locale", revision: binding.revision, syncedAt: binding.syncedAt, pending: territoryDigest(this.store.read()) !== binding.localHash }; }
+  async status() {
+    const binding = await this.binding();
+    if (this.digestCache?.revision !== this.store.revision) this.digestCache = { revision: this.store.revision, hash: territoryDigest(this.store.read()) };
+    return { configured: true, environment: this.config.environment ?? "locale", revision: binding.revision, syncedAt: binding.syncedAt, pending: this.digestCache.hash !== binding.localHash };
+  }
   async reconcile() {
     const [binding, remote] = await Promise.all([this.binding(), this.remote()]);
     if (remote && remote.revision > binding.revision) {

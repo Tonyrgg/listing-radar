@@ -18,6 +18,8 @@ export class WorkerV2Host {
   private session: Awaited<ReturnType<typeof openTerritorySession>> | null = null;
   private opening: Promise<void> | null = null;
   private disposed = false;
+  private shown = false;
+  private publishedActive = false;
   private viewport: Viewport | null = null;
   private memoryQueue: Promise<unknown> = Promise.resolve();
   constructor(private readonly parent: BrowserWindow, private readonly options: {
@@ -37,7 +39,11 @@ export class WorkerV2Host {
   async pause() { this.session?.application.pause(); await this.session?.application.waitForIdle(); }
   async update(value: unknown) {
     this.viewport = workerV2Viewport.parse(value);
-    if (!this.viewport.visible) { this.view?.setVisible(false); return { ready: Boolean(this.session) }; }
+    if (!this.viewport.visible) {
+      this.view?.setVisible(false); this.shown = false;
+      this.view?.webContents.send("territory:appearance", { integrated: true, theme: this.viewport.theme, visible: false });
+      return { ready: Boolean(this.session) };
+    }
     await this.ensureOpen();
     this.layout();
     return { ready: true };
@@ -76,8 +82,9 @@ export class WorkerV2Host {
     const x = Math.min(bounds.x, width), y = Math.min(bounds.y, height);
     this.view.setBounds({ x, y, width: Math.max(0, Math.min(bounds.width, width - x)), height: Math.max(0, Math.min(bounds.height, height - y)) });
     this.view.setVisible(visible);
-    this.view.webContents.send("territory:appearance", { integrated: true, theme });
-    if (visible) this.view.webContents.send("territory:changed");
+    this.view.webContents.send("territory:appearance", { integrated: true, theme, visible });
+    if (visible && !this.shown) this.view.webContents.send("territory:changed");
+    this.shown = visible;
   }
   private async open() {
     const view = new WebContentsView({ webPreferences: { preload: path.join(this.options.assetDirectory, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, partition: "persist:worker-v2" } });
@@ -86,8 +93,14 @@ export class WorkerV2Host {
     view.webContents.on("will-navigate", event => event.preventDefault());
     this.view = view;
     try {
-      this.session = await openTerritorySession({ ...this.options, contents: view.webContents, parent: this.parent, live: !this.options.simulation, integrated: true, openBrowser: () => this.openBrowser() });
+      this.session = await openTerritorySession({ ...this.options, contents: view.webContents, parent: this.parent, live: !this.options.simulation, integrated: true, openBrowser: () => this.openBrowser(), changed: () => {
+        // The shell needs only the busy flag. Property checkpoints and map
+        // updates belong to the V2 renderer, not to the full legacy dashboard.
+        const active = this.active;
+        if (active !== this.publishedActive) { this.publishedActive = active; this.options.changed(); }
+      } });
       await view.webContents.loadFile(path.join(this.options.assetDirectory, "renderer/index.html"));
+      view.webContents.send("territory:appearance", { integrated: true, theme: this.viewport?.theme ?? "dark", visible: this.viewport?.visible ?? false });
       this.parent.contentView.addChildView(view);
     } catch (error) {
       await this.session?.close(); this.session = null;

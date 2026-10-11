@@ -34,7 +34,11 @@ describe("memoria individuale degli immobili", () => {
     const unit = app.detail(street.id).units[0]!, src = effectiveSource(unit);
     await store.change(s => { s.runs.push({ id: "apply", streetId: street.id, operation: "apply", origin: "simulation", state: "running", startedAt: "2026-10-07T09:00:00Z", endedAt: null, error: null, handled: 0, total: 2, itemKeys: Object.keys(s.units).slice(0, 2) }); });
     const port = new TerritoryImportStore(store, street.id, "apply"), cp = await port.loadOrCreate(buildPlan(src));
-    Object.assign(cp, { stage: "completed", crmPropertyId: "verified", updatedAt: "2026-10-07T10:00:00Z" }); await port.save(cp); await port.recordEvent(cp, "stage_completed");
+    Object.assign(cp, { stage: "completed", crmPropertyId: "verified", updatedAt: "2026-10-07T10:00:00Z" }); await port.save(cp);
+    const committedRevision = store.revision;
+    await port.recordEvent(cp, "stage_completed"); await port.recordEvent(cp, "stage_completed");
+    expect(store.revision).toBe(committedRevision);
+    expect(store.read().events.filter(e => e.id === `import:${cp.itemId}:completed`)).toHaveLength(1);
     const reopened = await TerritoryStore.open(directory, [street]), state = reopened.read();
     expect(state.runs.at(-1)).toMatchObject({ state: "stopped", handled: 0, imports: { [unit.key]: { crmId: "verified" } } });
     expect(unitMemory(state.units[unit.key]!).statistics.verifiedImports).toBe(1);
@@ -79,6 +83,25 @@ describe("memoria individuale degli immobili", () => {
     expect(memory.statistics).toMatchObject({ reviews: 1, verifiedImports: 0 });
     expect(memory.events.find(e => e.kind === "import_quarantined")?.source?.owners).toEqual([]);
     expect(store.read().units[unit.key]!.observations[0]!.source.owners).toHaveLength(1);
+  });
+  it("adotta i fatti a blocchi ordinati senza cancellarli prima del commit atomico", async () => {
+    const { directory } = await setup();
+    for (let i = 0; i < 52; i++) { const f = memory(); f.at = new Date(Date.parse(f.at) + i * 1000).toISOString(); await queuePropertyMemory(directory, f); }
+    const single = vi.fn(async () => {}), batches: PropertyMemory[][] = [];
+    const failed = vi.fn(async () => { throw new Error("Commit fallito"); });
+    await expect(consumePropertyMemory(directory, single, failed)).rejects.toThrow("Commit fallito");
+    expect(await readdir(path.join(directory, "property-inbox"))).toHaveLength(52);
+    await expect(consumePropertyMemory(directory, single, async batch => {
+      if (batch.length === 2) throw new Error("Secondo commit fallito");
+      batches.push(batch);
+    })).rejects.toThrow("Secondo commit fallito");
+    expect(await readdir(path.join(directory, "property-inbox"))).toHaveLength(2);
+    await consumePropertyMemory(directory, single, async batch => { batches.push(batch); });
+    expect(single).not.toHaveBeenCalled();
+    expect(batches.map(b => b.length)).toEqual([50, 2]);
+    const dates = batches.flat().map(f => f.at);
+    expect(dates).toEqual([...dates].sort());
+    expect(await readdir(path.join(directory, "property-inbox"))).toHaveLength(0);
   });
   it("la replica parte solo dopo la persistenza originale e non cambia l'esito CRM se fallisce", async () => {
     const cp = checkpoint(), persist = vi.fn(async () => {}), sink = vi.fn(async () => { throw new Error("Replica indisponibile"); });

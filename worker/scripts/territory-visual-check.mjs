@@ -61,6 +61,9 @@ try {
   });
   await page.locator('#tools').evaluate(el => { el.open = true; });
   await page.locator('#refresh').click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => window.checkedPaths.size), 0, 'Una mappa invariata non viene ridisegnata');
+  await page.evaluate(id => window.territory.annotate({ streetId: id, note: '', attention: false }), snapshot.streets[0].id);
   await page.waitForFunction(() => window.checkedPaths.size > 500);
   const widePaths = () => page.evaluate(() => [...window.checkedPaths].filter(p => p._map && p.options.weight > 4).length);
   assert.equal(await widePaths(), 0, 'Ogni via parte sottile, anche se selezionata');
