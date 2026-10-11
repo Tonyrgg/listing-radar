@@ -31,6 +31,7 @@ export function icon(name) {
 }
 const labels = [
   [/^(Coda|Apri coda|Aggiungi alla coda)/, "layers"], [/^(Importa in Tecnocloud|Prova import)/, "play"], [/^Rimuovi/, "close"], [/^Filtra immobili$/, "filter"], [/^Opzioni dell’import$/, "settings"],
+  [/^Consulta corrispondenze CRM$/, "search"], [/^(Continua|Avvia import|Prova import)/, "play"], [/^Interrompi lavoro$/, "pause"], [/^Apri coda/, "layers"],
   [/^Aggiorna da SISTER$/, "refresh"], [/^Impostazioni della via$/, "settings"], [/^Associa via ufficiale$/, "link"],
   [/^Acquisisci via$/, "download"], [/^Confronta (gestionale|selezionati)/, "search"],
   [/^(Applica selezionati|Prova piano)/, "play"], [/^Riprendi/, "play"], [/^Metti in pausa/, "pause"],

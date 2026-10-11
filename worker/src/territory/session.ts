@@ -17,6 +17,7 @@ import { rememberCheckpoint } from "./unit-memory.js";
 import { adoptHistory, matchHistoricalStreet } from "./history.js";
 import { unitKey } from "./model.js";
 import { runSettingsSchema, runSettings } from "./run-options.js";
+import { pendingUnitImport } from "./import-queue.js";
 import { unitQuerySchema } from "./query.js";
 
 const id = z.string().min(1).max(200);
@@ -183,24 +184,27 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");
       const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
+      if (v.operation === "apply" && v.resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
       if (v.queue && (v.operation !== "apply" || v.query || v.streetId)) throw new Error("Selezione della coda non valida");
       if (!v.queue && (!v.query && !v.streetId || v.query && (v.operation === "scan" || v.resumeId))) throw new Error("Scegli una via per acquisire, oppure una query per confrontare e applicare");
       if (options.live && v.operation === "apply") {
         const state = store.read();
-        const prior = v.resumeId ? state.runs.find(r => r.id === v.resumeId) : undefined;
-        const settings = runSettings(prior?.settings ?? v.settings);
-        const activityCount = settings.activityMode === "plain" ? (prior?.itemKeys ?? v.selected).filter(key => {
-          if (prior?.applySources?.[key]) return prior.applySources[key].activity.enabled;
+        const settings = runSettings(v.settings);
+        const recoveries = v.selected.map(key => pendingUnitImport(state, key)).filter(r => r !== null);
+        const activityCount = v.selected.filter(key => {
+          const recovery = pendingUnitImport(state, key);
+          if (recovery) return recovery.source.activity.enabled;
+          if (settings.activityMode !== "plain") return false;
           const observation = state.units[key]?.observations.at(-1);
           return observation && (observation.activityEligible ?? !observation.historyPropertyId);
-        }).length : 0;
-        const activityText = settings.activityMode === "plain"
+        }).length;
+        const activityText = activityCount
           ? `Il piano prevede ${activityCount} attività Telefonata, Da eseguire, esclusi immobili di rete o di provenienza storica incerta.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
           type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",
-          message: `Applicare le modifiche a ${prior?.itemKeys.length ?? v.selected.length} immobili selezionati nel gestionale reale?`,
-          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Controlla selezione e opzioni prima di continuare.`,
+          message: `Applicare le modifiche a ${v.selected.length} immobili selezionati nel gestionale reale?`,
+          detail: `Per i nuovi lavori saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${recoveries.length ? `${recoveries.length} immobili hanno scritture da verificare: conservano dati e opzioni originali, indicati nel riepilogo della coda.` : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Ogni successo viene conservato subito. Gli immobili non conclusi restano in coda, senza una run da riprendere.`,
           buttons: ["Torna al piano", operational ? "Applica agli immobili selezionati" : "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return null;

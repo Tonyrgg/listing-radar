@@ -1,5 +1,15 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.16: un ciclo per immobile, un percorso guidato
+
+Il flusso è **acquisisci da SISTER → scegli gli immobili → aggiungi alla coda → controlla il riepilogo → avvia import**. La scheda via propone selezione e accodamento; aggiornamento SISTER e consultazione facoltativa del CRM sono nelle impostazioni. Il confronto necessario avviene automaticamente dalla coda, prima di ogni scrittura. Nelle card si leggono indirizzo, civico/piano, catasto, ultimo import riuscito e intestatari; esiti tecnici e tentativi sono nei dettagli. Il filtro principale distingue mai importati, entro 30 giorni, da 31 a 90 e oltre 90.
+
+Ogni lavoro dalla coda termina, anche dopo una richiesta di interruzione, un errore o la chiusura dell’app. `stopped` descrive la fine del lavoro, senza affermare che tutti gli import siano riusciti. Ogni successo verificato conserva immediatamente data, scheda CRM e storico individuale, prima dell’avanzamento del cursore; soltanto il suo elemento esce dalla coda. Non esiste un obbligo di completare la vecchia selezione. All’apertura e al recupero della memoria condivisa, le precedenti run apply sospese/in corso vengono chiuse nello storico, conservando dati, prove, piani e coda. Scansioni e confronti mantengono i propri checkpoint di lettura.
+
+Una scrittura incerta è protetta sul singolo immobile: il checkpoint viene trovato per identità catastale anche dopo una nuova acquisizione. Al prossimo avvio della selezione dalla coda, quell’immobile conserva sorgente, via e opzioni originali, visibili nel riepilogo. Si rileggono comunque le corrispondenze CRM; ambiguità nuove impediscono scritture ripetute. Le sue correzioni sono bloccate finché il piano non viene verificato, ma può essere rimosso dalla coda senza cancellare il checkpoint. Gli immobili non ancora iniziati rimangono modificabili. Più checkpoint incerti o opzioni non recuperabili bloccano soltanto quel caso, con motivo esplicito. Non cambia il motore del worker precedente.
+
+Verifiche locali: regressioni di successi prima del cursore, interruzioni, libertà della nuova selezione, date/filtri, recupero del piano e dell’attività incerta senza duplicati, anche dopo una nuova lettura SISTER; percorso Electron e layout 390/1024/1600 px. La migrazione su una copia del profilo reale conserva 1.350 immobili e 52 elementi in coda, chiudendo due lavori senza checkpoint; il file originale resta invariato. Le prove non scrivono nel CRM reale. Copertura finale: 97 gruppi, 809 test, con i due file che avviano molte istanze Chrome eseguiti separatamente; 145 regressioni Territorio ripetute dopo le modifiche definitive.
+
 ## Versione 0.34.15: coda unica degli import
 
 La **0.34.15** introduce la **Coda immobili** come unico punto di avvio degli import Tecnocloud nel Worker V2. Dalle schede via e dalle query si filtrano e selezionano gli immobili da accodare, anche su più vie. La coda conserva la selezione alla riapertura, permette correzioni permanenti della memoria e rimozioni senza perdere dati o storico. Ogni import confronta il CRM prima di scrivere e rimuove dalla coda soltanto i successi verificati; anomalie e interruzioni restano conservate. Le riprese precedenti V2 vengono esposte nella coda con il piano originale. Le sezioni del worker precedente mantengono il proprio flusso.
@@ -126,7 +136,7 @@ Le nuove acquisizioni avviate dalla mappa includono categorie A e C. La ripresa 
 
 Percentuale e rapporto sono visibili nell'elenco, nel riepilogo e nella modale; aumentando lo zoom ad almeno 16 compaiono anche le etichette percentuali sui tracciati. Lo storico viene aggiornato dalle prove del file locale già esportato, senza ripetere import o riletture dei portali. Le prove restano nell'archivio sincronizzato e sono distinte per acquisizione; i totali di un job che comprende più vie non vengono applicati indistintamente a ciascuna via.
 
-Pausa e chiusura attendono il punto sicuro. Alla riapertura un'operazione interrotta diventa «da riprendere». Gli immobili letti restano disponibili; una lettura fallita non elimina schede conservate e non prova assenze.
+Pausa e chiusura attendono il punto sicuro. Alla riapertura una lettura interrotta diventa «da riprendere»; dalla 0.34.16 un lavoro di import V2 diventa terminato e la coda conserva soltanto gli immobili non conclusi. Gli immobili letti restano disponibili; una lettura fallita non elimina schede conservate e non prova assenze.
 
 ## Isolamento
 
@@ -169,7 +179,7 @@ npm.cmd --prefix worker run territory:setup-sync
 
 Il comando legge lo stato del progetto Supabase locale e salva la configurazione privata nel profilo. Non stampa le chiavi e non usa le credenziali del progetto remoto. Per la simulazione aggiungere `-- --simulation`.
 
-Il pulsante **Sincronizzazione** permette di caricare o recuperare l'archivio. Le modifiche locali e i conflitti tra revisioni bloccano la sostituzione automatica. Prima di un recupero viene conservata una copia dell'archivio precedente. Le operazioni recuperate in corso diventano da riprendere. Se la risposta di un salvataggio va persa, un nuovo caricamento riconosce i dati già salvati senza duplicarli. Un lock del profilo impedisce scrittori concorrenti sullo stesso archivio.
+Il pulsante **Sincronizzazione** permette di caricare o recuperare l'archivio. Le modifiche locali e i conflitti tra revisioni bloccano la sostituzione automatica. Prima di un recupero viene conservata una copia dell'archivio precedente. Le letture recuperate in corso diventano da riprendere; gli import V2 terminano conservando i checkpoint dei singoli immobili. Se la risposta di un salvataggio va persa, un nuovo caricamento riconosce i dati già salvati senza duplicarli. Un lock del profilo impedisce scrittori concorrenti sullo stesso archivio.
 
 In alternativa, a laboratorio chiuso:
 

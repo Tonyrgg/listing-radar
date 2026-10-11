@@ -42,7 +42,7 @@ export class TerritoryStore {
       resolveRecognizedHistory(next);
       hydrateUnitMemory(next);
       hydrateQuarantine(next);
-      hydrateImportQueue(next);
+      hydrateImportQueue(next, true);
       for (const run of next.runs) if (run.state === "running") { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
     });
     return store;
@@ -62,7 +62,7 @@ export class TerritoryStore {
       applyNetworkBindings(next);
       hydrateUnitMemory(next);
       hydrateQuarantine(next);
-      hydrateImportQueue(next);
+      hydrateImportQueue(next, true);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
       await rename(temporary, this.filename); this.state = next;

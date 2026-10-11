@@ -3,7 +3,7 @@ import { createStreetSearch } from "./street-search.js";
 import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
 import { createToast, isBrowserWarning } from "./toast.js";
-import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitRecordHtml } from "./unit-card.js";
+import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitRecordHtml, unitImportTone } from "./unit-card.js";
 import { wireUnitEditors } from "./unit-editor.js";
 import { createQueuePanel } from "./queue-panel.js";
 import { createFilterPicker } from "./filter-picker.js";
@@ -51,13 +51,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   const operations = {
     scan: "Acquisizione della via",
     compare: "Confronto con il gestionale",
-    apply: "Applicazione del piano",
+    apply: "Lavoro dalla coda",
   };
   const runStates = {
     running: "In corso",
     paused: "Da riprendere",
     completed: "Conclusa",
     failed: "Interrotta",
+    stopped: "Terminata",
   };
   let snapshot = null,
     detail = null,
@@ -185,7 +186,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("draft-status").hidden = !dirty;
   }
   const ready = (u) =>
-    u.canWrite && ["create", "update", "synced"].includes(u.assessment?.kind);
+    u.canWrite && !snapshot.queueKeys.includes(u.key);
   function unitRows() {
     const needle = unitSearch.trim().toLocaleLowerCase("it");
     return detail.units.filter(
@@ -195,7 +196,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .toLocaleLowerCase("it")
             .includes(needle)) &&
         (!unitFilter ||
-          (unitFilter === "ready"
+          (unitFilter === "never"
+            ? !u.memory?.statistics.verifiedImports
+            : ["recent", "aging", "stale"].includes(unitFilter)
+              ? unitImportTone(u) === unitFilter
+              : unitFilter === "ready"
             ? ready(u)
             : unitFilter === "selected"
               ? selected.has(u.key)
@@ -321,13 +326,16 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     toast.show(text, error, options);
   }
   const notifiedRunErrors = new Map();
+  const sessionStartedAt = Date.now();
   function notifyRunIssue(run) {
     if (!run) return;
+    // Archived import attempts are history, not a new task or alert on reopening.
+    if (run.state === "stopped" && Date.parse(run.startedAt) < sessionStartedAt) return;
     if (["running", "completed"].includes(run.state)) {
       if ($("feedback").dataset.run) toast.dismiss();
       notifiedRunErrors.delete(run.id); return;
     }
-    if (!["paused", "failed"].includes(run.state) || !run.error || notifiedRunErrors.get(run.id) === run.error) return;
+    if (!["paused", "failed", "stopped"].includes(run.state) || !run.error || notifiedRunErrors.get(run.id) === run.error) return;
     notifiedRunErrors.set(run.id, run.error);
     feedback(run.error, true, { runId: run.id });
   }
@@ -676,10 +684,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const disabled = snapshot.activeRun ? "disabled" : "";
     const latest = detail.runs.at(-1),
       paused =
-        latest && ["paused", "failed"].includes(latest.state) ? latest : null;
-    const resume = paused?.operation === "apply"
-      ? `<section class="run-item"><strong>Import da riprendere nella coda</strong><button data-open-queue>Apri coda</button></section>`
-      : paused
+        latest && latest.operation !== "apply" && ["paused", "failed"].includes(latest.state) ? latest : null;
+    const resume = paused
       ? `<section class="run-item"><strong>${escape(operations[paused.operation])}: da riprendere</strong><p class="explanation">${escape(isBrowserWarning(paused.error || "") ? "Avanzamento conservato. Riprendi dopo aver aperto il browser di lavoro." : paused.error || "L’avanzamento è conservato.")}</p><button id="resume" class="primary" ${disabled}>Riprendi operazione</button></section>`
       : "";
     const counts = { unknown: 0, ready: 0, planned: 0, review: 0, aligned: 0 };
@@ -691,18 +697,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (["synced", "unchanged"].includes(u.assessment?.kind))
         counts.aligned++;
     }
-    const step = !s.count
-      ? 0
-      : counts.ready || counts.planned || counts.review
-        ? 2
-        : counts.unknown
-          ? 1
-          : 2;
-    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’import dalla coda.</p>`;
+    const actions = `<ol class="workflow-steps" aria-label="Flusso degli immobili"><li data-done="true"><span>1</span>Dati SISTER acquisiti</li><li aria-current="step"><span>2</span>Scegli gli immobili</li><li><span>3</span>Aggiungi alla coda</li></ol>`;
     {
       if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
-        `<div class="street-secondary">${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
+        `<div class="street-secondary">${view.hasInventory ? `<div class="actions"><button data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Consulta corrispondenze CRM</button></div><p class="meta">La coda confronta automaticamente ogni immobile prima di scrivere.</p>` : ""}${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
       if ($("open-units")) $("open-units").onclick = () => switchTab("units");
       $("memory-form").oninput = (event) => markDirty(event.currentTarget);
       $("memory-form").onsubmit = safe(async (event) => {
@@ -770,7 +769,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="unknown">Confronto da eseguire o incompleto (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>Ordine: civico, piano, catasto · ${rows.length} immobili visibili · ${counts.ready} selezionabili · ${counts.review} da verificare</p>${detail.units.length ? unitFiltersHtml() : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Mostra immobili<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai importati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>${rows.length} immobili · Ordinati per civico, piano e catasto</p>${detail.units.length ? unitFiltersHtml() : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p class="explanation" id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -873,7 +872,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .reverse()
             .map(
               (run) =>
-                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.handled} immobili</p><p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
+                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " import riusciti su " + run.total : run.handled + " immobili"}</p><p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
             )
             .join("") ||
           '<li class="explanation">Nessuna operazione su questa via.</li>'
@@ -943,7 +942,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("selection-count").textContent = qty(selected.size, "immobile selezionato", "immobili selezionati");
     $("selection-plan").textContent = `${fresh.length} da aggiungere alla coda${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
     $("enqueue").disabled = !fresh.length || Boolean(snapshot.activeRun);
-    $("enqueue").textContent = `Aggiungi alla coda (${fresh.length})`;
+    const queued = detail.units.filter(u => snapshot.queueKeys.includes(u.key)).length;
+    $("enqueue").hidden = !fresh.length && queued > 0;
+    $("street-open-queue").hidden = Boolean(fresh.length) || !queued;
+    $("street-open-queue").innerHTML = `${icon("layers")}Apri coda (${snapshot.queueCount})`;
+    const steps = $("street-actionbar").querySelectorAll(".workflow-steps li");
+    const stage = queued && !fresh.length ? 2 : 1;
+    steps.forEach((item, i) => { item.removeAttribute("aria-current"); item.dataset.done = String(i < stage); if (i === stage) item.setAttribute("aria-current", "step"); });
+    $("enqueue").innerHTML = `${icon("layers")}Aggiungi alla coda (${fresh.length})`;
     $("clear-selection").disabled = !selected.size;
     $("unit-filter").querySelector('[value="selected"]').textContent = `Solo selezionati (${selected.size})`;
     $("selection-help").textContent = "L’aggiunta conserva la selezione nella coda. L’import si avvia dal pulsante Coda sulla mappa.";
@@ -960,11 +966,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   function progressContent(root, run, street, id) {
     if (root.dataset.run !== run.id) {
       root.dataset.run = run.id;
-      root.innerHTML = `<div><strong></strong><p></p><progress aria-label="Avanzamento dell’operazione"></progress></div><button id="${id}">Pausa</button>`;
+      root.innerHTML = `<div><strong></strong><p></p><progress aria-label="Avanzamento dell’operazione"></progress></div><button id="${id}">${run.operation === "apply" ? "Interrompi lavoro" : "Pausa"}</button>`;
       $(id).onclick = safe(async () => {
         await api.pause();
         feedback(
-          "Pausa richiesta. L’avanzamento viene conservato al prossimo punto sicuro.",
+          run.operation === "apply" ? "Interruzione richiesta. Ogni successo resta registrato; gli altri immobili restano in coda." : "Pausa richiesta. L’avanzamento viene conservato al prossimo punto sicuro.",
         );
       });
     }

@@ -102,7 +102,7 @@ describe("Opzioni operative V2, congelate per run", () => {
     }
     const app = new TerritoryApplication(store, new UncertainActivity(store, 0));
     const id = await app.start(street.id, "apply", [key], undefined, { activityMode: "plain" }); await app.waitForIdle();
-    expect(store.read().runs.at(-1)?.state).toBe("paused");
+    expect(store.read().runs.at(-1)?.state).toBe("stopped");
     expect(Object.values(store.read().virtualActivities!)).toHaveLength(1);
     expect(effectiveSource(store.read().units[key]!).activity.enabled).toBe(false);
     const reopened = await TerritoryStore.open(directory, [street]);
@@ -113,16 +113,22 @@ describe("Opzioni operative V2, congelate per run", () => {
       }
     }
     const changed = new TerritoryApplication(reopened, new ChangedCandidates(reopened, 0));
-    await changed.start(street.id, "apply", [key], id); await changed.waitForIdle();
-    expect(reopened.read().runs.at(-1)?.state).toBe("paused");
+    await changed.enqueue([key]); await changed.startQueue([key], { activityMode: "none", includeCoOwners: false }); await changed.waitForIdle();
+    expect(reopened.read().runs.at(-1)?.state).toBe("stopped");
     expect(Object.keys(reopened.read().checkpoints)).toHaveLength(1);
     expect(changed.quarantineList().some(item => item.origin === "apply")).toBe(false);
     expect(Object.values(reopened.read().virtualActivities!)).toHaveLength(1);
     const second = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
-    await expect(second.start(street.id, "apply", [key], id, { activityMode: "none" })).rejects.toThrow("opzioni iniziali");
-    await expect(second.start(street.id, "apply", [key], undefined, { activityMode: "none" })).rejects.toThrow("run originale");
-    await second.start(street.id, "apply", [key], id); await second.waitForIdle();
+    await expect(second.start(street.id, "apply", [key], id)).rejects.toThrow("terminato");
+    await second.start(street.id, "scan"); await second.waitForIdle();
+    await expect(second.correct(key, { category: "A/2" }, "")).rejects.toThrow("piano originale");
+    await second.dequeue([key]); await second.enqueue([key]);
+    // A crash may leave the old preview unchanged while the property was written.
+    await reopened.change(s => { s.units[key]!.assessment = { ...s.units[key]!.assessment!, kind: "create" }; });
+    await second.startQueue([key], { activityMode: "none", includeCoOwners: false, importPolicy: "existing_only" }); await second.waitForIdle();
     expect(reopened.read().runs.at(-1)?.state).toBe("completed");
+    expect(reopened.read().runs.at(-1)!.unitSettings![key]).toMatchObject({ activityMode: "plain", includeCoOwners: true, importPolicy: "create_update" });
+    expect(reopened.read().runs.at(-1)!.applySources![key]!.activity.enabled).toBe(true);
     const activities = Object.values(reopened.read().virtualActivities!);
     expect(activities).toHaveLength(1);
     expect(activities[0]!.activity.status).toBe("Da eseguire");

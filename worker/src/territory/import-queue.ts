@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { type TerritoryState, type Unit, type Run } from "./model.js";
+import { unitKey, type TerritoryState, type Unit, type Run } from "./model.js";
+import { runSettings } from "./run-options.js";
 
 export type ImportQueueEntry = { id: string; key: string; streetId: string; addedAt: string };
 export function queueStreet(state: TerritoryState, unit: Unit, preferred?: string) {
@@ -10,17 +11,30 @@ export function queueStreet(state: TerritoryState, unit: Unit, preferred?: strin
   return (observed && streets.find(s => s.id === canonical(observed)?.id)) || (streets.length === 1 ? streets[0] : undefined);
 }
 export function queueLocked(state: TerritoryState, key: string) {
-  return state.runs.some(r => r.operation === "apply" && ["running", "paused", "failed"].includes(r.state) && !r.imports?.[key]?.crmId && r.itemKeys.slice(r.handled).includes(key));
+  return state.runs.some(r => r.operation === "apply" && r.state === "running" && !r.imports?.[key]?.crmId && r.itemKeys.slice(r.handled).includes(key));
+}
+/** Recover a single property's original plan, even after a newer SISTER observation. */
+export function pendingUnitImport(state: TerritoryState, key: string) {
+  const checkpoints = Object.values(state.checkpoints).filter(c => {
+    if (c.stage === "completed" || !c.plan) return false;
+    try { return unitKey(c.plan.source) === key; } catch { return false; }
+  });
+  if (!checkpoints.length) return null;
+  if (checkpoints.length !== 1) throw new Error("Più piani conservati per questo immobile: controlla lo storico prima di importare");
+  const checkpoint = checkpoints[0]!;
+  const run = [...state.runs].reverse().find(r => r.operation === "apply" && r.itemKeys.includes(key) && (r.applySources?.[key]?.sourcePropertyId === checkpoint.propertyId || (!r.applySources && state.units[key]?.observations.some(o => o.source.sourcePropertyId === checkpoint.propertyId))));
+  if (!run) throw new Error("Opzioni originali dell’immobile non disponibili: nessuna scrittura automatica");
+  return { checkpoint, source: structuredClone(checkpoint.plan!.source), settings: runSettings(run.unitSettings?.[key] ?? run.settings), streetId: run.unitStreetIds?.[key] ?? run.streetId, origin: run.origin };
 }
 /** Removal is tied to this enrollment, never to an older import of the same unit. */
 export function settleQueueImport(state: TerritoryState, run: Run, key: string) {
   if (run.imports?.[key]?.crmId && state.importQueue?.[key]?.id === run.queueEntryIds?.[key]) delete state.importQueue![key];
 }
-export function hydrateImportQueue(state: TerritoryState) {
+export function hydrateImportQueue(state: TerritoryState, closeInterrupted = false) {
   state.importQueue ??= {};
   for (const run of state.runs) {
     if (run.operation !== "apply") continue;
-    if (!run.queueEntryIds && ["running", "paused", "failed"].includes(run.state)) {
+    if (!run.queueEntryIds && ["running", "paused", "failed", "stopped"].includes(run.state)) {
       run.queueEntryIds = {};
       for (const key of run.itemKeys.slice(run.handled)) {
         const unit = state.units[key];
@@ -31,5 +45,9 @@ export function hydrateImportQueue(state: TerritoryState) {
       }
     }
     for (const key of Object.keys(run.queueEntryIds ?? {})) settleQueueImport(state, run, key);
+    if (["paused", "failed"].includes(run.state) || closeInterrupted && run.state === "running") {
+      run.state = "stopped";
+      run.endedAt ??= new Date().toISOString();
+    }
   }
 }

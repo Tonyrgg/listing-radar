@@ -86,7 +86,7 @@ try {
   for (const [width, theme] of [[1600, 'dark'], [1024, 'light'], [390, 'dark']]) {
     await page.setViewportSize({ width, height: 860 }); await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth || document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false, 'Coda senza overflow');
-    const button = await page.locator('#queue-import').boundingBox(), modal = await page.locator('#detail-dialog').boundingBox();
+    const button = await page.locator('#queue-continue').boundingBox(), modal = await page.locator('#detail-dialog').boundingBox();
     assert.ok(button.y + button.height <= modal.y + modal.height, 'Il comando import resta interamente visibile');
     await page.screenshot({ path: path.join(output, 'queue-' + width + '.png') });
   }
@@ -94,7 +94,20 @@ try {
   await page.locator('#queue-search').fill(first.key);
   assert.equal(await page.locator('[data-unit]').count(), 1, 'Ricerca catastale nella coda');
   assert.ok((await page.locator('.queue-selection strong').textContent()).includes('1 fuori dalla ricerca'));
-  await page.locator('#queue-search').fill(''); await page.locator('#queue-import').click();
+  await page.locator('#queue-search').fill(''); await page.locator('#queue-continue').click();
+  assert.equal(await page.locator('[data-unit]').count(), 0, 'Il riepilogo separa le opzioni dalle card');
+  assert.equal(await page.locator('.queue-review-list li').count(), 2);
+  assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8')).virtualCrm, ledgerBefore.virtualCrm, 'Controllare il piano non scrive');
+  for (const width of [1600, 1024, 390]) {
+    await page.setViewportSize({ width, height: 860 });
+    assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false, 'Riepilogo senza overflow');
+    const bounds = await page.locator('#queue-import').boundingBox(), dialog = await page.locator('#detail-dialog').boundingBox();
+    assert.ok(bounds.y + bounds.height <= dialog.y + dialog.height, 'Avvio interamente visibile nel riepilogo');
+    await page.screenshot({ path: path.join(output, 'queue-review-' + width + '.png') });
+  }
+  await page.setViewportSize({ width: 1600, height: 960 });
+  await page.locator('#queue-back').click(); await page.locator('#queue-continue').click();
+  await page.locator('#queue-import').click();
   await until(async () => !(await window.territory.snapshot()).activeRun && (await window.territory.queue()).entries.length === 0);
   const after = await page.evaluate(() => window.territory.queue());
   assert.equal(after.runs.at(-1).state, 'completed'); assert.equal(Object.keys(after.runs.at(-1).imports).length, 2);
@@ -108,11 +121,19 @@ try {
     await window.territory.pause();
   }, [first.key, second.key]);
   await until(async () => !(await window.territory.snapshot()).activeRun);
-  await app.close(); app = null; await launch();
+  await app.close(); app = null;
+  const oldFile = path.join(profile, 'territory-ledger.json'), oldLedger = JSON.parse(await readFile(oldFile, 'utf8'));
+  oldLedger.runs.at(-1).state = 'paused'; oldLedger.runs.at(-1).endedAt = null; oldLedger.runs.at(-1).error = 'Vecchio errore di collegamento';
+  await writeFile(oldFile, JSON.stringify(oldLedger));
+  await launch();
   await page.locator('#queue-manager').click();
-  await page.locator('[data-queue-resume]').waitFor();
-  assert.equal(await page.locator('#queue-import').isDisabled(), true, 'Una ripresa conserva il suo piano');
-  await page.locator('[data-queue-resume]').click();
+  assert.equal(await page.locator('#feedback').isVisible(), false, 'Le run archiviate non ripropongono avvisi');
+  assert.equal(await page.locator('[data-queue-resume]').count(), 0, 'Nessuna run da riprendere');
+  assert.equal(await page.locator('#queue-import').count(), 0, 'Prima si sceglie, poi si controlla');
+  assert.equal(await page.locator('#queue-continue').isDisabled(), false);
+  const stopped = await page.evaluate(() => window.territory.queue());
+  assert.equal(stopped.runs.at(-1).state, 'stopped');
+  await page.locator('#queue-continue').click(); await page.locator('#queue-import').click();
   await until(async () => !(await window.territory.snapshot()).activeRun && !(await window.territory.queue()).entries.length);
   const resumed = await page.evaluate(() => window.territory.queue());
   assert.equal(resumed.runs.at(-1).state, 'completed');
@@ -122,6 +143,6 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector('.map-toolbar').getBoundingClientRect().right <= innerWidth), true);
   await page.screenshot({ path: path.join(output, 'map-390.png') });
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, persistentQueue: true, multiStreet: true, permanentEdits: true, combinedStreetFilters: true, queryEnqueue: true, noPrematureWrites: true, verifiedImportsRemoved: true, errors }, null, 2));
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, persistentQueue: true, multiStreet: true, permanentEdits: true, combinedStreetFilters: true, queryEnqueue: true, noPrematureWrites: true, verifiedImportsRemoved: true, guidedReview: true, stoppedBatchesDoNotBlock: true, archivedRunsDoNotAlert: true, errors }, null, 2));
   console.log('Coda persistente, filtri, correzioni permanenti e import centralizzato verificati in Electron simulato.');
 } finally { if (app) await app.close(); }

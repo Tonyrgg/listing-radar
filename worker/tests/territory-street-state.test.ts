@@ -9,6 +9,9 @@ describe("Presentazione della via prima dell'acquisizione", () => {
     expect(streetViewState(detail(), { operation: "scan", streetId: "20" }).phase).toBe("acquiring");
     expect(streetViewState(detail(), { operation: "scan", streetId: "21" }).phase).toBe("unacquired");
   });
+  it("un vecchio import non chiede di riprendere la via", () => {
+    for (const state of ["paused", "failed", "stopped"]) expect(streetViewState(detail([{ operation: "apply", state }], [{ key: "immobile" }]), null)).toMatchObject({ phase: "populated", paused: null });
+  });
   it("mostra i dati parziali e distingue un inventario concluso vuoto", () => {
     expect(streetViewState(detail([], [{ key: "immobile" }]), null)).toMatchObject({ hasInventory: true, phase: "populated" });
     expect(streetViewState(detail([{ operation: "scan", state: "completed" }]), null).hasInventory).toBe(true);

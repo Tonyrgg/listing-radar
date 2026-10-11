@@ -18,7 +18,7 @@ export type UnitEvent = {
   people?: { taxCode: string; crmIds: string[] }[]; syncedPeople?: ImportV2Checkpoint["syncedPeople"];
 };
 export type Unit = { key: string; streetIds: string[]; observations: Observation[]; sourceVersionId?: string; corrections: { address?: string; category?: string; owners?: SourceProperty["owners"] }; note: string; assessment: Assessment | null; importedAt: string | null; crmId: string | null; journal?: UnitEvent[] };
-export type Run = { queueEntryIds?: Record<string, string>; unitStreetIds?: Record<string, string>; selectionScope?: string[]; query?: import("./query.js").UnitQuery; id: string; streetId: string; operation: "scan" | "compare" | "apply"; origin: "simulation" | "live"; state: "running" | "paused" | "failed" | "completed"; startedAt: string; endedAt: string | null; handled: number; total: number | null; error: string | null; itemKeys: string[]; checkpoint?: unknown; acquisitionRunId?: string | null; imports?: Record<string, { at: string; crmId: string }>; settings?: RunSettings; applySources?: Record<string, SourceProperty> };
+export type Run = { unitSettings?: Record<string, RunSettings>; queueEntryIds?: Record<string, string>; unitStreetIds?: Record<string, string>; selectionScope?: string[]; query?: import("./query.js").UnitQuery; id: string; streetId: string; operation: "scan" | "compare" | "apply"; origin: "simulation" | "live"; state: "running" | "paused" | "failed" | "completed" | "stopped"; startedAt: string; endedAt: string | null; handled: number; total: number | null; error: string | null; itemKeys: string[]; checkpoint?: unknown; acquisitionRunId?: string | null; imports?: Record<string, { at: string; crmId: string }>; settings?: RunSettings; applySources?: Record<string, SourceProperty> };
 export type Event = { id: string; streetId: string; at: string; text: string; unitKey?: string };
 export type StreetMemory = { note: string; attention: boolean; updatedAt: string; registeredAt?: string };
 export type QuarantineItem = { id: string; streetId: string; runId: string; at: string; reason: string; address: string; cadastral: SourceProperty["cadastral"] | null; source?: SourceProperty; checkpoint?: ImportV2Checkpoint; unitKey?: string; recordKey?: string; origin: "scan" | "apply"; resolvedAt: string | null };
@@ -59,7 +59,7 @@ export function streetSummary(state: TerritoryState, street: Street) {
   if (lastScan?.state === "completed" && !unresolved && !Object.values(state.quarantine ?? {}).some(q => !q.resolvedAt && streetIds.includes(q.streetId))) status = "completed";
   const attention = streetIds.some(id => state.memories[id]?.attention);
   if (review || attention) status = "review";
-  if (lastRun?.state === "paused" || lastRun?.state === "failed") status = "paused";
+  if (lastRun?.operation !== "apply" && (lastRun?.state === "paused" || lastRun?.state === "failed")) status = "paused";
   if (lastRun?.state === "running") status = "running";
   return { ...street, acquisitionState: lastScan?.state ?? null, quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && streetIds.includes(q.streetId)).length, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds) };
 }

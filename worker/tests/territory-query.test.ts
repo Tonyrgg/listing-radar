@@ -65,12 +65,12 @@ describe("query combinate e zone di vie", () => {
     await app.startQuery({}, "compare", keys); await app.waitForIdle();
     expect(routes).toEqual([["a", "a"], ["b", "b"]]);
     failOnce(); const run = await app.startQuery({}, "apply", keys); await app.waitForIdle();
-    expect(store.read().runs.at(-1)).toMatchObject({ state: "paused", handled: 1, unitStreetIds: { [keys[0]!]: "a", [keys[1]!]: "b" } });
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "stopped", handled: 1, unitStreetIds: { [keys[0]!]: "a", [keys[1]!]: "b" } });
     expect(unitMemory(store.read().units[keys[0]!]!).statistics.verifiedImports).toBe(1);
     expect(unitMemory(store.read().units[keys[1]!]!).statistics.pauses).toBe(1);
     expect(app.detail("b").runs.at(-1)?.id).toBe(run);
-    await app.start("a", "apply", [], run); await app.waitForIdle();
-    expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 2 });
+    await app.enqueue([keys[1]!]); await app.startQueue([keys[1]!]); await app.waitForIdle();
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 1 });
     expect(keys.map(k => unitMemory(store.read().units[k]!).statistics.verifiedImports)).toEqual([1, 1]);
     expect(Object.keys(store.read().virtualPeople)).toHaveLength(1);
     expect(routes.every(([s, parcel]) => s === parcel)).toBe(true);

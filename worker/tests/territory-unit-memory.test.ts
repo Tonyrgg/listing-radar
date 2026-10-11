@@ -36,7 +36,7 @@ describe("memoria individuale degli immobili", () => {
     const port = new TerritoryImportStore(store, street.id, "apply"), cp = await port.loadOrCreate(buildPlan(src));
     Object.assign(cp, { stage: "completed", crmPropertyId: "verified", updatedAt: "2026-10-07T10:00:00Z" }); await port.save(cp); await port.recordEvent(cp, "stage_completed");
     const reopened = await TerritoryStore.open(directory, [street]), state = reopened.read();
-    expect(state.runs.at(-1)).toMatchObject({ state: "paused", handled: 0, imports: { [unit.key]: { crmId: "verified" } } });
+    expect(state.runs.at(-1)).toMatchObject({ state: "stopped", handled: 0, imports: { [unit.key]: { crmId: "verified" } } });
     expect(unitMemory(state.units[unit.key]!).statistics.verifiedImports).toBe(1);
     expect(state.units[unit.key]!.journal!.filter(e => e.kind === "import_completed")).toHaveLength(1);
     expect(unitMemory(state.units[Object.keys(state.units)[1]!]!).statistics.verifiedImports).toBe(0);

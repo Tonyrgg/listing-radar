@@ -100,6 +100,7 @@ try {
   assert.equal(await page.locator("[data-unit-select]:checked").count(), 5, "Tutti selezionabili prima del confronto");
   assert.equal(await page.locator("#enqueue").isDisabled(), false, "Confronto e import si avviano insieme");
   await page.locator("#clear-selection").click();
+  await openStreetSettings(page);
   await page.locator('[data-operation="compare"]').click();
   const scanRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.find(r => r.operation === "scan"), street.id);
   assert.equal(scanRun.settings.filters.minCivicNumber, 2);
@@ -144,24 +145,24 @@ try {
     "Il focus resta sul record letto",
   );
   await page.locator("#unit-filter").selectOption("ready");
-  assert.equal(await page.locator(".unit").count(), 3);
+  assert.equal(await page.locator(".unit").count(), 5);
   await page.locator("#select-all").click();
   assert.equal(
     await page.locator("#selection-count").textContent(),
-    "3 immobili selezionati",
+    "5 immobili selezionati",
   );
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
-      "3 da aggiungere alla coda",
+      "5 da aggiungere alla coda",
     ),
   );
-  await page.locator("#unit-filter").selectOption("review");
+  await page.locator("#unit-filter").selectOption("recent");
   assert.equal(await page.locator('[data-disclosure="options-apply"]').count(), 0, "Le opzioni import sono soltanto nella coda");
   assert.equal(await page.locator("#enqueue").isDisabled(), false);
-  assert.equal(await page.locator(".unit").count(), 1);
+  assert.equal(await page.locator(".unit").count(), 0);
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
-      "3 fuori dai filtri",
+      "5 fuori dai filtri",
     ),
     "Gli immobili nascosti selezionati sono espliciti",
   );
@@ -173,17 +174,20 @@ try {
   await page.locator(`[data-unit-select="${deselectKey}"]`).click();
   assert.equal(
     await page.locator(".unit").count(),
-    2,
+    4,
     "Deselezionare aggiorna il filtro Solo selezionati",
   );
   await page.locator("#clear-selection").click();
   assert.equal(await page.locator("#enqueue").isDisabled(), true);
   await page.locator("#unit-filter").selectOption("ready");
   await page.locator("#select-all").click();
+  await page.locator("#clear-selection").click();
+  const keysToImport = await page.evaluate(async id => (await window.territory.detail(id)).units.filter(u => ['create', 'update', 'synced'].includes(u.assessment?.kind)).map(u => u.key), street.id);
+  for (const key of keysToImport) await page.locator(`[data-unit-select="${key}"]`).check();
   await page.screenshot({ path: path.join(output, "import-options.png") });
   await page.locator("#enqueue").click();
   await page.locator("#detail-close").click(); await page.locator("#queue-manager").click();
-  await page.locator("[data-disclosure=queue-options]").evaluate(el => el.open = true);
+  await page.locator("#queue-continue").click();
   await page.locator("#queue-activity").selectOption("plain");
   await page.locator("#queue-import").click();
   await until(page, async id => {

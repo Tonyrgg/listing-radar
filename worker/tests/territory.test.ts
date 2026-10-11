@@ -105,7 +105,7 @@ describe("Territorio: un solo flusso, memoria separata", () => {
     class FailedSearch extends SimulationProvider { override async candidates() { return { rows: [], complete: false }; } }
     const secondApp = new TerritoryApplication(store, new FailedSearch(store, 0));
     await run(secondApp, "apply", [key]);
-    expect(store.read().runs.at(-1)?.state).toBe("paused");
+    expect(store.read().runs.at(-1)?.state).toBe("stopped");
     expect(store.read().units[key]!.assessment?.kind).toBe("unknown");
     expect(Object.keys(store.read().virtualPeople)).toHaveLength(0);
   });
@@ -124,7 +124,7 @@ describe("Territorio: un solo flusso, memoria separata", () => {
     const key = Object.keys(store.read().units)[0]!;
     await run(app, "apply", [key]);
     const last = store.read().runs.at(-1)!;
-    if (last.state === "paused") await run(app, "apply", [key], last.id);
+    if (last.state === "stopped") await run(app, "apply", [key]);
     expect(store.read().runs.at(-1)?.error).toBeNull();
     expect(store.read().runs.at(-1)?.state).toBe("completed");
     expect(Object.values(store.read().virtualCrm).filter(p => p.cadastral?.subaltern === "1")).toHaveLength(1);
@@ -134,10 +134,12 @@ describe("Territorio: un solo flusso, memoria separata", () => {
     const key = Object.keys(store.read().units)[0]!; await run(app, "apply", [key]);
     await store.change(state => { state.runs.at(-1)!.state = "running"; state.checkpoints[effectiveSource(state.units[key]!).sourcePropertyId]!.stage = "people_synced"; });
     const reopened = await TerritoryStore.open(directory, [street]);
-    expect(reopened.read().runs.at(-1)?.state).toBe("paused");
+    expect(reopened.read().runs.at(-1)?.state).toBe("stopped");
     const recovered = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
-    await expect(recovered.start(street.id, "scan")).rejects.toThrow("import parziale");
-    await expect(recovered.correct(key, { address: "Altro indirizzo" }, "")).rejects.toThrow("Import parziale");
+    const before = reopened.read().checkpoints;
+    await recovered.start(street.id, "scan"); await recovered.waitForIdle();
+    expect(reopened.read().checkpoints).toEqual(before);
+    await expect(recovered.correct(key, { address: "Altro indirizzo" }, "")).rejects.toThrow("piano originale");
     expect(JSON.parse(await readFile(path.join(directory, "territory-ledger.json"), "utf8")).version).toBe(1);
   });
 });

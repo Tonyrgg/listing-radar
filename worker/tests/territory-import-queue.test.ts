@@ -6,6 +6,7 @@ import { TerritoryStore } from "../src/territory/store.js";
 import { TerritoryApplication } from "../src/territory/application.js";
 import { SimulationProvider } from "../src/territory/providers.js";
 import { hydrateImportQueue } from "../src/territory/import-queue.js";
+import { buildPlan } from "../src/import-v2/identity.js";
 import { effectiveSource, type Street } from "../src/territory/model.js";
 import type { SourceProperty } from "../src/import-v2/model.js";
 
@@ -70,20 +71,24 @@ describe("Coda centrale degli import V2", () => {
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys);
     expect(routes).toEqual(["a", "b"]);
   });
-  it("conserva gli interrotti e impedisce rimozioni o nuovi piani fino alla ripresa", async () => {
+  it("chiude il batch interrotto e lascia liberi gli immobili non iniziati", async () => {
     const { app, keys, interrupt, store } = await setup();
     await app.enqueue(keys); interrupt(); const runId = await app.startQueue(keys); await app.waitForIdle();
-    expect(app.importQueue().entries.map(e => e.key)).toEqual([keys[1]]);
-    await expect(app.dequeue([keys[1]!])).rejects.toThrow("originale");
-    await expect(app.correct(keys[1]!, { category: "A/2" }, "")).rejects.toThrow("originale");
-    await expect(app.startQueue([keys[1]!])).rejects.toThrow("Riprendi");
-    await app.correct(keys[0]!, { category: "A/2" }, "Successo già concluso");
-    await app.enqueue([keys[0]!]); const newEntry = store.read().importQueue![keys[0]!]!.id;
-    await app.startQueue([], undefined, runId); await app.waitForIdle();
-    expect(store.read().runs.at(-1)!.state).toBe("completed");
-    expect(app.importQueue().entries.map(e => e.key)).toEqual([keys[0]]);
-    expect(app.importQueue().entries[0]!.id).toBe(newEntry);
-    expect(app.unitDetail(keys[0]!).source.category).toBe("A/2");
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "stopped", handled: 1 });
+    expect(store.read().runs.at(-1)!.endedAt).not.toBeNull();
+    expect(app.unitDetail(keys[0]!).memory.statistics.verifiedImports).toBe(1);
+    expect(app.unitDetail(keys[1]!).memory.statistics.verifiedImports).toBe(0);
+    expect(app.snapshot().streets.find(s => s.id === "a")!.status).not.toBe("paused");
+    expect(app.importQueue().entries[0]).toMatchObject({ key: keys[1], locked: false, editLocked: false });
+    await app.dequeue([keys[1]!]); await app.correct(keys[1]!, { category: "A/2" }, "Nuova selezione");
+    await app.enqueue([keys[1]!]);
+    await expect(app.startQueue([], undefined, runId)).rejects.toThrow("terminato");
+    const id = await app.startQueue([keys[1]!]); await app.waitForIdle();
+    expect(id).not.toBe(runId);
+    expect(app.importQueue().entries).toHaveLength(0);
+    expect(store.read().runs.find(r => r.id === runId)!.state).toBe("stopped");
+    expect(app.unitDetail(keys[0]!).memory.statistics.verifiedImports).toBe(1);
+    expect(app.unitDetail(keys[1]!).memory.statistics.verifiedImports).toBe(1);
   });
   it("recupera gli import precedenti interrotti nella coda mantenendo il piano originale", async () => {
     const { app, keys, interrupt, store, directory } = await setup();
@@ -93,7 +98,8 @@ describe("Coda centrale degli import V2", () => {
     const next = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
     expect(next.importQueue().entries.map(e => e.key)).toEqual([keys[1]]);
     expect(reopened.read().runs.at(-1)!.applySources).toEqual(sources);
-    await next.startQueue([], undefined, runId); await next.waitForIdle();
+    expect(reopened.read().runs.find(r => r.id === runId)!.state).toBe("stopped");
+    await next.startQueue([keys[1]!]); await next.waitForIdle();
     expect(next.importQueue().entries).toHaveLength(0);
   });
   it("conserva le anomalie senza rimuoverle dalla coda e permette di correggerle", async () => {
@@ -124,9 +130,48 @@ describe("Coda centrale degli import V2", () => {
     });
     expect(app.importQueue().entries).toHaveLength(0);
     const crm = store.read().virtualCrm;
-    await app.startQueue([], undefined, store.read().runs.at(-1)!.id); await app.waitForIdle();
+    await expect(app.startQueue([], undefined, store.read().runs.at(-1)!.id)).rejects.toThrow("terminato");
     expect(store.read().virtualCrm).toEqual(crm);
-    expect(store.read().runs.at(-1)!.state).toBe("completed");
+    expect(store.read().runs.at(-1)!.state).toBe("stopped");
+  });
+
+  it("un piano incerto senza opzioni recuperabili blocca solo quel caso", async () => {
+    const { app, keys, store } = await setup();
+    await app.enqueue([keys[0]!]); await app.startQueue([keys[0]!]); await app.waitForIdle();
+    await store.change(state => {
+      const cp = Object.values(state.checkpoints)[0]!;
+      delete state.checkpoints[cp.propertyId];
+      cp.propertyId = "orphan-source";
+      cp.plan = buildPlan({ ...cp.plan!.source, sourcePropertyId: cp.propertyId });
+      cp.stage = "property_synced";
+      state.checkpoints[cp.propertyId] = cp;
+    });
+    await app.enqueue(keys);
+    const before = store.read().checkpoints;
+    expect(app.importQueue().readyKeys).toEqual([keys[1]]);
+    expect(app.importQueue().entries[0]).toMatchObject({ editLocked: true, problem: expect.stringContaining("Opzioni originali") });
+    await expect(app.startQueue([keys[0]!])).rejects.toThrow("piani");
+    await app.startQueue([keys[1]!]); await app.waitForIdle();
+    expect(store.read().checkpoints["orphan-source"]).toEqual(before["orphan-source"]);
+    expect(app.unitDetail(keys[1]!).memory.statistics.verifiedImports).toBe(1);
+    await app.dequeue([keys[0]!]);
+    expect(store.read().checkpoints["orphan-source"]).toEqual(before["orphan-source"]);
+  });
+
+  it("una prova precedente non rimuove un nuovo inserimento nella coda", async () => {
+    const { app, keys, store, directory } = await setup();
+    const key = keys[0]!;
+    await app.enqueue([key]); const oldEntry = store.read().importQueue![key]!.id;
+    await app.startQueue([key]); await app.waitForIdle();
+    await app.enqueue([key]); const newEntry = store.read().importQueue![key]!.id;
+    expect(newEntry).not.toBe(oldEntry);
+    const reopened = await TerritoryStore.open(directory, streets);
+    expect(reopened.read().importQueue![key]!.id).toBe(newEntry);
+    const next = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
+    await next.startQueue([key]); await next.waitForIdle();
+    expect(next.importQueue().entries).toHaveLength(0);
+    expect(next.unitDetail(key).memory.statistics.verifiedImports).toBe(2);
+    expect(Object.values(reopened.read().virtualCrm).filter(p => p.cadastral?.parcel === "a" && p.cadastral.subaltern === "1")).toHaveLength(1);
   });
 
 });

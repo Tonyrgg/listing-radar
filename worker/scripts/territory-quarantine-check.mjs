@@ -36,7 +36,7 @@ try {
   assert.equal(await page.locator("#enqueue").isDisabled(), false);
   await page.locator("#enqueue").click();
   await page.locator("#detail-close").click(); await page.locator("#queue-manager").click();
-  await page.locator("[data-disclosure=queue-options]").evaluate(el => el.open = true);
+  await page.locator("#queue-continue").click();
   await page.locator("#queue-activity").selectOption("plain");
   await page.locator("#queue-import").click();
   await until(page, async id => (await window.territory.detail(id)).runs.at(-1)?.operation === "apply" && (await window.territory.detail(id)).runs.at(-1)?.state === "completed", street.id);
