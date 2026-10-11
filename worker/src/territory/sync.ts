@@ -29,6 +29,7 @@ export function territoryDigest(value: unknown): string {
 }
 function validateState(state: TerritoryState, kind: TerritorySyncConfig["profileKind"]) {
   if (state.version !== 1 || !Array.isArray(state.streets) || !Array.isArray(state.runs) || !state.memories || !state.units || !state.checkpoints || !state.virtualCrm || !state.virtualPeople || !Array.isArray(state.events)) throw new Error("Archivio remoto non riconosciuto");
+  if (state.importQueue !== undefined && (!state.importQueue || Array.isArray(state.importQueue) || typeof state.importQueue !== "object" || Object.entries(state.importQueue).some(([key, entry]) => !entry || entry.key !== key || typeof entry.id !== "string" || !entry.id || typeof entry.streetId !== "string" || !entry.streetId || typeof entry.addedAt !== "string" || !Number.isFinite(Date.parse(entry.addedAt))))) throw new Error("Coda dell'archivio remoto non riconosciuta");
   for (const unit of Object.values(state.units)) {
     if (!Array.isArray(unit.observations) || !unit.observations.length || unit.observations.some(o => (o.origin === "simulation") !== (kind === "simulation") || o.source.municipality.trim().toUpperCase() !== "BITONTO")) throw new Error("Il workspace contiene dati di un altro profilo o Comune");
   }
@@ -71,7 +72,7 @@ export class TerritorySync {
     const [binding, remote] = await Promise.all([this.binding(), this.remote()]);
     if (remote && remote.revision > binding.revision) {
       const local = this.store.read();
-      const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length;
+      const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length || Object.keys(local.importQueue ?? {}).length;
       if (territoryDigest(local) === territoryDigest(remote.state) || (binding.localHash && territoryDigest(local) === binding.localHash) || (!binding.localHash && !hasWork)) return this.pull();
     }
     return this.push();
@@ -94,7 +95,7 @@ export class TerritorySync {
     if (!remote) throw new Error("Nessun archivio presente nella memoria condivisa");
     if (remote.revision < binding.revision) throw new Error("La memoria condivisa ha una revisione più vecchia. L'archivio locale resta conservato.");
     if (territoryDigest(local) === territoryDigest(remote.state)) { await this.remember(remote.revision, local); return { revision: remote.revision, changed: false }; }
-    const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length;
+    const hasWork = Object.keys(local.units).length || local.runs.length || local.events.length || Object.values(local.memories).some(m => m.note || m.attention) || local.history?.length || Object.keys(local.networkBindings ?? {}).length || Object.keys(local.zones ?? {}).length || Object.keys(local.savedQueries ?? {}).length || Object.keys(local.importQueue ?? {}).length;
     if ((binding.localHash && territoryDigest(local) !== binding.localHash) || (!binding.localHash && hasWork)) throw new Error("Ci sono dati o modifiche locali da conservare. Nessun archivio viene sostituito automaticamente.");
     const incoming = structuredClone(remote.state);
     for (const run of incoming.runs) if (run.state === "running") { run.state = "paused"; run.error = "Operazione recuperata dalla memoria condivisa: verifica la sessione e riprendi dal punto conservato."; }

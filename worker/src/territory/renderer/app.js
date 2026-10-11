@@ -3,8 +3,11 @@ import { createStreetSearch } from "./street-search.js";
 import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
 import { createToast, isBrowserWarning } from "./toast.js";
-import { unitHeadingHtml, ownerListHtml, comparisonHtml } from "./unit-card.js";
-import { unitHistoryHtml } from "./unit-history.js";
+import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitRecordHtml } from "./unit-card.js";
+import { wireUnitEditors } from "./unit-editor.js";
+import { createQueuePanel } from "./queue-panel.js";
+import { createFilterPicker } from "./filter-picker.js";
+import { matchesUnitFilters, emptyUnitFilters } from "./unit-filters.js";
 import { createQueryPanel } from "./query-panel.js";
 import { gradientStops, importGradientRenderer } from "./import-gradient.js";
 /* The renderer receives data and explicit commands only, never filesystem or credentials. */
@@ -66,15 +69,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     layers = new Map();
   const dirtyForms = new Set();
   const operationDrafts = new Map();
+  let unitFilters = emptyUnitFilters();
   function optionsForStreet() {
     if (!operationDrafts.has(selectedStreet)) {
       const scan = [...detail.runs].reverse().find(r => r.operation === "scan" && r.settings)?.settings;
-      const apply = [...detail.runs].reverse().find(r => r.operation === "apply" && r.settings)?.settings;
       operationDrafts.set(selectedStreet, {
         filters: { residentialOnly: false, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null, ...scan?.filters },
-        includeCoOwners: apply?.includeCoOwners ?? true,
-        importPolicy: apply?.importPolicy ?? "create_update",
-        activityMode: apply?.activityMode ?? "none",
       });
     }
     return operationDrafts.get(selectedStreet);
@@ -91,34 +91,24 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     return `${s.importPolicy === "existing_only" ? "Solo schede esistenti" : "Creazioni e aggiornamenti"} · ${s.includeCoOwners ? "tutti gli intestatari" : "solo principale"} · ${s.activityMode === "plain" ? "attività da eseguire" : "nessuna attività"}`;
   }
   function operationOptions(operation, disabled) {
-    const settings = optionsForStreet(), f = settings.filters;
+    const f = optionsForStreet().filters;
     const option = (value, label, current) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
     const number = (id, label, value, min, max) => `<label for="${id}">${label}<input id="${id}" type="number" step="1" min="${min}" max="${max}" value="${value ?? ""}"></label>`;
-    return `<details class="operation-options" data-disclosure="options-${operation}"><summary>${operation === "scan" ? "Filtri della prossima acquisizione" : "Opzioni del prossimo import"}</summary><form id="options-${operation}"><fieldset ${disabled}><legend class="sr-only">${operation === "scan" ? "Filtri SISTER" : "Regole import"}</legend><div class="operation-fields">${operation === "scan" ? `<label for="scan-category">Categorie<select id="scan-category">${option("all", "Abitazioni e categoria C (box, locali…)", f.residentialOnly ? "homes" : "all")}${option("homes", "Solo categoria A", f.residentialOnly ? "homes" : "all")}</select></label><label for="scan-floor-mode">Piano<select id="scan-floor-mode">${Object.entries({ any: "Tutti i piani", exact: "Piano esatto", minimum: "Da questo piano", maximum: "Fino a questo piano" }).map(([v,l])=>option(v,l,f.floorMode)).join("")}</select></label>${number("scan-floor", "Numero piano (0 = terra)", f.floorValue, -10, 100)}${number("scan-min-civic", "Civico iniziale (facoltativo)", f.minCivicNumber, 0, 999999)}${number("scan-max-civic", "Civico finale (facoltativo)", f.maxCivicNumber, 0, 999999)}` : `<label for="import-policy">Schede da gestire<select id="import-policy">${option("create_update", "Crea o aggiorna secondo il confronto", settings.importPolicy)}${option("existing_only", "Aggiorna soltanto schede esistenti", settings.importPolicy)}</select></label><label for="import-owners">Intestatari<select id="import-owners">${option("all", "Tutti gli intestatari acquisiti", settings.includeCoOwners ? "all" : "primary")}${option("primary", "Solo il principale", settings.includeCoOwners ? "all" : "primary")}</select></label><label for="import-activity">Attività nel gestionale<select id="import-activity">${option("none", "Nessuna attività", settings.activityMode)}${option("plain", "Telefonata da eseguire", settings.activityMode)}</select></label>`}</div><p class="explanation">${operation === "scan" ? "I filtri limitano la lettura dei proprietari. Il totale della via usa l'inventario SISTER prima dei filtri. Piani o civici non riconoscibili restano esclusi se il filtro è attivo." : "Il principale è scelto dal motore in base alle quote. Gli altri collegamenti già presenti sono conservati. L’attività, se richiesta, resta da eseguire e non registra un contatto effettuato. Gli immobili raccolti dalla rete proprietari, o con provenienza storica da verificare, non generano attività."} Le scelte si fissano all’avvio; Riprendi mantiene quelle della run originale.</p></fieldset></form></details>`;
+    return `<details class="operation-options" data-disclosure="options-scan"><summary>Filtri della prossima acquisizione</summary><form id="options-scan"><fieldset ${disabled}><legend class="sr-only">Filtri SISTER</legend><div class="operation-fields"><label for="scan-category">Categorie<select id="scan-category">${option("all", "Abitazioni e categoria C (box, locali…)", f.residentialOnly ? "homes" : "all")}${option("homes", "Solo categoria A", f.residentialOnly ? "homes" : "all")}</select></label><label for="scan-floor-mode">Piano<select id="scan-floor-mode">${Object.entries({ any: "Tutti i piani", exact: "Piano esatto", minimum: "Da questo piano", maximum: "Fino a questo piano" }).map(([v,l])=>option(v,l,f.floorMode)).join("")}</select></label>${number("scan-floor", "Numero piano (0 = terra)", f.floorValue, -10, 100)}${number("scan-min-civic", "Civico iniziale (facoltativo)", f.minCivicNumber, 0, 999999)}${number("scan-max-civic", "Civico finale (facoltativo)", f.maxCivicNumber, 0, 999999)}</div><p class="explanation">I filtri limitano la lettura dei proprietari. Il totale della via usa l'inventario SISTER prima dei filtri. Piani o civici non riconoscibili restano esclusi se il filtro è attivo. Le scelte si fissano all’avvio; Riprendi mantiene quelle della run originale.</p></fieldset></form></details>`;
   }
-  function bindOperationOptions(operation) {
-    const form = $(`options-${operation}`);
-    if (!form) return;
+  function bindOperationOptions() {
+    const form = $("options-scan"); if (!form) return;
     const settings = optionsForStreet();
     form.onsubmit = event => event.preventDefault();
     const numberValue = id => $(id).value === "" ? null : Number($(id).value);
     const update = () => {
-      if (operation === "scan") {
-        settings.filters = { residentialOnly: $("scan-category").value === "homes", floorMode: $("scan-floor-mode").value, floorValue: numberValue("scan-floor"), minCivicNumber: numberValue("scan-min-civic"), maxCivicNumber: numberValue("scan-max-civic") };
-        $("scan-floor").disabled = settings.filters.floorMode === "any" || Boolean(snapshot.activeRun);
-        $("scan-floor").required = settings.filters.floorMode !== "any";
-        const f = settings.filters;
-        $("scan-max-civic").setCustomValidity(f.minCivicNumber !== null && f.maxCivicNumber !== null && f.minCivicNumber > f.maxCivicNumber ? "Il civico finale deve essere maggiore o uguale a quello iniziale" : "");
-      } else {
-        settings.importPolicy = $("import-policy").value;
-        settings.includeCoOwners = $("import-owners").value === "all";
-        settings.activityMode = $("import-activity").value;
-        updateSelection();
-      }
+      settings.filters = { residentialOnly: $("scan-category").value === "homes", floorMode: $("scan-floor-mode").value, floorValue: numberValue("scan-floor"), minCivicNumber: numberValue("scan-min-civic"), maxCivicNumber: numberValue("scan-max-civic") };
+      $("scan-floor").disabled = settings.filters.floorMode === "any" || Boolean(snapshot.activeRun);
+      $("scan-floor").required = settings.filters.floorMode !== "any";
+      const f = settings.filters;
+      $("scan-max-civic").setCustomValidity(f.minCivicNumber !== null && f.maxCivicNumber !== null && f.minCivicNumber > f.maxCivicNumber ? "Il civico finale deve essere maggiore o uguale a quello iniziale" : "");
     };
-    form.oninput = update;
-    form.onchange = update;
-    update();
+    form.oninput = update; form.onchange = update; update();
   }
   let hoverId = null;
   let hoverPoint = null;
@@ -199,7 +189,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   function unitRows() {
     const needle = unitSearch.trim().toLocaleLowerCase("it");
     return detail.units.filter(
-      (u) =>
+      (u) => matchesUnitFilters(u, unitFilters) &&
         (!needle ||
           `${u.source.fullAddress} ${u.source.cadastral.sheet} ${u.source.cadastral.parcel} ${u.source.cadastral.subaltern} ${u.source.owners.map((o) => `${o.fullName} ${o.taxCode}`).join(" ")}`
             .toLocaleLowerCase("it")
@@ -213,6 +203,50 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
                 ? ["synced", "unchanged"].includes(u.assessment?.kind)
                 : (u.assessment?.kind || "unknown") === unitFilter)),
     );
+  }
+  function unitFiltersHtml() {
+    return `<details class="unit-filter-panel operation-options" data-disclosure="unit-filters"><summary>Filtra immobili</summary><div class="unit-filter-fields"><div id="unit-floors"></div><div id="unit-categories"></div><div id="unit-owners"></div><label>Import Cloud<select id="unit-imports"><option value="any">Tutti</option><option value="never">Mai importati</option><option value="imported">Con import verificato</option></select></label><label>Ultimo import più vecchio di (giorni)<input id="unit-age" type="number" min="0" max="36500" value="${unitFilters.age ?? ''}" placeholder="Nessun limite"></label><div class="unit-civic-range"><label>Dal civico<input id="unit-min-civic" type="number" min="0" max="999999" value="${unitFilters.minCivic ?? ''}" placeholder="Inizio"></label><label>Al civico<input id="unit-max-civic" type="number" min="0" max="999999" value="${unitFilters.maxCivic ?? ''}" placeholder="Fine"></label></div></div><div class="actions"><button id="unit-reset-filters" class="quiet">Azzera filtri immobili</button></div><p class="meta">I filtri si combinano. Piani e civici non rilevati restano esclusi quando richiesti.</p></details>`;
+  }
+  function bindUnitFilters() {
+    const units = detail.units, owners = new Map();
+    for (const u of units) for (const o of u.source.owners) {
+      const cf = o.taxCode.trim().toUpperCase(); if (!cf) continue;
+      const names = owners.get(cf) ?? new Set(); names.add(o.fullName); owners.set(cf, names);
+    }
+    let pickers;
+    const changed = () => {
+      if (dirty) {
+        for (const [field, picker] of Object.entries(pickers)) picker.fill(unitFilters[field]);
+        return feedback('Salva o annulla le correzioni prima di filtrare gli immobili.', true);
+      }
+      unitFilters = { ...unitFilters, ...Object.fromEntries(Object.entries(pickers).map(([field, picker]) => [field, picker.values()])) };
+      renderDetail();
+    };
+    const specs = [
+      ['floors', 'unit-floors', 'Piani', [...new Set(units.flatMap(u => u.position.floors))].sort((a, b) => a - b).map(f => ({ value: String(f), label: f === 0 ? 'Piano terra' : f < 0 ? `Interrato ${Math.abs(f)}` : `Piano ${f}` }))],
+      ['categories', 'unit-categories', 'Categorie', [...new Set(units.map(u => u.source.category.trim().toUpperCase()))].sort().map(c => ({ value: c, label: c }))],
+      ['owners', 'unit-owners', 'Intestatari', [...owners].map(([cf, names]) => ({ value: cf, label: [...names].join(' / '), meta: cf, identity: cf })).sort((a, b) => a.label.localeCompare(b.label, 'it'))]
+    ];
+    pickers = Object.fromEntries(specs.map(([field, id, label, rows]) => {
+      const picker = createFilterPicker($(id), { label, allLabel: `Tutti · ${rows.length} voci`, rows, escape, onChange: changed });
+      $(id).querySelector('details').dataset.disclosure = `unit-picker-${field}`;
+      picker.fill(unitFilters[field]); return [field, picker];
+    }));
+    const restoreInputs = () => {
+      $('unit-imports').value = unitFilters.imports;
+      $('unit-age').value = unitFilters.age ?? '';
+      $('unit-min-civic').value = unitFilters.minCivic ?? '';
+      $('unit-max-civic').value = unitFilters.maxCivic ?? '';
+    };
+    restoreInputs();
+    for (const id of ['unit-imports', 'unit-age', 'unit-min-civic', 'unit-max-civic']) $(id).onchange = () => {
+      if (dirty) { restoreInputs(); return feedback('Salva o annulla le correzioni prima di filtrare gli immobili.', true); }
+      const number = id => $(id).value === '' ? null : Number($(id).value);
+      const next = { ...unitFilters, imports: $('unit-imports').value, age: number('unit-age'), minCivic: number('unit-min-civic'), maxCivic: number('unit-max-civic') };
+      if (['unit-age', 'unit-min-civic', 'unit-max-civic'].some(id => !$(id).checkValidity()) || next.minCivic !== null && next.maxCivic !== null && next.minCivic > next.maxCivic) { restoreInputs(); return feedback('Controlla giorni e intervallo dei civici.', true); }
+      unitFilters = next; renderDetail();
+    };
+    $('unit-reset-filters').onclick = () => { if (dirty) return feedback('Salva o annulla le correzioni prima di azzerare i filtri.', true); unitFilters = emptyUnitFilters(); unitSearch = unitFilter = ''; renderDetail(); };
   }
   function switchTab(next, focus = true) {
     if (dirty)
@@ -560,6 +594,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     tab = "units";
     unitSearch = "";
     unitFilter = "";
+    unitFilters = emptyUnitFilters();
     renderedContext = null;
     hidePreview();
     $("detail-dialog").scrollTop = 0;
@@ -598,7 +633,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       const title = s.needsReview ? "Associa il tracciato a una via" : view.phase === "acquiring" ? "Acquisizione da SISTER in corso" : view.phase === "interrupted" ? "Riprendi la prima acquisizione" : "Acquisisci i dati di questa via";
       const description = s.needsReview ? "Scegli la via ufficiale per leggere i suoi dati catastali." : view.phase === "interrupted" ? "Il lavoro già svolto è conservato. Riprendi dallo stesso punto." : "Leggi immobili e intestatari da SISTER e conservali nella memoria del Worker.";
       const button = view.phase === "acquiring" ? "" : s.needsReview ? '<button id="first-associate" class="primary">Associa via ufficiale</button>' : view.phase === "interrupted" ? '<button id="resume" class="primary">Riprendi acquisizione</button>' : '<button class="primary" data-operation="scan">Acquisisci via</button>';
-      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">L’import in Tecnocloud si avvia dai selezionati, con confronto e import insieme.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
+      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">Seleziona gli immobili acquisiti e aggiungili alla coda per importarli in Tecnocloud.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
     } else if (sameContext) {
       $("inspector").querySelector(".detail-header").innerHTML = header;
       $("tab-units").innerHTML = `${icon("building")}Immobili ${s.count}`;
@@ -642,7 +677,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const latest = detail.runs.at(-1),
       paused =
         latest && ["paused", "failed"].includes(latest.state) ? latest : null;
-    const resume = paused
+    const resume = paused?.operation === "apply"
+      ? `<section class="run-item"><strong>Import da riprendere nella coda</strong><button data-open-queue>Apri coda</button></section>`
+      : paused
       ? `<section class="run-item"><strong>${escape(operations[paused.operation])}: da riprendere</strong><p class="explanation">${escape(isBrowserWarning(paused.error || "") ? "Avanzamento conservato. Riprendi dopo aver aperto il browser di lavoro." : paused.error || "L’avanzamento è conservato.")}</p><button id="resume" class="primary" ${disabled}>Riprendi operazione</button></section>`
       : "";
     const counts = { unknown: 0, ready: 0, planned: 0, review: 0, aligned: 0 };
@@ -661,7 +698,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         : counts.unknown
           ? 1
           : 2;
-    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’applicazione.</p>`;
+    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’import dalla coda.</p>`;
     {
       if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
@@ -733,7 +770,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Pronti ad applicare (${counts.ready})</option><option value="unknown">Confronto da eseguire o incompleto (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>Ordine: civico, piano, catasto · ${rows.length} immobili visibili · ${counts.ready} pronti ad applicare · ${counts.review} da verificare</p>${detail.units.length ? operationOptions("apply", disabled) : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="apply" class="primary" ${disabled || !selected.size ? "disabled" : ""}>${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Esito del confronto<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="unknown">Confronto da eseguire o incompleto (${counts.unknown})</option><option value="review">Da verificare (${counts.review})</option><option value="aligned">Coerenti o allineati (${counts.aligned})</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>Ordine: civico, piano, catasto · ${rows.length} immobili visibili · ${counts.ready} selezionabili · ${counts.review} da verificare</p>${detail.units.length ? unitFiltersHtml() : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button></div><p class="explanation" id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -756,7 +793,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         $("unit-empty-action").onclick = () => {
           if (!detail.units.length) $("street-tools [data-operation='scan']")?.click();
           else {
-            unitSearch = unitFilter = "";
+            if (dirty) return feedback("Salva o annulla le correzioni prima di cambiare i filtri.", true);
+            unitSearch = unitFilter = ""; unitFilters = emptyUnitFilters();
             renderDetail();
           }
         };
@@ -766,7 +804,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             "Salva o annulla le modifiche prima di cambiare selezione.",
             true,
           );
-        for (const u of rows) selected.add(u.key);
+        for (const u of rows) if (!snapshot.queueKeys.includes(u.key)) selected.add(u.key);
         renderDetail();
       };
       $("clear-selection").onclick = () => {
@@ -778,7 +816,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         selected.clear();
         renderDetail();
       };
-      $("apply").onclick = safe(() => operate("apply"));
+      bindUnitFilters();
+      $("enqueue").onclick = safe(async () => {
+        if (dirty) return feedback("Salva o annulla le modifiche prima di aggiungere alla coda.", true);
+        const count = await api.enqueue({ keys: [...selected], streetId: selectedStreet });
+        selected.clear(); await refresh(); feedback(`${count} immobili aggiunti alla coda.`);
+      });
       $("detail-body").querySelectorAll(".unit").forEach(card => { card.onclick = event => { if (event.target.closest("input, label, button, summary, details, a, textarea, select") || window.getSelection()?.toString()) return; const input = card.querySelector("[data-unit-select]"); if (input && !input.disabled) input.click(); }; });
       $("detail-body")
         .querySelectorAll("[data-unit-select]")
@@ -815,39 +858,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           };
         });
       updateSelection();
-      $("detail-body")
-        .querySelectorAll("[data-edit]")
-        .forEach((form) => {
-          form.oninput = () => markDirty(form);
-          form.onsubmit = safe(async (event) => {
-            event.preventDefault();
-            const key = form.dataset.edit,
-              unit = detail.units.find((u) => u.key === key);
-            const data = new FormData(form);
-            const owners = unit.source.owners.map((owner, i) => ({
-              ...owner,
-              fullName: String(data.get(`name-${i}`)),
-              taxCode: String(data.get(`cf-${i}`)),
-              sharePercentage:
-                String(data.get(`share-${i}`)).trim() === ""
-                  ? null
-                  : Number(data.get(`share-${i}`)),
-            }));
-            await api.correct({
-              key,
-              note: String(data.get("note")),
-              correction: {
-                address: String(data.get("address")),
-                category: String(data.get("category")),
-                owners,
-              },
-            });
-            saved(form);
-            selected.delete(key);
-            await refresh();
-            feedback("Correzione conservata. Serve un nuovo confronto.");
-          });
-        });
+      wireUnitEditors($("detail-body"), detail.units, { api, safe, markDirty, saved, feedback,
+        afterSave: async key => { selected.delete(key); await refresh(); },
+        cancel: form => { dirtyForms.delete(form); dirty = Boolean(dirtyForms.size); draftStatus(); }
+      });
+
     } else if (tab === "quarantine") {
       $("detail-body").innerHTML = quarantineHtml(detail.quarantine || [], escape, date);
       wireQuarantine($("detail-body"), detail.quarantine || []);
@@ -910,7 +925,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         await refresh();
       });
     bindOperationOptions("scan");
-    bindOperationOptions("apply");
+    $("inspector").querySelectorAll("[data-open-queue]").forEach(button => { button.onclick = safe(() => queuePanel.open()); });
     modalProgress();
     draftStatus();
     labelIcons($("inspector"));
@@ -918,49 +933,22 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (state) restore($("inspector"), state);
   }
   function unitHtml(u) {
-    const s = u.source,
-      decision = u.assessment?.kind || "unknown";
-    const enabled = !snapshot.activeRun;
-    return `<article class="unit" data-unit="${escape(u.key)}" data-selected="${selected.has(u.key)}"><div class="unit-head"><label class="unit-select-label"><input type="checkbox" aria-label="Seleziona ${escape(s.fullAddress)}" data-unit-select="${escape(u.key)}" ${selected.has(u.key) ? "checked" : ""} ${enabled ? "" : "disabled"}></label><div>${unitHeadingHtml(u, escape)}</div></div>${ownerListHtml(s.owners, escape)}${comparisonHtml(u, escape)}${!snapshot.operational && !u.canWrite && ["create", "update"].includes(decision) ? '<p class="meta">Scheda non autorizzata al collaudo</p><button class="quiet" data-authorize-key="' + escape(u.key) + '">Scegli per il collaudo</button>' : ""}<details data-disclosure="${escape(u.key)}:record"><summary>Dati immobile e acquisizioni</summary><div class="unit-detail-body"><table><tr><th scope="row">Categoria</th><td>${escape(s.category)}</td></tr><tr><th scope="row">Consistenza</th><td>${escape(s.consistency)}</td></tr><tr><th scope="row">Ultima acquisizione</th><td>${date(u.observations.at(-1)?.at)}</td></tr>${u.crmId ? `<tr><th scope="row">Scheda gestionale</th><td>${escape(u.crmId)}</td></tr><tr><th scope="row">Ultimo import concluso</th><td>${u.importedAt ? date(u.importedAt) : "Data non disponibile"}</td></tr>` : ""}</table><p>${escape(u.note)}</p><details data-disclosure="${escape(u.key)}:observations"><summary>Acquisizioni precedenti (${u.observations.length})</summary>${[
-      ...u.observations,
-    ]
-      .reverse()
-      .map(
-        (o) =>
-          `<p class="explanation">${date(o.at)} · ${escape(o.source.fullAddress)} · ${o.source.owners.length} intestatari</p>`,
-      )
-      .join(
-        "",
-      )}</details></div></details>${unitHistoryHtml(u, escape, date)}<details data-disclosure="${escape(u.key)}:edit"><summary>Correggi i dati conservati</summary><div class="unit-detail-body"><p class="explanation">La lettura originale resta nello storico. Le correzioni manuali saranno conservate anche alla prossima acquisizione.</p><form class="edit-form" data-edit="${escape(u.key)}"><div class="field"><label>Indirizzo<input name="address" required value="${escape(s.fullAddress)}"></label></div><div class="field"><label>Categoria<input name="category" required value="${escape(s.category)}"></label></div>${s.owners.map((owner, i) => `<div class="owner-edit"><label>Nome intestatario<input name="name-${i}" aria-label="Nome intestatario ${i + 1}" required value="${escape(owner.fullName)}"></label><label>Codice fiscale<input name="cf-${i}" aria-label="Codice fiscale intestatario ${i + 1}" value="${escape(owner.taxCode)}"></label><label>Quota (%)<input name="share-${i}" type="number" min="0" max="100" step="0.001" aria-label="Quota intestatario ${i + 1}" value="${owner.sharePercentage ?? ""}"></label></div>`).join("")}<div class="field"><label>Annotazioni<textarea name="note" rows="2">${escape(u.note)}</textarea></label></div><div class="form-actions"><button ${snapshot.activeRun ? "disabled" : ""}>Salva correzioni</button><button type="button" data-cancel>Annulla</button></div></form></div></details></article>`;
+    return unitRecordHtml(u, { escape, date, selected: selected.has(u.key), selectionDisabled: Boolean(snapshot.activeRun) || snapshot.queueKeys.includes(u.key), editDisabled: Boolean(snapshot.activeRun), allowTestChoice: !snapshot.operational, footer: snapshot.queueKeys.includes(u.key) ? '<span class="status icon-label">' + icon("layers") + 'In coda</span>' : "" });
   }
+
   function updateSelection() {
-    if (!$("apply")) return;
-    const records = detail.units.filter((u) => selected.has(u.key)),
-      visible = new Set(unitRows().map((u) => u.key)),
-      hidden = records.filter((u) => !visible.has(u.key)).length;
-    const settings = optionsForStreet();
-    const blockedCreation = settings.importPolicy === "existing_only" && records.some(u => u.assessment?.kind === "create");
-    $("selection-count").textContent = qty(
-      selected.size,
-      "immobile selezionato",
-      "immobili selezionati",
-    );
-    $("selection-plan").textContent =
-      `${qty(records.filter((u) => u.assessment?.kind === "create").length, "nuova scheda", "nuove schede")} · ${qty(records.filter((u) => u.assessment?.kind === "update").length, "aggiornamento", "aggiornamenti")}${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
-    $("apply").disabled = !selected.size || Boolean(snapshot.activeRun) || blockedCreation || records.some(u => !u.canWrite);
-    $("apply").textContent =
-      `${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})`;
+    if (!$("enqueue")) return;
+    const records = detail.units.filter(u => selected.has(u.key)), visible = new Set(unitRows().map(u => u.key));
+    const fresh = records.filter(u => !snapshot.queueKeys.includes(u.key)), hidden = records.filter(u => !visible.has(u.key)).length;
+    $("selection-count").textContent = qty(selected.size, "immobile selezionato", "immobili selezionati");
+    $("selection-plan").textContent = `${fresh.length} da aggiungere alla coda${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
+    $("enqueue").disabled = !fresh.length || Boolean(snapshot.activeRun);
+    $("enqueue").textContent = `Aggiungi alla coda (${fresh.length})`;
     $("clear-selection").disabled = !selected.size;
-    $("unit-filter").querySelector('[value="selected"]').textContent =
-      `Solo selezionati (${selected.size})`;
-    $("selection-help").textContent = snapshot.activeRun
-      ? "Attendi o sospendi l’operazione in corso."
-      : blockedCreation ? "Hai scelto solo schede esistenti: deseleziona gli immobili da creare, oppure cambia la regola d’import."
-      : records.some(u => !u.canWrite) ? "Completa i dati o le autorizzazioni degli immobili selezionati prima di applicare."
-      : selected.size
-        ? `${snapshot.origin === "simulation" ? "Piano simulato" : snapshot.operational ? "Piano di import" : "Solo schede autorizzate"}: ${optionsSummary({ operation: "apply", settings })}. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
-        : "Seleziona gli immobili da confrontare e importare.";
+    $("unit-filter").querySelector('[value="selected"]').textContent = `Solo selezionati (${selected.size})`;
+    $("selection-help").textContent = "L’aggiunta conserva la selezione nella coda. L’import si avvia dal pulsante Coda sulla mappa.";
   }
+
   function modalProgress() {
     if (!$("detail-run")) return;
     const run = snapshot.activeRun;
@@ -1001,13 +989,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       form.reportValidity();
       return;
     }
-    const runId = await api.start({
-      settings: operation === "scan" ? { filters: optionsForStreet().filters } : operation === "apply" ? { includeCoOwners: optionsForStreet().includeCoOwners, importPolicy: optionsForStreet().importPolicy, activityMode: optionsForStreet().activityMode } : undefined,
+    await api.start({
+      settings: operation === "scan" ? { filters: optionsForStreet().filters } : undefined,
       streetId: selectedStreet,
       operation,
       selected: operation === "scan" ? [] : [...selected],
     });
-    if (runId && operation === "apply") selected.clear();
     await refresh();
   }
   async function refresh() {
@@ -1130,6 +1117,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       }
     streetSearch.refresh();
     paint();
+    $("queue-count").textContent = snapshot.queueCount;
     renderProgress();
     modalProgress();
     if (!dirty && $("detail-dialog").open) {
@@ -1137,6 +1125,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       else if (networkView) showNetworkSetup();
       else if (testsView) await showTestSettings();
       else if (historyView) await showHistoryReview();
+      else if (queuePanel.active) await queuePanel.refresh();
       else if (queryPanel.active) await queryPanel.refresh();
       else renderDetail();
     }
@@ -1547,10 +1536,16 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       $("tools").querySelector("summary").focus();
     }
   });
-  const queryPanel = createQueryPanel({ api, escape, feedback, notifyRunIssue, snapshot: () => snapshot,
-    open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); openDialog("Query immobili"); return true; },
+  const queryPanel = createQueryPanel({ api, escape, feedback, notifyRunIssue, snapshot: () => snapshot, refresh, openQueue: () => queuePanel.open(),
+    open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); $("inspector").innerHTML = ""; $("detail-dialog").scrollTop = 0; openDialog("Query immobili"); return true; },
     openUnit: async unit => { if (!unit.streetIds.length) return feedback("Associa questo immobile a una via dallo storico prima di lavorarlo.", true); await choose(unit.streetIds[0]); const card = [...$("inspector").querySelectorAll("[data-unit]")].find(c => c.dataset.unit === unit.key); if (card) { card.querySelector('[data-disclosure$=":record"]').open = true; card.scrollIntoView({ block: "start", behavior: "smooth" }); } }
   });
+  const queuePanel = createQueuePanel({ api, escape, date, feedback, safe, markDirty, saved, remember, restore, progressContent, notifyRunIssue,
+    snapshot: () => snapshot, dirty: () => dirty, refresh,
+    cancel: form => { dirtyForms.delete(form); dirty = Boolean(dirtyForms.size); draftStatus(); },
+    open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire la coda.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); $("inspector").innerHTML = ""; $("detail-dialog").scrollTop = 0; openDialog("Coda immobili"); return true; }
+  });
+  $("queue-manager").onclick = safe(() => queuePanel.open());
   $("query-manager").onclick = safe(() => queryPanel.open());
   refresh().catch(archiveFailure);
 })();

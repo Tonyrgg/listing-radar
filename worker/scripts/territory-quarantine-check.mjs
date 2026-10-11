@@ -33,11 +33,16 @@ try {
   const originalBad = detail.quarantine.find(q => q.source?.owners[0]?.taxCode === "DA_COMPLETARE");
   await page.evaluate(key => window.territory.correct({ key, correction: {}, note: "Nota confermata da conservare" }), originalBad.unitKey);
   for (const key of keys) await page.locator(`[data-unit-select="${key}"]`).check();
-  assert.equal(await page.locator("#apply").isDisabled(), false);
-  await page.locator("#apply").click();
+  assert.equal(await page.locator("#enqueue").isDisabled(), false);
+  await page.locator("#enqueue").click();
+  await page.locator("#detail-close").click(); await page.locator("#queue-manager").click();
+  await page.locator("[data-disclosure=queue-options]").evaluate(el => el.open = true);
+  await page.locator("#queue-activity").selectOption("plain");
+  await page.locator("#queue-import").click();
   await until(page, async id => (await window.territory.detail(id)).runs.at(-1)?.operation === "apply" && (await window.territory.detail(id)).runs.at(-1)?.state === "completed", street.id);
   const applied = await page.evaluate(id => window.territory.detail(id), street.id);
   assert.equal(Object.keys(applied.runs.at(-1).imports).length, 3); assert.equal(applied.quarantine.length, 2);
+  await page.locator("#detail-close").click(); await openStreet(page, street);
   await until(page, () => document.querySelector("#tab-quarantine")?.textContent.includes("Quarantena 2"));
   assert.equal(await page.locator("#resume").count(), 0);
   await page.locator("#tab-quarantine").click();

@@ -30,6 +30,24 @@ async function setup() {
   return { store, directory, sync, remote: () => remote!, calls: () => calls, uncertain: () => { uncertain = true; }, conflict: () => { conflict = true; }, beforeRead: (f: () => Promise<void>) => { beforeRead = f; } };
 }
 describe("Memoria Territorio separata, revisioni e recupero", () => {
+  it("sincronizza la coda persistente e conserva iscrizioni locali in caso di conflitto", async () => {
+    const t = await setup();
+    const entry = { id: "entry", key: "unit-key", streetId: street.id, addedAt: "2026-10-11T10:00:00Z" };
+    await t.store.change(s => { s.importQueue = { [entry.key]: entry }; });
+    await t.sync.push(); expect(t.remote().state.importQueue).toEqual({ [entry.key]: entry });
+    t.remote().revision++; t.remote().state.importQueue = {};
+    await t.store.change(s => { s.importQueue![entry.key]!.addedAt = "2026-10-11T11:00:00Z"; });
+    await expect(t.sync.pull()).rejects.toThrow("modifiche locali");
+    expect(t.store.read().importQueue![entry.key]!.id).toBe(entry.id);
+  });
+  it("rifiuta una coda remota malformata senza sostituire la memoria", async () => {
+    const t = await setup(); await t.sync.push();
+    t.remote().revision++;
+    t.remote().state.importQueue = { bad: { id: "id", key: "different", streetId: street.id, addedAt: "invalid" } };
+    const before = t.store.read();
+    await expect(t.sync.pull()).rejects.toThrow("Coda");
+    expect(t.store.read()).toEqual(before);
+  });
   it("sincronizza gruppi di vie e query e non perde quelli creati prima della prima acquisizione", async () => {
     const t = await setup();
     await t.store.change(s => { s.zones = { centro: { id: "centro", name: "Centro", streetIds: [street.id], updatedAt: "2026-10-08T10:00:00Z" } }; });

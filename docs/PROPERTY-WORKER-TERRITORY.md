@@ -1,5 +1,21 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.15: coda unica degli import
+
+La **0.34.15** introduce la **Coda immobili** come unico punto di avvio degli import Tecnocloud nel Worker V2. Dalle schede via e dalle query si filtrano e selezionano gli immobili da accodare, anche su più vie. La coda conserva la selezione alla riapertura, permette correzioni permanenti della memoria e rimozioni senza perdere dati o storico. Ogni import confronta il CRM prima di scrivere e rimuove dalla coda soltanto i successi verificati; anomalie e interruzioni restano conservate. Le riprese precedenti V2 vengono esposte nella coda con il piano originale. Le sezioni del worker precedente mantengono il proprio flusso.
+
+Il pulsante **Coda** è sulla mappa, dopo Query immobili e Centra Bitonto; il contatore mostra le iscrizioni attuali. Le schede via conservano acquisizione SISTER e confronto in sola lettura, senza azioni o opzioni di import. **Filtra immobili** combina piani, categorie, intestatari per CF, import verificati, anzianità e intervallo dei civici con la ricerca e l’esito del confronto. Più valori nello stesso filtro si sommano; campi diversi si combinano. Piani e civici non rilevati non soddisfano un filtro esplicito. La selezione fuori dai filtri resta indicata e **Seleziona tutti** riguarda soltanto gli immobili filtrati non già accodati.
+
+La coda contiene riferimenti all’immobile canonico, senza copie modificabili separate. **Correggi i dati conservati** aggiorna indirizzo, categoria, intestatari, quote e note nella memoria, conserva la lettura originale e richiede un nuovo confronto. Queste correzioni non scrivono subito nel CRM. Rimuovere dalla coda conserva la scheda e il suo ciclo di vita. Una seconda aggiunta dello stesso immobile non duplica né riordina l’iscrizione.
+
+Le opzioni creazioni/aggiornamenti, intestatari e Telefonata sono nella coda. L’import può interessare più vie, con la via di origine verificata per ogni immobile. Una ripresa usa le sorgenti, opzioni e checkpoint originali: gli immobili ancora nel piano non sono correggibili o rimovibili fino alla conclusione. Gli immobili già verificati escono subito dalla coda; una successiva iscrizione non viene rimossa dalla ripresa di un vecchio import. Ricerche incomplete e salvataggi incerti conservano la ripresa; le anomalie scartate prima delle scritture rimangono accodate con motivo e possono essere corrette o rimosse.
+
+La coda è nel JSON del workspace esistente e segue revisioni, sincronizzazione automatica e protezioni dai conflitti già presenti. Non richiede tabelle nuove o migration SQL. I checkpoint delle sezioni precedenti non vengono trasferiti: soltanto gli import del motore V2 vengono recuperati nella coda.
+
+Verifica dell’interfaccia: `npm.cmd --prefix worker run territory:queue-check` (dopo `territory:compile`) usa un profilo temporaneo e CRM simulato. Controlla filtri combinati, aggiunta da via e query, persistenza al riavvio, correzioni permanenti, rimozione, import su più vie, mancata scrittura prima dell’avvio e layout desktop/mobile. Non acquisisce dai portali reali e non scrive in Tecnocloud.
+
+Verifica della 0.34.15: 97 gruppi / 805 test coperti. Il file adattatori (50 test) è stato rieseguito separatamente dopo due timeout del browser, senza modificare verifiche o tempi limite; tutti i 50 passano. Build TypeScript, installer, corrispondenza dei renderer nel pacchetto, mappa, query, quarantena, coda, desktop integrato e layout mobile verificati. Pausa e riavvio della coda riprendono lo stesso import. Queste prove usano dati temporanei e gestionali simulati; non certificano il collaudo live dei portali.
+
 ## Versione 0.34.14: acquisizione SISTER distinta dagli import Cloud
 
 La **0.34.14** distingue sulla mappa V2 gli immobili **acquisiti da SISTER ma mai importati in Cloud** con il blu. Le quote verde/giallo/rosso conservano gli import Cloud verificati anche in run precedenti; il grigio identifica le righe dell’inventario ancora prive di dati acquisiti e, separatamente nel riepilogo, gli import Cloud senza data. I dati acquisiti in quarantena restano blu. I tracciati con dati acquisiti o importati rimangono davanti alla rete grigia agli incroci. Barra, legenda e tracciati usano gli stessi conteggi, senza modificare gli archivi o avviare scritture CRM.

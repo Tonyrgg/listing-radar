@@ -6,6 +6,7 @@ import { applyNetworkBindings } from "./network.js";
 import { hydrateHistoryProgress, resolveRecognizedHistory } from "./history.js";
 import type { HistorySnapshot } from "./history-source.js";
 import { hydrateUnitMemory } from "./unit-memory.js";
+import { hydrateImportQueue } from "./import-queue.js";
 import { hydrateQuarantine } from "./quarantine.js";
 
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
@@ -41,6 +42,7 @@ export class TerritoryStore {
       resolveRecognizedHistory(next);
       hydrateUnitMemory(next);
       hydrateQuarantine(next);
+      hydrateImportQueue(next);
       for (const run of next.runs) if (run.state === "running") { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
     });
     return store;
@@ -60,6 +62,7 @@ export class TerritoryStore {
       applyNetworkBindings(next);
       hydrateUnitMemory(next);
       hydrateQuarantine(next);
+      hydrateImportQueue(next);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
       await rename(temporary, this.filename); this.state = next;

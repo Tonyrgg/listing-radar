@@ -129,7 +129,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       ipcMain.handle(`territory:${name}`, (event, value) => {
         if (event.sender !== options.contents || event.senderFrame !== options.contents.mainFrame) throw new Error("Richiesta non autorizzata");
         if (closing && !["snapshot", "detail", "sync-status", "pause"].includes(name)) throw new Error("Worker V2 si sta chiudendo: attendo il checkpoint");
-        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
+        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
         return handler(value);
       });
     };
@@ -165,6 +165,9 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       finally { syncing = false; notify(); }
     });
     handle("detail", value => application.detail(id.parse(value)));
+    handle("queue", () => application.importQueue());
+    handle("queue-add", value => { const v = z.object({ keys: z.array(id).min(1).max(10000), streetId: id.optional() }).strict().parse(value); return application.enqueue(v.keys, v.streetId); });
+    handle("queue-remove", value => { const v = z.object({ keys: z.array(id).min(1).max(10000) }).strict().parse(value); return application.dequeue(v.keys); });
     handle("quarantine", () => application.quarantineList());
     handle("unit-detail", value => application.unitDetail(id.parse(value)));
     handle("query-catalog", () => application.queryCatalog());
@@ -178,8 +181,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
       if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");
-      const v = z.object({ streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
-      if (!v.query && !v.streetId || v.query && (v.operation === "scan" || v.resumeId)) throw new Error("Scegli una via per acquisire, oppure una query per confrontare e applicare");
+      const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
+      if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
+      if (v.queue && (v.operation !== "apply" || v.query || v.streetId)) throw new Error("Selezione della coda non valida");
+      if (!v.queue && (!v.query && !v.streetId || v.query && (v.operation === "scan" || v.resumeId))) throw new Error("Scegli una via per acquisire, oppure una query per confrontare e applicare");
       if (options.live && v.operation === "apply") {
         const state = store.read();
         const prior = v.resumeId ? state.runs.find(r => r.id === v.resumeId) : undefined;
@@ -202,7 +207,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       options.beforeStart?.();
       try {
-        const run = v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
+        const run = v.queue ? await application.startQueue(v.selected, v.settings, v.resumeId) : v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
         void application.waitForIdle().finally(() => { options.afterIdle?.(); notify(); });
         return run;
       } catch (error) { options.afterIdle?.(); throw error; }

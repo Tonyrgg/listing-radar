@@ -18,6 +18,7 @@ import { appendUnitEvent, rememberAcquisition, unitMemory } from "./unit-memory.
 import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
 import { collectScanQuarantine, isQuarantined, quarantine, resolveUnitQuarantine, sourceProblem } from "./quarantine.js";
 import { buildCadastralKey } from "../core/normalize.js";
+import { queueStreet, queueLocked, settleQueueImport } from "./import-queue.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: _sources, checkpoint: _checkpoint, ...run }: Run) => run;
@@ -29,6 +30,58 @@ export class TerritoryApplication {
   constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}) {}
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null; }
+  importQueue() {
+    const state = this.store.read();
+    const entries = Object.values(state.importQueue ?? {}).map(entry => {
+      const unit = state.units[entry.key], locked = queueLocked(state, entry.key);
+      const problem = !unit ? "Immobile non più disponibile" : isQuarantined(state, unit) ? "In quarantena: correggi i dati prima di importare" : sourceProblem(effectiveSource(unit)) ? "Dati da completare: " + sourceProblem(effectiveSource(unit)) : !this.provider.canWrite(unit.key, effectiveSource(unit)) ? "Dati o autorizzazioni da completare" : !queueStreet(state, unit, entry.streetId) ? "Associazione alla via da completare" : null;
+      return { ...entry, unit: unit ? this.presentUnit(unit) : null, locked, problem };
+    }).sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+    return { entries, readyKeys: entries.filter(e => !e.problem && !e.locked).map(e => e.key), runs: state.runs.filter(r => r.operation === "apply" && (r.queueEntryIds || ["paused", "failed"].includes(r.state)) && r.origin === this.origin).slice(-30).map(publicRun) };
+  }
+  async enqueue(keys: string[], preferredStreet?: string) {
+    if (!keys.length || keys.length > 10000) throw new Error("Seleziona gli immobili da aggiungere alla coda");
+    const count = await this.store.change(state => {
+      let count = 0;
+      for (const key of new Set(keys)) {
+        const unit = state.units[key];
+        if (!unit || isQuarantined(state, unit) || (latest(unit).origin === "simulation") !== (this.origin === "simulation")) throw new Error("La selezione contiene immobili non disponibili: aggiorna la scheda");
+        const street = queueStreet(state, unit, preferredStreet);
+        if (!street) throw new Error("Associa l'immobile a una via identificata prima di aggiungerlo alla coda");
+        if (state.importQueue?.[key]) continue;
+        const entry = { id: randomUUID(), key, streetId: street.id, addedAt: now() };
+        (state.importQueue ??= {})[key] = entry;
+        appendUnitEvent(unit, [entry.id, "queued"], { kind: "queued", at: entry.addedAt, runId: "manual", origin: this.origin, message: "Aggiunto alla coda di import" }); count++;
+      }
+      return count;
+    }); this.changed(); return count;
+  }
+  async dequeue(keys: string[]) {
+    await this.store.change(state => {
+      for (const key of keys) {
+        if (queueLocked(state, key)) throw new Error("Questo immobile appartiene a un import da concludere: il piano originale resta conservato");
+        const entry = state.importQueue?.[key], unit = state.units[key];
+        if (!entry) continue;
+        if (unit) appendUnitEvent(unit, [entry.id, "removed"], { kind: "queue_removed", at: now(), runId: "manual", origin: this.origin, message: "Rimosso dalla coda; dati e storico conservati" });
+        delete state.importQueue![key];
+      }
+    }); this.changed();
+  }
+  async startQueue(keys: string[], settings?: unknown, resumeId?: string) {
+    const state = this.store.read();
+    if (resumeId) {
+      const run = state.runs.find(r => r.id === resumeId && r.operation === "apply" && r.queueEntryIds);
+      if (!run) throw new Error("Import della coda non trovato");
+      return this.start(run.streetId, "apply", [], run.id, settings);
+    }
+    if (state.runs.some(r => r.operation === "apply" && r.origin === this.origin && ["paused", "failed"].includes(r.state) && r.handled < r.itemKeys.length)) throw new Error("Riprendi l'import conservato prima di avviare una nuova selezione della coda");
+    if (!keys.length || keys.some(key => !state.importQueue?.[key] || !state.units[key])) throw new Error("La selezione non corrisponde più alla coda: aggiornala");
+    if (keys.some(key => sourceProblem(effectiveSource(state.units[key]!)))) throw new Error("Dati da completare prima di importare dalla coda");
+    const routes = keys.map(key => queueStreet(state, state.units[key]!, state.importQueue![key]!.streetId));
+    if (routes.some(s => !s)) throw new Error("Completa le associazioni alle vie prima di importare");
+    const scope = [...new Set(routes.map(s => s!.id))];
+    return this.start(scope[0]!, "apply", keys, undefined, settings, { scope, query: unitQuerySchema.parse({}), routes: Object.fromEntries(keys.map((key, i) => [key, routes[i]!.id])), queueEntryIds: Object.fromEntries(keys.map(key => [key, state.importQueue![key]!.id])) });
+  }
   quarantineList() { const state = this.store.read(); return Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).map(q => ({ ...q, editableSource: q.unitKey && state.units[q.unitKey] ? effectiveSource(state.units[q.unitKey]!) : q.source, unitNote: q.unitKey ? state.units[q.unitKey]?.note ?? "" : "" })); }
   historyReview() { return this.store.read().history?.flatMap(job => job.issues.map(issue => ({ jobId: job.id, propertyId: issue.propertyId, address: issue.address, reason: issue.reason, canAssociate: Boolean(issue.source), cadastral: issue.source?.cadastral ?? null }))) ?? []; }
   async associate(propertyId: string, streetId: string) { if (this.active) throw new Error("Metti in pausa prima di associare lo storico"); await associateHistory(this.store, propertyId, streetId); this.changed(); }
@@ -36,7 +89,7 @@ export class TerritoryApplication {
   snapshot() {
     const state = this.store.read();
     const activeRun = this.active ? state.runs.find(r => r.id === this.active!.runId) : undefined;
-    return { quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: state.streets.filter(s => !s.linkedOfficialId).map(s => streetSummary(state, s)), activeRun: activeRun ? publicRun(activeRun) : null };
+    return { queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: state.streets.filter(s => !s.linkedOfficialId).map(s => streetSummary(state, s)), activeRun: activeRun ? publicRun(activeRun) : null };
   }
   detail(streetId: string) {
     const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);
@@ -75,6 +128,7 @@ export class TerritoryApplication {
     if (this.active) throw new Error("Metti in pausa e attendi la fine dell'operazione prima di correggere i dati");
     await this.store.change(state => {
       const unit = state.units[key]; if (!unit) throw new Error("Immobile non trovato");
+      if (queueLocked(state, key)) throw new Error("Riprendi l'import originale prima di modificare questo immobile");
       const source = effectiveSource(unit);
       const checkpoint = state.checkpoints[source.sourcePropertyId];
       if (checkpoint && checkpoint.stage !== "completed") throw new Error("Import parziale: conserva il piano originale e riprendilo prima di cambiare i dati");
@@ -85,7 +139,7 @@ export class TerritoryApplication {
     });
     this.changed();
   }
-  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown, batch?: { scope: string[]; routes: Record<string, string>; query: import("./query.js").UnitQuery }): Promise<string> {
+  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown, batch?: { scope: string[]; routes: Record<string, string>; query: import("./query.js").UnitQuery; queueEntryIds?: Record<string, string> }): Promise<string> {
     if (this.active) throw new Error("Una via è già in lavorazione. Mettila in pausa prima di avviarne un'altra.");
     const state = this.store.read(); const street = state.streets.find(s => s.id === streetId);
     if (!street) throw new Error("Via non trovata");
@@ -111,16 +165,17 @@ export class TerritoryApplication {
       if (operation === "apply" && !selected.length) throw new Error("Seleziona gli immobili da applicare");
       run = { id: randomUUID(), streetId, operation, origin: this.origin, state: "running", startedAt: now(), endedAt: null, error: null, handled: 0, total: operation === "scan" ? null : (selected.length ? selected.length : unitKeys.length), itemKeys: operation === "scan" ? [] : selected.length ? selected : unitKeys, acquisitionRunId: operation === "apply" ? importProgress(state, ids).acquisitionRunId : null };
       run.settings = runSettings(settings);
-      if (batch) { run.selectionScope = batch.scope; run.unitStreetIds = batch.routes; run.query = batch.query; }
+      if (batch) { run.selectionScope = batch.scope; run.unitStreetIds = batch.routes; run.query = batch.query; run.queueEntryIds = batch.queueEntryIds; }
     }
     if (operation !== "scan") {
       for (const key of run.itemKeys) {
+        if (operation === "apply" && resumeId && run.imports?.[key]?.crmId) continue;
         const unit = state.units[key]!;
         if ((latest(unit).origin === "simulation") !== (this.origin === "simulation")) throw new Error("Dati simulati e acquisizioni reali usano archivi distinti");
         const checkpoint = state.checkpoints[effectiveSource(unit).sourcePropertyId];
         if (operation === "apply" && !resumeId && checkpoint && checkpoint.stage !== "completed") throw new Error("Riprendi la run originale dell'import parziale prima di cambiarne le opzioni");
         const frozen = run.applySources?.[key];
-        if (frozen && buildPlan(frozen).fingerprint !== buildPlan(effectiveSource(unit)).fingerprint) throw new Error("I dati sono cambiati dopo l'avvio: verifica il piano prima di riprendere");
+        if (frozen && !run.imports?.[key]?.crmId && buildPlan(frozen).fingerprint !== buildPlan(effectiveSource(unit)).fingerprint) throw new Error("I dati sono cambiati dopo l'avvio: verifica il piano prima di riprendere");
         if (operation === "apply" && !resumeId && run.settings!.importPolicy === "existing_only" && unit.assessment?.kind === "create") throw new Error("Solo schede esistenti: deseleziona gli immobili da creare");
         const resumable = Boolean(resumeId && checkpoint && checkpoint.stage !== "completed");
         if (operation === "apply" && (!this.provider.canWrite(key, effectiveSource(unit)) || (!resumable && isQuarantined(state, unit)))) throw new Error("Un immobile selezionato è in quarantena o non è autorizzato alle scritture");
@@ -152,7 +207,7 @@ export class TerritoryApplication {
   unitDetail(key: string) { const unit = this.store.read().units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit); }
   private presentUnit(unit: Unit) { const source = effectiveSource(unit); return { ...unit, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit) }; }
   queryCatalog() { return queryCatalog(this.store.read()); }
-  query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return this.provider.canWrite(key, effectiveSource(u)) && !isQuarantined(state, u); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
+  query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, queueKeys: keys.filter(key => queueStreet(state, state.units[key]!)), total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return this.provider.canWrite(key, effectiveSource(u)) && !isQuarantined(state, u); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
   async saveZone(name: string, streetIds: string[], id: string = randomUUID()) {
     if (this.active) throw new Error("Attendi la fine dell'operazione prima di modificare le zone");
     await this.store.change(state => { const canonical = [...new Set(streetIds.map(id => state.streets.find(s => s.id === id)?.linkedOfficialId ?? id))]; if (!canonical.length || canonical.some(id => !state.streets.some(s => s.id === id && !s.needsReview))) throw new Error("Scegli almeno una via identificata"); (state.zones ??= {})[id] = { id, name, streetIds: canonical, updatedAt: now() }; }); this.changed(); return id;
@@ -210,6 +265,10 @@ export class TerritoryApplication {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           if (this.isPaused()) { await this.updateRun(run.id, { state: "paused" }); return; }
           const key = run.itemKeys[index]!;
+          if (run.operation === "apply" && this.store.read().runs.find(r => r.id === run.id)?.imports?.[key]?.crmId) {
+            await this.store.change(s => settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key));
+            await this.updateRun(run.id, { handled: index + 1 }); continue;
+          }
           currentKey = key;
           const state = this.store.read(), unit = state.units[key]!; const source = run.applySources?.[key] ?? effectiveSource(unit);
           const street = run.unitStreetIds?.[key] ? state.streets.find(s => s.id === run.unitStreetIds![key]) : run.selectionScope ? state.streets.find(s => unit.streetIds.some(id => id === s.id || state.networkBindings?.[id]?.officialId === s.id) && run.selectionScope!.includes(s.id))! : state.streets.find(s => s.id === run.streetId)!;
@@ -254,6 +313,7 @@ export class TerritoryApplication {
               if (outcome.state === "completed") {
                 u.crmId = outcome.crmPropertyId; u.importedAt = s.runs.find(r => r.id === run.id)?.imports?.[key]?.at ?? now();
                 if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
+                settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key);
               }
             });
             if (outcome.state === "quarantined" && !outcome.failure?.global && ["queued", "planned"].includes(outcome.stage) && !outcome.crmPropertyId && !outcome.syncedPeople.length) {

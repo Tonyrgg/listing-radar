@@ -98,7 +98,7 @@ try {
   );
   await page.locator("#select-all").click();
   assert.equal(await page.locator("[data-unit-select]:checked").count(), 5, "Tutti selezionabili prima del confronto");
-  assert.equal(await page.locator("#apply").isDisabled(), false, "Confronto e import si avviano insieme");
+  assert.equal(await page.locator("#enqueue").isDisabled(), false, "Confronto e import si avviano insieme");
   await page.locator("#clear-selection").click();
   await page.locator('[data-operation="compare"]').click();
   const scanRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.find(r => r.operation === "scan"), street.id);
@@ -152,17 +152,12 @@ try {
   );
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
-      "2 nuove schede · 1 aggiornamento",
+      "3 da aggiungere alla coda",
     ),
   );
   await page.locator("#unit-filter").selectOption("review");
-  await page.locator('[data-disclosure="options-apply"] > summary').click();
-  await page.locator("#import-policy").selectOption("existing_only");
-  assert.equal(await page.locator("#apply").isDisabled(), true);
-  assert.ok((await page.locator("#selection-help").textContent()).includes("deseleziona"));
-  await page.locator("#import-policy").selectOption("create_update");
-  await page.locator("#import-activity").selectOption("plain");
-  assert.ok((await page.locator("#selection-help").textContent()).includes("attività da eseguire"));
+  assert.equal(await page.locator('[data-disclosure="options-apply"]').count(), 0, "Le opzioni import sono soltanto nella coda");
+  assert.equal(await page.locator("#enqueue").isDisabled(), false);
   assert.equal(await page.locator(".unit").count(), 1);
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
@@ -182,11 +177,15 @@ try {
     "Deselezionare aggiorna il filtro Solo selezionati",
   );
   await page.locator("#clear-selection").click();
-  assert.equal(await page.locator("#apply").isDisabled(), true);
+  assert.equal(await page.locator("#enqueue").isDisabled(), true);
   await page.locator("#unit-filter").selectOption("ready");
   await page.locator("#select-all").click();
   await page.screenshot({ path: path.join(output, "import-options.png") });
-  await page.locator("#apply").click();
+  await page.locator("#enqueue").click();
+  await page.locator("#detail-close").click(); await page.locator("#queue-manager").click();
+  await page.locator("[data-disclosure=queue-options]").evaluate(el => el.open = true);
+  await page.locator("#queue-activity").selectOption("plain");
+  await page.locator("#queue-import").click();
   await until(page, async id => {
     const run = (await window.territory.detail(id)).runs.at(-1);
     return run.operation === "apply" && run.state === "completed";
@@ -197,6 +196,7 @@ try {
   assert.equal(importedRun.settings.includeCoOwners, true);
   const ledger = JSON.parse(await readFile(path.join(profile, "territory-ledger.json"), "utf8"));
   assert.equal(Object.keys(ledger.virtualActivities).length, 3);
+  await page.locator("#detail-close").click(); await openStreet(page, street);
   await page.locator("#tab-history").click();
   assert.ok((await page.locator(".runs-list").textContent()).includes("attività da eseguire"));
   await page.locator("#tab-units").click();
@@ -296,17 +296,17 @@ try {
   assert.equal(await page.locator("[data-query-select]:checked").count(), 0);
   await page.locator("[data-query-unit] .owner-name strong").first().click();
   assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Clic sulla card seleziona l’immobile");
-  assert.equal(await page.locator("#q-apply").isDisabled(), false, "La query consente confronto e import nello stesso avvio");
+  assert.equal(await page.locator("#q-enqueue").isDisabled(), false, "La query consente confronto e import nello stesso avvio");
   await page.locator("#q-compare").click();
-  await until(page, async () => !(await window.territory.snapshot()).activeRun && !(document.querySelector("#q-apply")?.disabled));
+  await until(page, async () => !(await window.territory.snapshot()).activeRun && !(document.querySelector("#q-enqueue")?.disabled));
   assert.equal(await page.locator(".query-card .unit-owners strong").count(), first.source.owners.length);
   await chooseFilter("#q-localities", "Bitonto");
   assert.equal(await page.locator("#q-compare").isDisabled(), true, "Filtri cambiati richiedono nuovi risultati");
-  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  assert.equal(await page.locator("#q-enqueue").isDisabled(), true);
   await page.locator("#q-localities summary").click();
   await page.locator("#q-localities [data-remove]").click();
   await page.locator("#q-localities summary").click();
-  assert.equal(await page.locator("#q-apply").isDisabled(), false, "Ripristinare i filtri riabilita il risultato corrente");
+  assert.equal(await page.locator("#q-enqueue").isDisabled(), false, "Ripristinare i filtri riabilita il risultato corrente");
   await page.locator("#q-owners summary").click();
   await page.locator('#q-owners input[type="search"]').fill("Nessun proprietario con questo nome");
   await page.keyboard.press("Enter");
@@ -332,7 +332,7 @@ try {
   await page.locator("#q-saved").selectOption(missingId);
   await until(page, () => document.querySelector(".query-results-heading h3")?.textContent === "0 immobili trovati");
   assert.ok((await page.locator("#q-owners .picker-value").textContent()).includes("Non più in archivio"), "Un criterio salvato mancante non scompare o diventa Tutti");
-  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  assert.equal(await page.locator("#q-enqueue").isDisabled(), true);
   await page.locator("#q-reset").click();
   await until(page, () => document.querySelectorAll("[data-query-unit]").length === 5);
 

@@ -203,13 +203,16 @@ try {
   await page.getByRole("tab", { name: "Immobili 5", exact: true }).click();
   await page.locator("#unit-filter").selectOption("ready");
   await page.getByRole("button", { name: "Seleziona tutti", exact: true }).click();
-  await page.getByRole("button", { name: "Prova piano (3)", exact: true }).click();
+  await page.locator("#enqueue").click();
+  await page.locator("#detail-close").click(); await page.locator("#queue-manager").click();
+  await page.locator("#queue-import").click();
   await until(page, async id => { const d = await window.territory.detail(id); return d.runs.at(-1)?.operation === "apply" && d.runs.at(-1)?.state !== "running"; }, street.id);
   const detail = await page.evaluate(id => window.territory.detail(id), street.id);
   assert.equal(detail.runs.at(-1).state, "completed", detail.runs.at(-1).error);
   assert.equal(detail.units.filter(u => u.assessment.kind === "synced").length, 3);
   assert.equal(detail.street.progress.percent, 50);
   assert.equal(detail.street.progress.tone, 'recent');
+  await page.locator("#detail-close").click(); await openStreet(page, street);
   await page.waitForFunction(() => document.querySelector('.detail-header .import-summary')?.textContent.includes('50% · 3/6'));
   await page.screenshot({ path: path.join(output, "03-unified-process.png") });
   await page.locator('#detail-close').click();
