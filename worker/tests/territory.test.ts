@@ -33,7 +33,8 @@ describe("Territorio: un solo flusso, memoria separata", () => {
   it("crea e aggiorna nello stesso processo e una seconda applicazione non duplica", async () => {
     const { app, store } = await setup();
     await run(app, "scan"); await run(app, "compare");
-    expect(app.detail(street.id).units.map(u => u.assessment?.kind)).toEqual(["create", "create", "update", "review", "review", "unknown"]);
+    expect(app.detail(street.id).units.map(u => u.assessment?.kind)).toEqual(["create", "create", "update", "review", "unknown"]);
+    expect(app.detail(street.id).quarantine).toHaveLength(1);
     const keys = app.detail(street.id).units.filter(u => ["create", "update"].includes(u.assessment!.kind)).map(u => u.key);
     await run(app, "apply", keys);
     expect(store.read().runs.at(-1)?.error).toBeNull();

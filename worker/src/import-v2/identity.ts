@@ -224,7 +224,8 @@ export function sameCadastralIdentity(left: CadastralIdentity | null, right: Cad
   return tokenMatches(left.urbanSection, right.urbanSection)
     && tokenMatches(left.sheet, right.sheet)
     && (!expectedParcels.length || expectedParcels.some((token) => actualParcels.includes(token)))
-    && tokenMatches(left.subaltern, right.subaltern)
+    // An empty subaltern is an actual coordinate, never a wildcard for every unit.
+    && canonicalCadastralToken(left.subaltern) === canonicalCadastralToken(right.subaltern)
     && (expectedIncome == null || expectedIncome === canonicalIncome(right.income));
 }
 
@@ -244,13 +245,27 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
   | { kind: "create"; candidate: null }
   | { kind: "exact" | "address_update" | "cadastral_update"; candidate: CrmPropertySummary } {
   const unique = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
+  if (!canonicalCadastralToken(source.cadastral.subaltern) && unique.some(candidate => candidate.cadastral
+    && canonicalCadastralToken(candidate.cadastral.sheet) === canonicalCadastralToken(source.cadastral.sheet)
+    && parcelTokens(source.cadastral).some(token => parcelTokens(candidate.cadastral!).includes(token))
+    && canonicalCadastralToken(candidate.cadastral.subaltern))) {
+    throw new ImportV2Error("Immobile senza subalterno: nel CRM sono presenti unità della stessa particella con subalterno. Corrispondenza da chiarire", "ambiguous_identity");
+  }
   const addressMatches = unique.filter((candidate) => sameCrmPropertyAddress(source.fullAddress, candidate));
+  if (!canonicalCadastralToken(source.cadastral.subaltern)) {
+    const matching = unique.filter(candidate => sameCadastralIdentity({ ...source.cadastral, income: null }, candidate.cadastral ? { ...candidate.cadastral, income: null } : null));
+    if (matching.length > 1) throw new ImportV2Error("Più immobili senza subalterno condividono foglio e particella", "ambiguous_identity");
+    if (matching.length === 1) return { kind: sameCrmPropertyAddress(source.fullAddress, matching[0]!) ? "exact" : "cadastral_update", candidate: matching[0]! };
+  }
   const exact = addressMatches.filter((candidate) => sameCadastralIdentity(source.cadastral, candidate.cadastral));
   if (exact.length === 1) return { kind: "exact", candidate: exact[0]! };
   if (exact.length > 1) {
     throw new ImportV2Error("Più immobili coincidono sia per indirizzo sia per dati catastali", "ambiguous_identity", {
       details: { candidateIds: exact.map((candidate) => candidate.id) },
     });
+  }
+  if (!canonicalCadastralToken(source.cadastral.subaltern) && addressMatches.length) {
+    throw new ImportV2Error("Immobile senza subalterno: indirizzo presente nel CRM ma identità catastale non confermata", "ambiguous_identity");
   }
   /* Un indirizzo puo' contenere molte unita'. Se ogni candidato possiede una
    * terna completa diversa, quelle terne provano immobili distinti e non si
@@ -281,7 +296,7 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
   if (!source.sourcePropertyId || !source.jobId || !source.fullAddress.trim()) {
     throw new ImportV2Error("Immobile privo degli identificatori obbligatori", "invalid_source");
   }
-  if (![source.municipality, source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern].every(value => value?.trim())) {
+  if (![source.municipality, source.cadastral.sheet, source.cadastral.parcel].every(value => value?.trim())) {
     throw new ImportV2Error("Immobile privo dei dati catastali obbligatori", "invalid_source");
   }
   if (!source.owners.length) throw new ImportV2Error("Immobile senza intestatari SISTER", "invalid_source");
@@ -328,6 +343,7 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
   }
   const normalizedSource: SourceProperty = {
     ...source,
+    cadastral: { ...source.cadastral, subaltern: String(source.cadastral.subaltern ?? "").trim() },
     fullAddress: stripSisterMunicipalityPrefix(source.fullAddress, source.municipality),
     owners: normalizedOwners,
   };

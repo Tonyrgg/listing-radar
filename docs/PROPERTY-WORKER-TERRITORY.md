@@ -1,5 +1,11 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.13: quarantena e confronto durante l'import
+
+Le letture SISTER concluse non diventano parziali per anomalie dei singoli immobili: le righe da controllare sono conservate nella **Quarantena** della via e in **Strumenti → Quarantena**, separate dall'elenco operativo e dalle query. I totali noti dell'inventario le includono; una riga con piano ma senza civico viene contata solo se il nome della via corrisponde esattamente. Interruzioni di sessione e inventari non attribuibili restano distinti da dati validi. Le vecchie false acquisizioni parziali vengono riparate solo con checkpoint completo e privo di errori.
+
+**Applica selezionati** ora esegue confronto e import nello stesso avvio: selezionare gli immobili validi è sufficiente. Il confronto separato resta facoltativo e non scrive. Ambiguità prima delle scritture vanno in quarantena; salvataggi incerti e checkpoint avanzati mantengono la ripresa originale. Il subalterno può essere vuoto, senza inventare valori o scegliere altre unità della stessa particella. [Regole, correzioni e verifiche](PROPERTY-WORKER-QUARANTINE.md).
+
 ## Versione 0.34.11: prima acquisizione e accesso operativo
 
 Una via **Mai acquisita** apre una modale compatta: nome, stato e un solo **Acquisisci via**. Non mostra percentuali, distribuzione, confronto, filtri degli immobili o tab senza dati. **Impostazioni della via** raccoglie filtri SISTER, note e associazione alla via ufficiale; un tracciato senza nome propone prima l'associazione. La prima acquisizione interrotta mostra **Riprendi acquisizione**. I primi immobili letti rendono disponibili elenco, storico e confronto. Un'acquisizione conclusa senza immobili resta distinta da una via mai acquisita.

@@ -165,6 +165,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       finally { syncing = false; notify(); }
     });
     handle("detail", value => application.detail(id.parse(value)));
+    handle("quarantine", () => application.quarantineList());
     handle("unit-detail", value => application.unitDetail(id.parse(value)));
     handle("query-catalog", () => application.queryCatalog());
     handle("query", value => { const v = z.object({ query: unitQuerySchema, limit: z.number().int().min(1).max(10000).default(100) }).parse(value); return application.query(v.query, v.limit); });
@@ -194,7 +195,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const result = await dialog.showMessageBox(options.parent, {
           type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",
           message: `Applicare le modifiche a ${prior?.itemKeys.length ?? v.selected.length} immobili selezionati nel gestionale reale?`,
-          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Creazioni e aggiornamenti secondo il confronto."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Consulta il piano e le correzioni prima di continuare.`,
+          detail: `Saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${prior ? "La ripresa conserva il piano iniziale, incluse le attività già previste." : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Controlla selezione e opzioni prima di continuare.`,
           buttons: ["Torna al piano", operational ? "Applica agli immobili selezionati" : "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return null;

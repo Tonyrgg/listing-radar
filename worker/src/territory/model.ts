@@ -21,7 +21,8 @@ export type Unit = { key: string; streetIds: string[]; observations: Observation
 export type Run = { unitStreetIds?: Record<string, string>; selectionScope?: string[]; query?: import("./query.js").UnitQuery; id: string; streetId: string; operation: "scan" | "compare" | "apply"; origin: "simulation" | "live"; state: "running" | "paused" | "failed" | "completed"; startedAt: string; endedAt: string | null; handled: number; total: number | null; error: string | null; itemKeys: string[]; checkpoint?: unknown; acquisitionRunId?: string | null; imports?: Record<string, { at: string; crmId: string }>; settings?: RunSettings; applySources?: Record<string, SourceProperty> };
 export type Event = { id: string; streetId: string; at: string; text: string; unitKey?: string };
 export type StreetMemory = { note: string; attention: boolean; updatedAt: string; registeredAt?: string };
-export type TerritoryState = { zones?: Record<string, import("./query.js").WorkerZone>; savedQueries?: Record<string, import("./query.js").SavedUnitQuery>; version: 1; streets: Street[]; memories: Record<string, StreetMemory>; units: Record<string, Unit>; runs: Run[]; events: Event[]; checkpoints: Record<string, ImportV2Checkpoint>; virtualCrm: Record<string, CrmPropertySnapshot>; virtualPeople: Record<string, import("../import-v2/model.js").CrmPersonSnapshot>; virtualActivities?: Record<string, { id: string; propertyId: string; activity: SourceProperty["activity"] }>; history?: HistoricalWork[]; historicalStreetMappings?: Record<string, string>; networkBindings?: Record<string, { officialId: string; confirmedAt: string; geometry?: Geometry; evidence?: string | null }> };
+export type QuarantineItem = { id: string; streetId: string; runId: string; at: string; reason: string; address: string; cadastral: SourceProperty["cadastral"] | null; source?: SourceProperty; checkpoint?: ImportV2Checkpoint; unitKey?: string; recordKey?: string; origin: "scan" | "apply"; resolvedAt: string | null };
+export type TerritoryState = { quarantine?: Record<string, QuarantineItem>; zones?: Record<string, import("./query.js").WorkerZone>; savedQueries?: Record<string, import("./query.js").SavedUnitQuery>; version: 1; streets: Street[]; memories: Record<string, StreetMemory>; units: Record<string, Unit>; runs: Run[]; events: Event[]; checkpoints: Record<string, ImportV2Checkpoint>; virtualCrm: Record<string, CrmPropertySnapshot>; virtualPeople: Record<string, import("../import-v2/model.js").CrmPersonSnapshot>; virtualActivities?: Record<string, { id: string; propertyId: string; activity: SourceProperty["activity"] }>; history?: HistoricalWork[]; historicalStreetMappings?: Record<string, string>; networkBindings?: Record<string, { officialId: string; confirmedAt: string; geometry?: Geometry; evidence?: string | null }> };
 export type StreetStatus = "unseen" | "running" | "paused" | "review" | "acquired" | "completed";
 
 export const STATUS_LABELS: Record<StreetStatus, string> = { unseen: "Mai acquisita", running: "In corso", paused: "Da riprendere", review: "Da verificare", acquired: "Acquisita", completed: "Allineata" };
@@ -37,12 +38,13 @@ export function effectiveSource(unit: Unit): SourceProperty {
 }
 export function unitKey(source: SourceProperty): string {
   const values = [source.municipality, source.cadastral.urbanSection ?? "", source.cadastral.sheet, source.cadastral.parcel, source.cadastral.subaltern];
-  if (![values[0], values[2], values[3], values[4]].every(x => x?.trim())) throw new Error("Identità catastale incompleta");
+  if (![values[0], values[2], values[3]].every(x => x?.trim())) throw new Error("Identità catastale incompleta");
   return values.map(x => String(x).trim().toUpperCase()).join("|");
 }
 export function streetSummary(state: TerritoryState, street: Street) {
   const streetIds = relatedStreetIds(state, street.id);
-  const units = Object.values(state.units).filter(unit => unit.streetIds.some(id => streetIds.includes(id)));
+  const pendingKeys = new Set(Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && q.unitKey).map(q => q.unitKey));
+  const units = Object.values(state.units).filter(unit => unit.streetIds.some(id => streetIds.includes(id)) && !pendingKeys.has(unit.key));
   const runs = state.runs.filter(run => streetIds.includes(run.streetId));
   const lastScan = [...runs].reverse().find(run => run.operation === "scan");
   const completeScan = [...runs].reverse().find(run => run.operation === "scan" && run.state === "completed");
@@ -54,11 +56,11 @@ export function streetSummary(state: TerritoryState, street: Street) {
   let status: StreetStatus = "unseen";
   if (units.length) status = "acquired";
   if (lastScan) status = lastScan.state === "completed" ? "acquired" : "paused";
-  if (lastScan?.state === "completed" && !unresolved) status = "completed";
+  if (lastScan?.state === "completed" && !unresolved && !Object.values(state.quarantine ?? {}).some(q => !q.resolvedAt && streetIds.includes(q.streetId))) status = "completed";
   const attention = streetIds.some(id => state.memories[id]?.attention);
   if (review || attention) status = "review";
   if (lastRun?.state === "paused" || lastRun?.state === "failed") status = "paused";
   if (lastRun?.state === "running") status = "running";
-  return { ...street, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds) };
+  return { ...street, acquisitionState: lastScan?.state ?? null, quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && streetIds.includes(q.streetId)).length, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds) };
 }
 export function relatedStreetIds(state: TerritoryState, id: string) { return [id, ...Object.entries(state.networkBindings ?? {}).filter(([, binding]) => binding.officialId === id).map(([networkId]) => networkId)]; }

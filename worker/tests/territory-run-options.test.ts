@@ -68,8 +68,8 @@ describe("Opzioni operative V2, congelate per run", () => {
     class Gone extends SimulationProvider { override async candidates() { return { rows: [], complete: true }; } }
     const app = new TerritoryApplication(store, new Gone(store, 0));
     await app.start(street.id, "apply", [key], undefined, { importPolicy: "existing_only" }); await app.waitForIdle();
-    expect(store.read().runs.at(-1)?.error).toContain("nessuna creazione");
-    expect(store.read().runs.at(-1)?.state).toBe("paused");
+    expect(app.quarantineList().at(-1)?.reason).toContain("nessuna creazione");
+    expect(store.read().runs.at(-1)?.state).toBe("completed");
     expect(Object.keys(store.read().virtualPeople)).toHaveLength(0);
   });
   it("lavora il solo principale senza eliminare gli altri collegamenti già esistenti", async () => {
@@ -106,6 +106,18 @@ describe("Opzioni operative V2, congelate per run", () => {
     expect(Object.values(store.read().virtualActivities!)).toHaveLength(1);
     expect(effectiveSource(store.read().units[key]!).activity.enabled).toBe(false);
     const reopened = await TerritoryStore.open(directory, [street]);
+    class ChangedCandidates extends SimulationProvider {
+      override async candidates(s: Street, source: import("../src/import-v2/model.js").SourceProperty) {
+        const result = await super.candidates(s, source);
+        return { ...result, rows: [...result.rows, { ...result.rows[0]!, id: "duplicate-after-pause" }] };
+      }
+    }
+    const changed = new TerritoryApplication(reopened, new ChangedCandidates(reopened, 0));
+    await changed.start(street.id, "apply", [key], id); await changed.waitForIdle();
+    expect(reopened.read().runs.at(-1)?.state).toBe("paused");
+    expect(Object.keys(reopened.read().checkpoints)).toHaveLength(1);
+    expect(changed.quarantineList().some(item => item.origin === "apply")).toBe(false);
+    expect(Object.values(reopened.read().virtualActivities!)).toHaveLength(1);
     const second = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
     await expect(second.start(street.id, "apply", [key], id, { activityMode: "none" })).rejects.toThrow("opzioni iniziali");
     await expect(second.start(street.id, "apply", [key], undefined, { activityMode: "none" })).rejects.toThrow("run originale");

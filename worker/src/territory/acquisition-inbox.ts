@@ -39,7 +39,15 @@ export async function queuePropertyMemory(profile: string, memory: PropertyMemor
   const folder = path.join(profile, "property-inbox"); await mkdir(folder, { recursive: true });
   const content = JSON.stringify(memory), name = createHash("sha256").update(content).digest("hex");
   const file = path.join(folder, `${name}.json`), temporary = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temporary, content, { mode: 0o600 }); await rename(temporary, file);
+  await writeFile(temporary, content, { mode: 0o600 });
+  try { await rename(temporary, file); }
+  catch (error) {
+    // Windows can reject replacing an identical fact queued by another lane.
+    // Accept only byte-identical durable evidence, never swallow a lost write.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!["EPERM", "EEXIST"].includes(code ?? "") || await readFile(file, "utf8").catch(() => null) !== content) throw error;
+    await unlink(temporary);
+  }
 }
 export async function consumePropertyMemory(profile: string, adopt: (memory: PropertyMemory) => Promise<void>) {
   const folder = path.join(profile, "property-inbox"); let files: string[];

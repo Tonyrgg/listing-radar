@@ -61,10 +61,10 @@ try {
   await page.screenshot({ path: path.join(output, "03-interrupted.png") });
   await page.locator("#feedback .toast-close").click();
   await page.locator("#resume").click();
-  await page.waitForFunction(async id => (await window.territory.detail(id)).units.length === 6 && !(await window.territory.snapshot()).activeRun, street.id);
-  await page.getByRole("tab", { name: "Immobili 6", exact: true }).waitFor();
+  await page.waitForFunction(async id => (await window.territory.detail(id)).units.length === 5 && !(await window.territory.snapshot()).activeRun, street.id);
+  await page.getByRole("tab", { name: "Immobili 5", exact: true }).waitFor();
   assert.equal(await page.locator("#detail-dialog").getAttribute("data-street-phase"), "populated");
-  assert.equal(await page.locator(".unit").count(), 6);
+  assert.equal(await page.locator(".unit").count(), 5);
   assert.equal((await page.evaluate(id => window.territory.detail(id), street.id)).memory.note, "Nota prima di acquisire");
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.screenshot({ path: path.join(output, "04-acquired.png") });

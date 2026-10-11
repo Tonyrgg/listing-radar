@@ -63,7 +63,7 @@ describe("Rete e dossier prima delle lavorazioni", () => {
     await app.annotate(official.id, "Nota ufficiale confermata", false);
     await app.start(networkId, "scan"); await app.waitForIdle();
     await app.bindNetwork(networkId, official.id);
-    expect(app.detail(official.id).units).toHaveLength(6);
+    expect(app.detail(official.id).units).toHaveLength(5);
     expect(app.detail(official.id).runs).toHaveLength(1);
     expect(app.detail(official.id).memory.note).toBe("Nota ufficiale confermata");
     expect(app.detail(official.id).linkedNotes[0]!.note).toBe("Nota sul tracciato");
@@ -77,7 +77,8 @@ describe("Rete e dossier prima delle lavorazioni", () => {
     const reopened = await TerritoryStore.open(directory, streets);
     const next = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
     expect(next.detail(official.id).street.geometry).not.toBeNull();
-    expect(next.detail(official.id).units).toHaveLength(6);
+    expect(next.detail(official.id).units).toHaveLength(5);
+    expect(next.detail(official.id).quarantine).toHaveLength(1);
     expect(store.read().units).toEqual(reopened.read().units);
     await next.start(official.id, "compare"); await next.waitForIdle();
     expect(next.detail(official.id).units.some(u => u.assessment?.kind === "create")).toBe(true);

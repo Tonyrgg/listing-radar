@@ -27,6 +27,17 @@ function apply(state: TerritoryState, keys: string[], days = 5, cohort = "scan")
   state.runs.push({ id: `apply:${state.runs.length}`, streetId: street.id, operation: "apply", origin: "simulation", state: "completed", startedAt: ago(days), endedAt: ago(days), total: keys.length, handled: keys.length, itemKeys: keys, error: null, acquisitionRunId: cohort, imports: Object.fromEntries(keys.map(key => [key, { at: ago(days), crmId: `crm:${key}` }])) });
 }
 describe("Età e percentuale import nell'ultima acquisizione", () => {
+  it("conta gli indirizzi senza civico con piano e il subalterno vuoto, senza attribuire altre vie", () => {
+    const { state, keys, scan } = fixture(1);
+    scan.checkpoint = { results: [{ outcome: "found", inventoryProperties: [
+      { municipality: "BITONTO", sheet: "49", parcel: "93", subaltern: "", address: `${street.name} Piano S1`, category: "C/2" },
+      { municipality: "BITONTO", sheet: "49", parcel: "94", subaltern: "2", address: `${street.name} Piano T`, category: "C/6" },
+    ] }] };
+    // Quarantine changes availability, never the known inventory denominator.
+    expect(importProgress(state, [street.id], now)).toMatchObject({ observed: 2, total: 2, complete: true });
+    (scan.checkpoint as any).results[0].inventoryProperties.push({ municipality: "BITONTO", sheet: "49", parcel: "95", subaltern: "", address: "Via sconosciuta Piano T", category: "C/2" });
+    expect(importProgress(state, [street.id], now)).toMatchObject({ observed: 2, total: null, complete: false });
+  });
   it("colora 100 unità dell'inventario: 33 recenti, 17 vecchie e 50 mai importate", () => {
     const { state, keys, scan } = fixture(100);
     state.runs.unshift({ ...scan, id: "scan-old", startedAt: ago(150), endedAt: ago(150) });

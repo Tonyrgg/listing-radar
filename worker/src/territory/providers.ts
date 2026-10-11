@@ -10,6 +10,7 @@ import { decideStreetProperty, type StreetPropertyFilters } from "../core/networ
 import { runSettings } from "./run-options.js";
 
 export type ScanSink = (source: SourceProperty) => Promise<void>;
+const simulatedSearchMatch = (source: SourceProperty["cadastral"], candidate: CrmPropertySummary["cadastral"]) => sameCadastralIdentity({ ...source, income: null, subaltern: source.subaltern.trim() || candidate?.subaltern || "" }, candidate ? { ...candidate, income: null } : null);
 export interface TerritoryProvider {
   origin: "simulation" | "live";
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
@@ -59,7 +60,7 @@ export class SimulationProvider implements TerritoryProvider {
   }
   async candidates(_street: Street, source: SourceProperty) {
     if (source.cadastral.subaltern === "6") return { rows: [], complete: false };
-    return { rows: Object.values(this.store.read().virtualCrm).filter(r => sameCadastralIdentity({ ...source.cadastral, income: null }, r.cadastral ? { ...r.cadastral, income: null } : null)), complete: true };
+    return { rows: Object.values(this.store.read().virtualCrm).filter(r => simulatedSearchMatch(source.cadastral, r.cadastral)), complete: true };
   }
   async port(): Promise<TecnocloudV2Port> { return new VirtualCrmPort(this.store); }
 }
@@ -75,7 +76,7 @@ class VirtualCrmPort implements TecnocloudV2Port {
   }
   async mergePeople(request: MergeRequest) { await this.store.change(s => { for (const id of request.duplicatePersonIds) delete s.virtualPeople[id]; }); return this.overwritePerson(request.canonicalPersonId, request.desired); }
   async listAllPropertiesForPeople(_ids: string[], plan: ImportV2Plan) { return this.findPropertiesByCadastralIdentity(plan); }
-  async findPropertiesByCadastralIdentity(plan: ImportV2Plan) { return Object.values(this.store.read().virtualCrm).filter(p => sameCadastralIdentity(plan.source.cadastral, p.cadastral)); }
+  async findPropertiesByCadastralIdentity(plan: ImportV2Plan) { return Object.values(this.store.read().virtualCrm).filter(p => simulatedSearchMatch(plan.source.cadastral, p.cadastral)); }
   async createProperty(plan: ImportV2Plan) { return this.updateProperty(randomUUID(), plan); }
   async updateProperty(id: string, plan: ImportV2Plan) {
     return this.store.change(s => { const p: CrmPropertySnapshot = { id, displayName: plan.source.fullAddress, fullAddress: plan.source.fullAddress, cadastral: plan.source.cadastral, owners: s.virtualCrm[id]?.owners ?? [] }; s.virtualCrm[id] = p; return structuredClone(p); });

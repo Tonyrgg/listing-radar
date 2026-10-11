@@ -61,10 +61,21 @@ describe("Import V2 identity", () => {
     expect(() => buildPlan(input)).toThrow(/Quota/);
   });
 
-  it.each(["sheet", "parcel", "subaltern"] as const)("rifiuta un piano senza %s prima di cercare o creare nel CRM", key => {
+  it.each(["sheet", "parcel"] as const)("rifiuta un piano senza %s prima di cercare o creare nel CRM", key => {
     const input = source();
     input.cadastral[key] = " ";
     expect(() => buildPlan(input)).toThrow(/catastali/);
+  });
+  it("accetta il subalterno assente senza usarlo come jolly per altre unità", () => {
+    const input = source(); input.cadastral.subaltern = "";
+    expect(buildPlan(input).source.cadastral.subaltern).toBe("");
+    expect(sameCadastralIdentity(input.cadastral, source().cadastral)).toBe(false);
+    expect(sameCadastralIdentity(source().cadastral, input.cadastral)).toBe(false);
+    expect(choosePropertyCandidate(input, []).kind).toBe("create");
+    const candidate = { id: "blank", fullAddress: input.fullAddress, displayName: input.fullAddress, cadastral: input.cadastral };
+    expect(choosePropertyCandidate(input, [candidate]).kind).toBe("exact");
+    expect(() => choosePropertyCandidate(input, [{ ...candidate, cadastral: source().cadastral }])).toThrow(/senza subalterno/);
+    expect(() => choosePropertyCandidate(input, [candidate, { ...candidate, id: "sibling", cadastral: source().cadastral }])).toThrow(/senza subalterno/);
   });
   it("estrae dal nome CRM solo l'indirizzo e conserva l'interno tra quadre", () => {
     expect(propertyNameToAddress("IM - Via Publio Virgilio Marone 2 [25] - Abbadessa"))

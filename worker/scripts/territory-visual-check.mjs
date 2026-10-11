@@ -28,7 +28,7 @@ async function until(page, predicate, value) {
   throw new Error("Il laboratorio non ha raggiunto lo stato atteso entro 20 secondi");
 }
 async function idle(page, operation) {
-  await until(page, async op => { const s = await window.territory.snapshot(); return !s.activeRun && s.streets.some(street => street.count === 6); }, operation);
+  await until(page, async op => { const s = await window.territory.snapshot(); return !s.activeRun && s.streets.some(street => street.count === 5 && street.quarantineCount === 1); }, operation);
 }
 async function mapPoints(page, geometry) {
   await page.waitForTimeout(400); // Leaflet finishes its fitBounds transition.
@@ -192,7 +192,7 @@ try {
   await idle(page, "scan");
   await page.getByRole("button", { name: "Confronta gestionale", exact: true }).click();
   await until(page, async id => { const d = await window.territory.detail(id); return d.runs.at(-1)?.operation === "compare" && d.runs.at(-1)?.state === "completed"; }, street.id);
-  await page.getByRole("tab", { name: "Immobili 6", exact: true }).click();
+  await page.getByRole("tab", { name: "Immobili 5", exact: true }).click();
   await page.locator("#unit-filter").selectOption("ready");
   await page.getByRole("button", { name: "Seleziona tutti", exact: true }).click();
   await page.getByRole("button", { name: "Prova piano (3)", exact: true }).click();
@@ -208,7 +208,7 @@ try {
   await page.locator('.street-percent-label').filter({ hasText: '50%' }).first().waitFor();
   await page.screenshot({ path: path.join(output, '03-map-import-progress.png') });
   await openStreet(page, street);
-  await page.getByRole('tab', { name: 'Immobili 6', exact: true }).click();
+  await page.getByRole('tab', { name: 'Immobili 5', exact: true }).click();
   const units = page.locator(".unit");
   await units.nth(0).getByText("Correggi i dati conservati", { exact: true }).click();
   await units.nth(1).getByText("Correggi i dati conservati", { exact: true }).click();
@@ -245,11 +245,11 @@ try {
   assert.equal(restoredLink.street.id, emptyOfficial.id);
   assert.equal(restoredLink.linkedNotes[0].note, 'Dossier iniziale, prima di qualsiasi analisi');
   assert.equal(restored.memory.note, "Annotazione salvata durante il collaudo");
-  assert.equal(restored.units.length, 6);
+  assert.equal(restored.units.length, 5);
   assert.equal(restored.units.filter(u => u.assessment?.kind === "synced").length, 1);
   assert.equal(restored.units.find(u => u.key === firstKey).source.fullAddress, `${street.name} 20`);
   assert.equal(restored.units.find(u => u.key === secondKey).source.fullAddress, `${street.name} 22`);
-  assert.deepEqual(restored.units.map(u => u.position.civic), ["6", "8", "10", "12", "20", "22"], "Ordine per civico anche dopo correzione e riapertura");
+  assert.deepEqual(restored.units.map(u => u.position.civic), ["6", "8", "12", "20", "22"], "Ordine per civico anche dopo correzione e riapertura");
   assert.equal(restored.street.progress.percent, 50, 'Le correzioni non cancellano le prove degli import');
   assert.equal(errors.length, 0, errors.join("\n"));
   const ledger = JSON.parse(await readFile(path.join(dataDirectory, "territory-ledger.json"), "utf8"));

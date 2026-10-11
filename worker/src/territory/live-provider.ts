@@ -43,8 +43,10 @@ export class LiveProvider implements TerritoryProvider {
   private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => { this.tabsPromise = null; throw error; }); }
   canWrite(key: string, source?: SourceProperty) {
     if (this.writeAccess === "operational") {
-      if (!source || source.municipality.trim().toUpperCase() !== "BITONTO" || unitKey(source) !== key) return false;
-      try { buildPlan(source); return true; } catch { return false; }
+      try {
+        if (!source || source.municipality.trim().toUpperCase() !== "BITONTO" || unitKey(source) !== key) return false;
+        buildPlan(source); return true;
+      } catch { return false; }
     }
     return this.config.allowedCadastralKeys.includes(key) && Boolean(source && source.owners.length && source.owners.every(owner => this.config.allowedTaxCodes.includes(owner.taxCode.trim().toUpperCase())));
   }
@@ -89,6 +91,6 @@ export class LiveProvider implements TerritoryProvider {
       },
     });
     const result = await runner.run(street.sisterName, prior && hasRetryableAcquisitionRecords(prior) ? prepareStreetAcquisitionRetry(prior) : prior);
-    return result.status === "completed" && !result.lastError && result.totalSkippedPropertyRows === 0;
+    return result.status === "completed" && !result.lastError;
   }
 }

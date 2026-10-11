@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   testSettings: () => ipcRenderer.invoke('territory:test-settings'),
   configureTests: value => ipcRenderer.invoke('territory:configure-tests', value),
   detail: id => ipcRenderer.invoke('territory:detail', id),
+  quarantine: () => ipcRenderer.invoke('territory:quarantine'),
   unitDetail: id => ipcRenderer.invoke('territory:unit-detail', id),
   queryCatalog: () => ipcRenderer.invoke('territory:query-catalog'),
   query: value => ipcRenderer.invoke('territory:query', value),

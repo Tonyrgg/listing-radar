@@ -1372,3 +1372,12 @@ button[aria-busy="true"]::after {
 button[aria-busy="true"] {
   cursor: progress;
 }
+.quarantine-intro { margin-block: 16px 24px; max-width: 70ch; }
+.quarantine-intro h3 { display: flex; align-items: center; gap: 10px; }
+.quarantine-list { list-style: none; padding: 0; margin: 0; }
+.quarantine-item { border-top: 1px solid var(--lr-line-quiet); padding-block: 20px; }
+.quarantine-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.quarantine-heading h4 { font-size: var(--lr-text-record); margin: 0; }
+.quarantine-reason { color: var(--lr-warn); font-weight: var(--lr-weight-medium); }
+.quarantine-item form { display: grid; gap: 12px; padding-block: 12px; }
+.quarantine-item > button { margin-top: 12px; }

@@ -16,6 +16,8 @@ import { runSettings, sourceForApply } from "./run-options.js";
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { appendUnitEvent, rememberAcquisition, unitMemory } from "./unit-memory.js";
 import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
+import { collectScanQuarantine, isQuarantined, quarantine, resolveUnitQuarantine, sourceProblem } from "./quarantine.js";
+import { buildCadastralKey } from "../core/normalize.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: _sources, checkpoint: _checkpoint, ...run }: Run) => run;
@@ -27,13 +29,14 @@ export class TerritoryApplication {
   constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}) {}
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null; }
+  quarantineList() { const state = this.store.read(); return Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).map(q => ({ ...q, editableSource: q.unitKey && state.units[q.unitKey] ? effectiveSource(state.units[q.unitKey]!) : q.source, unitNote: q.unitKey ? state.units[q.unitKey]?.note ?? "" : "" })); }
   historyReview() { return this.store.read().history?.flatMap(job => job.issues.map(issue => ({ jobId: job.id, propertyId: issue.propertyId, address: issue.address, reason: issue.reason, canAssociate: Boolean(issue.source), cadastral: issue.source?.cadastral ?? null }))) ?? []; }
   async associate(propertyId: string, streetId: string) { if (this.active) throw new Error("Metti in pausa prima di associare lo storico"); await associateHistory(this.store, propertyId, streetId); this.changed(); }
   isPaused = () => Boolean(this.active?.pause);
   snapshot() {
     const state = this.store.read();
     const activeRun = this.active ? state.runs.find(r => r.id === this.active!.runId) : undefined;
-    return { origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: state.streets.filter(s => !s.linkedOfficialId).map(s => streetSummary(state, s)), activeRun: activeRun ? publicRun(activeRun) : null };
+    return { quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: state.streets.filter(s => !s.linkedOfficialId).map(s => streetSummary(state, s)), activeRun: activeRun ? publicRun(activeRun) : null };
   }
   detail(streetId: string) {
     const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);
@@ -42,7 +45,7 @@ export class TerritoryApplication {
     streetId = street.id;
     const ids = relatedStreetIds(state, streetId);
     const summary = streetSummary(state, street);
-    return { street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id))).map(u => this.presentUnit(u)).sort((a, b) => compareSourceProperties(a.source, b.source)), runs: state.runs.filter(r => ids.includes(r.streetId) || r.selectionScope?.some(id => ids.includes(id))).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
+    return { quarantine: this.quarantineList().filter(q => ids.includes(q.streetId)), street: summary, history: state.history?.filter(h => h.streetIds.some(id => ids.includes(id))) ?? [], memory: { ...(state.memories[streetId] ?? { note: "" }), attention: summary.attention }, linkedNotes: ids.filter(id => id !== streetId && state.memories[id]?.note).map(id => ({ streetId: id, ...state.memories[id]! })), units: Object.values(state.units).filter(u => u.streetIds.some(id => ids.includes(id)) && !isQuarantined(state, u)).map(u => this.presentUnit(u)).sort((a, b) => compareSourceProperties(a.source, b.source)), runs: state.runs.filter(r => ids.includes(r.streetId) || r.selectionScope?.some(id => ids.includes(id))).map(publicRun), events: state.events.filter(e => ids.includes(e.streetId)).slice(-100) };
   }
   async bindNetwork(networkId: string, officialId: string) {
     if (this.active) throw new Error("Attendi la fine dell'operazione prima di associare un tracciato");
@@ -76,6 +79,7 @@ export class TerritoryApplication {
       const checkpoint = state.checkpoints[source.sourcePropertyId];
       if (checkpoint && checkpoint.stage !== "completed") throw new Error("Import parziale: conserva il piano originale e riprendilo prima di cambiare i dati");
       unit.corrections = { ...unit.corrections, ...correction }; unit.note = note; unit.sourceVersionId = randomUUID(); unit.assessment = null;
+      resolveUnitQuarantine(state, unit, now());
       appendUnitEvent(unit, ["corrected", unit.sourceVersionId], { kind: "corrected", at: now(), runId: "manual", origin: latest(unit).origin === "simulation" ? "simulation" : "live", source: effectiveSource(unit), note, message: "Correzione manuale conservata; serve un nuovo confronto" });
       for (const streetId of unit.streetIds) state.events.push({ id: randomUUID(), streetId, at: now(), text: "Correzione manuale conservata; serve un nuovo confronto", unitKey: key });
     });
@@ -119,7 +123,7 @@ export class TerritoryApplication {
         if (frozen && buildPlan(frozen).fingerprint !== buildPlan(effectiveSource(unit)).fingerprint) throw new Error("I dati sono cambiati dopo l'avvio: verifica il piano prima di riprendere");
         if (operation === "apply" && !resumeId && run.settings!.importPolicy === "existing_only" && unit.assessment?.kind === "create") throw new Error("Solo schede esistenti: deseleziona gli immobili da creare");
         const resumable = Boolean(resumeId && checkpoint && checkpoint.stage !== "completed");
-        if (operation === "apply" && (!this.provider.canWrite(key, effectiveSource(unit)) || (!resumable && !["create", "update", "synced"].includes(unit.assessment?.kind ?? "unknown")))) throw new Error("Un immobile selezionato richiede una verifica o non è autorizzato alle scritture");
+        if (operation === "apply" && (!this.provider.canWrite(key, effectiveSource(unit)) || (!resumable && isQuarantined(state, unit)))) throw new Error("Un immobile selezionato è in quarantena o non è autorizzato alle scritture");
       }
     }
     this.active = { runId: run.id, pause: false };
@@ -148,7 +152,7 @@ export class TerritoryApplication {
   unitDetail(key: string) { const unit = this.store.read().units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit); }
   private presentUnit(unit: Unit) { const source = effectiveSource(unit); return { ...unit, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit) }; }
   queryCatalog() { return queryCatalog(this.store.read()); }
-  query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return ["create", "update", "synced"].includes(u.assessment?.kind ?? "") && this.provider.canWrite(key, effectiveSource(u)); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
+  query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return this.provider.canWrite(key, effectiveSource(u)) && !isQuarantined(state, u); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
   async saveZone(name: string, streetIds: string[], id: string = randomUUID()) {
     if (this.active) throw new Error("Attendi la fine dell'operazione prima di modificare le zone");
     await this.store.change(state => { const canonical = [...new Set(streetIds.map(id => state.streets.find(s => s.id === id)?.linkedOfficialId ?? id))]; if (!canonical.length || canonical.some(id => !state.streets.some(s => s.id === id && !s.needsReview))) throw new Error("Scegli almeno una via identificata"); (state.zones ??= {})[id] = { id, name, streetIds: canonical, updatedAt: now() }; }); this.changed(); return id;
@@ -180,9 +184,13 @@ export class TerritoryApplication {
       const street = this.store.read().streets.find(s => s.id === run.streetId)!;
       if (run.operation === "scan") {
         const complete = await this.provider.scan(street, run.id, run.checkpoint, async source => {
-          const key = unitKey(source);
+          let key: string | undefined;
+          try { key = unitKey(source); } catch { /* The source itself remains in quarantine. */ }
+          const problem = sourceProblem(source);
           await this.store.change(state => {
             const currentRun = state.runs.find(r => r.id === run.id)!;
+            if (problem || !key) quarantine(state, { streetId: street.id, runId: run.id, at: now(), origin: "scan", reason: problem ?? "Identità catastale incompleta", address: source.fullAddress, cadastral: source.cadastral, source: structuredClone(source), unitKey: key, recordKey: buildCadastralKey({ municipality: source.municipality, ...source.cadastral }) });
+            if (!key) return;
             const unit = state.units[key] ??= { key, streetIds: [], observations: [], corrections: {}, note: "", assessment: null, importedAt: null, crmId: null };
             if (!unit.streetIds.includes(street.id)) unit.streetIds.push(street.id);
             // A replay is harmless; a repaired SISTER row retains both readings.
@@ -193,9 +201,11 @@ export class TerritoryApplication {
             }
             if (!currentRun.itemKeys.includes(key)) currentRun.itemKeys.push(key);
             currentRun.handled = currentRun.itemKeys.length;
+            if (!problem) resolveUnitQuarantine(state, unit, now());
           }); this.changed();
         }, async checkpoint => this.updateRun(run.id, { checkpoint }), this.isPaused, run.settings!.filters);
-        await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Acquisizione parziale: i dati letti restano conservati. Riprendi o verifica le anomalie." });
+        await this.store.change(state => collectScanQuarantine(state, state.runs.find(r => r.id === run.id)!));
+        await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           if (this.isPaused()) { await this.updateRun(run.id, { state: "paused" }); return; }
@@ -213,13 +223,23 @@ export class TerritoryApplication {
             // A plan is a preview, not permission to trust an old CRM read.
             const fresh = await this.provider.candidates(street, source);
             const assessment = assess(source, fresh.rows, fresh.complete);
-            if (run.settings!.importPolicy === "existing_only" && assessment.kind === "create") throw new Error("Scheda esistente non trovata nella nuova lettura: nessuna creazione autorizzata da questa run");
+            if (assessment.kind === "unknown") {
+              await this.store.change(s => { s.units[key]!.assessment = assessment; });
+              throw new Error(assessment.reason);
+            }
             if (!this.provider.canWrite(key, source)) throw new Error("Scrittura non autorizzata per questo immobile");
-            if (!["create", "update"].includes(assessment.kind)) {
+            if (assessment.kind === "review" || (run.settings!.importPolicy === "existing_only" && assessment.kind === "create")) {
+              const checkpoint = this.store.read().checkpoints[source.sourcePropertyId];
+              if (checkpoint && checkpoint.stage !== "completed") {
+                await this.store.change(s => { s.units[key]!.assessment = assessment; });
+                throw new Error("Confronto cambiato durante un import da riprendere: checkpoint conservato, nessuna scrittura ripetuta.");
+              }
               await this.store.change(s => { const u = s.units[key]!; u.assessment = assessment;
+                const reason = assessment.kind === "review" ? assessment.reason : "Solo schede esistenti: nessuna creazione autorizzata";
+                quarantine(s, { origin: "apply", runId: run.id, streetId: street.id, at: now(), unitKey: key, source, address: source.fullAddress, cadastral: source.cadastral, reason });
                 appendUnitEvent(u, [run.id, key, "fresh_comparison", assessment.checkedAt], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-                appendUnitEvent(u, [run.id, key, "plan_changed", assessment.checkedAt], { kind: "import_paused", at: assessment.checkedAt, runId: run.id, origin: run.origin, message: "La corrispondenza è cambiata: verifica il piano prima di riprendere" }); });
-              await this.updateRun(run.id, { state: "paused", error: "La corrispondenza è cambiata: verifica il piano prima di riprendere." }); return;
+                appendUnitEvent(u, [run.id, key, "quarantined"], { kind: "import_quarantined", at: now(), runId: run.id, origin: run.origin, message: reason }); });
+              await this.updateRun(run.id, { handled: index + 1 }); continue;
             }
             const plan = buildPlan(source);
             const narrowed = fresh.rows.filter(c => c.id === assessment.candidateId);
@@ -236,7 +256,13 @@ export class TerritoryApplication {
                 if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
               }
             });
-            if (outcome.state !== "completed") { await this.updateRun(run.id, { state: "paused", error: outcome.failure?.message ?? "Import da verificare" }); return; }
+            if (outcome.state === "quarantined" && !outcome.failure?.global && ["queued", "planned"].includes(outcome.stage) && !outcome.crmPropertyId && !outcome.syncedPeople.length) {
+              await this.store.change(state => {
+                quarantine(state, { origin: "apply", runId: run.id, streetId: street.id, at: now(), unitKey: key, source, checkpoint: state.checkpoints[source.sourcePropertyId], address: source.fullAddress, cadastral: source.cadastral, reason: outcome.failure?.message ?? "Import da controllare; checkpoint conservato" });
+                // No writes occurred: keep the rejected plan in quarantine, not as a pending import.
+                delete state.checkpoints[source.sourcePropertyId];
+              });
+            } else if (outcome.state !== "completed") { await this.updateRun(run.id, { state: "paused", error: outcome.failure?.message ?? "Import da verificare" }); return; }
           }
           await this.updateRun(run.id, { handled: index + 1 });
         }

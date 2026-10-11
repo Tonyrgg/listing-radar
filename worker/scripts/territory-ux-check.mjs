@@ -92,13 +92,13 @@ try {
     page,
     async (id) => {
       const d = await window.territory.detail(id);
-      return d.runs.at(-1)?.state === "completed" && d.units.length === 6;
+      return d.runs.at(-1)?.state === "completed" && d.units.length === 5;
     },
     street.id,
   );
   await page.locator("#select-all").click();
-  assert.equal(await page.locator("[data-unit-select]:checked").count(), 6, "Tutti selezionabili prima del confronto");
-  assert.equal(await page.locator("#apply").isDisabled(), true, "Nessun import senza un piano valido");
+  assert.equal(await page.locator("[data-unit-select]:checked").count(), 5, "Tutti selezionabili prima del confronto");
+  assert.equal(await page.locator("#apply").isDisabled(), false, "Confronto e import si avviano insieme");
   await page.locator("#clear-selection").click();
   await page.locator('[data-operation="compare"]').click();
   const scanRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.find(r => r.operation === "scan"), street.id);
@@ -163,7 +163,7 @@ try {
   await page.locator("#import-policy").selectOption("create_update");
   await page.locator("#import-activity").selectOption("plain");
   assert.ok((await page.locator("#selection-help").textContent()).includes("attività da eseguire"));
-  assert.equal(await page.locator(".unit").count(), 2);
+  assert.equal(await page.locator(".unit").count(), 1);
   assert.ok(
     (await page.locator("#selection-plan").textContent()).includes(
       "3 fuori dai filtri",
@@ -202,10 +202,10 @@ try {
   await page.locator("#tab-units").click();
   await page.locator("#unit-filter").selectOption("");
   await page.locator("#unit-search").fill("LAB");
-  assert.equal(await page.locator(".unit").count(), 6);
+  assert.equal(await page.locator(".unit").count(), 5);
   await page.locator("#unit-search").fill("nessun immobile corrispondente");
   await page.locator("#unit-empty-action").click();
-  assert.equal(await page.locator(".unit").count(), 6);
+  assert.equal(await page.locator(".unit").count(), 5);
   const edit = page.locator(".unit").first().locator("[data-edit]");
   await page
     .locator(".unit")
@@ -296,7 +296,7 @@ try {
   assert.equal(await page.locator("[data-query-select]:checked").count(), 0);
   await page.locator("[data-query-unit] .owner-name strong").first().click();
   assert.equal(await page.locator("[data-query-select]:checked").count(), 1, "Clic sulla card seleziona l’immobile");
-  assert.equal(await page.locator("#q-apply").isDisabled(), true);
+  assert.equal(await page.locator("#q-apply").isDisabled(), false, "La query consente confronto e import nello stesso avvio");
   await page.locator("#q-compare").click();
   await until(page, async () => !(await window.territory.snapshot()).activeRun && !(document.querySelector("#q-apply")?.disabled));
   assert.equal(await page.locator(".query-card .unit-owners strong").count(), first.source.owners.length);
@@ -334,7 +334,7 @@ try {
   assert.ok((await page.locator("#q-owners .picker-value").textContent()).includes("Non più in archivio"), "Un criterio salvato mancante non scompare o diventa Tutti");
   assert.equal(await page.locator("#q-apply").isDisabled(), true);
   await page.locator("#q-reset").click();
-  await until(page, () => document.querySelectorAll("[data-query-unit]").length === 6);
+  await until(page, () => document.querySelectorAll("[data-query-unit]").length === 5);
 
   await page.locator("#detail-close").click();
   // Two co-owners are readable without opening any disclosure.

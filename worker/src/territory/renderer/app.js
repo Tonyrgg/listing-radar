@@ -1,3 +1,4 @@
+import { quarantineHtml } from "./quarantine.js";
 import { createStreetSearch } from "./street-search.js";
 import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
@@ -125,6 +126,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     highlightSource = null;
   const stroke = { weight: 4, opacity: 0.9 },
     hoverStroke = { weight: 8, opacity: 1 };
+  let quarantineView = false;
   let historyView = false,
     historyRows = [],
     historyFilter = "";
@@ -336,7 +338,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const place = ["Bitonto", "Palombaio", "Mariotto"].includes(street.locality) ? street.locality : "Comune di Bitonto";
     return street.catalogKind === "network" ? `${escape(place)} · Tracciato della mappa` : `${escape(place)} · Codvia ${escape(street.id)}`;
   };
-  const acquisitionLabel = street => street.progress?.complete ? "Acquisizione completa" : street.progress?.acquiredAt ? "Acquisizione parziale" : "Nessuna acquisizione";
+  const acquisitionLabel = street => street.acquisitionState === "completed" || street.progress?.complete ? "Acquisizione conclusa" : street.progress?.acquiredAt ? "Lettura da riprendere" : "Nessuna acquisizione";
   function statusHtml(street) { return `<span class="status icon-label">${icon(street.progress.complete ? "check" : "download")}${acquisitionLabel(street)}</span>`; }
   function progressHtml(street, compact = false) {
     if (!street.count && !street.progress.complete) return "";
@@ -531,7 +533,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       closeDialog();
   });
   $("detail-dialog").addEventListener("close", () => {
-    networkView = testsView = historyView = false;
+    quarantineView = networkView = testsView = historyView = false;
     document.body.append($("feedback"));
     if (dialogOpener?.isConnected && dialogOpener.getClientRects().length) dialogOpener.focus({ preventScroll: true });
     else streetSearch.focus();
@@ -546,6 +548,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     }
     const chosen = await api.detail(id);
     streetSearch.setValue(chosen.street.name);
+    quarantineView = false;
     historyView = false;
     testsView = false;
     networkView = false;
@@ -592,14 +595,16 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       const title = s.needsReview ? "Associa il tracciato a una via" : view.phase === "acquiring" ? "Acquisizione da SISTER in corso" : view.phase === "interrupted" ? "Riprendi la prima acquisizione" : "Acquisisci i dati di questa via";
       const description = s.needsReview ? "Scegli la via ufficiale per leggere i suoi dati catastali." : view.phase === "interrupted" ? "Il lavoro già svolto è conservato. Riprendi dallo stesso punto." : "Leggi immobili e intestatari da SISTER e conservali nella memoria del Worker.";
       const button = view.phase === "acquiring" ? "" : s.needsReview ? '<button id="first-associate" class="primary">Associa via ufficiale</button>' : view.phase === "interrupted" ? '<button id="resume" class="primary">Riprendi acquisizione</button>' : '<button class="primary" data-operation="scan">Acquisisci via</button>';
-      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">L’import in Tecnocloud si avvia in un passaggio successivo, dopo il confronto.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
+      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">L’import in Tecnocloud si avvia dai selezionati, con confronto e import insieme.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
     } else if (sameContext) {
       $("inspector").querySelector(".detail-header").innerHTML = header;
       $("tab-units").innerHTML = `${icon("building")}Immobili ${s.count}`;
+      $("tab-quarantine").innerHTML = `${icon("warning")}Quarantena ${detail.quarantine?.length || 0}`;
     } else
       $("inspector").innerHTML =
         `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-actionbar" class="street-actionbar"></div><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
                     ["units", `Immobili ${s.count}`],
+          ["quarantine", `Quarantena ${detail.quarantine?.length || 0}`],
           ["history", "Storico"],
         ]
           .map(
@@ -614,7 +619,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       .forEach((button) => {
         button.onclick = () => switchTab(button.dataset.tab);
         button.onkeydown = (event) => {
-          const keys = ["units", "history"],
+          const keys = ["units", "quarantine", "history"],
             i = keys.indexOf(tab);
           if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key))
             return;
@@ -624,8 +629,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
               event.key === "Home"
                 ? 0
                 : event.key === "End"
-                  ? 1
-                  : (i + 1) % 2
+                  ? keys.length - 1
+                  : (i + (event.key === "ArrowLeft" ? keys.length - 1 : 1)) % keys.length
             ],
           );
         };
@@ -653,7 +658,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         : counts.unknown
           ? 1
           : 2;
-    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="${step === 1 && !paused ? "primary" : ""}" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’applicazione.</p>`;
+    const actions = `<div class="actions"><button class="${step === 0 && !paused ? "primary" : ""}" data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Confronta gestionale</button></div><p class="comparison-help">Il confronto legge il CRM e prepara gli esiti. Nessuna scheda viene modificata fino all’applicazione.</p>`;
     {
       if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
@@ -840,6 +845,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             feedback("Correzione conservata. Serve un nuovo confronto.");
           });
         });
+    } else if (tab === "quarantine") {
+      $("detail-body").innerHTML = quarantineHtml(detail.quarantine || [], escape, date);
+      wireQuarantine($("detail-body"), detail.quarantine || []);
     } else {
       $("detail-body").innerHTML =
         `<h3>Operazioni della via</h3><ul class="runs-list">${
@@ -936,7 +944,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     );
     $("selection-plan").textContent =
       `${qty(records.filter((u) => u.assessment?.kind === "create").length, "nuova scheda", "nuove schede")} · ${qty(records.filter((u) => u.assessment?.kind === "update").length, "aggiornamento", "aggiornamenti")}${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
-    $("apply").disabled = !selected.size || Boolean(snapshot.activeRun) || blockedCreation || records.some(u => !ready(u));
+    $("apply").disabled = !selected.size || Boolean(snapshot.activeRun) || blockedCreation || records.some(u => !u.canWrite);
     $("apply").textContent =
       `${snapshot.origin === "simulation" ? "Prova piano" : "Applica selezionati"} (${selected.size})`;
     $("clear-selection").disabled = !selected.size;
@@ -945,10 +953,10 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("selection-help").textContent = snapshot.activeRun
       ? "Attendi o sospendi l’operazione in corso."
       : blockedCreation ? "Hai scelto solo schede esistenti: deseleziona gli immobili da creare, oppure cambia la regola d’import."
-      : records.some(u => !ready(u)) ? "Confronta i selezionati e completa i dati prima di applicare."
+      : records.some(u => !u.canWrite) ? "Completa i dati o le autorizzazioni degli immobili selezionati prima di applicare."
       : selected.size
         ? `${snapshot.origin === "simulation" ? "Piano simulato" : snapshot.operational ? "Piano di import" : "Solo schede autorizzate"}: ${optionsSummary({ operation: "apply", settings })}. Ogni immobile verrà verificato prima del salvataggio.${hidden ? " La selezione include anche gli immobili fuori dai filtri." : ""}`
-        : "Seleziona gli immobili pronti. I casi dubbi restano esclusi.";
+        : "Seleziona gli immobili da confrontare e importare.";
   }
   function modalProgress() {
     if (!$("detail-run")) return;
@@ -1054,6 +1062,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             : memory.syncedAt
               ? `Ultima sincronizzazione: ${date(memory.syncedAt)}`
               : "Non ancora sincronizzata");
+    $("quarantine-open").textContent = `Quarantena (${snapshot.quarantineCount || 0})`;
     $("history-review").hidden = !snapshot.historyIssues;
     $("history-review").textContent =
       `Storico da associare (${snapshot.historyIssues || 0})`;
@@ -1121,7 +1130,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     renderProgress();
     modalProgress();
     if (!dirty && $("detail-dialog").open) {
-      if (networkView) showNetworkSetup();
+      if (quarantineView) await showQuarantine();
+      else if (networkView) showNetworkSetup();
       else if (testsView) await showTestSettings();
       else if (historyView) await showHistoryReview();
       else if (queryPanel.active) await queryPanel.refresh();
@@ -1150,12 +1160,46 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     );
   });
   $("detail-refresh").onclick = safe(refresh);
+  function wireQuarantine(root, items) {
+    root.querySelectorAll("[data-quarantine-street]").forEach(button => {
+      button.onclick = safe(() => choose(button.dataset.quarantineStreet));
+    });
+    root.querySelectorAll("[data-quarantine-edit]").forEach(form => {
+      form.oninput = () => markDirty(form);
+      form.querySelector("[data-quarantine-cancel]").onclick = () => { form.reset(); saved(form); };
+      form.onsubmit = safe(async event => {
+        event.preventDefault();
+        const item = items.find(q => q.id === form.dataset.quarantineEdit), data = new FormData(form);
+        const owners = (item.editableSource || item.source).owners.map((owner, i) => ({ ...owner,
+          fullName: String(data.get(`name-${i}`)), taxCode: String(data.get(`cf-${i}`)),
+          sharePercentage: String(data.get(`share-${i}`)).trim() ? Number(data.get(`share-${i}`)) : null }));
+        await api.correct({ key: item.unitKey, note: item.unitNote, correction: { address: String(data.get("address")), category: String(data.get("category")), owners } });
+        saved(form); await refresh();
+        feedback("Correzione conservata. L’immobile torna in lavorazione quando i dati sono validi.");
+      });
+    });
+  }
+  async function showQuarantine() {
+    const items = await api.quarantine();
+    if (!quarantineView || dirty) return;
+    const state = remember($("inspector"));
+    $("inspector").innerHTML = quarantineHtml(items, escape, date);
+    wireQuarantine($("inspector"), items); restore($("inspector"), state); labelIcons($("inspector"));
+  }
+  $("quarantine-open").onclick = safe(async () => {
+    if (dirty) return feedback("Salva o annulla le modifiche prima di aprire la quarantena", true);
+    quarantineView = true; networkView = testsView = historyView = false;
+    selectedStreet = null; detail = null; renderedContext = null;
+    $("inspector").classList.remove("street-inspector");
+    openDialog("Quarantena immobili"); await showQuarantine();
+  });
   $("network-setup").onclick = () => {
     if (dirty)
       return feedback(
         "Salva o annulla le modifiche prima di aprire la rete.",
         true,
       );
+    quarantineView = false;
     networkView = true;
     historyView = false;
     testsView = false;
@@ -1233,6 +1277,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         true,
       );
     networkView = false;
+    quarantineView = false;
     testsView = true;
     historyView = false;
     $("tools").open = false;
@@ -1354,6 +1399,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       );
     networkView = false;
     testsView = false;
+    quarantineView = false;
     historyView = true;
     $("tools").open = false;
     openDialog("Storico da associare");
@@ -1499,7 +1545,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     }
   });
   const queryPanel = createQueryPanel({ api, escape, feedback, notifyRunIssue, snapshot: () => snapshot,
-    open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); openDialog("Query immobili"); return true; },
+    open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); openDialog("Query immobili"); return true; },
     openUnit: async unit => { if (!unit.streetIds.length) return feedback("Associa questo immobile a una via dallo storico prima di lavorarlo.", true); await choose(unit.streetIds[0]); const card = [...$("inspector").querySelectorAll("[data-unit]")].find(c => c.dataset.unit === unit.key); if (card) { card.querySelector('[data-disclosure$=":record"]').open = true; card.scrollIntoView({ block: "start", behavior: "smooth" }); } }
   });
   $("query-manager").onclick = safe(() => queryPanel.open());

@@ -1,6 +1,6 @@
 import type { TerritoryState } from "./model.js";
 import { normalizeSisterStreet } from "../core/street-scan.js";
-import { stripSisterMunicipalityPrefix } from "../core/normalize.js";
+import { parsePropertyAddress, stripSisterMunicipalityPrefix } from "../core/normalize.js";
 import { addressIdentity } from "../import-v2/identity.js";
 import type { Run } from "./model.js";
 import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
@@ -57,7 +57,8 @@ export function importProgress(state: TerritoryState, streetIds: string[], now =
       for (const property of result.inventoryProperties) {
         const address = property.address && stripSisterMunicipalityPrefix(property.address, "BITONTO");
         const identity = address && addressIdentity(address);
-        const name = address && normalizeSisterStreet(identity ? identity.street : address);
+        // A floor without a civic is still an exact street name, not a different road.
+        const name = address && normalizeSisterStreet(identity ? identity.street : parsePropertyAddress(address).address);
         if (!name) { complete = false; continue; }
         if (!names.has(name)) {
           // An unrecognised address cannot prove that this row belongs elsewhere.

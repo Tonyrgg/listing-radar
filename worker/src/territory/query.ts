@@ -42,6 +42,7 @@ export function queryUnitKeys(state: TerritoryState, input: unknown, now = Date.
   const streets = new Map(state.streets.map(s => [s.id, s]));
   for (const id of query.streetIds) if (!streets.has(id)) throw new Error("Una via della query non è più disponibile");
   return Object.values(state.units).filter(unit => {
+    if (Object.values(state.quarantine ?? {}).some(q => !q.resolvedAt && q.unitKey === unit.key)) return false;
     const source = effectiveSource(unit);
     if (source.municipality.trim().toUpperCase() !== "BITONTO") return false;
     const streetIds = unit.streetIds.map(id => streets.get(id)?.linkedOfficialId ?? id);

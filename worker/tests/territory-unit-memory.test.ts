@@ -89,7 +89,7 @@ describe("memoria individuale degli immobili", () => {
   });
   it("conserva tutte le corsie, riprova dopo un guasto e separa le identità incomplete senza perdere i fatti", async () => {
     const { directory } = await setup(), a = memory(), b = memory(); b.at = "2026-10-07T11:00:00Z";
-    const invalid = memory(); invalid.source.cadastral.subaltern = "";
+    const invalid = memory(); invalid.source.cadastral.sheet = "";
     await Promise.all([a, b, a, invalid].map(f => queuePropertyMemory(directory, f)));
     await expect(consumePropertyMemory(directory, async () => { throw new Error("Occupato"); })).rejects.toThrow("Occupato");
     const seen: PropertyMemory[] = []; await consumePropertyMemory(directory, async f => { seen.push(f); });
