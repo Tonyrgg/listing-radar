@@ -1,3 +1,4 @@
+import { rememberCloudCheckpoint } from "./cloud-memory.js";
 import { createHash } from "node:crypto";
 import { sanitizeSensitiveText } from "../logger.js";
 import { unitKey, type TerritoryState, type Unit, type UnitEvent } from "./model.js";
@@ -25,6 +26,7 @@ export function ensureMemoryUnit(state: TerritoryState, source: SourceProperty, 
 }
 export function rememberCheckpoint(state: TerritoryState, memory: PropertyMemory, context?: { key: string; runId: string; streetId: string; origin: "simulation" | "live" }) {
   const { source, checkpoint, failure } = memory;
+  if (memory.event === "stage_completed" && !failure && !checkpoint?.lastError) rememberCloudCheckpoint(state, source, checkpoint, memory.at);
   const runId = context?.runId ?? `history:${source.jobId}`;
   const unit = context ? state.units[context.key]! : ensureMemoryUnit(state, source, validAt(memory.acquiredAt) ?? memory.at, runId);
   if (!unit || unit.key !== unitKey(source)) throw new Error("Identità della memoria immobile non coerente");

@@ -1,6 +1,7 @@
 import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
+import { logger } from "../logger.js";
 import { assignPhonesToAvailableFields, PHONE_FIELD_LABELS, type PhoneFieldLabel } from "./contacts.js";
 import { normalizePhone } from "../core/normalize.js";
 import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, sameCrmPropertyAddress, splitSourcePersonName } from "./identity.js";
@@ -320,6 +321,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     private readonly dryRun = false,
     private readonly options: {
       isInterruptionRequested?: () => boolean;
+      cadastralLookupOnly?: boolean;
+      recoverReadLoading?: boolean;
     } = {},
   ) {}
 
@@ -366,6 +369,25 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private url(pathname: string): string {
     return new URL(pathname, this.page.url()).toString();
+  }
+  /** Only read operations can reload and repeat automatically. Never replay a save. */
+  private async readAction<T>(label: string, operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.action(label, operation); }
+      catch (error) {
+        if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 2
+          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato/i.test(error.message)) throw error;
+        this.throwIfInterruptionRequested();
+        await this.assertSession();
+        // A dialog may contain a pending/uncertain write. Keep its checkpoint
+        // and let the engine recover, rather than throwing away a form.
+        if (await this.page.locator('[role="dialog"]:visible').count()) throw error;
+        logger.warn({ portal: "CRM", action: "read-loading-recovery", label, attempt: attempt + 1 }, "Caricamento CRM bloccato: aggiorno la pagina e ripeto la lettura");
+        await this.page.reload({ waitUntil: "commit", timeout: 30_000 });
+        this.throwIfInterruptionRequested();
+        await this.assertSession();
+      }
+    }
   }
 
   private async navigate(pathname: string): Promise<void> {
@@ -555,7 +577,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   async readPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
-    return this.action("Rilettura nominativo verificato", () => {
+    return this.readAction("Rilettura nominativo verificato", () => {
       const cached = this.verifiedPersonSnapshots.get(crmRecordKey(personId));
       if (cached && cached.expiresAt >= Date.now()
         && (!expectedTaxCode || canonicalTaxCode(cached.snapshot.taxCode) === canonicalTaxCode(expectedTaxCode))) {
@@ -566,7 +588,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   async searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]> {
-    return this.action("Ricerca nominativo per codice fiscale", async () => {
+    return this.readAction("Ricerca nominativo per codice fiscale", async () => {
       const expected = canonicalTaxCode(taxCode);
       const virtual = this.virtualPeople.get(expected);
       if (virtual) return [structuredClone(virtual)];
@@ -1443,7 +1465,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "commit", timeout: 30_000 });
     }
     await this.assertSession();
-    await this.page.getByText("Indirizzo Completo Immobile", { exact: false }).first().waitFor({ state: "visible", timeout: 20_000 });
+    await this.page.getByText("Indirizzo Completo Immobile", { exact: false }).filter({ visible: true }).first().waitFor({ state: "visible", timeout: 20_000 });
   }
 
   private async waitForPropertyRecord(): Promise<string> {
@@ -1500,7 +1522,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     street: string,
     onProgress?: (progress: { phase: "loading" | "reading"; current: number; total: number }) => void,
   ): Promise<CrmPropertySummary[]> {
-    return this.action("Inventario immobili della via", async () => {
+    return this.readAction("Inventario immobili della via", async () => {
       const requested = street.replace(/\s+/g, " ").trim();
       if (requested.length < 4) throw new ImportV2Error("Via non valida per la ricerca Cloud", "invalid_source");
       await this.navigate(PROPERTY_SEARCH);
@@ -1660,7 +1682,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   async listAllPropertiesForPeople(personIds: string[], plan: ImportV2Plan): Promise<CrmPropertySummary[]> {
-    return this.action("Lettura immobili collegati", async () => {
+    return this.readAction("Lettura immobili collegati", async () => {
       const links = [] as Array<{ id: string; href: string; label: string }>;
       for (const personId of [...new Set(personIds)]) links.push(...await this.propertyLinksForPerson(personId, plan));
       const unique = [...new Map(links.map((link) => [link.id, link])).values()];
@@ -1671,7 +1693,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   async findPropertiesByCadastralIdentity(plan: ImportV2Plan): Promise<CrmPropertySummary[]> {
-    return this.action("Ricerca catastale globale", async () => {
+    return this.readAction("Ricerca catastale globale", async () => {
       const openSearchView = async () => {
         await this.navigate(PROPERTY_SEARCH);
         const view = this.page.locator('input[placeholder="--- Seleziona ---"]').filter({ visible: true }).first();
@@ -1863,6 +1885,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       if (summaries.some((candidate) => sameCrmPropertyAddress(plan.source.fullAddress, candidate)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
+      if (this.options.cadastralLookupOnly) return summaries;
       /* Se il catasto non restituisce un'identità esatta, il riscontro per
        * indirizzo resta sempre attivo: è una protezione anti-duplicato, non
        * una modalità operativa disattivabile. */
@@ -2649,7 +2672,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   async readProperty(propertyId: string): Promise<CrmPropertySnapshot> {
     const virtual = this.virtualProperties.get(propertyId);
     if (virtual) return structuredClone(virtual);
-    return this.action("Rilettura immobile", async () => {
+    return this.readAction("Rilettura immobile", async () => {
       const summary = await this.readPropertySummary(propertyId);
       return { ...summary, owners: await this.readOwnerships(propertyId) };
     });

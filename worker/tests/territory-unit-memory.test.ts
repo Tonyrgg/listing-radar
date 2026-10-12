@@ -29,6 +29,18 @@ function checkpoint(): ImportV2Checkpoint {
 }
 const memory = (cp = checkpoint()): PropertyMemory => ({ version: 1, event: "stage_completed", at: cp.updatedAt, source: cp.plan!.source, checkpoint: cp });
 describe("memoria individuale degli immobili", () => {
+  it("avviare o fallire una ripresa non inventa una nuova verifica Cloud da un vecchio checkpoint", async () => {
+    const { store } = await setup(), cp = checkpoint(), verified = cp.updatedAt;
+    await store.change(state => {
+      rememberCheckpoint(state, memory(cp));
+      const key = unitKey(cp.plan!.source);
+      expect(state.cloudMemory!.properties[key]!.lastVerifiedAt).toBe(verified);
+      rememberCheckpoint(state, { ...memory(cp), event: "import_started", at: "2026-10-12T10:00:00Z" });
+      expect(state.cloudMemory!.properties[key]!.lastVerifiedAt).toBe(verified);
+      rememberCheckpoint(state, { ...memory(cp), event: "import_paused", at: "2026-10-12T10:01:00Z", failure: { kind: "transient_portal", stage: "completed", message: "Timeout", retryable: true, global: false, occurredAt: "2026-10-12T10:01:00Z", details: {} } });
+      expect(state.cloudMemory!.properties[key]!.lastVerifiedAt).toBe(verified);
+    });
+  });
   it("conserva un successo prima dell'avanzamento della run e lo recupera dopo un'interruzione", async () => {
     const { store, app, directory } = await setup(); await app.start(street.id, "scan"); await app.waitForIdle();
     const unit = app.detail(street.id).units[0]!, src = effectiveSource(unit);

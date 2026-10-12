@@ -1,5 +1,24 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.18: ricerca catastale, identità Cloud e recupero delle letture
+
+Il V2 non apre più l’inventario di tutti gli immobili della via. La prima verifica usa **foglio, particella e subalterno**, inclusa l’alternativa Denom Particella dove disponibile. Un sub vuoto continua a essere una coordinata vuota, mai un jolly. Se una ricerca completa non trova corrispondenze, si prosegue nel normale flusso; prima di una creazione restano il controllo dei collegamenti degli intestatari e la verifica contro un salvataggio precedente incerto. Il worker precedente conserva il proprio flusso, compresa la ricerca per indirizzo quando prevista.
+
+Il workspace conserva `cloudMemory.properties` per identità catastale e `cloudMemory.people` per codice fiscale. Ogni riscontro registra ID, stato, ultima verifica positiva e ultimo controllo. Gli ID positivi servono a **aprire direttamente la scheda e confermarne l’identità**, evitando la ricerca globale ripetuta. Gli intestatari dello stesso CF condividono una sola voce, anche su più vie e acquisizioni. Una nuova acquisizione cambia la sorgente, non perde l’identità Cloud già trovata.
+
+Le date distinguono un riscontro positivo da un tentativo recente: una ripresa, un retry o un errore non trasformano un vecchio checkpoint in una verifica appena eseguita. Se una scheda nota non si legge, dopo i refresh si tenta la ricerca mirata. Se anche questa non conferma l’identità, resta **da riconfermare**, con ID e data precedenti, senza autorizzare una creazione; questa protezione sopravvive al riavvio. Un’identità positiva cambiata o un CF differente non autorizzano l’aggiornamento del vecchio ID. Più ID noti vengono riletti tutti, conservando l’ambiguità. Le ricerche vuote non diventano una scorciatoia persistente per le creazioni.
+
+Le verifiche confluiscono nei commit già previsti dal confronto e dai checkpoint. Non si introduce un nuovo salvataggio dell’intero archivio per ogni lettura. Anche gli import ordinari alimentano i riscontri dai checkpoint completati; all’apertura si recuperano soltanto i fatti storici con data e identificativo documentati. Il campo è facoltativo nel JSON versione 1 e viene conservato dalla sincronizzazione esistente, senza nuove tabelle o migrazioni SQL. L’archivio originale non viene modificato durante i test.
+
+Nelle card di via e coda, **Presenza in Tecnocloud** espone immobile e intestatari, ID e date dei riscontri. “Già presente” descrive l’esistenza della scheda, mentre “Import riuscito” resta una prova distinta della lavorazione del singolo immobile. Il campo Ultimo controllo compare quando differisce dalla verifica positiva, senza stampare due volte la stessa data.
+
+Il recupero automatico è abilitato sul port del V2 per le sole letture: timeout o caricamento bloccato permettono massimo due `reload` con attesa del commit e ripetizione della ricerca/lettura. Prima e dopo si controllano sessione e interruzione; una modale aperta impedisce il refresh. Creazione, aggiornamento, merge, proprietà e attività non ricevono questo replay automatico. I loro checkpoint e le verifiche dopo scrittura rimangono obbligatori. `openProperty` aspetta il titolo visibile, evitando falsi timeout su una copia del titolo nascosta da Lightning.
+
+Verifiche: recupero reale in Chrome su una pagina fixture ferma sul titolo immobile, seguito da una lettura corretta dopo il refresh; nessun refresh di un salvataggio, di modali o di sessioni scadute; ID/CF riusati tra acquisizioni; conservazione di ambiguità e assenze non cacheabili; protezione dopo restart; data non inventata da riprese/errori; collaudo Electron dei riscontri a 390/1024/1600 px. Le prove CRM usano fixture, non schede reali.
+
+Copertura finale: **100 gruppi, 830 test**; i file browser più pesanti sono eseguiti separatamente. Sulla copia del profilo reale si recuperano 646 identità immobili Cloud dai fatti disponibili; i 1.350 immobili e i checkpoint restano conservati, e l’originale non viene modificato. Gli ID proprietari non documentati non vengono inventati.
+
+
 ## Versione 0.34.17: svuotamento della coda e prestazioni
 
 **Coda immobili → Svuota coda** rimuove tutte le iscrizioni, comprese quelle nascoste dalla ricerca o bloccate per dati incompleti. La conferma mostra il totale; Annulla conserva la selezione. Immobili, correzioni permanenti, acquisizioni, date di import, storico e checkpoint incerti restano nell’archivio. Si può accodare di nuovo un immobile. Non è possibile svuotare durante un lavoro; il backend verifica atomicamente la revisione confermata e rifiuta una coda cambiata nel frattempo. Lo svuotamento resta conservato al riavvio e si sincronizza con l’archivio esistente, senza migrazioni SQL.

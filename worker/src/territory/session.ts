@@ -116,7 +116,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test");
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store);
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {

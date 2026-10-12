@@ -22,5 +22,5 @@ export function assess(source: SourceProperty, candidates: CrmPropertySummary[],
   if (exact.length === 1) return { ...base, kind: "update", candidateId: exact[0]!.id, reason: sameCrmPropertyAddress(source.fullAddress, exact[0]!) ? "Scheda identificata tramite catasto e indirizzo. Intestatari e recapiti saranno riletti prima dell'aggiornamento." : "Catasto corrispondente, indirizzo diverso: controlla la scheda prima di applicare." };
   const incomplete = unique.filter(c => sameCrmPropertyAddress(source.fullAddress, c) && !(c.cadastral?.sheet && c.cadastral.parcel && c.cadastral.subaltern));
   if (incomplete.length) return { ...base, kind: "review", reason: "Indirizzo presente ma catasto incompleto. Nessuna sovrascrittura automatica." };
-  return { ...base, kind: "create", reason: "Ricerca completa della via e del catasto: nessuna scheda corrispondente." };
+  return { ...base, kind: "create", reason: "Ricerca catastale completata: nessuna scheda corrispondente." };
 }

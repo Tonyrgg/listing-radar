@@ -120,29 +120,23 @@ describe("Schede reali scelte esplicitamente nel laboratorio", () => {
     expect(() => configureTestSettings(store.read(), base, [key], true)).toThrow();
     expect(configureTestSettings(store.read(), base, [], true).allowCreate).toBe(false);
   });
-  it("legge la via una volta per confronto ma rilegge il catasto per ciascun immobile", async () => {
-    const { source } = await setup();
-    const provider = new LiveProvider(base, () => false);
+  it("confronta solo per catasto e non apre l'inventario di tutta la via", async () => {
+    const { source } = await setup(); const provider = new LiveProvider(base, () => false);
     const port = { assertSession: vi.fn().mockResolvedValue(undefined), listPropertiesByStreet: vi.fn().mockResolvedValue([]), findPropertiesByCadastralIdentity: vi.fn().mockResolvedValue([]) };
     vi.spyOn(provider, "port").mockResolvedValue(port as unknown as TecnocloudUiV2Port);
-    provider.beginOperation("compare"); await provider.candidates(street, source); await provider.candidates(street, source);
-    expect(port.listPropertiesByStreet).toHaveBeenCalledTimes(1);
-    expect(port.findPropertiesByCadastralIdentity).toHaveBeenCalledTimes(2);
-    provider.endOperation(); provider.beginOperation("compare"); await provider.candidates(street, source);
-    expect(port.listPropertiesByStreet).toHaveBeenCalledTimes(2);
-    provider.beginOperation("apply"); await provider.candidates(street, source); await provider.candidates(street, source);
-    expect(port.listPropertiesByStreet).toHaveBeenCalledTimes(4);
+    for (const operation of ["compare", "apply"] as const) { provider.beginOperation(operation); await provider.candidates(street, source); await provider.candidates(street, source); provider.endOperation(); }
+    expect(port.listPropertiesByStreet).not.toHaveBeenCalled();
+    expect(port.findPropertiesByCadastralIdentity).toHaveBeenCalledTimes(4);
   });
-  it("un inventario fallito resta incompleto e viene riletto solo in una nuova operazione", async () => {
+  it("non trasforma una ricerca catastale fallita in assenza e la ripete al prossimo tentativo", async () => {
     const { source } = await setup(); const provider = new LiveProvider(base, () => false);
-    const port = { assertSession: vi.fn().mockResolvedValue(undefined), listPropertiesByStreet: vi.fn().mockRejectedValueOnce(new Error("Rete interrotta")).mockResolvedValue([]), findPropertiesByCadastralIdentity: vi.fn().mockResolvedValue([]) };
+    const port = { assertSession: vi.fn().mockResolvedValue(undefined), listPropertiesByStreet: vi.fn(), findPropertiesByCadastralIdentity: vi.fn().mockRejectedValueOnce(new Error("Rete interrotta")).mockResolvedValue([]) };
     vi.spyOn(provider, "port").mockResolvedValue(port as unknown as TecnocloudUiV2Port);
-    provider.beginOperation("compare");
-    await expect(provider.candidates(street, source)).rejects.toThrow("Rete interrotta");
-    await expect(provider.candidates(street, source)).rejects.toThrow("Rete interrotta");
-    expect(port.findPropertiesByCadastralIdentity).not.toHaveBeenCalled();
-    provider.endOperation(); provider.beginOperation("compare"); await provider.candidates(street, source);
-    expect(port.listPropertiesByStreet).toHaveBeenCalledTimes(2);
+    provider.beginOperation("compare"); await expect(provider.candidates(street, source)).rejects.toThrow("Rete interrotta");
+    expect(await provider.candidates(street, source)).toEqual({ rows: [], complete: true });
+    expect(port.findPropertiesByCadastralIdentity).toHaveBeenCalledTimes(2);
+    expect(port.listPropertiesByStreet).not.toHaveBeenCalled();
+    provider.endOperation();
   });
   it("chiude il contesto del provider anche quando il confronto fallisce", async () => {
     const { store } = await setup();

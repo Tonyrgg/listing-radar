@@ -1,7 +1,7 @@
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { randomUUID } from "node:crypto";
 import { ImportV2Engine } from "../import-v2/engine.js";
-import { buildPlan } from "../import-v2/identity.js";
+import { buildPlan, canonicalTaxCode } from "../import-v2/identity.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { TerritoryImportStore } from "./import-store.js";
 import { assess } from "./reconcile.js";
@@ -228,7 +228,7 @@ export class TerritoryApplication {
     let writePending = false, writeIssue: string | null = null;
     try { writePending = Boolean(pendingUnitImport(state, unit.key)); }
     catch (error) { writePending = true; writeIssue = (error as Error).message; }
-    return { ...unit, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit), writePending, writeIssue };
+    return { ...unit, cloud: { property: state.cloudMemory?.properties[unit.key] ?? null, people: source.owners.map(o => ({ taxCode: o.taxCode, fullName: o.fullName, evidence: state.cloudMemory?.people[canonicalTaxCode(o.taxCode)] ?? null })) }, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit), writePending, writeIssue };
   }
   queryCatalog() { return queryCatalog(this.store.read()); }
   query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, queueKeys: keys.filter(key => queueStreet(state, state.units[key]!)), total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return this.provider.canWrite(key, effectiveSource(u)) && !isQuarantined(state, u); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!, state)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
@@ -255,7 +255,7 @@ export class TerritoryApplication {
     const scope = [...new Set(routes.map(s => s!.linkedOfficialId ?? s!.id))];
     return this.start(scope[0]!, operation, keys, undefined, settings, { scope, query, routes: Object.fromEntries(keys.map((key, i) => [key, routes[i]!.id])) });
   }
-  private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch); }); this.changed(); }
+  private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { this.provider.rememberCloud?.(s); const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch); }); this.changed(); }
   private async execute(run: Run) {
     let currentKey: string | null = null;
     try {
@@ -302,7 +302,7 @@ export class TerritoryApplication {
             let assessment;
             try { const result = await this.provider.candidates(street, source); assessment = assess(source, result.rows, result.complete); }
             catch (error) { assessment = { ...assess(source, [], false), reason: sanitizeSensitiveText(error instanceof Error ? error.message : "Ricerca non riuscita") }; }
-            await this.store.change(s => { const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
+            await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
           } else {
             // A plan is a preview, not permission to trust an old CRM read.
             const fresh = await this.provider.candidates(street, source);
@@ -318,7 +318,7 @@ export class TerritoryApplication {
                 await this.store.change(s => { s.units[key]!.assessment = assessment; });
                 throw new Error("Corrispondenza cambiata per una scrittura da verificare: piano conservato, nessuna scrittura ripetuta.");
               }
-              await this.store.change(s => { const u = s.units[key]!; u.assessment = assessment;
+              await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment;
                 const reason = assessment.kind === "review" ? assessment.reason : "Solo schede esistenti: nessuna creazione autorizzata";
                 quarantine(s, { origin: "apply", runId: run.id, streetId: street.id, at: now(), unitKey: key, source, address: source.fullAddress, cadastral: source.cadastral, reason });
                 appendUnitEvent(u, [run.id, key, "fresh_comparison", assessment.checkedAt], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
@@ -330,7 +330,7 @@ export class TerritoryApplication {
             const prior = this.store.read().checkpoints[source.sourcePropertyId];
             this.provider.authorizeWrite(source, prior?.propertyResolution?.kind === "create" && !prior.crmPropertyId ? "create" : assessment.kind as "create" | "update");
             const requireExisting = settings.importPolicy === "existing_only" || (prior?.propertyResolution?.kind === "create" ? false : assessment.kind === "update");
-            const engine = new ImportV2Engine(await this.provider.port(), new TerritoryImportStore(this.store, street.id, run.id), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, propertyCandidates: async () => narrowed });
+            const engine = new ImportV2Engine(await this.provider.port(), new TerritoryImportStore(this.store, street.id, run.id, state => this.provider.rememberCloud?.(state)), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, propertyCandidates: async () => narrowed });
             const outcome = await engine.run(plan.source);
             await this.store.change(s => {
               const u = s.units[key]!;

@@ -1,3 +1,6 @@
+import { CloudIdentityMemory } from "./cloud-memory.js";
+import type { TerritoryStore } from "./store.js";
+import type { TecnocloudV2Port } from "../import-v2/ports.js";
 import { randomUUID } from "node:crypto";
 import { connectToChrome, type ChromeTabs } from "../services/chrome.js";
 import { SisterStreetRun, hasRetryableAcquisitionRecords, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
@@ -5,7 +8,7 @@ import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { buildPlan } from "../import-v2/identity.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
 import { isBusinessOwner } from "../core/owner-kind.js";
-import type { SourceProperty, CrmPropertySummary } from "../import-v2/model.js";
+import type { SourceProperty } from "../import-v2/model.js";
 import { unitKey, type Street } from "./model.js";
 import type { ScanSink, TerritoryProvider } from "./providers.js";
 import type { StreetPropertyFilters } from "../core/network-exploration.js";
@@ -27,16 +30,16 @@ export class LiveProvider implements TerritoryProvider {
   readonly origin = "live" as const;
   private tabsPromise: Promise<ChromeTabs> | null = null;
   private config: LiveConfig;
-  private comparing = false;
-  private inventory = new Map<string, Promise<CrmPropertySummary[]>>();
-  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test") {
+  private memory: CloudIdentityMemory | null = null;
+  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test", private readonly store?: TerritoryStore) {
     if (writeAccess === "operational" && !workBrowser) throw new Error("La modalità operativa richiede il Chrome di lavoro affidato dal desktop");
     this.config = validateLiveConfig(config, workBrowser);
   }
   configure(config: LiveConfig) { this.config = validateLiveConfig(config, this.workBrowser); this.endOperation(); }
-  beginOperation(operation: "scan" | "compare" | "apply") { this.inventory.clear(); this.comparing = operation === "compare"; }
+  beginOperation(_operation: "scan" | "compare" | "apply") { this.memory = this.store ? new CloudIdentityMemory(this.store.read()) : null; }
+  rememberCloud(state: import("./model.js").TerritoryState) { this.memory?.flush(state); }
   endOperation() {
-    this.inventory.clear(); this.comparing = false;
+    this.memory = null;
     const connection = this.tabsPromise; this.tabsPromise = null;
     void connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
@@ -54,20 +57,14 @@ export class LiveProvider implements TerritoryProvider {
     if (source.municipality.trim().toUpperCase() !== "BITONTO" || !this.canWrite(unitKey(source), source)) throw new Error(this.writeAccess === "operational" ? "Identità catastale o intestatari incompleti, oppure immobile fuori dal Comune di Bitonto" : "Immobile o intestatari fuori dalle schede concordate");
     if (this.writeAccess === "test" && kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
   }
-  async port() { return new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused }); }
-  async candidates(street: Street, source: SourceProperty) {
-    const port = await this.port();
-    await port.assertSession();
-    let reading = this.comparing ? this.inventory.get(street.id) : undefined;
-    if (!reading) {
-      reading = port.listPropertiesByStreet(street.name);
-      if (this.comparing) this.inventory.set(street.id, reading);
-    }
-    // A failed inventory stays failed for this comparison, never becomes an absence.
-    // Applies and subsequent runs always read again; no cache crosses a run.
-    const byStreet = await reading;
-    const byCadastre = await port.findPropertiesByCadastralIdentity(buildPlan(source));
-    return { rows: [...byStreet, ...byCadastre], complete: true };
+  async port(): Promise<TecnocloudV2Port> {
+    const base = new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true });
+    this.memory ??= this.store ? new CloudIdentityMemory(this.store.read()) : null;
+    return this.memory?.port(base) ?? base;
+  }
+  async candidates(_street: Street, source: SourceProperty) {
+    const port = await this.port(); await port.assertSession();
+    return { rows: await port.findPropertiesByCadastralIdentity(buildPlan(source)), complete: true };
   }
   async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters) {
     if (street.needsReview) throw new Error("Via ufficiale da verificare prima dell'acquisizione");

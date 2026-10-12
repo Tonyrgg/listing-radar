@@ -7,6 +7,7 @@ import { hydrateHistoryProgress, resolveRecognizedHistory } from "./history.js";
 import type { HistorySnapshot } from "./history-source.js";
 import { hydrateUnitMemory } from "./unit-memory.js";
 import { hydrateImportQueue } from "./import-queue.js";
+import { hydrateCloudMemory } from "./cloud-memory.js";
 import { hydrateQuarantine } from "./quarantine.js";
 
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
@@ -44,6 +45,7 @@ export class TerritoryStore {
       applyNetworkBindings(next);
       resolveRecognizedHistory(next);
       hydrateUnitMemory(next);
+      hydrateCloudMemory(next);
       hydrateQuarantine(next);
       hydrateImportQueue(next, true);
       for (const run of next.runs) if (run.state === "running") { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
@@ -64,6 +66,7 @@ export class TerritoryStore {
       for (const street of next.streets) next.memories[street.id] ??= structuredClone(this.state.memories[street.id] ?? { note: "", attention: false, updatedAt: registeredAt, registeredAt });
       applyNetworkBindings(next);
       hydrateUnitMemory(next);
+      hydrateCloudMemory(next);
       hydrateQuarantine(next);
       hydrateImportQueue(next, true);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;

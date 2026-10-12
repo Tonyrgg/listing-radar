@@ -13,6 +13,7 @@ export type ScanSink = (source: SourceProperty) => Promise<void>;
 const simulatedSearchMatch = (source: SourceProperty["cadastral"], candidate: CrmPropertySummary["cadastral"]) => sameCadastralIdentity({ ...source, income: null, subaltern: source.subaltern.trim() || candidate?.subaltern || "" }, candidate ? { ...candidate, income: null } : null);
 export interface TerritoryProvider {
   origin: "simulation" | "live";
+  rememberCloud?(state: import("./model.js").TerritoryState): void;
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
   endOperation?(): void;
   scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters): Promise<boolean>;

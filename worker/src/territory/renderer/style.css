@@ -1448,3 +1448,12 @@ button[aria-busy="true"] {
 .unit-edit-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .queue-heading { flex-wrap: wrap; }
 .queue-clear-confirmation .actions { margin-top: 24px; }
+
+.unit-cloud-fact { margin: 0; color: var(--lr-ink-2); }
+.cloud-verification { display: grid; gap: 8px; margin-block: 12px 20px; }
+.cloud-verification > div { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(0, 2fr); gap: 12px; }
+.cloud-verification dt { color: var(--lr-ink-3); }
+.cloud-verification dd { margin: 0; overflow-wrap: anywhere; }
+.cloud-people { list-style: none; padding: 0; }
+.cloud-people > li { padding-block: 12px; border-top: 1px solid var(--lr-line-quiet); }
+.cloud-people > li > strong, .cloud-people > li > span { display: block; }

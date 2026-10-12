@@ -137,6 +137,21 @@ try {
   assert.equal((await page.evaluate(key => window.territory.unitDetail(key), first.key)).source.fullAddress, streets[0].name + ' N. 14 Piano 2');
   await page.locator('#detail-close').click(); await openStreet(page, streets[0]);
   assert.ok((await page.locator('[data-unit="' + first.key + '"] h3').textContent()).includes('14 Piano 2'));
+  const cloud = await page.evaluate(key => window.territory.unitDetail(key), first.key);
+  assert.ok(cloud.cloud.property.lastVerifiedAt, 'L’immobile conserva la verifica Cloud');
+  assert.ok(cloud.cloud.people.every(p => p.evidence?.lastVerifiedAt), 'Ogni intestatario conserva la verifica per CF');
+  const presence = page.locator('[data-disclosure="' + first.key + ':cloud"]');
+  await presence.evaluate(el => { el.open = true; });
+  assert.ok((await presence.textContent()).includes('Ultima verifica positiva'));
+  assert.ok((await presence.textContent()).includes(cloud.cloud.property.crmIds[0]));
+  for (const width of [1600, 1024, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await presence.scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false, 'Verifiche Cloud senza overflow');
+    await page.screenshot({ path: path.join(output, 'cloud-presence-' + width + '.png') });
+  }
+  await page.setViewportSize({ width: 1600, height: 960 });
+
   await page.locator('#detail-close').click();
   await page.evaluate(async keys => {
     await window.territory.enqueue({ keys });

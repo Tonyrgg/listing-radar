@@ -4,6 +4,7 @@ import { readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import type { TerritoryState } from "./model.js";
 import type { TerritoryStore } from "./store.js";
+import { validateCloudMemory } from "./cloud-memory.js";
 
 export type TerritorySyncConfig = { url: string; key: string; workspaceId: string; ownerId: string; profileKind: "live" | "simulation"; environment?: "online" };
 export type SyncBinding = { revision: number; localHash: string; syncedAt: string | null; workspaceId?: string; ownerId?: string; profileKind?: string; url?: string };
@@ -28,6 +29,7 @@ export function territoryDigest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(stable(value))).digest("hex");
 }
 function validateState(state: TerritoryState, kind: TerritorySyncConfig["profileKind"]) {
+  validateCloudMemory(state.cloudMemory);
   if (state.version !== 1 || !Array.isArray(state.streets) || !Array.isArray(state.runs) || !state.memories || !state.units || !state.checkpoints || !state.virtualCrm || !state.virtualPeople || !Array.isArray(state.events)) throw new Error("Archivio remoto non riconosciuto");
   if (state.importQueue !== undefined && (!state.importQueue || Array.isArray(state.importQueue) || typeof state.importQueue !== "object" || Object.entries(state.importQueue).some(([key, entry]) => !entry || entry.key !== key || typeof entry.id !== "string" || !entry.id || typeof entry.streetId !== "string" || !entry.streetId || typeof entry.addedAt !== "string" || !Number.isFinite(Date.parse(entry.addedAt))))) throw new Error("Coda dell'archivio remoto non riconosciuta");
   for (const unit of Object.values(state.units)) {

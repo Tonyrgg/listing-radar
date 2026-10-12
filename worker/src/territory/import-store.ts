@@ -8,8 +8,9 @@ import { unitKey as importKey } from "./model.js";
 
 /** Reuses the verified Import V2 engine with a completely independent ledger. */
 export class TerritoryImportStore implements ImportV2Store {
-  constructor(private readonly ledger: TerritoryStore, private readonly streetId: string, private readonly runId?: string) {}
+  constructor(private readonly ledger: TerritoryStore, private readonly streetId: string, private readonly runId?: string, private readonly captureCloud?: (state: import("./model.js").TerritoryState) => void) {}
   private remember(state: ReturnType<TerritoryStore["read"]>, checkpoint: ImportV2Checkpoint, event: import("../import-v2/memory-store.js").PropertyMemory["event"], failure?: ImportV2Failure) {
+    this.captureCloud?.(state);
     if (!checkpoint.plan || !this.runId) return;
     const run = state.runs.find(r => r.id === this.runId); if (!run) return;
     const key = importKey(checkpoint.plan.source);
