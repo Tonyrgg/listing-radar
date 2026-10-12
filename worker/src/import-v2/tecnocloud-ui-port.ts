@@ -307,7 +307,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
    * la verifica pre-collegamento riapra subito la stessa pagina, senza
    * trasformare una lettura vecchia in evidenza permanente. */
   private readonly verifiedPersonSnapshots = new Map<string, { snapshot: CrmPersonSnapshot; expiresAt: number }>();
-  private readonly submittedActivities = new Set<string>();
+  private readonly submittedActivities: Set<string>;
   private readonly virtualPeople = new Map<string, CrmPersonSnapshot>();
   private readonly virtualProperties = new Map<string, CrmPropertySnapshot>();
   /* La risoluzione e la sincronizzazione sono due checkpoint distinti e, in
@@ -323,8 +323,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       isInterruptionRequested?: () => boolean;
       cadastralLookupOnly?: boolean;
       recoverReadLoading?: boolean;
+      submittedActivities?: Set<string>;
     } = {},
-  ) {}
+  ) { this.submittedActivities = options.submittedActivities ?? new Set<string>(); }
 
   private throwIfInterruptionRequested(): void {
     if (this.options.isInterruptionRequested?.()) {
@@ -376,7 +377,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       try { return await this.action(label, operation); }
       catch (error) {
         if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 2
-          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato/i.test(error.message)) throw error;
+          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato|ricerca immobili non confermata/i.test(error.message)) throw error;
         this.throwIfInterruptionRequested();
         await this.assertSession();
         // A dialog may contain a pending/uncertain write. Keep its checkpoint
@@ -2803,6 +2804,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva attività");
       const saveRequests = this.watchSearchRequests();
       try {
+        if (this.options.submittedActivities) this.submittedActivities.add(propertyId);
         await save.click();
         await descriptionField.waitFor({ state: "hidden", timeout: 15_000 });
         let saveStable = 0;

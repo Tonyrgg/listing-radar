@@ -60,6 +60,8 @@ export type ImportV2EngineOptions = {
   propertyCandidates?: (plan: ImportV2Plan) => Promise<CrmPropertySummary[]>;
   /** Never create a CRM property when the property-first inventory has no match. */
   requireExistingProperty?: boolean;
+  /** V2 only: prefer the registry import, otherwise the first equal cadastral identity. */
+  preferRegistryDuplicates?: boolean;
 };
 
 function unique<T>(values: T[]): T[] {
@@ -151,6 +153,7 @@ export class ImportV2Engine {
   private readonly includeCoOwners: () => boolean;
   private readonly propertyCandidates?: (plan: ImportV2Plan) => Promise<CrmPropertySummary[]>;
   private readonly requireExistingProperty: boolean;
+  private readonly preferRegistryDuplicates: boolean;
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -164,6 +167,7 @@ export class ImportV2Engine {
     this.includeCoOwners = typeof includeCoOwners === "function" ? includeCoOwners : () => includeCoOwners;
     this.propertyCandidates = options.propertyCandidates;
     this.requireExistingProperty = options.requireExistingProperty === true;
+    this.preferRegistryDuplicates = options.preferRegistryDuplicates === true;
   }
 
   /** Gli intestatari che questo import deve creare, collegare e verificare. */
@@ -303,7 +307,7 @@ export class ImportV2Engine {
         let propertyResolution = checkpoint.propertyResolution;
         if (!propertyResolution && this.propertyCandidates) {
           const candidates = await this.propertyCandidates(plan);
-          let choice = choosePropertyCandidate(plan.source, candidates);
+          let choice = choosePropertyCandidate(plan.source, candidates, this.preferRegistryDuplicates);
           /* In existing-only mode the caller supplies candidates already
            * narrowed to the cadastral coordinates. Rendita and address are
            * values to refresh, not reasons to pretend that the unit is
@@ -543,14 +547,14 @@ export class ImportV2Engine {
     // The global search already covers all owners, including former owners.
     // Only an exact, unambiguous identity can avoid the linked-list fallback.
     if (exact.length) return {
-      choice: choosePropertyCandidate(plan.source, cadastral),
+      choice: choosePropertyCandidate(plan.source, cadastral, this.preferRegistryDuplicates),
       linkedCount: 0,
       cadastralCount: cadastral.length,
     };
     this.throwIfInterruptionRequested();
     const linked = await this.crm.listAllPropertiesForPeople(personIds, plan);
     return {
-      choice: choosePropertyCandidate(plan.source, [...linked, ...cadastral]),
+      choice: choosePropertyCandidate(plan.source, [...linked, ...cadastral], this.preferRegistryDuplicates),
       linkedCount: linked.length,
       cadastralCount: cadastral.length,
     };

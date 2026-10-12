@@ -9,6 +9,7 @@ import { hydrateUnitMemory } from "./unit-memory.js";
 import { hydrateImportQueue } from "./import-queue.js";
 import { hydrateCloudMemory } from "./cloud-memory.js";
 import { hydrateQuarantine } from "./quarantine.js";
+import { ImportV2Error } from "../import-v2/errors.js";
 
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
 export class TerritoryStore {
@@ -81,8 +82,12 @@ export class TerritoryStore {
       const next = structuredClone(this.state);
       const result = mutation(next);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
-      await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, this.filename);
+      try {
+        await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
+        await rename(temporary, this.filename);
+      } catch (error) {
+        throw new ImportV2Error("Memoria locale non salvata: nessuna ulteriore scrittura CRM finché il salvataggio non riesce.", "cloud_unavailable", { global: true, retryable: true, details: { localPersistence: true, code: (error as NodeJS.ErrnoException).code } });
+      }
       this.state = next;
       this.committedRevision++;
       return result;

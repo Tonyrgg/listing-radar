@@ -6,6 +6,7 @@ import { TerritoryStore } from "../src/territory/store.js";
 import { TerritoryApplication } from "../src/territory/application.js";
 import { SimulationProvider } from "../src/territory/providers.js";
 import { hydrateImportQueue } from "../src/territory/import-queue.js";
+import { ImportV2Error } from "../src/import-v2/errors.js";
 import { buildPlan } from "../src/import-v2/identity.js";
 import { effectiveSource, type Street } from "../src/territory/model.js";
 import type { SourceProperty } from "../src/import-v2/model.js";
@@ -21,7 +22,7 @@ async function setup() {
   class Provider extends SimulationProvider {
     beginOperation(operation: string) { phase = operation; }
     override async candidates(street: Street, source: SourceProperty) {
-      if (phase === "apply") { routes.push(street.id); if (failure && street.id === "b") { failure = false; throw new Error("Browser interrotto"); } }
+      if (phase === "apply") { routes.push(street.id); if (failure && street.id === "b") { failure = false; throw new ImportV2Error("Interruzione richiesta", "operator_pause", { global: true }); } }
       return super.candidates(street, source);
     }
   }

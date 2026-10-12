@@ -29,7 +29,7 @@ try {
   await until(page, () => document.querySelector(".detail-header .status")?.textContent.includes("conclusa"));
   assert.ok((await page.locator(".acquisition-state, .detail-header .status").textContent()).includes("conclusa"));
   assert.equal(await page.locator("#resume").count(), 0);
-  const keys = detail.units.filter(u => ["1", "2", "3", "4"].includes(u.source.cadastral.subaltern)).map(u => u.key);
+  const keys = detail.units.filter(u => ["1", "2", "3", "6"].includes(u.source.cadastral.subaltern)).map(u => u.key);
   const originalBad = detail.quarantine.find(q => q.source?.owners[0]?.taxCode === "DA_COMPLETARE");
   await page.evaluate(key => window.territory.correct({ key, correction: {}, note: "Nota confermata da conservare" }), originalBad.unitKey);
   for (const key of keys) await page.locator(`[data-unit-select="${key}"]`).check();
@@ -42,6 +42,16 @@ try {
   await until(page, async id => (await window.territory.detail(id)).runs.at(-1)?.operation === "apply" && (await window.territory.detail(id)).runs.at(-1)?.state === "completed", street.id);
   const applied = await page.evaluate(id => window.territory.detail(id), street.id);
   assert.equal(Object.keys(applied.runs.at(-1).imports).length, 3); assert.equal(applied.quarantine.length, 2);
+  assert.equal(Object.keys(applied.runs.at(-1).skipped).length, 1);
+  await until(page, () => document.querySelector('[data-disclosure="queue-skipped"] summary')?.textContent.includes("1 immobile accantonato"));
+  await page.locator('[data-disclosure="queue-skipped"] summary').click();
+  assert.ok((await page.locator('[data-disclosure="queue-skipped"]').textContent()).includes("Ricerca nel gestionale incompleta"));
+  for (const width of [1600, 1024, 390]) {
+    await page.setViewportSize({ width, height: 860 });
+    assert.equal(await page.evaluate(() => document.querySelector("#detail-dialog").scrollWidth > document.querySelector("#detail-dialog").clientWidth + 1), false);
+    await page.screenshot({ path: path.join(output, `queue-skipped-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1600, height: 960 });
   await page.locator("#detail-close").click(); await openStreet(page, street);
   await until(page, () => document.querySelector("#tab-quarantine")?.textContent.includes("Quarantena 2"));
   assert.equal(await page.locator("#resume").count(), 0);
@@ -72,6 +82,6 @@ try {
   await page.locator("#detail-close").click(); await page.locator("#tools > summary").click(); await page.locator("#quarantine-open").click();
   assert.equal(await page.locator(".quarantine-item").count(), 1);
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, acquisitionConcluded: true, unifiedApply: true, threeImports: true, ambiguousQuarantined: true, correctionReleasesUnit: true, originalsPreserved: true, globalQuarantine: true, responsive: true, errors }, null, 2));
+  await writeFile(path.join(output, "result.json"), JSON.stringify({ ok: true, acquisitionConcluded: true, unifiedApply: true, threeImports: true, incompleteSearchQuarantined: true, correctionReleasesUnit: true, originalsPreserved: true, globalQuarantine: true, responsive: true, errors }, null, 2));
   console.log("Quarantena, confronto e import nello stesso avvio verificati in Electron simulato.");
 } finally { if (app) await app.close(); }

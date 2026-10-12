@@ -26,20 +26,20 @@ describe("Territorio: un solo flusso, memoria separata", () => {
     const source = simulationSource(street, 1, "run");
     expect(assess(source, [], false).kind).toBe("unknown");
     const candidate = { id: "a", displayName: source.fullAddress, fullAddress: source.fullAddress, cadastral: source.cadastral };
-    expect(assess(source, [candidate, { ...candidate, id: "b" }], true).kind).toBe("review");
+    expect(assess(source, [candidate, { ...candidate, id: "b" }], true)).toMatchObject({ kind: "update", candidateId: "a" });
     expect(assess(source, [{ ...candidate, cadastral: null }], true).kind).toBe("review");
     expect(assess(source, [], true).kind).toBe("create");
   });
   it("crea e aggiorna nello stesso processo e una seconda applicazione non duplica", async () => {
     const { app, store } = await setup();
     await run(app, "scan"); await run(app, "compare");
-    expect(app.detail(street.id).units.map(u => u.assessment?.kind)).toEqual(["create", "create", "update", "review", "unknown"]);
+    expect(app.detail(street.id).units.map(u => u.assessment?.kind)).toEqual(["create", "create", "update", "update", "unknown"]);
     expect(app.detail(street.id).quarantine).toHaveLength(1);
     const keys = app.detail(street.id).units.filter(u => ["create", "update"].includes(u.assessment!.kind)).map(u => u.key);
     await run(app, "apply", keys);
     expect(store.read().runs.at(-1)?.error).toBeNull();
     expect(store.read().runs.at(-1)?.state).toBe("completed");
-    expect(keys.map(k => store.read().units[k]!.assessment?.kind)).toEqual(["synced", "synced", "synced"]);
+    expect(keys.map(k => store.read().units[k]!.assessment?.kind)).toEqual(["synced", "synced", "synced", "synced"]);
     const ids = Object.keys(store.read().virtualCrm).sort();
     await run(app, "apply", keys);
     expect(Object.keys(store.read().virtualCrm).sort()).toEqual(ids);
@@ -105,7 +105,7 @@ describe("Territorio: un solo flusso, memoria separata", () => {
     class FailedSearch extends SimulationProvider { override async candidates() { return { rows: [], complete: false }; } }
     const secondApp = new TerritoryApplication(store, new FailedSearch(store, 0));
     await run(secondApp, "apply", [key]);
-    expect(store.read().runs.at(-1)?.state).toBe("stopped");
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", skipped: { [key]: { reason: expect.stringContaining("incompleta") } } });
     expect(store.read().units[key]!.assessment?.kind).toBe("unknown");
     expect(Object.keys(store.read().virtualPeople)).toHaveLength(0);
   });

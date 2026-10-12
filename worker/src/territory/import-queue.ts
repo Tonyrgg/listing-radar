@@ -51,6 +51,7 @@ export function hydrateImportQueue(state: TerritoryState, closeInterrupted = fal
     for (const key of Object.keys(run.queueEntryIds ?? {})) settleQueueImport(state, run, key);
     if (["paused", "failed"].includes(run.state) || closeInterrupted && run.state === "running") {
       run.state = "stopped";
+      run.waiting = null;
       run.endedAt ??= new Date().toISOString();
     }
   }

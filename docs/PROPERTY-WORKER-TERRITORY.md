@@ -1,5 +1,17 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.19: duplicati catastali e continuità della coda
+
+Quando più schede Cloud condividono sezione, foglio, particella (anche Denom Particella) e subalterno, il V2 sceglie quella **importata da visura**, altrimenti il primo risultato. Rendita e indirizzo possono essere aggiornati; non distinguono due copie dello stesso catasto. La scelta e gli ID alternativi rimangono nello storico dell'immobile. Un indirizzo comune, un sub diverso o una sezione non confermata non autorizzano questa scelta. Il sub vuoto non diventa un jolly. La procedura legacy conserva la scelta rigorosa precedente.
+
+Gli errori del singolo immobile, inclusa una ricerca rimasta non confermata dopo il recupero, finiscono in quarantena e in `run.skipped`: il cursore avanza e il batch gestisce gli immobili successivi. Una ricerca fallita non autorizza mai una creazione. Se potrebbe esserci stata una scrittura, il checkpoint attivo conserva il piano e le opzioni originali; la coda ne impedisce la modifica e recupera quel solo immobile al prossimo avvio. Si eliminano dalla coda soltanto i successi verificati. Il riepilogo distingue successi, accantonati e interruzione esplicita.
+
+Chrome chiuso o sessione scaduta mantengono la run **in corso, in attesa di recupero**, senza data di fine o avanzamento. Ogni cinque secondi si tenta una nuova connessione al Chrome di lavoro, senza chiudere il browser reale; dopo l'accesso la stessa run prosegue. L'interruzione dell'operatore resta disponibile. Le scritture locali dal risultato incerto vengono accantonate, senza ritentare alla cieca: non sono trattate come un semplice guasto della connessione. I port V2 condividono la memoria delle attività inviate durante l'operazione, anche dopo la riconnessione, per non ripeterle se non sono ancora verificabili. I risultati non confermati di una ricerca possono ricevere i due refresh delle letture; i salvataggi non ricevono tale automatismo.
+
+Non è una garanzia contro spegnimenti o impossibilità di salvare sul disco: senza persistenza durevole non si prosegue con altre scritture CRM. La riapertura conserva le prove e i checkpoint, come prima. I campi `waiting`, `skipped` e gli ID alternativi sono facoltativi nel JSON esistente, senza migrazioni SQL o modifiche delle schede reali durante i test.
+
+Verifiche: scelta della visura e del primo risultato; unità distinte protette; recupero di una ricerca e prosecuzione dopo una ricerca irrecuperabile; creazione incerta accantonata con gli immobili successivi conclusi; recupero del solo checkpoint senza duplicati; attesa/ripartenza nella stessa run per Chrome e login; interruzione esplicita; assenza di scritture successive quando il checkpoint non è persistibile. Le prove usano CRM simulato e pagine Chrome fixture, non schede reali.
+
 ## Versione 0.34.18: ricerca catastale, identità Cloud e recupero delle letture
 
 Il V2 non apre più l’inventario di tutti gli immobili della via. La prima verifica usa **foglio, particella e subalterno**, inclusa l’alternativa Denom Particella dove disponibile. Un sub vuoto continua a essere una coordinata vuota, mai un jolly. Se una ricerca completa non trova corrispondenze, si prosegue nel normale flusso; prima di una creazione restano il controllo dei collegamenti degli intestatari e la verifica contro un salvataggio precedente incerto. Il worker precedente conserva il proprio flusso, compresa la ricerca per indirizzo quando prevista.

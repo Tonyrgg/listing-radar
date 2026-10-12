@@ -1,4 +1,5 @@
 import { CloudIdentityMemory } from "./cloud-memory.js";
+import { ImportV2Error } from "../import-v2/errors.js";
 import type { TerritoryStore } from "./store.js";
 import type { TecnocloudV2Port } from "../import-v2/ports.js";
 import { randomUUID } from "node:crypto";
@@ -31,19 +32,27 @@ export class LiveProvider implements TerritoryProvider {
   private tabsPromise: Promise<ChromeTabs> | null = null;
   private config: LiveConfig;
   private memory: CloudIdentityMemory | null = null;
+  private readonly submittedActivities = new Set<string>();
   constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test", private readonly store?: TerritoryStore) {
     if (writeAccess === "operational" && !workBrowser) throw new Error("La modalità operativa richiede il Chrome di lavoro affidato dal desktop");
     this.config = validateLiveConfig(config, workBrowser);
   }
   configure(config: LiveConfig) { this.config = validateLiveConfig(config, this.workBrowser); this.endOperation(); }
-  beginOperation(_operation: "scan" | "compare" | "apply") { this.memory = this.store ? new CloudIdentityMemory(this.store.read()) : null; }
+  beginOperation(_operation: "scan" | "compare" | "apply") { this.submittedActivities.clear(); this.memory = this.store ? new CloudIdentityMemory(this.store.read()) : null; }
   rememberCloud(state: import("./model.js").TerritoryState) { this.memory?.flush(state); }
   endOperation() {
     this.memory = null;
     const connection = this.tabsPromise; this.tabsPromise = null;
     void connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
-  private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => { this.tabsPromise = null; throw error; }); }
+  async resetConnection() {
+    const connection = this.tabsPromise; this.tabsPromise = null;
+    await connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
+  }
+  private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => {
+    this.tabsPromise = null;
+    throw new ImportV2Error(error instanceof Error ? error.message : "Chrome non raggiungibile", "global_portal", { global: true, retryable: true });
+  }); }
   canWrite(key: string, source?: SourceProperty) {
     if (this.writeAccess === "operational") {
       try {
@@ -58,7 +67,7 @@ export class LiveProvider implements TerritoryProvider {
     if (this.writeAccess === "test" && kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
   }
   async port(): Promise<TecnocloudV2Port> {
-    const base = new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true });
+    const base = new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true, submittedActivities: this.submittedActivities });
     this.memory ??= this.store ? new CloudIdentityMemory(this.store.read()) : null;
     return this.memory?.port(base) ?? base;
   }

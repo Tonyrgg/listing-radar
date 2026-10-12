@@ -1,6 +1,7 @@
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { randomUUID } from "node:crypto";
 import { ImportV2Engine } from "../import-v2/engine.js";
+import { failureFromError } from "../import-v2/errors.js";
 import { buildPlan, canonicalTaxCode } from "../import-v2/identity.js";
 import { sanitizeSensitiveText } from "../logger.js";
 import { TerritoryImportStore } from "./import-store.js";
@@ -29,7 +30,7 @@ export class TerritoryApplication {
   private fatalError: string | null = null;
   private presentationRevision = 0;
   private mapCache: { key: string; snapshot: ReturnType<TerritoryApplication["buildSnapshot"]> } | null = null;
-  constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}) {}
+  constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000) {}
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null; }
   refreshAuthorization() { this.presentationRevision++; this.changed(); }
@@ -51,8 +52,10 @@ export class TerritoryApplication {
       let count = 0;
       for (const key of new Set(keys)) {
         const unit = state.units[key];
-        if (!unit || isQuarantined(state, unit) || (latest(unit).origin === "simulation") !== (this.origin === "simulation")) throw new Error("La selezione contiene immobili non disponibili: aggiorna la scheda");
-        const street = queueStreet(state, unit, preferredStreet);
+        let recovery;
+        try { recovery = pendingUnitImport(state, key); } catch { /* The queue exposes an orphaned plan as blocked, without writing. */ }
+        if (!unit || (isQuarantined(state, unit) && !recovery) || (latest(unit).origin === "simulation") !== (this.origin === "simulation")) throw new Error("La selezione contiene immobili non disponibili: aggiorna la scheda");
+        const street = queueStreet(state, unit, recovery?.streetId ?? preferredStreet);
         if (!street) throw new Error("Associa l'immobile a una via identificata prima di aggiungerlo alla coda");
         if (state.importQueue?.[key]) continue;
         const entry = { id: randomUUID(), key, streetId: street.id, addedAt: now() };
@@ -256,6 +259,26 @@ export class TerritoryApplication {
     return this.start(scope[0]!, operation, keys, undefined, settings, { scope, query, routes: Object.fromEntries(keys.map((key, i) => [key, routes[i]!.id])) });
   }
   private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { this.provider.rememberCloud?.(s); const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch); }); this.changed(); }
+  private async waitForRecovery(run: Run, reason: string) {
+    if (/Chrome|connectOverCDP|ECONNREFUSED/i.test(reason)) reason = "Chrome di lavoro non disponibile. Aprilo e verifica le schede SISTER e Tecnocloud.";
+    await this.updateRun(run.id, { waiting: sanitizeSensitiveText(reason), error: null });
+    await this.provider.resetConnection?.();
+    const until = Date.now() + this.recoveryDelayMs;
+    while (!this.isPaused() && Date.now() < until) await new Promise(resolve => setTimeout(resolve, Math.min(250, until - Date.now())));
+  }
+  private async deferUnit(run: Run, key: string, index: number, source: SourceProperty, reason: string) {
+    reason = sanitizeSensitiveText(reason);
+    await this.store.change(state => {
+      this.provider.rememberCloud?.(state);
+      const unit = state.units[key]!, current = state.runs.find(r => r.id === run.id)!;
+      const checkpoint = state.checkpoints[source.sourcePropertyId], at = now();
+      quarantine(state, { origin: "apply", runId: run.id, streetId: run.unitStreetIds?.[key] ?? run.streetId, at, unitKey: key, source, checkpoint: checkpoint ? structuredClone(checkpoint) : undefined, address: source.fullAddress, cadastral: source.cadastral, reason });
+      // After any possible write the checkpoint stays active, with its original plan.
+      if (checkpoint && ["queued", "planned"].includes(checkpoint.stage) && !checkpoint.crmPropertyId && !checkpoint.syncedPeople.length) delete state.checkpoints[source.sourcePropertyId];
+      appendUnitEvent(unit, [run.id, key, "quarantined"], { kind: "import_quarantined", at, runId: run.id, origin: run.origin, message: reason });
+      (current.skipped ??= {})[key] = { at, reason }; current.handled = index + 1; current.waiting = null;
+    }); this.changed();
+  }
   private async execute(run: Run) {
     let currentKey: string | null = null;
     try {
@@ -287,7 +310,7 @@ export class TerritoryApplication {
         await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
-          if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", endedAt: run.operation === "apply" ? now() : null }); return; }
+          if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null }); return; }
           const key = run.itemKeys[index]!;
           if (run.operation === "apply" && this.store.read().runs.find(r => r.id === run.id)?.imports?.[key]?.crmId) {
             await this.store.change(s => settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key));
@@ -297,69 +320,90 @@ export class TerritoryApplication {
           const state = this.store.read(), unit = state.units[key]!; const source = run.applySources?.[key] ?? effectiveSource(unit);
           const settings = run.unitSettings?.[key] ?? run.settings!;
           const street = run.unitStreetIds?.[key] ? state.streets.find(s => s.id === run.unitStreetIds![key]) : run.selectionScope ? state.streets.find(s => unit.streetIds.some(id => id === s.id || state.networkBindings?.[id]?.officialId === s.id) && run.selectionScope!.includes(s.id))! : state.streets.find(s => s.id === run.streetId)!;
-          if (!street) throw new Error("Via non disponibile per questo immobile: nessuna scrittura");
-          if (run.operation === "compare") {
-            let assessment;
-            try { const result = await this.provider.candidates(street, source); assessment = assess(source, result.rows, result.complete); }
-            catch (error) { assessment = { ...assess(source, [], false), reason: sanitizeSensitiveText(error instanceof Error ? error.message : "Ricerca non riuscita") }; }
-            await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
-          } else {
-            // A plan is a preview, not permission to trust an old CRM read.
-            const fresh = await this.provider.candidates(street, source);
-            const assessment = assess(source, fresh.rows, fresh.complete);
-            if (assessment.kind === "unknown") {
-              await this.store.change(s => { s.units[key]!.assessment = assessment; });
-              throw new Error(assessment.reason);
-            }
-            if (!this.provider.canWrite(key, source)) throw new Error("Scrittura non autorizzata per questo immobile");
-            if (assessment.kind === "review" || (settings.importPolicy === "existing_only" && assessment.kind === "create")) {
-              const checkpoint = this.store.read().checkpoints[source.sourcePropertyId];
-              if (checkpoint && checkpoint.stage !== "completed") {
+          try {
+            if (!street) throw new Error("Via non disponibile per questo immobile: nessuna scrittura");
+            if (run.operation === "compare") {
+              let assessment;
+              try { const result = await this.provider.candidates(street, source); assessment = assess(source, result.rows, result.complete); }
+              catch (error) { assessment = { ...assess(source, [], false), reason: sanitizeSensitiveText(error instanceof Error ? error.message : "Ricerca non riuscita") }; }
+              await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
+            } else {
+              // A plan is a preview, not permission to trust an old CRM read.
+              let fresh;
+              for (let attempt = 0; ; attempt++) {
+                try { fresh = await this.provider.candidates(street, source); break; }
+                catch (error) {
+                  const failure = failureFromError(error, "planned");
+                  if (failure.global || !failure.retryable || attempt >= 1 || this.isPaused()) throw error;
+                  await (await this.provider.port()).recover("planned", error);
+                }
+              }
+              if (this.store.read().runs.find(r => r.id === run.id)?.waiting) await this.updateRun(run.id, { waiting: null });
+              const assessment = assess(source, fresh.rows, fresh.complete);
+              if (assessment.kind === "unknown") {
                 await this.store.change(s => { s.units[key]!.assessment = assessment; });
-                throw new Error("Corrispondenza cambiata per una scrittura da verificare: piano conservato, nessuna scrittura ripetuta.");
+                throw new Error(assessment.reason);
               }
-              await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment;
-                const reason = assessment.kind === "review" ? assessment.reason : "Solo schede esistenti: nessuna creazione autorizzata";
-                quarantine(s, { origin: "apply", runId: run.id, streetId: street.id, at: now(), unitKey: key, source, address: source.fullAddress, cadastral: source.cadastral, reason });
-                appendUnitEvent(u, [run.id, key, "fresh_comparison", assessment.checkedAt], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-                appendUnitEvent(u, [run.id, key, "quarantined"], { kind: "import_quarantined", at: now(), runId: run.id, origin: run.origin, message: reason }); });
-              await this.updateRun(run.id, { handled: index + 1 }); continue;
-            }
-            const plan = buildPlan(source);
-            const narrowed = fresh.rows.filter(c => c.id === assessment.candidateId);
-            const prior = this.store.read().checkpoints[source.sourcePropertyId];
-            this.provider.authorizeWrite(source, prior?.propertyResolution?.kind === "create" && !prior.crmPropertyId ? "create" : assessment.kind as "create" | "update");
-            const requireExisting = settings.importPolicy === "existing_only" || (prior?.propertyResolution?.kind === "create" ? false : assessment.kind === "update");
-            const engine = new ImportV2Engine(await this.provider.port(), new TerritoryImportStore(this.store, street.id, run.id, state => this.provider.rememberCloud?.(state)), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, propertyCandidates: async () => narrowed });
-            const outcome = await engine.run(plan.source);
-            await this.store.change(s => {
-              const u = s.units[key]!;
-              u.assessment = { ...assessment, kind: outcome.state === "completed" ? "synced" : "review", reason: outcome.failure?.message ?? "Indirizzo, catasto e intestatari riletti e verificati.", candidateId: outcome.crmPropertyId };
-              if (outcome.state === "completed") {
-                u.crmId = outcome.crmPropertyId; u.importedAt = s.runs.find(r => r.id === run.id)?.imports?.[key]?.at ?? now();
-                if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
-                settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key);
-                s.runs.find(r => r.id === run.id)!.handled = index + 1;
+              if (!this.provider.canWrite(key, source)) throw new Error("Scrittura non autorizzata per questo immobile");
+              if (assessment.kind === "review" || (settings.importPolicy === "existing_only" && assessment.kind === "create")) {
+                const checkpoint = this.store.read().checkpoints[source.sourcePropertyId];
+                if (checkpoint && checkpoint.stage !== "completed") {
+                  await this.store.change(s => { s.units[key]!.assessment = assessment; });
+                  throw new Error("Corrispondenza cambiata per una scrittura da verificare: piano conservato, nessuna scrittura ripetuta.");
+                }
+                await this.store.change(s => { s.units[key]!.assessment = assessment; });
+                await this.deferUnit(run, key, index, source, assessment.kind === "review" ? assessment.reason : "Solo schede esistenti: nessuna creazione autorizzata"); continue;
               }
-            });
-            if (outcome.state === "quarantined" && !outcome.failure?.global && ["queued", "planned"].includes(outcome.stage) && !outcome.crmPropertyId && !outcome.syncedPeople.length) {
-              await this.store.change(state => {
-                quarantine(state, { origin: "apply", runId: run.id, streetId: street.id, at: now(), unitKey: key, source, checkpoint: state.checkpoints[source.sourcePropertyId], address: source.fullAddress, cadastral: source.cadastral, reason: outcome.failure?.message ?? "Import da controllare; checkpoint conservato" });
-                // No writes occurred: keep the rejected plan in quarantine, not as a pending import.
-                delete state.checkpoints[source.sourcePropertyId];
-                state.runs.find(r => r.id === run.id)!.handled = index + 1;
+              const plan = buildPlan(source);
+              const narrowed = fresh.rows.filter(c => c.id === assessment.candidateId);
+              const prior = this.store.read().checkpoints[source.sourcePropertyId];
+              this.provider.authorizeWrite(source, prior?.propertyResolution?.kind === "create" && !prior.crmPropertyId ? "create" : assessment.kind as "create" | "update");
+              const requireExisting = settings.importPolicy === "existing_only" || (prior?.propertyResolution?.kind === "create" ? false : assessment.kind === "update");
+              const crm = await this.provider.port();
+              const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
+                this.provider.rememberCloud?.(state);
+                appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
+              }), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
+              const outcome = await engine.run(plan.source);
+              await this.store.change(s => {
+                const u = s.units[key]!;
+                u.assessment = { ...assessment, kind: outcome.state === "completed" ? "synced" : "review", reason: outcome.failure?.message ?? "Indirizzo, catasto e intestatari riletti e verificati.", candidateId: outcome.crmPropertyId };
+                if (outcome.state === "completed") {
+                  u.crmId = outcome.crmPropertyId; u.importedAt = s.runs.find(r => r.id === run.id)?.imports?.[key]?.at ?? now();
+                  if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
+                  resolveUnitQuarantine(s, u, now());
+                  settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key);
+                  s.runs.find(r => r.id === run.id)!.handled = index + 1;
+                }
               });
-            } else if (outcome.state !== "completed") { await this.updateRun(run.id, { state: "stopped", endedAt: now(), error: outcome.failure?.message ?? "Scrittura dell’immobile da verificare" }); return; }
+              if (outcome.state !== "completed") {
+                if (this.isPaused() || outcome.failure?.kind === "operator_pause") {
+                  await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now(), error: "Lavoro interrotto dall'operatore; dati e checkpoint conservati." }); return;
+                }
+                if (outcome.failure?.global && (outcome.failure.kind === "global_session" || outcome.failure.kind === "cloud_unavailable" || outcome.failure.kind === "global_portal" && (outcome.failure.retryable || ["queued", "planned"].includes(outcome.stage)))) {
+                  await this.waitForRecovery(run, outcome.failure.message); index--; continue;
+                }
+                if (outcome.failure?.global) await crm.recover(outcome.stage, outcome.failure).catch(() => undefined);
+                await this.deferUnit(run, key, index, source, outcome.failure?.message ?? "Scrittura dell'immobile da verificare");
+              }
+            }
+            if (run.operation === "apply") this.changed();
+            else await this.updateRun(run.id, { handled: index + 1 });
+          } catch (error) {
+            if (run.operation !== "apply") throw error;
+            if (this.isPaused()) { await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now() }); return; }
+            const failure = failureFromError(error, this.store.read().checkpoints[source.sourcePropertyId]?.stage ?? "queued");
+            if (failure.kind === "operator_pause") { await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now() }); return; }
+            if (failure.global && ["global_session", "global_portal", "cloud_unavailable"].includes(failure.kind)) { await this.waitForRecovery(run, failure.message); index--; continue; }
+            await this.deferUnit(run, key, index, source, failure.message);
           }
-          if (run.operation === "apply") this.changed();
-          else await this.updateRun(run.id, { handled: index + 1 });
         }
-        await this.updateRun(run.id, { state: "completed", endedAt: now() });
+        await this.updateRun(run.id, { state: "completed", waiting: null, error: null, endedAt: now() });
       }
       await this.store.change(s => { s.events.push({ id: randomUUID(), streetId: street.id, at: now(), text: `${({ scan: "Acquisizione", compare: "Confronto", apply: "Applicazione" })[run.operation]} ${s.runs.find(r => r.id === run.id)?.state === "completed" ? "conclusa" : "conservata per la ripresa"}` }); });
     } catch (error) {
       if (currentKey && run.operation === "apply") await this.store.change(state => { const unit = state.units[currentKey!]; if (unit) appendUnitEvent(unit, [run.id, currentKey, "operation_error", now()], { kind: "import_paused", at: now(), runId: run.id, origin: run.origin, message: sanitizeSensitiveText(error instanceof Error ? error.message : "Operazione interrotta") }); });
-      await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", endedAt: run.operation === "apply" ? now() : null, error: sanitizeSensitiveText(error instanceof Error ? error.message : "Operazione interrotta") });
+      await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null, error: sanitizeSensitiveText(error instanceof Error ? error.message : "Operazione interrotta") });
     } finally { this.provider.endOperation?.(); }
   }
 }

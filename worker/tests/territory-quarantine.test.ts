@@ -67,7 +67,7 @@ describe("acquisizioni concluse e quarantena indipendente", () => {
     expect(store.read().runs[0]).toMatchObject({ id, state: "paused" });
     expect((await TerritoryStore.open(dir, [street])).read().runs[0]!.state).toBe("paused");
   });
-  it("confronta, crea e aggiorna direttamente; le ambiguità non bloccano il successivo", async () => {
+  it("confronta, crea e aggiorna direttamente; i duplicati non bloccano il successivo", async () => {
     const { store } = await setup(); const app = new TerritoryApplication(store, new SimulationProvider(store, 0));
     await execute(app, "scan");
     const units = app.detail(street.id).units;
@@ -75,8 +75,8 @@ describe("acquisizioni concluse e quarantena indipendente", () => {
     const keys = [units.find(u => u.source.cadastral.subaltern === "4")!.key, ...units.filter(u => ["1", "2", "3"].includes(u.source.cadastral.subaltern)).map(u => u.key)];
     await execute(app, "apply", keys);
     expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 4, error: null });
-    expect(Object.values(store.read().runs.at(-1)!.imports!)).toHaveLength(3);
-    expect(app.quarantineList().filter(q => q.origin === "apply")).toHaveLength(1);
+    expect(Object.values(store.read().runs.at(-1)!.imports!)).toHaveLength(4);
+    expect(app.quarantineList().filter(q => q.origin === "apply")).toHaveLength(0);
     expect(Object.values(store.read().virtualCrm)).toHaveLength(5);
   });
   it("crea un immobile senza subalterno e ne aggiorna lo stesso record senza duplicare", async () => {

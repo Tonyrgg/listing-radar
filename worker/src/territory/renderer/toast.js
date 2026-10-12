@@ -32,7 +32,7 @@ export function createToast(root, { openBrowser, canOpenBrowser }) {
       root.innerHTML = `${icon(browser ? "browser" : error ? "warning" : "info")}<div class="toast-copy"><p class="toast-message"></p>${browser && canOpenBrowser() ? '<button type="button" class="quiet" data-toast-browser>Apri Chrome di lavoro</button>' : ""}</div><button type="button" class="quiet toast-close" aria-label="Chiudi notifica">${icon("close")}</button>`;
       const text = root.querySelector(".toast-message");
       text.setAttribute("role", error ? "alert" : "status");
-      text.textContent = browser ? "Chrome di lavoro non è raggiungibile. Aprilo e accedi a SISTER e Tecnocloud, poi riprendi l’operazione." : message;
+      text.textContent = browser && runId && message.startsWith("In attesa di recupero:") ? "Chrome di lavoro non raggiungibile. Aprilo e accedi: il lavoro riparte automaticamente." : browser ? "Chrome di lavoro non è raggiungibile. Aprilo e accedi a SISTER e Tecnocloud, poi riprendi l’operazione." : message;
       root.querySelector(".toast-close").onclick = dismiss;
       const action = root.querySelector("[data-toast-browser]");
       if (action) action.onclick = async () => { action.disabled = true; await openBrowser(); if (action.isConnected) action.disabled = false; };

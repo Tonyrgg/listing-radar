@@ -241,7 +241,16 @@ function otherVerifiedCadastralUnit(left: CadastralIdentity | null, right: Cadas
   return !sameCadastralIdentity(left ? { ...left, income: null } : null, right ? { ...right, income: null } : null);
 }
 
-export function choosePropertyCandidate(source: SourceProperty, candidates: CrmPropertySummary[]):
+/** V2 policy applies only to proven equal coordinates, never to an address alone. */
+export function preferredCadastralCandidate(source: SourceProperty, candidates: CrmPropertySummary[]) {
+  const matching = [...new Map(candidates.map(c => [c.id.slice(0, 15), c])).values()].filter(c =>
+    c.cadastral?.sheet?.trim() && (c.cadastral.parcel?.trim() || c.cadastral.parcelDenomination?.trim())
+    && canonicalCadastralToken(c.cadastral.urbanSection) === canonicalCadastralToken(source.cadastral.urbanSection)
+    && sameCadastralIdentity({ ...source.cadastral, income: null }, { ...c.cadastral, income: null }));
+  return { candidate: matching.find(c => c.importedFromRegistry === true) ?? matching[0] ?? null, candidateIds: matching.map(c => c.id) };
+}
+
+export function choosePropertyCandidate(source: SourceProperty, candidates: CrmPropertySummary[], preferRegistryDuplicates = false):
   | { kind: "create"; candidate: null }
   | { kind: "exact" | "address_update" | "cadastral_update"; candidate: CrmPropertySummary } {
   const unique = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
@@ -252,6 +261,10 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
     throw new ImportV2Error("Immobile senza subalterno: nel CRM sono presenti unità della stessa particella con subalterno. Corrispondenza da chiarire", "ambiguous_identity");
   }
   const addressMatches = unique.filter((candidate) => sameCrmPropertyAddress(source.fullAddress, candidate));
+  if (preferRegistryDuplicates) {
+    const { candidate } = preferredCadastralCandidate(source, unique);
+    if (candidate) return { kind: sameCrmPropertyAddress(source.fullAddress, candidate) ? "exact" : "cadastral_update", candidate };
+  }
   if (!canonicalCadastralToken(source.cadastral.subaltern)) {
     const matching = unique.filter(candidate => sameCadastralIdentity({ ...source.cadastral, income: null }, candidate.cadastral ? { ...candidate.cadastral, income: null } : null));
     if (matching.length > 1) throw new ImportV2Error("Più immobili senza subalterno condividono foglio e particella", "ambiguous_identity");

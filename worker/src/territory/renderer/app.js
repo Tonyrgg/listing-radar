@@ -331,6 +331,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   const sessionStartedAt = Date.now();
   function notifyRunIssue(run) {
     if (!run) return;
+    if (run.state === "running" && run.waiting) {
+      if (notifiedRunErrors.get(run.id) !== run.waiting) {
+        notifiedRunErrors.set(run.id, run.waiting);
+        feedback(`In attesa di recupero: ${run.waiting} Il lavoro riparte automaticamente appena disponibile.`, true, { runId: run.id });
+      }
+      return;
+    }
     // Archived import attempts are history, not a new task or alert on reopening.
     if (run.state === "stopped" && Date.parse(run.startedAt) < sessionStartedAt) return;
     if (["running", "completed"].includes(run.state)) {
@@ -976,9 +983,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         );
       });
     }
-    root.querySelector("strong").textContent = operations[run.operation];
+    root.querySelector("strong").textContent = run.waiting ? "In attesa di recupero" : operations[run.operation];
     root.querySelector("p").textContent =
-      `${street?.name || "Via in lavorazione"} · ${run.handled}${run.total === null ? "" : ` / ${run.total}`} immobili`;
+      run.waiting ? `${run.waiting} Riprovo automaticamente; puoi interrompere il lavoro.` : `${street?.name || "Via in lavorazione"} · ${run.handled}${run.total === null ? "" : ` / ${run.total}`} immobili · ${Object.keys(run.skipped || {}).length} accantonati`;
     const progress = root.querySelector("progress");
     if (run.total) {
       progress.max = run.total;

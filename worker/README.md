@@ -1,5 +1,7 @@
 # Property Data Worker
 
+La **0.34.19** gestisce nel Worker V2 i duplicati dello stesso catasto vengono gestiti scegliendo la scheda importata da visura, altrimenti la prima. Un errore del singolo immobile viene accantonato e il lavoro prosegue sui successivi, conservando le scritture da verificare. Se manca Chrome o scade l'accesso, la stessa run attende e riparte automaticamente dopo il recupero. Il riepilogo mostra import riusciti e accantonati. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
+
 La **0.34.18** cerca gli immobili V2 per foglio/particella/subalterno e apre direttamente gli ID Cloud già conosciuti. Immobili e proprietari conservano presenza e ultima verifica nel dettaglio. Un caricamento CRM bloccato viene ricaricato e riletto nel V2, senza ripetere i salvataggi. Le procedure del worker precedente restano disponibili. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
 
 La **0.34.17** aggiunge **Coda immobili → Svuota coda**, conservando dati, correzioni e storico. Ottimizza ricerche, mappa, aggiornamenti nascosti e salvataggi della memoria. Sulla copia del profilo con 1.350 immobili: coda circa 35 ms invece di 1,2 s; riepilogo mappa circa 110 ms invece di 750 ms e circa 14 ms se invariato. Le verifiche CRM mantengono il proprio flusso. [Misure e limiti](../docs/PROPERTY-WORKER-TERRITORY.md).

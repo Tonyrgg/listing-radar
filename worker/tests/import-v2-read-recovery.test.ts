@@ -32,6 +32,11 @@ describe("Ripresa delle sole letture CRM bloccate", () => {
     await expect(port.readAction("Ricerca catastale", read)).rejects.toThrow("Timeout");
     expect(read).toHaveBeenCalledTimes(3); expect(reload).toHaveBeenCalledTimes(2);
   });
+  it("ricarica anche una ricerca rimasta non confermata prima di accantonarla", async () => {
+    const { port, reload } = setup(), read = vi.fn().mockRejectedValueOnce(new ImportV2Error("Ricerca immobili non confermata: accantono questo immobile e continuo l'import.", "transient_portal", { retryable: true })).mockResolvedValue(["first"]);
+    expect(await port.readAction("Ricerca catastale", read)).toEqual(["first"]);
+    expect(reload).toHaveBeenCalledOnce(); expect(read).toHaveBeenCalledTimes(2);
+  });
   it("non ricarica moduli aperti, sessioni scadute o un'operazione interrotta", async () => {
     const a = setup(1); await expect(a.port.readAction("Lettura", async () => { throw new Error("Timeout"); })).rejects.toThrow("Timeout"); expect(a.reload).not.toHaveBeenCalled();
     const b = setup(); await expect(b.port.readAction("Lettura", async () => { throw new ImportV2Error("Sessione scaduta", "global_session", { global: true }); })).rejects.toThrow("scaduta"); expect(b.reload).not.toHaveBeenCalled();

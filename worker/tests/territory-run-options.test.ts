@@ -102,21 +102,21 @@ describe("Opzioni operative V2, congelate per run", () => {
     }
     const app = new TerritoryApplication(store, new UncertainActivity(store, 0));
     const id = await app.start(street.id, "apply", [key], undefined, { activityMode: "plain" }); await app.waitForIdle();
-    expect(store.read().runs.at(-1)?.state).toBe("stopped");
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", skipped: { [key]: expect.anything() } });
     expect(Object.values(store.read().virtualActivities!)).toHaveLength(1);
     expect(effectiveSource(store.read().units[key]!).activity.enabled).toBe(false);
     const reopened = await TerritoryStore.open(directory, [street]);
     class ChangedCandidates extends SimulationProvider {
       override async candidates(s: Street, source: import("../src/import-v2/model.js").SourceProperty) {
         const result = await super.candidates(s, source);
-        return { ...result, rows: [...result.rows, { ...result.rows[0]!, id: "duplicate-after-pause" }] };
+        return { ...result, rows: [{ ...result.rows[0]!, cadastral: null, id: "incomplete-after-pause" }] };
       }
     }
     const changed = new TerritoryApplication(reopened, new ChangedCandidates(reopened, 0));
     await changed.enqueue([key]); await changed.startQueue([key], { activityMode: "none", includeCoOwners: false }); await changed.waitForIdle();
-    expect(reopened.read().runs.at(-1)?.state).toBe("stopped");
+    expect(reopened.read().runs.at(-1)).toMatchObject({ state: "completed", skipped: { [key]: expect.anything() } });
     expect(Object.keys(reopened.read().checkpoints)).toHaveLength(1);
-    expect(changed.quarantineList().some(item => item.origin === "apply")).toBe(false);
+    expect(changed.quarantineList().some(item => item.origin === "apply")).toBe(true);
     expect(Object.values(reopened.read().virtualActivities!)).toHaveLength(1);
     const second = new TerritoryApplication(reopened, new SimulationProvider(reopened, 0));
     await expect(second.start(street.id, "apply", [key], id)).rejects.toThrow("terminato");

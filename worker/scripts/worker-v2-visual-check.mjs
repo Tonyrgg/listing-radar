@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { hydrateUnitMemory } from '../dist-desktop/territory/unit-memory.js';
 import { resolveRecognizedHistory } from '../dist-desktop/territory/history.js';
+import { TerritoryStore } from '../dist-desktop/territory/store.js';
+import { simulationSource } from '../dist-desktop/territory/providers.js';
+import { unitKey } from '../dist-desktop/territory/model.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.resolve(root, '../.runtime/worker-v2-ui-check');
@@ -17,9 +20,10 @@ const legacyCheckpoint = JSON.stringify({ version: 4, strategy: 'bulk_exact_vari
 await writeFile(path.join(desktop, 'sister-street-run.json'), legacyCheckpoint);
 let application;
 const errors = [];
-async function launch(profile, simulation) {
+async function launch(profile, simulation, confirmFixtureImport = false) {
   const env = { ...process.env, WORKER_V2_TEST_ROOT: root, WORKER_V2_DESKTOP_TEST_DIR: desktop, TERRITORY_LAB_DATA_DIR: profile, WORKER_V2_SIMULATION: simulation ? '1' : '0', SISTER_KEEPALIVE_ENABLED: 'false', CHROME_CDP_URL: 'http://127.0.0.1:65531' };
   delete env.ELECTRON_RUN_AS_NODE;
+  env.WORKER_V2_CONFIRM_FIXTURE_IMPORT = confirmFixtureImport ? '1' : '0';
   application = await electron.launch({ args: [path.join(root, 'scripts/fixtures/worker-v2-host.cjs')], env });
   const shell = await application.firstWindow(); shell.setDefaultTimeout(20000);
   shell.on('pageerror', error => errors.push(error.message));
@@ -152,9 +156,35 @@ try {
   assert.equal((await page.evaluate(() => window.territory.snapshot())).streets.length, recovered.streets.length, 'La memoria offline non impedisce la consultazione locale');
   await page.screenshot({ path: path.join(output, '02-recovered-real-profile.png') });
   await application.close(); application = null;
+  // Synthetic data only: an import against the closed fixture port must wait,
+  // rather than claim completion. Never enqueue the recovered user's units.
+  const waitingProfile = path.join(directory, 'territory-waiting');
+  const waitingStore = await TerritoryStore.open(waitingProfile, [street]);
+  const source = simulationSource(street, 1, 'waiting-fixture'), key = unitKey(source);
+  await waitingStore.change(state => { state.units[key] = { key, streetIds: [street.id], observations: [{ at: new Date().toISOString(), runId: source.jobId, source, streetId: street.id, origin: 'sister' }], corrections: {}, note: '', assessment: null, crmId: null, importedAt: null }; });
+  ({ shell, page } = await launch(waitingProfile, false, true));
+  await page.evaluate(key => window.territory.enqueue({ keys: [key] }), key);
+  await page.locator('#queue-manager').click(); await page.locator('#queue-continue').click(); await page.locator('#queue-import').click();
+  await page.waitForFunction(() => document.querySelector('#queue-run strong')?.textContent === 'In attesa di recupero');
+  const waiting = (await page.evaluate(() => window.territory.snapshot())).activeRun;
+  assert.equal(waiting.state, 'running'); assert.equal(waiting.endedAt, null); assert.equal(waiting.handled, 0); assert.ok(waiting.waiting);
+  assert.equal(await page.locator('.queue-result').count(), 0, 'Una connessione mancante non conclude il batch');
+  assert.ok((await page.locator('#queue-run').textContent()).includes('Riprovo automaticamente'));
+  for (const width of [1600, 1024, 390]) {
+    await page.setViewportSize({ width, height: 860 });
+    assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false);
+    await page.screenshot({ path: path.join(output, `03-queue-waiting-${width}.png`) });
+  }
+  await page.locator('#queue-pause').click();
+  await page.locator('.queue-result h3').filter({ hasText: 'Lavoro interrotto' }).waitFor();
+  const stopped = (await page.evaluate(() => window.territory.queue())).runs.at(-1);
+  assert.equal(stopped.id, waiting.id); assert.equal(stopped.state, 'stopped'); assert.equal(stopped.waiting, null);
+  assert.equal((await page.evaluate(() => window.territory.queue())).entries.length, 1);
+  assert.equal((await readFile(path.join(desktop, 'sister-street-run.json'), 'utf8')), legacyCheckpoint);
+  await application.close(); application = null;
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: expectedUnitKeys.length, sharedMemoryOfflineSupported: true, chromeWarningToast: true, toastOpensSharedBrowser: true, dismissedWarningStaysClosed: true, realWritesEnabled: false, errors }, null, 2));
-  console.log(`Worker V2 integrato verificato: ${output}`);
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, singleWindow: true, isolatedRenderers: true, switchingPreservesDraft: true, legacyConcurrencyBlocked: true, pausePreservesRun: true, legacyPausedCheckpointPreserved: true, restoredUnits: expectedUnitKeys.length, sharedMemoryOfflineSupported: true, chromeWarningToast: true, toastOpensSharedBrowser: true, dismissedWarningStaysClosed: true, syntheticQueueWaitsForChrome: true, waitingImportCanBeInterrupted: true, realWritesEnabled: false, errors }, null, 2));
+  console.log(`Worker V2 integrato e coda in attesa verificati: ${output}`);
 } catch (error) {
   if (application) for (const [i, page] of application.context().pages().entries()) await page.screenshot({ path: path.join(output, `failure-${i}.png`) }).catch(() => {});
   throw error;

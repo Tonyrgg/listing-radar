@@ -16,6 +16,7 @@ export interface TerritoryProvider {
   rememberCloud?(state: import("./model.js").TerritoryState): void;
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
   endOperation?(): void;
+  resetConnection?(): Promise<void>;
   scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters): Promise<boolean>;
   candidates(street: Street, source: SourceProperty): Promise<{ rows: CrmPropertySummary[]; complete: boolean }>;
   port(): Promise<TecnocloudV2Port>;
