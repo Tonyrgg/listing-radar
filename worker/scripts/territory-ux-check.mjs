@@ -62,6 +62,16 @@ try {
   await page.locator('#hover [data-open="' + street.id + '"]').click();
   assert.equal(await page.locator("#tab-units").count(), 0, "Prima di acquisire non ci sono tab vuote");
   await openStreetSettings(page); await page.locator('[data-disclosure="options-scan"] > summary').click();
+  assert.equal(await page.locator('#scan-portfolios').isChecked(), false);
+  assert.equal(await page.locator('#scan-reuse').isChecked(), true);
+  await page.locator('#scan-portfolios').check(); await page.locator('#scan-reuse').uncheck();
+  for (const width of [390, 1024, 1600]) {
+    await page.setViewportSize({ width, height: 920 });
+    assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false, 'Opzioni acquisizione senza overflow');
+    await page.locator('#scan-portfolios').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(output, `acquisition-options-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1600, height: 1000 });
   await page.locator("#scan-floor-mode").selectOption("exact");
   await page.locator("#scan-floor").fill("0");
   await page.locator("#scan-min-civic").fill("2");
@@ -70,6 +80,8 @@ try {
   await until(page, () => document.querySelector("#street-note")?.value === "Opzioni in preparazione");
   assert.equal(await page.locator("#scan-floor").inputValue(), "0");
   assert.equal(await page.locator("#scan-max-civic").inputValue(), "12");
+  assert.equal(await page.locator('#scan-portfolios').isChecked(), true);
+  assert.equal(await page.locator('#scan-reuse').isChecked(), false);
   await page.locator("#scan-floor-mode").selectOption("any");
   await page.locator('[data-operation="scan"]').click();
   // Hidden Electron throttles animation frames to 1 fps: the 720 ms fixture
@@ -96,6 +108,9 @@ try {
     },
     street.id,
   );
+  const lockedOptions = await page.evaluate(async id => (await window.territory.detail(id)).runs.at(-1).settings, street.id);
+  assert.equal(lockedOptions.expandOwnerProperties, true);
+  assert.equal(lockedOptions.reuseAcquiredProperties, false);
   await page.locator("#select-all").click();
   assert.equal(await page.locator("[data-unit-select]:checked").count(), 5, "Tutti selezionabili prima del confronto");
   assert.equal(await page.locator("#enqueue").isDisabled(), false, "Confronto e import si avviano insieme");
@@ -195,14 +210,16 @@ try {
     return run.operation === "apply" && run.state === "completed";
   }, street.id);
   const importedRun = await page.evaluate(async id => (await window.territory.detail(id)).runs.at(-1), street.id);
-  assert.equal(importedRun.handled, 3);
+  assert.equal(importedRun.handled, keysToImport.length);
+  assert.equal(Object.keys(importedRun.imports).length, keysToImport.length);
   assert.equal(importedRun.settings.activityMode, "plain");
   assert.equal(importedRun.settings.includeCoOwners, true);
+  assert.equal(importedRun.settings.replaceUnlistedPrimary, true);
   const ledger = JSON.parse(await readFile(path.join(profile, "territory-ledger.json"), "utf8"));
-  assert.equal(Object.keys(ledger.virtualActivities).length, 3);
+  assert.equal(Object.keys(ledger.virtualActivities).length, keysToImport.length);
   await page.locator("#detail-close").click(); await openStreet(page, street);
   await page.locator("#tab-history").click();
-  assert.ok((await page.locator(".runs-list").textContent()).includes("attività da eseguire"));
+  assert.ok((await page.locator(".runs-list").textContent()).includes("Telefonata da eseguire"));
   await page.locator("#tab-units").click();
   await page.locator("#unit-filter").selectOption("");
   await page.locator("#unit-search").fill("LAB");

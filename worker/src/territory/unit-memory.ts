@@ -40,6 +40,7 @@ export function rememberCheckpoint(state: TerritoryState, memory: PropertyMemory
     ...(completed || failure ? { source: structuredClone(source) } : {}),
     ...(failure ? { failure: { kind: failure.kind, stage: failure.stage, message: sanitizeSensitiveText(failure.message), retryable: failure.retryable, global: failure.global } } : {}),
     ...(completed ? { activity: checkpoint!.activityEvidence, resolution: checkpoint!.propertyResolution } : {}),
+    ...(checkpoint?.ownershipReplacement && (completed || checkpoint.stage === "ownerships_synced") ? { ownershipReplacement: checkpoint.ownershipReplacement } : {}),
     ...(checkpoint && (completed || failure || checkpoint.stage === "people_resolved") ? { people: checkpoint.people.map(p => ({ taxCode: p.taxCode, crmIds: p.matches.map(m => m.id) })) } : {}),
     ...(checkpoint && (completed || failure || checkpoint.stage === "people_synced") ? { syncedPeople: checkpoint.syncedPeople } : {}),
     ...(checkpoint?.stage === "property_resolved" ? { resolution: checkpoint.propertyResolution } : {}),

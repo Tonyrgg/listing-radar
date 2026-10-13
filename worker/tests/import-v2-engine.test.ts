@@ -219,6 +219,23 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("inoltra la politica esplicita V2 e conserva la sostituzione del principale nel checkpoint", async () => {
+    const source = property(); source.owners[1]!.sharePercentage = 70; source.owners[0]!.sharePercentage = 30;
+    class ReplacementCrm extends FakeCrm {
+      override async replaceManagedOwnerships(id: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}) {
+        const result = await super.replaceManagedOwnerships(id, desired, options);
+        const principal = desired.find(owner => owner.role === "Proprietario Principale")!;
+        expect(principal.taxCode).toBe(source.owners[1]!.taxCode);
+        return { ...result, ...(options.replaceUnlistedPrimary ? { ownershipReplacement: { before: { linkId: "old-primary", personId: "old", taxCode: "BNCNNA80B42A893X", role: "Proprietario Principale", rightType: "Proprietà", sharePercentage: 100 }, afterPersonId: principal.personId } } : {}) };
+      }
+    }
+    const store = new MemoryStore(), crm = new ReplacementCrm();
+    expect((await new ImportV2Engine(crm, store, { replaceUnlistedPrimary: true }).run(source)).state).toBe("completed");
+    expect(crm.lastOwnershipOptions.replaceUnlistedPrimary).toBe(true);
+    expect(store.checkpoints.get(source.sourcePropertyId)?.ownershipReplacement?.before.taxCode).toBe("BNCNNA80B42A893X");
+    const strict = new ReplacementCrm(); await new ImportV2Engine(strict, new MemoryStore()).run(source);
+    expect(strict.lastOwnershipOptions.replaceUnlistedPrimary).toBeUndefined();
+  });
   it("pausa sul 525 dell'audit dopo il checkpoint e riprende senza rifare lo stadio", async () => {
     class InterruptedAuditStore extends MemoryStore {
       failOnce = true;

@@ -302,6 +302,9 @@ type StreetRunOptions = {
     owner: CadastralOwner,
     properties: CadastralProperty[],
   ) => void | Promise<void>;
+  /** V2 reads every owner on a portfolio property, without recursive expansion. */
+  onExpandedPropertyAcquired?: (property: CadastralProperty, owners: CadastralOwner[], error?: string) => void | Promise<void>;
+  reuseProperty?: (property: CadastralProperty, portfolio: boolean) => boolean | Promise<boolean>;
   onProgress?: (progress: SisterStreetRunProgress) => void | Promise<void>;
   isCancelled?: () => boolean;
   onCheckpoint?: (checkpoint: SisterStreetRunCheckpoint) => void | Promise<void>;
@@ -1116,6 +1119,7 @@ export class SisterStreetRun {
             status: "running", nextRetryAt: null,
           });
           try {
+            if (await this.options.reuseProperty?.(property, false)) { acquired = true; break; }
             acquiredOwners = await this.adapter.extractOwners(property, this.expandAllOwners ? {
               // Con i comproprietari attivi sviluppiamo ogni intestatario
               // della riga; altrimenti ne apriamo uno solo. In entrambi i
@@ -1133,12 +1137,29 @@ export class SisterStreetRun {
                 // Piano e range civici restano invece vincoli della via sorgente:
                 // non vanno estesi agli immobili del portafoglio fuori via.
                 const eligibleExpandedProperties = expandedProperties.filter((expandedProperty) =>
-                  isStrategicNetworkCategory(expandedProperty.category, this.filters.residentialOnly));
+                  isStrategicNetworkCategory(expandedProperty.category, this.filters.residentialOnly)
+                  && (!this.options.onExpandedPropertyAcquired || expandedProperty.municipality.trim().toUpperCase() === "BITONTO"));
                 await publishPartial?.(snapshot("paused", {
                   ...cursor,
                   ownerNames: [owner.fullName],
                 }));
                 await this.options.onOwnerPropertiesAcquired?.(variant, property, owner, eligibleExpandedProperties);
+                if (this.options.onExpandedPropertyAcquired) {
+                  for (const expanded of eligibleExpandedProperties) {
+                    if (this.options.isCancelled?.()) throw new WorkerError("Pausa richiesta", "paused", {}, true);
+                    if (await this.options.reuseProperty?.(expanded, true)) continue;
+                    let expandedOwners: CadastralOwner[] = [], expandedError: string | undefined;
+                    for (let retry = 1; retry <= this.maxQueryAttempts; retry++) {
+                      try { expandedOwners = await this.adapter.extractOwners(expanded); expandedError = undefined; break; }
+                      catch (error) {
+                        if (error instanceof WorkerError && ["session_expired", "paused"].includes(error.status)) throw error;
+                        expandedError = error instanceof Error ? error.message : String(error);
+                        await this.adapter.ensureResultsPage();
+                      }
+                    }
+                    await this.options.onExpandedPropertyAcquired(expanded, expandedOwners, expandedError);
+                  }
+                }
                 this.expandedOwnerKeys.add(ownerKey);
                 if (!expandedOwnerKeys.includes(ownerKey)) expandedOwnerKeys.push(ownerKey);
                 for (const expandedProperty of eligibleExpandedProperties) {

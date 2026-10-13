@@ -2,17 +2,18 @@ import { CloudIdentityMemory } from "./cloud-memory.js";
 import { ImportV2Error } from "../import-v2/errors.js";
 import type { TerritoryStore } from "./store.js";
 import type { TecnocloudV2Port } from "../import-v2/ports.js";
-import { randomUUID } from "node:crypto";
 import { connectToChrome, connectToCrmChrome, type ChromeTabs, type CrmChromeTab } from "../services/chrome.js";
 import { SisterStreetRun, hasRetryableAcquisitionRecords, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { buildPlan } from "../import-v2/identity.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
-import { isBusinessOwner } from "../core/owner-kind.js";
 import type { SourceProperty } from "../import-v2/model.js";
-import { unitKey, type Street } from "./model.js";
+import { latest, unitKey, type Street } from "./model.js";
 import type { ScanSink, TerritoryProvider } from "./providers.js";
 import type { StreetPropertyFilters } from "../core/network-exploration.js";
+import { runSettings } from "./run-options.js";
+import { sisterSource, reusableSisterSource } from "./sister-memory.js";
+import { sourceProblem } from "./quarantine.js";
 
 export type LiveConfig = { cdpUrl: string; sisterTabMatch: string; crmTabMatch: string; contactsExcelPath?: string; allowedCadastralKeys: string[]; allowedTaxCodes: string[]; allowCreate: boolean };
 export type LiveBrowserConfig = Pick<LiveConfig, "cdpUrl" | "sisterTabMatch" | "crmTabMatch">;
@@ -84,25 +85,48 @@ export class LiveProvider implements TerritoryProvider {
     const port = await this.port(); await port.assertSession();
     return { rows: await port.findPropertiesByCadastralIdentity(buildPlan(source)), complete: true };
   }
-  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters) {
+  async scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters, options = runSettings()) {
     if (street.needsReview) throw new Error("Via ufficiale da verificare prima dell'acquisizione");
     const tabs = await this.tabs();
     let contacts: ExcelContactsAdapter | null = null;
     if (this.config.contactsExcelPath) { contacts = new ExcelContactsAdapter(this.config.contactsExcelPath); await contacts.load(); }
     const prior = checkpoint as SisterStreetRunCheckpoint | undefined;
+    let portfolioAnomaly = false;
+    const readThisRun = new Set<string>();
     const runner = new SisterStreetRun(tabs.sisterPage, {
-      acquireOwners: true, includeAllOwners: true, expandAllOwners: false,
+      acquireOwners: true, includeAllOwners: true, expandAllOwners: options.expandOwnerProperties, expandCoOwners: true,
       // The street inventory includes dwellings and category C (e.g. garages).
       filters: prior?.runSettings?.filters ?? prior?.filters ?? filters ?? { residentialOnly: false },
       strategy: "bulk_exact_variants", prepareSearchAutomatically: true, keepAcquisition: true,
       // Live is SISTER acquisition here, never a CRM write or a stable worker job.
       mode: "live", importJobId: runId, isCancelled: paused, onCheckpoint: save,
+      reuseProperty: async (property, portfolio) => {
+        if (!this.store || property.municipality.trim().toUpperCase() !== "BITONTO") return false;
+        const row = sisterSource(property, [], runId);
+        let key: string; try { key = unitKey(row); } catch { return false; }
+        if (!options.reuseAcquiredProperties && !readThisRun.has(key)) return false;
+        const state = this.store.read();
+        const source = reusableSisterSource(state, row);
+        if (!source) return false;
+        // Enabling portfolios on a street previously read without them must
+        // still visit its owners, even though the property's own data is known.
+        if (!portfolio && options.expandOwnerProperties && !latest(state.units[key]!).portfoliosExpanded) return false;
+        await sink(source, { portfolio, reused: true, ownersComplete: true }); return true;
+      },
+      onExpandedPropertyAcquired: options.expandOwnerProperties ? async (property, owners, error) => {
+        if (property.municipality.trim().toUpperCase() !== "BITONTO") return;
+        const source = sisterSource(property, owners, runId, contacts);
+        if (error) source.acquisitionError = error;
+        const problem = sourceProblem(source);
+        if (problem) portfolioAnomaly = true;
+        await sink(source, { portfolio: true, ownersComplete: !error && owners.length > 0 });
+        if (!problem) readThisRun.add(unitKey(source));
+      } : undefined,
       onPropertyAcquired: async (_variant, property, owners) => {
         if (property.municipality.trim().toUpperCase() !== "BITONTO") throw new Error("Risultato SISTER fuori dal Comune di Bitonto");
-        const rawCells = property.rawPayload.rawCells as Record<string, unknown> | undefined;
-        const raw = (...keys: string[]) => keys.map(key => rawCells?.[key] ?? property.rawPayload[key]).find(value => typeof value === "string" && value.trim()) as string | undefined;
-        const source: SourceProperty = { sourcePropertyId: randomUUID(), jobId: runId, municipality: "BITONTO", fullAddress: property.address ?? "", cadastral: { urbanSection: raw("urbanSection", "sezioneUrbana", "sezione")?.trim() ?? null, sheet: property.sheet, parcel: property.parcel, parcelDenomination: raw("parcelDenomination", "denomParticella")?.trim() ?? null, subaltern: property.subaltern, income: property.cadastralIncome }, category: property.category, propertyClass: property.class, consistency: property.consistency, hasBusinessOwners: owners.some(owner => isBusinessOwner(owner.fullName, owner.taxCode)), activity: { enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" }, owners: owners.map(owner => { const match = contacts?.findByTaxCode(owner.taxCode ?? ""); return { sourcePersonId: randomUUID(), taxCode: owner.taxCode ?? "", fullName: owner.fullName, birthDate: owner.birthDate, birthPlace: owner.birthPlace, birthProvince: owner.birthProvince, rightType: owner.rightType, sharePercentage: owner.sharePercentage, contacts: { phones: [...(match?.mobiles ?? []), ...(match?.landlines ?? [])], emails: match?.emails ?? [] } }; }) };
-        await sink(source);
+        const source = sisterSource(property, owners, runId, contacts);
+        await sink(source, { ownersComplete: owners.length > 0, portfoliosExpanded: options.expandOwnerProperties && !portfolioAnomaly });
+        if (!sourceProblem(source)) readThisRun.add(unitKey(source));
       },
     });
     const result = await runner.run(street.sisterName, prior && hasRetryableAcquisitionRecords(prior) ? prepareStreetAcquisitionRetry(prior) : prior);

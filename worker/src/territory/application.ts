@@ -9,7 +9,7 @@ import { assess } from "./reconcile.js";
 import { effectiveSource, latest, streetSummary, unitKey, type Run, type SourceProperty, type Unit, type TerritoryState } from "./types.js";
 import { TerritoryStore } from "./store.js";
 import type { TerritoryProvider } from "./providers.js";
-import { associateHistory } from "./history.js";
+import { associateHistory, matchHistoricalStreet } from "./history.js";
 import { applyNetworkBindings } from "./network.js";
 import { relatedStreetIds, streetSummaries } from "./model.js";
 import { importProgress } from "./progress.js";
@@ -298,27 +298,35 @@ export class TerritoryApplication {
       this.provider.beginOperation?.(run.operation);
       const street = this.store.read().streets.find(s => s.id === run.streetId)!;
       if (run.operation === "scan") {
-        const complete = await this.provider.scan(street, run.id, run.checkpoint, async source => {
+        const complete = await this.provider.scan(street, run.id, run.checkpoint, async (source, context) => {
           let key: string | undefined;
           try { key = unitKey(source); } catch { /* The source itself remains in quarantine. */ }
           const problem = sourceProblem(source);
           await this.store.change(state => {
             const currentRun = state.runs.find(r => r.id === run.id)!;
-            if (problem || !key) quarantine(state, { streetId: street.id, runId: run.id, at: now(), origin: "scan", reason: problem ?? "Identità catastale incompleta", address: source.fullAddress, cadastral: source.cadastral, source: structuredClone(source), unitKey: key, recordKey: buildCadastralKey({ municipality: source.municipality, ...source.cadastral }) });
+            const matches = context?.portfolio ? matchHistoricalStreet(source, state.streets) : [street];
+            const destination = matches.length === 1 ? matches[0] : undefined;
+            if (problem || !key) quarantine(state, { streetId: destination?.id ?? street.id, runId: run.id, at: now(), origin: "scan", reason: problem ?? "Identità catastale incompleta", address: source.fullAddress, cadastral: source.cadastral, source: structuredClone(source), unitKey: key, recordKey: buildCadastralKey({ municipality: source.municipality, ...source.cadastral }) });
             if (!key) return;
             const unit = state.units[key] ??= { key, streetIds: [], observations: [], corrections: {}, note: "", assessment: null, importedAt: null, crmId: null };
-            if (!unit.streetIds.includes(street.id)) unit.streetIds.push(street.id);
+            if (destination && !unit.streetIds.includes(destination.id)) unit.streetIds.push(destination.id);
             // A replay is harmless; a repaired SISTER row retains both readings.
-            if (!unit.observations.some(o => o.runId === run.id && observationData(o.source) === observationData(source))) {
-              unit.observations.push({ at: now(), runId: run.id, streetId: street.id, source, origin: this.origin === "simulation" ? "simulation" : "sister" });
+            const sameReading = unit.observations.find(o => o.runId === run.id && observationData(o.source) === observationData(source));
+            if (sameReading && context?.portfoliosExpanded) sameReading.portfoliosExpanded = true;
+            if (!context?.reused && !sameReading) {
+              // A fully read portfolio has the same evidence as a street row.
+              // Activities still require an explicit choice when starting the queue.
+              unit.observations.push({ at: now(), runId: run.id, streetId: destination?.id, source, ownersComplete: context?.ownersComplete, portfoliosExpanded: context?.portfoliosExpanded, portfolio: context?.portfolio, activityEligible: context?.ownersComplete ?? !context?.portfolio, origin: this.origin === "simulation" ? "simulation" : "sister" });
               rememberAcquisition(unit, unit.observations.at(-1)!);
               unit.sourceVersionId = source.sourcePropertyId; unit.assessment = null;
             }
             if (!currentRun.itemKeys.includes(key)) currentRun.itemKeys.push(key);
+            if (context?.reused && !currentRun.reusedKeys?.includes(key)) (currentRun.reusedKeys ??= []).push(key);
+            if (context?.portfolio && !currentRun.portfolioKeys?.includes(key)) (currentRun.portfolioKeys ??= []).push(key);
             currentRun.handled = currentRun.itemKeys.length;
             if (!problem) resolveUnitQuarantine(state, unit, now());
           }); this.changed();
-        }, async checkpoint => this.updateRun(run.id, { checkpoint }), this.isPaused, run.settings!.filters);
+        }, async checkpoint => this.updateRun(run.id, { checkpoint }), this.isPaused, run.settings!.filters, run.settings);
         await this.store.change(state => collectScanQuarantine(state, state.runs.find(r => r.id === run.id)!));
         await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
@@ -377,7 +385,7 @@ export class TerritoryApplication {
               const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
                 this.provider.rememberCloud?.(state);
                 appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-              }), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
+              }), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
               const outcome = await engine.run(plan.source, (stage, retry) => {
                 if (this.active && (this.active.stage !== stage || this.active.attempt !== retry.attempt)) {
                   this.active.stage = stage; this.active.attempt = retry.attempt; this.changed();

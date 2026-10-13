@@ -5,6 +5,9 @@ import { propertyActivityDefinition } from "../services/property-activities.js";
 const floor = z.number().int().min(-10).max(100).nullable().default(null);
 const civic = z.number().int().min(0).max(999999).nullable().default(null);
 export const runSettingsSchema = z.object({
+  replaceUnlistedPrimary: z.boolean().default(true),
+  expandOwnerProperties: z.boolean().default(false),
+  reuseAcquiredProperties: z.boolean().default(true),
   filters: z.object({
     residentialOnly: z.boolean().default(false),
     floorMode: z.enum(["any", "exact", "minimum", "maximum"]).default("any"),

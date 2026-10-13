@@ -1,6 +1,6 @@
 import { icon } from "./icons.js";
 export function unitHistoryHtml(unit, escape, date) {
-  const memory = unit.memory;
+  const memory = unit.memory && { ...unit.memory, events: unit.memory.events.map(e => e.ownershipReplacement ? { ...e, message: `${e.message}. Principale aggiornato secondo SISTER: precedente ${e.ownershipReplacement.before.taxCode || e.ownershipReplacement.before.personId}, nuovo ID Cloud ${e.ownershipReplacement.afterPersonId}.` } : e) };
   if (!memory) return "";
   const stages = { queued: "Preparazione", planned: "Piano", people_resolved: "Identità degli intestatari", people_synced: "Anagrafiche", property_resolved: "Identità dell’immobile", property_synced: "Dati dell’immobile", ownerships_synced: "Proprietà e quote", verified: "Verifica dei dati", activity_synced: "Attività", completed: "Import completo" };
   const labels = { queued: "Aggiunto alla coda", queue_removed: "Rimosso dalla coda", acquired: "Dati acquisiti", compared: "Confronto CRM", corrected: "Correzione manuale", import_started: "Import avviato / ripreso", stage_completed: "Passaggio conservato", retry_scheduled: "Tentativo ripetuto", import_paused: "Import sospeso", import_quarantined: "Import non concluso", import_completed: "Import verificato", street_associated: "Via associata" };

@@ -2,7 +2,7 @@ import type { Locator, Page, Request, Response } from "playwright";
 
 import { ImportV2Error } from "./errors.js";
 import { logger } from "../logger.js";
-import { assignPhonesToAvailableFields, PHONE_FIELD_LABELS, type PhoneFieldLabel } from "./contacts.js";
+import { additionalPhonesFromNotes, mergePrivateNotes, notesWithAdditionalPhones, assignPhonesToAvailableFields, PHONE_FIELD_LABELS, type PhoneFieldLabel } from "./contacts.js";
 import { normalizePhone } from "../core/normalize.js";
 import { canonicalTaxCode, formatStreetName, sameAddress, sameCadastralIdentity, sameCrmPropertyAddress, splitSourcePersonName } from "./identity.js";
 import { isManagedCrmOwnership, isPrivateFiscalCode, normalizedOwnershipRight } from "./ownership-policy.js";
@@ -377,7 +377,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       try { return await this.action(label, operation); }
       catch (error) {
         if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 2
-          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato|ricerca immobili non confermata/i.test(error.message)) throw error;
+          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato|ricerca immobili non confermata|ricerca CF.*ambigua|CF non è rimasto stabile/i.test(error.message)) throw error;
         this.throwIfInterruptionRequested();
         await this.assertSession();
         // A dialog may contain a pending/uncertain write. Keep its checkpoint
@@ -435,19 +435,28 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.page.locator("body").waitFor({ state: "visible", timeout: 10_000 });
   }
 
-  private async detailValue(label: string): Promise<string> {
+  private async detailValue(label: string, preserveWhitespace = false): Promise<string> {
     const labels = this.page.locator("label").filter({ hasText: label }).filter({ visible: true });
     const exactIndexes: number[] = [];
     for (let index = 0; index < await labels.count(); index += 1) {
       if (normalized(await labels.nth(index).innerText().catch(() => "")) === normalized(label)) exactIndexes.push(index);
     }
     if (exactIndexes.length !== 1) return "";
-    let row = labels.nth(exactIndexes[0]!).locator("xpath=../..");
+    let row = labels.nth(exactIndexes[0]!).locator("xpath=..");
     for (let depth = 0; depth < 4; depth += 1) {
-      const value = row.locator(".slds-form-element__static .slds-grow, .slds-form-element__static, c-output-field").filter({ visible: true });
+      const fieldLabels = await row.locator("label").filter({ visible: true }).allTextContents();
+      if (fieldLabels.some(name => normalized(name) !== normalized(label))) return "";
+      const value = row.locator(".slds-form-element__static .slds-grow, .slds-form-element__static, c-output-field");
       if (await value.count()) {
-        const text = (await value.first().innerText().catch(() => "")).replace(/\s+/g, " ").trim();
-        if (text && normalized(text) !== normalized(label)) return text;
+        if (!(await value.first().isVisible())) return "";
+        const raw = preserveWhitespace ? await value.first().evaluate(element => {
+          const original = element.textContent ?? "";
+          return /\r?\n/.test(original) ? original : (element as HTMLElement).innerText;
+        }).catch(() => "") : await value.first().innerText().catch(() => "");
+        const text = (preserveWhitespace ? raw : raw.replace(/\s+/g, " ")).trim();
+        // An empty field is still the field. Climbing past it can read a
+        // neighbouring value (even the CF as the birthplace) from the page.
+        return text;
       }
       row = row.locator("xpath=..");
     }
@@ -495,7 +504,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
   }
 
-  private async readCurrentPerson(personId: string, expectedTaxCode: string | null = null): Promise<CrmPersonSnapshot> {
+  private async readCurrentPerson(personId: string, expectedTaxCode: string | null = null, desired?: PersonWriteModel): Promise<CrmPersonSnapshot> {
     await this.openPerson(personId);
     let core: [string, string, string, string, string, string, string, string] = ["", "", "", "", "", "", "", ""];
     let signature = "";
@@ -515,6 +524,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const ready = Boolean(currentTaxCode)
         && (!expectedTaxCode || canonicalTaxCode(currentTaxCode) === canonicalTaxCode(expectedTaxCode))
         && Boolean((currentFirstName && currentLastName) || currentFullName || currentClientName)
+        && (!desired?.birthPlace || Boolean(core[6].trim()))
+        && (!desired?.birthDate || Boolean(core[5].trim()))
         && !(await this.searchIsBusy());
       const currentSignature = JSON.stringify(core.map(normalized));
       stable = ready && currentSignature === signature ? stable + 1 : 0;
@@ -527,7 +538,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
     const phoneLabels = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"];
     const emailLabels = ["Email", "Email Secondaria"];
-    const phones = (await Promise.all(phoneLabels.map((label) => this.detailValue(label)))).filter(Boolean);
+    const privateNotes = await this.detailValue("Note Private", true);
+    const phones = [...new Set([...(await Promise.all(phoneLabels.map((label) => this.detailValue(label)))).filter(Boolean), ...additionalPhonesFromNotes(privateNotes)])];
     const emails = (await Promise.all(emailLabels.map((label) => this.detailValue(label)))).filter(Boolean);
     const provinceInPlace = birthPlaceRaw.match(/\(([A-Z]{2})\)\s*$/i)?.[1] ?? null;
     const birthPlace = birthPlaceRaw.replace(/\s*\([A-Z]{2}\)\s*$/i, "").trim() || null;
@@ -546,6 +558,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       birthProvince: birthProvinceRaw || provinceInPlace,
       phones,
       emails,
+      privateNotes: privateNotes || null,
     };
     if (taxCode) this.verifiedPersonSnapshots.set(crmRecordKey(personId), {
       snapshot: structuredClone(snapshot),
@@ -784,6 +797,11 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async searchIsBusy(): Promise<boolean> {
     return await this.page.locator('lightning-spinner:visible, .slds-spinner:visible, [role="progressbar"]:visible, [aria-busy="true"]:visible').count() > 0;
+  }
+
+  private filterButton(): Locator {
+    return this.page.locator('button[title="Filters"], button[title="Filtri"], button[aria-label="Filters"], button[aria-label="Filtri"], button[title="Filtra"]')
+      .or(this.page.getByRole("button", { name: /^(?:Filtri|Filters|Filtra)$/i })).filter({ visible: true });
   }
 
   private async assertSearchHealthy(requestFailed: boolean, writeOutcomeUncertain = false): Promise<void> {
@@ -1163,7 +1181,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     await this.fillLookupRecord(component, lookup, value, province, "Luogo di nascita", "Rimuovi luogo di nascita");
   }
 
-  private async fillPersonFields(desired: PersonWriteModel, editing: boolean): Promise<void> {
+  private async fillPersonFields(desired: PersonWriteModel, editing: boolean): Promise<boolean> {
     const values: Array<[string, Locator, string]> = [
       ["Nome", this.page.locator('.slds-form-element:has(label:text-is("Nome")) input').filter({ visible: true }), desired.firstName],
       ["Cognome", this.page.locator('.slds-form-element:has(label:has-text("Cognome")) input').filter({ visible: true }), desired.lastName],
@@ -1199,11 +1217,6 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (await field.count() === 1) phoneFields.set(label, field.first());
     }
     const phoneAssignment = assignPhonesToAvailableFields(desired.phones, [...phoneFields.keys()]);
-    if (phoneAssignment.overflow.length) {
-      throw new ImportV2Error("Più numeri disponibili dei campi telefono visibili in Tecnocloud", "unsupported_case", {
-        details: { phoneCount: desired.phones.length, availableFields: [...phoneFields.keys()], overflow: phoneAssignment.overflow },
-      });
-    }
     for (const label of PHONE_FIELD_LABELS) {
       const field = phoneFields.get(label);
       const value = phoneAssignment.values[label];
@@ -1216,14 +1229,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (await field.count() === 1) await field.fill(desired.emails[index] ?? "");
       else if (desired.emails[index]) throw new ImportV2Error(`Campo ${label} non disponibile`, "transient_portal", { retryable: true });
     }
-    if (desired.privateNotes) {
-      const notes = this.page.getByLabel(/Note Private/i).filter({ visible: true });
-      if (await notes.count() !== 1) {
-        if (editing) throw new ImportV2Error("Campo Note private non disponibile", "unsupported_case");
-      } else {
-        await notes.fill(desired.privateNotes);
-      }
-    }
+    const notes = this.page.getByLabel(/Note Private/i).filter({ visible: true });
+    const hasNotes = await notes.count() === 1;
+    if (phoneAssignment.overflow.length && !hasNotes && editing) throw new ImportV2Error("Recapiti aggiuntivi da conservare ma campo Note private non disponibile", "transient_portal", { retryable: true });
+    if (hasNotes) {
+      const before = await notes.inputValue();
+      const merged = mergePrivateNotes(before, desired.privateNotes);
+      const value = notesWithAdditionalPhones(merged, phoneAssignment.overflow) ?? "";
+      if (value !== before) await notes.fill(value);
+    } else if (desired.privateNotes && editing) throw new ImportV2Error("Campo Note private non disponibile", "unsupported_case");
+    return !hasNotes && Boolean(desired.privateNotes || phoneAssignment.overflow.length);
   }
 
   private mergeDialog(): Locator {
@@ -1409,14 +1424,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         return structuredClone(person);
       }
       await this.openPersonCreateForm();
-      await this.fillPersonFields(desired, false);
+      const notesDeferred = await this.fillPersonFields(desired, false);
       const saved = await this.savePersonForm();
-      if (desired.privateNotes && !saved.merged) {
+      if (notesDeferred) {
         await this.openPersonEditForm(saved.personId);
         await this.fillPersonFields(desired, true);
         await this.savePersonForm();
       }
-      return this.readCurrentPerson(saved.personId, desired.taxCode);
+      return this.readCurrentPerson(saved.personId, desired.taxCode, desired);
     });
   }
 
@@ -1432,7 +1447,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.openPersonEditForm(personId);
       await this.fillPersonFields(desired, true);
       const saved = await this.savePersonForm();
-      return this.readCurrentPerson(saved.personId, desired.taxCode);
+      return this.readCurrentPerson(saved.personId, desired.taxCode, desired);
     });
   }
 
@@ -1453,7 +1468,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.fillPersonFields(request.desired, true);
       const saved = await this.savePersonForm();
       if (!saved.merged) throw new ImportV2Error("Il salvataggio non ha aperto il merge atteso", "verification_failed", { retryable: true });
-      return this.readCurrentPerson(saved.personId, request.taxCode);
+      return this.readCurrentPerson(saved.personId, request.taxCode, request.desired);
     });
   }
 
@@ -1574,7 +1589,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         });
       };
       if (!(await drawerIsOpen())) {
-        const trigger = await this.one(this.page.locator('button[title="Filters"]').filter({ visible: true }), "Filtri immobili", 12_000);
+        const trigger = await this.one(this.filterButton(), "Filtri immobili", 12_000);
         for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
           await trigger.click({ force: true });
           for (let wait = 0; wait < 15 && !(await drawerIsOpen()); wait += 1) await this.pauseAwareWait(200);
@@ -1770,7 +1785,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         return this.filterIndexes?.get(normalized(label)) ?? fallback;
       };
       const drawerIsOpen = async () => {
-        const trigger = this.page.locator('button[title="Filters"]').filter({ visible: true });
+        const trigger = this.filterButton();
         if (await trigger.count() === 1 && await trigger.getAttribute("aria-expanded") === "false") return false;
         // A custom-element host can remain visible while its input is hidden,
         // and a translated drawer is "visible" to Playwright outside the
@@ -1784,7 +1799,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       };
       const openDrawer = async () => {
         if (await drawerIsOpen()) return;
-        const open = await this.one(this.page.locator('button[title="Filters"]').filter({ visible: true }), "Filtri immobili", 12_000);
+        const open = await this.one(this.filterButton(), "Filtri immobili", 12_000);
         for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
           await open.click({ force: true });
           // Give the same opening time to finish before clicking a toggle again.
@@ -2641,13 +2656,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       // SISTER supplies shares, not the operator's choice of principal contact.
       // Preserve that choice whenever the current owner is still in the source.
       if (currentPrimary) {
-        const retained = desired.find((owner) => sameCrmRecordId(owner.personId, currentPrimary.personId));
-        if (!retained) {
+        // A merge can replace the CRM ID without changing the person. Verified
+        // CF equality preserves the principal contact instead of reporting a false conflict.
+        const retained = desired.find((owner) => sameCrmRecordId(owner.personId, currentPrimary.personId))
+          ?? (isPrivateFiscalCode(currentPrimary.taxCode ?? "") ? desired.find(owner => canonicalTaxCode(owner.taxCode) === canonicalTaxCode(currentPrimary.taxCode!)) : undefined);
+        const inFullSource = options.sourceOwnerTaxCodes?.some(code => canonicalTaxCode(code) === canonicalTaxCode(currentPrimary.taxCode));
+        if (!retained && (!options.replaceUnlistedPrimary || inFullSource || !isPrivateFiscalCode(currentPrimary.taxCode ?? ""))) {
           throw new ImportV2Error("Proprietario principale Cloud assente dagli intestatari verificati: immobile da rifinire senza cambiare proprietario", "verification_failed", {
             details: { currentPrimaryPersonId: currentPrimary.personId, expectedPersonIds: desired.map((owner) => owner.personId) },
           });
         }
-        desired = desired.map((owner) => ({ ...owner, role: owner === retained ? "Proprietario Principale" : "Comproprietario" }));
+        if (retained) desired = desired.map((owner) => ({ ...owner, role: owner === retained ? "Proprietario Principale" : "Comproprietario" }));
       }
       const desiredPrimary = desired.filter((owner) => owner.role === "Proprietario Principale");
       if (desiredPrimary.length !== 1) {
@@ -2696,7 +2715,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           },
         });
       }
-      return { propertyId, owners, removedPersonIds };
+      const ownershipReplacement = options.replaceUnlistedPrimary && primaryChanged
+        && !desired.some(owner => sameCrmRecordId(owner.personId, currentPrimary.personId) || canonicalTaxCode(owner.taxCode) === canonicalTaxCode(currentPrimary.taxCode))
+        ? { before: structuredClone(currentPrimary), afterPersonId: desiredPrimary[0]!.personId } : undefined;
+      return { propertyId, owners, removedPersonIds, ...(ownershipReplacement ? { ownershipReplacement } : {}) };
     });
   }
 

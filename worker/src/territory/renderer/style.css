@@ -1462,6 +1462,8 @@ button[aria-busy="true"] {
 .current-import-activity { align-items: flex-start; color: var(--lr-ink-2); padding-top: 16px; border-top: 1px solid var(--lr-line-quiet); }
 .current-import-activity p { margin: 4px 0 0; }
 .current-import-note { padding-top: 16px; max-width: 70ch; }
+#options-scan .check { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 12px; }
+#options-scan .check input { flex: 0 0 auto; margin: 0; }
 .cloud-verification { display: grid; gap: 8px; margin-block: 12px 20px; }
 .cloud-verification > div { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(0, 2fr); gap: 12px; }
 .cloud-verification dt { color: var(--lr-ink-3); }

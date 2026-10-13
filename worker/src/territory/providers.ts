@@ -7,9 +7,10 @@ import { sameCadastralIdentity } from "../import-v2/identity.js";
 import type { Street } from "./model.js";
 import { TerritoryStore } from "./store.js";
 import { decideStreetProperty, type StreetPropertyFilters } from "../core/network-exploration.js";
-import { runSettings } from "./run-options.js";
+import { runSettings, type RunSettings } from "./run-options.js";
 
-export type ScanSink = (source: SourceProperty) => Promise<void>;
+export type ScanContext = { portfolio?: boolean; reused?: boolean; ownersComplete?: boolean; portfoliosExpanded?: boolean };
+export type ScanSink = (source: SourceProperty, context?: ScanContext) => Promise<void>;
 const simulatedSearchMatch = (source: SourceProperty["cadastral"], candidate: CrmPropertySummary["cadastral"]) => sameCadastralIdentity({ ...source, income: null, subaltern: source.subaltern.trim() || candidate?.subaltern || "" }, candidate ? { ...candidate, income: null } : null);
 export interface TerritoryProvider {
   origin: "simulation" | "live";
@@ -17,7 +18,7 @@ export interface TerritoryProvider {
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
   endOperation?(): void;
   resetConnection?(): Promise<void>;
-  scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters): Promise<boolean>;
+  scan(street: Street, runId: string, checkpoint: unknown, sink: ScanSink, save: (checkpoint: unknown) => Promise<void>, paused: () => boolean, filters?: StreetPropertyFilters, settings?: RunSettings): Promise<boolean>;
   candidates(street: Street, source: SourceProperty): Promise<{ rows: CrmPropertySummary[]; complete: boolean }>;
   port(): Promise<TecnocloudV2Port>;
   canWrite(key: string, source?: SourceProperty): boolean;

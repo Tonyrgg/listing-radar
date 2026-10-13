@@ -1,9 +1,10 @@
-import { personWriteModel } from "./contacts.js";
+import { mergePrivateNotes, personWriteModel } from "./contacts.js";
 import { isTransientCloudError } from "./cloud-retry.js";
 import { failureFromError, ImportV2Error } from "./errors.js";
 import {
   buildPlan,
   canonicalEmail,
+  canonicalBirthPlace,
   canonicalPhone,
   canonicalPersonName,
   canonicalTaxCode,
@@ -43,6 +44,7 @@ const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
 };
 
 export type ImportV2EngineOptions = {
+  replaceUnlistedPrimary?: boolean;
   maxTransientAttempts: number;
   now?: () => Date;
   isInterruptionRequested?: () => boolean;
@@ -75,6 +77,7 @@ function combinedExisting(matches: CrmPersonSnapshot[]): CrmPersonSnapshot | nul
     ...canonical,
     phones: unique(matches.flatMap((match) => match.phones.map(canonicalPhone)).filter(Boolean)),
     emails: unique(matches.flatMap((match) => match.emails.map(canonicalEmail)).filter(Boolean)),
+    privateNotes: matches.reduce<string | null>((notes, match) => mergePrivateNotes(notes, match.privateNotes), null),
   };
 }
 
@@ -98,8 +101,9 @@ function assertPerson(source: SourceOwner, actual: CrmPersonSnapshot, expectedPh
     ["luogo di nascita", source.birthPlace, actual.birthPlace],
     ["provincia di nascita", source.birthProvince, actual.birthProvince],
   ] as const) {
-    if (expected && !sameNullableText(actualValue, expected)) {
-      throw new ImportV2Error(`Il nominativo riletto non ha ${field} atteso`, "verification_failed", { retryable: true });
+    const agrees = field === "luogo di nascita" ? canonicalBirthPlace(actualValue) === canonicalBirthPlace(expected) : sameNullableText(actualValue, expected);
+    if (expected && !agrees) {
+      throw new ImportV2Error(`Il nominativo riletto non ha ${field} atteso: SISTER ${expected}; Cloud ${actualValue || "non valorizzato"}`, "verification_failed", { retryable: true });
     }
   }
   const actualPhones = new Set(actual.phones.map(canonicalPhone));
@@ -154,6 +158,7 @@ export class ImportV2Engine {
   private readonly propertyCandidates?: (plan: ImportV2Plan) => Promise<CrmPropertySummary[]>;
   private readonly requireExistingProperty: boolean;
   private readonly preferRegistryDuplicates: boolean;
+  private readonly replaceUnlistedPrimary: boolean;
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -168,6 +173,7 @@ export class ImportV2Engine {
     this.propertyCandidates = options.propertyCandidates;
     this.requireExistingProperty = options.requireExistingProperty === true;
     this.preferRegistryDuplicates = options.preferRegistryDuplicates === true;
+    this.replaceUnlistedPrimary = options.replaceUnlistedPrimary === true;
   }
 
   /** Gli intestatari che questo import deve creare, collegare e verificare. */
@@ -392,10 +398,11 @@ export class ImportV2Engine {
           await this.store.save(checkpoint);
         }
         this.throwIfInterruptionRequested();
-        await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
+        const ownerships = await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
           keepUnlistedManagedOwners: !this.includeCoOwners(),
+          ...(this.replaceUnlistedPrimary ? { replaceUnlistedPrimary: true, sourceOwnerTaxCodes: plan.source.owners.map(owner => owner.taxCode) } : {}),
         });
-        return { ...checkpoint, stage: NEXT_STAGE.property_synced };
+        return { ...checkpoint, ownershipReplacement: ownerships.ownershipReplacement ?? checkpoint.ownershipReplacement, stage: NEXT_STAGE.property_synced };
       }
       case "ownerships_synced": {
         const property = await this.crm.readProperty(this.requirePropertyId(checkpoint));

@@ -67,6 +67,7 @@ export type SourceProperty = {
 };
 
 export type CrmPersonSnapshot = {
+  privateNotes?: string | null;
   id: string;
   taxCode: string;
   fullName: string;
@@ -127,6 +128,7 @@ export type ImportV2Plan = {
 };
 
 export type ImportV2Checkpoint = {
+  ownershipReplacement?: { before: CrmOwnershipSnapshot; afterPersonId: string };
   itemId: string;
   jobId: string;
   propertyId: string;

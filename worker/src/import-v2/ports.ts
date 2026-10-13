@@ -14,6 +14,10 @@ import type {
 } from "./public-types.js";
 
 export type OwnershipSyncOptions = {
+  /** Explicit V2 policy: replace a principal who is absent from verified SISTER owners. */
+  replaceUnlistedPrimary?: boolean;
+  /** Full verified source scope, even when this import handles only one owner. */
+  sourceOwnerTaxCodes?: string[];
   /**
    * Lascia dov'e' ogni comproprietario gestito che non compare fra i desiderati
    * invece di scollegarlo. Serve quando l'import lavora sul solo intestatario
@@ -64,6 +68,7 @@ export interface TecnocloudV2Port {
 }
 
 export type CrmOwnershipSnapshotResult = {
+  ownershipReplacement?: ImportV2Checkpoint["ownershipReplacement"];
   propertyId: string;
   owners: Array<{ personId: string; taxCode: string | null; sharePercentage: number | null; rightType: string | null; role?: string | null }>;
   removedPersonIds: string[];

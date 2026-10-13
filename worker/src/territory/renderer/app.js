@@ -78,6 +78,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (!operationDrafts.has(selectedStreet)) {
       const scan = [...detail.runs].reverse().find(r => r.operation === "scan" && r.settings)?.settings;
       operationDrafts.set(selectedStreet, {
+        expandOwnerProperties: scan?.expandOwnerProperties ?? false,
+        reuseAcquiredProperties: scan?.reuseAcquiredProperties ?? true,
         filters: { residentialOnly: false, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null, ...scan?.filters },
       });
     }
@@ -89,7 +91,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (run.operation === "scan") {
       const f = s.filters;
       const floors = { exact: "piano", minimum: "dal piano", maximum: "fino al piano" };
-      return `${f.residentialOnly ? "Categorie A" : "Categorie A e C"}${f.floorMode !== "any" ? ` · ${floors[f.floorMode]} ${f.floorValue}` : " · tutti i piani"}${f.minCivicNumber !== null || f.maxCivicNumber !== null ? ` · civici ${f.minCivicNumber ?? "inizio"}–${f.maxCivicNumber ?? "fine"}` : " · tutti i civici"}`;
+      return `${f.residentialOnly ? "Categorie A" : "Categorie A e C"}${f.floorMode !== "any" ? ` · ${floors[f.floorMode]} ${f.floorValue}` : " · tutti i piani"}${f.minCivicNumber !== null || f.maxCivicNumber !== null ? ` · civici ${f.minCivicNumber ?? "inizio"}–${f.maxCivicNumber ?? "fine"}` : " · tutti i civici"}${s.expandOwnerProperties ? ' · portafogli degli intestatari' : ''}${s.reuseAcquiredProperties ? ' · riuso memoria' : ' · rilettura completa'}`;
     }
     if (run.operation === "compare") return "Sola lettura del gestionale";
     return `${s.importPolicy === "existing_only" ? "Solo schede esistenti" : "Creazioni e aggiornamenti"} · ${s.includeCoOwners ? "tutti gli intestatari" : "solo principale"} · ${activityLabel(s.activityMode)}`;
@@ -98,7 +100,10 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const f = optionsForStreet().filters;
     const option = (value, label, current) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
     const number = (id, label, value, min, max) => `<label for="${id}">${label}<input id="${id}" type="number" step="1" min="${min}" max="${max}" value="${value ?? ""}"></label>`;
-    return `<details class="operation-options" data-disclosure="options-scan"><summary>Filtri della prossima acquisizione</summary><form id="options-scan"><fieldset ${disabled}><legend class="sr-only">Filtri SISTER</legend><div class="operation-fields"><label for="scan-category">Categorie<select id="scan-category">${option("all", "Abitazioni e categoria C (box, locali…)", f.residentialOnly ? "homes" : "all")}${option("homes", "Solo categoria A", f.residentialOnly ? "homes" : "all")}</select></label><label for="scan-floor-mode">Piano<select id="scan-floor-mode">${Object.entries({ any: "Tutti i piani", exact: "Piano esatto", minimum: "Da questo piano", maximum: "Fino a questo piano" }).map(([v,l])=>option(v,l,f.floorMode)).join("")}</select></label>${number("scan-floor", "Numero piano (0 = terra)", f.floorValue, -10, 100)}${number("scan-min-civic", "Civico iniziale (facoltativo)", f.minCivicNumber, 0, 999999)}${number("scan-max-civic", "Civico finale (facoltativo)", f.maxCivicNumber, 0, 999999)}</div><p class="explanation">I filtri limitano la lettura dei proprietari. Il totale della via usa l'inventario SISTER prima dei filtri. Piani o civici non riconoscibili restano esclusi se il filtro è attivo. Le scelte si fissano all’avvio; Riprendi mantiene quelle della run originale.</p></fieldset></form></details>`;
+    return `<details class="operation-options" data-disclosure="options-scan"><summary>Filtri della prossima acquisizione</summary><form id="options-scan"><fieldset ${disabled}><legend class="sr-only">Filtri SISTER</legend><div class="operation-fields"><label for="scan-category">Categorie<select id="scan-category">${option("all", "Abitazioni e categoria C (box, locali…)", f.residentialOnly ? "homes" : "all")}${option("homes", "Solo categoria A", f.residentialOnly ? "homes" : "all")}</select></label><label for="scan-floor-mode">Piano<select id="scan-floor-mode">${Object.entries({ any: "Tutti i piani", exact: "Piano esatto", minimum: "Da questo piano", maximum: "Fino a questo piano" }).map(([v,l])=>option(v,l,f.floorMode)).join("")}</select></label>${number("scan-floor", "Numero piano (0 = terra)", f.floorValue, -10, 100)}${number("scan-min-civic", "Civico iniziale (facoltativo)", f.minCivicNumber, 0, 999999)}${number("scan-max-civic", "Civico finale (facoltativo)", f.maxCivicNumber, 0, 999999)}</div>
+      <label class="check"><input id="scan-portfolios" type="checkbox" ${optionsForStreet().expandOwnerProperties ? 'checked' : ''}>Acquisisci tutte le proprietà degli intestatari</label><p class="meta">Conserva anche gli immobili su altre vie di Bitonto, Palombaio e Mariotto, con tutti gli intestatari. L’import in Tecnocloud parte soltanto dalla coda.</p>
+      <label class="check"><input id="scan-reuse" type="checkbox" ${optionsForStreet().reuseAcquiredProperties ? 'checked' : ''}>Riusa gli immobili completi già in memoria</label><p class="meta">Salta la lettura degli intestatari se la riga SISTER coincide con i dati conservati. Disattiva per rileggere anche quelli già acquisiti.</p>
+      <p class="explanation">Piano e civici filtrano solo la via scelta; le categorie valgono anche per i portafogli. Il totale della via usa l’inventario SISTER prima dei filtri. Riprendi conserva le scelte iniziali.</p></fieldset></form></details>`;
   }
   function bindOperationOptions() {
     const form = $("options-scan"); if (!form) return;
@@ -107,6 +112,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const numberValue = id => $(id).value === "" ? null : Number($(id).value);
     const update = () => {
       settings.filters = { residentialOnly: $("scan-category").value === "homes", floorMode: $("scan-floor-mode").value, floorValue: numberValue("scan-floor"), minCivicNumber: numberValue("scan-min-civic"), maxCivicNumber: numberValue("scan-max-civic") };
+      settings.expandOwnerProperties = $("scan-portfolios").checked;
+      settings.reuseAcquiredProperties = $("scan-reuse").checked;
       $("scan-floor").disabled = settings.filters.floorMode === "any" || Boolean(snapshot.activeRun);
       $("scan-floor").required = settings.filters.floorMode !== "any";
       const f = settings.filters;
@@ -882,7 +889,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .reverse()
             .map(
               (run) =>
-                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " import riusciti su " + run.total : run.handled + " immobili"}</p><p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
+                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " import riusciti su " + run.total : run.handled + " immobili"}</p>${run.operation === 'scan' && (run.reusedKeys?.length || run.portfolioKeys?.length) ? `<p class="meta">${run.reusedKeys?.length || 0} riutilizzati dalla memoria · ${run.portfolioKeys?.length || 0} trovati nei portafogli</p>` : ''}<p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
             )
             .join("") ||
           '<li class="explanation">Nessuna operazione su questa via.</li>'
@@ -1006,7 +1013,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       return;
     }
     await api.start({
-      settings: operation === "scan" ? { filters: optionsForStreet().filters } : undefined,
+      settings: operation === "scan" ? optionsForStreet() : undefined,
       streetId: selectedStreet,
       operation,
       selected: operation === "scan" ? [] : [...selected],

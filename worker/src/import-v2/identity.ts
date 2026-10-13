@@ -28,6 +28,13 @@ export function canonicalEmail(value: unknown): string {
   return String(value ?? "").trim().toLocaleLowerCase("it-IT");
 }
 
+/** Formatting only: never equate different municipalities or historical names. */
+export function canonicalBirthPlace(value: unknown): string {
+  return String(value ?? "").replace(/\s*\([A-Z]{2}\)\s*$/i, "")
+    .normalize("NFD").replace(DIACRITICS, "").toUpperCase()
+    .replace(/['’`]/g, "").replace(/[^A-Z0-9]+/g, " ").trim();
+}
+
 /** Comparison never changes the spelling sent to the CRM. */
 export function canonicalPersonName(value: unknown): string {
   const words = String(value ?? "").normalize("NFD").replace(DIACRITICS, "")

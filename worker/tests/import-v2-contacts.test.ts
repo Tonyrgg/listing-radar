@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assignPhonesToAvailableFields, assignPhonesToFields, personWriteModel } from "../src/import-v2/contacts.js";
+import { additionalPhonesFromNotes, notesWithAdditionalPhones, assignPhonesToAvailableFields, assignPhonesToFields, personWriteModel } from "../src/import-v2/contacts.js";
 import type { CrmPersonSnapshot, SourceOwner } from "../src/import-v2/model.js";
 
 const owner: SourceOwner = {
@@ -65,9 +65,18 @@ describe("Import V2 contact and overwrite policy", () => {
     expect(personWriteModel(owner, existing).phones).toEqual(["0801111111", "3333333333"]);
   });
 
-  it("non cancella i quattro numeri già presenti quando il CRM non ha altri campi", () => {
+  it("conserva i quattro numeri già presenti e il nuovo numero da salvare nelle note", () => {
     const crowded = { ...existing, phones: ["0801", "0802", "3331", "3332"] };
-    expect(personWriteModel(owner, crowded).phones).toEqual(["0801", "0802", "3331", "3332"]);
+    expect(personWriteModel(owner, crowded).phones).toEqual(["0801", "0802", "3331", "3332", "3333333333"]);
+  });
+  it("conserva le note dell'operatore e riconosce solo il proprio blocco di recapiti", () => {
+    const original = "Appuntamento civico 7, telefono dichiarato in nota 0801234567";
+    const notes = notesWithAdditionalPhones(original, ["+39 3331111111", "3492222222", "3331111111"]);
+    expect(additionalPhonesFromNotes(notes)).toEqual(["3331111111", "3492222222"]);
+    expect(additionalPhonesFromNotes(original)).toEqual([]);
+    expect(notesWithAdditionalPhones(notes, ["0803333333"])).toBe(notesWithAdditionalPhones(original, ["0803333333"]));
+    expect(notesWithAdditionalPhones(notes, [])).toBe(original);
+    expect(personWriteModel(owner, { ...existing, privateNotes: original }).privateNotes).toBe(original);
   });
 
   it("usa al massimo due email dando priorità a quelle importate", () => {

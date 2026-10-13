@@ -1,5 +1,20 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.21: portafogli completi e recupero degli accantonamenti
+
+Nelle impostazioni della via, **Acquisisci tutte le proprietà degli intestatari** apre il portafoglio di ogni persona fisica incontrata, una volta per CF nella run. Legge tutti gli intestatari e le quote di ciascun immobile e conserva i dati in V2, senza avviare Tecnocloud e senza espandere ricorsivamente altri portafogli. Categorie A/C e Comune di Bitonto restano il perimetro; il filtro categorie vale anche per i portafogli, mentre piani e civici valgono soltanto per la via iniziale. L'associazione delle proprietà esterne richiede un nome ufficiale univoco; quelle non associabili restano in memoria e nelle query, senza inventare una posizione o autorizzare un import senza via.
+
+**Riusa gli immobili completi già in memoria** evita di riaprire gli intestatari quando catasto, indirizzo, categoria, classe, consistenza e rendita coincidono con l'inventario corrente. Il riuso richiede una lettura completa documentata e nessuna quarantena attiva; non attribuisce una nuova data di lettura agli intestatari, non cancella correzioni, import o storico. Disattivare l'opzione forza una nuova lettura nella nuova run. Attivare per la prima volta i portafogli su una via già acquisita apre comunque gli intestatari; gli immobili trovati più volte nella stessa run vengono deduplicati. Inventario e denominatore della via sorgente non includono gli immobili su altre vie. Lo storico distingue quelli trovati nei portafogli e quelli riutilizzati.
+
+Gli errori dello screenshot di via Francesco Muciaccia sono gestiti per causa:
+
+- recapiti oltre i campi CRM: i numeri restano tutti conservati, quelli eccedenti in un blocco delle note private; la rilettura verifica anche quel blocco e non interpreta altri numeri scritti liberamente nelle note;
+- principale con ID cambiato dopo una fusione: viene riconosciuto tramite CF verificato. Se il principale privato verificato non compare fra gli intestatari SISTER, il V2 lo sostituisce con la quota maggiore (pari quota: ordine SISTER), secondo la scelta esplicita del 13 ottobre 2026. La precedente identità viene conservata dopo la verifica della scrittura nel checkpoint e nello storico; i flussi legacy non attivano questa politica;
+- ricerca CF ambigua e filtri non disponibili: recupero di lettura con refresh limitato, senza ricaricare modali di scrittura; riconoscimento di comandi filtri anche localizzati. Un'assenza non verificata non consente duplicati;
+- luogo di nascita: un campo vuoto non legge più il valore di un vicino. Dopo il salvataggio il worker attende i campi anagrafici forniti; confronto del Comune limitato a differenze di accenti, apostrofi e provincia tra parentesi. Nomi realmente diversi restano un errore, con valore SISTER e Cloud mostrati nel motivo.
+
+Verifiche: fixture SISTER con lettura di tutti gli intestatari, appartenenza a due vie, denominatore, riuso, rilettura e riapertura; fixture Chrome per recapiti, note, principale e recupero; suite worker e controllo Electron di opzioni, pausa/ripresa e layout. Nessuna scrittura automatica di collaudo sulle schede reali già accantonate dell'altro PC.
+
 ## Versione 0.34.20: import solo CRM, immobile corrente e modalità attività
 
 La coda e il confronto V2 usano `connectToCrmChrome`, senza cercare o richiedere la scheda SISTER. L'acquisizione mantiene il proprio collegamento. Una riconnessione libera soltanto i collegamenti CDP e mantiene la memoria degli ID e delle attività inviate. I messaggi dell'attesa import indicano Tecnocloud.

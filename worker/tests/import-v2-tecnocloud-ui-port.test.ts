@@ -56,7 +56,7 @@ describe("Ricerca nominativo nel lookup", () => {
       expect(sync.mock.calls[0]?.[1]).toMatchObject({ personId: "mario", role: "Proprietario Principale" });
       expect(add).not.toHaveBeenCalled();
       expect(remove).not.toHaveBeenCalled();
-      await expect(port.replaceManagedOwnerships("property", [{ personId: "other", taxCode: "RSSMRA80A01A893P", fullName: "Other", phones: [], sharePercentage: 100, role: "Proprietario Principale" }])).rejects.toThrow(/senza cambiare proprietario/);
+      await expect(port.replaceManagedOwnerships("property", [{ personId: "other", taxCode: "BNCNNA80B42A893X", fullName: "Other", phones: [], sharePercentage: 100, role: "Proprietario Principale" }])).rejects.toThrow(/senza cambiare proprietario/);
       expect(sync).toHaveBeenCalledTimes(1);
     } finally { await browser.close(); }
   });
