@@ -198,12 +198,12 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const activityCount = v.selected.filter(key => {
           const recovery = pendingUnitImport(state, key);
           if (recovery) return recovery.source.activity.enabled;
-          if (settings.activityMode !== "plain") return false;
+          if (settings.activityMode === "none") return false;
           const observation = state.units[key]?.observations.at(-1);
           return observation && (observation.activityEligible ?? !observation.historyPropertyId);
         }).length;
         const activityText = activityCount
-          ? `Il piano prevede ${activityCount} attività Telefonata, Da eseguire, esclusi immobili di rete o di provenienza storica incerta.`
+          ? `Il piano prevede ${activityCount} attività. Opzione per i nuovi immobili: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. Gli immobili di rete o di provenienza storica incerta restano esclusi; gli eventuali piani conservati mantengono le attività originali.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
           type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",

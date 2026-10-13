@@ -8,7 +8,7 @@ import { SimulationProvider, simulationSource } from "../src/territory/providers
 import { LiveProvider, validateLiveConfig, type LiveConfig } from "../src/territory/live-provider.js";
 import { configureTestSettings, testSettings } from "../src/territory/test-settings.js";
 import { unitKey, type Street } from "../src/territory/model.js";
-import type { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
+import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ChromeTabs } from "../src/services/chrome.js";
 import { SisterStreetRun, type SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
 import { isStrategicNetworkCategory, normalizeStreetPropertyFilters, type StreetPropertyFilters } from "../src/core/network-exploration.js";
@@ -127,6 +127,17 @@ describe("Schede reali scelte esplicitamente nel laboratorio", () => {
     for (const operation of ["compare", "apply"] as const) { provider.beginOperation(operation); await provider.candidates(street, source); await provider.candidates(street, source); provider.endOperation(); }
     expect(port.listPropertiesByStreet).not.toHaveBeenCalled();
     expect(port.findPropertiesByCadastralIdentity).toHaveBeenCalledTimes(4);
+  });
+  it("il confronto e l'import V2 usano soltanto il collegamento CRM, senza SISTER", async () => {
+    const { source } = await setup(); const provider = new LiveProvider(base, () => false);
+    const sister = vi.spyOn(provider as unknown as { tabs(): Promise<ChromeTabs> }, "tabs").mockRejectedValue(new Error("SISTER non deve servire"));
+    const crm = vi.spyOn(provider as unknown as { crmTabs(): Promise<unknown> }, "crmTabs").mockResolvedValue({ crmPage: {} });
+    vi.spyOn(TecnocloudUiV2Port.prototype, "assertSession").mockResolvedValue(undefined);
+    vi.spyOn(TecnocloudUiV2Port.prototype, "findPropertiesByCadastralIdentity").mockResolvedValue([]);
+    for (const operation of ["compare", "apply"] as const) {
+      provider.beginOperation(operation); await provider.candidates(street, source); await provider.port(); provider.endOperation();
+    }
+    expect(crm).toHaveBeenCalledTimes(4); expect(sister).not.toHaveBeenCalled();
   });
   it("non trasforma una ricerca catastale fallita in assenza e la ripete al prossimo tentativo", async () => {
     const { source } = await setup(); const provider = new LiveProvider(base, () => false);

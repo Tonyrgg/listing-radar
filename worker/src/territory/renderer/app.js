@@ -1,3 +1,4 @@
+import { activityLabel } from "./activity-modes.js";
 import { quarantineHtml } from "./quarantine.js";
 import { createStreetSearch } from "./street-search.js";
 import { streetViewState } from "./street-state.js";
@@ -91,7 +92,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       return `${f.residentialOnly ? "Categorie A" : "Categorie A e C"}${f.floorMode !== "any" ? ` · ${floors[f.floorMode]} ${f.floorValue}` : " · tutti i piani"}${f.minCivicNumber !== null || f.maxCivicNumber !== null ? ` · civici ${f.minCivicNumber ?? "inizio"}–${f.maxCivicNumber ?? "fine"}` : " · tutti i civici"}`;
     }
     if (run.operation === "compare") return "Sola lettura del gestionale";
-    return `${s.importPolicy === "existing_only" ? "Solo schede esistenti" : "Creazioni e aggiornamenti"} · ${s.includeCoOwners ? "tutti gli intestatari" : "solo principale"} · ${s.activityMode === "plain" ? "attività da eseguire" : "nessuna attività"}`;
+    return `${s.importPolicy === "existing_only" ? "Solo schede esistenti" : "Creazioni e aggiornamenti"} · ${s.includeCoOwners ? "tutti gli intestatari" : "solo principale"} · ${activityLabel(s.activityMode)}`;
   }
   function operationOptions(operation, disabled) {
     const f = optionsForStreet().filters;

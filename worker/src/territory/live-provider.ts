@@ -3,7 +3,7 @@ import { ImportV2Error } from "../import-v2/errors.js";
 import type { TerritoryStore } from "./store.js";
 import type { TecnocloudV2Port } from "../import-v2/ports.js";
 import { randomUUID } from "node:crypto";
-import { connectToChrome, type ChromeTabs } from "../services/chrome.js";
+import { connectToChrome, connectToCrmChrome, type ChromeTabs, type CrmChromeTab } from "../services/chrome.js";
 import { SisterStreetRun, hasRetryableAcquisitionRecords, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { buildPlan } from "../import-v2/identity.js";
@@ -30,6 +30,7 @@ export function validateLiveConfig(value: LiveConfig, workBrowser?: LiveBrowserC
 export class LiveProvider implements TerritoryProvider {
   readonly origin = "live" as const;
   private tabsPromise: Promise<ChromeTabs> | null = null;
+  private crmPromise: Promise<CrmChromeTab> | null = null;
   private config: LiveConfig;
   private memory: CloudIdentityMemory | null = null;
   private readonly submittedActivities = new Set<string>();
@@ -43,15 +44,23 @@ export class LiveProvider implements TerritoryProvider {
   endOperation() {
     this.memory = null;
     const connection = this.tabsPromise; this.tabsPromise = null;
+    const crm = this.crmPromise; this.crmPromise = null;
     void connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
+    void crm?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
   async resetConnection() {
     const connection = this.tabsPromise; this.tabsPromise = null;
+    const crm = this.crmPromise; this.crmPromise = null;
     await connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
+    await crm?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
   private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => {
     this.tabsPromise = null;
     throw new ImportV2Error(error instanceof Error ? error.message : "Chrome non raggiungibile", "global_portal", { global: true, retryable: true });
+  }); }
+  private crmTabs() { return this.crmPromise ??= connectToCrmChrome(this.config.cdpUrl, this.config.crmTabMatch).catch(error => {
+    this.crmPromise = null;
+    throw new ImportV2Error(error instanceof Error ? error.message : "Tecnocloud non raggiungibile", "global_portal", { global: true, retryable: true });
   }); }
   canWrite(key: string, source?: SourceProperty) {
     if (this.writeAccess === "operational") {
@@ -67,7 +76,7 @@ export class LiveProvider implements TerritoryProvider {
     if (this.writeAccess === "test" && kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
   }
   async port(): Promise<TecnocloudV2Port> {
-    const base = new TecnocloudUiV2Port((await this.tabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true, submittedActivities: this.submittedActivities });
+    const base = new TecnocloudUiV2Port((await this.crmTabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true, submittedActivities: this.submittedActivities });
     this.memory ??= this.store ? new CloudIdentityMemory(this.store.read()) : null;
     return this.memory?.port(base) ?? base;
   }

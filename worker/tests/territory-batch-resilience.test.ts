@@ -36,6 +36,7 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(() => choosePropertyCandidate(source, [first, { ...first, id: "second" }])).toThrow();
     expect(choosePropertyCandidate(source, [{ ...registry, cadastral: { ...registry.cadastral, subaltern: "2" } }, first], true).candidate?.id).toBe("first");
     expect(assess(source, [{ ...registry, cadastral: { ...registry.cadastral, urbanSection: "A" } }, { ...first, cadastral: { ...first.cadastral, urbanSection: "B" } }], true).kind).toBe("review");
+    expect(assess(source, [{ ...first, cadastral: { ...first.cadastral, urbanSection: "A" } }, { ...registry, cadastral: { ...registry.cadastral, urbanSection: "A" } }], true)).toMatchObject({ kind: "update", candidateId: "registry" });
     expect(assess(source, [first, registry], false).kind).toBe("unknown");
     const blank = { ...source, cadastral: { ...source.cadastral, subaltern: "" } };
     expect(choosePropertyCandidate(blank, [{ ...first, cadastral: blank.cadastral }, { ...registry, cadastral: blank.cadastral }], true).candidate?.id).toBe("registry");
@@ -52,6 +53,20 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(store.read().units[keys[0]!]!.journal!.some(e => e.assessment?.candidateId === "registry" && e.assessment.candidateIds?.length === 2)).toBe(true);
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(4);
   });
+  it("mostra la sorgente congelata e ogni fase sul singolo immobile in lavorazione", async () => {
+    const { store, keys } = await setup(); const seen: Array<ReturnType<TerritoryApplication["snapshot"]>["currentItem"]> = [];
+    let app: TerritoryApplication;
+    app = new TerritoryApplication(store, new SimulationProvider(store, 0), () => { const current = app.snapshot().currentItem; if (current) seen.push(current); });
+    await app.enqueue(keys); await app.startQueue(keys, { activityMode: "killer" }); await app.waitForIdle();
+    for (const key of keys) {
+      const frames = seen.filter(f => f?.key === key);
+      expect(frames.length).toBeGreaterThan(1); expect(frames.map(f => f!.stage)).toContain("property_resolved");
+      expect(frames.map(f => f!.stage)).toContain("verified");
+      expect(frames[0]!.source).toEqual(store.read().runs.at(-1)!.applySources![key]);
+    }
+    expect(app.snapshot().currentItem).toBeNull();
+    expect(effectiveSource(store.read().units[keys[0]!]!).activity.enabled).toBe(false);
+  });
   it("accantona una ricerca non confermata e importa tutti gli immobili successivi", async () => {
     const { store, keys, dir } = await setup(); let attempts = 0;
     class FailedSearch extends SimulationProvider {
@@ -65,8 +80,12 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 3, error: null, skipped: { [keys[0]!]: { reason: "Ricerca immobili non confermata" } } });
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys.slice(1));
     expect(app.importQueue().entries.map(e => e.key)).toEqual([keys[0]]);
+    expect(app.importQueue().entries[0]).toMatchObject({ retry: true, problem: null });
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(2);
     expect((await TerritoryStore.open(dir, [street])).read().runs.at(-1)!.skipped).toEqual(store.read().runs.at(-1)!.skipped);
+    const next = new TerritoryApplication(store, new SimulationProvider(store, 0));
+    await next.startQueue([keys[0]!]); await next.waitForIdle();
+    expect(next.importQueue().entries).toHaveLength(0); expect(next.quarantineList()).toHaveLength(0);
   });
   it.each(["verification_failed", "global_portal"] as const)("conserva una creazione incerta (%s), prosegue e recupera poi senza duplicarla", async kind => {
     const { store, keys } = await setup();
@@ -84,7 +103,21 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(cp.stage).toBe("property_resolved"); expect(app.importQueue().entries[0]!.editLocked).toBe(true);
     expect(app.quarantineList()[0]!.checkpoint!.plan!.fingerprint).toBe(cp.plan!.fingerprint);
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(3);
-    const next = new TerritoryApplication(store, new SimulationProvider(store, 0)); await next.startQueue([keys[0]!]); await next.waitForIdle();
+    const sourceAt = store.read().units[keys[0]!]!.observations[0]!.at;
+    let recoveredAt: string | null | undefined;
+    let next: TerritoryApplication;
+    class Rescan extends SimulationProvider {
+      override async scan(s: Street, id: string, _cp: unknown, sink: (source: SourceProperty) => Promise<void>) {
+        for (let i = 1; i <= 3; i++) await sink(simulationSource(s, i, id)); return true;
+      }
+    }
+    next = new TerritoryApplication(store, new Rescan(store, 0), () => {
+      if (next.snapshot().currentItem?.key === keys[0]) recoveredAt = next.snapshot().currentItem?.acquiredAt;
+    });
+    await next.start(street.id, "scan"); await next.waitForIdle();
+    await store.change(s => { s.units[keys[0]!]!.observations.at(-1)!.at = "2030-01-01T10:00:00Z"; });
+    await next.startQueue([keys[0]!]); await next.waitForIdle();
+    expect(recoveredAt).toBe(sourceAt);
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(3); expect(next.importQueue().entries).toHaveLength(0);
     expect(next.quarantineList()).toHaveLength(0); expect(next.unitDetail(keys[0]!).memory.statistics.verifiedImports).toBe(1);
   });

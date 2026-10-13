@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { TerritoryStore } from "../src/territory/store.js";
 import { TerritoryApplication } from "../src/territory/application.js";
-import { SimulationProvider } from "../src/territory/providers.js";
+import { SimulationProvider, simulationSource } from "../src/territory/providers.js";
 import { effectiveSource, type Street } from "../src/territory/model.js";
-import { runSettings } from "../src/territory/run-options.js";
+import { runSettings, sourceForApply } from "../src/territory/run-options.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
 
 const street: Street = { id: "1", name: "Via di prova", sisterName: "VIA DI PROVA", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
@@ -22,11 +22,38 @@ async function setup() {
   return { store, app, key, directory };
 }
 describe("Opzioni operative V2, congelate per run", () => {
+  it("le quattro modalita rispettano recapiti, intestatari inclusi e ordinali congelati", () => {
+    const source = simulationSource(street, 1, "test"), original = structuredClone(source);
+    expect(sourceForApply(source, runSettings({ activityMode: "none" })).activity.enabled).toBe(false);
+    expect(sourceForApply(source, runSettings({ activityMode: "plain" })).activity).toMatchObject({ enabled: true, contactMode: "Telefonata", status: "Da eseguire" });
+    expect(sourceForApply(source, runSettings({ activityMode: "direct_contact" }), true, 2).activity).toMatchObject({ contactMode: "Contatto diretto", status: "Eseguito", description: "Ripassare in un secondo momento" });
+    source.owners[0]!.contacts.phones = ["3330000000"];
+    expect(sourceForApply(source, runSettings({ activityMode: "direct_contact" })).activity).toMatchObject({ contactMode: "Telefonata", status: "Da eseguire" });
+    expect(sourceForApply(source, runSettings({ activityMode: "killer" }), true, 2).activity).toMatchObject({ contactMode: "Telefonata", status: "Eseguito", description: "Ci abita" });
+    expect(sourceForApply(source, runSettings({ activityMode: "killer" }), false).activity.enabled).toBe(false);
+    expect(source.activity).toEqual(original.activity);
+    source.owners = [{ ...source.owners[0]!, sharePercentage: 100, contacts: { phones: [], emails: [] } }, { ...source.owners[0]!, sourcePersonId: "other", sharePercentage: 0 }];
+    expect(sourceForApply(source, runSettings({ activityMode: "killer", includeCoOwners: false })).activity.contactMode).toBe("Contatto diretto");
+    expect(sourceForApply(source, runSettings({ activityMode: "killer", includeCoOwners: true })).activity.contactMode).toBe("Telefonata");
+  });
+  it("Killer ruota gli esiti per immobile e conserva il piano anche dopo la riapertura", async () => {
+    const { store, app, directory } = await setup();
+    const keys = app.detail(street.id).units.filter(u => ["1", "2", "3"].includes(u.source.cadastral.subaltern)).map(u => u.key);
+    for (const key of keys) await app.correct(key, { owners: effectiveSource(store.read().units[key]!).owners.map(owner => ({ ...owner, contacts: { ...owner.contacts, phones: ["3330000000"] } })) }, "");
+    await app.enqueue(keys); await app.startQueue(keys, { activityMode: "killer" }); await app.waitForIdle();
+    expect(store.read().runs.at(-1)!.state).toBe("completed");
+    expect(Object.values(store.read().runs.at(-1)!.applySources!).map(s => s.activity.description)).toEqual(["Non vende", "Ci abita", "Segreteria"]);
+    expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito", "Eseguito", "Eseguito"]);
+    const reopened = await TerritoryStore.open(directory, [street]);
+    expect(reopened.read().runs.at(-1)!.applySources).toEqual(store.read().runs.at(-1)!.applySources);
+    expect(effectiveSource(reopened.read().units[keys[0]!]!).activity.enabled).toBe(false);
+  });
   it("rifiuta intervalli invertiti, piani mancanti e modalità non supportate", () => {
     expect(() => runSettings({ filters: { minCivicNumber: 10, maxCivicNumber: 2 } })).toThrow("civico finale");
     expect(() => runSettings({ filters: { floorMode: "exact" } })).toThrow("Indica il piano");
     expect(() => runSettings({ filters: { floorValue: 101 } })).toThrow();
-    expect(() => runSettings({ activityMode: "killer" })).toThrow();
+    expect(() => runSettings({ activityMode: "unsupported" })).toThrow();
+    expect(runSettings({ activityMode: "killer" }).activityMode).toBe("killer");
     expect(runSettings().activityMode).toBe("none");
     expect(runSettings().includeCoOwners).toBe(true);
   });

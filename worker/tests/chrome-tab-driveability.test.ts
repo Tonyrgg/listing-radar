@@ -85,7 +85,8 @@ describe("schede Chrome pilotabili", () => {
   });
 
   it("riaggancia anche durante una ripresa che richiede soltanto il gestionale", async () => {
-    const { recovered, original } = crmRecoveryFixture();
+    const { recovered, original, context } = crmRecoveryFixture();
+    (context.pages as () => Array<{ url: () => string }>)().splice(0, 1);
     const tabs = await connectToCrmChrome("ws://127.0.0.1:9222/devtools/browser/fake", "crm");
     expect(tabs.crmPage).toBe(recovered);
     expect(original.close).not.toHaveBeenCalled();

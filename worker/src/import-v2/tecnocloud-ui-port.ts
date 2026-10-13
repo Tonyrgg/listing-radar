@@ -1507,7 +1507,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     // A Lightning card need not expose an h1/h2. Optional decoration must not
     // spend the default 30-second locator timeout on every matching record.
     const heading = displayName || (await headingField.count() ? await headingField.innerText() : fullAddress);
-    const importedFromRegistry = await this.page.getByText("Importato da visura", { exact: true }).filter({ visible: true }).count() > 0;
+    const registryLabels = this.page.locator("label").filter({ hasText: /^\s*Importato da visura\s*$/i });
+    let importedFromRegistry = false;
+    if (await registryLabels.count() === 1) {
+      const row = registryLabels.first().locator("xpath=../..");
+      const checkbox = row.locator('input[type="checkbox"]');
+      const accessible = row.locator('[role="checkbox"][aria-checked]');
+      if (await checkbox.count() === 1) importedFromRegistry = await checkbox.isChecked();
+      else if (await accessible.count() === 1) importedFromRegistry = await accessible.getAttribute("aria-checked") === "true";
+      else importedFromRegistry = /^(?:si|sì|true|vero|yes)$/i.test((await this.detailValue("Importato da visura")).trim());
+    } else importedFromRegistry = await this.page.getByText("Importato da visura", { exact: true }).filter({ visible: true }).count() > 0;
     return {
       id: propertyId,
       displayName: heading.replace(/\s+/g, " ").trim(),
@@ -1814,24 +1823,38 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           throw new ImportV2Error(`${label} non confermato`, "transient_portal", { retryable: true });
         }
       };
+      let unsettledPositiveResults = false;
       const collectResults = async (requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]>): Promise<string[]> => {
         const ids = this.page.locator('lightning-input[c-queryviewer_queryviewer][data-id]').filter({ visible: true });
+        const links = this.page.locator('a[href*="/s/immobile/"]').filter({ visible: true });
+        const renderedIds = async () => {
+          const linked = await links.evaluateAll(nodes => nodes.flatMap(node => {
+            const id = (node.getAttribute("href") ?? "").match(/\/s\/immobile\/([^/?#]+)/i)?.[1];
+            return id && !/^Immobile__c$/i.test(id) ? [decodeURIComponent(id)] : [];
+          }));
+          const checked = await ids.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-id") ?? "").filter(Boolean));
+          // Links prove visible rows even when Lightning's checkbox host has no dimensions.
+          return [...new Set([...linked, ...checked])];
+        };
         await this.pauseAwareWait(1_250);
         let prior = "";
         let stable = 0;
         for (let attempt = 0; attempt < 60 && stable < 4; attempt += 1) {
           await this.assertSession();
           await this.assertSearchHealthy(requests.failed());
-          const records = (await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean).sort())).join("|");
+          const records = (await renderedIds()).sort().join("|");
           const empty = await this.page.getByText(/^(?:Nessun risultat[io](?: trovato)?|Nessun (?:record|elemento)(?: da visualizzare)?|Non (?:sono presenti|ci sono) (?:record|elementi)|0 (?:record|risultati|elementi))\s*[.!]?$/i).filter({ visible: true }).count() > 0;
-          const busy = requests.pending() || await this.searchIsBusy();
+          // Positive rows will be opened and verified individually. Background
+          // Lightning requests cannot turn those rows into an endless loading state.
+          const busy = await this.searchIsBusy() || (requests.pending() && (!this.options.cadastralLookupOnly || !records));
           const signature = busy ? "loading" : records || (empty ? "empty" : "loading");
           stable = signature !== "loading" && signature === prior ? stable + 1 : 0;
           prior = signature;
           if (stable < 4) await this.pauseAwareWait(250);
         }
         if (stable < 4) throw new ImportV2Error("Ricerca immobili non confermata: accantono questo immobile e continuo l'import.", "transient_portal", { retryable: true });
-        return [...new Set(await ids.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id") ?? "").filter(Boolean)))];
+        unsettledPositiveResults ||= requests.pending();
+        return renderedIds();
       };
       type SearchFilters = {
         address?: string; civic?: string; internal?: string;
@@ -1886,7 +1909,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       if (summaries.some((candidate) => sameCrmPropertyAddress(plan.source.fullAddress, candidate)
         && sameCadastralIdentity(plan.source.cadastral, candidate.cadastral))) return summaries;
-      if (this.options.cadastralLookupOnly) return summaries;
+      if (this.options.cadastralLookupOnly) {
+        // Visible records justify an update only after their coordinates match.
+        // Old rows left on screen while a real query is pending never prove absence.
+        if (unsettledPositiveResults && !summaries.some(candidate => sameCadastralIdentity(
+          { ...plan.source.cadastral, income: null }, candidate.cadastral ? { ...candidate.cadastral, income: null } : null)))
+          throw new ImportV2Error("La ricerca mostra righe non corrispondenti mentre una richiesta è ancora aperta: nessuna creazione automatica.", "transient_portal", { retryable: true });
+        return summaries;
+      }
       /* Se il catasto non restituisce un'identità esatta, il riscontro per
        * indirizzo resta sempre attivo: è una protezione anti-duplicato, non
        * una modalità operativa disattivabile. */

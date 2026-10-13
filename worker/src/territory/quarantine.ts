@@ -23,6 +23,13 @@ export function quarantine(state: TerritoryState, item: Omit<QuarantineItem, "id
 export function isQuarantined(state: TerritoryState, unit: Unit): boolean {
   return Object.values(state.quarantine ?? {}).some(item => !item.resolvedAt && item.unitKey === unit.key);
 }
+/** A rejected read/preview can be compared again without editing good source data. */
+export function canRetryQuarantinedUnit(state: TerritoryState, unit: Unit): boolean {
+  const items = Object.values(state.quarantine ?? {}).filter(item => !item.resolvedAt && item.unitKey === unit.key);
+  if (!items.length || sourceProblem(effectiveSource(unit))) return false;
+  return items.every(item => item.origin === "apply" && (!item.checkpoint ||
+    ["queued", "planned"].includes(item.checkpoint.stage) && !item.checkpoint.crmPropertyId && !item.checkpoint.syncedPeople.length));
+}
 export function resolveUnitQuarantine(state: TerritoryState, unit: Unit, at: string) {
   if (sourceProblem(effectiveSource(unit))) return;
   const recordKey = buildCadastralKey({ municipality: effectiveSource(unit).municipality, ...effectiveSource(unit).cadastral });

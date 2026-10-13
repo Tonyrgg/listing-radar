@@ -14,7 +14,7 @@ export const runSettingsSchema = z.object({
   }).strict().default({ residentialOnly: false, floorMode: "any", floorValue: null, minCivicNumber: null, maxCivicNumber: null }),
   includeCoOwners: z.boolean().default(true),
   importPolicy: z.enum(["create_update", "existing_only"]).default("create_update"),
-  activityMode: z.enum(["none", "plain"]).default("none"),
+  activityMode: z.enum(["none", "plain", "direct_contact", "killer"]).default("none"),
 }).strict().superRefine((value, ctx) => {
   const f = value.filters;
   if (f.floorMode !== "any" && f.floorValue === null) ctx.addIssue({ code: "custom", path: ["filters", "floorValue"], message: "Indica il piano per applicare il filtro" });
@@ -24,9 +24,11 @@ export type RunSettings = z.infer<typeof runSettingsSchema>;
 export function runSettings(value: unknown = {}) { return runSettingsSchema.parse(value); }
 
 /** Freeze effects on a copy. Acquired owners and original observations stay intact. */
-export function sourceForApply(source: SourceProperty, settings: RunSettings, activityEligible = true): SourceProperty {
+export function sourceForApply(source: SourceProperty, settings: RunSettings, activityEligible = true, ordinal = 1): SourceProperty {
   const copy = structuredClone(source);
-  const definition = propertyActivityDefinition([], 1, activityEligible ? settings.activityMode : "none");
+  const owners = (settings.includeCoOwners ? copy.owners : [...copy.owners].sort((a, b) => (b.sharePercentage ?? -1) - (a.sharePercentage ?? -1)).slice(0, 1))
+    .map(owner => ({ mobiles: owner.contacts.phones, landlines: [] }));
+  const definition = propertyActivityDefinition(owners, ordinal, activityEligible ? settings.activityMode : "none");
   copy.activity = definition ? { enabled: true, description: definition.description, contactMode: definition.contactMode, status: definition.status }
     : { enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" };
   return copy;

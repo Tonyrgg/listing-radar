@@ -245,8 +245,11 @@ function otherVerifiedCadastralUnit(left: CadastralIdentity | null, right: Cadas
 export function preferredCadastralCandidate(source: SourceProperty, candidates: CrmPropertySummary[]) {
   const matching = [...new Map(candidates.map(c => [c.id.slice(0, 15), c])).values()].filter(c =>
     c.cadastral?.sheet?.trim() && (c.cadastral.parcel?.trim() || c.cadastral.parcelDenomination?.trim())
-    && canonicalCadastralToken(c.cadastral.urbanSection) === canonicalCadastralToken(source.cadastral.urbanSection)
     && sameCadastralIdentity({ ...source.cadastral, income: null }, { ...c.cadastral, income: null }));
+  // An unspecified source section is allowed only when every duplicate proves
+  // the same CRM section. Different or partly unknown sections stay ambiguous.
+  if (!canonicalCadastralToken(source.cadastral.urbanSection) && new Set(matching.map(c => canonicalCadastralToken(c.cadastral?.urbanSection))).size > 1)
+    return { candidate: null, candidateIds: matching.map(c => c.id) };
   return { candidate: matching.find(c => c.importedFromRegistry === true) ?? matching[0] ?? null, candidateIds: matching.map(c => c.id) };
 }
 

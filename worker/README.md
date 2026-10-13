@@ -1,6 +1,8 @@
 # Property Data Worker
 
-La **0.34.19** gestisce nel Worker V2 i duplicati dello stesso catasto vengono gestiti scegliendo la scheda importata da visura, altrimenti la prima. Un errore del singolo immobile viene accantonato e il lavoro prosegue sui successivi, conservando le scritture da verificare. Se manca Chrome o scade l'accesso, la stessa run attende e riparte automaticamente dopo il recupero. Il riepilogo mostra import riusciti e accantonati. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
+La **0.34.20** avvia gli import V2 dalla coda usando solo Tecnocloud. Gestisce righe duplicate anche con telemetria aperta, mostra tutti i dati dell'immobile corrente e la fase, aggiunge Contatto diretto automatico e Killer alle modalità di attività. Nei lavori precedenti espone i motivi degli accantonamenti; i dati validi respinti prima delle scritture possono essere confrontati di nuovo. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
+
+La **0.34.19** gestisce nel Worker V2 i duplicati dello stesso catasto scegliendo la scheda importata da visura, altrimenti la prima. Un errore del singolo immobile viene accantonato e il lavoro prosegue sui successivi, conservando le scritture da verificare. Se manca Chrome o scade l'accesso, la stessa run attende e riparte automaticamente dopo il recupero. Il riepilogo mostra import riusciti e accantonati. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
 
 La **0.34.18** cerca gli immobili V2 per foglio/particella/subalterno e apre direttamente gli ID Cloud già conosciuti. Immobili e proprietari conservano presenza e ultima verifica nel dettaglio. Un caricamento CRM bloccato viene ricaricato e riletto nel V2, senza ripetere i salvataggi. Le procedure del worker precedente restano disponibili. [Flusso e protezioni](../docs/PROPERTY-WORKER-TERRITORY.md).
 

@@ -120,6 +120,12 @@ try {
   await page.locator('#queue-continue').click();
   assert.equal(await page.locator('[data-unit]').count(), 0, 'Il riepilogo separa le opzioni dalle card');
   assert.equal(await page.locator('.queue-review-list li').count(), 2);
+  assert.equal(await page.locator('#queue-activity option').count(), 4);
+  await page.locator('#queue-activity').selectOption('killer');
+  assert.ok((await page.locator('#queue-activity-hint').textContent()).includes('Eseguito'));
+  await page.locator('#queue-activity').selectOption('direct_contact');
+  assert.ok((await page.locator('#queue-activity-hint').textContent()).includes('Senza recapiti'));
+  await page.locator('#queue-activity').selectOption('none');
   assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8')).virtualCrm, ledgerBefore.virtualCrm, 'Controllare il piano non scrive');
   for (const width of [1600, 1024, 390]) {
     await page.setViewportSize({ width, height: 860 });

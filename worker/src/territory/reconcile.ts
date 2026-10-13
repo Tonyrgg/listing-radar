@@ -13,7 +13,7 @@ export function assess(source: SourceProperty, candidates: CrmPropertySummary[],
       const choice = choosePropertyCandidate(source, unique, true);
       if (choice.kind !== "create" && (!choice.candidate.cadastral || !sameCadastralIdentity({ ...source.cadastral, income: null }, { ...choice.candidate.cadastral, income: null })))
         return { ...base, kind: "review", reason: "Immobile senza subalterno: indirizzo presente ma identità catastale non confermata." };
-      return { ...base, kind: choice.kind === "create" ? "create" : "update", candidateId: choice.candidate?.id ?? null, reason: choice.kind === "create" ? "Ricerca completa: immobile senza subalterno non presente nel CRM." : "Foglio e particella corrispondono; subalterno vuoto anche nel CRM." };
+      return { ...base, kind: choice.kind === "create" ? "create" : "update", candidateId: choice.candidate?.id ?? null, candidateIds: preferredCadastralCandidate(source, unique).candidateIds, reason: choice.kind === "create" ? "Ricerca completa: immobile senza subalterno non presente nel CRM." : "Foglio e particella corrispondono; subalterno vuoto anche nel CRM." };
     } catch (error) { return { ...base, kind: "review", reason: error instanceof Error ? error.message : "Corrispondenza catastale da chiarire" }; }
   }
   const identity = { ...source.cadastral, income: null };

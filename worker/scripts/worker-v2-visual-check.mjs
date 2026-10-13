@@ -170,6 +170,10 @@ try {
   assert.equal(waiting.state, 'running'); assert.equal(waiting.endedAt, null); assert.equal(waiting.handled, 0); assert.ok(waiting.waiting);
   assert.equal(await page.locator('.queue-result').count(), 0, 'Una connessione mancante non conclude il batch');
   assert.ok((await page.locator('#queue-run').textContent()).includes('Riprovo automaticamente'));
+  assert.ok(!(await page.locator('#queue-run').textContent()).includes('SISTER'));
+  assert.equal(await page.locator('.current-import h3').textContent(), source.fullAddress);
+  assert.ok((await page.locator('.current-import .unit-owners').textContent()).includes(source.owners[0].fullName));
+  assert.ok((await page.locator('.current-import').textContent()).includes('LAB'));
   for (const width of [1600, 1024, 390]) {
     await page.setViewportSize({ width, height: 860 });
     assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth > document.querySelector('#detail-dialog').clientWidth + 1), false);
