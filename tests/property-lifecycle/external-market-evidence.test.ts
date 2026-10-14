@@ -41,9 +41,11 @@ describe("External Market Evidence policy and real retrieval facts", () => {
     expect(result.listing.source.portalModifiedAt).toBe("2026-09-22T00:00:00.000Z");
     expect(result.claims.find(c => c.kind === "PRICE_HISTORY")?.sourceRecordedAt).toBeNull();
   });
-  it.each(["31/02/2026", "32 mag 2026", "13/13/2026", "2026-11-01", "not a date"])("rejects malformed/future date %s", raw => {
+  it.each(["31/02/2026", "32 mag 2026", "13/13/2026", "2026-11-01", "2026-05-05Tnot-an-instant", "not a date"])("rejects malformed/future date %s", raw => {
     expect(explicitDate(raw, base.observedAt)).toBeNull();
     expect(facts({ publishedLabel: raw }).warnings).toContain("invalid_publication_date");
+    expect(facts({ publishedLabel: raw }).claims.find(c=>c.kind==="PORTAL_PUBLICATION_DATE"))
+      .toMatchObject({rawValue:raw,sourceRecordedAt:null,confidence:EXTERNAL_POLICY.confidence.invalidClaim,metadata:{interpretation:"REVIEW_REQUIRED"}});
   });
   it("supports full Italian month labels and preserves day precision", () => {
     expect(explicitDate("4 Agosto 2026", base.observedAt)).toBe("2026-08-04T00:00:00.000Z");
@@ -189,6 +191,8 @@ describe("External source DOM contracts and inventory safety", () => {
     expect(publicationIdentity("WIKICASA", base.url)).toBe("29812570");
     expect(() => publicationIdentity("WIKICASA", "https://elsewhere.test/annuncio/29812570")).toThrow();
     expect(() => publicationIdentity("IMMOBILIARE", base.url)).toThrow();
+    expect(() => publicationIdentity("WIKICASA", base.url.replace("https://","https://credential@"))).toThrow();
+    expect(() => publicationIdentity("WIKICASA", base.url.replace("wikicasa.it/","wikicasa.it:8443/"))).toThrow();
   });
   it("walks all scoped pages and deduplicates repeated card links", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(inventory(["1","1"],2,"?page=2"))).mockResolvedValueOnce(response(inventory(["2"],2)));
@@ -216,6 +220,24 @@ describe("External source DOM contracts and inventory safety", () => {
 });
 
 describe("Public source HTTP robustness", () => {
+  it("serializes concurrent calls and releases the slot after a failed request", async () => {
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>(resolve=>{release=resolve;});
+    const fetcher=vi.fn().mockReturnValueOnce(pending).mockResolvedValue(response("<main>valid</main>"));
+    const http=new ExternalPublicHttp(fetcher,async()=>{});
+    const first=http.get(base.url,"wikicasa.it"), second=http.get(base.url,"wikicasa.it");
+    await vi.waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(1));
+    release(response("unavailable",404));
+    await expect(first).rejects.toMatchObject({status:404});
+    expect((await second).status).toBe(200);expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("a queued call cannot bypass a circuit opened by the first request", async () => {
+    const fetcher=vi.fn().mockResolvedValue(response("blocked",403));
+    const http=new ExternalPublicHttp(fetcher,async()=>{});
+    const results=await Promise.allSettled([http.get(base.url,"wikicasa.it"),http.get(base.url,"wikicasa.it")]);
+    expect(results.every(result=>result.status==="rejected")).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it("403 opens the circuit and cannot become a missing observation", async () => {
     const fetcher = vi.fn().mockResolvedValue(response("blocked",403));
     const http = new ExternalPublicHttp(fetcher, async () => {});
@@ -234,6 +256,13 @@ describe("Public source HTTP robustness", () => {
     try { await new ExternalPublicHttp(fetcher,async()=>{},()=>0).get(base.url,"wikicasa.it"); throw new Error("Expected rate limit"); }
     catch(error) { expect(error).toMatchObject({reason:"retry_after_requires_job_retry",retryAfterMs:3600000});
       expect(lifecycleRetryDelayMs(1,error)).toBe(3600000); }
+  });
+  it("queued concurrent calls also respect a long Retry-After",async()=>{
+    const fetcher=vi.fn().mockResolvedValue(response("busy",500,{"retry-after":"3600"}));
+    const http=new ExternalPublicHttp(fetcher,async()=>{},()=>0);
+    const results=await Promise.allSettled([http.get(base.url,"wikicasa.it"),http.get(base.url,"wikicasa.it")]);
+    expect(results.every(result=>result.status==="rejected")).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it.each([404,410,302])("HTTP %i is not a positive or sold observation", async status => {
     await expect(new ExternalPublicHttp(vi.fn().mockResolvedValue(response("unavailable",status)),async()=>{}).get(base.url,"wikicasa.it")).rejects.toMatchObject({status});

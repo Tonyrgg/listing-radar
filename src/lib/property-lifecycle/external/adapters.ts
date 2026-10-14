@@ -3,8 +3,9 @@ import { CONTRACT_VERSION, finalizeNormalizedListing, hashValue, type EvidenceCl
 import { resolveMonitoredGeography } from "@/lib/property-lifecycle/geography/scope";
 import { EXTERNAL_POLICY, explicitDate, externalClaim, type RetrievalMethod } from "./policy";
 import { ExternalPublicHttp } from "./http";
+import { parseRemaxFacts } from "./remax";
 
-export const SOURCE_HOSTS = { WIKICASA: "wikicasa.it", IMMOBILIARE: "immobiliare.it", CASA: "casa.it", IDEALISTA: "idealista.it" } as const;
+export const SOURCE_HOSTS = { WIKICASA: "wikicasa.it", IMMOBILIARE: "immobiliare.it", CASA: "casa.it", REMAX: "stella-polare.remax.it", IDEALISTA: "idealista.it" } as const;
 type Portal = keyof typeof SOURCE_HOSTS;
 export interface ExternalFacts {
   source: Portal; url: string; observedAt: string; method: RetrievalMethod;
@@ -27,9 +28,11 @@ export interface ExternalObservation {
 export function publicationIdentity(source: Portal, url: string): string {
   const parsed = new URL(url);
   const paths = { WIKICASA: /^\/annuncio\/(\d+)\/?$/, IMMOBILIARE: /^\/annunci\/(\d+)\/?$/,
-    CASA: /^\/immobili\/(\d+)\/?$/, IDEALISTA: /^\/immobile\/(\d+)\/?$/ };
+    CASA: /^\/immobili\/(\d+)\/?$/, IDEALISTA: /^\/immobile\/(\d+)\/?$/,
+    REMAX: /^\/vendita-[a-z-]+\/(?:bitonto|palombaio|mariotto)\/[a-z0-9-]+-(\d+-\d+)\/?$/ };
   const id = parsed.pathname.match(paths[source])?.[1];
-  if (parsed.protocol !== "https:" || parsed.hostname.replace(/^www\./, "") !== SOURCE_HOSTS[source] || !id) throw new Error("Invalid public publication URL");
+  if (parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password ||
+    parsed.hostname.replace(/^www\./, "") !== SOURCE_HOSTS[source] || !id) throw new Error("Invalid public publication URL");
   return id;
 }
 
@@ -46,6 +49,12 @@ export function normalizeExternalFacts(facts: ExternalFacts): ExternalObservatio
   const modified = explicitDate(facts.modifiedLabel ?? null, facts.observedAt);
   if (facts.publishedLabel && !published) warnings.push("invalid_publication_date");
   if (facts.modifiedLabel && !modified) warnings.push("invalid_modified_date");
+  if (facts.publishedLabel && !published) claim("PORTAL_PUBLICATION_DATE", "publication.datePublished", facts.publishedLabel,
+    { declaredDate: facts.publishedLabel, valid: false }, EXTERNAL_POLICY.confidence.invalidClaim, null,
+    { interpretation: "REVIEW_REQUIRED", precision: "UNKNOWN", contradictions: ["invalid_publication_date"] });
+  if (facts.modifiedLabel && !modified) claim("PORTAL_MODIFIED_DATE", "publication.dateModified", facts.modifiedLabel,
+    { declaredDate: facts.modifiedLabel, valid: false }, EXTERNAL_POLICY.confidence.invalidClaim, null,
+    { interpretation: "REVIEW_REQUIRED", precision: "UNKNOWN", contradictions: ["invalid_modified_date"] });
   if (published) claim("PORTAL_PUBLICATION_DATE", "publication.datePublished", facts.publishedLabel ?? null,
     published, EXTERNAL_POLICY.confidence.explicitDate, published, { sourceField: facts.publishedClaimField ?? (facts.source === "WIKICASA" ? "Data annuncio" : "Explicit publication date") });
   if (modified) claim("PORTAL_MODIFIED_DATE", "publication.dateModified", facts.modifiedLabel ?? null,
@@ -128,6 +137,7 @@ function money(value: string | null): number | null {
 
 export function parseExternalHtml(source: Portal, html: string, url: string, observedAt: string): ExternalObservation {
   const externalId = publicationIdentity(source, url);
+  if (source === "REMAX") return normalizeExternalFacts(parseRemaxFacts(html,url,externalId,observedAt));
   if (source === "CASA") {
     const $ = load(html); const raw = $("script#__NEXT_DATA__").text();
     if (raw) {

@@ -4,6 +4,8 @@ Implementazione del 14 ottobre 2026. Base: 57b0581 e completamento semantico 002
 
 ## Stato dell'implementazione
 
+Follow-up del 15 ottobre: [22-external-market-primary-validation.md](22-external-market-primary-validation.md). Aggiunti tre detail HTTP primari RE/MAX, verificatore mirato/flag off e migration 0026 applicata; rafforzati evidence-only su agency incerta, concorrenza/retry e conservazione dei claim malformati. Test correnti: 407 unit, 98 integration e 25 skipped. Il report sottostante conserva i risultati della consegna iniziale, senza trasformarli in certificazione live dei portali.
+
 La base di raccolta, verifica e interpretazione è implementata su Property Lifecycle V2. **L'accesso live completo dei portali non è certificato**: l'audit ha ricevuto 403 sia con HTTP diretto sia con Chrome headless ordinario senza bypass, anche sugli URL Crocifisso reali. Tutte le nuove fonti nascono disabilitate. Un adapter testato con contratto DOM sintetico non è dichiarato validato contro il markup live.
 
 Audit eseguito prima degli adapter: [20-external-market-source-audit.md](20-external-market-source-audit.md).

@@ -16,7 +16,7 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
       create schema extensions;
       create function extensions.digest(text,text) returns bytea language sql immutable as $$
         select sha256(convert_to($1,'UTF8')) $$;`);
-    for (const file of ["0001_production_schema.sql", "0010_acquisition_os.sql", "0014_market_observer_reliability.sql", "0015_market_observer_intelligence.sql", "0016_market_observer_private_projection.sql", "0017_resource_compaction.sql", "0018_compaction_index_headroom.sql", "0019_bounded_identity_fingerprints.sql", "0020_fingerprint_update_uniqueness.sql", "0021_market_observer_read_indexes.sql", "0022_market_observer_semantics.sql", "0023_market_observer_projections.sql", "0024_external_market_evidence.sql", "0025_external_market_projections.sql"]) {
+    for (const file of ["0001_production_schema.sql", "0010_acquisition_os.sql", "0014_market_observer_reliability.sql", "0015_market_observer_intelligence.sql", "0016_market_observer_private_projection.sql", "0017_resource_compaction.sql", "0018_compaction_index_headroom.sql", "0019_bounded_identity_fingerprints.sql", "0020_fingerprint_update_uniqueness.sql", "0021_market_observer_read_indexes.sql", "0022_market_observer_semantics.sql", "0023_market_observer_projections.sql", "0024_external_market_evidence.sql", "0025_external_market_projections.sql", "0026_external_market_primary_verifier.sql"]) {
       const sql = await readFile(`supabase/migrations/${file}`, "utf8");
       await db.exec(sql.replace(/create extension if not exists pgcrypto;/g, ""));
     }

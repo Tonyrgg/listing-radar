@@ -1,0 +1,56 @@
+[
+  {
+    "id": "wikicasa-reference",
+    "url": "https://www.wikicasa.it/annuncio/29812570",
+    "observedAt": "2026-10-14T21:56:53.293Z",
+    "status": 403,
+    "contentType": "text/html; charset=UTF-8",
+    "bytes": 5485,
+    "challenge": true
+  },
+  {
+    "id": "immobiliare-reference",
+    "url": "https://www.immobiliare.it/annunci/128823342/",
+    "observedAt": "2026-10-14T21:56:54.917Z",
+    "status": 403,
+    "contentType": "text/html;charset=utf-8",
+    "bytes": 774,
+    "challenge": true
+  },
+  {
+    "id": "remax-reference",
+    "url": "https://stella-polare.remax.it/vendita-casa-indipendente/bitonto/centro-41091011-176",
+    "observedAt": "2026-10-14T21:56:56.900Z",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "bytes": 858980,
+    "challenge": false
+  },
+  {
+    "id": "remax-home",
+    "url": "https://stella-polare.remax.it/",
+    "observedAt": "2026-10-14T21:56:58.547Z",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "bytes": 621326,
+    "challenge": false
+  },
+  {
+    "id": "gabetti-reference",
+    "url": "https://www.gabetti.it/vendita/bitonto/appartamento/3339528",
+    "observedAt": "2026-10-14T21:57:00.541Z",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "bytes": 62478,
+    "challenge": false
+  },
+  {
+    "id": "gabetti-robots",
+    "url": "https://www.gabetti.it/robots.txt",
+    "observedAt": "2026-10-14T21:57:02.085Z",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "bytes": 300,
+    "challenge": false
+  }
+]

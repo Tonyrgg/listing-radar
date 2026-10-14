@@ -3,12 +3,12 @@ import { hashValue, type EvidenceClaim } from "@/lib/property-lifecycle/contract
 export const EXTERNAL_POLICY = {
   version: "external_market_evidence_v1",
   confidence: { explicitDate: 0.95, explicitStatus: 0.95, currentPrice: 0.95, previousPrice: 0.9,
-    identity: 0.9, agent: 0.9, primaryCapture: 0.9, indexCapture: 0.65, contradictionPenalty: 0.2 },
+    identity: 0.9, agent: 0.9, primaryCapture: 0.9, indexCapture: 0.65, invalidClaim: 0.45, contradictionPenalty: 0.2 },
   http: { concurrency: 1, delayMs: 1500, timeoutMs: 20_000, retries: 2, maxPages: 100, maxBodyBytes: 5_000_000 },
   deepRotationHours: 168,
   configRefreshMs: 30_000,
 } as const;
-export const EXTERNAL_SOURCES = ["WIKICASA", "IMMOBILIARE", "CASA", "IDEALISTA", "SEARCH_INDEX"] as const;
+export const EXTERNAL_SOURCES = ["WIKICASA", "IMMOBILIARE", "CASA", "REMAX", "IDEALISTA", "SEARCH_INDEX"] as const;
 export type ExternalSource = typeof EXTERNAL_SOURCES[number];
 export type AgencyRole = "OUR_AGENCY" | "COMPETITOR" | "PRIVATE" | "UNKNOWN";
 export type RetrievalMethod = "PRIMARY_HTTP" | "PRIMARY_CAPTURE" | "INDEX_CAPTURE";
@@ -16,6 +16,7 @@ export type RetrievalMethod = "PRIMARY_HTTP" | "PRIMARY_CAPTURE" | "INDEX_CAPTUR
 // A calendar date is a day, not a guessed instant of publication. Preserve precision in metadata.
 export function explicitDate(raw: string | null, observedAt: string): string | null {
   if (!raw) return null;
+  if (raw.includes("T") && !Number.isFinite(Date.parse(raw))) return null;
   const months = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
   let parts = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
   let year: number, month: number, day: number;

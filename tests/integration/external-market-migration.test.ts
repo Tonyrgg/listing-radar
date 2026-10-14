@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { historicalEvidence, normalizeExternalFacts, type ExternalFacts } from "@/lib/property-lifecycle/external/adapters";
+import { historicalEvidence, normalizeExternalFacts, parseExternalHtml, type ExternalFacts } from "@/lib/property-lifecycle/external/adapters";
 import real from "../fixtures/property-lifecycle/external/real-retrieval-facts.json";
+import remax from "../fixtures/property-lifecycle/external/remax/manifest.json";
 
 describe.sequential("External evidence migrations on actual PostgreSQL", () => {
   let db: PGlite; let agency: string;
@@ -16,7 +17,7 @@ describe.sequential("External evidence migrations on actual PostgreSQL", () => {
       "0015_market_observer_intelligence.sql","0016_market_observer_private_projection.sql","0017_resource_compaction.sql",
       "0018_compaction_index_headroom.sql","0019_bounded_identity_fingerprints.sql","0020_fingerprint_update_uniqueness.sql",
       "0021_market_observer_read_indexes.sql","0022_market_observer_semantics.sql","0023_market_observer_projections.sql",
-      "0024_external_market_evidence.sql","0025_external_market_projections.sql"]) {
+      "0024_external_market_evidence.sql","0025_external_market_projections.sql","0026_external_market_primary_verifier.sql"]) {
       await db.exec((await readFile(`supabase/migrations/${file}`,"utf8")).replace(/create extension if not exists pgcrypto;/g,""));
     }
   }, 30_000);
@@ -40,6 +41,25 @@ describe.sequential("External evidence migrations on actual PostgreSQL", () => {
     expect(await row("select enabled,projections_enabled,missing_enabled from market_observer_sources where source_key='CASA'"))
       .toEqual({enabled:false,projections_enabled:false,missing_enabled:false});
     expect((await row("select count(*)::integer n from market_observer_agency_identities")).n).toBe(0);
+  });
+  it("RE/MAX is a disabled targeted source with no inventory and no missing permission",async()=>{
+    expect(await row("select enabled,projections_enabled,missing_enabled,inventory_roots from market_observer_sources where source_key='REMAX'"))
+      .toEqual({enabled:false,projections_enabled:false,missing_enabled:false,inventory_roots:[]});
+  });
+  it("primary RE/MAX evidence enriches an existing Wikicasa property without inventing an acquisition date or relisting",async()=>{
+    const first=await observe();
+    await db.exec("update market_observer_sources set enabled=true,projections_enabled=true where source_key='REMAX'");
+    const o=parseExternalHtml("REMAX",await readFile("tests/fixtures/property-lifecycle/external/remax/crocifisso.html","utf8"),remax[0].url,remax[0].observedAt);
+    const result=(await row("select persist_market_external_observation_atomic('REMAX',$1,$2,$3,$4) result",[
+      agency,JSON.stringify(o.listing),JSON.stringify({outcome:"AUTO_MATCH",propertyId:first.propertyId,score:1,candidates:[]}),JSON.stringify(o.claims)])).result as {propertyId:string};
+    expect(result.propertyId).toBe(first.propertyId);
+    expect((await row("select count(*)::integer n from properties")).n).toBe(1);
+    expect((await row("select count(*)::integer n from publications")).n).toBe(2);
+    expect((await row("select count(*)::integer n from events where event_type in ('PUBLICATION_RELAUNCHED','PRICE_DROP')")).n).toBe(0);
+    expect((await row("select estimated_acquisition_at from agency_listings")).estimated_acquisition_at).toBeNull();
+    expect((await row("select agent_name from market_observer_intelligence")).agent_name).toBe("Nicola Sicolo");
+    await db.query("update agency_listings set state='EXIT_PENDING' where id=$1",[first.agencyListingId]);
+    expect((await row("select payload->>'source' source from lifecycle_jobs where job_type='VERIFY_MARKET_PUBLICATION'")).source).toBe("REMAX");
   });
   it("creates only a V2 property and evidence while preserving first_seen and null acquisition",async()=>{
     const first=await observe();

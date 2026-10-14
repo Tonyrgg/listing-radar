@@ -56,6 +56,15 @@ export async function runExternalSourceJob(db: SupabaseClient, job: LifecycleJob
       agency_id:typeof details.agencyId === "string" ? details.agencyId : null,
       dedupe_key: `external:${source}:${key}` }, { onConflict: "dedupe_key" })); counts.review_count++;
   };
+  const retainKnownEvidence = async (observation: ExternalObservation, target: { propertyId: string; publicationId: string }) => {
+    assertOwnership();
+    const claims = observation.claims.map(claim => ({ ...claim, metadata: { ...claim.metadata,
+      targetedVerification: true, attribution: "KNOWN_PUBLICATION_URL", agencyResolution: "REVIEW_REQUIRED" } }));
+    checked(await db.rpc("market_external_claims_atomic", { p_property_id: target.propertyId, p_publication_id: target.publicationId,
+      p_sync_run_id: null, p_source_key: source, p_claims: claims, p_observed_at: observation.listing.observedAt }));
+    // Preserve verifiable facts, without changing current presence, agency or the commercial state.
+    state = "DEGRADED"; reasons.push("known_publication_evidence_requires_agency_review");
+  };
   const ingest = async (observation: ExternalObservation, marker: string | null, target?: { agencyId: string; propertyId: string; publicationId: string }) => {
     assertOwnership();
     const { listing } = observation;
@@ -71,10 +80,14 @@ export async function runExternalSourceJob(db: SupabaseClient, job: LifecycleJob
       (observation.agency.name != null && i.normalized_name === normalizedAgencyName(observation.agency.name))).map(i => i.agency_id))];
     if (mapped.length !== 1) {
       await review(listing.source.externalId, "Agenzia della publication esterna da collegare", { source, agency: observation.agency,
-        url: listing.source.canonicalUrl, observedAt: listing.observedAt, claims: observation.claims, normalizedListing:listing, ambiguousMapping: mapped }); return;
+        url: listing.source.canonicalUrl, observedAt: listing.observedAt, claims: observation.claims, normalizedListing:listing, ambiguousMapping: mapped });
+      if (target) await retainKnownEvidence(observation,target);
+      return;
     }
     if (target && mapped[0] !== target.agencyId) {
-      await review(listing.source.externalId, "Agenzia diversa sulla publication nota", { source, target, agency: observation.agency, mapped }); return;
+      await review(listing.source.externalId, "Agenzia diversa sulla publication nota", { source, target, agency: observation.agency, mapped });
+      await retainKnownEvidence(observation,target);
+      return;
     }
     if (!agencyCache.has(mapped[0])) agencyCache.set(mapped[0],Promise.resolve(db.from("agencies").select("id,slug,market_role").eq("id",mapped[0]).single())
       .then(result=>checked(result) as { id:string;slug:string;market_role:string }));
@@ -133,7 +146,7 @@ export async function runExternalSourceJob(db: SupabaseClient, job: LifecycleJob
         catch (error) {
           if (error instanceof Error && /source disabled/i.test(error.message)) throw error;
           if (error instanceof SourceAccessError && ([401,403,429].includes(error.status ?? 0) ||
-            ["source_unavailable","source_circuit_open"].includes(error.reason))) throw error;
+            ["source_unavailable","source_circuit_open","retry_after_requires_job_retry","challenge_page"].includes(error.reason))) throw error;
           detailErrors.push(`${item.externalId}:${error instanceof Error ? error.message : "detail_failed"}`);
         }
       }

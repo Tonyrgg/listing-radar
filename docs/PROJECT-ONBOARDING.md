@@ -280,6 +280,8 @@ Osservazioni invariate riusano le versioni e conservano ricevute di presenza. As
 
 ### Contratto adapter
 
+Follow-up External Evidence del 15 ottobre: **0026** applicata online aggiunge RE/MAX Stella Polare soltanto come verificatore di URL noti, con tre fixture HTTP primarie in Bitonto, agency/agente dichiarati e flag spento. Inventory e missing non certificati; portali bloccati restano off. Date malformate conservate come prove non interpretabili, verifica nota con agency incerta in evidence/review senza cambiare presenza/stato, HTTP seriale con circuit e Retry-After. [Verifica primaria/limiti/test](property-lifecycle/22-external-market-primary-validation.md). Nessun backfill o deploy web/runtime; nessun intervento al desktop.
+
 Ogni adapter deve restituire pubblicazioni normalizzate con evidenza della fonte, identificatore esterno, URL, stato, dati immobiliari, geografia e media disponibili. La matrice delle fonti e le regole per agenzia sono in:
 
 - `docs/property-lifecycle/04-adapter-contract.md`;

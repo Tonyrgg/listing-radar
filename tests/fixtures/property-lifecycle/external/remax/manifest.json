@@ -1,0 +1,68 @@
+[
+  {
+    "id": "crocifisso",
+    "url": "https://stella-polare.remax.it/vendita-casa-indipendente/bitonto/centro-41091011-176",
+    "status": 200,
+    "observedAt": "2026-10-14T22:01:33.039Z",
+    "method": "PRIMARY_HTTP",
+    "rawSha256": "c509691a688fa5a2255683583cd73631bda365d5146491d2cb2d3f8e56d5fa9c",
+    "fixtureSha256": "8e477769f3dd2f1e8999bdb9b416358430428855a247008e9ea1e1394994c5b5",
+    "transformations": [
+      "remove executable scripts and style",
+      "remove navigation, forms, controls, header/footer and iframe",
+      "remove nonce attributes"
+    ],
+    "fields": {
+      "address": "via Crocifisso 52",
+      "published": "2026-05-05T00:00:00.000Z",
+      "price": 155000,
+      "agency": "REMAX Stella Polare - Bari Via Caduti del Lavoro",
+      "agent": "Nicola Sicolo",
+      "images": 25
+    }
+  },
+  {
+    "id": "loiacono",
+    "url": "https://stella-polare.remax.it/vendita-appartamento/bitonto/centro-41091011-172",
+    "status": 200,
+    "observedAt": "2026-10-14T22:01:34.899Z",
+    "method": "PRIMARY_HTTP",
+    "rawSha256": "e36eff9ed190a28d548e9b87063ce77c05a26575a97e9bd86db40316c022414a",
+    "fixtureSha256": "9541ae601d7189751915796eef501b89c953937cc615b5e71cd7ecbfe8d62305",
+    "transformations": [
+      "remove executable scripts and style",
+      "remove navigation, forms, controls, header/footer and iframe",
+      "remove nonce attributes"
+    ],
+    "fields": {
+      "address": "Corte Abbate Loiacono 8",
+      "published": "2026-04-13T00:00:00.000Z",
+      "price": 40000,
+      "agency": "REMAX Stella Polare - Bari Via Caduti del Lavoro",
+      "agent": "Nicola Sicolo",
+      "images": 38
+    }
+  },
+  {
+    "id": "romano",
+    "url": "https://stella-polare.remax.it/vendita-appartamento/bitonto/centro-41091011-200",
+    "status": 200,
+    "observedAt": "2026-10-14T22:01:36.770Z",
+    "method": "PRIMARY_HTTP",
+    "rawSha256": "aa2c5c015dfd60e3716d5a977d794626a4144919f70637b83e4ca151bfc14764",
+    "fixtureSha256": "f6435a3c135b3c62745b268608843e300b390bee9140acbeb5455465bf3fb31a",
+    "transformations": [
+      "remove executable scripts and style",
+      "remove navigation, forms, controls, header/footer and iframe",
+      "remove nonce attributes"
+    ],
+    "fields": {
+      "address": "via Giandomenico Romano 20",
+      "published": "2026-10-01T00:00:00.000Z",
+      "price": 225000,
+      "agency": "REMAX Stella Polare - Bari Via Caduti del Lavoro",
+      "agent": "Nicola Sicolo",
+      "images": 16
+    }
+  }
+]
