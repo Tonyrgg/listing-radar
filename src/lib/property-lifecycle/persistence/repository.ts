@@ -21,6 +21,7 @@ import {
   type HealthBaselineEvaluation,
 } from "@/lib/property-lifecycle/health/baseline";
 import { resolveAuthoritativeValue } from "@/lib/property-lifecycle/lifecycle/manual-overrides";
+import { decideExternalPropertyIdentity } from "@/lib/property-lifecycle/external/identity";
 import {
   type AgencyListingState,
   type PublicationPresence,
@@ -532,6 +533,8 @@ export class PropertyLifecycleRepository {
     counts: SyncRunCounts;
     structureFingerprint: string;
     diagnostics: Record<string, unknown>;
+    observedSourceKeys?: string[];
+    finishedAt?: string;
   }): Promise<void> {
     const { error } = await this.db
       .from("sync_runs")
@@ -550,7 +553,8 @@ export class PropertyLifecycleRepository {
         transitioned_count: input.counts.transitionedCount,
         structure_fingerprint: input.structureFingerprint,
         diagnostics: input.diagnostics,
-        finished_at: new Date().toISOString(),
+        finished_at: input.finishedAt ?? new Date().toISOString(),
+        ...(input.observedSourceKeys ? { inventory_observed_keys: input.observedSourceKeys } : {}),
       })
       .eq("id", input.syncRunId);
     throwIfError(error);
@@ -837,6 +841,17 @@ export class PropertyLifecycleRepository {
       createdPublication: result.createdPublication,
     };
   }
+
+  /** External publications use the same candidate catalog and conservative V2 resolver. */
+  async resolveExternalIdentity(agencyId: string, listing: NormalizedListingV2, assets: ProcessedAsset[] = [], excludedPropertyIds: string[] = []): Promise<IdentityDecision> {
+    const publication = await this.publicationBySource(agencyId, listing.source.sourceKey);
+    if (publication) return { outcome: "AUTO_MATCH", propertyId: (await this.agencyListing(publication.agency_listing_id)).property_id,
+      score: 1, margin: 1, candidates: [] };
+    return decideExternalPropertyIdentity(identityObservationFromListing(listing, assets),
+      (await this.identityCandidates(agencyId)).filter(candidate=>!excludedPropertyIds.includes(candidate.propertyId)));
+  }
+
+  invalidateExternalIdentityCatalog(agencyId: string): void { this.identityCatalog.delete(agencyId); }
 
   private async uploadRepresentativeThumbnails(
     propertyId: string,

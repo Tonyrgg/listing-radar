@@ -285,7 +285,9 @@ function propertyTypeFamily(value: string | null): string | null {
   if (/garage|box|posto auto|autorimessa/.test(normalized)) return "GARAGE";
   if (/terreno|agricol|suolo/.test(normalized)) return "LAND";
   if (/locale|negozio|commerciale|ufficio|deposito|capannone/.test(normalized)) return "COMMERCIAL";
-  if (/villa|casa indipendente|palazzo|stabile/.test(normalized)) return "INDEPENDENT";
+  // Portal taxonomies call an independent house "terratetto unifamiliare".
+  // Keep the candidate for review; exact-type disagreement still contributes a scoring contradiction.
+  if (/villa|villino|casa indipendente|casa singola|terratetto|palazzo|stabile/.test(normalized)) return "INDEPENDENT";
   if (/appartamento|attico|mansarda|loft/.test(normalized)) return "APARTMENT";
   return normalized;
 }

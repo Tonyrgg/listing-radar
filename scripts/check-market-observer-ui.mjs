@@ -22,6 +22,7 @@ try{
       if(overflow) throw new Error(`Horizontal overflow ${view} ${width}`);
       const content=await page.locator("main").innerText();
       if(/SOLD_CONFIRMED|UNKNOWN_EXIT|MISSING_UNCONFIRMED/.test(content)) throw new Error("Raw state leaked into the UI.");
+      if(!await page.getByLabel("Cerca indirizzo",{exact:true}).isVisible()) throw new Error("Address filter missing.");
       await page.screenshot({path:`${folder}/${view}-${width}.png`,fullPage:true});
       results.push({view,width,overflow:false});
     }
@@ -34,6 +35,40 @@ try{
     await page.screenshot({path:`${folder}/property-${width}.png`,fullPage:true});
     results.push({view:"property",width,overflow:false});
   }
+  await page.goto(`${base}/intelligence`,{waitUntil:"networkidle"});
+  await page.getByLabel("Agenzia",{exact:true}).selectOption("22222222-2222-4222-8222-222222222222");
+  await page.getByLabel("Giorni minimi",{exact:true}).fill("150");
+  await page.getByLabel("Punteggio minimo",{exact:true}).fill("30");
+  await page.getByRole("button",{name:"Cerca",exact:true}).click();
+  await page.waitForURL(url=>url.searchParams.get("giorni")==="150" && url.searchParams.get("punteggio")==="30");
+  await page.getByRole("link",{name:"Azzera filtri",exact:true}).click();
+  await page.waitForURL(url=>!url.searchParams.has("giorni"));
+  results.push({view:"filter-submit-and-reset",width:1600});
+  await page.goto(`${base}/casa/11111111-1111-4111-8111-111111111111`,{waitUntil:"networkidle"});
+  await page.getByRole("link",{name:"Eventi e prove precedenti",exact:true}).click();
+  await page.waitForURL(url=>url.searchParams.get("storia")==="2");
+  await page.getByText(/Mostra le .* prove conservate/).click();
+  await page.getByText("Prova storica 61",{exact:true}).waitFor();
+  await page.getByRole("link",{name:"Storico più recente",exact:true}).click();
+  await page.waitForURL(url=>url.searchParams.get("storia")==="1");
+  results.push({view:"historical-evidence-pagination",width:1600});
+  await page.goto(`${base}/intelligence?vista=mercato`,{waitUntil:"networkidle"});
+  await page.getByText("Panoramica delle agenzie monitorate",{exact:true}).click();
+  await page.getByText(/Età mercato mediana 161/).waitFor();
+  if(!(await page.getByText(/Sul mercato da almeno/).first().getAttribute("title"))?.includes("Wikicasa")) throw new Error("Market age provenance missing.");
+  results.push({view:"agency-intelligence-and-age-provenance",width:1600});
+  await page.goto(`${base}/casa/11111111-1111-4111-8111-111111111111`,{waitUntil:"networkidle"});
+  await page.getByText(/Mostra le .* prove conservate/).click();
+  await page.getByText("Data della variazione non dichiarata.",{exact:false}).waitFor();
+  await page.locator("li").filter({has:page.getByText("Data della variazione non dichiarata.",{exact:false})}).getByText("Dettagli della prova",{exact:true}).click();
+  await page.getByText("Copia recuperata dall’indice: non dimostra presenza attuale.",{exact:true}).waitFor();
+  results.push({view:"external-evidence-unknown-price-date-and-confidence",width:1600});
+  await page.goto(`${base}/fonti`,{waitUntil:"networkidle"});
+  await page.getByRole("heading",{name:"Prove dalle fonti esterne",exact:true}).waitFor();
+  await page.getByText(/In questa fase i portali non autorizzano assenze/).waitFor();
+  await page.getByRole("heading",{name:"1 agenzie osservate",exact:true}).waitFor();
+  await page.screenshot({path:`${folder}/external-source-health.png`,fullPage:true});
+  results.push({view:"external-source-health-and-flags",width:1600});
   if(errors.length) throw new Error(errors.join("\n"));
   await writeFile(`${folder}/results.json`,JSON.stringify({syntheticReadOnly:true,results,errors},null,2));
   console.log(`${results.length} visual scenarios passed: 390, 1024 and 1600 px; no horizontal overflow or runtime errors.`);

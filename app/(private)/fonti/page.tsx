@@ -11,6 +11,8 @@ import { formatDateTime, formatNumber } from "@/lib/formatting";
 import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
 import { getSourcesSummary } from "@/lib/sources-health";
 import type { SourceHealth } from "@/components/ui/atoms";
+import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { readExternalSourceStatus } from "@/lib/property-lifecycle/read-models/external";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Fonti" };
@@ -47,9 +49,10 @@ const tono: Record<SourceHealth, "action" | "warn" | "danger" | "neutral"> = {
 export default async function FontiPage() {
   await connection();
 
-  const [sommario, vista] = await Promise.all([
+  const [sommario, vista, external] = await Promise.all([
     getSourcesSummary(),
     vistaAgenzie(),
+    Promise.resolve().then(() => readExternalSourceStatus(getSupabaseServiceClient())).catch(() => null),
   ]);
 
   if (!vista.available || !vista.data) {
@@ -114,6 +117,7 @@ export default async function FontiPage() {
       />
 
       {/* La regola non negoziabile del progetto, scritta dove serve. */}
+      {external ? <Card className="p-4"><h2 className="font-[650]">Prove dalle fonti esterne</h2><Meta>In questa fase i portali non autorizzano assenze. Una verifica puntuale non dimostra un inventario completo.</Meta><div className="mt-3 divide-y divide-[var(--lr-line-quiet)]">{external.map(source=><div key={source.key} className="flex flex-wrap justify-between gap-2 py-3"><strong>{({WIKICASA:"Wikicasa",IMMOBILIARE:"Immobiliare.it",CASA:"Casa.it",IDEALISTA:"Idealista",SEARCH_INDEX:"Indice storico"} as Record<string,string>)[source.key] ?? source.key}</strong><div className="text-[length:var(--lr-text-meta)]"><p>{!source.enabled ? "Disattivata" : source.state==="FAILED" ? "Non letta" : source.state==="DEGRADED" ? "Lettura parziale" : source.state==="RUNNING" ? "Lettura in corso" : source.inventoryComplete ? "Inventario completo nello scope configurato" : source.state ? "Verifica puntuale" : "In attesa del primo run"} · {source.projectionsEnabled ? "Prove usate nell’intelligence" : "Prove in valutazione"}</p><Meta>{source.finishedAt ? `Ultimo run ${formatDateTime(source.finishedAt)} · ` : ""}{source.discovered} annunci · {source.details} dettagli richiesti{source.key==="WIKICASA" ? ` · ${source.baselineReady ? "baseline pronta" : "baseline da verificare"}` : ""}</Meta></div></div>)}</div></Card> : null}
       {sommario.broken.length ? (
         <Card className="p-4">
           <div className="flex gap-3">

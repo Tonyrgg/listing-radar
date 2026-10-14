@@ -54,6 +54,7 @@ export const normalizedLocationSchema = z.object({
   rawText: nullableText,
   municipality: nullableText,
   locality: nullableText,
+  zoneName: nullableText.optional(),
   postalCode: nullableText,
   streetName: nullableText,
   streetNumber: nullableText,
@@ -101,6 +102,7 @@ export const normalizedListingV2Schema = z.object({
     // Source publication/modification dates never describe a signed mandate.
     portalPublishedAt: z.iso.datetime().nullable().optional(),
     portalModifiedAt: z.iso.datetime().nullable().optional(),
+    soldAt: z.iso.datetime().nullable().optional(),
     transactionType: z.enum(["SALE", "RENT", "OTHER", "UNKNOWN"]),
   }),
   commercial: z.object({
@@ -183,6 +185,8 @@ export function finalizeNormalizedListing(input: ListingWithoutHash): Normalized
   ];
   const validDate = (value: unknown): string | null => {
     if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value)) return null;
+    const [year,month,day]=value.slice(0,10).split("-").map(Number);
+    if (new Date(Date.UTC(year,month-1,day)).toISOString().slice(0,10)!==value.slice(0,10)) return null;
     const time = Date.parse(value);
     return Number.isFinite(time) && time <= Date.parse(input.observedAt)
       ? new Date(time).toISOString() : null;
@@ -193,10 +197,23 @@ export function finalizeNormalizedListing(input: ListingWithoutHash): Normalized
       ...input.source,
       portalPublishedAt: validDate(input.source.portalPublishedAt ?? publicationClaim?.sourceRecordedAt),
       portalModifiedAt: validDate(input.source.portalModifiedAt ?? modifiedCandidates.find((value) => validDate(value))),
+      soldAt: validDate(input.source.soldAt),
     },
   };
+  // An explicit source sale date is evidence, never the date we inserted the record.
+  if (input.source.soldAt && input.status.value === "SOLD" && !input.status.evidence.some((claim) => claim.claimKey === "publication.soldAt")) {
+    input.status = { ...input.status, evidence: [...input.status.evidence, {
+      kind: "STATUS", claimKey: "publication.soldAt", sourceUrl: input.source.canonicalUrl,
+      extractionMethod: "SOURCE_EXPLICIT_SALE_DATE_V1", rawValue: input.source.soldAt,
+      normalizedValue: input.source.soldAt, confidence: input.status.confidence,
+      observedAt: input.observedAt, sourceRecordedAt: input.source.soldAt, metadata: {},
+    }] };
+  }
   const hashInput = {
     ...input,
+    // Optional evidence fields absent on historical observations must not change their hash merely to null.
+    source: { ...input.source, soldAt: input.source.soldAt ?? undefined },
+    location: { ...input.location, zoneName: input.location.zoneName ?? undefined },
     observedAt: undefined,
     response: {
       ...input.response,

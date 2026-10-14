@@ -180,6 +180,33 @@ export async function runAgencySync(input: {
     const absenceEvaluationAllowed =
       healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP";
 
+
+    const status: "SUCCEEDED" | "FAILED" | "PARTIAL" = healthState === "FAILED" ? "FAILED" : healthState === "HEALTHY" ? "SUCCEEDED" : "PARTIAL";
+    const completion = {
+      syncRunId,
+      status,
+      observedSourceKeys: [...observedSourceKeys],
+      finishedAt: observedAt,
+      healthState,
+      inventoryComplete,
+      absenceEvaluationAllowed,
+      expectedCount: inventory.diagnostics.expectedCount,
+      counts,
+      structureFingerprint: inventory.structureFingerprint,
+      diagnostics: {
+        inventory: inventory.diagnostics,
+        detailErrorRatio,
+        detailErrors,
+        assetWarnings,
+        durationMs: Date.now() - startedAt,
+        processedCount: counts.normalizedCount,
+        successPercentage: counts.discoveredCount > 0
+          ? Math.round(100 * counts.normalizedCount / counts.discoveredCount) : 0,
+        timeoutCount: detailErrors.filter((issue) => /timeout|timed out|abort/i.test(issue.message)).length,
+      },
+    };
+    // Absence is committed only after the source inventory and its health are durably complete.
+    await input.repository.finalizeSyncRun(completion);
     if (absenceEvaluationAllowed) {
       const missing = await input.repository.applyMissingObservations({
         agencyId: agency.id,
@@ -198,28 +225,7 @@ export async function runAgencySync(input: {
       counts.transitionedCount += missing.transitionedCount;
     }
 
-    const status = healthState === "FAILED" ? "FAILED" : healthState === "HEALTHY" ? "SUCCEEDED" : "PARTIAL";
-    await input.repository.finalizeSyncRun({
-      syncRunId,
-      status,
-      healthState,
-      inventoryComplete,
-      absenceEvaluationAllowed,
-      expectedCount: inventory.diagnostics.expectedCount,
-      counts,
-      structureFingerprint: inventory.structureFingerprint,
-      diagnostics: {
-        inventory: inventory.diagnostics,
-        detailErrorRatio,
-        detailErrors,
-        assetWarnings,
-        durationMs: Date.now() - startedAt,
-        processedCount: counts.normalizedCount,
-        successPercentage: counts.discoveredCount > 0
-          ? Math.round(100 * counts.normalizedCount / counts.discoveredCount) : 0,
-        timeoutCount: detailErrors.filter((issue) => /timeout|timed out|abort/i.test(issue.message)).length,
-      },
-    });
+    if (counts.missingCount || counts.transitionedCount) await input.repository.finalizeSyncRun({...completion,counts});
 
     return {
       syncRunId,

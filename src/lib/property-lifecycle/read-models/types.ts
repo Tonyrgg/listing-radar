@@ -189,6 +189,8 @@ export interface LifecyclePropertyDetail {
     confidence: number;
     actorType: string;
     payload: Record<string, unknown>;
+    publicationId?: string | null;
+    sourceUrl?: string | null;
   }>;
   evidence: Array<{
     id: string;
@@ -198,6 +200,9 @@ export interface LifecyclePropertyDetail {
     confidence: number;
     observedAt: string;
     sourceRecordedAt: string | null;
+    rawValue?: string | null;
+    normalizedValue?: unknown;
+    metadata?: Record<string, unknown>;
     sourceUrl?: string | null;
     publicationId?: string | null;
   }>;
@@ -220,8 +225,15 @@ export interface LifecyclePropertyDetail {
     effectiveAt: string;
   }>;
   imageUrls: string[];
+  historyPage?: number; historyHasNext?: boolean;
+  marketObservation?: {
+    publicationId: string | null; latestPrice: number | null; sourceUrl: string | null;
+    soldAt: string | null; soldObservedAt: string | null; priceConflict: boolean;
+    classification: string; confidence: number | null; classifiedAt: string | null;
+  };
   publicationPrices?: Array<{
     publicationId: string; firstPrice: number | null; latestPrice: number | null;
     reductionPercent: number | null; dropCount: number; sourceUrl: string;
+    firstObservedAt?: string | null; latestObservedAt?: string | null; dropDates?: string[];
   }>;
 }

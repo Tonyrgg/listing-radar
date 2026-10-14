@@ -190,6 +190,18 @@ function repository(decision: "IN_SCOPE" | "OUT_OF_SCOPE" | null) {
 }
 
 describe("geography reviews across syncs", () => {
+  it("persists a completed inventory and health before committing missing observations",async()=>{
+    const {repository:repo}=repository(null);const order:string[]=[];
+    repo.recordAdapterHealth=async()=>({effectiveState:"HEALTHY",inventoryComplete:true,absenceEvaluationAllowed:true,next:{} } as never);
+    repo.finalizeSyncRun=async input=>{
+      expect(input.status).toBe("SUCCEEDED");
+      expect(input.observedSourceKeys).toHaveLength(1);
+      expect(input.finishedAt).toBeTruthy();order.push("completed");
+    };
+    repo.applyMissingObservations=async()=>{expect(order).toEqual(["completed"]);order.push("missing");return {missingCount:0,transitionedCount:0};};
+    await runAgencySync({adapter:new FixtureAdapter([listing("IN_SCOPE")]),repository:repo});
+    expect(order.slice(0,2)).toEqual(["completed","missing"]);
+  });
   it("queues the case and keeps the listing out while nobody has answered", async () => {
     const { queued, persisted, repository: repo } = repository(null);
 

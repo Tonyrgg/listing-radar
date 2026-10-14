@@ -1,0 +1,67 @@
+{
+  "kind": "REAL_HTTP_ACCESS_METADATA_NO_CHALLENGE_TOKENS",
+  "records": [
+    {
+      "name": "wikicasa-inventory",
+      "url": "https://www.wikicasa.it/vendita-case/bitonto/",
+      "status": 403,
+      "bytes": 5485,
+      "observedAt": "2026-10-14T20:13:51.308Z",
+      "sha256": "253681a0cba6124be0146c15b34f458df908edbc15d8ed8e6e8a5fb8b93408f1",
+      "title": "Attention Required! | Cloudflare"
+    },
+    {
+      "name": "wikicasa-admaiora",
+      "url": "https://www.wikicasa.it/annuncio/30533235",
+      "status": 403,
+      "bytes": 5485,
+      "observedAt": "2026-10-14T20:13:52.453Z",
+      "sha256": "c57eefede4ff63641cb3425d42c6a0167a09ed3e27a999a4c420640ff1cfc269",
+      "title": "Attention Required! | Cloudflare"
+    },
+    {
+      "name": "wikicasa-studisanti",
+      "url": "https://www.wikicasa.it/annuncio/30644308",
+      "status": 403,
+      "bytes": 5485,
+      "observedAt": "2026-10-14T20:13:53.610Z",
+      "sha256": "b2c66842b400cd04add1c497b1419582586e4778274be69fff01adb0720c1507",
+      "title": "Attention Required! | Cloudflare"
+    },
+    {
+      "name": "wikicasa-studisanti-discount",
+      "url": "https://www.wikicasa.it/annuncio/28897794",
+      "status": 403,
+      "bytes": 5485,
+      "observedAt": "2026-10-14T20:13:54.758Z",
+      "sha256": "6d31a94d607c40d7a6ef5eff379bd451899ae532eca15b8c6915fd97b76804e1",
+      "title": "Attention Required! | Cloudflare"
+    },
+    {
+      "name": "wikicasa-robots",
+      "url": "https://www.wikicasa.it/robots.txt",
+      "status": 200,
+      "bytes": 1615,
+      "observedAt": "2026-10-14T20:13:55.914Z",
+      "sha256": "7c5314beeeec6c9b3cf76563e053fdbbd3bc76bb20f2ab876f0ae6bb21e74e63"
+    },
+    {
+      "name": "casa-known",
+      "url": "https://www.casa.it/immobili/54520194/",
+      "status": 403,
+      "bytes": 770,
+      "observedAt": "2026-10-14T20:13:57.190Z",
+      "sha256": "1263044bfa13810f585a6fd2db0f0f1f178300a3958b81c257e1b7c937ef42eb",
+      "title": "casa.it"
+    },
+    {
+      "name": "immobiliare-known",
+      "url": "https://www.immobiliare.it/annunci/122004746/",
+      "status": 403,
+      "bytes": 774,
+      "observedAt": "2026-10-14T20:13:58.415Z",
+      "sha256": "32f3d19f0b2e98c6668dba28dc51ee0a50aff1d390c703260b800e505ac8b289",
+      "title": "immobiliare.it"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MappaDellaCasa } from "@/components/casa/mappa-della-casa";
+import { marketAgeLabel } from "@/lib/property-lifecycle/read-models/intelligence";
 import { RigaDiVita } from "@/components/casa/riga-di-vita";
 import { PendingSubmitButton } from "@/components/loading-controls";
 import {
@@ -100,7 +101,7 @@ function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
   >();
 
   for (const prova of evidence) {
-    const chiave = `${prova.publicationId ?? prova.sourceUrl ?? ""}|${prova.claimKey}|${prova.extractionMethod}`;
+    const chiave = `${prova.publicationId ?? prova.sourceUrl ?? ""}|${prova.claimKey}|${prova.extractionMethod}|${JSON.stringify(prova.normalizedValue??prova.rawValue??null)}`;
     const quando = prova.sourceRecordedAt ?? prova.observedAt;
     const gia = migliori.get(chiave);
 
@@ -114,15 +115,6 @@ function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
       b.sourceRecordedAt ?? b.observedAt,
     ),
   );
-}
-
-/** Il primo prezzo che le abbiamo visto, letto all'indietro nei ribassi. */
-function primoPrezzo(eventi: LifecyclePropertyDetail["events"]) {
-  const conPrezzo = eventi
-    .filter((evento) => typeof evento.payload.oldPrice === "number")
-    .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-
-  return conPrezzo.length ? (conPrezzo[0].payload.oldPrice as number) : null;
 }
 
 /** Un numero fermo, con la sua etichetta. La griglia non cambia mai posto. */
@@ -255,6 +247,7 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
             {new URL(publication.canonicalUrl).hostname.replace(/^www\./, "")} ·{" "}
             {publicationStateLabel(publication.state)} · osservato dal{" "}
             {formatDate(publication.firstSeenAt)}
+            {` · ultima presenza ${formatDate(publication.lastSeenAt)}`}
             {publication.portalPublishedAt ? ` · pubblicato dalla fonte il ${formatDate(publication.portalPublishedAt)}` : ""}
             {publication.portalModifiedAt ? ` · modifica fonte ${formatDate(publication.portalModifiedAt)}` : ""}
           </Meta>
@@ -297,8 +290,11 @@ export function SchedaMercato({
   now: number;
 }>) {
   const property = detail.property;
+  const saleDate = detail.marketObservation?.soldAt ?? detail.marketObservation?.soldObservedAt;
+  const marketEnd = saleDate ? Date.parse(saleDate) : now;
+  const currentAsking = detail.marketObservation?.latestPrice ?? property.currentPrice;
   const marketAnchor = property.earliestMarketEvidenceAt ?? property.firstSeenAt;
-  const giorniDiMercato = ageDays(marketAnchor, now);
+  const giorniDiMercato = ageDays(marketAnchor, marketEnd);
   const agenziaAttiva = property.agencies.find(
     (agency) => agency.state === "ACTIVE",
   );
@@ -324,15 +320,15 @@ export function SchedaMercato({
     : null;
   const dove = posizione || property.locality || null;
   const prove = proveDistinte(detail.evidence);
-  const prezzoFonte = detail.publicationPrices?.find(price=>price.publicationId === detail.publications[0]?.id);
-  const prezzoIniziale = prezzoFonte?.firstPrice ?? primoPrezzo(detail.events);
+  const prezzoFonte = detail.publicationPrices?.find(price=>price.publicationId === (detail.marketObservation?.publicationId ?? detail.publications[0]?.id));
+  const prezzoIniziale = prezzoFonte?.firstPrice ?? null;
   const scarto =
     prezzoIniziale != null && prezzoFonte?.latestPrice != null
       ? prezzoFonte.latestPrice - prezzoIniziale
       : null;
   const euroAlMq =
-    property.currentPrice != null && property.surfaceSqm
-      ? Math.round(property.currentPrice / property.surfaceSqm)
+    currentAsking != null && property.surfaceSqm
+      ? Math.round(currentAsking / property.surfaceSqm)
       : null;
   const indizi =
     detail.opportunity && !hasNoRealSignal(detail.opportunity.reasons)
@@ -413,8 +409,11 @@ export function SchedaMercato({
       </header>
 
       <section className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-[var(--lr-line-quiet)] py-3" aria-label="Situazione osservata">
-        <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(property.currentPrice)}</strong>
-        <span>Sul mercato almeno dal {formatDate(marketAnchor)}{giorniDiMercato!=null ? ` · ${giorniDiMercato}+ giorni` : ""}</span>
+        <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(currentAsking)}</strong>
+        <span>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</span>
+        <span>Monitorato dal {formatDate(property.firstSeenAt)}</span>
+        {detail.marketObservation?.soldAt ? <span>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</span> : detail.marketObservation?.soldObservedAt ? <span>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</span> : null}
+        {detail.marketObservation?.priceConflict ? <Meta>Le fonti mostrano prezzi diversi: il prezzo indicato proviene dalla pubblicazione selezionata.</Meta> : null}
         {prezzoFonte?.reductionPercent!=null && prezzoFonte.reductionPercent>0 ? <span className="text-[var(--lr-ok)]">−{formatNumber(prezzoFonte.reductionPercent)}% sulla stessa pubblicazione</span> : null}
         {detail.opportunity ? <span>Opportunità <strong>{formatNumber(detail.opportunity.score??0)}/100</strong></span> : null}
       </section>
@@ -471,6 +470,11 @@ export function SchedaMercato({
           />
 
           <RigaDiVita eventi={detail.events} prove={prove} />
+          <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
+            {(detail.historyPage??1)>1?<Link href={`?storia=${(detail.historyPage??1)-1}`} className={buttonClass("secondary")}>Storico più recente</Link>:<span/>}
+            <Meta>Pagina {detail.historyPage??1} di eventi e prove</Meta>
+            {detail.historyHasNext?<Link href={`?storia=${(detail.historyPage??1)+1}`} className={buttonClass("secondary")}>Eventi e prove precedenti</Link>:null}
+          </nav>
         </div>
 
         <div className="space-y-4">
@@ -480,7 +484,7 @@ export function SchedaMercato({
                 <div className="min-w-0">
                   <Label>Prezzo richiesto oggi</Label>
                   <p className="text-[length:var(--lr-text-page)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
-                    {formatCurrency(property.currentPrice)}
+                    {formatCurrency(currentAsking)}
                   </p>
                   {scarto || euroAlMq ? (
                     <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
@@ -516,7 +520,7 @@ export function SchedaMercato({
                 </Misura>
                 <div className="col-span-2">
                   <Misura
-                    label="Presenza osservata sul mercato"
+                    label={Date.parse(marketAnchor)<Date.parse(property.firstSeenAt)?"Anzianità pubblica dimostrabile":"Durata del monitoraggio"}
                     nota="Prima osservazione o data di pubblicazione dichiarata dalla fonte. Non indica l’inizio di un incarico."
                   >
                     {giorniDiMercato != null ? (
@@ -525,7 +529,7 @@ export function SchedaMercato({
                           1,
                         )}
                       >
-                        da almeno {formatDays(giorniDiMercato)}
+                        {marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}
                       </Dato>
                     ) : (
                       "non lo sappiamo"
@@ -548,6 +552,8 @@ export function SchedaMercato({
                 <ul className="space-y-3 py-2">{detail.publicationPrices.map(price=><li key={price.publicationId}>
                   <a href={price.sourceUrl} target="_blank" rel="noreferrer" className="font-medium underline">{new URL(price.sourceUrl).hostname}</a>
                   <p>Primo {formatCurrency(price.firstPrice)} · ultimo {formatCurrency(price.latestPrice)} · {price.dropCount} ribassi</p>
+                  {price.firstObservedAt ? <Meta>Primo prezzo osservato il {formatDate(price.firstObservedAt)}{price.latestObservedAt ? ` · ultimo prezzo documentato il ${formatDate(price.latestObservedAt)}` : ""}</Meta> : null}
+                  {price.dropDates?.length ? <Meta>Ribassi rilevati: {price.dropDates.map(date=>formatDate(date)).join(", ")}</Meta> : null}
                 </li>)}</ul>
                 <Meta>Le date dei ribassi indicano quando li abbiamo rilevati, non quando il portale li ha applicati.</Meta>
               </details> : null}

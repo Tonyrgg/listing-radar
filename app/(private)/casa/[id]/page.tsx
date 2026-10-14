@@ -29,13 +29,15 @@ export const metadata: Metadata = { title: "La casa" };
  * cui si dice.
  */
 export default async function CasaPage({
-  params,
-}: Readonly<{ params: Promise<{ id: string }> }>) {
+  params,searchParams,
+}: Readonly<{ params: Promise<{ id: string }>; searchParams: Promise<Record<string,string|string[]|undefined>> }>) {
   await connection();
   const { id } = await params;
+  const query=await searchParams;
+  const historyPage=Math.max(1,Math.min(10000,Math.floor(Number(query.storia)||1)));
 
   const [vistaMercato, user, now] = await Promise.all([
-    vistaCasa(id),
+    vistaCasa(id,historyPage),
     getCurrentUser(),
     readNow(),
   ]);

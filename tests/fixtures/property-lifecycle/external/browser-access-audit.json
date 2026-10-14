@@ -1,0 +1,45 @@
+{
+  "kind": "REAL_CHROME_HEADLESS_ACCESS_METADATA_NO_STEALTH_NO_CHALLENGE_TOKENS",
+  "records": [
+    {
+      "name": "wikicasa-inventory",
+      "url": "https://www.wikicasa.it/vendita-case/bitonto/",
+      "status": 403,
+      "title": "Attention Required! | Cloudflare",
+      "blocked": true,
+      "error": null,
+      "observedAt": "2026-10-14T21:42:58.303Z",
+      "bytes": 5406
+    },
+    {
+      "name": "wikicasa-reference",
+      "url": "https://www.wikicasa.it/annuncio/29812570",
+      "status": 403,
+      "title": "Attention Required! | Cloudflare",
+      "blocked": true,
+      "error": null,
+      "observedAt": "2026-10-14T21:42:59.965Z",
+      "bytes": 4271
+    },
+    {
+      "name": "immobiliare-reference",
+      "url": "https://www.immobiliare.it/annunci/128823342/",
+      "status": 403,
+      "title": "immobiliare.it",
+      "blocked": true,
+      "error": null,
+      "observedAt": "2026-10-14T21:43:01.761Z",
+      "bytes": 1496
+    },
+    {
+      "name": "casa-known",
+      "url": "https://www.casa.it/immobili/54520194/",
+      "status": 403,
+      "title": "casa.it",
+      "blocked": true,
+      "error": null,
+      "observedAt": "2026-10-14T21:43:03.587Z",
+      "bytes": 1482
+    }
+  ]
+}

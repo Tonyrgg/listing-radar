@@ -20,6 +20,7 @@ import {
 } from "@/lib/property-lifecycle/assets/pipeline";
 import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
+import { runExternalSourceJob } from "@/lib/property-lifecycle/external/runtime";
 
 export type LifecycleAssetProcessor = (
   listing: NormalizedListingV2,
@@ -112,6 +113,15 @@ async function executeFanout(
       },
       dedupeKey: `${childType}:${agency.slug}`,
     });
+  }
+  if (childType !== "BOOTSTRAP_AGENCY") {
+    const sources = await db.from("market_observer_sources").select("source_key").eq("enabled", true).eq("source_key", "WIKICASA");
+    if (sources.error) throw new Error(sources.error.message);
+    for (const source of (sources.data ?? []) as Array<{ source_key: string }>) {
+      if (source.source_key === "WIKICASA") await queue.enqueue({ jobType: "SYNC_MARKET_SOURCE",
+        payload: { source: source.source_key, deep: childType === "DEEP_SYNC_AGENCY", parentJobId: job.id },
+        dedupeKey: `SYNC_MARKET_SOURCE:${source.source_key}` });
+    }
   }
 }
 
@@ -271,6 +281,8 @@ export async function runLifecycleWorkerOnce(
         dependencies.assetProcessor ?? defaultAssetProcessor,
         assertOwnership,
       );
+    } else if (["SYNC_MARKET_SOURCE", "VERIFY_MARKET_PUBLICATION"].includes(job.job_type)) {
+      await runExternalSourceJob(dependencies.db, job, dependencies.fetcher ?? fetch, assertOwnership);
     } else if (job.job_type === "POST_EXIT_CHECK") {
       await executePostExitCheck(dependencies.db, job);
     } else if (job.job_type === "BUILDING_DATA_SYNC") {

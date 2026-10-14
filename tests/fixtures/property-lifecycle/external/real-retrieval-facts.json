@@ -1,0 +1,210 @@
+{
+  "format": "FACTS_EXTRACTED_FROM_PUBLIC_RETRIEVAL_NOT_RAW_HTML",
+  "capturedAt": "2026-10-14T20:32:28.000Z",
+  "method": "INDEX_CAPTURE",
+  "notes": [
+    "No live HTTP inventory certified. Facts are limited excerpts from primary portal retrievals via web index.",
+    "Gabetti control is Modugno, not a fabricated Bitonto listing; Gabetti Bitonto still requires an in-scope fixture.",
+    "RE/MAX agency-site index retrieval separately shows 155000 and update 2026-09-22; update is not price-change date.",
+    "No production import/backfill performed."
+  ],
+  "facts": [
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Crocifisso 52, Bitonto",
+      "reference": "41091011-176",
+      "propertyType": "Casa indipendente",
+      "price": 195000,
+      "surfaceSqm": 106,
+      "rooms": 3,
+      "floor": "Su più livelli",
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": "RE/MAX Stella Polare 2 - Remax",
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/29812570",
+      "externalId": "29812570",
+      "title": "Casa indipendente in Vendita, Via Crocifisso 52, Bitonto",
+      "previousPrice": 225000,
+      "publishedLabel": "5 mag 2026"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Crocifisso 52, Bitonto",
+      "reference": "41091011-176",
+      "propertyType": "Terratetto unifamiliare",
+      "price": 155000,
+      "surfaceSqm": 106,
+      "rooms": 3,
+      "floor": null,
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": null,
+        "url": null
+      },
+      "source": "IMMOBILIARE",
+      "url": "https://www.immobiliare.it/annunci/128823342/",
+      "externalId": "128823342",
+      "title": "Terratetto unifamiliare via Crocifisso 52, Centro, Bitonto",
+      "previousPrice": 195000,
+      "modifiedLabel": "22/09/2026"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Vitale Giordano, Bitonto",
+      "reference": "9707RA22792",
+      "propertyType": "Appartamento",
+      "price": 175000,
+      "surfaceSqm": 140,
+      "rooms": 4,
+      "floor": "3° piano",
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": "AD MAIORA IMMOBILIARE SRLS",
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/30533235",
+      "externalId": "30533235",
+      "title": "Appartamento in Vendita, Via Vitale Giordano, Bitonto",
+      "publishedLabel": "25 lug 2026",
+      "warnings": [
+        "direct_http_blocked",
+        "later_web_open_returned_410"
+      ]
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Leopardi 2/3, Mariotto, Bitonto",
+      "reference": "V000798",
+      "propertyType": "Casa indipendente",
+      "price": 75000,
+      "surfaceSqm": 93,
+      "rooms": 3,
+      "floor": null,
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": "STUDI SANTI SRL",
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/30644308",
+      "externalId": "30644308",
+      "title": "Casa indipendente in Vendita, Via Leopardi 2/3, Bitonto",
+      "locality": "Mariotto",
+      "publishedLabel": "12 ago 2026"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Francesco Bonasia, Mariotto, Bitonto",
+      "reference": "V000715",
+      "propertyType": "Terreno",
+      "price": 80000,
+      "surfaceSqm": 400,
+      "rooms": null,
+      "floor": null,
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": "STUDI SANTI SRL",
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/28897794",
+      "externalId": "28897794",
+      "title": "Terreno in Vendita, Via Francesco Bonasia, Bitonto",
+      "locality": "Mariotto",
+      "previousPrice": 100000,
+      "publishedLabel": "29 gen 2026"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": null,
+      "reference": null,
+      "propertyType": "Appartamento",
+      "price": 159000,
+      "surfaceSqm": 113,
+      "rooms": 3,
+      "floor": "2° piano",
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": "Affiliato Tecnocasa: IMMOBILIARE SAN FRANCESCO D.I. - Tecnocasa",
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/30171085",
+      "externalId": "30171085",
+      "title": "Appartamento in Vendita, Bitonto",
+      "publishedLabel": "13 giu 2026"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Bitonto",
+      "address": "Via Silvio Pellico 6, Bitonto",
+      "reference": null,
+      "propertyType": "Appartamento",
+      "price": null,
+      "surfaceSqm": 110,
+      "rooms": 4,
+      "floor": "4",
+      "statusLabel": "Venduto il 12/02/2025",
+      "agency": {
+        "externalId": null,
+        "name": "BENVENUTA Casa - Servizi Immobiliari",
+        "url": null
+      },
+      "source": "IMMOBILIARE",
+      "url": "https://www.immobiliare.it/annunci/117666673/",
+      "externalId": "117666673",
+      "title": "Quadrilocale via Silvio Pellico 6, Centro, Bitonto",
+      "modifiedLabel": "12/02/2025"
+    },
+    {
+      "observedAt": "2026-10-14T20:32:28.000Z",
+      "method": "INDEX_CAPTURE",
+      "municipality": "Modugno",
+      "address": null,
+      "reference": "Cod. rif 3339055",
+      "propertyType": "Appartamento",
+      "price": 115000,
+      "surfaceSqm": 94,
+      "rooms": 3,
+      "floor": "Piano terra",
+      "statusLabel": null,
+      "agency": {
+        "externalId": null,
+        "name": null,
+        "url": null
+      },
+      "source": "WIKICASA",
+      "url": "https://www.wikicasa.it/annuncio/30814521",
+      "externalId": "30814521",
+      "title": "Appartamento in Vendita, Modugno",
+      "publishedLabel": "12 set 2026",
+      "warnings": [
+        "gabetti_poggiofranco_description_only_not_verified_agency_identity",
+        "out_of_scope_control"
+      ]
+    }
+  ]
+}

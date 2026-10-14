@@ -8,6 +8,7 @@ import {
   claimKeyLabel,
   extractionMethodLabel,
   lifecycleEventLabel,
+  evidenceSourceLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 
 /**
@@ -28,6 +29,7 @@ export type EventoDiVita = Readonly<{
   confidence: number;
   actorType: string;
   payload: Record<string, unknown>;
+  sourceUrl?: string | null;
 }>;
 
 export type ProvaConservata = Readonly<{
@@ -38,6 +40,9 @@ export type ProvaConservata = Readonly<{
   observedAt: string;
   sourceRecordedAt: string | null;
   sourceUrl?: string | null;
+  rawValue?: string | null;
+  normalizedValue?: unknown;
+  metadata?: Record<string, unknown>;
 }>;
 
 const PREZZO = new Set(["PRICE_DROP", "PRICE_INCREASE", "PRICE_CHANGED"]);
@@ -48,6 +53,7 @@ const AGENZIE = new Set([
   "PUBLICATION_RELAUNCHED",
   "DISAPPEARED_CONFIRMED",
   "AGENCY_SWITCH_DETECTED",
+  "AGENCY_LISTING_REACTIVATED",
   "AGENCY_TO_PRIVATE",
   "SOURCE_MARKED_SOLD",
 ]);
@@ -65,7 +71,7 @@ type Filtro = (typeof FILTRI)[number]["id"];
 function provenienza(evento: EventoDiVita) {
   if (evento.actorType === "USER") return "registrato da una persona";
 
-  return evento.confidence >= 0.85 ? "letta dall'annuncio" : "dedotto dal sistema";
+  return evento.actorType === "ADAPTER" ? "letta dalla fonte" : "dedotto dal sistema";
 }
 
 function confermato(evento: EventoDiVita) {
@@ -132,6 +138,7 @@ function Riga({ evento }: Readonly<{ evento: EventoDiVita }>) {
 
       <span className="col-start-3 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)] sm:col-start-4 sm:text-right">
         {provenienza(evento)}
+        {evento.sourceUrl ? <a href={evento.sourceUrl} target="_blank" rel="noreferrer" className="ml-2 underline">{new URL(evento.sourceUrl).hostname.replace(/^www\./, "")}</a> : null}
       </span>
     </li>
   );
@@ -163,7 +170,7 @@ export function RigaDiVita({
             Riga di vita
           </h2>
           <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-            ogni riga è un fatto osservato, non una nostra opinione
+            Fatti e conclusioni, con la loro provenienza
           </p>
         </div>
 
@@ -225,13 +232,18 @@ export function RigaDiVita({
               >
                 <span className="text-[length:var(--lr-text-body)] text-[var(--lr-ink)]">
                   {claimKeyLabel(prova.claimKey)}
+                  {prova.rawValue ? <span className="ml-2 break-words text-[var(--lr-ink-2)]">{prova.rawValue}</span> : null}
                 </span>
                 <span className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                  {formatDate(prova.sourceRecordedAt ?? prova.observedAt)},{" "}
+                  <span className="mr-2 rounded-[var(--lr-radius-pill)] border border-[var(--lr-line)] px-2 py-0.5">{evidenceSourceLabel(prova.sourceUrl)}</span>
+                  {prova.sourceRecordedAt ? `Data dichiarata ${formatDate(prova.sourceRecordedAt)} · ` : ""}
+                  {`Osservato il ${formatDate(prova.observedAt)} · `}
                   {extractionMethodLabel(prova.extractionMethod)}
                   {` · certezza ${Math.round(prova.confidence * 100)}%`}
                   {prova.sourceUrl ? <a className="ml-2 underline" href={prova.sourceUrl} target="_blank" rel="noreferrer">Fonte della prova</a> : null}
                 </span>
+                {prova.claimKey === "publication.previousAskingPrice" ? <p className="w-full text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">Prezzo precedente dichiarato dalla fonte. {prova.sourceRecordedAt ? "Data della variazione dichiarata." : "Data della variazione non dichiarata."}</p> : null}
+                {(prova.normalizedValue != null || prova.metadata) ? <details className="w-full text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]"><summary className="cursor-pointer">Dettagli della prova</summary><p className="mt-1">{prova.metadata?.retrievalMethod === "INDEX_CAPTURE" ? "Copia recuperata dall’indice: non dimostra presenza attuale." : "Informazione conservata dalla fonte."}</p><pre className="mt-2 whitespace-pre-wrap break-all rounded-[var(--lr-radius-control)] bg-[var(--lr-raised)] p-2">{JSON.stringify({ value: prova.normalizedValue, metadata: prova.metadata }, null, 2)}</pre></details> : null}
               </li>
             ))}
           </ul>

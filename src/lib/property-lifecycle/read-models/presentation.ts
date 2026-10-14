@@ -6,7 +6,7 @@ const EVENT_LABELS: Record<string, string> = {
   PRICE_DROP: "Riduzione di prezzo",
   PRICE_INCREASE: "Aumento di prezzo",
   PUBLICATION_MISSING_PENDING: "Assenza da verificare",
-  PUBLICATION_REMOVED: "Uscita confermata",
+  PUBLICATION_REMOVED: "Pubblicazione non più rilevata",
   DISAPPEARED_CONFIRMED: "Uscita confermata",
   PUBLICATION_REAPPEARED: "Annuncio ricomparso",
   PRIVATE_PUBLICATION_REAPPEARED: "Privato ricomparso",
@@ -17,11 +17,19 @@ const EVENT_LABELS: Record<string, string> = {
   PRIVATE_RELIST: "Pubblicazione privata simultanea",
   PRIVATE_RELIST_CONFLICT: "Conflitto sul privato",
   PUBLICATION_RELAUNCHED: "Rilancio commerciale",
+  AGENCY_LISTING_REACTIVATED: "Commercializzazione ripresa",
+  PUBLICATION_REFRESHED: "Pubblicazione aggiornata dalla fonte",
   POST_EXIT_CLASSIFIED: "Esito post-uscita",
   PRICE_CHANGED: "Prezzo aggiornato",
   MANUAL_OVERRIDE_RECORDED: "Correzione registrata da una persona",
   PROPERTY_SALE_STATUS_OVERRIDDEN: "Stato di vendita corretto a mano",
   AGENCY_OUTCOME_OVERRIDDEN: "Esito dell'agenzia corretto a mano",
+};
+
+const MARKET_EVIDENCE_LABELS: Record<string,string> = {
+  "publication.soldAt": "Data di vendita dichiarata dalla fonte",
+  "publication.askingPrice": "Prezzo richiesto dichiarato dalla fonte",
+  SOURCE_EXPLICIT_SALE_DATE_V1: "dalla data di vendita dichiarata dalla fonte",
 };
 
 const PROPERTY_STATE_LABELS: Record<string, string> = {
@@ -321,9 +329,30 @@ export function geographyReasonLabel(value: string): string {
 }
 
 export function claimKeyLabel(value: string): string {
-  return CLAIM_KEY_LABELS[value] ?? humanize(value);
+  const external: Record<string,string> = {
+    "publication.previousAskingPrice": "Prezzo precedente dichiarato",
+    "publication.dateModified": "Ultimo aggiornamento sul portale",
+    "publication.externalStatus": "Stato dichiarato dalla fonte",
+    "publication.agencyIdentity": "Agenzia dichiarata",
+    "publication.agentIdentity": "Agente responsabile dichiarato",
+    "publication.historicalMarketEvidence": "Evidenza pubblica storica",
+  };
+  if (external[value]) return external[value];
+  return MARKET_EVIDENCE_LABELS[value] ?? CLAIM_KEY_LABELS[value] ?? humanize(value);
 }
 
 export function extractionMethodLabel(value: string): string {
-  return METHOD_LABELS[value] ?? humanize(value).toLocaleLowerCase("it");
+  return MARKET_EVIDENCE_LABELS[value] ?? METHOD_LABELS[value] ?? humanize(value).toLocaleLowerCase("it");
+}
+export function evidenceSourceLabel(url: string | null | undefined): string {
+  if (!url) return "Fonte da verificare";
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (host === "wikicasa.it") return "Wikicasa";
+    if (host === "immobiliare.it") return "Immobiliare.it";
+    if (host === "casa.it") return "Casa.it";
+    if (host === "idealista.it") return "Idealista";
+    if (host === "remax.it" || host.endsWith(".remax.it")) return "RE/MAX";
+    return host;
+  } catch { return "Fonte da verificare"; }
 }

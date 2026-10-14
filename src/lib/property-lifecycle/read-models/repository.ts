@@ -823,13 +823,14 @@ export class PropertyLifecycleReadRepository {
     });
   }
 
-  async property(id: string): Promise<LifecyclePropertyDetail | null> {
+  async property(id: string, historyPage = 1): Promise<LifecyclePropertyDetail | null> {
     const properties = await this.propertiesByIds([id]);
     const propertyRow = properties[0];
     if (!propertyRow) return null;
     const property = (await this.hydrateProperties(properties))[0];
+    const historyOffset = (Math.max(1,Math.min(10000,historyPage))-1);
     const agencyListingIds = property.agencies.map((agency) => agency.listingId);
-    const [publicationResult, privateResult, eventResult, evidenceResult, opportunityResult, priceResult] =
+    const [publicationResult, privateResult, eventResult, evidenceResult, opportunityResult, priceResult, intelligenceResult] =
       await Promise.all([
         agencyListingIds.length
           ? this.db
@@ -849,18 +850,18 @@ export class PropertyLifecycleReadRepository {
           .order("last_seen_at", { ascending: false }),
         this.db
           .from("events")
-          .select("id,event_type,occurred_at,confidence,actor_type,payload")
+          .select("id,event_type,occurred_at,confidence,actor_type,payload,publication_id")
           .eq("property_id", id)
-          .order("occurred_at", { ascending: false })
-          .limit(300),
+          .order("occurred_at", { ascending: false }).order("id")
+          .range(historyOffset*40,historyOffset*40+40),
         this.db
           .from("evidence")
           .select(
-            "id,evidence_kind,claim_key,extraction_method,confidence,observed_at,source_recorded_at,source_url,publication_id",
+            "id,evidence_kind,claim_key,extraction_method,confidence,observed_at,source_recorded_at,source_url,publication_id,raw_value,normalized_value,metadata",
           )
           .eq("property_id", id)
-          .order("observed_at", { ascending: false })
-          .limit(200),
+          .order("observed_at", { ascending: false }).order("id")
+          .range(historyOffset*60,historyOffset*60+60),
         this.db
           .from("opportunities")
           .select(
@@ -869,8 +870,11 @@ export class PropertyLifecycleReadRepository {
           .eq("property_id", id)
           .maybeSingle(),
         agencyListingIds.length ? this.db.from("market_observer_publication_metrics")
-          .select("publication_id,first_asking_price,latest_asking_price,reduction_percent,drop_count,canonical_url")
+          .select("publication_id,first_asking_price,latest_asking_price,reduction_percent,drop_count,canonical_url,first_price_observed_at,latest_price_observed_at,drop_dates")
           .in("agency_listing_id", agencyListingIds) : Promise.resolve({data:[],error:null}),
+        agencyListingIds.length ? this.db.from("market_observer_agency_listing_intelligence")
+          .select("agency_listing_id,state,latest_asking_price,price_source_url,sold_at,sold_observed_at,source_price_conflict,exit_classification,exit_confidence,classified_at")
+          .in("agency_listing_id",agencyListingIds).order("last_seen_at",{ascending:false}) : Promise.resolve({data:[],error:null}),
       ]);
     [
       publicationResult,
@@ -879,6 +883,7 @@ export class PropertyLifecycleReadRepository {
       evidenceResult,
       opportunityResult,
       priceResult,
+      intelligenceResult,
     ].forEach((result) => throwIfError(result.error));
     const privateRows = (privateResult.data ?? []) as PrivatePublicationRow[];
     const targetIds = unique([
@@ -921,7 +926,8 @@ export class PropertyLifecycleReadRepository {
           .from("property-lifecycle-visuals")
           .createSignedUrls(imagePaths, 60 * 30)
       : { data: [], error: null };
-    const eventRows = (eventResult.data ?? []) as Array<Record<string, unknown>>;
+    const historyHasNext = (eventResult.data?.length ?? 0)>40 || (evidenceResult.data?.length ?? 0)>60;
+    const eventRows = (eventResult.data ?? []).slice(0,40) as Array<Record<string, unknown>>;
     const opportunityRows = opportunityResult.data
       ? await this.opportunityItems([
           opportunityResult.data as Parameters<
@@ -953,6 +959,8 @@ export class PropertyLifecycleReadRepository {
     );
     const location = locationResult.data as Record<string, unknown> | null;
     const building = buildingResult.data as { id: string; display_name: string | null } | null;
+    const marketRows=(intelligenceResult.data??[]) as Array<Record<string,unknown>>;
+    const market=marketRows.find(row=>row.state==="ACTIVE")??marketRows[0];
     return {
       property,
       location: location
@@ -987,6 +995,14 @@ export class PropertyLifecycleReadRepository {
         portalModifiedAt: stringValue(row.portal_modified_at),
       })),
       privatePublications,
+      historyPage,historyHasNext,
+      ...(market ? { marketObservation: {
+        publicationId: stringValue((publicationResult.data??[]).find(row=>row.canonical_url===market.price_source_url)?.id),
+        latestPrice:numberValue(market.latest_asking_price),sourceUrl:stringValue(market.price_source_url),
+        soldAt:stringValue(market.sold_at),soldObservedAt:stringValue(market.sold_observed_at),
+        priceConflict:Boolean(market.source_price_conflict),classification:String(market.exit_classification),
+        confidence:numberValue(market.exit_confidence),classifiedAt:stringValue(market.classified_at),
+      }} : {}),
       events: eventRows.map((row) => ({
         id: String(row.id),
         eventType: String(row.event_type),
@@ -994,8 +1010,10 @@ export class PropertyLifecycleReadRepository {
         confidence: numberValue(row.confidence) ?? 0,
         actorType: String(row.actor_type),
         payload: record(row.payload),
+        publicationId:stringValue(row.publication_id),
+        sourceUrl:stringValue((publicationResult.data??[]).find(p=>p.id===row.publication_id)?.canonical_url),
       })),
-      evidence: ((evidenceResult.data ?? []) as Array<Record<string, unknown>>).map(
+      evidence: ((evidenceResult.data ?? []).slice(0,60) as Array<Record<string, unknown>>).map(
         (row) => ({
           id: String(row.id),
           kind: String(row.evidence_kind),
@@ -1006,6 +1024,7 @@ export class PropertyLifecycleReadRepository {
           sourceRecordedAt: stringValue(row.source_recorded_at),
           sourceUrl: stringValue(row.source_url),
           publicationId: stringValue(row.publication_id),
+          rawValue:stringValue(row.raw_value),normalizedValue:row.normalized_value,metadata:record(row.metadata),
         }),
       ),
       priceHistory: eventRows
@@ -1021,6 +1040,8 @@ export class PropertyLifecycleReadRepository {
         publicationId:String(row.publication_id),firstPrice:numberValue(row.first_asking_price),
         latestPrice:numberValue(row.latest_asking_price),reductionPercent:numberValue(row.reduction_percent),
         dropCount:numberValue(row.drop_count)??0,sourceUrl:String(row.canonical_url),
+        firstObservedAt:stringValue(row.first_price_observed_at),latestObservedAt:stringValue(row.latest_price_observed_at),
+        dropDates:Array.isArray(row.drop_dates)?row.drop_dates.map(String):[],
       })),
       manualOverrides: (
         (overrideResult.data ?? []) as Array<Record<string, unknown>>

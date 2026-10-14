@@ -16,7 +16,7 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
       create schema extensions;
       create function extensions.digest(text,text) returns bytea language sql immutable as $$
         select sha256(convert_to($1,'UTF8')) $$;`);
-    for (const file of ["0001_production_schema.sql", "0010_acquisition_os.sql", "0014_market_observer_reliability.sql", "0015_market_observer_intelligence.sql", "0016_market_observer_private_projection.sql", "0017_resource_compaction.sql", "0018_compaction_index_headroom.sql", "0019_bounded_identity_fingerprints.sql", "0020_fingerprint_update_uniqueness.sql", "0021_market_observer_read_indexes.sql"]) {
+    for (const file of ["0001_production_schema.sql", "0010_acquisition_os.sql", "0014_market_observer_reliability.sql", "0015_market_observer_intelligence.sql", "0016_market_observer_private_projection.sql", "0017_resource_compaction.sql", "0018_compaction_index_headroom.sql", "0019_bounded_identity_fingerprints.sql", "0020_fingerprint_update_uniqueness.sql", "0021_market_observer_read_indexes.sql", "0022_market_observer_semantics.sql", "0023_market_observer_projections.sql", "0024_external_market_evidence.sql", "0025_external_market_projections.sql"]) {
       const sql = await readFile(`supabase/migrations/${file}`, "utf8");
       await db.exec(sql.replace(/create extension if not exists pgcrypto;/g, ""));
     }
@@ -44,12 +44,12 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
       values($1,$2,$3,$4,'{"sourceComplete":true,"baselineReady":true}')`, [agency,id,healthy ? "HEALTHY" : "FAILED",at]);
     return id;
   }
-  async function observe(options: { at?: string; key?: string; price?: number; host?: string; status?: "SOLD"|"ACTIVE"|"UNKNOWN"|"REMOVED"; confidence?:number; propertyId?: string; published?: string; modified?: string; decision?: Record<string,unknown> } = {}) {
+  async function observe(options: { at?: string; key?: string; price?: number; host?: string; status?: "SOLD"|"ACTIVE"|"UNKNOWN"|"REMOVED"|"NEGOTIATION"; confidence?:number; propertyId?: string; published?: string; modified?: string; soldAt?:string; decision?: Record<string,unknown> } = {}) {
     const at = options.at ?? "2026-09-01T12:00:00.000Z";
     const key = options.key ?? "one";
     const listing = rehashNormalizedListing(template, (input) => ({ ...input, observedAt: at,
       source: { ...input.source, sourceKey: key, externalId: key, canonicalUrl: `https://${options.host ?? "agency.test"}/property/${key}`,
-        portalPublishedAt: options.published ?? null, portalModifiedAt: options.modified ?? null },
+        portalPublishedAt: options.published ?? null, portalModifiedAt: options.modified ?? null, soldAt:options.soldAt??null },
       commercial: { ...input.commercial, priceAmount: options.price ?? 150000 },
       status: { ...input.status, value: options.status ?? "ACTIVE", confidence: options.confidence ?? 1 },
     }));
@@ -64,6 +64,8 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
   async function scalar(sql: string, params: unknown[] = []) { return (await db.query<Record<string, unknown>>(sql,params)).rows[0]; }
   async function miss(at: string, keys: string[] = [], healthy = true) {
     const sync=await run(at,healthy);
+    await db.query("update sync_runs set status=$2,health_state=$3,inventory_complete=$4,absence_evaluation_allowed=$4,inventory_observed_keys=$5,finished_at=$6 where id=$1",
+      [sync,healthy?'SUCCEEDED':'FAILED',healthy?'HEALTHY':'FAILED',healthy,keys,at]);
     await db.query("select apply_missing_observations_atomic($1,$2,$3,$4)",[agency,sync,keys,at]);
     return sync;
   }
@@ -147,7 +149,7 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
     await db.exec("savepoint expected_failure");
     await expect(db.query("select run_post_exit_check_atomic($1,$2,null,'2026-09-06T12:00:00Z')",[job.id,first.agencyListingId])).rejects.toThrow("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED");
     await db.exec("rollback to savepoint expected_failure");
-    const fresh=await run("2026-09-06T12:00:00Z");
+    const fresh=await miss("2026-09-06T12:00:00Z");
     await db.query("update sync_runs set status='SUCCEEDED',health_state='HEALTHY',inventory_complete=true,absence_evaluation_allowed=true,finished_at='2026-09-06T12:01:00Z' where id=$1",[fresh]);
     await db.query("select run_post_exit_check_atomic($1,$2,null,'2026-09-06T12:02:00Z')",[job.id,first.agencyListingId]);
     expect((await scalar("select state from agency_listings")).state).toBe("OFF_MARKET_NO_SALE_EVIDENCE");
@@ -162,6 +164,7 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
   });
   it("relisting keeps the property and earliest public evidence", async () => {
     const first=await observe({published:"2026-07-01T00:00:00.000Z"});
+    await miss("2026-09-02T12:00:00Z"); await miss("2026-09-03T12:00:00Z");
     const second=await observe({key:"new-id",at:"2026-09-04T12:00:00.000Z",propertyId:first.propertyId,published:"2026-09-04T00:00:00.000Z"});
     expect(second.propertyId).toBe(first.propertyId);
     expect((await scalar("select relaunch_count from properties")).relaunch_count).toBe(1);
@@ -281,5 +284,147 @@ describe.sequential("Market Observer migrations and atomic lifecycle", () => {
     expect((await scalar("select state from agency_listings")).state).toBe("EXIT_PENDING");
     expect((await scalar("select sale_status from properties")).sale_status).toBe("UNKNOWN");
     expect((await scalar("select count(*)::integer n from lifecycle_jobs where job_type='POST_EXIT_CHECK'")).n).toBe(1);
+  });
+  it.each(["RUNNING","FAILED","PARTIAL"])("never commits absence from a %s scan, even with a healthy-looking adapter row",async(status)=>{
+    await observe();const sync=await run("2026-09-02T12:00:00Z");
+    await db.query("update sync_runs set status=$2,health_state='HEALTHY',inventory_complete=true,absence_evaluation_allowed=true,inventory_observed_keys='{}',finished_at='2026-09-02T12:00:00Z' where id=$1",[sync,status]);
+    await db.query("select apply_missing_observations_atomic($1,$2,'{}','2026-09-02T12:00:00Z')",[agency,sync]);
+    expect((await scalar("select state,missing_healthy_run_count n from publications"))).toEqual({state:"ACTIVE",n:0});
+  });
+  it("rejects invented missing keys and incomplete inventory despite successful status",async()=>{
+    await observe();const sync=await run("2026-09-02T12:00:00Z");
+    await db.query("update sync_runs set status='SUCCEEDED',health_state='HEALTHY',inventory_complete=true,absence_evaluation_allowed=true,inventory_observed_keys=array['one'],finished_at='2026-09-02T12:00:00Z' where id=$1",[sync]);
+    await db.query("select apply_missing_observations_atomic($1,$2,'{}','2026-09-02T12:00:00Z')",[agency,sync]);
+    expect((await scalar("select state from publications")).state).toBe("ACTIVE");
+    await db.query("update sync_runs set inventory_complete=false,absence_evaluation_allowed=false where id=$1",[sync]);
+    await db.query("select apply_missing_observations_atomic($1,$2,array['one'],'2026-09-02T12:00:00Z')",[agency,sync]);
+    expect((await scalar("select count(*)::integer n from missing_observation_commits")).n).toBe(0);
+  });
+  it("does not allow a late old inventory to undo a later positive observation",async()=>{
+    await observe();const old=await run("2026-09-02T12:00:00Z");
+    await observe({at:"2026-09-03T12:00:00.000Z"});
+    await db.query("update sync_runs set status='SUCCEEDED',health_state='HEALTHY',inventory_complete=true,absence_evaluation_allowed=true,inventory_observed_keys='{}',finished_at='2026-09-04T12:00:00Z' where id=$1",[old]);
+    await db.query("select apply_missing_observations_atomic($1,$2,'{}','2026-09-04T12:00:00Z')",[agency,old]);
+    expect((await scalar("select state,missing_healthy_run_count n from publications"))).toEqual({state:"ACTIVE",n:0});
+  });
+  it("does not rewind price or last_seen with a delayed detail observation",async()=>{
+    await observe({at:"2026-09-03T12:00:00.000Z",price:140000});
+    await db.exec("savepoint stale");
+    await expect(observe({at:"2026-09-02T12:00:00.000Z",price:150000})).rejects.toThrow("OBSERVATION_PRECEDES_LAST_SEEN");
+    await db.exec("rollback to savepoint stale");
+    expect((await scalar("select latest_asking_price from market_observer_publication_metrics")).latest_asking_price).toBe(140000);
+  });
+  it("does not turn simultaneous same-host prices into relaunches or reductions",async()=>{
+    const first=await observe({price:180000});
+    await observe({key:"parallel",at:"2026-09-03T12:00:00.000Z",propertyId:first.propertyId,price:160000});
+    expect((await scalar("select relaunch_count from properties")).relaunch_count).toBe(0);
+    expect((await scalar("select count(*)::integer n from events where event_type in ('PRICE_DROP','PUBLICATION_RELAUNCHED')")).n).toBe(0);
+    expect((await scalar("select source_price_conflict,price_confidence::float from market_observer_agency_price_metrics"))).toEqual({source_price_conflict:true,price_confidence:0.65});
+  });
+  it("keeps a deterministic source price even if a mirror is processed later",async()=>{
+    const first=await observe({price:180000});
+    await observe({key:"mirror",host:"portal.test",at:"2026-09-03T12:00:00.000Z",propertyId:first.propertyId,price:160000});
+    expect((await scalar("select latest_asking_price,first_asking_price,drop_count from market_observer_intelligence"))).toEqual({latest_asking_price:180000,first_asking_price:180000,drop_count:0});
+  });
+  it("counts each genuine re-entry once and preserves the prior commercial episode",async()=>{
+    const first=await observe();await miss("2026-09-02T12:00:00Z");await miss("2026-09-03T12:00:00Z");
+    await miss("2026-09-06T12:00:00Z");
+    const job=await scalar("select id from lifecycle_jobs where job_type='POST_EXIT_CHECK' order by created_at limit 1");
+    await db.query("select run_post_exit_check_atomic($1,$2,null,'2026-09-06T12:00:01Z')",[job.id,first.agencyListingId]);
+    await observe({at:"2026-09-07T12:00:00.000Z"});await observe({at:"2026-09-08T12:00:00.000Z"});
+    expect((await scalar("select relaunch_count from properties")).relaunch_count).toBe(1);
+    expect((await scalar("select count(*)::integer n from events where event_type='AGENCY_LISTING_REACTIVATED'")).n).toBe(1);
+    expect((await scalar("select payload->>'previousState' s,payload->>'previousExitConfirmedAt' t from events where event_type='AGENCY_LISTING_REACTIVATED'"))).toMatchObject({s:"OFF_MARKET_NO_SALE_EVIDENCE",t:expect.stringContaining("2026-09-06")});
+    expect((await scalar("select state,exit_confirmed_at from agency_listings"))).toEqual({state:"ACTIVE",exit_confirmed_at:null});
+  });
+  it("a brief pending absence is a reappearance, not a completed relisting",async()=>{
+    await observe();await miss("2026-09-02T12:00:00Z");await observe({at:"2026-09-02T14:00:00.000Z"});
+    expect((await scalar("select relaunch_count from properties")).relaunch_count).toBe(0);
+  });
+  it("requires the follow-up scan to start after the due time, not merely finish afterwards",async()=>{
+    const first=await observe();await miss("2026-09-02T12:00:00Z");await miss("2026-09-03T12:00:00Z");
+    const sync=await run("2026-09-05T11:00:00Z");
+    await db.query("update sync_runs set status='SUCCEEDED',health_state='HEALTHY',inventory_complete=true,absence_evaluation_allowed=true,inventory_observed_keys='{}',finished_at='2026-09-05T13:00:00Z' where id=$1",[sync]);
+    const job=await scalar("select id from lifecycle_jobs where job_type='POST_EXIT_CHECK'");
+    await db.exec("savepoint no_fresh");
+    await expect(db.query("select run_post_exit_check_atomic($1,$2,null,'2026-09-05T14:00:00Z')",[job.id,first.agencyListingId])).rejects.toThrow("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED");
+    await db.exec("rollback to savepoint no_fresh");
+    expect((await scalar("select state from agency_listings")).state).toBe("EXIT_PENDING");
+  });
+  it("finds sold evidence on the other publication of the same agency listing",async()=>{
+    const first=await observe();await miss("2026-09-02T12:00:00Z");await miss("2026-09-03T12:00:00Z");
+    await observe({key:"sale",host:"portal.test",propertyId:first.propertyId,at:"2026-09-04T12:00:00.000Z",status:"SOLD"});
+    const job=await scalar("select id from lifecycle_jobs where job_type='POST_EXIT_CHECK'");
+    expect((await scalar("select run_post_exit_check_atomic($1,$2,$3,'2026-09-06T12:00:00Z') outcome",[job.id,first.agencyListingId,first.publicationId])).outcome).toBe("CLOSED_SOLD");
+    expect((await scalar("select sale_status from properties")).sale_status).toBe("SOLD_CONFIRMED");
+  });
+  it("keeps sold_at unknown unless the source explicitly declares a sale date",async()=>{
+    await observe({status:"SOLD"});
+    expect((await scalar("select sold_at,sold_observed_at::text from market_observer_intelligence"))).toEqual({sold_at:null,sold_observed_at:expect.stringContaining("2026-09-01")});
+    await observe({at:"2026-09-02T12:00:00.000Z",status:"SOLD",soldAt:"2026-08-30T12:00:00.000Z"});
+    expect((await scalar("select sold_at::text from market_observer_intelligence")).sold_at).toContain("2026-08-30");
+  });
+  it("records classifier version, current evidence and provenance without changing classification time on unchanged observations",async()=>{
+    await observe();const first=await scalar("select market_exit_classified_at::text t from agency_listings");
+    await observe({at:"2026-09-02T12:00:00.000Z"});
+    const metadata=await scalar("select market_exit_classified_at::text t,market_exit_classifier_version v,cardinality(market_exit_evidence_ids) n,market_exit_reasons reasons,market_exit_provenance provenance from agency_listings");
+    expect(metadata).toMatchObject({t:first.t,v:3,n:expect.any(Number),reasons:["positive_publication"]});
+    expect(Number(metadata.n)).toBeGreaterThan(0);
+    expect(metadata.provenance).toMatchObject({publications:[{state:"ACTIVE"}]});
+  });
+  it("refreshes an existing Acquisition signal without duplicating activities or changing the operator's action",async()=>{
+    const first=await observe();await observe({at:"2026-09-02T12:00:00.000Z",price:140000});
+    const op=await scalar("select id from opportunities");const lead=await scalar("select acquisition_link_market_opportunity($1) id",[op.id]);
+    await db.query("update acquisition_leads set next_action_note='Richiamare venerdì' where id=$1",[lead.id]);
+    await observe({at:"2026-09-03T12:00:00.000Z",price:130000});
+    await db.query("select acquisition_link_market_opportunity($1)",[op.id]);
+    expect((await scalar("select count(*)::integer n from acquisition_signals")).n).toBe(1);
+    expect((await scalar("select count(*)::integer n from acquisition_activities")).n).toBe(1);
+    expect((await scalar("select details->'score' score from acquisition_signals"))).toEqual(await scalar("select to_jsonb(score) score from opportunities where property_id=$1",[first.propertyId]));
+    expect((await scalar("select next_action_note from acquisition_leads")).next_action_note).toBe("Richiamare venerdì");
+  });
+  it("cannot let an old unknown exit promote the property when a new agency is active",async()=>{
+    const first=await observe();await miss("2026-09-02T12:00:00Z");await miss("2026-09-03T12:00:00Z");
+    await db.query("update agency_listings set state='OFF_MARKET_NO_SALE_EVIDENCE' where id=$1",[first.agencyListingId]);
+    const other=await scalar("insert into agencies(slug,name,adapter_key,website_url,inventory_url) values('other','Other','other','https://other.test','https://other.test/list') returning id");
+    agency=String(other.id);await observe({propertyId:first.propertyId,key:"other",host:"other.test",at:"2026-09-04T12:00:00.000Z"});
+    expect((await scalar("select score::float from opportunities where property_id=$1",[first.propertyId])).score).toBe(0);
+    expect((await scalar("select state from agency_listings where id=$1",[first.agencyListingId])).state).toBe("CLOSED_SWITCHED");
+  });
+  it("reactivates a switched relationship and preserves the ended episode in the timeline",async()=>{
+    const first=await observe();await db.query("update agency_listings set state='CLOSED_SWITCHED',closed_at='2026-09-02T12:00:00Z' where id=$1",[first.agencyListingId]);
+    await db.query("update publications set state='REMOVED',removed_at='2026-09-02T12:00:00Z' where id=$1",[first.publicationId]);
+    await observe({at:"2026-09-04T12:00:00.000Z"});
+    expect((await scalar("select state,market_exit_classification from agency_listings"))).toEqual({state:"ACTIVE",market_exit_classification:"RELISTED"});
+    expect((await scalar("select payload->>'previousState' state from events where event_type='AGENCY_LISTING_REACTIVATED'")).state).toBe("CLOSED_SWITCHED");
+  });
+  it("treats a newly recognized sold graphic as significant even if the source content hash is unchanged",async()=>{
+    const first=await observe({status:"UNKNOWN"});const sync=await run("2026-09-02T12:00:00Z");
+    const listing=rehashNormalizedListing(first.listing,input=>({...input,observedAt:"2026-09-02T12:00:00.000Z"}));
+    const assets=[{canonicalUrl:listing.assets[0].canonicalUrl,classification:"SOLD_GRAPHIC",sha256:"a".repeat(64)}];
+    await db.query("select persist_property_lifecycle_observation_atomic($1,$2,$3,'{}',$4,'location',null,null,null)",[agency,sync,JSON.stringify(listing),JSON.stringify(assets)]);
+    expect((await scalar("select count(*)::integer n from snapshots")).n).toBe(2);
+    expect((await scalar("select sale_status from properties")).sale_status).toBe("SOLD_CONFIRMED");
+    const next=await run("2026-09-03T12:00:00Z");
+    await db.query("select persist_property_lifecycle_observation_atomic($1,$2,$3,'{}',$4,'location',null,null,null)",[agency,next,JSON.stringify({...listing,observedAt:"2026-09-03T12:00:00.000Z"}),JSON.stringify(assets)]);
+    expect((await scalar("select count(*)::integer n from snapshots")).n).toBe(2);
+  });
+  it.each(["2026-12-01T00:00:00.000Z","2026-02-31T00:00:00.000Z"])("rejects a future or invalid declared sale date: %s",async(soldAt)=>{
+    await observe({status:"SOLD",soldAt});
+    expect((await scalar("select sold_at from market_observer_intelligence")).sold_at).toBeNull();
+    expect((await scalar("select count(*)::integer n from evidence where claim_key='publication.soldAt'")).n).toBe(0);
+  });
+  it("retains an explicit human exit classification and never derives expiry from age",async()=>{
+    const first=await observe({published:"2020-01-01T00:00:00.000Z"});
+    expect((await scalar("select market_exit_classification c from agency_listings")).c).toBe("ACTIVE");
+    await db.query(`insert into manual_overrides(target_type,target_id,override_key,override_value,reason,source,effective_at)
+      values('AGENCY_LISTING',$1,'exit_classification','"WITHDRAWN"','Proprietario verificato','USER','2026-09-01T13:00:00Z')`,[first.agencyListingId]);
+    await observe({at:"2026-09-02T12:00:00.000Z",status:"SOLD"});
+    expect((await scalar("select market_exit_classification c,market_exit_confidence::float confidence from agency_listings"))).toEqual({c:"WITHDRAWN",confidence:1});
+  });
+  it("does not change a publication hash solely because new optional evidence fields are empty",()=>{
+    const absent=rehashNormalizedListing(template,input=>({...input,source:{...input.source,soldAt:undefined},location:{...input.location,zoneName:undefined}}));
+    const empty=rehashNormalizedListing(template,input=>({...input,source:{...input.source,soldAt:null},location:{...input.location,zoneName:null}}));
+    expect(empty.contentHash).toBe(absent.contentHash);
   });
 });

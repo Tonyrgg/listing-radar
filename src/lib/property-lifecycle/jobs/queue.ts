@@ -10,9 +10,16 @@ export const LIFECYCLE_JOB_TYPES = [
   "POST_EXIT_CHECK",
   "BUILDING_DATA_SYNC",
   "SYNC_PRIVATE_RADAR",
+  "SYNC_MARKET_SOURCE",
+  "VERIFY_MARKET_PUBLICATION",
 ] as const;
 
 export type LifecycleJobType = (typeof LIFECYCLE_JOB_TYPES)[number];
+export function lifecycleRetryDelayMs(attempts:number,error:unknown):number {
+  const normal=Math.min(900,15*2**Math.max(0,attempts-1))*1000;
+  const retryAfter=error instanceof Error && "retryAfterMs" in error ? Number(error.retryAfterMs) : 0;
+  return Number.isFinite(retryAfter) && retryAfter>0 ? Math.max(normal,retryAfter) : normal;
+}
 export type LifecycleJobStatus =
   | "QUEUED"
   | "RUNNING"
@@ -146,12 +153,12 @@ export class LifecycleJobQueue {
       return;
     }
     const deadLetter = job.attempts >= job.max_attempts;
-    const retryDelaySeconds = Math.min(900, 15 * 2 ** Math.max(0, job.attempts - 1));
+    const retryDelayMs = lifecycleRetryDelayMs(job.attempts,errorValue);
     const { data, error } = await this.db
       .from("lifecycle_jobs")
       .update({
         status: deadLetter ? "DEAD_LETTER" : "RETRY",
-        run_after: new Date(Date.now() + retryDelaySeconds * 1_000).toISOString(),
+        run_after: new Date(Date.now() + retryDelayMs).toISOString(),
         lease_expires_at: null,
         finished_at: deadLetter ? new Date().toISOString() : null,
         last_error: {

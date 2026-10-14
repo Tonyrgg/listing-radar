@@ -38,7 +38,8 @@ function vista<A extends unknown[], T>(
 ): (...args: A) => Promise<LifecycleViewResult<T>> {
   const letturaInCache = unstable_cache(
     (...args: A) => lettura(getPropertyLifecycleReadRepository(), ...args),
-    ["lifecycle", nome],
+    // Separate DEV/STAGING/local fixture caches when the same checkout changes database environment.
+    ["lifecycle", nome, process.env.NEXT_PUBLIC_SUPABASE_URL ?? "unconfigured"],
     {
       tags: [LIFECYCLE_CACHE_TAG, `${LIFECYCLE_CACHE_TAG}:${nome}`],
       revalidate: DURATA_CACHE_SECONDI,
@@ -77,8 +78,8 @@ export const vistaPrivati = vista("privateRadar", (repository) =>
 export const vistaAgenzia = vista("agency", (repository, slug: string) =>
   repository.agency(slug),
 );
-export const vistaCasa = vista("property", (repository, id: string) =>
-  repository.property(id),
+export const vistaCasa = vista("property", (repository, id: string, historyPage: number = 1) =>
+  repository.property(id,historyPage),
 );
 export const vistaMovimenti = vista("marketEvents", (repository, limite: number) =>
   repository.marketEvents(limite),
