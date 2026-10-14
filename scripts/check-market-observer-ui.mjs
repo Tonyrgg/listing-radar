@@ -16,7 +16,7 @@ try{
     for(const view of ["mercato","opportunita","usciti","venduti"]){
       const response=await page.goto(`${base}/intelligence?vista=${view}`,{waitUntil:"networkidle"});
       if(response?.status()!==200) throw new Error(`HTTP ${response?.status()} ${view}`);
-      await page.getByRole("heading",{name:"Intelligence",exact:true}).waitFor();
+      await page.getByRole("heading",{name:({mercato:"Mercato",opportunita:"Opportunità",usciti:"Usciti",venduti:"Venduti"})[view],exact:true}).waitFor();
       if(await page.getByRole("heading",{name:"Intelligence non disponibile"}).count()) throw new Error("The fixture did not reach the page.");
       const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth+1);
       if(overflow) throw new Error(`Horizontal overflow ${view} ${width}`);

@@ -164,6 +164,7 @@ describe("sistema di design", () => {
       "Oggi",
       "Immobili",
       "Segnali",
+      "Intelligence",
       "Commerciale",
       "Territorio",
       "Impostazioni",

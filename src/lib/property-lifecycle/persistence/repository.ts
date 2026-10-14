@@ -307,12 +307,7 @@ export class PropertyLifecycleRepository {
       agency_id: string;
       source_key: string;
     };
-    type FingerprintStateRow = {
-      property_id: string;
-      algorithm: string;
-      fingerprint: string;
-    };
-    const [agencies, properties, agencyListings, publications, images, floorplans] =
+    const [agencies, properties, agencyListings, publications] =
       await Promise.all([
         allDatabaseRows<AgencyStateRow>(async (from, to) => {
           const { data, error } = await this.db
@@ -347,9 +342,8 @@ export class PropertyLifecycleRepository {
             .range(from, to);
           return { data: data as PublicationStateRow[] | null, error };
         }),
-        this.distinctFingerprints(null,"IMAGE") as Promise<FingerprintStateRow[]>,
-        this.distinctFingerprints(null,"FLOORPLAN") as Promise<FingerprintStateRow[]>,
       ]);
+    const { images, plans: floorplans } = await this.identityFingerprints(properties.map(row => row.id));
     const agencySlugs = new Map(agencies.map((agency) => [agency.id, agency.slug]));
 
     return {
@@ -607,12 +601,21 @@ export class PropertyLifecycleRepository {
     return catalog;
   }
 
-  private distinctFingerprints(propertyIds:string[]|null,kind:"IMAGE"|"FLOORPLAN") {
-    return allDatabaseRows<{property_id:string;algorithm:string;fingerprint:string}>(async(from,to)=>{
-      const {data,error}=await this.db.rpc("lifecycle_identity_fingerprints",{p_property_ids:propertyIds})
-        .eq("kind",kind).order("property_id").order("algorithm").order("fingerprint").range(from,to);
-      return {data,error};
-    });
+  private async identityFingerprints(propertyIds: string[]) {
+    type Value = { algorithm: string; fingerprint: string };
+    type Row = Value & { property_id: string };
+    const images: Row[] = [], plans: Row[] = [];
+    // Each RPC returns at most 75 rows, each containing all distinct values for
+    // one property. No 1,000-row truncation or repeated offset/DISTINCT scans.
+    for (const ids of batchesOf(propertyIds)) {
+      const { data, error } = await this.db.rpc("lifecycle_identity_fingerprint_bundles", { p_property_ids: ids });
+      throwIfError(error);
+      for (const row of (data ?? []) as Array<{ property_id: string; images: Value[]; floorplans: Value[] }>) {
+        images.push(...row.images.map(value => ({ ...value, property_id: row.property_id })));
+        plans.push(...row.floorplans.map(value => ({ ...value, property_id: row.property_id })));
+      }
+    }
+    return { images, plans };
   }
 
   private async loadIdentityCandidates(agencyId: string): Promise<IdentityCandidate[]> {
@@ -627,28 +630,16 @@ export class PropertyLifecycleRepository {
     }
 
     const propertyIdBatches = batchesOf(rows.map((row) => row.id));
-    const batchResults = await Promise.all(
-      propertyIdBatches.map(async (propertyIds) => {
-        const [refs, images, plans] = await Promise.all([
-          this.db
+    const refsData: Array<{ property_id: string; agency_id: string; agency_reference: string | null }> = [];
+    for (const propertyIds of propertyIdBatches) {
+      const refs = await this.db
             .from("agency_listings")
             .select("property_id,agency_id,agency_reference")
-            .in("property_id", propertyIds),
-          this.distinctFingerprints(propertyIds,"IMAGE"),
-          this.distinctFingerprints(propertyIds,"FLOORPLAN"),
-        ]);
-        throwIfError(refs.error);
-        return {
-          references: refs.data ?? [],
-          images,
-          plans,
-        };
-      }),
-    );
-
-    const refsData = batchResults.flatMap((result) => result.references);
-    const imagesData = batchResults.flatMap((result) => result.images);
-    const plansData = batchResults.flatMap((result) => result.plans);
+            .in("property_id", propertyIds);
+      throwIfError(refs.error);
+      refsData.push(...(refs.data ?? []));
+    }
+    const { images: imagesData, plans: plansData } = await this.identityFingerprints(rows.map(row => row.id));
 
     const references = (refsData ?? []) as Array<{
       property_id: string;

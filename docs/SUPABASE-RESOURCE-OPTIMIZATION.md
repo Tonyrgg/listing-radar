@@ -1,5 +1,21 @@
 # Riduzione delle risorse Supabase — 14 ottobre 2026
 
+## Ripristino completato con Pro
+
+L'Owner ha attivato Pro. Il progetto era ancora su Nano con disco da 2 GB: sono stati applicati **8 GB di disco e Micro con 1 GB RAM**, entrambi con incremento mostrato di **0,00 USD/mese**, mantenendo lo spend cap. PostgreSQL è tornato accessibile e la piattaforma ha rimosso automaticamente la sola lettura; non sono stati alterati ruoli di sicurezza o cancellati file WAL.
+
+La compattazione e il recupero fisico sono conclusi. Prima del primo sync di collaudo: **66.372 snapshot e 1.063.130 fingerprint originali conservati**, zero payload da compattare, zero fingerprint rimasti nella rappresentazione non compressa. Dopo VACUUM FULL delle due sole tabelle fisiche: database **613.321.875 byte**, rispetto ai **1.422.806.163 byte iniziali**. Dopo gli indici mirati e durante il collaudo: circa **620 MB**; sono possibili piccoli aumenti dovuti a nuovi sync e log.
+
+Storage: **15.355.770 byte e 653 anteprime**, contro 69.776.368 byte iniziali. Sono stati sostituiti 1.222 file generati, dopo l'aggiornamento verificato dei riferimenti. Zero download mancanti, zero conflitti; nessun immobile conserva più di un riferimento foto. Link delle fonti e tutti i fingerprint sono mantenuti.
+
+Le migrazioni **0018–0021 sono applicate e registrate**. Durante la sola lettura, il runner MCP/CLI non riusciva a inizializzare il registro: 0018–0019 sono state eseguite dai file di migrazione tramite una sessione di manutenzione; a protezione rimossa è stata allineata la history con `supabase migration repair`, verificando poi il dry-run senza migrazioni pendenti. 0020–0021 sono state applicate normalmente tramite CLI. 0020 mantiene il controllo di unicità anche sugli aggiornamenti; 0021 aggiunge piccoli indici parziali su prove di vendita e prezzi, senza cancellare dati.
+
+Il piano reale della vista Mercato mostrava 665 scansioni delle evidenze, con circa 15.256 blocchi letti e oltre 6 secondi di esecuzione. Dopo gli indici e il recupero fisico: prima pagina **471 ms**, altre viste **97–129 ms**. Archivio del worker: **665 immobili, 16.971 fingerprint immagine e 74 planimetrie**, invariati tra i controlli; caricamento da circa **14 secondi a 2 secondi**. I campioni Metrics API tra i passaggi di manutenzione sono rimasti sotto la soglia del 70%, con massimo medio misurato di circa 44% durante manutenzione e profiling; non sono una misura del massimo istantaneo.
+
+Collaudo reale dalla coda: **Iconacasa, 106 annunci trovati e 106 elaborati, zero errori, job SUCCEEDED al primo tentativo**, in circa 173 secondi. Campione Metrics API finale delle 14:23:59 UTC: **CPU media 4,63% negli ultimi 296 secondi**, carico 0,09, circa **7,00 GB disponibili sul disco dati**. Le percentuali dei grafici storici della dashboard non vanno confuse con questo campione. Le altre fonti non sono state forzate: Studi Santi resta non raggiungibile e PuntoCasa/Momento richiedono osservazione delle baseline. I crawler falliti non autorizzano rimozioni.
+
+Le sezioni successive conservano diagnosi e cronologia del blocco precedente. La bozza di supporto non è stata inviata e non è stata necessaria per questo recupero. Il desktop SISTER/Tecnocloud non è modificato.
+
 ## Diagnosi verificata
 
 Progetto configurato e collegato alla CLI: quello mostrato negli screenshot. Nessun reset o migrazione verso un altro progetto.
@@ -45,13 +61,13 @@ npx tsx --env-file=.env.local scripts/compact-supabase-resources.ts
 npx tsx --env-file=.env.local scripts/compact-listing-previews.ts
 
 # Compattazione verificata e anteprime:
-npx tsx --env-file=.env.local scripts/compact-supabase-resources.ts --apply --confirm-project=REF_AUTORIZZATO
+npx tsx --env-file=.env.local scripts/compact-supabase-resources.ts --apply --confirm-project=REF_AUTORIZZATO --confirmed-maintenance-window
 npx tsx --env-file=.env.local scripts/compact-listing-previews.ts --apply --confirm-project=REF_AUTORIZZATO
 ```
 
 Se il conteggio iniziale esaurisce il timeout REST, la compattazione può ometterlo con `--skip-initial-status`, dopo aver rilevato i volumi mediante una sessione SQL di manutenzione. I batch completati si possono rieseguire senza duplicare lo storico.
 
-Lo spazio fisico delle copie sostituite va recuperato dopo il completamento mediante VACUUM FULL sulle sole tabelle fisiche interessate, in assenza di job Lifecycle attivi e con lock timeout. VACUUM FULL blocca la tabella durante la riscrittura: eseguirlo separatamente, non dentro una migration o una transazione applicativa.
+Lo spazio fisico delle copie sostituite va recuperato dopo il completamento mediante VACUUM FULL sulle sole tabelle fisiche interessate, in assenza di job Lifecycle attivi e con lock timeout. Prima verificare che il disco abbia spazio sufficiente per la nuova copia della tabella e il WAL generato: il solo ritorno della connettività o il recupero di un indice non garantisce questo margine. Se il margine manca, fermarsi e concordare il recupero con il supporto. VACUUM FULL blocca la tabella durante la riscrittura: eseguirlo separatamente, non dentro una migration o una transazione applicativa.
 
 ```sql
 SET lock_timeout = '5s';
@@ -63,7 +79,7 @@ In sola lettura usare esclusivamente una sessione di manutenzione secondo la [pr
 
 Il consumo egress già registrato nel periodo non si annulla cancellando foto. Ridurre letture e download evita consumo ulteriore; eventuali restrizioni Fair Use dipendono anche dalla media del periodo, come spiega la [documentazione Supabase](https://supabase.com/docs/guides/platform/database-size#fair-use-database-size-restriction).
 
-## Stato dell'intervento
+## Cronologia del blocco precedente al ripristino
 
 La compattazione online è **interrotta e riprendibile**, non conclusa. I log dei batch attestano almeno 24.544 snapshot internati e 382.957 osservazioni fingerprint trasferite senza perdita alla rappresentazione condivisa; altri batch precedenti all'interruzione potrebbero essere già completati. Non usare questi minimi al posto del conteggio finale sul server.
 
@@ -77,4 +93,22 @@ L'utente ha escluso il passaggio a Pro il 14 ottobre 2026. Il controllo successi
 
 Il workflow GitHub **Property Lifecycle Radar** (`property-lifecycle.yml`) è stato disabilitato temporaneamente durante il blocco. Nessun nuovo job è stato avviato per il rilascio. Riabilitarlo soltanto dopo la manutenzione e la verifica delle letture/scritture con `gh workflow enable property-lifecycle.yml`; non avviare scansioni nel frattempo. Il desktop SISTER/Tecnocloud e il workflow della sua release non sono modificati.
 
-Alla ripresa: verificare lo stato e i job attivi, applicare 0018, completare i batch, confrontare conteggi e contenuti, eseguire il recupero fisico con lock timeout, verificare nuovamente letture/scritture, compattare le anteprime e misurare Storage. Rilascio del codice applicativo distinto dall'applicazione delle migrazioni: non considerare attive le riduzioni dei trasferimenti del runtime finché il codice non viene pubblicato.
+Il nuovo MCP Supabase è stato collegato e verificato sul progetto `eqqmglsxwbsihrlecnun`. I log sono accessibili e confermano un errore di scrittura `pg_wal/xlogtemp.47151: No space left on device` alle 12:29:52 UTC del 14 ottobre, seguito da recovery. Una query minima e gli advisor falliscono ancora con 57P03. Il collegamento MCP funziona, ma non ripristina la disponibilità PostgreSQL. La bozza per il supporto contiene ora queste evidenze. Il codice applicativo del commit `c4ed16a` è stato pubblicato e il deploy Vercel Production è riuscito; le scansioni Lifecycle restano sospese.
+
+### Verifica della segnalazione CPU
+
+L'utente segnala CPU al 100% dopo l'intervento. Non è stata ottenuta una misura CPU né un piano di esecuzione online durante il blocco: i test funzionali locali non dimostrano il costo sul volume reale.
+
+La lettura dei log nella finestra 06:00–15:00 UTC del 14 ottobre mostra il primo errore di disco pieno alle 08:16:32 UTC, il primo avvio del recupero alle 08:42:35 UTC e 168 avvii del recupero fino alle 12:30:05 UTC. Il commit web è delle 12:21:58 UTC; le migrazioni online e i batch di compattazione sono precedenti. Il codice Lifecycle nuovo non risulta eseguito da GitHub Actions: gli ultimi job usavano `535f51d`, mentre le funzioni SQL e le viste condivise erano già cambiate. Questo distingue il push web dagli interventi diretti sul database, senza escludere il contributo di questi ultimi al problema.
+
+La revisione statica individua costi da verificare prima di riattivare il servizio: confronto integrale JSON nei batch di compattazione; espansione delle osservazioni nella vista compatibile `image_fingerprints`; query DISTINCT globali ripetute durante la paginazione dei fingerprint. La limitazione delle gallerie allo snapshot/pubblicazione è pronta in 0018 ma non applicata. Il recupero ripetuto può contribuire al carico attuale: è una spiegazione plausibile, non una misura della sua quota di CPU. Nessuna compattazione Node locale risulta ancora in esecuzione e lo scheduler resta disabilitato. Non riattivare i batch o lo scheduler senza verificare spazio libero e piani/costo delle query sul database nuovamente accessibile.
+
+### Correzioni locali successive alla segnalazione
+
+**0019_bounded_identity_fingerprints.sql** aggiunge una lettura limitata a 75 immobili, con una riga per immobile e tutti i suoi fingerprint distinti, immagini e planimetrie insieme. Legge soltanto i valori dei gruppi, senza ricostruire le osservazioni; non crea nuove copie dei dati o nuovi indici. Il runtime prepara gruppi in sequenza e non ripete DISTINCT globali per ogni pagina e ogni tipo. Il test conserva 1.201 valori distinti di un immobile oltre il limite delle 1.000 righe, verifica deduplicazione e planimetrie, ed esclude l'espansione dello storico mediante un archivio canarino che fallirebbe se espanso. Non è una misura della CPU production.
+
+La manutenzione ora usa batch da 250 snapshot e 1.000 fingerprint, una pausa di 500 ms dopo i batch non vuoti e un massimo di 100 chiamate per invocazione prima di richiedere una nuova verifica di disco/CPU/WAL. Riprende dall'ultima pubblicazione interamente completata tramite `--after-publication=UUID`; se si interrompe a metà pubblicazione, la include di nuovo. Controlla i job attivi prima di ogni batch e richiede conferma della finestra di manutenzione dopo la verifica manuale del margine disco: il flag non misura né garantisce quel margine. Richiede anche la nuova RPC, impedendo di riprendere con lo schema precedente. 317 test unitari e 42 integrazioni passati, 25 integrazioni saltate; typecheck, lint e build passati. Corretto anche l'occhiello della pagina Intelligence rilevato dalla suite completa dopo il primo commit.
+
+Il runtime nuovo richiede 0019: schema e collaudo online sono ora completati. Le correzioni vengono distribuite dopo questa verifica; lo scheduler va riabilitato soltanto sul codice corretto.
+
+Alla ripresa: verificare lo stato e i job attivi, applicare 0018, misurare il margine recuperato, applicare 0019 e controllare i piani/costi delle letture su volumi reali. Completare i batch soltanto con margine adeguato, confrontare conteggi e contenuti, eseguire il recupero fisico soltanto con spazio sufficiente e lock timeout, verificare nuovamente letture/scritture, compattare le anteprime e misurare Storage. Il codice già pubblicato è `c4ed16a`; non considerare attive le correzioni locali successive finché non vengono distribuite.

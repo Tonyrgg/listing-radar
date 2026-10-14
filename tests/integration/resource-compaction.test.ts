@@ -30,6 +30,9 @@ describe.sequential("lossless resource compaction", () => {
     fingerprints=(await db.query("select to_jsonb(f) row from image_fingerprints f order by id")).rows;
     await db.exec(await readFile("supabase/migrations/0017_resource_compaction.sql","utf8"));
     await db.exec(await readFile("supabase/migrations/0018_compaction_index_headroom.sql","utf8"));
+    await db.exec(await readFile("supabase/migrations/0019_bounded_identity_fingerprints.sql","utf8"));
+    await db.exec(await readFile("supabase/migrations/0020_fingerprint_update_uniqueness.sql","utf8"));
+    await db.exec(await readFile("supabase/migrations/0021_market_observer_read_indexes.sql","utf8"));
   },30_000);
   afterAll(async()=>{await db?.close();});
   it("preserves every column and ID before and after bounded, repeatable compaction",async()=>{
@@ -67,7 +70,39 @@ describe.sequential("lossless resource compaction", () => {
     const sql="insert into image_fingerprints(property_id,publication_id,snapshot_id,canonical_url,algorithm,fingerprint) select property_id,publication_id,$1,'https://test.example/new.jpg','SHA256','new' from image_fingerprints limit 1";
     await db.query(sql,[snapshot]);
     await expect(db.query(sql,[snapshot])).rejects.toThrow("Duplicate fingerprint observation");
+    const second=(await db.query<{id:string}>(`insert into image_fingerprints(property_id,publication_id,snapshot_id,canonical_url,algorithm,fingerprint)
+      select property_id,publication_id,$1,'https://test.example/other.jpg','SHA256','other' from image_fingerprints limit 1 returning id`,[snapshot])).rows[0].id;
+    await expect(db.query("update image_fingerprint_current set canonical_url='https://test.example/new.jpg' where id=$1",[second]))
+      .rejects.toThrow("Duplicate fingerprint observation");
     expect((await db.query("select normalized_payload from snapshots where id=$1",[snapshot])).rows[0])
       .toEqual({normalized_payload:{observedAt:null,unknown:true}});
+  });
+  it("returns every distinct value beyond PostgREST's row limit without expanding archived observations",async()=>{
+    await db.exec("begin");
+    try {
+      const target=(await db.query<{id:string}>("insert into properties default values returning id")).rows[0].id;
+      const other=(await db.query<{id:string}>("insert into properties default values returning id")).rows[0].id;
+      await db.query(`insert into image_fingerprint_current(property_id,canonical_url,algorithm,fingerprint)
+        select $1,'https://test.example/'||n,'SHA256','f-'||n from generate_series(1,1201) n`,[target]);
+      await db.query(`insert into floorplan_fingerprints(property_id,canonical_url,algorithm,fingerprint)
+        values($1,'https://test.example/plan','SHA256','plan-one')`,[target]);
+      // A logical history expansion would cast this deliberately invalid ID and fail.
+      // Matching needs only group values, including when a group overlaps current data.
+      await db.query(`insert into image_fingerprint_archive_groups(property_id,row_data,observations) values
+        ($1,'{"algorithm":"SHA256","fingerprint":"f-1"}','[{"id":"must-not-be-expanded"}]'),
+        ($2,'{"algorithm":"SHA256","fingerprint":"unrelated"}','[{"id":"must-not-be-expanded"}]')`,[target,other]);
+      const rows=(await db.query<{property_id:string;images:Array<{algorithm:string;fingerprint:string}>;floorplans:unknown[]}>(
+        "select * from lifecycle_identity_fingerprint_bundles($1)",[[target]])).rows;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].property_id).toBe(target);
+      expect(rows[0].images).toHaveLength(1201);
+      expect(new Set(rows[0].images.map(v=>v.fingerprint))).toEqual(new Set(Array.from({length:1201},(_,i)=>`f-${i+1}`)));
+      expect(rows[0].floorplans).toEqual([{algorithm:"SHA256",fingerprint:"plan-one"}]);
+    } finally { await db.exec("rollback"); }
+  });
+  it("rejects global identity scans and oversized property batches",async()=>{
+    await expect(db.query("select * from lifecycle_identity_fingerprint_bundles(null)")).rejects.toThrow("at most 75");
+    await expect(db.query("select * from lifecycle_identity_fingerprint_bundles($1)",[Array(76).fill(pub)])).rejects.toThrow("at most 75");
+    expect((await db.query("select * from lifecycle_identity_fingerprint_bundles('{}')")).rows).toEqual([]);
   });
 });

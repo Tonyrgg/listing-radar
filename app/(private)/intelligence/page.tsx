@@ -28,7 +28,7 @@ export default async function IntelligencePage({searchParams}: {searchParams:Pro
   try { result=await readIntelligence(getSupabaseServiceClient(),{view,page,query:q,classification}); } catch { failed=true; }
   const pageUrl=(next:number)=>`?${new URLSearchParams({vista:view,pagina:String(next),...(q?{q}:{}),...(classification?{esito:classification}:{})})}`;
   return <div className="space-y-5">
-    <PageHeader eyebrow="Osservazione del mercato" title="Intelligence" description="Pubblicazioni, variazioni e opportunità, con le prove che le sostengono."
+    <PageHeader eyebrow="Intelligence" title={tabs[view]} description="Pubblicazioni, variazioni e opportunità, con le prove che le sostengono."
       actions={<form action={enqueueGlobalLifecycleRefresh}><PendingSubmitButton className={buttonClass("secondary")} pendingLabel="Metto in coda" icon={<RefreshCw aria-hidden="true" className="size-4"/>}>Rileggi le fonti</PendingSubmitButton></form>}/>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--lr-line-quiet)] pb-3">
       <nav className="flex flex-wrap gap-2" aria-label="Viste Intelligence">
