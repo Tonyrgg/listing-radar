@@ -11,9 +11,9 @@ export function LogbookEventRow({event}:{event:LogbookEvent}) {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="font-semibold text-[var(--lr-ink)]">{eventLabel(event)}</span>
         <span className="text-xs text-[var(--lr-ink-3)]">{categoryLabel[event.event_category] ?? "Attività"}</span>
-        {event.importance === "urgent" && <span className="text-xs font-semibold text-red-700">Urgente</span>}
-        {event.requires_action && <span className="text-xs font-semibold text-amber-700">Richiede azione</span>}
-        {event.sensitive && <span className="text-xs font-semibold text-amber-700">Fonte sensibile</span>}
+        {event.importance === "urgent" && <span className="text-xs font-semibold text-[var(--lr-danger)]">Urgente</span>}
+        {event.requires_action && <span className="text-xs font-semibold text-[var(--lr-warn)]">Richiede azione</span>}
+        {event.sensitive && <span className="text-xs font-semibold text-[var(--lr-warn)]">Fonte sensibile</span>}
       </div>
       <div className="flex flex-wrap gap-x-2 text-sm text-[var(--lr-ink-2)]">
         {href ? <Link href={href} className="font-medium underline underline-offset-2">
@@ -25,11 +25,11 @@ export function LogbookEventRow({event}:{event:LogbookEvent}) {
       {(event.description || event.outcome) && <p className="line-clamp-2 text-sm text-[var(--lr-ink-2)]">
         {event.description}{event.outcome && event.outcome !== "unverified" ? ` · ${event.outcome.replaceAll("_"," ")}` : ""}
       </p>}
-      {event.requires_action && event.next_action_at && <p className="text-xs font-medium text-amber-800">
+      {event.requires_action && event.next_action_at && <p className="text-xs font-medium text-[var(--lr-warn)]">
         {event.next_action_type ?? "Prossima azione"} · {formatEventTime(event.next_action_at,true)}
       </p>}
       {event.event_category === "MARKET" && event.importance === "attention" && event.lead_id
-        && <p className="text-xs text-amber-800">Valuta la prossima azione sull’opportunità.</p>}
+        && <p className="text-xs text-[var(--lr-warn)]">Valuta la prossima azione sull’opportunità.</p>}
     </div>
   </article>;
 }

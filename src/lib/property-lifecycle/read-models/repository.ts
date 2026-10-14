@@ -277,6 +277,7 @@ export class PropertyLifecycleReadRepository {
         trueMarketStartUpperBound: property.true_market_start_upper_bound,
         trueMarketStartMethod: property.true_market_start_method,
         trueMarketStartConfidence: numberValue(property.true_market_start_confidence),
+        earliestMarketEvidenceAt: stringValue(record(current).earliest_market_evidence_at) ?? property.first_seen_at,
         relaunchCount: property.relaunch_count,
         firstSeenAt: property.first_seen_at,
         lastSeenAt: property.last_seen_at,
@@ -515,7 +516,7 @@ export class PropertyLifecycleReadRepository {
       this.db
         .from("sync_runs")
         .select(
-          "id,mode,status,health_state,started_at,finished_at,discovered_count,in_scope_count,excluded_count,error_count,transitioned_count",
+          "id,mode,status,health_state,started_at,finished_at,discovered_count,normalized_count,in_scope_count,excluded_count,error_count,transitioned_count,diagnostics",
         )
         .eq("agency_id", agency.id)
         .order("started_at", { ascending: false })
@@ -564,6 +565,11 @@ export class PropertyLifecycleReadRepository {
           excludedCount: numberValue(run.excluded_count) ?? 0,
           errorCount: numberValue(run.error_count) ?? 0,
           transitionedCount: numberValue(run.transitioned_count) ?? 0,
+          processedCount: numberValue(run.normalized_count),
+          timeoutCount: numberValue(record(run.diagnostics).timeoutCount),
+          successPercentage: numberValue(record(run.diagnostics).successPercentage),
+          durationMs: numberValue(record(run.diagnostics).durationMs) ?? (run.finished_at ?
+            Math.max(0,Date.parse(String(run.finished_at))-Date.parse(String(run.started_at))) : null),
         }),
       ),
     };
@@ -823,13 +829,13 @@ export class PropertyLifecycleReadRepository {
     if (!propertyRow) return null;
     const property = (await this.hydrateProperties(properties))[0];
     const agencyListingIds = property.agencies.map((agency) => agency.listingId);
-    const [publicationResult, privateResult, eventResult, evidenceResult, opportunityResult] =
+    const [publicationResult, privateResult, eventResult, evidenceResult, opportunityResult, priceResult] =
       await Promise.all([
         agencyListingIds.length
           ? this.db
               .from("publications")
               .select(
-                "id,agency_listing_id,source_key,canonical_url,state,source_status,first_seen_at,last_seen_at",
+                "id,agency_listing_id,source_key,canonical_url,state,source_status,first_seen_at,last_seen_at,portal_published_at,portal_modified_at",
               )
               .in("agency_listing_id", agencyListingIds)
               .order("last_seen_at", { ascending: false })
@@ -850,7 +856,7 @@ export class PropertyLifecycleReadRepository {
         this.db
           .from("evidence")
           .select(
-            "id,evidence_kind,claim_key,extraction_method,confidence,observed_at,source_recorded_at",
+            "id,evidence_kind,claim_key,extraction_method,confidence,observed_at,source_recorded_at,source_url,publication_id",
           )
           .eq("property_id", id)
           .order("observed_at", { ascending: false })
@@ -862,6 +868,9 @@ export class PropertyLifecycleReadRepository {
           )
           .eq("property_id", id)
           .maybeSingle(),
+        agencyListingIds.length ? this.db.from("market_observer_publication_metrics")
+          .select("publication_id,first_asking_price,latest_asking_price,reduction_percent,drop_count,canonical_url")
+          .in("agency_listing_id", agencyListingIds) : Promise.resolve({data:[],error:null}),
       ]);
     [
       publicationResult,
@@ -869,6 +878,7 @@ export class PropertyLifecycleReadRepository {
       eventResult,
       evidenceResult,
       opportunityResult,
+      priceResult,
     ].forEach((result) => throwIfError(result.error));
     const privateRows = (privateResult.data ?? []) as PrivatePublicationRow[];
     const targetIds = unique([
@@ -905,7 +915,7 @@ export class PropertyLifecycleReadRepository {
     [locationResult, buildingResult, overrideResult].forEach((result) =>
       throwIfError(result.error),
     );
-    const imagePaths = property.representativeImagePaths.slice(0, 2);
+    const imagePaths = property.representativeImagePaths.slice(0, 1);
     const signedImages = imagePaths.length
       ? await this.db.storage
           .from("property-lifecycle-visuals")
@@ -973,6 +983,8 @@ export class PropertyLifecycleReadRepository {
         sourceStatus: String(row.source_status),
         firstSeenAt: String(row.first_seen_at),
         lastSeenAt: String(row.last_seen_at),
+        portalPublishedAt: stringValue(row.portal_published_at),
+        portalModifiedAt: stringValue(row.portal_modified_at),
       })),
       privatePublications,
       events: eventRows.map((row) => ({
@@ -992,6 +1004,8 @@ export class PropertyLifecycleReadRepository {
           confidence: numberValue(row.confidence) ?? 0,
           observedAt: String(row.observed_at),
           sourceRecordedAt: stringValue(row.source_recorded_at),
+          sourceUrl: stringValue(row.source_url),
+          publicationId: stringValue(row.publication_id),
         }),
       ),
       priceHistory: eventRows
@@ -1003,6 +1017,11 @@ export class PropertyLifecycleReadRepository {
           newPrice: numberValue(record(row.payload).newPrice),
         })),
       opportunity: opportunityRows[0] ?? null,
+      publicationPrices: ((priceResult.data ?? []) as Array<Record<string,unknown>>).map(row=>({
+        publicationId:String(row.publication_id),firstPrice:numberValue(row.first_asking_price),
+        latestPrice:numberValue(row.latest_asking_price),reductionPercent:numberValue(row.reduction_percent),
+        dropCount:numberValue(row.drop_count)??0,sourceUrl:String(row.canonical_url),
+      })),
       manualOverrides: (
         (overrideResult.data ?? []) as Array<Record<string, unknown>>
       ).map((row) => ({

@@ -28,6 +28,7 @@ export interface PresenceEvaluationInput {
   observedSourceStatus?: SourceStatus;
   observedAt: string;
   missingHealthyRunThreshold?: number;
+  missingGraceHours?: number;
 }
 
 export interface PresenceEvaluation {
@@ -96,7 +97,9 @@ export function evaluatePublicationPresence(
   const nextMissingCount = input.current.missingHealthyRunCount + 1;
   const missingSince = input.current.missingSince ?? input.observedAt;
 
-  if (nextMissingCount >= threshold) {
+  const graceHours = Math.max(1, Math.min(168, input.missingGraceHours ?? 24));
+  const graceElapsed = Date.parse(input.observedAt) - Date.parse(missingSince) >= graceHours * 3_600_000;
+  if (nextMissingCount >= threshold && graceElapsed) {
     return {
       next: {
         state: "REMOVED",

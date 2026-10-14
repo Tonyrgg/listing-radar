@@ -12,12 +12,6 @@ export interface GeographyInput {
   coordinatesExact?: boolean;
 }
 
-const LOCALITY_NAMES = new Map([
-  ["bitonto", "Bitonto"],
-  ["palombaio", "Palombaio"],
-  ["mariotto", "Mariotto"],
-]);
-
 const KNOWN_OUT_OF_SCOPE = [
   "bari",
   "santo spirito",
@@ -119,20 +113,33 @@ function extractStreet(rawText: string | null | undefined): {
   };
 }
 
-export function resolveMonitoredGeography(input: GeographyInput): NormalizedLocation {
+export interface GeographyPolicy {
+  municipality: string;
+  localities: string[];
+  outOfScopePlaces: string[];
+  postalCodes: string[];
+}
+export const DEFAULT_GEOGRAPHY_POLICY: GeographyPolicy = {
+  municipality: "Bitonto", localities: ["Bitonto", "Palombaio", "Mariotto"],
+  outOfScopePlaces: KNOWN_OUT_OF_SCOPE, postalCodes: ["70032"],
+};
+export function resolveMonitoredGeography(input: GeographyInput, policy: GeographyPolicy = DEFAULT_GEOGRAPHY_POLICY): NormalizedLocation {
+  const localityNames = new Map(policy.localities.map(name=>[normalize(name),name]));
+  const monitoredMunicipality = normalize(policy.municipality);
+  const outOfScopePlaces = policy.outOfScopePlaces.map(normalize);
   const raw = normalize(input.rawText);
   const municipality = normalize(input.municipality);
   const locality = normalize(input.locality);
   const combined = [raw, municipality, locality].filter(Boolean).join(" ");
   const segments = addressSegments(input.rawText, input.municipality, input.locality);
   const named = (place: string) => hasPlace(combined, place);
-  const streetsNamedAfterPlaces = [...LOCALITY_NAMES.keys(), ...KNOWN_OUT_OF_SCOPE].filter(
+  const streetsNamedAfterPlaces = [...localityNames.keys(), ...outOfScopePlaces].filter(
     (place) => named(place) && onlyANearbyStreet(segments, place),
   );
   const isPlaceName = (place: string) =>
     named(place) && !streetsNamedAfterPlaces.includes(place);
-  const inScopeMatches = [...LOCALITY_NAMES.keys()].filter(isPlaceName);
-  const outOfScopeMatches = KNOWN_OUT_OF_SCOPE.filter(isPlaceName);
+  const inScopeMatches = [...localityNames.keys()].filter(isPlaceName);
+  const outOfScopeMatches = outOfScopePlaces.filter(isPlaceName);
   const reasons: string[] = [];
 
   if (streetsNamedAfterPlaces.length > 0) {
@@ -151,17 +158,17 @@ export function resolveMonitoredGeography(input: GeographyInput): NormalizedLoca
     reasons.push("conflicting_in_scope_and_out_of_scope_place_names");
   } else if (inScopeMatches.length > 0) {
     scope = "IN_SCOPE";
-    resolutionConfidence = municipality === "bitonto" || locality ? 0.98 : 0.9;
-    normalizedLocality = LOCALITY_NAMES.get(
-      inScopeMatches.find((value) => value !== "bitonto") ?? "bitonto",
+    resolutionConfidence = municipality === monitoredMunicipality || locality ? 0.98 : 0.9;
+    normalizedLocality = localityNames.get(
+      inScopeMatches.find((value) => value !== monitoredMunicipality) ?? monitoredMunicipality,
     ) ?? null;
-    normalizedMunicipality = "Bitonto";
+    normalizedMunicipality = policy.municipality;
     reasons.push(`explicit_monitored_place:${inScopeMatches.join(",")}`);
   } else if (outOfScopeMatches.length > 0) {
     scope = "OUT_OF_SCOPE";
     resolutionConfidence = 0.98;
     reasons.push(`explicit_out_of_scope_place:${outOfScopeMatches.join(",")}`);
-  } else if (input.postalCode === "70032") {
+  } else if (input.postalCode && policy.postalCodes.includes(input.postalCode)) {
     reasons.push("postal_code_only_requires_review");
   } else {
     reasons.push("no_explicit_monitored_place");

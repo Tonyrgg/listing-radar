@@ -118,11 +118,33 @@ export class LifecycleJobQueue {
     return data as LifecycleJob;
   }
 
+  async renew(jobId: string, workerId: string): Promise<void> {
+    const { data, error } = await this.db.rpc("renew_lifecycle_job", {
+      p_job_id: jobId,
+      p_worker_id: workerId,
+      p_lease_seconds: 300,
+    });
+    throwQueueError(error);
+    if (data !== true) throw new Error(`Worker ${workerId} no longer owns lifecycle job ${jobId}.`);
+  }
+
   async fail(
     job: LifecycleJob,
     workerId: string,
     errorValue: unknown,
   ): Promise<void> {
+    if (errorValue instanceof Error && errorValue.message.includes("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED")) {
+      // Waiting for evidence is not a failed attempt. A blocked source must not
+      // turn every pending exit into a dead letter before the next scheduled scan.
+      const { data, error } = await this.db.from("lifecycle_jobs").update({
+        status: "RETRY", attempts: Math.max(0, job.attempts - 1),
+        run_after: new Date(Date.now() + 3_600_000).toISOString(), lease_expires_at: null,
+        last_error: { message: "In attesa di una nuova scansione completa e sana della fonte.", waitingForEvidence: true },
+      }).eq("id", job.id).eq("worker_id", workerId).eq("status", "RUNNING").select("id");
+      throwQueueError(error);
+      if (!data?.length) throw new Error(`Worker ${workerId} no longer owns lifecycle job ${job.id}.`);
+      return;
+    }
     const deadLetter = job.attempts >= job.max_attempts;
     const retryDelaySeconds = Math.min(900, 15 * 2 ** Math.max(0, job.attempts - 1));
     const { data, error } = await this.db

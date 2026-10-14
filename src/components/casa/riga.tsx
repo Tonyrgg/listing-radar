@@ -81,8 +81,8 @@ export function rigaDaMercato(
 ): RigaCasa {
   const daPrivato = property.activePrivateCount > 0;
   const agenzia = property.agencies[0]?.name ?? null;
-  const inizio = property.trueMarketStartLowerBound
-    ? new Date(property.trueMarketStartLowerBound).getTime()
+  const inizio = property.earliestMarketEvidenceAt ?? property.firstSeenAt
+    ? new Date(property.earliestMarketEvidenceAt ?? property.firstSeenAt).getTime()
     : Number.NaN;
 
   const opportunita = options.opportunita;
@@ -106,7 +106,7 @@ export function rigaDaMercato(
     giorni: Number.isNaN(inizio)
       ? null
       : Math.max(0, Math.floor((now - inizio) / (24 * 60 * 60 * 1000))),
-    giorniIncerti: (property.trueMarketStartConfidence ?? 0) < 0.85,
+    giorniIncerti: false,
     vista: new Date(property.lastSeenAt).getTime() || 0,
     stato: propertyStateLabel(property.propertyState),
     segnali: opportunita

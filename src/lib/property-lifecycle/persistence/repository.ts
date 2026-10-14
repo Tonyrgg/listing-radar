@@ -5,6 +5,7 @@ import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/
 import { canonicalBuildingAddress } from "@/lib/property-lifecycle/buildings/address";
 import {
   hashValue,
+  rehashNormalizedListing,
   type NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import {
@@ -19,14 +20,7 @@ import {
   type AdapterHealthBaseline,
   type HealthBaselineEvaluation,
 } from "@/lib/property-lifecycle/health/baseline";
-import { mergeTrueMarketStart } from "@/lib/property-lifecycle/lifecycle/market-age";
-import { trueMarketAgeDays } from "@/lib/property-lifecycle/lifecycle/market-age";
 import { resolveAuthoritativeValue } from "@/lib/property-lifecycle/lifecycle/manual-overrides";
-import {
-  assessSaleStatus,
-  type SaleStatus,
-} from "@/lib/property-lifecycle/lifecycle/sale-intelligence";
-import { assessOpportunity } from "@/lib/property-lifecycle/opportunities/rules";
 import {
   type AgencyListingState,
   type PublicationPresence,
@@ -43,6 +37,7 @@ interface AgencyRow {
   slug: string;
   adapter_key: string;
   settings: Record<string, unknown>;
+  inventory_url: string;
 }
 
 interface PublicationRow {
@@ -175,6 +170,10 @@ export function identityObservationFromListing(
     rooms: listing.commercial.rooms,
     floor: listing.commercial.floor,
     priceAmount: listing.commercial.priceAmount,
+    description: listing.commercial.description,
+    latitude: listing.location.latitude,
+    longitude: listing.location.longitude,
+    coordinatesExact: listing.location.precision === "EXACT_COORDINATES",
     imageFingerprints:
       processedAssets.length > 0
         ? processedAssets
@@ -274,15 +273,19 @@ function mediaMarketStartEvidence(
 }
 
 export class PropertyLifecycleRepository {
+  private readonly identityCatalog = new Map<string, Promise<IdentityCandidate[]>>();
+  private readonly primarySourceHosts = new Map<string,string>();
   constructor(private readonly db: SupabaseClient) {}
 
   async getAgencyBySlug(slug: string): Promise<AgencyRow> {
     const { data, error } = await this.db
       .from("agencies")
-      .select("id,slug,adapter_key,settings")
+      .select("id,slug,adapter_key,settings,inventory_url")
       .eq("slug", slug)
       .single();
-    return requiredData(data as AgencyRow | null, error, `Agency ${slug}`);
+    const agency=requiredData(data as AgencyRow | null,error,`Agency ${slug}`);
+    this.primarySourceHosts.set(agency.id,new URL(agency.inventory_url).hostname.toLowerCase().replace(/^www\./,""));
+    return agency;
   }
 
   async loadBootstrapState(): Promise<BootstrapExistingState> {
@@ -344,22 +347,8 @@ export class PropertyLifecycleRepository {
             .range(from, to);
           return { data: data as PublicationStateRow[] | null, error };
         }),
-        allDatabaseRows<FingerprintStateRow>(async (from, to) => {
-          const { data, error } = await this.db
-            .from("image_fingerprints")
-            .select("property_id,algorithm,fingerprint")
-            .order("id")
-            .range(from, to);
-          return { data: data as FingerprintStateRow[] | null, error };
-        }),
-        allDatabaseRows<FingerprintStateRow>(async (from, to) => {
-          const { data, error } = await this.db
-            .from("floorplan_fingerprints")
-            .select("property_id,algorithm,fingerprint")
-            .order("id")
-            .range(from, to);
-          return { data: data as FingerprintStateRow[] | null, error };
-        }),
+        this.distinctFingerprints(null,"IMAGE") as Promise<FingerprintStateRow[]>,
+        this.distinctFingerprints(null,"FLOORPLAN") as Promise<FingerprintStateRow[]>,
       ]);
     const agencySlugs = new Map(agencies.map((agency) => [agency.id, agency.slug]));
 
@@ -480,12 +469,33 @@ export class PropertyLifecycleRepository {
           consecutiveHealthyRuns: row.consecutive_healthy_runs,
         }
       : emptyHealthBaseline();
+    let corroboratedLowerInventory = false;
+    if (input.state === "HEALTHY" && input.sourceComplete && input.observedCount > 0 &&
+      input.expectedCount === input.observedCount && input.parseErrorCount === 0 &&
+      baseline.rollingMedian && input.observedCount / baseline.rollingMedian < 0.7 &&
+      input.structureFingerprint === baseline.schemaFingerprint) {
+      const previous = await this.db.from("adapter_health")
+        .select("observed_count,expected_count,parse_error_count,structure_fingerprint,checked_at,diagnostics")
+        .eq("agency_id", input.agencyId).order("checked_at", {ascending:false}).limit(8);
+      throwIfError(previous.error);
+      const rows = (previous.data ?? []) as Array<{
+        observed_count:number; expected_count:number; parse_error_count:number;
+        structure_fingerprint:string; checked_at:string; diagnostics:Record<string,unknown>;
+      }>;
+      corroboratedLowerInventory = rows.length >= 3 && rows.every(row =>
+        Math.abs(row.observed_count-input.observedCount) <= Math.max(1,input.observedCount*0.05) &&
+        row.expected_count === row.observed_count &&
+        row.parse_error_count === 0 && row.structure_fingerprint === input.structureFingerprint &&
+        row.diagnostics.sourceState === "HEALTHY" && row.diagnostics.sourceComplete === true) &&
+        Date.parse(rows[0].checked_at) - Date.parse(rows[rows.length-1].checked_at) >= 86_400_000;
+    }
     const evaluation = evaluateHealthBaseline({
       baseline,
       sourceState: input.state as "HEALTHY" | "DEGRADED" | "FAILED" | "STRUCTURE_CHANGED",
       sourceComplete: input.sourceComplete,
       observedCount: input.observedCount,
       structureFingerprint: input.structureFingerprint,
+      corroboratedLowerInventory,
     });
     const { error } = await this.db.rpc("record_adapter_health_observation", {
       p_agency_id: input.agencyId,
@@ -552,93 +562,6 @@ export class PropertyLifecycleRepository {
     throwIfError(error);
   }
 
-  private async upsertLocation(listing: NormalizedListingV2): Promise<string> {
-    const normalizedKey = hashValue({
-      municipality: listing.location.municipality,
-      locality: listing.location.locality,
-      postalCode: listing.location.postalCode,
-      streetName: listing.location.streetName,
-      streetNumber: listing.location.streetNumber,
-      rawText: listing.location.rawText,
-    });
-    const { data, error } = await this.db
-      .from("locations")
-      .upsert(
-        {
-          raw_text: listing.location.rawText,
-          municipality: listing.location.municipality,
-          locality: listing.location.locality,
-          postal_code: listing.location.postalCode,
-          street_name: listing.location.streetName,
-          street_number: listing.location.streetNumber,
-          latitude: listing.location.latitude,
-          longitude: listing.location.longitude,
-          scope_state: listing.location.scope,
-          resolution_method: listing.location.resolutionMethod,
-          resolution_confidence: listing.location.resolutionConfidence,
-          precision_level: listing.location.precision,
-          evidence_source: listing.adapterKey,
-          normalized_key: normalizedKey,
-          metadata: { reasons: listing.location.reasons },
-        },
-        { onConflict: "normalized_key" },
-      )
-      .select("id")
-      .single();
-    return requiredData(data as { id: string } | null, error, "Upsert location").id;
-  }
-
-  private async upsertBuilding(
-    listing: NormalizedListingV2,
-    locationId: string,
-  ): Promise<string | null> {
-    const address = canonicalBuildingAddress(listing.location);
-    if (!address) {
-      return null;
-    }
-    const existing = await this.db
-      .from("buildings")
-      .select("id,attributes")
-      .eq("normalized_key", address.normalizedKey)
-      .maybeSingle();
-    throwIfError(existing.error);
-    const attributes = {
-      ...((existing.data as { attributes?: Record<string, unknown> } | null)
-        ?.attributes ?? {}),
-      municipality: address.municipality,
-      locality: address.locality,
-      streetName: address.streetName,
-      streetNumber: address.streetNumber,
-    };
-    if (existing.data) {
-      const row = existing.data as { id: string };
-      const { error } = await this.db
-        .from("buildings")
-        .update({
-          location_id: locationId,
-          display_name: address.displayName,
-          attributes,
-          last_seen_at: listing.observedAt,
-        })
-        .eq("id", row.id);
-      throwIfError(error);
-      return row.id;
-    }
-    const { data, error } = await this.db
-      .from("buildings")
-      .insert({
-        location_id: locationId,
-        normalized_key: address.normalizedKey,
-        display_name: address.displayName,
-        attributes,
-        first_seen_at: listing.observedAt,
-        last_seen_at: listing.observedAt,
-      })
-      .select("id")
-      .single();
-    return requiredData(data as { id: string } | null, error, "Create building").id;
-  }
-
   private async publicationBySource(
     agencyId: string,
     sourceKey: string,
@@ -675,18 +598,30 @@ export class PropertyLifecycleRepository {
     return requiredData(data as PropertyRow | null, error, "Property");
   }
 
-  private async identityCandidates(agencyId: string): Promise<IdentityCandidate[]> {
-    const { data: propertiesData, error: propertiesError } = await this.db
-      .from("properties")
-      .select("id,property_type,canonical_attributes")
-      .neq("identity_status", "MERGED")
-      .limit(500);
-    throwIfError(propertiesError);
-    const rows = (propertiesData ?? []) as Array<{
+  private identityCandidates(agencyId: string): Promise<IdentityCandidate[]> {
+    let catalog = this.identityCatalog.get(agencyId);
+    if (!catalog) {
+      catalog = this.loadIdentityCandidates(agencyId);
+      this.identityCatalog.set(agencyId, catalog);
+    }
+    return catalog;
+  }
+
+  private distinctFingerprints(propertyIds:string[]|null,kind:"IMAGE"|"FLOORPLAN") {
+    return allDatabaseRows<{property_id:string;algorithm:string;fingerprint:string}>(async(from,to)=>{
+      const {data,error}=await this.db.rpc("lifecycle_identity_fingerprints",{p_property_ids:propertyIds})
+        .eq("kind",kind).order("property_id").order("algorithm").order("fingerprint").range(from,to);
+      return {data,error};
+    });
+  }
+
+  private async loadIdentityCandidates(agencyId: string): Promise<IdentityCandidate[]> {
+    const rows = await allDatabaseRows<{
       id: string;
       property_type: string | null;
       canonical_attributes: Record<string, unknown>;
-    }>;
+    }>(async (from,to)=>await this.db.from("properties").select("id,property_type,canonical_attributes")
+      .neq("identity_status","MERGED").order("id").range(from,to));
     if (rows.length === 0) {
       return [];
     }
@@ -699,22 +634,14 @@ export class PropertyLifecycleRepository {
             .from("agency_listings")
             .select("property_id,agency_id,agency_reference")
             .in("property_id", propertyIds),
-          this.db
-            .from("image_fingerprints")
-            .select("property_id,algorithm,fingerprint")
-            .in("property_id", propertyIds),
-          this.db
-            .from("floorplan_fingerprints")
-            .select("property_id,algorithm,fingerprint")
-            .in("property_id", propertyIds),
+          this.distinctFingerprints(propertyIds,"IMAGE"),
+          this.distinctFingerprints(propertyIds,"FLOORPLAN"),
         ]);
         throwIfError(refs.error);
-        throwIfError(images.error);
-        throwIfError(plans.error);
         return {
           references: refs.data ?? [],
-          images: images.data ?? [],
-          plans: plans.data ?? [],
+          images,
+          plans,
         };
       }),
     );
@@ -756,6 +683,10 @@ export class PropertyLifecycleRepository {
       rooms: numberValue(row.canonical_attributes.rooms),
       floor: stringValue(row.canonical_attributes.floor),
       priceAmount: numberValue(row.canonical_attributes.priceAmount),
+      description: stringValue(row.canonical_attributes.description),
+      latitude: numberValue(row.canonical_attributes.latitude),
+      longitude: numberValue(row.canonical_attributes.longitude),
+      coordinatesExact: row.canonical_attributes.coordinatePrecision === "EXACT_COORDINATES",
       imageFingerprints: images
         .filter((image) => image.property_id === row.id)
         .map((image) => `${image.algorithm}:${image.fingerprint}`),
@@ -763,153 +694,6 @@ export class PropertyLifecycleRepository {
         .filter((plan) => plan.property_id === row.id)
         .map((plan) => `${plan.algorithm}:${plan.fingerprint}`),
     }));
-  }
-
-  private async createProperty(
-    listing: NormalizedListingV2,
-    locationId: string,
-    buildingId: string | null,
-    identityStatus: "PROVISIONAL" | "REVIEW",
-  ): Promise<string> {
-    const { data, error } = await this.db
-      .from("properties")
-      .insert({
-        primary_location_id: locationId,
-        building_id: buildingId,
-        property_type: listing.commercial.propertyType,
-        identity_status: identityStatus,
-        true_market_start_lower_bound: listing.marketStart.lowerBound,
-        true_market_start_upper_bound: listing.marketStart.upperBound,
-        true_market_start_method: listing.marketStart.method,
-        true_market_start_confidence: listing.marketStart.confidence,
-        first_public_evidence_at:
-          listing.marketStart.lowerBound ?? listing.marketStart.upperBound ?? listing.observedAt,
-        first_seen_at: listing.observedAt,
-        last_seen_at: listing.observedAt,
-        canonical_attributes: {
-          address: identityAddress(listing),
-          locality: listing.location.locality,
-          surfaceSqm: listing.commercial.surfaceSqm,
-          rooms: listing.commercial.rooms,
-          propertyType: listing.commercial.propertyType,
-        },
-      })
-      .select("id")
-      .single();
-    return requiredData(data as { id: string } | null, error, "Create property").id;
-  }
-
-  private async choosePrimaryLocation(
-    currentLocationId: string | null,
-    candidateLocationId: string,
-  ): Promise<string> {
-    if (!currentLocationId || currentLocationId === candidateLocationId) {
-      return candidateLocationId;
-    }
-    const { data, error } = await this.db
-      .from("locations")
-      .select("id,precision_level,manually_verified")
-      .in("id", [currentLocationId, candidateLocationId]);
-    throwIfError(error);
-    const rows = (data ?? []) as Array<{
-      id: string;
-      precision_level: string;
-      manually_verified: boolean;
-    }>;
-    const current = rows.find((row) => row.id === currentLocationId);
-    const candidate = rows.find((row) => row.id === candidateLocationId);
-    if (current?.manually_verified || !candidate) {
-      return currentLocationId;
-    }
-    const rank: Record<string, number> = {
-      UNKNOWN: 0,
-      APPROXIMATE_AREA: 1,
-      STREET_ONLY: 2,
-      EXACT_COORDINATES: 3,
-      EXACT_ADDRESS: 4,
-    };
-    return (rank[candidate.precision_level] ?? 0) >
-      (rank[current?.precision_level ?? "UNKNOWN"] ?? 0)
-      ? candidateLocationId
-      : currentLocationId;
-  }
-
-  private async updatePropertyObservation(
-    propertyId: string,
-    listing: NormalizedListingV2,
-    locationId: string,
-    buildingId: string | null,
-  ): Promise<void> {
-    const existing = await this.property(propertyId);
-    const marketStart = mergeTrueMarketStart(
-      existing.true_market_start_method
-        ? {
-            lowerBound: existing.true_market_start_lower_bound,
-            upperBound: existing.true_market_start_upper_bound,
-            method: existing.true_market_start_method,
-            confidence: existing.true_market_start_confidence ?? 0,
-          }
-        : null,
-      listing.marketStart,
-    );
-    const primaryLocationId = await this.choosePrimaryLocation(
-      existing.primary_location_id,
-      locationId,
-    );
-    const { error } = await this.db
-      .from("properties")
-      .update({
-        primary_location_id: primaryLocationId,
-        building_id:
-          primaryLocationId === locationId && buildingId
-            ? buildingId
-            : existing.building_id,
-        property_type: existing.property_type ?? listing.commercial.propertyType,
-        true_market_start_lower_bound: marketStart.lowerBound,
-        true_market_start_upper_bound: marketStart.upperBound,
-        true_market_start_method: marketStart.method,
-        true_market_start_confidence: marketStart.confidence,
-        first_public_evidence_at: [
-          existing.first_public_evidence_at,
-          listing.marketStart.lowerBound ?? listing.marketStart.upperBound,
-        ]
-          .filter((value): value is string => Boolean(value))
-          .sort()[0] ?? listing.observedAt,
-        last_seen_at: listing.observedAt,
-        canonical_attributes: {
-          ...existing.canonical_attributes,
-          address:
-            existing.canonical_attributes.address ??
-            identityAddress(listing),
-          locality: existing.canonical_attributes.locality ?? listing.location.locality,
-          surfaceSqm: listing.commercial.surfaceSqm,
-          rooms: listing.commercial.rooms,
-          propertyType: listing.commercial.propertyType,
-        },
-      })
-      .eq("id", propertyId);
-    throwIfError(error);
-  }
-
-  private async ensureAgencyListing(
-    agencyId: string,
-    propertyId: string,
-    listing: NormalizedListingV2,
-  ): Promise<AgencyListingRow> {
-    const { data, error } = await this.db
-      .from("agency_listings")
-      .upsert(
-        {
-          agency_id: agencyId,
-          property_id: propertyId,
-          agency_reference: listing.source.agencyReference,
-          last_seen_at: listing.observedAt,
-        },
-        { onConflict: "agency_id,property_id" },
-      )
-      .select("id,agency_id,property_id,state")
-      .single();
-    return requiredData(data as AgencyListingRow | null, error, "Upsert agency listing");
   }
 
   private async recordEvent(input: {
@@ -955,426 +739,6 @@ export class PropertyLifecycleRepository {
     return eventId;
   }
 
-  private async recordIdentityDecision(
-    publicationId: string,
-    decision: IdentityDecision,
-    provisionalPropertyId: string,
-  ): Promise<void> {
-    const persistedCandidates = decision.candidates.slice(0, 10);
-    if (persistedCandidates.length > 0) {
-      const { error } = await this.db.from("property_match_candidates").upsert(
-        persistedCandidates.map((candidate) => ({
-          publication_id: publicationId,
-          candidate_property_id: candidate.propertyId,
-          evaluation_version: 1,
-          candidate_rank: candidate.rank,
-          score: candidate.score,
-          outcome:
-            decision.outcome === "AUTO_MATCH" && candidate.rank === 1
-              ? "AUTO_MATCH"
-              : decision.outcome,
-          feature_scores: candidate.features,
-          contradictions: candidate.contradictions,
-        })),
-        { onConflict: "publication_id,candidate_property_id,evaluation_version" },
-      );
-      throwIfError(error);
-    }
-
-    if (decision.outcome === "REVIEW_REQUIRED") {
-      const { error } = await this.db.from("review_queue").upsert(
-        {
-          review_type: "IDENTITY",
-          status: "OPEN",
-          property_id: provisionalPropertyId,
-          publication_id: publicationId,
-          title: "Ambiguous property identity",
-          details: {
-            score: decision.score,
-            margin: decision.margin,
-            candidates: persistedCandidates.slice(0, 3).map((candidate) => ({
-              propertyId: candidate.propertyId,
-              score: candidate.score,
-              contradictions: candidate.contradictions,
-            })),
-          },
-          dedupe_key: `identity:${publicationId}:v1`,
-        },
-        { onConflict: "dedupe_key" },
-      );
-      throwIfError(error);
-    }
-  }
-
-  private async recordSnapshotAndEvidence(
-    listing: NormalizedListingV2,
-    propertyId: string,
-    publicationId: string,
-    syncRunId: string,
-  ): Promise<{ snapshotId: string; evidenceIds: string[] }> {
-    const { data, error } = await this.db
-      .from("snapshots")
-      .insert({
-        publication_id: publicationId,
-        sync_run_id: syncRunId,
-        contract_version: listing.contractVersion,
-        observed_at: listing.observedAt,
-        content_hash: listing.contentHash,
-        normalized_payload: listing,
-        title: listing.commercial.title,
-        description: listing.commercial.description,
-        price_amount: listing.commercial.priceAmount,
-        price_currency: listing.commercial.priceCurrency,
-        surface_sqm: listing.commercial.surfaceSqm,
-        rooms: listing.commercial.rooms,
-        source_status: listing.status.value,
-        availability: !["SOLD", "REMOVED"].includes(listing.status.value),
-        extraction_warnings: listing.extractionWarnings,
-      })
-      .select("id")
-      .single();
-    const snapshotId = requiredData(data as { id: string } | null, error, "Record snapshot").id;
-    const claims = [
-      ...listing.status.evidence,
-      ...listing.marketStart.evidence,
-      {
-        kind: "LOCATION",
-        claimKey: "publication.location",
-        sourceUrl: listing.source.canonicalUrl,
-        extractionMethod: listing.location.resolutionMethod,
-        rawValue: listing.location.rawText,
-        normalizedValue: {
-          municipality: listing.location.municipality,
-          locality: listing.location.locality,
-          postalCode: listing.location.postalCode,
-          streetName: listing.location.streetName,
-          precision: listing.location.precision,
-          scope: listing.location.scope,
-        },
-        confidence: listing.location.resolutionConfidence,
-        observedAt: listing.observedAt,
-        sourceRecordedAt: null,
-        metadata: { reasons: listing.location.reasons },
-      },
-    ];
-    if (claims.length === 0) {
-      return { snapshotId, evidenceIds: [] };
-    }
-
-    const evidenceRows = claims.map((claim) => ({
-      property_id: propertyId,
-      publication_id: publicationId,
-      snapshot_id: snapshotId,
-      sync_run_id: syncRunId,
-      evidence_kind: claim.kind,
-      source_url: claim.sourceUrl,
-      extraction_method: claim.extractionMethod,
-      claim_key: claim.claimKey,
-      raw_value: claim.rawValue,
-      normalized_value: claim.normalizedValue,
-      confidence: claim.confidence,
-      observed_at: claim.observedAt,
-      source_recorded_at: claim.sourceRecordedAt,
-      evidence_hash: hashValue({ ...claim, observedAt: undefined }),
-      metadata: claim.metadata,
-    }));
-    const { data: evidenceData, error: evidenceError } = await this.db
-      .from("evidence")
-      .insert(evidenceRows)
-      .select("id");
-    throwIfError(evidenceError);
-    return {
-      snapshotId,
-      evidenceIds: ((evidenceData ?? []) as Array<{ id: string }>).map((row) => row.id),
-    };
-  }
-
-  private async latestSnapshot(publicationId: string): Promise<{
-    id: string;
-    price_amount: number | null;
-    content_hash: string;
-    normalized_payload: unknown;
-  } | null> {
-    const { data, error } = await this.db
-      .from("snapshots")
-      .select("id,price_amount,content_hash,normalized_payload")
-      .eq("publication_id", publicationId)
-      .order("observed_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    throwIfError(error);
-    return data as {
-      id: string;
-      price_amount: number | null;
-      content_hash: string;
-      normalized_payload: unknown;
-    } | null;
-  }
-
-  private async previousPerceptualFingerprints(snapshotId: string): Promise<{
-    images: string[];
-    floorplans: string[];
-  }> {
-    const [{ data: imageData, error: imageError }, { data: floorplanData, error: floorplanError }] =
-      await Promise.all([
-        this.db
-          .from("image_fingerprints")
-          .select("fingerprint")
-          .eq("snapshot_id", snapshotId)
-          .eq("algorithm", "DHASH64"),
-        this.db
-          .from("floorplan_fingerprints")
-          .select("fingerprint")
-          .eq("snapshot_id", snapshotId)
-          .eq("algorithm", "DHASH64"),
-      ]);
-    throwIfError(imageError);
-    throwIfError(floorplanError);
-    return {
-      images: ((imageData ?? []) as Array<{ fingerprint: string }>).map(
-        (row) => row.fingerprint,
-      ),
-      floorplans: ((floorplanData ?? []) as Array<{ fingerprint: string }>).map(
-        (row) => row.fingerprint,
-      ),
-    };
-  }
-
-  private async recordAssetFingerprints(
-    listing: NormalizedListingV2,
-    propertyId: string,
-    publicationId: string,
-    snapshotId: string,
-    syncRunId: string,
-    processedAssets: ProcessedAsset[],
-  ): Promise<void> {
-    const processedByUrl = new Map(
-      processedAssets.map((asset) => [asset.canonicalUrl, asset]),
-    );
-    const imageRows: Array<Record<string, unknown>> = [];
-    const floorplanRows: Array<Record<string, unknown>> = [];
-
-    for (const [position, asset] of listing.assets.entries()) {
-      const processed = processedByUrl.get(asset.canonicalUrl);
-      const algorithms = processed
-        ? [
-            { algorithm: "SHA256", fingerprint: processed.sha256 },
-            { algorithm: "DHASH64", fingerprint: processed.perceptualHash },
-          ]
-        : [
-            {
-              algorithm: "SOURCE_URL_SHA256",
-              fingerprint: hashValue(asset.canonicalUrl),
-            },
-          ];
-      const isFloorplan =
-        processed?.classification === "FLOORPLAN" || asset.kind === "FLOORPLAN";
-      const rows = isFloorplan ? floorplanRows : imageRows;
-
-      for (const algorithm of algorithms) {
-        rows.push({
-          property_id: propertyId,
-          publication_id: publicationId,
-          snapshot_id: snapshotId,
-          canonical_url: asset.canonicalUrl,
-          algorithm: algorithm.algorithm,
-          fingerprint: algorithm.fingerprint,
-          width: processed?.width ?? null,
-          height: processed?.height ?? null,
-          source_recorded_at: asset.sourceRecordedAt,
-          metadata: {
-            ...asset.metadata,
-            position,
-            classification: processed?.classification ?? asset.kind,
-            format: processed?.format ?? null,
-            contentType: processed?.contentType ?? null,
-            etag: processed?.etag ?? null,
-            lastModified: processed?.lastModified ?? null,
-            exif: processed?.exif ?? null,
-          },
-        });
-      }
-    }
-
-    if (imageRows.length > 0) {
-      const { error } = await this.db.from("image_fingerprints").insert(imageRows);
-      throwIfError(error);
-    }
-    if (floorplanRows.length > 0) {
-      const { error } = await this.db
-        .from("floorplan_fingerprints")
-        .insert(floorplanRows);
-      throwIfError(error);
-    }
-
-    const mediaMarketStartPolicy =
-      listing.adapterKey === "vistocasa"
-        ? {
-            method: "VISTOCASA_ORIGINAL_MEDIA_LAST_MODIFIED",
-            claimKey: "publication.originalMediaAvailableBy",
-            confidence: 0.55,
-            limitation: "media may be prepared before publication or reused",
-          }
-        : listing.adapterKey === "futura"
-          ? {
-              method: "FUTURA_ORIGINAL_MEDIA_LAST_MODIFIED",
-              claimKey: "publication.originalMediaAvailableBy",
-              confidence: 0.6,
-              limitation:
-                "coherent gallery upload batches can predate a relaunch; media may still be reused",
-            }
-          : listing.adapterKey === "garofalo"
-            ? {
-                method: "GAROFALO_ORIGINAL_MEDIA_LAST_MODIFIED",
-                claimKey: "publication.originalMediaAvailableBy",
-                confidence: 0.65,
-                limitation:
-                  "only original globaluserfiles media is eligible; media may predate publication or be reused",
-              }
-            : listing.adapterKey === "trio"
-              ? {
-                  method: "TRIO_TROVACASA_MEDIA_LAST_MODIFIED",
-                  claimKey: "publication.portalMediaAvailableBy",
-                  confidence: 0.5,
-                  limitation:
-                    "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
-                }
-              : listing.adapterKey === "momento"
-                ? {
-                    method: "MOMENTO_TROVACASA_MEDIA_LAST_MODIFIED",
-                    claimKey: "publication.portalMediaAvailableBy",
-                    confidence: 0.5,
-                    limitation:
-                      "TrovaCasa resized gallery availability is public evidence, not contractual start; media may be reused",
-                  }
-                : null;
-
-    if (mediaMarketStartPolicy) {
-      const observedTime = Date.parse(listing.observedAt);
-      const earliestMediaDate = processedAssets
-        .filter((asset) => asset.classification !== "SOLD_GRAPHIC" && asset.lastModified)
-        .map((asset) => ({ asset, time: Date.parse(asset.lastModified as string) }))
-        .filter(
-          (candidate) =>
-            Number.isFinite(candidate.time) &&
-            candidate.time >= Date.UTC(2000, 0, 1) &&
-            candidate.time <= observedTime,
-        )
-        .sort((left, right) => left.time - right.time)[0];
-
-      if (earliestMediaDate) {
-        const sourceRecordedAt = new Date(earliestMediaDate.time).toISOString();
-        const claim = {
-          kind: "MARKET_START_BOUND",
-          claimKey: mediaMarketStartPolicy.claimKey,
-          sourceUrl: earliestMediaDate.asset.canonicalUrl,
-          extractionMethod: mediaMarketStartPolicy.method,
-          rawValue: earliestMediaDate.asset.lastModified,
-          normalizedValue: { lowerBound: null, upperBound: sourceRecordedAt },
-          confidence: mediaMarketStartPolicy.confidence,
-          observedAt: listing.observedAt,
-          sourceRecordedAt,
-          metadata: {
-            limitation: mediaMarketStartPolicy.limitation,
-            classification: earliestMediaDate.asset.classification,
-          },
-        };
-        const { error: evidenceError } = await this.db.from("evidence").insert({
-          property_id: propertyId,
-          publication_id: publicationId,
-          snapshot_id: snapshotId,
-          sync_run_id: syncRunId,
-          evidence_kind: claim.kind,
-          source_url: claim.sourceUrl,
-          extraction_method: claim.extractionMethod,
-          claim_key: claim.claimKey,
-          raw_value: claim.rawValue,
-          normalized_value: claim.normalizedValue,
-          confidence: claim.confidence,
-          observed_at: claim.observedAt,
-          source_recorded_at: claim.sourceRecordedAt,
-          evidence_hash: hashValue({ ...claim, observedAt: undefined }),
-          metadata: claim.metadata,
-        });
-        throwIfError(evidenceError);
-
-        const existing = await this.property(propertyId);
-        const marketStart = mergeTrueMarketStart(
-          existing.true_market_start_method
-            ? {
-                lowerBound: existing.true_market_start_lower_bound,
-                upperBound: existing.true_market_start_upper_bound,
-                method: existing.true_market_start_method,
-                confidence: existing.true_market_start_confidence ?? 0,
-              }
-            : null,
-          {
-            lowerBound: null,
-            upperBound: sourceRecordedAt,
-            method: mediaMarketStartPolicy.method,
-            confidence: mediaMarketStartPolicy.confidence,
-          },
-        );
-        const { error: propertyError } = await this.db
-          .from("properties")
-          .update({
-            true_market_start_lower_bound: marketStart.lowerBound,
-            true_market_start_upper_bound: marketStart.upperBound,
-            true_market_start_method: marketStart.method,
-            true_market_start_confidence: marketStart.confidence,
-            first_public_evidence_at: [
-              existing.first_public_evidence_at,
-              sourceRecordedAt,
-            ]
-              .filter((value): value is string => Boolean(value))
-              .sort()[0] ?? sourceRecordedAt,
-          })
-          .eq("id", propertyId);
-        throwIfError(propertyError);
-      }
-    }
-
-    const representatives = processedAssets
-      .filter(
-        (asset) => asset.classification === "IMAGE" && asset.representativeThumbnail,
-      )
-      .sort((left, right) => left.position - right.position)
-      .slice(0, 2);
-    if (representatives.length === 0) {
-      return;
-    }
-
-    const paths: string[] = [];
-    for (const representative of representatives) {
-      const path = `${propertyId}/${representative.sha256}.webp`;
-      const { error } = await this.db.storage
-        .from("property-lifecycle-visuals")
-        .upload(path, representative.representativeThumbnail as Uint8Array, {
-          contentType: "image/webp",
-          upsert: true,
-        });
-      throwIfError(error);
-      paths.push(path);
-    }
-
-    const { data: propertyData, error: propertyError } = await this.db
-      .from("properties")
-      .select("representative_image_paths")
-      .eq("id", propertyId)
-      .single();
-    throwIfError(propertyError);
-    const existingPaths =
-      ((propertyData as { representative_image_paths: string[] } | null)
-        ?.representative_image_paths ?? []);
-    const { error: updateError } = await this.db
-      .from("properties")
-      .update({
-        representative_image_paths: [...new Set([...existingPaths, ...paths])].slice(0, 2),
-      })
-      .eq("id", propertyId);
-    throwIfError(updateError);
-  }
-
   async persistObservation(
     agencyId: string,
     syncRunId: string,
@@ -1382,6 +746,17 @@ export class PropertyLifecycleRepository {
     processedAssets: ProcessedAsset[] = [],
     options: { failurePoint?: ObservationFailurePoint } = {},
   ): Promise<PersistedObservation> {
+    let primaryHost=this.primarySourceHosts.get(agencyId);
+    if (!primaryHost) {
+      const source=await this.db.from("agencies").select("inventory_url").eq("id",agencyId).single();
+      const agency=requiredData(source.data as {inventory_url:string}|null,source.error,"Primary publication source");
+      primaryHost=new URL(agency.inventory_url).hostname.toLowerCase().replace(/^www\./,"");
+      this.primarySourceHosts.set(agencyId,primaryHost);
+    }
+    const sourceHost=new URL(listing.source.canonicalUrl).hostname.toLowerCase().replace(/^www\./,"");
+    if (sourceHost!==primaryHost && !listing.source.sourceKey.startsWith(`${sourceHost}:`)) {
+      listing=rehashNormalizedListing(listing,input=>({...input,source:{...input.source,sourceKey:`${sourceHost}:${input.source.sourceKey}`}}));
+    }
     const existingPublication = await this.publicationBySource(
       agencyId,
       listing.source.sourceKey,
@@ -1447,12 +822,20 @@ export class PropertyLifecycleRepository {
         snapshotId: string;
         createdProperty: boolean;
         createdPublication: boolean;
+        changed?: boolean;
       } | null,
       null,
       "Atomic observation",
     );
 
-    await this.uploadRepresentativeThumbnails(result.propertyId, processedAssets);
+    if (result.createdProperty) {
+      const catalog = this.identityCatalog.get(agencyId);
+      if (catalog) (await catalog).push({
+        ...identityObservationFromListing(listing, processedAssets), propertyId: result.propertyId,
+        knownAgencyReferences: listing.source.agencyReference ? [listing.source.agencyReference] : [],
+      });
+    }
+    if (result.changed !== false) await this.uploadRepresentativeThumbnails(result.propertyId, processedAssets);
     return {
       propertyId: result.propertyId,
       agencyListingId: result.agencyListingId,
@@ -1473,36 +856,28 @@ export class PropertyLifecycleRepository {
         (asset) => asset.classification === "IMAGE" && asset.representativeThumbnail,
       )
       .sort((left, right) => left.position - right.position)
-      .slice(0, 2);
+      .slice(0, 1);
     if (representatives.length === 0) {
       return;
     }
     try {
       const paths: string[] = [];
       for (const representative of representatives) {
-        const path = `${propertyId}/${representative.sha256}.webp`;
+        const path = `${propertyId}/preview-640-${representative.sha256}.webp`;
         const { error } = await this.db.storage
           .from("property-lifecycle-visuals")
           .upload(path, representative.representativeThumbnail as Uint8Array, {
             contentType: "image/webp",
+            cacheControl: "31536000",
             upsert: true,
           });
         throwIfError(error);
         paths.push(path);
       }
-      const { data, error } = await this.db
-        .from("properties")
-        .select("representative_image_paths")
-        .eq("id", propertyId)
-        .single();
-      throwIfError(error);
-      const existingPaths =
-        ((data as { representative_image_paths: string[] } | null)
-          ?.representative_image_paths ?? []);
       const { error: updateError } = await this.db
         .from("properties")
         .update({
-          representative_image_paths: [...new Set([...existingPaths, ...paths])].slice(0, 2),
+          representative_image_paths: paths.slice(0, 1),
         })
         .eq("id", propertyId);
       throwIfError(updateError);
@@ -1657,194 +1032,11 @@ export class PropertyLifecycleRepository {
     });
   }
 
-  private async updateSaleFromObservation(input: {
-    propertyId: string;
-    publicationId: string;
-    listing: NormalizedListingV2;
-  }): Promise<void> {
-    const { data: agencyListingsData, error: agencyListingsError } = await this.db
-      .from("agency_listings")
-      .select("id")
-      .eq("property_id", input.propertyId);
-    throwIfError(agencyListingsError);
-    const agencyListingIds = ((agencyListingsData ?? []) as Array<{ id: string }>).map(
-      (row) => row.id,
-    );
-    let otherActivePublication = false;
-    if (agencyListingIds.length > 0) {
-      const { count, error } = await this.db
-        .from("publications")
-        .select("id", { count: "exact", head: true })
-        .in("agency_listing_id", agencyListingIds)
-        .neq("id", input.publicationId)
-        .eq("state", "ACTIVE");
-      throwIfError(error);
-      otherActivePublication = (count ?? 0) > 0;
-    }
-
-    const manualStatus = await this.authoritativeManualValue<SaleStatus | null>({
-      targetType: "PROPERTY",
-      targetId: input.propertyId,
-      key: "sale_status",
-      derivedValue: null,
-    });
-    const assessment = assessSaleStatus({
-      explicitSourceSold: input.listing.status.value === "SOLD",
-      soldGraphic: input.listing.assets.some(
-        (asset) => /vendut|sold/i.test(new URL(asset.canonicalUrl).pathname),
-      ),
-      trustedPortalSold: false,
-      manualStatus,
-      otherActivePublication,
-    });
-    const { error } = await this.db
-      .from("properties")
-      .update({ sale_status: assessment.status })
-      .eq("id", input.propertyId);
-    throwIfError(error);
-
-    if (assessment.requiresReview) {
-      const { error: reviewError } = await this.db.from("review_queue").upsert(
-        {
-          review_type: "LIFECYCLE",
-          status: "OPEN",
-          property_id: input.propertyId,
-          publication_id: input.publicationId,
-          title: "Conflicting sold and active-publication evidence",
-          details: assessment,
-          dedupe_key: `sale-conflict:${input.propertyId}`,
-        },
-        { onConflict: "dedupe_key" },
-      );
-      throwIfError(reviewError);
-    }
-  }
-
   async refreshPropertyIntelligence(propertyId: string): Promise<void> {
-    const { data: propertyData, error: propertyError } = await this.db
-      .from("properties")
-      .select(
-        "sale_status,true_market_start_lower_bound,true_market_start_upper_bound,true_market_start_method,true_market_start_confidence,relaunch_count",
-      )
-      .eq("id", propertyId)
-      .single();
-    throwIfError(propertyError);
-    const property = requiredData(
-      propertyData as {
-        sale_status: SaleStatus;
-        true_market_start_lower_bound: string | null;
-        true_market_start_upper_bound: string | null;
-        true_market_start_method: string | null;
-        true_market_start_confidence: number | null;
-        relaunch_count: number;
-      } | null,
-      null,
-      "Refresh property intelligence",
-    );
-    const { data: agencyListingsData, error: agencyListingsError } = await this.db
-      .from("agency_listings")
-      .select("id,agency_id,state")
-      .eq("property_id", propertyId);
-    throwIfError(agencyListingsError);
-    const agencyListings = (agencyListingsData ?? []) as Array<{
-      id: string;
-      agency_id: string;
-      state: AgencyListingState;
-    }>;
-    const activeAgencyCount = new Set(
-      agencyListings
-        .filter((agencyListing) => agencyListing.state === "ACTIVE")
-        .map((agencyListing) => agencyListing.agency_id),
-    ).size;
-    const { count: privateCount, error: privateError } = await this.db
-      .from("private_publications")
-      .select("id", { count: "exact", head: true })
-      .eq("property_id", propertyId)
-      .eq("state", "ACTIVE");
-    throwIfError(privateError);
-    const activePrivate = (privateCount ?? 0) > 0;
-    const propertyState =
-      property.sale_status === "SOLD_CONFIRMED" && activeAgencyCount === 0 && !activePrivate
-        ? "SOLD"
-        : activeAgencyCount > 1 && activePrivate
-          ? "ACTIVE_AGENCY_AND_PRIVATE"
-          : activeAgencyCount > 1
-            ? "ACTIVE_MULTI_AGENCY"
-            : activeAgencyCount === 1 && activePrivate
-              ? "ACTIVE_AGENCY_AND_PRIVATE"
-              : activeAgencyCount === 1
-                ? "ACTIVE_AGENCY"
-                : activePrivate
-                  ? "ACTIVE_PRIVATE"
-                  : "OFF_MARKET_UNKNOWN";
-    const { error: stateError } = await this.db
-      .from("properties")
-      .update({ property_state: propertyState })
-      .eq("id", propertyId);
-    throwIfError(stateError);
-
-    const { count: priceDropCount, error: priceError } = await this.db
-      .from("events")
-      .select("id", { count: "exact", head: true })
-      .eq("property_id", propertyId)
-      .eq("event_type", "PRICE_DROP");
-    throwIfError(priceError);
-    const age = property.true_market_start_method
-      ? trueMarketAgeDays(
-          {
-            lowerBound: property.true_market_start_lower_bound,
-            upperBound: property.true_market_start_upper_bound,
-            method: property.true_market_start_method,
-            confidence: property.true_market_start_confidence ?? 0,
-          },
-          new Date().toISOString(),
-        ).minimumDays
-      : null;
-    const assessments = agencyListings.map((agencyListing) =>
-      assessOpportunity({
-        saleStatus: property.sale_status,
-        agencyListingState: agencyListing.state,
-        agencyToPrivate: agencyListing.state === "CLOSED_TO_PRIVATE",
-        trueMarketAgeDays: age,
-        priceDropCount: priceDropCount ?? 0,
-        relaunchCount: property.relaunch_count,
-      }),
-    );
-    const levelRank = { NONE: 0, WATCH: 1, INTERESTING: 2, HIGH: 3, HOT: 4 };
-    const opportunity = assessments.sort(
-      (left, right) => levelRank[right.level] - levelRank[left.level],
-    )[0] ??
-      assessOpportunity({
-        saleStatus: property.sale_status,
-        // No agency listing has ever existed for this property, so no agency
-        // exit was ever observed. Claiming one here fabricated history the
-        // Radar never saw for private-only properties.
-        agencyListingState: null,
-        agencyToPrivate: false,
-        trueMarketAgeDays: age,
-        priceDropCount: priceDropCount ?? 0,
-        relaunchCount: property.relaunch_count,
-      });
-    const { error: opportunityError } = await this.db.from("opportunities").upsert(
-      {
-        property_id: propertyId,
-        opportunity_type: "ACQUISITION",
-        status:
-          opportunity.level === "NONE"
-            ? property.sale_status === "SOLD_CONFIRMED"
-              ? "DISMISSED"
-              : "EXPIRED"
-            : "OPEN",
-        level: opportunity.level,
-        score: opportunity.score,
-        evidence_summary: { propertyState },
-        reasons: opportunity.reasons,
-        rule_version: 1,
-        dedupe_key: `acquisition:${propertyId}:v1`,
-      },
-      { onConflict: "dedupe_key" },
-    );
-    throwIfError(opportunityError);
+    const { error } = await this.db.rpc("refresh_property_lifecycle_intelligence_atomic", {
+      p_property_id: propertyId,
+    });
+    throwIfError(error);
   }
 
   async runPostExitCheck(input: {

@@ -120,6 +120,7 @@ async function executeAgencySync(
   job: LifecycleJob,
   adapterFactory: (adapterKey: string) => PropertyLifecycleAdapter,
   assetProcessor: LifecycleAssetProcessor,
+  assertOwnership: () => void,
 ): Promise<void> {
   if (!job.agency_id) {
     throw new Error(`Job ${job.id} requires agency_id.`);
@@ -144,6 +145,7 @@ async function executeAgencySync(
     mode: syncMode(job.job_type),
     jobId: job.id,
     assetProcessor: (listing) => assetProcessor(listing, job.job_type),
+    assertOwnership,
   });
 }
 
@@ -246,6 +248,16 @@ export async function runLifecycleWorkerOnce(
     return false;
   }
 
+  let ownershipError: Error | null = null;
+  let renewal: Promise<void> | null = null;
+  const heartbeat = setInterval(() => {
+    if (renewal || ownershipError) return;
+    renewal = queue.renew(job.id, workerId)
+      .catch((error: unknown) => { ownershipError = error instanceof Error ? error : new Error(String(error)); })
+      .finally(() => { renewal = null; });
+  }, 60_000);
+  const assertOwnership = () => { if (ownershipError) throw ownershipError; };
+
   try {
     if (["SYNC_ALL", "DEEP_SYNC_ALL", "BOOTSTRAP_ALL"].includes(job.job_type)) {
       await executeFanout(dependencies.db, queue, job);
@@ -257,6 +269,7 @@ export async function runLifecycleWorkerOnce(
         job,
         adapterFactory,
         dependencies.assetProcessor ?? defaultAssetProcessor,
+        assertOwnership,
       );
     } else if (job.job_type === "POST_EXIT_CHECK") {
       await executePostExitCheck(dependencies.db, job);
@@ -271,10 +284,16 @@ export async function runLifecycleWorkerOnce(
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);
     }
+    clearInterval(heartbeat);
+    await renewal;
+    assertOwnership();
     await queue.complete(job.id, workerId);
     return true;
   } catch (error) {
     await queue.fail(job, workerId, error);
     throw error;
+  } finally {
+    clearInterval(heartbeat);
+    await renewal;
   }
 }

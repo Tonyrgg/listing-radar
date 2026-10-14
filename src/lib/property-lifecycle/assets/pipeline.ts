@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
 import { inspectImage } from "@/lib/image/inspection";
+import { isDedicatedSoldGraphicUrl } from "@/lib/property-lifecycle/lifecycle/status-evidence";
 import type {
   NormalizedAsset,
   NormalizedListingV2,
@@ -91,7 +92,7 @@ export function sanitizeExif(exif: Record<string, unknown> | null): SanitizedExi
 }
 
 function classifyAsset(asset: NormalizedAsset): AssetClassification {
-  if (/vendut|sold/i.test(new URL(asset.canonicalUrl).pathname)) {
+  if (isDedicatedSoldGraphicUrl(asset.canonicalUrl)) {
     return "SOLD_GRAPHIC";
   }
   if (
@@ -141,7 +142,7 @@ export async function processListingAssets(
   const maxBytesPerAsset = options.maxBytesPerAsset ?? 15 * 1024 * 1024;
   const requestDelayMs = options.requestDelayMs ?? 200;
   const timeoutMs = options.timeoutMs ?? 15_000;
-  const representativeImageCount = Math.min(2, options.representativeImageCount ?? 2);
+  const representativeImageCount = Math.max(0,Math.min(1, options.representativeImageCount ?? 1));
   const processed: ProcessedAsset[] = [];
   const warnings: string[] = [];
   let representativeImages = 0;
@@ -163,8 +164,8 @@ export async function processListingAssets(
       const representativeThumbnail = retainRepresentative
         ? await sharp(bytes)
             .rotate()
-            .resize(960, 720, { fit: "inside", withoutEnlargement: true })
-            .webp({ quality: 76 })
+            .resize(640, 480, { fit: "inside", withoutEnlargement: true })
+            .webp({ quality: 65 })
             .toBuffer()
         : null;
       if (retainRepresentative) {

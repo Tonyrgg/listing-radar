@@ -9,6 +9,7 @@ import {
   type SourceStatus,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { resolveMonitoredGeography } from "@/lib/property-lifecycle/geography/scope";
+import { isDedicatedSoldGraphicUrl } from "@/lib/property-lifecycle/lifecycle/status-evidence";
 import type {
   AdapterHealthResult,
   InventoryItem,
@@ -126,7 +127,7 @@ function vistocasaAssets($: CheerioAPI, externalId: string): NormalizedAsset[] {
   }
 
   return [...urls].slice(0, 60).map((url) => {
-    const soldGraphic = /vendut|sold/i.test(new URL(url).pathname);
+    const soldGraphic = isDedicatedSoldGraphicUrl(url);
     return {
       kind: /planimetr|piantina|floor.?plan|pianta[-_.]/i.test(new URL(url).pathname)
         ? "FLOORPLAN"
@@ -143,12 +144,12 @@ function vistocasaAssets($: CheerioAPI, externalId: string): NormalizedAsset[] {
 }
 
 function soldGraphic(assets: NormalizedAsset[], item: InventoryItem): NormalizedAsset | null {
-  const fromDetail = assets.find((asset) => /vendut|sold/i.test(new URL(asset.canonicalUrl).pathname));
+  const fromDetail = assets.find((asset) => isDedicatedSoldGraphicUrl(asset.canonicalUrl));
   if (fromDetail) {
     return fromDetail;
   }
   const inventoryImage = item.summary.imageUrl;
-  if (typeof inventoryImage !== "string" || !/vendut|sold/i.test(inventoryImage)) {
+  if (typeof inventoryImage !== "string" || !isDedicatedSoldGraphicUrl(inventoryImage)) {
     return null;
   }
   return {
@@ -218,7 +219,7 @@ export function parseVistocasaInventoryHtml(
           })(),
           longitude: parseCoordinate(marker.attr("lng")),
           imageUrl,
-          soldGraphic: Boolean(imageUrl && /vendut|sold/i.test(imageUrl)),
+          soldGraphic: Boolean(imageUrl && isDedicatedSoldGraphicUrl(imageUrl)),
         },
       });
     } catch {

@@ -143,7 +143,7 @@ export default async function SegnaliPage() {
       <LifecycleHeader
         eyebrow="Segnali"
         title="Cosa è cambiato sul mercato"
-        description="Ogni movimento ricondotto alla casa vera: prezzi che scendono, annunci che spariscono, mandati che cambiano mano."
+        description="Ogni movimento ricondotto alla casa vera: prezzi che scendono, pubblicazioni che spariscono, agenzie che cambiano."
         actions={
           <>
             {/* Rileggere tutte le fonti è un'azione di questa sezione, non una
@@ -212,7 +212,7 @@ export default async function SegnaliPage() {
             <CardBody>
               <EmptyState
                 title="Il mercato è fermo"
-                description="Nessun prezzo cambiato, nessun annuncio uscito, nessun mandato passato di mano dall'ultima lettura delle fonti."
+                description="Nessun prezzo cambiato, nessuna pubblicazione rimossa, nessun cambio di agenzia dall'ultima lettura delle fonti."
               />
             </CardBody>
           )}

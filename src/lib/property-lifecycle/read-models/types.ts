@@ -25,6 +25,7 @@ export interface LifecyclePropertySummary {
   trueMarketStartUpperBound: string | null;
   trueMarketStartMethod: string | null;
   trueMarketStartConfidence: number | null;
+  earliestMarketEvidenceAt?: string | null;
   relaunchCount: number;
   firstSeenAt: string;
   lastSeenAt: string;
@@ -107,6 +108,10 @@ export interface LifecycleAgencyDetail {
     excludedCount: number;
     errorCount: number;
     transitionedCount: number;
+    processedCount?: number | null;
+    timeoutCount?: number | null;
+    successPercentage?: number | null;
+    durationMs?: number | null;
   }>;
 }
 
@@ -173,6 +178,8 @@ export interface LifecyclePropertyDetail {
     sourceStatus: string;
     firstSeenAt: string;
     lastSeenAt: string;
+    portalPublishedAt?: string | null;
+    portalModifiedAt?: string | null;
   }>;
   privatePublications: LifecyclePrivatePublication[];
   events: Array<{
@@ -191,6 +198,8 @@ export interface LifecyclePropertyDetail {
     confidence: number;
     observedAt: string;
     sourceRecordedAt: string | null;
+    sourceUrl?: string | null;
+    publicationId?: string | null;
   }>;
   priceHistory: Array<{
     eventType: string;
@@ -211,4 +220,8 @@ export interface LifecyclePropertyDetail {
     effectiveAt: string;
   }>;
   imageUrls: string[];
+  publicationPrices?: Array<{
+    publicationId: string; firstPrice: number | null; latestPrice: number | null;
+    reductionPercent: number | null; dropCount: number; sourceUrl: string;
+  }>;
 }

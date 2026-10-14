@@ -86,6 +86,7 @@ export function evaluateHealthBaseline(input: {
   sourceComplete: boolean;
   observedCount: number;
   structureFingerprint: string;
+  corroboratedLowerInventory?: boolean;
 }): HealthBaselineEvaluation {
   const baseline = input.baseline ?? emptyHealthBaseline();
   const sourceUsable = input.sourceState === "HEALTHY" && input.sourceComplete;
@@ -167,6 +168,19 @@ export function evaluateHealthBaseline(input: {
     anomalyRatio != null &&
     anomalyRatio < minimumPlausibleRatio
   ) {
+    if (input.corroboratedLowerInventory) {
+      // A genuine inventory shrink must not freeze the source forever. The
+      // repository permits this only after independent, complete scans with
+      // explicit counts and unchanged structure, spanning at least 24 hours.
+      return {
+        effectiveState: "HEALTHY", inventoryComplete: true, absenceEvaluationAllowed: false,
+        baselineReady: false, anomalyRatio,
+        reasons: ["inventory_baseline_reestablished_from_complete_scans", "baseline_warmup"],
+        next: { ...baseline, recentInventoryCounts: [input.observedCount], rollingMedian: input.observedCount,
+          variability: null, successfulRunCount: baseline.successfulRunCount + 1,
+          consecutiveHealthyRuns: 1, consecutiveFailures: 0 },
+      };
+    }
     return {
       effectiveState: "DEGRADED",
       inventoryComplete: false,

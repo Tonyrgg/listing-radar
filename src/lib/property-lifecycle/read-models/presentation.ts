@@ -67,6 +67,8 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 export function lifecycleEventLabel(value: string): string {
+  if (value === "PUBLICATION_REFRESHED") return "Pubblicazione aggiornata dalla fonte";
+  if (value === "SALE_STATUS_CHANGED") return "Valutazione della vendita aggiornata";
   return EVENT_LABELS[value] ?? humanize(value);
 }
 
@@ -128,6 +130,8 @@ export function agencyListingStateLabel(value: string): string {
 }
 
 export function opportunityReasonLabel(value: string): string {
+  if (value.startsWith("observed_market_age:")) return `Almeno ${value.split(":")[1]} giorni osservati sul mercato`;
+  if (value.startsWith("price_reduction_percent:")) return `Prezzo ridotto del ${value.split(":")[1]}%`;
   if (value.startsWith("price_drops:")) {
     return `Riduzioni di prezzo: ${value.split(":")[1]}`;
   }
@@ -135,7 +139,7 @@ export function opportunityReasonLabel(value: string): string {
     return `Rilanci osservati: ${value.split(":")[1]}`;
   }
   if (value === "true_market_age_at_least_150_days") {
-    return "Anzianità reale di mercato oltre 150 giorni";
+    return "Presenza osservata sul mercato oltre 150 giorni";
   }
   return REASON_LABELS[value] ?? humanize(value);
 }
@@ -188,7 +192,9 @@ const REVIEW_STATUS_LABELS: Record<string, string> = {
 
 const PUBLICATION_STATE_LABELS: Record<string, string> = {
   ACTIVE: "Ancora online",
-  REMOVED: "Uscito dal mercato",
+  REMOVED: "Pubblicazione rimossa",
+  MISSING_PENDING: "Assenza da confermare",
+  SOLD_MARKED: "Segnalata come venduta dalla fonte",
   PENDING: "Da verificare",
 };
 
@@ -218,6 +224,9 @@ const PRECISION_LABELS: Record<string, string> = {
 const CLAIM_KEY_LABELS: Record<string, string> = {
   "publication.location": "Dove si trova",
   "publication.status": "Cosa dichiara il sito",
+  "publication.askingPrice": "Prezzo richiesto dalla fonte",
+  "publication.soldGraphic": "Indicatore di vendita della pubblicazione",
+  "publication.inventoryPresence": "Presenza nel catalogo della fonte",
   "publication.datePublished": "Quando l'annuncio è stato pubblicato",
   "publication.publishUp": "Quando l'annuncio è andato online",
   "publication.articlePublishedDate": "Data della pagina sul sito",
@@ -254,6 +263,9 @@ const METHOD_LABELS: Record<string, string> = {
   FLAZIO_SOLD_FLAG: "dal segno di venduto messo dal sito",
   VISTOCASA_DEDICATED_SOLD_GRAPHIC: "dalla scritta «venduto» sulla foto",
   PUNTOCASA_DEDICATED_STATUS_TAXONOMY: "dalla categoria di stato usata dal sito",
+  SOURCE_PRICE_FIELD_V1: "dal campo prezzo della pubblicazione",
+  DEDICATED_SOLD_GRAPHIC_V1: "dall’indicatore dedicato di vendita nella galleria",
+  COMPLETE_HEALTHY_INVENTORY_V1: "dal collegamento presente nel catalogo completo della fonte",
 };
 
 export function opportunityLevelLabel(value: string): string {

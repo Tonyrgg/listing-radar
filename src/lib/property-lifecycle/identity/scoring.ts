@@ -7,6 +7,10 @@ export interface IdentityObservation {
   rooms: number | null;
   floor?: string | null;
   priceAmount?: number | null;
+  description?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinatesExact?: boolean;
   imageFingerprints: string[];
   floorplanFingerprints: string[];
 }
@@ -62,7 +66,17 @@ const FEATURE_WEIGHTS = {
   propertyType: 0.03,
   floor: 0.05,
   price: 0.07,
+  geography: 0.08,
+  description: 0.02,
 } as const;
+
+function exactDistance(left: IdentityObservation, right: IdentityObservation): number | null {
+  if (!left.coordinatesExact || !right.coordinatesExact || left.latitude==null || left.longitude==null ||
+    right.latitude==null || right.longitude==null) return null;
+  const latitude=(left.latitude-right.latitude)*111_320;
+  const longitude=(left.longitude-right.longitude)*111_320*Math.cos(left.latitude*Math.PI/180);
+  return Math.hypot(latitude,longitude);
+}
 
 /**
  * Una differenza di prezzo o metratura può essere un semplice aggiornamento;
@@ -216,6 +230,8 @@ export function identityHardConflicts(
   candidate: IdentityObservation,
 ): string[] {
   const conflicts: string[] = [];
+  const distance=exactDistance(observation,candidate);
+  if (distance!=null && distance>150) conflicts.push("exact_coordinate_conflict");
   const surfaceDifference = relativeDifference(observation.surfaceSqm, candidate.surfaceSqm);
   const priceDifference = relativeDifference(observation.priceAmount, candidate.priceAmount);
   const roomsDifference =
@@ -355,6 +371,8 @@ export function retrieveIdentityCandidates(
       normalizedFloor(observation.floor) != null &&
       normalizedFloor(observation.floor) === normalizedFloor(candidate.floor);
     const strongMedia = imageScore >= 0.78 || floorplanScore >= 0.8;
+    const distance=exactDistance(observation,candidate);
+    const exactLocationBlock=distance!=null && distance<=50 && surfaceDifference!=null && surfaceDifference<=0.2;
     const exactCivicBlock = exactCivic && addressScore >= 0.5;
     const streetAndFactsBlock =
       addressScore >= 0.5 &&
@@ -375,6 +393,7 @@ export function retrieveIdentityCandidates(
       exactCivicBlock ||
       streetAndFactsBlock ||
       incompleteLocationBlock
+      || exactLocationBlock
     ) {
       included.push(candidate);
     } else {
@@ -426,6 +445,10 @@ export function scoreIdentityCandidate(
     candidate.floorplanFingerprints,
   );
   const features = {
+    geography: feature(Math.max(0,1-(exactDistance(observation,candidate)??150)/150),
+      FEATURE_WEIGHTS.geography,exactDistance(observation,candidate)!=null),
+    description: feature(jaccard(normalizedTokens(observation.description??null),normalizedTokens(candidate.description??null)),
+      FEATURE_WEIGHTS.description,normalizedTokens(observation.description??null).size>=12 && normalizedTokens(candidate.description??null).size>=12),
     agencyReference: feature(
       agencyReferenceScore,
       FEATURE_WEIGHTS.agencyReference,

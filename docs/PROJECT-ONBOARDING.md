@@ -266,6 +266,14 @@ Regole:
 
 ## 8. Property Lifecycle Radar V2
 
+### Market Observer / Intelligence
+
+La revisione del 14 ottobre 2026 è implementata nel repository. Le migrazioni additive **0014–0017** sono state applicate online durante l'intervento sulle quote Supabase; il rilascio del codice web/runtime è una fase distinta. Audit e procedura sono in [17-market-observer-audit.md](property-lifecycle/17-market-observer-audit.md), [18-market-observer-implementation.md](property-lifecycle/18-market-observer-implementation.md) e [SUPABASE-RESOURCE-OPTIMIZATION.md](SUPABASE-RESOURCE-OPTIMIZATION.md). Non riguarda il desktop SISTER/Tecnocloud.
+
+`/intelligence` riunisce mercato, opportunità, usciti e venduti sullo stesso archivio V2. Date dichiarate del portale, prima osservazione e prima evidenza pubblica restano distinte dall'incarico; una foto non dimostra l'inizio della commercializzazione. Lo score è centralizzato nella RPC `market_observer_assess_opportunity`, con pesi in `market_observer_config`; le opportunità si collegano esplicitamente ad Acquisition OS senza sovrascrivere la prossima azione umana.
+
+Osservazioni invariate riusano le versioni e conservano ricevute di presenza. Assenze implicite richiedono inventario sano/completo, baseline pronta, scansioni consecutive e grace di 24 ore; il post-uscita richiede nuove prove sane dopo la scadenza del controllo. La nuova baseline di un inventario ridotto ha un warmup conservativo. Per le limitazioni reali delle fonti e il backfill derivato, leggere il rapporto prima di eseguire comandi online.
+
 ### Contratto adapter
 
 Ogni adapter deve restituire pubblicazioni normalizzate con evidenza della fonte, identificatore esterno, URL, stato, dati immobiliari, geografia e media disponibili. La matrice delle fonti e le regole per agenzia sono in:

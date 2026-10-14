@@ -98,6 +98,9 @@ export const normalizedListingV2Schema = z.object({
     externalId: z.string().trim().min(1),
     canonicalUrl: z.url(),
     agencyReference: nullableText,
+    // Source publication/modification dates never describe a signed mandate.
+    portalPublishedAt: z.iso.datetime().nullable().optional(),
+    portalModifiedAt: z.iso.datetime().nullable().optional(),
     transactionType: z.enum(["SALE", "RENT", "OTHER", "UNKNOWN"]),
   }),
   commercial: z.object({
@@ -169,6 +172,29 @@ export function hashValue(value: unknown): string {
 }
 
 export function finalizeNormalizedListing(input: ListingWithoutHash): NormalizedListingV2 {
+  const publicationClaim = input.marketStart.evidence.find((claim) =>
+    ["publication.datePublished", "publication.publishUp", "publication.articlePublishedDate"].includes(claim.claimKey),
+  );
+  const modifiedCandidates = [
+    input.provenance.wordpressDateModified,
+    input.provenance.portalModifiedAt,
+    input.provenance.articleModifiedLabel,
+    input.provenance.backendModified,
+  ];
+  const validDate = (value: unknown): string | null => {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value)) return null;
+    const time = Date.parse(value);
+    return Number.isFinite(time) && time <= Date.parse(input.observedAt)
+      ? new Date(time).toISOString() : null;
+  };
+  input = {
+    ...input,
+    source: {
+      ...input.source,
+      portalPublishedAt: validDate(input.source.portalPublishedAt ?? publicationClaim?.sourceRecordedAt),
+      portalModifiedAt: validDate(input.source.portalModifiedAt ?? modifiedCandidates.find((value) => validDate(value))),
+    },
+  };
   const hashInput = {
     ...input,
     observedAt: undefined,

@@ -54,7 +54,7 @@ export default async function StalePage({searchParams}:{searchParams:Promise<{
         className="grid gap-1 border-b border-[var(--lr-line-quiet)] py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_10rem_9rem]">
         <span><strong>{row.address}</strong> · {row.locality}
           <span className="ml-2 text-xs text-[var(--lr-ink-3)]">{row.priority} · {row.status.replaceAll("_"," ")}</span></span>
-        <span className={row.reason === "Azione scaduta" ? "font-semibold text-red-700" : "text-amber-700"}>{row.reason}</span>
+        <span className={row.reason === "Azione scaduta" ? "font-semibold text-[var(--lr-danger)]" : "text-[var(--lr-warn)]"}>{row.reason}</span>
         <span className="text-[var(--lr-ink-2)]">Ultimo movimento {days(row.last_movement_at,now)} giorni fa</span>
       </Link>)}
       {!rows.length && <p className="py-6 text-sm text-[var(--lr-ink-2)]">Nessuna pista ferma con queste soglie.</p>}

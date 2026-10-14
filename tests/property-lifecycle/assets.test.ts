@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import sharp from "sharp";
 
 import type { HttpResponse } from "@/lib/http/client";
 import { normalizeIconacasaDetail } from "@/lib/property-lifecycle/adapters/iconacasa";
@@ -40,6 +41,20 @@ function listingFixture() {
 }
 
 describe("Property Lifecycle media pipeline", () => {
+  it("stores one small preview while preserving fingerprints of all source photos", async()=>{
+    const listing=listingFixture();
+    listing.assets=["one","two","three"].map(name=>({kind:"IMAGE" as const,url:`https://media.example/${name}.png`,canonicalUrl:`https://media.example/${name}.png`,sourceRecordedAt:null,dateEvidenceMethod:null,metadata:{}}));
+    const photo=await sharp({create:{width:1600,height:1200,channels:3,background:{r:120,g:150,b:180}}}).png().toBuffer();
+    const result=await processListingAssets(listing,{requestDelayMs:0,representativeImageCount:2,fetcher:async()=>new Response(photo)});
+    expect(result.assets).toHaveLength(3);
+    expect(result.assets.every(asset=>!!asset.perceptualHash)).toBe(true);
+    const previews=result.assets.filter(asset=>asset.representativeThumbnail);
+    expect(previews).toHaveLength(1);
+    const preview=previews[0].representativeThumbnail;
+    if(!preview)throw new Error("Preview missing");
+    const metadata=await sharp(preview).metadata();
+    expect(metadata.width).toBe(640);expect(metadata.height).toBe(480);expect(metadata.format).toBe("webp");
+  });
   it("creates content hashes, perceptual hashes, metadata, and a compact representative", async () => {
     const listing = listingFixture();
     listing.assets = [

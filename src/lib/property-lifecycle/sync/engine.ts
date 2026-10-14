@@ -36,7 +36,9 @@ export async function runAgencySync(input: {
   jobId?: string | null;
   observedAt?: string;
   assetProcessor?: (listing: NormalizedListingV2) => Promise<AssetProcessingResult>;
+  assertOwnership?: () => void;
 }): Promise<SyncResult> {
+  const startedAt = Date.now();
   const mode = input.mode ?? "SYNC";
   const agency = await input.repository.getAgencyBySlug(input.adapter.agencySlug);
   if (agency.adapter_key !== input.adapter.key) {
@@ -66,9 +68,11 @@ export async function runAgencySync(input: {
   try {
     const inventory = await input.adapter.fetchInventory();
     counts.discoveredCount = inventory.items.length;
+    counts.errorCount = inventory.diagnostics.parseErrorCount;
     const observedSourceKeys = new Set(inventory.items.map((item) => item.sourceKey));
 
     for (const item of inventory.items) {
+      input.assertOwnership?.();
       try {
         const document = await input.adapter.fetchDetail(item);
         const listing = await input.adapter.normalize(document);
@@ -130,6 +134,7 @@ export async function runAgencySync(input: {
           ? await (input.assetProcessor ?? processListingAssets)(situato)
           : { assets: [], warnings: [] };
         assetWarnings.push(...assetResult.warnings);
+        input.assertOwnership?.();
         const persisted = await input.repository.persistObservation(
           agency.id,
           syncRunId,
@@ -155,6 +160,7 @@ export async function runAgencySync(input: {
         ? "DEGRADED"
         : inventory.healthState;
     const observedAt = input.observedAt ?? new Date().toISOString();
+    input.assertOwnership?.();
 
     const healthEvaluation = await input.repository.recordAdapterHealth({
       agencyId: agency.id,
@@ -163,7 +169,7 @@ export async function runAgencySync(input: {
       sourceComplete: inventory.complete,
       observedCount: inventory.diagnostics.observedCount,
       expectedCount: inventory.diagnostics.expectedCount,
-      parseErrorCount: inventory.diagnostics.parseErrorCount + counts.errorCount,
+      parseErrorCount: counts.errorCount,
       structureFingerprint: inventory.structureFingerprint,
       reasons: inventory.diagnostics.reasons,
       diagnostics: { ...inventory.diagnostics },
@@ -207,6 +213,11 @@ export async function runAgencySync(input: {
         detailErrorRatio,
         detailErrors,
         assetWarnings,
+        durationMs: Date.now() - startedAt,
+        processedCount: counts.normalizedCount,
+        successPercentage: counts.discoveredCount > 0
+          ? Math.round(100 * counts.normalizedCount / counts.discoveredCount) : 0,
+        timeoutCount: detailErrors.filter((issue) => /timeout|timed out|abort/i.test(issue.message)).length,
       },
     });
 
@@ -218,6 +229,12 @@ export async function runAgencySync(input: {
       counts,
     };
   } catch (error) {
+    await input.repository.recordAdapterHealth({
+      agencyId: agency.id, syncRunId, state: "FAILED", sourceComplete: false,
+      observedCount: counts.discoveredCount, expectedCount: null, parseErrorCount: counts.errorCount + 1,
+      structureFingerprint: "unavailable", reasons: ["sync_failed"],
+      diagnostics: { durationMs: Date.now() - startedAt },
+    });
     await input.repository.finalizeSyncRun({
       syncRunId,
       status: "FAILED",
@@ -229,6 +246,8 @@ export async function runAgencySync(input: {
       structureFingerprint: "unavailable",
       diagnostics: {
         error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt,
+        processedCount: counts.normalizedCount,
       },
     });
     throw error;

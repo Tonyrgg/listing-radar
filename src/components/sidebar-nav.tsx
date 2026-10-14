@@ -46,13 +46,13 @@ const primaryItems = [
     owns: ["/listings"],
   },
   {
-    href: "/lifecycle",
-    label: "Segnali",
+    href: "/intelligence",
+    label: "Intelligence",
     hint: "Opportunità e cambi",
     icon: Radar,
     /* Le fonti stanno qui: dicono di chi ti puoi fidare, che è la prima
      * domanda dei segnali. */
-    owns: ["/lifecycle", "/fonti"],
+    owns: ["/intelligence", "/lifecycle", "/fonti"],
   },
   {
     href: "/matching",

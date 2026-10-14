@@ -167,7 +167,7 @@ export function PropertyRow({
           ) : null}
           {!compact ? (
             <Periodo
-              from={anzianitaTesto(property.trueMarketStartLowerBound, now)}
+              from={anzianitaTesto(property.earliestMarketEvidenceAt ?? property.firstSeenAt, now)}
               uncertain={(property.trueMarketStartConfidence ?? 0) < 0.85}
             />
           ) : null}

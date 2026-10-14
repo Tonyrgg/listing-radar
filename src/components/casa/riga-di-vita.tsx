@@ -37,6 +37,7 @@ export type ProvaConservata = Readonly<{
   confidence: number;
   observedAt: string;
   sourceRecordedAt: string | null;
+  sourceUrl?: string | null;
 }>;
 
 const PREZZO = new Set(["PRICE_DROP", "PRICE_INCREASE", "PRICE_CHANGED"]);
@@ -228,6 +229,8 @@ export function RigaDiVita({
                 <span className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
                   {formatDate(prova.sourceRecordedAt ?? prova.observedAt)},{" "}
                   {extractionMethodLabel(prova.extractionMethod)}
+                  {` · certezza ${Math.round(prova.confidence * 100)}%`}
+                  {prova.sourceUrl ? <a className="ml-2 underline" href={prova.sourceUrl} target="_blank" rel="noreferrer">Fonte della prova</a> : null}
                 </span>
               </li>
             ))}

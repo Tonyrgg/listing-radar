@@ -36,7 +36,6 @@ import {
 } from "@/lib/formatting";
 import {
   agencyListingStateLabel,
-  extractionMethodLabel,
   hasNoRealSignal,
   humanize,
   identityOutcomeLabel,
@@ -58,6 +57,7 @@ import {
   ageDays,
 } from "@/app/(private)/lifecycle/_components/ui";
 import styles from "@/app/(private)/lifecycle/lifecycle.module.css";
+import { linkMarketOpportunity } from "@/app/(private)/intelligence/actions";
 
 export const metadata: Metadata = { title: "Scheda della casa" };
 
@@ -100,7 +100,7 @@ function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
   >();
 
   for (const prova of evidence) {
-    const chiave = `${prova.claimKey}|${prova.extractionMethod}`;
+    const chiave = `${prova.publicationId ?? prova.sourceUrl ?? ""}|${prova.claimKey}|${prova.extractionMethod}`;
     const quando = prova.sourceRecordedAt ?? prova.observedAt;
     const gia = migliori.get(chiave);
 
@@ -212,7 +212,7 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
     return (
       <EmptyState
         title="Nessuno la sta vendendo, per quanto vediamo"
-        description="Non risulta nessun mandato né annuncio attivo su questa casa."
+        description="Non risultano pubblicazioni attive su questa casa."
       />
     );
   }
@@ -236,7 +236,7 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
             </Stato>
           </div>
           <Meta>
-            dal {formatDate(agency.firstSeenAt)}, vista l&apos;ultima volta il{" "}
+            Osservata dal {formatDate(agency.firstSeenAt)}, vista l&apos;ultima volta il{" "}
             {formatDate(agency.lastSeenAt)}
             {agency.reference ? ` · rif. ${agency.reference}` : ""}
           </Meta>
@@ -252,9 +252,11 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
             {formatShouty(publication.agencyName)}
           </span>
           <Meta>
-            annuncio su {getSourceLabel(publication.sourceKey)} ·{" "}
-            {publicationStateLabel(publication.state)} · dal{" "}
+            {new URL(publication.canonicalUrl).hostname.replace(/^www\./, "")} ·{" "}
+            {publicationStateLabel(publication.state)} · osservato dal{" "}
             {formatDate(publication.firstSeenAt)}
+            {publication.portalPublishedAt ? ` · pubblicato dalla fonte il ${formatDate(publication.portalPublishedAt)}` : ""}
+            {publication.portalModifiedAt ? ` · modifica fonte ${formatDate(publication.portalModifiedAt)}` : ""}
           </Meta>
           <ExternalSourceLink href={publication.canonicalUrl} />
         </div>
@@ -295,7 +297,8 @@ export function SchedaMercato({
   now: number;
 }>) {
   const property = detail.property;
-  const giorniDiMercato = ageDays(property.trueMarketStartLowerBound, now);
+  const marketAnchor = property.earliestMarketEvidenceAt ?? property.firstSeenAt;
+  const giorniDiMercato = ageDays(marketAnchor, now);
   const agenziaAttiva = property.agencies.find(
     (agency) => agency.state === "ACTIVE",
   );
@@ -321,10 +324,11 @@ export function SchedaMercato({
     : null;
   const dove = posizione || property.locality || null;
   const prove = proveDistinte(detail.evidence);
-  const prezzoIniziale = primoPrezzo(detail.events);
+  const prezzoFonte = detail.publicationPrices?.find(price=>price.publicationId === detail.publications[0]?.id);
+  const prezzoIniziale = prezzoFonte?.firstPrice ?? primoPrezzo(detail.events);
   const scarto =
-    prezzoIniziale != null && property.currentPrice != null
-      ? property.currentPrice - prezzoIniziale
+    prezzoIniziale != null && prezzoFonte?.latestPrice != null
+      ? prezzoFonte.latestPrice - prezzoIniziale
       : null;
   const euroAlMq =
     property.currentPrice != null && property.surfaceSqm
@@ -370,6 +374,7 @@ export function SchedaMercato({
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
             {[
+              agenziaAttiva?.name ?? property.agencies[0]?.name ?? null,
               property.propertyType ? humanize(property.propertyType) : null,
               dove,
               detail.location
@@ -407,6 +412,13 @@ export function SchedaMercato({
         </div>
       </header>
 
+      <section className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-[var(--lr-line-quiet)] py-3" aria-label="Situazione osservata">
+        <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(property.currentPrice)}</strong>
+        <span>Sul mercato almeno dal {formatDate(marketAnchor)}{giorniDiMercato!=null ? ` · ${giorniDiMercato}+ giorni` : ""}</span>
+        {prezzoFonte?.reductionPercent!=null && prezzoFonte.reductionPercent>0 ? <span className="text-[var(--lr-ok)]">−{formatNumber(prezzoFonte.reductionPercent)}% sulla stessa pubblicazione</span> : null}
+        {detail.opportunity ? <span>Opportunità <strong>{formatNumber(detail.opportunity.score??0)}/100</strong></span> : null}
+      </section>
+
       {/* Cosa fare adesso, con gli indizi che lo reggono. Mai il giudizio da
         * solo: un giudizio senza gli indizi è un'opinione. */}
       {azione && indizi.length ? (
@@ -433,6 +445,15 @@ export function SchedaMercato({
               </li>
             ))}
           </ul>
+          {detail.opportunity && (detail.opportunity.score ?? 0)>0 ? <form action={linkMarketOpportunity}>
+            <input type="hidden" name="opportunity_id" value={detail.opportunity.id}/>
+            <PendingSubmitButton className={buttonClass("primary")} pendingLabel="Collego l’opportunità">Porta in Acquisizioni</PendingSubmitButton>
+          </form> : null}
+          {detail.opportunity?.evidenceSummary.components ? <details className="basis-full text-[length:var(--lr-text-meta)]">
+            <summary className="cursor-pointer py-2">Come si compone il punteggio</summary>
+            <ul className="space-y-1 py-2">{Object.entries(detail.opportunity.evidenceSummary.components as Record<string,unknown>).map(([key,points])=><li key={key}>{({observed_age:"Presenza osservata",price_drops:"Numero di ribassi",price_reduction:"Entità del ribasso",relistings:"Ripubblicazioni",unsold_exit:"Uscita senza prova di vendita",agency_change:"Cambio agenzia",pending_exit:"Uscita da verificare",agency_to_private:"Passaggio a privato"} as Record<string,string>)[key] ?? humanize(key)}: <strong>{String(points)} punti</strong></li>)}</ul>
+            <Meta>Regole versione {String(detail.opportunity.evidenceSummary.ruleVersion ?? 1)}. È una priorità di lavoro, non una scadenza dell’incarico.</Meta>
+          </details> : null}
         </section>
       ) : null}
 
@@ -490,22 +511,18 @@ export function SchedaMercato({
                 <Misura label="Ripubblicazioni">
                   {formatNumber(property.relaunchCount)}
                 </Misura>
-                <Misura label="Con questa agenzia">
+                <Misura label="Osservata con questa agenzia">
                   {giorniInAgenzia != null ? formatDays(giorniInAgenzia) : "—"}
                 </Misura>
                 <div className="col-span-2">
                   <Misura
-                    label="Sul mercato"
-                    nota={
-                      property.trueMarketStartMethod
-                        ? `Lo sappiamo ${extractionMethodLabel(property.trueMarketStartMethod)}.`
-                        : undefined
-                    }
+                    label="Presenza osservata sul mercato"
+                    nota="Prima osservazione o data di pubblicazione dichiarata dalla fonte. Non indica l’inizio di un incarico."
                   >
                     {giorniDiMercato != null ? (
                       <Dato
                         certainty={certaintyFromConfidence(
-                          property.trueMarketStartConfidence,
+                          1,
                         )}
                       >
                         da almeno {formatDays(giorniDiMercato)}
@@ -522,10 +539,18 @@ export function SchedaMercato({
           <Card>
             <CardHeader
               title="Chi la vende"
-              meta={`${formatNumber(property.agencies.length)} ${property.agencies.length === 1 ? "mandato" : "mandati"} · ${property.activePrivateCount ? `${formatNumber(property.activePrivateCount)} privato` : "nessun privato"}`}
+              meta={`${formatNumber(property.agencies.length)} ${property.agencies.length === 1 ? "agenzia osservata" : "agenzie osservate"} · ${property.activePrivateCount ? `${formatNumber(property.activePrivateCount)} privato` : "nessun privato"}`}
             />
             <CardBody>
               <ChiLaTiene detail={detail} />
+              {detail.publicationPrices?.length ? <details className="mt-4 border-t border-[var(--lr-line-quiet)] pt-2">
+                <summary className="cursor-pointer py-2 font-medium">Prezzi per pubblicazione</summary>
+                <ul className="space-y-3 py-2">{detail.publicationPrices.map(price=><li key={price.publicationId}>
+                  <a href={price.sourceUrl} target="_blank" rel="noreferrer" className="font-medium underline">{new URL(price.sourceUrl).hostname}</a>
+                  <p>Primo {formatCurrency(price.firstPrice)} · ultimo {formatCurrency(price.latestPrice)} · {price.dropCount} ribassi</p>
+                </li>)}</ul>
+                <Meta>Le date dei ribassi indicano quando li abbiamo rilevati, non quando il portale li ha applicati.</Meta>
+              </details> : null}
             </CardBody>
           </Card>
 

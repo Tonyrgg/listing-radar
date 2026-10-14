@@ -182,6 +182,16 @@ export default async function AgenziaPage({
         ) : null}
       </Card>
 
+      {ultimo ? <details className="rounded-[var(--lr-radius-control)] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-4">
+        <summary className="cursor-pointer py-3 font-medium">Dettagli dell’ultima scansione</summary>
+        <dl className="grid grid-cols-2 gap-3 border-t border-[var(--lr-line-quiet)] py-3 sm:grid-cols-4">
+          {[["Trovati",ultimo.discoveredCount],["Processati",ultimo.processedCount??"non rilevato"],
+            ["Errori",ultimo.errorCount],["Timeout",ultimo.timeoutCount??"non rilevato"],
+            ["Successo",ultimo.successPercentage!=null?`${ultimo.successPercentage}%`:"non rilevato"],
+            ["Durata",ultimo.durationMs!=null?`${Math.round(ultimo.durationMs/1000)} secondi`:"in corso"]].map(([label,value])=><div key={label}><dt className="text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">{label}</dt><dd className="font-medium">{value}</dd></div>)}
+        </dl>
+      </details> : null}
+
       <div className="flex flex-wrap gap-2">
         {FILTRI.map((voce) => (
           <Link
