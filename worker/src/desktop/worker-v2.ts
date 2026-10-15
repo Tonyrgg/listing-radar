@@ -22,6 +22,7 @@ export class WorkerV2Host {
   private publishedActive = false;
   private viewport: Viewport | null = null;
   private memoryQueue: Promise<unknown> = Promise.resolve();
+  private closingTask: Promise<void> | null = null;
   constructor(private readonly parent: BrowserWindow, private readonly options: {
     assetDirectory: string; profileDirectory: string; simulation?: boolean;
     contactsExcelPath?: string; beforeStart: () => void; afterIdle: () => void; changed: () => void;
@@ -31,7 +32,6 @@ export class WorkerV2Host {
     parent.on("close", event => {
       if (this.disposed || (!this.session && !this.opening)) return;
       event.preventDefault();
-      if (this.session?.syncing) return;
       void this.close().then(() => parent.close());
     });
   }
@@ -112,6 +112,10 @@ export class WorkerV2Host {
     return this.options.openBrowser();
   }
   async close() {
+    this.closingTask ??= this.shutdown();
+    return this.closingTask;
+  }
+  private async shutdown() {
     await this.memoryQueue;
     await this.opening?.catch(() => undefined);
     await this.session?.close(); this.session = null;

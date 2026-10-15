@@ -1,13 +1,14 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import type { TerritoryState } from "./model.js";
 import type { TerritoryStore } from "./store.js";
 import { validateCloudMemory } from "./cloud-memory.js";
+import { diffRecords, mergeTerritory, recordsState, syncRecords, type SyncRecord } from "./sync-records.js";
 
 export type TerritorySyncConfig = { url: string; key: string; workspaceId: string; ownerId: string; profileKind: "live" | "simulation"; environment?: "online" };
-export type SyncBinding = { revision: number; localHash: string; syncedAt: string | null; workspaceId?: string; ownerId?: string; profileKind?: string; url?: string };
+export type SyncBinding = { revision: number; localHash: string; syncedAt: string | null; workspaceId?: string; ownerId?: string; profileKind?: string; url?: string; baseline?: TerritoryState };
 type Remote = { id: string; owner_id: string; profile_kind: "live" | "simulation"; revision: number; state: TerritoryState };
 export function localSyncConfig(config: TerritorySyncConfig): TerritorySyncConfig {
   const url = new URL(config.url);
@@ -38,7 +39,10 @@ function validateState(state: TerritoryState, kind: TerritorySyncConfig["profile
 }
 export class TerritorySync {
   private readonly client: SupabaseClient;
-  private digestCache: { revision: number; hash: string } | null = null;
+  private digestCache: { revision: number; hash: string; conflicts: NonNullable<TerritoryState["syncConflicts"]>[string][] } | null = null;
+  private bindingCache: { stamp: string; value: SyncBinding } | null = null;
+  private reconciliation: Promise<unknown> = Promise.resolve();
+  private cleanStoreRevision: number | null = null;
   constructor(private readonly store: TerritoryStore, private readonly directory: string, private readonly config: TerritorySyncConfig, client?: SupabaseClient, approvedUrl?: string) {
     if (config.environment === "online") onlineSyncConfig(config, approvedUrl ?? "http://localhost"); else localSyncConfig(config);
     this.client = client ?? createClient(config.url, config.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(15000) }) } });
@@ -46,18 +50,21 @@ export class TerritorySync {
   private get bindingFile() { return path.join(this.directory, this.config.environment === "online" ? "sync-state-online.json" : "sync-state.json"); }
   private async binding(): Promise<SyncBinding> {
     try {
+      const info = await stat(this.bindingFile); const stamp = `${info.mtimeMs}:${info.size}`;
+      if (this.bindingCache?.stamp === stamp) return this.bindingCache.value;
       const binding = JSON.parse(await readFile(this.bindingFile, "utf8")) as SyncBinding;
       if (!Number.isSafeInteger(binding.revision) || binding.revision < 0 || typeof binding.localHash !== "string" || !/^[a-f0-9]{64}$/.test(binding.localHash)) throw new Error("Registro di sincronizzazione non valido: conserva gli archivi prima del recupero");
       if (binding.workspaceId !== this.config.workspaceId || binding.ownerId !== this.config.ownerId || binding.profileKind !== this.config.profileKind) throw new Error("La configurazione è cambiata rispetto all'ultima sincronizzazione. Conserva e confronta gli archivi prima di cambiare workspace.");
       if ((this.config.environment === "online" || binding.url) && binding.url !== new URL(this.config.url).origin) throw new Error("Il progetto della memoria è cambiato. Nessun archivio viene sostituito.");
-      return binding;
+      this.bindingCache = { stamp, value: binding }; return binding;
     }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; return { revision: 0, localHash: "", syncedAt: null }; }
   }
   private async remember(revision: number, state: TerritoryState) {
     const file = this.bindingFile;
-    await writeFile(`${file}.tmp`, JSON.stringify({ revision, localHash: territoryDigest(state), syncedAt: new Date().toISOString(), workspaceId: this.config.workspaceId, ownerId: this.config.ownerId, profileKind: this.config.profileKind, url: new URL(this.config.url).origin }), { mode: 0o600 });
+    await writeFile(`${file}.tmp`, JSON.stringify({ revision, localHash: territoryDigest(state), baseline: state, syncedAt: new Date().toISOString(), workspaceId: this.config.workspaceId, ownerId: this.config.ownerId, profileKind: this.config.profileKind, url: new URL(this.config.url).origin }), { mode: 0o600 });
     await rename(`${file}.tmp`, file);
+    this.bindingCache = null;
   }
   private async remote(): Promise<Remote | null> {
     const result = await this.client.from("territory_lab_workspaces").select("*").eq("id", this.config.workspaceId).eq("owner_id", this.config.ownerId).maybeSingle();
@@ -72,10 +79,15 @@ export class TerritorySync {
   }
   async status() {
     const binding = await this.binding();
-    if (this.digestCache?.revision !== this.store.revision) this.digestCache = { revision: this.store.revision, hash: territoryDigest(this.store.read()) };
-    return { configured: true, environment: this.config.environment ?? "locale", revision: binding.revision, syncedAt: binding.syncedAt, pending: this.digestCache.hash !== binding.localHash };
+    if (this.digestCache?.revision !== this.store.revision) { const state = this.store.read(); this.digestCache = { revision: this.store.revision, hash: territoryDigest(state), conflicts: Object.values(state.syncConflicts ?? {}).filter(c => !c.resolvedAt) }; }
+    return { configured: true, environment: this.config.environment ?? "locale", revision: binding.revision, syncedAt: binding.syncedAt, pending: this.digestCache.hash !== binding.localHash, conflicts: this.digestCache.conflicts };
   }
   async reconcile() {
+    if (this.config.environment === "online") {
+      const task = this.reconciliation.then(() => this.reconcileChanges());
+      this.reconciliation = task.catch(() => undefined);
+      return task;
+    }
     const [binding, remote] = await Promise.all([this.binding(), this.remote()]);
     if (remote && remote.revision > binding.revision) {
       const local = this.store.read();
@@ -83,6 +95,53 @@ export class TerritorySync {
       if (territoryDigest(local) === territoryDigest(remote.state) || (binding.localHash && territoryDigest(local) === binding.localHash) || (!binding.localHash && !hasWork)) return this.pull();
     }
     return this.push();
+  }
+  private async reconcileChanges() {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const binding = await this.binding();
+      if (binding.baseline) validateState(binding.baseline, this.config.profileKind);
+      const args = { p_workspace_id: this.config.workspaceId, p_owner_id: this.config.ownerId, p_profile_kind: this.config.profileKind };
+      const result = await this.client.rpc("read_territory_workspace_changes", { ...args, p_since: binding.baseline ? binding.revision : 0 });
+      if (result.error) throw new Error("Sincronizzazione online non raggiungibile o schema da aggiornare. I dati locali restano conservati.");
+      const { revision, changes } = result.data as { revision: number; changes: SyncRecord[] };
+      if (!Number.isSafeInteger(revision) || revision < binding.revision || !Array.isArray(changes)) throw new Error("Revisione online non valida: archivio locale conservato");
+      if (binding.baseline && revision === binding.revision && !changes.length && this.cleanStoreRevision === this.store.revision) return { revision, changed: false };
+      const local = this.store.read();
+      validateState(local, this.config.profileKind);
+      const records = binding.baseline ? syncRecords(binding.baseline) : new Map<string, SyncRecord>();
+      for (const row of changes) {
+        if (!row || typeof row.collection !== "string" || typeof row.key !== "string") throw new Error("Aggiornamento online non riconosciuto");
+        const id = JSON.stringify([row.collection, row.key]);
+        if (row.deleted) records.delete(id); else records.set(id, row);
+      }
+      const remote = recordsState(records);
+      if (revision) validateState(remote, this.config.profileKind);
+      const merged = revision ? mergeTerritory(binding.baseline, local, remote) : local;
+      validateState(merged, this.config.profileKind);
+      if (!binding.baseline && revision) await this.store.backupBeforeSharedRecovery();
+      const patch = revision ? diffRecords(remote, merged) : [];
+      let nextRevision = revision;
+      if (!revision || patch.length) {
+        const save = await this.client.rpc(revision ? "save_territory_workspace_changes" : "save_territory_lab_workspace", {
+          ...args, p_expected_revision: revision, ...(revision ? { p_changes: patch } : { p_state: merged }),
+        });
+        if (save.error?.code === "40001") continue;
+        if (save.error) throw new Error("Salvataggio online non confermato: riprovo senza perdere i dati locali.");
+        nextRevision = Number(save.data);
+        if (nextRevision !== revision + 1) throw new Error("Risposta online non confermata: archivio locale conservato");
+      }
+      if (territoryDigest(local) !== territoryDigest(merged)) await this.store.change(current => {
+        // Runs keep committing while the network is in flight. Rebase again inside
+        // the same serial disk transaction so a new success can never be replaced.
+        const next = mergeTerritory(local, current, merged);
+        Object.assign(current, next);
+      });
+      // Exactly what was acknowledged, never a newer local checkpoint not sent yet.
+      if (nextRevision !== binding.revision || territoryDigest(merged) !== binding.localHash) await this.remember(nextRevision, merged);
+      this.cleanStoreRevision = territoryDigest(this.store.read()) === territoryDigest(merged) ? this.store.revision : null;
+      return { revision: nextRevision, changed: patch.length > 0 || territoryDigest(local) !== territoryDigest(merged) || !revision };
+    }
+    throw new Error("Altra postazione in aggiornamento: riprovo automaticamente. Dati locali conservati.");
   }
   async push() {
     const local = this.store.read(); validateState(local, this.config.profileKind);

@@ -14,10 +14,20 @@ global.fetch = async (input, init) => {
   try { remote = JSON.parse(await fs.readFile(cloudFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (url.pathname === '/auth/v1/admin/users') return Response.json({ users: [{ id: ownerId }] });
   if (url.pathname === '/rest/v1/territory_lab_workspaces') return Response.json(url.searchParams.get('select') === 'id' ? (remote ? [{ id: remote.id }] : []) : remote);
-  if (url.pathname === '/rest/v1/rpc/save_territory_lab_workspace') {
+  const { syncRecords, recordsState, diffRecords } = await import(pathToFileURL(path.join(process.env.WORKER_V2_TEST_ROOT, 'dist-desktop/territory/sync-records.js')).href);
+  if (url.pathname === '/rest/v1/rpc/read_territory_workspace_changes') {
+    const args = JSON.parse(init.body);
+    const rows = remote?.records ?? (remote ? [...syncRecords(remote.state).values()].map(row => ({ row, revision: remote.revision })) : []);
+    return Response.json({ revision: remote?.revision ?? 0, changes: rows.filter(r => r.revision > args.p_since).map(r => r.row) });
+  }
+  if (['/rest/v1/rpc/save_territory_lab_workspace','/rest/v1/rpc/save_territory_workspace_changes'].includes(url.pathname)) {
     const args = JSON.parse(init.body);
     if ((remote?.revision ?? 0) !== args.p_expected_revision) return Response.json({ code: '40001' }, { status: 409 });
-    remote = { id: args.p_workspace_id, owner_id: args.p_owner_id, profile_kind: args.p_profile_kind, revision: (remote?.revision ?? 0) + 1, state: args.p_state };
+    const records = remote ? syncRecords(remote.state) : new Map();
+    const patch = args.p_changes ?? (remote ? diffRecords(remote.state, args.p_state) : [...syncRecords(args.p_state).values()]);
+    const versions = new Map((remote?.records ?? []).map(v => [JSON.stringify([v.row.collection,v.row.key]),v]));
+    for (const row of patch) { const id = JSON.stringify([row.collection,row.key]); if (row.deleted) records.delete(id); else records.set(id,row); versions.set(id,{row,revision:(remote?.revision??0)+1}); }
+    remote = { id: args.p_workspace_id, owner_id: args.p_owner_id, profile_kind: args.p_profile_kind, revision: (remote?.revision ?? 0) + 1, state: recordsState(records), records: [...versions.values()] };
     await fs.writeFile(cloudFile, JSON.stringify(remote)); return Response.json(remote.revision);
   }
   throw new Error('Unexpected test endpoint');

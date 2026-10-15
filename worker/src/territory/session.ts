@@ -8,7 +8,7 @@ import { SimulationProvider } from "./providers.js";
 import { LiveProvider, validateLiveConfig, type LiveConfig, type LiveBrowserConfig } from "./live-provider.js";
 import type { Street } from "./model.js";
 import { lockTerritoryProfile } from "./profile-lock.js";
-import { TerritorySync, type TerritorySyncConfig } from "./sync.js";
+import { TerritorySync, territoryDigest, type TerritorySyncConfig } from "./sync.js";
 import { testSettings, configureTestSettings } from "./test-settings.js";
 import { openOnlineMemory, type OnlineCredentials } from "./online-memory.js";
 import { sanitizeSensitiveText } from "../logger.js";
@@ -20,6 +20,8 @@ import { runSettingsSchema, runSettings } from "./run-options.js";
 import { pendingUnitImport } from "./import-queue.js";
 import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
+import { TerritorySyncLoop } from "./sync-loop.js";
+import { resolveSyncConflict } from "./sync-records.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), ownershipParts: z.array(z.object({ rightType: z.string().max(200), shareOriginal: z.string().max(100) })).max(100).optional(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -42,35 +44,35 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   let closing = false;
   let memoryError: string | null = null;
   let sync: TerritorySync | null = null;
-  let syncTimer: ReturnType<typeof setTimeout> | undefined;
-  let syncTask: Promise<void> | null = null;
+  let credentialDigest = "";
   const publish = () => { if (!options.contents.isDestroyed()) options.contents.send("territory:changed"); options.changed?.(); };
   const flushOnline = async () => {
-    if (!options.onlineCredentials || !options.live || application.hasActiveRun || syncing) return;
+    if (!options.onlineCredentials || !options.live || syncing) return;
     syncing = true;
     try {
-      sync = await openOnlineMemory(store, options.profileDirectory, options.onlineCredentials());
+      const credentials = options.onlineCredentials();
+      const nextDigest = territoryDigest(credentials);
+      if (!sync || nextDigest !== credentialDigest) {
+        sync = await openOnlineMemory(store, options.profileDirectory, credentials);
+        credentialDigest = nextDigest;
+      }
       await sync.reconcile(); memoryError = null;
     } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Sincronizzazione.`; }
     finally {
       syncing = false; publish();
-      if (memoryError && !closing) {
-        clearTimeout(syncTimer);
-        syncTimer = setTimeout(() => { syncTask = flushOnline().finally(() => { syncTask = null; }); }, 30000);
-      }
     }
   };
   const scheduleSync = () => {
     if (!options.onlineCredentials || !options.live || closing) return;
-    clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => { syncTask = flushOnline().finally(() => { syncTask = null; }); }, 2000);
+    syncLoop.changed();
   };
+  const syncLoop = new TerritorySyncLoop(flushOnline);
   const channels: string[] = [];
   const notify = () => { publish(); scheduleSync(); };
   let store: TerritoryStore;
   const consumeDailyMemory = async () => {
     if (!options.live || closing || application.hasActiveRun) return;
-    if (syncTask) await syncTask;
+    await syncLoop.flush();
     if (syncing) throw new Error("Memoria V2 occupata: acquisizione conservata in attesa");
     syncing = true;
     try {
@@ -121,7 +123,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {
-      await flushOnline();
+      await syncLoop.flush();
     } else try {
       const config = JSON.parse(await readFile(path.join(options.profileDirectory, "sync-config.json"), "utf8")) as TerritorySyncConfig;
       if (config.profileKind !== application.origin) throw new Error("Il profilo della memoria condivisa non corrisponde al laboratorio");
@@ -134,7 +136,6 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       ipcMain.handle(`territory:${name}`, (event, value) => {
         if (event.sender !== options.contents || event.senderFrame !== options.contents.mainFrame) throw new Error("Richiesta non autorizzata");
         if (closing && !["snapshot", "detail", "sync-status", "pause"].includes(name)) throw new Error("Worker V2 si sta chiudendo: attendo il checkpoint");
-        if (syncing && ["sister-street-settings", "annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove", "queue-clear"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
         return handler(value);
       });
     };
@@ -157,10 +158,28 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       } finally { syncing = false; }
     });
     handle("sync-status", async () => sync ? { ...await sync.status(), syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", syncing, error: memoryError });
+    handle("sync-review", async () => {
+      if (application.hasActiveRun) throw new Error("Attendi la fine del lavoro prima di scegliere tra modifiche concorrenti");
+      for (const issue of Object.values(store.read().syncConflicts ?? {}).filter(c => !c.resolvedAt)) {
+        const state = store.read(), key = issue.path[1];
+        const name = state.streets.find(s => s.id === key)?.name ?? state.units[key ?? ""]?.observations.at(-1)?.source.fullAddress ?? key;
+        const result = await dialog.showMessageBox(options.parent, {
+          type: "question", title: "Modifiche da confrontare", message: `${name}: ${issue.path.slice(2).join(" / ") || issue.path[0]}`,
+          detail: `Due postazioni hanno modificato lo stesso dato. Entrambe le proposte sono conservate.\n\nVersione 1:\n${JSON.stringify(issue.values[0], null, 2).slice(0, 5000)}\n\nVersione 2 (condivisa):\n${JSON.stringify(issue.values[1], null, 2).slice(0, 5000)}`,
+          buttons: ["Decidi più tardi", "Usa versione 1", "Usa versione 2"], defaultId: 0, cancelId: 0,
+        });
+        if (!result.response) break;
+        await store.change(s => resolveSyncConflict(s, issue.id, result.response - 1)); notify();
+      }
+    });
     handle("sync", async value => {
       const direction = z.enum(["push", "pull"]).parse(value);
+      if (options.onlineCredentials && options.live) {
+        const before = sync ? await sync.status() : null;
+        await syncLoop.flush(); if (memoryError) throw new Error(memoryError);
+        const after = await sync!.status(); return { ...after, changed: after.revision !== before?.revision };
+      }
       if (syncing || application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione in corso");
-      clearTimeout(syncTimer);
       syncing = true;
       try {
         if (options.onlineCredentials && options.live) sync = await openOnlineMemory(store, options.profileDirectory, options.onlineCredentials());
@@ -187,7 +206,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("sister-street-settings", async value => { const v = z.object({ streetId: id, settings: sisterStreetSettingsSchema }).strict().parse(value); await application.configureSisterStreet(v.streetId, v.settings); });
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
-      if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");
+      if (options.onlineCredentials && options.live) await syncLoop.flush();
       const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
       if (v.operation === "apply" && v.resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
@@ -233,17 +252,14 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       },
       get syncing() { return syncing; },
       async close() {
-        if (syncing && !syncTask) throw new Error("Attendi il salvataggio della memoria Worker V2");
         closing = true;
-        clearTimeout(syncTimer);
         application.pause(); await application.waitForIdle();
-        await syncTask;
-        await flushOnline();
+        await syncLoop.close();
         channels.forEach(channel => ipcMain.removeHandler(channel));
         releaseProfile?.(); releaseProfile = undefined;
       },
     };
   } catch (error) {
-    clearTimeout(syncTimer); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
+    syncLoop.stop(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
   }
 }

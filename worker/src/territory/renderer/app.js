@@ -1063,9 +1063,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     document.body.classList.toggle("operational", Boolean(snapshot.operational));
     $("cloud-memory").hidden = !memory.configured;
     const online = memory.environment === "online";
+    const conflictCount = memory.conflicts?.length || 0;
+    $("memory-review").hidden = !conflictCount;
+    $("memory-review").textContent = `Rivedi modifiche concorrenti (${conflictCount})`;
     $("cloud-memory").textContent = online
       ? memory.error
         ? "Sincronizzazione da verificare"
+        : conflictCount
+          ? `Modifiche da confrontare (${conflictCount})`
         : memory.syncing
           ? "Salvataggio…"
           : memory.pending
@@ -1077,14 +1082,17 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       (online
         ? "Vie, immobili, note e storico sincronizzati su Supabase"
         : "Memoria condivisa locale");
+    if (memory.error) feedback(memory.error, true, { deduplicate: true });
     $("memory-pull").textContent = online
       ? "Recupera archivio online"
       : "Recupera archivio condiviso";
+    $("memory-pull").hidden = online;
+    $("memory-push").textContent = online ? "Sincronizza ora" : "Invia modifiche locali";
     $("memory-title").textContent = online
       ? "Memoria online"
       : "Memoria condivisa di prova";
     $("memory-description").textContent = online
-      ? "Vie, immobili, note e storico vengono sincronizzati automaticamente dopo le modifiche e al termine delle lavorazioni. Una copia locale permette di conservare il lavoro anche senza rete. I conflitti richiedono un confronto."
+      ? "Un unico archivio per tutte le postazioni. Le modifiche vengono inviate dopo le azioni e durante le lavorazioni; ogni 15 secondi ricevi gli aggiornamenti degli altri PC. Senza rete il lavoro resta sul PC e viene inviato al ritorno della connessione. Se lo stesso dato è stato modificato in due modi, entrambe le proposte sono conservate per il confronto."
       : "Archivio nell'ambiente locale separato. Un conflitto conserva le tue modifiche e richiede un confronto.";
     if (memory.configured)
       $("memory-date").textContent =
@@ -1181,7 +1189,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     }
     labelIcons(document);
     if (snapshot.error) feedback(snapshot.error, true, { deduplicate: true });
-    else toast.reset();
+    else if (!memory.error) toast.reset();
     map.invalidateSize();
   }
   $("refresh").onclick = safe(async () => {
@@ -1274,6 +1282,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   $("memory-close").onclick = () => {
     if (!syncBusy) $("memory-dialog").close();
   };
+  $("memory-review").onclick = safe(async () => { await api.syncReview(); await refresh(); });
   $("memory-dialog").addEventListener("cancel", (event) => {
     if (syncBusy) event.preventDefault();
   });

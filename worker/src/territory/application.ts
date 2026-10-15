@@ -225,6 +225,7 @@ export class TerritoryApplication {
         if (operation === "apply" && (!this.provider.canWrite(key, recovery?.source ?? effectiveSource(unit)) || (!recovery && isQuarantined(state, unit) && !canRetryQuarantinedUnit(state, unit)))) throw new Error("Un immobile selezionato è in quarantena o non è autorizzato alle scritture");
       }
     }
+    run.deviceId = this.store.deviceId;
     this.active = { runId: run.id, pause: false };
     try { await this.store.change(s => {
       let directContactOrdinal = 0;

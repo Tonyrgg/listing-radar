@@ -17,7 +17,7 @@ export class TerritoryStore {
   private committedRevision = 0;
   /** Advances only after the atomic file replacement succeeds. */
   get revision() { return this.committedRevision; }
-  private constructor(private readonly filename: string, private state: TerritoryState) {}
+  private constructor(private readonly filename: string, private state: TerritoryState, readonly deviceId: string) {}
   static async open(directory: string, streets: Street[]) {
     await mkdir(directory, { recursive: true });
     const filename = path.join(directory, "territory-ledger.json");
@@ -29,7 +29,12 @@ export class TerritoryStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       state = { version: 1, streets, memories: {}, units: {}, runs: [], events: [], checkpoints: {}, virtualCrm: {}, virtualPeople: {} };
     }
-    const store = new TerritoryStore(filename, state);
+    const deviceFile = path.join(directory, "device-id.txt");
+    let deviceId: string;
+    try { deviceId = (await readFile(deviceFile, "utf8")).trim(); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; deviceId = randomUUID(); await writeFile(deviceFile, deviceId, { flag: "wx", mode: 0o600 }); }
+    if (!/^[a-f0-9-]{36}$/i.test(deviceId)) throw new Error("Identità della postazione non valida: archivio conservato");
+    const store = new TerritoryStore(filename, state, deviceId);
     let history: HistorySnapshot | undefined;
     if (state.history?.length) {
       try { history = JSON.parse(await readFile(path.join(directory, "history-snapshot.json"), "utf8")); }
@@ -48,12 +53,16 @@ export class TerritoryStore {
       hydrateUnitMemory(next);
       hydrateCloudMemory(next);
       hydrateQuarantine(next);
-      hydrateImportQueue(next, true);
-      for (const run of next.runs) if (run.state === "running") { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
+      for (const run of next.runs) if (run.state === "running" && (!run.deviceId || run.deviceId === deviceId)) { run.state = "paused"; run.error = "Applicazione interrotta. Riprendi dal punto conservato."; }
+      hydrateImportQueue(next);
     });
     return store;
   }
   read(): TerritoryState { return structuredClone(this.state); }
+  async backupBeforeSharedRecovery() {
+    try { await writeFile(`${this.filename}.before-shared-recovery.json`, JSON.stringify(this.state), { encoding: "utf8", mode: 0o600, flag: "wx" }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
   async replace(state: TerritoryState, unchanged?: (current: TerritoryState) => boolean) {
     const operation = this.queue.then(async () => {
       if (this.state.runs.some(run => run.state === "running")) throw new Error("Metti in pausa prima di scaricare la memoria condivisa");

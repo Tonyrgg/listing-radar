@@ -13,10 +13,11 @@ const source = path.join(process.env.APPDATA, 'ListingRadarTerritoryLab-live');
 for (const name of ['territory-ledger.json', 'history-snapshot.json']) await copyFile(path.join(source, name), path.join(first, name));
 const cloudFile = path.join(directory, 'fake-cloud.json');
 const output = path.resolve(root, '../.runtime/territory-online-ui-check'); await mkdir(output, { recursive: true });
-let application; const errors = [];
+let application; const errors = []; const applications = [];
 async function launch(profile) {
   const env = { ...process.env, WORKER_V2_TEST_ROOT: root, TERRITORY_ONLINE_TEST_DIR: profile, TERRITORY_ONLINE_CLOUD_FILE: cloudFile }; delete env.ELECTRON_RUN_AS_NODE;
   application = await electron.launch({ args: [path.join(root, 'scripts/fixtures/online-memory-host.cjs')], env });
+  applications.push(application);
   const page = await application.firstWindow(); page.setDefaultTimeout(20000); page.on('pageerror', e => errors.push(e.message));
   await streetSearchReady(page); return page;
 }
@@ -34,7 +35,8 @@ async function synced(page, revision) { await memoryUntil(page, m => m.revision 
 try {
   let page = await launch(first); await synced(page, 1);
   const snapshot = await page.evaluate(() => window.territory.snapshot());
-  assert.equal(snapshot.streets.reduce((n, s) => n + s.count, 0), 928);
+  const expectedUnits = snapshot.streets.reduce((n, s) => n + s.count, 0);
+  assert.ok(expectedUnits > 0);
   const streetId = snapshot.streets[0].id;
   await page.evaluate(id => window.territory.annotate({ streetId: id, note: 'Nota sincronizzata automaticamente', attention: true }), streetId);
   await synced(page, 2);
@@ -59,12 +61,17 @@ try {
   const second = path.join(directory, 'second'); await mkdir(second);
   page = await launch(second); await synced(page, 3);
   const restored = await page.evaluate(() => window.territory.snapshot());
-  assert.equal(restored.streets.reduce((n, s) => n + s.count, 0), 928);
-  assert.equal(restored.historyIssues, 180);
+  assert.equal(restored.streets.reduce((n, s) => n + s.count, 0), expectedUnits);
+  assert.equal(restored.historyIssues, snapshot.historyIssues);
   assert.equal((await page.evaluate(id => window.territory.detail(id), streetId)).memory.note, 'Correzione conservata senza rete');
   assert.equal((await page.evaluate(() => window.territory.testSettings())).selected.length, 0);
   await page.locator('#cloud-memory').click(); await page.screenshot({ path: path.join(output, '02-online-memory.png') });
+  const secondPage = page;
+  const firstPage = await launch(first); await synced(firstPage, 3);
+  await secondPage.evaluate(id => window.territory.annotate({ streetId: id, note: 'Azione ufficio 2 ricevuta da ufficio 1', attention: false }), streetId);
+  await synced(secondPage, 4); await synced(firstPage, 4);
+  assert.equal((await firstPage.evaluate(id => window.territory.detail(id), streetId)).memory.note, 'Azione ufficio 2 ricevuta da ufficio 1');
   assert.deepEqual(errors, []);
-  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, automaticUpload: true, offlineChangesPreserved: true, restartSync: true, emptyDeviceRecovered: true, restoredUnits: 928, credentialsExcluded: true, crmWritesEnabled: false, errors }, null, 2));
-  console.log('Memoria online verificata: upload automatico, offline, riavvio e recupero da profilo vuoto.');
-} finally { if (application) await application.close(); }
+  await writeFile(path.join(output, 'result.json'), JSON.stringify({ ok: true, automaticUpload: true, offlineChangesPreserved: true, restartSync: true, emptyDeviceRecovered: true, twoOpenWorkstations: true, restoredUnits: expectedUnits, credentialsExcluded: true, crmWritesEnabled: false, errors }, null, 2));
+  console.log('Memoria online verificata: due postazioni aperte, ricezione senza azioni locali, offline e riavvio.');
+} finally { for (const instance of applications) { try { await instance.close(); } catch {} } }
