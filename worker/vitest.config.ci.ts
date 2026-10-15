@@ -18,6 +18,7 @@ const browserBackedTests = [
   "tests/crm-person-seeds.test.ts",
   "tests/import-v2-collapsed-merge.test.ts",
   "tests/import-v2-loading-reconciliation.test.ts",
+  "tests/import-v2-activity-evidence.test.ts",
   "tests/import-v2-filter-drawer.test.ts",
   "tests/import-v2-person-search.test.ts",
   "tests/import-v2-tecnocloud-ui-port.test.ts",

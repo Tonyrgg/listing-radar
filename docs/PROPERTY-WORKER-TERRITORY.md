@@ -1,5 +1,17 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.23: attività Killer e riscontri CRM
+
+Il precedente controllo cercava la descrizione dell'attività nel testo di qualsiasi risposta XHR/fetch del CRM. Le opzioni dei menu («Non vende», «Ci abita», «Eseguito»), un'attività di un altro immobile o descrizione e stato di due record diversi potevano quindi far risultare l'attività già presente, saltandone la creazione.
+
+Il controllo accetta ora record Task persistiti con ID, relazione `WhatId` all'immobile corrente, descrizione e stato dello stesso record. Legge i campi UI API e i valori serializzati Aura; conserva nel checkpoint l'ID attività quando disponibile. Le righe visibili vengono confrontate separatamente: non si uniscono descrizione e stato di due attività. Le risposte fallite o ancora in caricamento non provano l'assenza; un Task corrispondente privo di relazione/stato verificabile mantiene il caso da controllare, evitando una creazione alla cieca.
+
+Il motore non completa un import che prevedeva l'attività se il port la restituisce disabilitata o segnala descrizione/stato non verificati. I dati immobile già salvati restano nel checkpoint. Le protezioni contro salvataggi ripetuti restano attive.
+
+Killer conserva lo stato **Eseguito**, quindi le attività sono fra quelle concluse. La correzione non converte retroattivamente i piani già avviati con «Nessuna attività» e non cambia le esclusioni dei portafogli storici non verificati. Per una nuova scelta serve un nuovo lavoro dopo aver riconciliato quello precedente. I test riproducono il difetto su pagine simulate; il collaudo della run segnalata sull'altro PC richiede il relativo archivio aggiornato, assente nella memoria consultabile da questa macchina.
+
+Copertura verificata: **109 gruppi, 893 test**, build TypeScript, compilazione desktop e controllo grafico. Il flusso completo è stato rieseguito separatamente (7 test) dopo aver completato il CRM simulato: salva descrizione, modalità e stato dai campi del modulo, li espone alla rilettura e ne verifica i valori. Le altre 108 suite passano; nessuna scrittura di collaudo sul CRM reale.
+
 ## Versione 0.34.22: recupero letture, quote e nomi SISTER
 
 Le letture V2 che restano bloccate sui filtri o sul caricamento ricevono fino a **tre refresh**, oltre al tentativo iniziale. Una pagina non caricata non prova l'assenza di un immobile. Non vengono ricaricate finestre di modifica, merge o salvataggi incerti e non viene ripetuta alla cieca una scrittura. L'elenco completo immobili del nominativo viene chiuso prima del recupero perché è una finestra di sola lettura.

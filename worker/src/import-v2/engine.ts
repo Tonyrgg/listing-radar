@@ -415,6 +415,9 @@ export class ImportV2Engine {
       }
       case "verified": {
         const activityEvidence = await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan);
+        if (plan.source.activity.enabled && (activityEvidence.outcome === "disabled" || activityEvidence.descriptionVerified === false || activityEvidence.statusVerified === false)) {
+          throw new ImportV2Error("L'attività prevista dal piano non è stata verificata: immobile conservato, attività da completare", "verification_failed", { retryable: true });
+        }
         return { ...checkpoint, activityEvidence, stage: NEXT_STAGE.verified };
       }
       case "activity_synced":

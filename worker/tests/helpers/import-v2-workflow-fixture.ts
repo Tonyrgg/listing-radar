@@ -20,7 +20,7 @@ const lookupScript = `function commitPlace(option) { const box=option.parentElem
 const readForm = `Object.fromEntries([...document.querySelectorAll('[data-field]')].map(input=>[input.dataset.field,input.value]))`;
 
 type Person = Record<string, string>;
-type Property = { id: string; street: string; civic: string; catasto: Record<string, string>; activity: string | null };
+type Property = { id: string; street: string; civic: string; catasto: Record<string, string>; activity: { description: string; status: string; contactMode: string } | null };
 
 /** All requests are fulfilled in memory. No live cookies, CRM or database. */
 export class WorkflowUiFixture {
@@ -92,7 +92,7 @@ export class WorkflowUiFixture {
       <div><div><label>Proprietario Predefinito</label></div><a href="${root}/account/${personId}">Rossi Mario</a></div>
       ${detail("Quota Proprietario", "100")}
       <article>Soggetti collegati (0)</article>
-      <article id="activities">Attività e appuntamenti ${escaped(p.activity)}<button onclick="activityForm()">Nuovo</button></article>
+      <article id="activities">Attività e appuntamenti ${p.activity ? `<div>Descrizione ${escaped(p.activity.description)}</div><div>Stato ${escaped(p.activity.status)}</div><div>Modalità ${escaped(p.activity.contactMode)}</div>` : ""}<button onclick="activityForm()">Nuovo</button></article>
       <script>
         const catasto=${JSON.stringify(p.catasto)};
         function editCatasto() {
@@ -101,9 +101,9 @@ export class WorkflowUiFixture {
         async function saveCatasto() {
           await fetch('/_fixture/catasto/${p.id}', {method:'POST',body:JSON.stringify(${readForm})}); location.reload();
         }
-        function activityForm() { document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(`<section role="dialog"><c-input-field>Cliente<input value="Rossi Mario"></c-input-field><c-input-field>Correlato a<input value="IM - ${escaped(p.street)} ${p.civic}"></c-input-field><c-input-field>Modalità Contatto<input role="textbox" value="Contatto diretto"></c-input-field><c-input-field>Stato<input role="textbox" value="Eseguito"></c-input-field><c-input-field>Descrizione<textarea></textarea></c-input-field><button onclick="saveActivity()">Salva</button></section>`)}); }
-        async function saveActivity() { const description=document.querySelector('textarea').value;
-          await fetch('/_fixture/activity/${p.id}', {method:'POST',body:description}); document.querySelector('[role=dialog]').remove(); document.querySelector('#activities').append(description);
+        function activityForm() { document.body.insertAdjacentHTML('beforeend', ${JSON.stringify(`<section role="dialog"><c-input-field>Cliente<input value="Rossi Mario"></c-input-field><c-input-field>Correlato a<input value="IM - ${escaped(p.street)} ${p.civic}"></c-input-field><c-input-field>Modalità Contatto<input data-activity-contact role="textbox" value="Contatto diretto"></c-input-field><c-input-field>Stato<input data-activity-status role="textbox" value="Eseguito"></c-input-field><c-input-field>Descrizione<textarea></textarea></c-input-field><button onclick="saveActivity()">Salva</button></section>`)}); }
+        async function saveActivity() { const activity={description:document.querySelector('textarea').value,status:document.querySelector('[data-activity-status]').value,contactMode:document.querySelector('[data-activity-contact]').value};
+          await fetch('/_fixture/activity/${p.id}', {method:'POST',body:JSON.stringify(activity)}); document.querySelector('[role=dialog]').remove(); document.querySelector('#activities').append(activity.description+' '+activity.status+' '+activity.contactMode);
         }
       </script>`;
   }
@@ -129,7 +129,7 @@ export class WorkflowUiFixture {
           this.properties.find(p => p.id === pathname.split("/").at(-1))!.catasto = JSON.parse(body);
           this.writes.push("property:catasto");
         } else if (pathname.startsWith("/_fixture/activity/")) {
-          this.properties.find(p => p.id === pathname.split("/").at(-1))!.activity = body;
+          this.properties.find(p => p.id === pathname.split("/").at(-1))!.activity = JSON.parse(body);
           this.writes.push("activity:create");
         } else if (pathname === "/_fixture/search") {
           if (this.failPropertySearch) { await route.fulfill({ status: 503, body: "unavailable" }); return; }

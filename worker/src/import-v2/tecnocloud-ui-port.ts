@@ -1,4 +1,5 @@
 import type { Locator, Page, Request, Response } from "playwright";
+import { cloudActivityEvidence } from "./activity-evidence.js";
 
 import { ImportV2Error } from "./errors.js";
 import { logger } from "../logger.js";
@@ -2772,6 +2773,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async readActivityEvidence(propertyId: string, description: string, status: string): Promise<{
     card: Locator;
+    activityId: string | null;
     found: boolean;
     descriptionVerified: boolean;
     statusVerified: boolean;
@@ -2779,16 +2781,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const expected = normalized(description);
     const expectedStatus = normalized(status);
     let responseMatched = false;
-    let responseStatusMatched = false;
+    let responseActivityId: string | null = null;
+    let unresolvedResponse = false;
     const responseTasks = new Set<Promise<void>>();
+    const requests = this.watchSearchRequests();
     const inspect = (response: Response) => {
-      if (!["xhr", "fetch"].includes(response.request().resourceType())) return;
+      if (!response.ok() || !["xhr", "fetch"].includes(response.request().resourceType())) return;
       let task: Promise<void>;
       task = response.text().then((body) => {
-        const decoded = body.replace(/\\u([0-9a-f]{4})/gi, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
-        const normalizedBody = normalized(decoded);
-        if (normalizedBody.includes(expected)) responseMatched = true;
-        if (normalizedBody.includes(expectedStatus)) responseStatusMatched = true;
+        const evidence = cloudActivityEvidence(body, propertyId, description, status);
+        if (evidence.found) { responseMatched = true; responseActivityId = evidence.activityId; }
+        if (evidence.unresolved) unresolvedResponse = true;
       }).catch(() => undefined).finally(() => responseTasks.delete(task));
       responseTasks.add(task);
     };
@@ -2800,17 +2803,33 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const card = await this.activityCard(propertyId);
       let stable = 0;
       for (let wait = 0; wait < 80 && stable < 4; wait += 1) {
-        const settled = responseTasks.size === 0 && !(await this.searchIsBusy());
+        await this.assertSession();
+        await this.assertSearchHealthy(requests.failed(), this.submittedActivities.has(propertyId));
+        const settled = !requests.pending() && responseTasks.size === 0 && !(await this.searchIsBusy());
         stable = settled ? stable + 1 : 0;
         if (stable < 4) await this.pauseAwareWait(250);
       }
+      if (stable < 4) throw new ImportV2Error("Il caricamento delle attività CRM non è concluso: nessuna assenza confermata", "transient_portal", { retryable: true });
       await Promise.all(responseTasks);
-      const cardText = normalized(await card.innerText());
-      const descriptionVerified = responseMatched || cardText.includes(expected);
-      const statusVerified = responseStatusMatched || cardText.includes(expectedStatus);
-      return { card, found: descriptionVerified, descriptionVerified, statusVerified };
+      // A description on one visible activity and a status on another do
+      // not constitute a match. Prefer the individual related-list rows.
+      const rows = card.locator('tr, [role="row"], li, .slds-timeline__item').filter({ visible: true });
+      const visibleTexts = await rows.count()
+        ? await rows.evaluateAll(nodes => nodes.map(node => (node as HTMLElement).innerText ?? ""))
+        : [await card.innerText()];
+      const visibleMatched = visibleTexts.some(text => {
+        const value = normalized(text);
+        const statuses = value.match(/(?:NON\s+)?ESEGUITO|DA ESEGUIRE/g) ?? [];
+        return value.includes(expected) && statuses.length > 0 && statuses.every(actual => actual === expectedStatus);
+      });
+      const found = responseMatched || visibleMatched;
+      const descriptionVerified = found;
+      const statusVerified = found;
+      if (!found && unresolvedResponse) throw new ImportV2Error("Un'attività CRM corrispondente non espone immobile o stato verificabili: recupero la lettura senza creare duplicati", "transient_portal", { retryable: true });
+      return { card, activityId: responseActivityId, found, descriptionVerified, statusVerified };
     } finally {
       this.page.off("response", inspect);
+      requests.stop();
     }
   }
 
@@ -2855,7 +2874,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const before = await this.readActivityEvidence(propertyId, description, plan.source.activity.status);
       if (before.found) {
         return {
-          activityId: null,
+          activityId: before.activityId,
           outcome: "existing",
           descriptionVerified: before.descriptionVerified,
           statusVerified: before.statusVerified,
@@ -2922,7 +2941,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         throw new ImportV2Error("L’attività salvata non è ancora verificabile nel Cloud. Import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
       }
       return {
-        activityId: null,
+        activityId: after.activityId,
         outcome: "created",
         descriptionVerified: after.descriptionVerified,
         statusVerified: after.statusVerified,

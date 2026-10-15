@@ -1465,6 +1465,10 @@ describe("Tecnocloud UI V2", () => {
           await route.fulfill({ body: "ok" });
           return;
         }
+        if (url.pathname === "/activity-options") {
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify({ picklistValues: { Description: ["Non sa nulla", "Non vende", "Ci abita"], Status: ["Eseguito", "Da eseguire"] } }) });
+          return;
+        }
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
           <div>Indirizzo Completo Immobile</div>
           <article id="activity"><h2>Attivita e appuntamenti (${savedDescription ? "1+" : "0"})</h2>${savedDescription ? `<div>Ricerca - Eseguito</div><div>Descrizione ${savedDescription}</div>` : '<button id="new">Nuovo</button>'}</article>
@@ -1483,6 +1487,7 @@ describe("Tecnocloud UI V2", () => {
           </section>
           <div id="options"></div>
           <script>
+            fetch('/activity-options');
             const form = document.querySelector('#form');
             const create = document.querySelector('#new');
             if (create) create.onclick = () => form.hidden = false;
@@ -1535,7 +1540,7 @@ describe("Tecnocloud UI V2", () => {
       const page = await browser.newPage();
       await page.route("https://tecnocasa-group.my.site.com/**", async (route) => {
         if (new URL(route.request().url()).pathname === "/activity-data") {
-          await route.fulfill({ contentType: "application/json", body: JSON.stringify({ description: "Non sa nulla", status: "Eseguito" }) });
+          await route.fulfill({ contentType: "application/json", body: JSON.stringify({ Id: "00T000000000001AAA", WhatId: "property-activity", Description: "Non sa nulla", Status: "Eseguito" }) });
           return;
         }
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>

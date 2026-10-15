@@ -219,6 +219,19 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it.each(["description", "status", "disabled"])("non completa l'import se l'attività richiesta ha una prova %s non valida", async field => {
+    class UnverifiedActivityCrm extends FakeCrm {
+      override async ensureActivity() {
+        if (field === "disabled") return { activityId: null, outcome: "disabled" as const };
+        return { activityId: "activity-unverified", outcome: "created" as const, descriptionVerified: field !== "description", statusVerified: field !== "status" };
+      }
+    }
+    const source = property(); source.activity.enabled = true;
+    const store = new MemoryStore();
+    const result = await new ImportV2Engine(new UnverifiedActivityCrm(), store, { maxTransientAttempts: 1 }).run(source);
+    expect(result).toMatchObject({ state: "quarantined", stage: "verified", failure: { kind: "verification_failed" } });
+    expect(store.checkpoints.get(source.sourcePropertyId)?.stage).toBe("verified");
+  });
   it("inoltra la politica esplicita V2 e conserva la sostituzione del principale nel checkpoint", async () => {
     const source = property(); source.owners[1]!.sharePercentage = 70; source.owners[0]!.sharePercentage = 30;
     class ReplacementCrm extends FakeCrm {

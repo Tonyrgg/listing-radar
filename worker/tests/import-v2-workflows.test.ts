@@ -117,6 +117,10 @@ describe("Collaudo locale acquisizione → Import V2 → rilettura CRM", () => {
       expect(fixture.writes.filter(w => w === "person:update")).toHaveLength(1);
       expect(fixture.writes.filter(w => w === "property:create")).toHaveLength(1);
       expect(fixture.writes.filter(w => w === "activity:create")).toHaveLength(2);
+      expect(fixture.properties.map(p => p.activity)).toEqual([
+        { description: "Contatto proprietari", status: "Eseguito", contactMode: "Contatto diretto" },
+        { description: "Contatto proprietari", status: "Eseguito", contactMode: "Contatto diretto" },
+      ]);
       expect(fixture.properties).toHaveLength(2);
       expect(fixture.searches).toContainEqual(["", "38", "216", "17"]);
       expect(fixture.searches.some(values => values[0]?.includes("SECONDA"))).toBe(false);
