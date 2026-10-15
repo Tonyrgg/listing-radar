@@ -24,6 +24,7 @@ type Property = { id: string; street: string; civic: string; catasto: Record<str
 
 /** All requests are fulfilled in memory. No live cookies, CRM or database. */
 export class WorkflowUiFixture {
+  private activityIds = new Map<string, string>();
   person: Person | null = null;
   properties: Property[] = [];
   writes: string[] = [];
@@ -94,6 +95,7 @@ export class WorkflowUiFixture {
       <article>Soggetti collegati (0)</article>
       <article id="activities">Attività e appuntamenti ${p.activity ? `<div>Descrizione ${escaped(p.activity.description)}</div><div>Stato ${escaped(p.activity.status)}</div><div>Modalità ${escaped(p.activity.contactMode)}</div>` : ""}<button onclick="activityForm()">Nuovo</button></article>
       <script>
+        fetch('/_fixture/tasks/${p.id}');
         const catasto=${JSON.stringify(p.catasto)};
         function editCatasto() {
           document.querySelector('#catasto').innerHTML=${JSON.stringify(catastoLabels.map(label => field(label, p.catasto[label] ?? "")).join(""))}+'<button onclick="saveCatasto()">Salva</button>';
@@ -114,6 +116,10 @@ export class WorkflowUiFixture {
       const url = new URL(route.request().url());
       if (url.origin !== crmOrigin) throw new Error(`Unexpected fixture origin: ${url.origin}`);
       const pathname = url.pathname;
+      if (pathname.startsWith("/_fixture/tasks/")) {
+        const p = this.properties.find(p => p.id === pathname.split("/").at(-1));
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(p?.activity ? [{ Id: this.activityIds.get(p.id), WhatId: p.id, Description: p.activity.description, Status: p.activity.status }] : []) }); return;
+      }
       if (pathname.startsWith("/_fixture/")) {
         const body = route.request().postData() ?? "";
         let result = "ok";
@@ -129,7 +135,9 @@ export class WorkflowUiFixture {
           this.properties.find(p => p.id === pathname.split("/").at(-1))!.catasto = JSON.parse(body);
           this.writes.push("property:catasto");
         } else if (pathname.startsWith("/_fixture/activity/")) {
-          this.properties.find(p => p.id === pathname.split("/").at(-1))!.activity = JSON.parse(body);
+          const p = this.properties.find(p => p.id === pathname.split("/").at(-1))!;
+          p.activity = JSON.parse(body);
+          this.activityIds.set(p.id, `00T${String(this.writes.filter(w => w === "activity:create").length + 1).padStart(12, "0")}AAA`);
           this.writes.push("activity:create");
         } else if (pathname === "/_fixture/search") {
           if (this.failPropertySearch) { await route.fulfill({ status: 503, body: "unavailable" }); return; }

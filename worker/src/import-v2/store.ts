@@ -40,6 +40,7 @@ function checkpointFromRow(row: ImportV2ItemRow): ImportV2Checkpoint {
     propertyResolution: row.checkpoint?.propertyResolution ?? null,
     crmPropertyId: row.checkpoint?.crmPropertyId ?? null,
     activityEvidence: row.checkpoint?.activityEvidence ?? null,
+    activityWrite: row.checkpoint?.activityWrite,
     attempts: row.attempts,
     nextAttemptAt: row.next_attempt_at,
     lastError: row.last_error,
@@ -54,6 +55,7 @@ function checkpointPayload(checkpoint: ImportV2Checkpoint) {
     propertyResolution: checkpoint.propertyResolution,
     crmPropertyId: checkpoint.crmPropertyId,
     activityEvidence: checkpoint.activityEvidence ?? null,
+    activityWrite: checkpoint.activityWrite ?? null,
   };
 }
 

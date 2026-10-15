@@ -16,7 +16,8 @@ describe("checkpoint Import V2", () => {
       ],
     };
     const original = buildPlan(source);
-    const row = { id: "item", job_id: "job", property_id: "property", plan_fingerprint: "old-order-sensitive-hash", plan: original, stage: "completed", status: "completed", checkpoint: { crmPropertyId: "verified-property", ownershipVerifiedPersonIds: ["verified-owner"] }, attempts: 2, next_attempt_at: null, last_error: null, updated_at: "2026-10-05T15:50:00Z" };
+    const activityWrite = { operationId: "item", preparedAt: "2026-10-05T15:00:00Z", submittedAt: "2026-10-05T15:01:00Z", baselineIds: ["00T000000000001"] };
+    const row = { id: "item", job_id: "job", property_id: "property", plan_fingerprint: "old-order-sensitive-hash", plan: original, stage: "completed", status: "completed", checkpoint: { crmPropertyId: "verified-property", ownershipVerifiedPersonIds: ["verified-owner"], activityWrite }, attempts: 2, next_attempt_at: null, last_error: null, updated_at: "2026-10-05T15:50:00Z" };
     const updates: unknown[] = [];
     const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: row, error: null }), update: (value: unknown) => { updates.push(value); return { eq: async () => ({ error: null }) }; } };
     const store = new SupabaseImportV2Store({ from: () => query } as never);
@@ -25,6 +26,7 @@ describe("checkpoint Import V2", () => {
     expect(loaded).toMatchObject({ stage: "completed", crmPropertyId: "verified-property", ownershipVerifiedPersonIds: ["verified-owner"] });
     expect(loaded.plan?.source.owners[0]?.sourcePersonId).toBe("person-b");
     expect(loaded.plan?.source.activity).toEqual(original.source.activity);
+    expect(loaded.activityWrite).toEqual(activityWrite);
     expect(updates).toHaveLength(1);
     await expect(store.loadOrCreate(buildPlan({ ...source, cadastral: { ...source.cadastral, subaltern: "99" } }))).rejects.toThrow("L'acquisizione è cambiata");
     expect(updates).toHaveLength(1);
@@ -75,6 +77,7 @@ describe("checkpoint Import V2", () => {
       ownershipVerifiedPersonIds: [],
       propertyResolution: null,
       crmPropertyId: "crm-property-1",
+      activityWrite: { operationId: "item-1", preparedAt: "2026-09-17T18:00:00Z", submittedAt: "2026-09-17T18:01:00Z", baselineIds: ["00T000000000001"] },
       activityEvidence: {
         activityId: "activity-1",
         outcome: "created",
@@ -92,6 +95,7 @@ describe("checkpoint Import V2", () => {
 
     expect(saved).not.toBeNull();
     expect((saved!.checkpoint as Record<string, unknown>).activityEvidence).toEqual(checkpoint.activityEvidence);
+    expect((saved!.checkpoint as Record<string, unknown>).activityWrite).toEqual(checkpoint.activityWrite);
   });
 
   it("migra un checkpoint esistente con il comune duplicato nell'indirizzo", async () => {

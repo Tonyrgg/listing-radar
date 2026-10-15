@@ -22,9 +22,11 @@ function parse(value: string): unknown {
  * evidence must belong to the same persisted Task and its property relation.
  * UI API fields and serialized Aura return values are supported.
  */
-export function cloudActivityEvidence(body: string, propertyId: string, description: string, status: string): { found: boolean; unresolved: boolean; activityId: string | null } {
+export function cloudActivityEvidence(body: string, propertyId: string, description: string, status: string, excludedIds: ReadonlySet<string> = new Set()): { found: boolean; unresolved: boolean; activityId: string | null; knownIds: string[] } {
   const nodes: unknown[] = [parse(body)];
   let unresolved = false;
+  let activityId: string | null = null;
+  const knownIds = new Set<string>();
   const expected = normalize(description), expectedStatus = normalize(status);
   for (let visited = 0; nodes.length && visited < 100_000; visited++) {
     const node = nodes.pop();
@@ -33,13 +35,16 @@ export function cloudActivityEvidence(body: string, propertyId: string, descript
       continue;
     }
     if (Array.isArray(node)) {
-      if (node.length + nodes.length > 100_000) return { found: false, unresolved: true, activityId: null };
+      if (node.length + nodes.length > 100_000) return { found: false, unresolved: true, activityId: null, knownIds: [...knownIds] };
       for (const child of node) nodes.push(child);
       continue;
     }
     if (!object(node)) continue;
     const id = values(field(node, "Id"))[0];
     if (id && /^00T[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/.test(id)) {
+      const related = values(field(node, "WhatId"))[0];
+      if (related && related.slice(0, 15) === propertyId.slice(0, 15)) knownIds.add(id.slice(0, 15));
+      if (excludedIds.has(id.slice(0, 15))) continue;
       if (values(field(node, "Description")).some(value => normalize(value) === expected)) {
         const relatedField = field(node, "WhatId");
         const related = values(relatedField)[0];
@@ -50,13 +55,13 @@ export function cloudActivityEvidence(body: string, propertyId: string, descript
         if (!noProperty) {
           if (!related || related.slice(0, 15) === propertyId.slice(0, 15) && !statuses.length) unresolved = true;
           else if (related.slice(0, 15) === propertyId.slice(0, 15)
-            && statuses.some(value => normalize(value) === expectedStatus || expectedStatus === "ESEGUITO" && normalize(value) === "COMPLETED" || expectedStatus === "DA ESEGUIRE" && normalize(value) === "NOT STARTED")) return { found: true, unresolved: false, activityId: id };
+            && statuses.some(value => normalize(value) === expectedStatus || expectedStatus === "ESEGUITO" && normalize(value) === "COMPLETED" || expectedStatus === "DA ESEGUIRE" && normalize(value) === "NOT STARTED")) activityId ??= id;
         }
       }
     }
     const children = Object.values(node);
-    if (children.length + nodes.length > 100_000) return { found: false, unresolved: true, activityId: null };
+    if (children.length + nodes.length > 100_000) return { found: false, unresolved: true, activityId: null, knownIds: [...knownIds] };
     for (const child of children) nodes.push(child);
   }
-  return { found: false, unresolved: unresolved || nodes.length > 0, activityId: null };
+  return { found: Boolean(activityId), unresolved: activityId ? false : unresolved || nodes.length > 0, activityId, knownIds: [...knownIds] };
 }

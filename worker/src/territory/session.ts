@@ -22,6 +22,7 @@ import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
 import { resolveSyncConflict } from "./sync-records.js";
+import { canEnableQueuedActivity } from "./activity-plan.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), ownershipParts: z.array(z.object({ rightType: z.string().max(200), shareOriginal: z.string().max(100) })).max(100).optional(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -218,13 +219,12 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const recoveries = v.selected.map(key => pendingUnitImport(state, key)).filter(r => r !== null);
         const activityCount = v.selected.filter(key => {
           const recovery = pendingUnitImport(state, key);
-          if (recovery) return recovery.source.activity.enabled;
+          if (recovery) return recovery.source.activity.enabled || settings.activityMode !== "none" && canEnableQueuedActivity(recovery.checkpoint);
           if (settings.activityMode === "none") return false;
-          const observation = state.units[key]?.observations.at(-1);
-          return observation && (observation.activityEligible ?? !observation.historyPropertyId);
+          return Boolean(state.units[key]);
         }).length;
         const activityText = activityCount
-          ? `Il piano prevede ${activityCount} attività. Opzione per i nuovi immobili: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. I portafogli storici senza una lettura completa restano esclusi; gli eventuali piani conservati mantengono le attività originali.`
+          ? `Il piano prevede ${activityCount} attività. Opzione scelta: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. La scelta vale anche per gli immobili dello storico e dei portafogli selezionati. I piani senza attività possono attivarla; un'attività già inviata da verificare conserva le opzioni originali.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
           type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",

@@ -123,9 +123,11 @@ try {
   assert.equal(await page.locator('#queue-activity option').count(), 4);
   await page.locator('#queue-activity').selectOption('killer');
   assert.ok((await page.locator('#queue-activity-hint').textContent()).includes('Eseguito'));
+  assert.equal(await page.locator('#queue-activity-total').textContent(), '2 attività previste su 2 immobili.');
   await page.locator('#queue-activity').selectOption('direct_contact');
   assert.ok((await page.locator('#queue-activity-hint').textContent()).includes('Senza recapiti'));
   await page.locator('#queue-activity').selectOption('none');
+  assert.equal(await page.locator('#queue-activity-total').textContent(), '0 attività previste su 2 immobili · 2 senza attività.');
   assert.deepEqual(JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8')).virtualCrm, ledgerBefore.virtualCrm, 'Controllare il piano non scrive');
   for (const width of [1600, 1024, 390]) {
     await page.setViewportSize({ width, height: 860 });
@@ -140,6 +142,7 @@ try {
   await until(async () => !(await window.territory.snapshot()).activeRun && (await window.territory.queue()).entries.length === 0);
   const after = await page.evaluate(() => window.territory.queue());
   assert.equal(after.runs.at(-1).state, 'completed'); assert.equal(Object.keys(after.runs.at(-1).imports).length, 2);
+  assert.deepEqual(after.runs.at(-1).activitySummary, { created: 0, recovered: 0, disabled: 2, unconfirmed: 0 });
   assert.equal((await page.evaluate(key => window.territory.unitDetail(key), first.key)).source.fullAddress, streets[0].name + ' N. 14 Piano 2');
   await page.locator('#detail-close').click(); await openStreet(page, streets[0]);
   assert.ok((await page.locator('[data-unit="' + first.key + '"] h3').textContent()).includes('14 Piano 2'));

@@ -5,7 +5,7 @@ const task = { Id: "00T000000000001AAA", WhatId: propertyId, Description: "Non v
 const evidence = (value: unknown) => cloudActivityEvidence(JSON.stringify(value), propertyId, "Non vende", "Eseguito");
 describe("Attività Cloud correlata e verificata", () => {
   it("legge record Apex anche dentro returnValue serializzato", () => {
-    expect(evidence({ actions: [{ returnValue: JSON.stringify({ records: [task] }) }] })).toEqual({ found: true, unresolved: false, activityId: task.Id });
+    expect(evidence({ actions: [{ returnValue: JSON.stringify({ records: [task] }) }] })).toMatchObject({ found: true, unresolved: false, activityId: task.Id, knownIds: [task.Id.slice(0, 15)] });
   });
   it("legge campi UI API, stato API e riferimenti equivalenti da 15 caratteri", () => {
     expect(evidence({ id: task.Id, apiName: "Task", fields: { WhatId: { value: propertyId.slice(0, 15) }, Description: { value: "Non vende" }, Status: { value: "Completed", displayValue: "Eseguito" } } }).found).toBe(true);
@@ -29,5 +29,12 @@ describe("Attività Cloud correlata e verificata", () => {
   });
   it("ignora HTML e JSON malformato senza promuoverli a prova", () => {
     expect(cloudActivityEvidence('<option>Non vende Eseguito</option>', propertyId, "Non vende", "Eseguito").found).toBe(false);
+  });
+  it("raccoglie tutti gli ID precedenti e distingue il nuovo Task, anche con descrizioni identiche", () => {
+    const newer = { ...task, Id: "00T000000000002AAA" };
+    const result = cloudActivityEvidence(JSON.stringify([task, newer]), propertyId, "Non vende", "Eseguito", new Set([task.Id.slice(0, 15)]));
+    expect(result).toMatchObject({ found: true, activityId: newer.Id });
+    expect(new Set(result.knownIds)).toEqual(new Set([task.Id.slice(0, 15), newer.Id.slice(0, 15)]));
+    expect(cloudActivityEvidence(JSON.stringify(task), propertyId, "Non vende", "Eseguito", new Set([task.Id.slice(0, 15)])).found).toBe(false);
   });
 });

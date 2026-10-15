@@ -21,6 +21,7 @@ import { collectScanQuarantine, isQuarantined, canRetryQuarantinedUnit, quaranti
 import { buildCadastralKey } from "../core/normalize.js";
 import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "./import-queue.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
+import { canEnableQueuedActivity, runActivitySummary } from "./activity-plan.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: sources, checkpoint: _checkpoint, ...run }: Run) => ({ ...run,
@@ -44,9 +45,9 @@ export class TerritoryApplication {
       try { recovery = pendingUnitImport(state, entry.key); } catch (error) { recoveryProblem = (error as Error).message; }
       const source = recovery?.source ?? (unit && effectiveSource(unit));
       const problem = recoveryProblem ?? (!unit || !source ? "Immobile non più disponibile" : recovery && recovery.origin !== this.origin ? "Piano di un altro profilo: nessuna scrittura" : !recovery && isQuarantined(state, unit) && !canRetryQuarantinedUnit(state, unit) ? "In quarantena: correggi i dati prima di importare" : sourceProblem(source) ? "Dati da completare: " + sourceProblem(source) : !this.provider.canWrite(unit.key, source) ? "Dati o autorizzazioni da completare" : !queueStreet(state, unit, recovery?.streetId ?? entry.streetId) ? "Associazione alla via da completare" : null);
-      return { ...entry, retry: !recovery && Boolean(unit && canRetryQuarantinedUnit(state, unit)), unit: unit ? this.presentUnit(unit, state) : null, locked, problem, recovery: recovery ? { stage: recovery.checkpoint.stage, settings: recovery.settings, address: recovery.source.fullAddress, activityEnabled: recovery.source.activity.enabled } : null, editLocked: locked || Boolean(recovery) || Boolean(recoveryProblem) };
+      return { ...entry, retry: !recovery && Boolean(unit && canRetryQuarantinedUnit(state, unit)), unit: unit ? this.presentUnit(unit, state) : null, locked, problem, recovery: recovery ? { stage: recovery.checkpoint.stage, settings: recovery.settings, address: recovery.source.fullAddress, activityEnabled: recovery.source.activity.enabled, canEnableActivity: canEnableQueuedActivity(recovery.checkpoint) } : null, editLocked: locked || Boolean(recovery) || Boolean(recoveryProblem) };
     }).sort((a, b) => a.addedAt.localeCompare(b.addedAt));
-    return { revision: this.store.revision, entries, readyKeys: entries.filter(e => !e.problem && !e.locked).map(e => e.key), runs: state.runs.filter(r => r.operation === "apply" && (r.queueEntryIds || ["paused", "failed"].includes(r.state)) && r.origin === this.origin).slice(-30).map(publicRun) };
+    return { revision: this.store.revision, entries, readyKeys: entries.filter(e => !e.problem && !e.locked).map(e => e.key), runs: state.runs.filter(r => r.operation === "apply" && (r.queueEntryIds || ["paused", "failed"].includes(r.state)) && r.origin === this.origin).slice(-30).map(r => ({ ...publicRun(r), activitySummary: runActivitySummary(state, r) })) };
   }
   async enqueue(keys: string[], preferredStreet?: string) {
     if (!keys.length || keys.length > 10000) throw new Error("Seleziona gli immobili da aggiungere alla coda");
@@ -234,6 +235,17 @@ export class TerritoryApplication {
         const unit = s.units[key]!;
         const recovery = pendingUnitImport(s, key);
         if (recovery) {
+          if (run.settings!.activityMode !== "none" && canEnableQueuedActivity(recovery.checkpoint)) {
+            const requested = sourceForApply(recovery.source, { ...recovery.settings, activityMode: run.settings!.activityMode }, true, run.settings!.activityMode === "killer" ? index + 1 : directContactOrdinal + 1);
+            const checkpoint = s.checkpoints[recovery.checkpoint.propertyId]!;
+            checkpoint.plan = buildPlan(requested);
+            if (checkpoint.stage === "activity_synced") checkpoint.stage = "verified";
+            checkpoint.activityEvidence = null;
+            checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: now(), submittedAt: null, baselineIds: [] };
+            checkpoint.updatedAt = now();
+            recovery.source = requested; recovery.settings = { ...recovery.settings, activityMode: run.settings!.activityMode };
+            s.events.push({ id: randomUUID(), streetId: run.streetId, at: now(), unitKey: key, text: "Attività richiesta dalla coda: attivata sul piano che prima non la prevedeva; dati immobile conservati" });
+          }
           if (recovery.source.activity.enabled && recovery.source.activity.contactMode === "Contatto diretto") directContactOrdinal++;
           (run.applySources ??= {})[key] = recovery.source;
           (run.unitSettings ??= {})[key] = recovery.settings;
@@ -241,8 +253,7 @@ export class TerritoryApplication {
           continue;
         }
         if (s.checkpoints[effectiveSource(unit).sourcePropertyId]?.stage === "completed") unit.sourceVersionId = randomUUID();
-        const observation = latest(unit);
-        (run.applySources ??= {})[key] = sourceForApply(effectiveSource(unit), run.settings!, observation.activityEligible ?? !observation.historyPropertyId, run.settings!.activityMode === "killer" ? index + 1 : directContactOrdinal + 1);
+        (run.applySources ??= {})[key] = sourceForApply(effectiveSource(unit), run.settings!, true, run.settings!.activityMode === "killer" ? index + 1 : directContactOrdinal + 1);
         const planned = run.applySources![key]!;
         if (planned.activity.enabled && planned.activity.contactMode === "Contatto diretto") directContactOrdinal++;
       }

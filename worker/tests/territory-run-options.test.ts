@@ -8,6 +8,8 @@ import { SimulationProvider, simulationSource } from "../src/territory/providers
 import { effectiveSource, type Street } from "../src/territory/model.js";
 import { runSettings, sourceForApply } from "../src/territory/run-options.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
+import { buildPlan } from "../src/import-v2/identity.js";
+import { canEnableQueuedActivity, runActivitySummary } from "../src/territory/activity-plan.js";
 
 const street: Street = { id: "1", name: "Via di prova", sisterName: "VIA DI PROVA", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
 const directories: string[] = [];
@@ -44,6 +46,11 @@ describe("Opzioni operative V2, congelate per run", () => {
     expect(store.read().runs.at(-1)!.state).toBe("completed");
     expect(Object.values(store.read().runs.at(-1)!.applySources!).map(s => s.activity.description)).toEqual(["Non vende", "Ci abita", "Segreteria"]);
     expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito", "Eseguito", "Eseguito"]);
+    expect(runActivitySummary(store.read(), store.read().runs.at(-1)!)).toEqual({ created: 3, recovered: 0, disabled: 0, unconfirmed: 0 });
+    const summaryState = store.read(), summaryRun = summaryState.runs.at(-1)!;
+    const cp = summaryState.checkpoints[summaryRun.applySources![keys[0]!]!.sourcePropertyId]!;
+    cp.activityEvidence!.operationId = "old-operation";
+    expect(runActivitySummary(summaryState, summaryRun).unconfirmed).toBe(1);
     const reopened = await TerritoryStore.open(directory, [street]);
     expect(reopened.read().runs.at(-1)!.applySources).toEqual(store.read().runs.at(-1)!.applySources);
     expect(effectiveSource(reopened.read().units[keys[0]!]!).activity.enabled).toBe(false);
@@ -160,12 +167,36 @@ describe("Opzioni operative V2, congelate per run", () => {
     expect(activities).toHaveLength(1);
     expect(activities[0]!.activity.status).toBe("Da eseguire");
   });
-  it("esclude dalle attività la rete proprietari e lo storico senza provenienza verificata", async () => {
+  it("rispetta l'attività scelta esplicitamente anche per un immobile dello storico o dei portafogli", async () => {
     const { store, app, key } = await setup();
     await store.change(s => { const observation = s.units[key]!.observations[0]!; observation.historyPropertyId = "old-property"; observation.activityEligible = false; });
     await app.start(street.id, "apply", [key], undefined, { activityMode: "plain" }); await app.waitForIdle();
     expect(store.read().runs.at(-1)?.state).toBe("completed");
-    expect(Object.values(store.read().virtualActivities ?? {})).toHaveLength(0);
-    expect(store.read().runs.at(-1)?.applySources?.[key]?.activity.enabled).toBe(false);
+    expect(Object.values(store.read().virtualActivities ?? {})).toHaveLength(1);
+    expect(store.read().runs.at(-1)?.applySources?.[key]?.activity.enabled).toBe(true);
+  });
+  it("Killer attiva l'attività di un vecchio piano Nessuna senza modificare dati, intestatari o import policy", async () => {
+    const { store, app, key } = await setup();
+    const source = effectiveSource(store.read().units[key]!);
+    const plan = buildPlan(source);
+    await store.change(s => {
+      s.checkpoints[source.sourcePropertyId] = { itemId: "old-item", jobId: source.jobId, propertyId: source.sourcePropertyId, stage: "queued", plan, people: [], syncedPeople: [], propertyResolution: null, crmPropertyId: null, attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: new Date().toISOString() };
+      s.runs.push({ id: "old-run", streetId: street.id, operation: "apply", origin: "simulation", state: "stopped", startedAt: new Date().toISOString(), endedAt: null, handled: 0, total: 1, itemKeys: [key], error: null, settings: runSettings({ activityMode: "none", includeCoOwners: true }), applySources: { [key]: source } });
+    });
+    await app.enqueue([key]); expect(app.importQueue().entries[0]!.recovery?.canEnableActivity).toBe(true);
+    await app.startQueue([key], { activityMode: "killer", includeCoOwners: false }); await app.waitForIdle();
+    const run = store.read().runs.at(-1)!;
+    expect(run.unitSettings![key]).toMatchObject({ activityMode: "killer", includeCoOwners: true });
+    expect(run.applySources![key]!.owners).toEqual(source.owners);
+    expect(Object.values(store.read().virtualActivities!)).toHaveLength(1);
+    expect(Object.values(store.read().virtualActivities!)[0]!.activity.status).toBe("Eseguito");
+    expect(store.read().checkpoints[source.sourcePropertyId]!.plan!.source.activity.enabled).toBe(true);
+  });
+  it("un piano con attività inviata non può essere riconvertito come se non fosse mai partito", async () => {
+    const { store, key } = await setup(); const source = effectiveSource(store.read().units[key]!);
+    const checkpoint = { itemId: "item", jobId: source.jobId, propertyId: source.sourcePropertyId, stage: "verified" as const, plan: buildPlan(source), people: [], syncedPeople: [], propertyResolution: null, crmPropertyId: null, attempts: 0, nextAttemptAt: null, lastError: null, updatedAt: "2026-10-15" };
+    expect(canEnableQueuedActivity(checkpoint)).toBe(true);
+    expect(canEnableQueuedActivity({ ...checkpoint, activityWrite: { operationId: "item", preparedAt: "2026-10-15", submittedAt: "2026-10-15", baselineIds: [] } })).toBe(false);
+    expect(canEnableQueuedActivity({ ...checkpoint, activityEvidence: { activityId: "task", outcome: "existing" } })).toBe(false);
   });
 });

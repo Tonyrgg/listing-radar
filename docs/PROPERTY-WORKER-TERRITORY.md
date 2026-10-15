@@ -1,5 +1,17 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.25: attività per ogni import esplicitamente selezionato
+
+Tre condizioni riprodotte potevano ancora saltare le attività: immobili storici o acquisiti tramite portafoglio esclusi nonostante la modalità scelta nella coda; un piano precedente «Nessuna attività» riutilizzato anche scegliendo Killer; un Task storico dello stesso immobile con descrizione e stato uguali considerato sufficiente per il nuovo import.
+
+La selezione esplicita nella coda applica la modalità anche agli immobili storici e ai portafogli. Il recupero può passare da attività disabilitata alla modalità scelta solo se non esiste un invio attività: conserva dati immobile, persone, opzioni e ordinale originali. Un piano già abilitato mantiene la modalità congelata; una scelta esplicita «Nessuna attività» resta tale. Le esclusioni automatiche del worker precedente non cambiano.
+
+Prima del Salva si persistono `activityWrite.operationId`, data e ID Task già presenti. La rilettura richiede una nuova attività dello stesso immobile, con descrizione e stato coerenti, escludendo gli ID precedenti. Un nuovo import può quindi creare una nuova attività uguale a quella storica; il recupero dello stesso import riutilizza solo il proprio salvataggio. Il riferimento attraversa ledger e checkpoint Supabase. Una persistenza fallita impedisce il click Salva. Non si ripete un invio dall'esito incerto: si riconcilia il risultato. Un vecchio checkpoint fermo prima della conferma e privo di questo confine conserva l'immobile e segnala l'attività da verificare, senza assegnargli arbitrariamente un Task storico.
+
+La coda espone il numero di attività previste prima dell'avvio; alla fine distingue attività create, recuperate per lo stesso lavoro, non richieste e successi precedenti senza prova conservata. Il riepilogo non riclassifica retroattivamente tutti gli import storici. Le prove coprono nuovo import su attività storica, ripetizione dello stesso lavoro, due lavori sullo stesso immobile, risposta persa dopo Salva, errore disco prima del click, recupero del checkpoint e attivazione sicura di un piano senza attività. Sono collaudi su CRM simulato: la run segnalata sull'altro PC non era ancora nell'archivio condiviso consultato (revisione 47), quindi non costituiscono una verifica di quella specifica run reale.
+
+Gate del 15 ottobre: **111 gruppi / 913 test verificati**, inclusi i **18 gruppi Chrome / 219 test** della verifica completa. Il primo giro aveva un solo errore nel nuovo test del riepilogo (modificava una copia dello stato ma interrogava una seconda copia): corretto il test, ripetuto il gruppo **12/12** e l'intera CI **93 gruppi / 694 test**; nessuna modifica al codice applicativo dopo il giro completo. Build TypeScript, compilazione desktop, prova Electron della coda a 390/1024/1600 px e V2 integrato superate. Nessuna scrittura di collaudo sul CRM reale.
+
 ## Versione 0.34.24: un archivio condiviso fra le postazioni
 
 Diagnosi del 15 ottobre: il workspace online era ancora alla revisione **46, 9 ottobre 08:00 UTC**, mentre le postazioni continuavano a lavorare localmente. Il vecchio ciclo non riceveva aggiornamenti in assenza di azioni locali; dopo cambiamenti su entrambi i PC, il confronto della revisione fermava l'invio senza unire gli archivi. Durante una run non veniva inviato alcun checkpoint.

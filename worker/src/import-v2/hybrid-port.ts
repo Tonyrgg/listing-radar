@@ -1,5 +1,6 @@
 import type { ImportV2Checkpoint, ImportV2Plan, PersonWriteModel } from "./public-types.js";
 import type {
+  ActivityWriteRequest,
   CrmOwnershipSnapshotResult,
   MergeRequest,
   OwnershipSyncOptions,
@@ -83,7 +84,9 @@ export class HybridTecnocloudV2Port implements TecnocloudV2Port {
     return this.read("read_property", () => this.http.readProperty(propertyId), () => this.ui.readProperty(propertyId));
   }
 
-  ensureActivity(propertyId: string, plan: ImportV2Plan) {
+  ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest) {
+    // A persisted activity boundary requires the UI writer's pre-Save handshake.
+    if (request) return this.ui.ensureActivity(propertyId, plan, request);
     return this.write("ensure_activity", () => this.http.ensureActivity(propertyId, plan), () => this.ui.ensureActivity(propertyId, plan));
   }
 

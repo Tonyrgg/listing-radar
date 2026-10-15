@@ -130,6 +130,8 @@ export type ImportV2Plan = {
 };
 
 export type ImportV2Checkpoint = {
+  /** Durable activity boundary: historical Tasks are not proof of this import. */
+  activityWrite?: { operationId: string; preparedAt: string; submittedAt: string | null; baselineIds: string[]; legacyUncertain?: boolean };
   ownershipReplacement?: { before: CrmOwnershipSnapshot; afterPersonId: string };
   itemId: string;
   jobId: string;
@@ -144,6 +146,7 @@ export type ImportV2Checkpoint = {
   crmPropertyId: string | null;
   /** Evidence returned only after the Cloud activity write/read cycle. */
   activityEvidence?: {
+    operationId?: string;
     activityId: string | null;
     outcome: "created" | "existing" | "disabled";
     descriptionVerified?: boolean;

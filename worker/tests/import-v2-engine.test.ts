@@ -11,6 +11,7 @@ import type {
   SourceProperty,
 } from "../src/import-v2/model.js";
 import type {
+  ActivityWriteRequest,
   CrmOwnershipSnapshotResult,
   ImportV2Store,
   MergeRequest,
@@ -209,7 +210,7 @@ class FakeCrm implements TecnocloudV2Port {
     return structuredClone(result);
   }
 
-  async ensureActivity(propertyId: string, plan: ImportV2Plan) {
+  async ensureActivity(propertyId: string, plan: ImportV2Plan): ReturnType<TecnocloudV2Port["ensureActivity"]> {
     if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled" as const };
     if (!this.activities.includes(propertyId)) this.activities.push(propertyId);
     return { activityId: `activity-${propertyId}`, outcome: "created" as const };
@@ -219,6 +220,38 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("conserva il confine del salvataggio e recupera l'attività senza ripetere l'import", async () => {
+    const store = new MemoryStore(); let saves = 0;
+    class InterruptedActivityCrm extends FakeCrm {
+      override async ensureActivity(id: string, plan: ImportV2Plan, request?: ActivityWriteRequest) {
+        expect(request?.state.operationId).toBe(`item-${plan.source.sourcePropertyId}`);
+        expect(store.checkpoints.get(plan.source.sourcePropertyId)?.activityWrite).toEqual(request?.state);
+        if (!request!.state.submittedAt) {
+          await request!.persist({ ...request!.state, submittedAt: "2026-10-15T12:00:00Z", baselineIds: ["old-task"] });
+          saves++;
+          throw new ImportV2Error("Risposta persa dopo Salva", "verification_failed", { retryable: false });
+        }
+        expect(request!.state.baselineIds).toEqual(["old-task"]);
+        return { activityId: "new-task", outcome: "existing" as const, descriptionVerified: true, statusVerified: true };
+      }
+    }
+    const crm = new InterruptedActivityCrm(), source = property();
+    expect((await new ImportV2Engine(crm, store).run(source)).state).toBe("quarantined");
+    expect(store.checkpoints.get(source.sourcePropertyId)?.activityWrite?.submittedAt).toBeTruthy();
+    expect((await new ImportV2Engine(crm, store).run(source)).state).toBe("completed");
+    expect(saves).toBe(1);
+    expect(crm.properties.size).toBe(1);
+    expect(store.checkpoints.get(source.sourcePropertyId)?.activityEvidence).toMatchObject({ activityId: "new-task", operationId: `item-${source.sourcePropertyId}`, outcome: "existing" });
+  });
+  it("non completa un checkpoint activity_synced che ha perso la prova dell'attività", async () => {
+    const store = new MemoryStore(), crm = new FakeCrm(), source = property();
+    await new ImportV2Engine(crm, store).run(source);
+    const checkpoint = store.checkpoints.get(source.sourcePropertyId)!;
+    checkpoint.stage = "activity_synced"; checkpoint.activityEvidence = null; crm.activities = [];
+    expect((await new ImportV2Engine(crm, store).run(source)).state).toBe("completed");
+    expect(crm.activities).toEqual([checkpoint.crmPropertyId]);
+    expect(store.checkpoints.get(source.sourcePropertyId)?.activityEvidence?.operationId).toBe(checkpoint.itemId);
+  });
   it.each(["description", "status", "disabled"])("non completa l'import se l'attività richiesta ha una prova %s non valida", async field => {
     class UnverifiedActivityCrm extends FakeCrm {
       override async ensureActivity() {
