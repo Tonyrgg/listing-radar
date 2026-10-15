@@ -27,10 +27,17 @@ describe("Ripresa delle sole letture CRM bloccate", () => {
     expect(await port.readAction("Inventario immobili della via", read)).toBe("immobile");
     expect(reload).toHaveBeenCalledWith({ waitUntil: "commit", timeout: 30000 }); expect(read).toHaveBeenCalledTimes(2);
   });
-  it("limita i refresh a due e non trasforma un sito fermo in un risultato vuoto", async () => {
+  it("limita i refresh a tre e non trasforma un sito fermo in un risultato vuoto", async () => {
     const { port, reload } = setup(), read = vi.fn().mockRejectedValue(new Error("Timeout caricamento"));
     await expect(port.readAction("Ricerca catastale", read)).rejects.toThrow("Timeout");
-    expect(read).toHaveBeenCalledTimes(3); expect(reload).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(4); expect(reload).toHaveBeenCalledTimes(3);
+  });
+  it("recupera i filtri al terzo refresh prima di accantonare l'immobile", async () => {
+    const { port, reload } = setup();
+    const error = new ImportV2Error("Filtri immobili non disponibile entro 12000 ms", "transient_portal", { retryable: true });
+    const read = vi.fn().mockRejectedValueOnce(error).mockRejectedValueOnce(error).mockRejectedValueOnce(error).mockResolvedValue(["immobile"]);
+    expect(await port.readAction("Ricerca catastale globale", read)).toEqual(["immobile"]);
+    expect(reload).toHaveBeenCalledTimes(3); expect(read).toHaveBeenCalledTimes(4);
   });
   it("ricarica anche una ricerca rimasta non confermata prima di accantonarla", async () => {
     const { port, reload } = setup(), read = vi.fn().mockRejectedValueOnce(new ImportV2Error("Ricerca immobili non confermata: accantono questo immobile e continuo l'import.", "transient_portal", { retryable: true })).mockResolvedValue(["first"]);

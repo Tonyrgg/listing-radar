@@ -42,6 +42,18 @@ try {
     await page.screenshot({ path: path.join(output, `02-unacquired-${width}.png`) });
   }
   await openStreetSettings(page);
+  await page.locator('[data-disclosure="sister-street-names"] > summary').click();
+  await page.locator('#sister-search-text').fill('MAZZIN');
+  await page.locator('#sister-result-name').fill('VIA GIUSEPPE MAZZINI');
+  await page.getByRole('button', { name: 'Salva ricerca SISTER', exact: true }).click();
+  await page.waitForFunction(async id => (await window.territory.detail(id)).memory.sisterSearch?.searchText === 'MAZZIN', street.id);
+  assert.equal((await page.evaluate(id => window.territory.detail(id), street.id)).street.name, street.name);
+  for (const width of [1600, 1024, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.locator('#sister-street-form').scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.querySelector('#detail-dialog').scrollWidth <= document.querySelector('#detail-dialog').clientWidth + 1), true);
+    await page.screenshot({ path: path.join(output, `02-sister-names-${width}.png`) });
+  }
   await page.locator('[data-disclosure="notes"] > summary').click();
   await page.locator("#street-note").fill("Nota prima di acquisire");
   await page.getByRole("button", { name: "Salva note", exact: true }).click();
@@ -66,6 +78,7 @@ try {
   assert.equal(await page.locator("#detail-dialog").getAttribute("data-street-phase"), "populated");
   assert.equal(await page.locator(".unit").count(), 5);
   assert.equal((await page.evaluate(id => window.territory.detail(id), street.id)).memory.note, "Nota prima di acquisire");
+  assert.deepEqual((await page.evaluate(id => window.territory.detail(id), street.id)).memory.sisterSearch, { searchText: 'MAZZIN', resultName: 'VIA GIUSEPPE MAZZINI' });
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.screenshot({ path: path.join(output, "04-acquired.png") });
   assert.deepEqual(errors, []);

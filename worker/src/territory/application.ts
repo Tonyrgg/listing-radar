@@ -20,6 +20,7 @@ import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
 import { collectScanQuarantine, isQuarantined, canRetryQuarantinedUnit, quarantine, resolveUnitQuarantine, sourceProblem } from "./quarantine.js";
 import { buildCadastralKey } from "../core/normalize.js";
 import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "./import-queue.js";
+import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: sources, checkpoint: _checkpoint, ...run }: Run) => ({ ...run,
@@ -142,8 +143,24 @@ export class TerritoryApplication {
       if (!network || !official) throw new Error("Scegli un tracciato e una via ufficiale valida");
       if (state.networkBindings?.[networkId]) throw new Error("Tracciato già associato: nessuna sostituzione automatica");
       const at = now(); (state.networkBindings ??= {})[networkId] = { officialId, confirmedAt: at, geometry: structuredClone(network.geometry!), evidence: network.geometryEvidence };
+      const search = state.memories[networkId]?.sisterSearch;
+      const officialSearch = state.memories[officialId]?.sisterSearch;
+      if (search && (search.searchText || search.resultName) && !officialSearch?.searchText && !officialSearch?.resultName) {
+        state.memories[officialId] = { ...(state.memories[officialId] ?? { note: "", attention: false }), sisterSearch: structuredClone(search), updatedAt: at };
+      }
       applyNetworkBindings(state);
       state.events.push({ id: randomUUID(), streetId: officialId, at, text: `Tracciato della rete propria associato manualmente: ${network.name}` });
+    });
+    this.changed();
+  }
+  async configureSisterStreet(streetId: string, value: unknown) {
+    if (this.active) throw new Error("Attendi la fine del lavoro prima di modificare la ricerca SISTER");
+    const settings = sisterStreetSettingsSchema.parse(value);
+    await this.store.change(state => {
+      const street = state.streets.find(s => s.id === streetId);
+      if (!street || street.linkedOfficialId) throw new Error("Apri la scheda della via associata per modificare la ricerca SISTER");
+      state.memories[streetId] = { ...(state.memories[streetId] ?? { note: "", attention: false }), sisterSearch: settings, updatedAt: now() };
+      state.events.push({ id: randomUUID(), streetId, at: now(), text: "Ricerca e voce SISTER della via aggiornate manualmente" });
     });
     this.changed();
   }
@@ -304,7 +321,7 @@ export class TerritoryApplication {
           const problem = sourceProblem(source);
           await this.store.change(state => {
             const currentRun = state.runs.find(r => r.id === run.id)!;
-            const matches = context?.portfolio ? matchHistoricalStreet(source, state.streets) : [street];
+            const matches = context?.portfolio ? matchHistoricalStreet(source, state.streets, undefined, state.memories) : [street];
             const destination = matches.length === 1 ? matches[0] : undefined;
             if (problem || !key) quarantine(state, { streetId: destination?.id ?? street.id, runId: run.id, at: now(), origin: "scan", reason: problem ?? "Identità catastale incompleta", address: source.fullAddress, cadastral: source.cadastral, source: structuredClone(source), unitKey: key, recordKey: buildCadastralKey({ municipality: source.municipality, ...source.cadastral }) });
             if (!key) return;

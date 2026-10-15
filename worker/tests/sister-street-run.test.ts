@@ -591,6 +591,29 @@ describe("preparazione automatica della via", () => {
     }
   }, 30_000);
 
+  it("usa parte di parola e voce insegnata, mantenendo nome della scheda e ricerca congelata nella ripresa", async () => {
+    const { server, richieste } = sisterFinto();
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/`);
+      const checkpoint = await new SisterStreetRun(page, { prepareSearchAutomatically: true, sisterSearchText: "FRANC", sisterResultName: "VIA BORGO SAN FRANCESCO", isCancelled: () => true }).run("VIA SAN FRANCESCO");
+      expect(richieste[0]).toMatchObject({ indirizzo: "FRANC", parIntera: "0", toponimo: "236" });
+      expect(checkpoint.requestedStreet).toBe("VIA SAN FRANCESCO");
+      expect(checkpoint.variants.map(v => v.sourceId)).toEqual(["542250", "557509"]);
+      expect(checkpoint.runSettings).toMatchObject({ sisterSearchText: "FRANC", sisterResultName: "VIA BORGO SAN FRANCESCO" });
+      await page.goto(`http://127.0.0.1:${port}/`);
+      const resumed = await new SisterStreetRun(page, { prepareSearchAutomatically: true, sisterSearchText: "DIVERSA", sisterResultName: "VIA SBAGLIATA", isCancelled: () => true }).run("VIA SAN FRANCESCO", checkpoint);
+      expect(richieste[1]).toMatchObject({ indirizzo: "FRANC", parIntera: "0" });
+      expect(resumed.variants.map(v => v.sourceId)).toEqual(["542250", "557509"]);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }, 30_000);
+
   it("senza preparazione automatica il comportamento resta quello di prima", async () => {
     const { server, richieste } = sisterFinto();
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

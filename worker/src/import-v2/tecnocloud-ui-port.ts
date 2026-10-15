@@ -376,8 +376,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     for (let attempt = 0; ; attempt++) {
       try { return await this.action(label, operation); }
       catch (error) {
-        if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 2
-          || !/timeout|caricament|non disponibile entro|lookup non è tornato|non ha completato|ricerca immobili non confermata|ricerca CF.*ambigua|CF non è rimasto stabile/i.test(error.message)) throw error;
+        if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 3
+          || !/timeout|caricament|non disponibile entro|non si è aperto|lookup non è tornato|non ha completato|ricerca immobili non confermata|ricerca CF.*ambigua|CF non è rimasto stabile/i.test(error.message)) throw error;
         this.throwIfInterruptionRequested();
         await this.assertSession();
         // A dialog may contain a pending/uncertain write. Keep its checkpoint
@@ -1296,18 +1296,36 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       || rightNames.length !== names.length || rightNames.some((name) => !names.includes(name))) {
       throw new ImportV2Error("Campi sinistri del merge non stabilizzati o non univoci", "verification_failed", { retryable: true });
     }
-    for (const name of names) {
-      // Resolve again by field name: each click may rerender/reorder the grid.
-      const indexes = await leftOptions.evaluateAll((elements, expected) => elements.flatMap((element, index) =>
-        element.getAttribute("name") === expected ? [index] : []), name);
-      if (indexes.length !== 1) throw new ImportV2Error("Campo della riconciliazione non univoco", "verification_failed");
-      await leftOptions.nth(indexes[0]!).click({ force: true });
+    let confirmed = false;
+    for (let pass = 0; pass < 3 && !confirmed; pass++) {
+      for (const name of names) {
+        // Resolve again after every Lightning rerender. The name remains
+        // stable even when the grid changes its ordering.
+        const radio = leftOptions.and(this.page.locator(`input[name=${JSON.stringify(name)}]`));
+        if (await radio.count() !== 1) throw new ImportV2Error("Campo della riconciliazione non univoco", "verification_failed");
+        // Also notify the portal for an initially selected master: its model
+        // may not have reconciled that field yet.
+        if (await radio.isChecked()) {
+          if (pass === 0) await radio.click({ force: true });
+        } else {
+          // Keyboard activation targets the native radio even when its 1px
+          // hit area is overlapped by the neighbouring Lightning label.
+          await radio.press("Space");
+        }
+        for (let wait = 0; wait < 10 && !(await radio.isChecked()); wait++) await this.pauseAwareWait(100);
+      }
+      let stableSelection = 0;
+      for (let wait = 0; wait < 15 && stableSelection < 3; wait++) {
+        const selected = await leftOptions.evaluateAll(elements => elements.flatMap(element => {
+          const input = element as HTMLInputElement;
+          return input.checked ? [input.name] : [];
+        }));
+        stableSelection = selected.length === names.length && names.every(name => selected.includes(name)) ? stableSelection + 1 : 0;
+        if (stableSelection < 3) await this.pauseAwareWait(200);
+      }
+      confirmed = stableSelection === 3;
     }
-    const selectedNames = await leftOptions.evaluateAll((elements) => elements.flatMap((element) => {
-      const input = element as HTMLInputElement;
-      return input.checked ? [input.name] : [];
-    }));
-    if (selectedNames.length !== names.length || names.some((name) => !selectedNames.includes(name))) {
+    if (!confirmed) {
       throw new ImportV2Error("Non tutte le opzioni sinistre del merge risultano selezionate", "verification_failed", { retryable: true });
     }
     return this.saveReadyMerge(dialog);
@@ -1650,7 +1668,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async propertyLinksForPerson(personId: string, plan: ImportV2Plan): Promise<Array<{ id: string; href: string; label: string }>> {
     await this.openPerson(personId);
-    const card = this.page.locator("article:visible").filter({ hasText: /Immobili\s*\/\s*Notizie\s*\/\s*Incarichi/i });
+    const cards = this.page.locator("article:visible").filter({ hasText: /Immobili\s*\/\s*Notizie\s*\/\s*Incarichi/i });
+    const card = cards.filter({ hasNot: cards });
     const current = await this.one(card, "Immobili/Notizie/Incarichi", 20_000);
     const declared = Number((await current.innerText()).match(/Immobili\s*\/\s*Notizie\s*\/\s*Incarichi\s*\((\d+)\)/i)?.[1] ?? 0);
     let scope: Locator = current;
@@ -1666,44 +1685,56 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         12_000,
       );
     }
-    const links = scope.locator('a[href*="/s/immobile/"]').filter({ visible: true });
-    /* Il titolo e il contatore della related list arrivano prima delle righe.
-     * Aspetta una lista realmente stabilizzata: una prima lettura vuota non e'
-     * prova che le righe IM non esistano. */
-    let signature = "";
-    let stable = 0;
-    for (let check = 0; check < 60 && stable < 3; check += 1) {
-      const current = (await links.evaluateAll((nodes) => nodes.map((node) => {
+    try {
+      // The counter includes news and mandates as well as properties. A fully
+      // loaded list containing only NT/IN is a valid empty property list.
+      const links = scope.locator('a[href*="/s/immobile/"], a[href*="/s/notizia/"], a[href*="/s/incarico/"]').filter({ visible: true });
+      /* Il titolo e il contatore della related list arrivano prima delle righe.
+       * Aspetta una lista realmente stabilizzata: una prima lettura vuota non e'
+       * prova che le righe IM non esistano. */
+      let signature = "";
+      let stable = 0;
+      for (let check = 0; check < 60 && stable < 3; check += 1) {
+        const current = (await links.evaluateAll((nodes) => nodes.map((node) => {
+          const href = node.getAttribute("href") ?? "";
+          const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+          return `${href}|${label}`;
+        }))).join("||");
+        const busy = await this.searchIsBusy();
+        const loaded = await links.evaluateAll(nodes => new Set(nodes.filter(node => /^\s*(?:IM|NT|IN)\s*-/i.test(node.textContent ?? "")).map(node => node.getAttribute("href"))).size);
+        const ready = loaded >= declared;
+        stable = ready && !busy && current === signature ? stable + 1 : 0;
+        signature = current;
+        if (stable < 3) await this.pauseAwareWait(200);
+      }
+      const rows = await links.evaluateAll((nodes) => nodes.map((node) => {
         const href = node.getAttribute("href") ?? "";
         const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-        return `${href}|${label}`;
-      }))).join("||");
-      const busy = await this.searchIsBusy();
-      const ready = declared === 0 || Boolean(current);
-      stable = ready && !busy && current === signature ? stable + 1 : 0;
-      signature = current;
-      if (stable < 3) await this.pauseAwareWait(200);
+        const id = node.getAttribute("data-recordid") ?? node.getAttribute("data-id") ?? href.match(/\/s\/immobile\/([^/?#]+)/i)?.[1] ?? "";
+        return { id, href, label };
+      }));
+      const properties = rows.filter((row) => row.id && /^\s*IM\s*-/i.test(row.label));
+      const loadedRecords = new Set(rows.filter(row => /^\s*(?:IM|NT|IN)\s*-/i.test(row.label)).map(row => row.href)).size;
+      if (stable < 3 || loadedRecords < declared) {
+        throw new ImportV2Error("La scheda dichiara immobili ma la related list non ha completato il caricamento delle righe IM", "transient_portal", { retryable: true });
+      }
+      const paired = properties.filter((row) => sameAddress(row.label, plan.source.fullAddress));
+      // Pair first; if an unknown label format prevents pairing, inspect all IM
+      // rows rather than risk creating a duplicate. NT/IN rows never enter here.
+      const selected = paired.length ? paired : properties;
+      return selected;
+    } finally {
+      // This modal is read-only. Closing it also permits the bounded refresh
+      // recovery; edit and merge dialogs must never be discarded this way.
+      const modal = this.page.locator('[role="dialog"]:visible').filter({ hasText: /Immobili\s*\/\s*Notizie\s*\/\s*Incarichi/i });
+      if (await modal.count()) {
+        const close = modal.getByRole("button", { name: /Chiudi|Close/i }).filter({ visible: true });
+        if (await close.count()) {
+          await close.last().click({ force: true });
+          await modal.waitFor({ state: "hidden", timeout: 10_000 });
+        }
+      }
     }
-    const rows = await links.evaluateAll((nodes) => nodes.map((node) => {
-      const href = node.getAttribute("href") ?? "";
-      const label = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-      const id = node.getAttribute("data-recordid") ?? node.getAttribute("data-id") ?? href.match(/\/s\/immobile\/([^/?#]+)/i)?.[1] ?? "";
-      return { id, href, label };
-    }));
-    const properties = rows.filter((row) => row.id && /^\s*IM\s*-/i.test(row.label));
-    if (declared > 0 && !properties.length) {
-      throw new ImportV2Error("La scheda dichiara immobili ma la related list non ha completato il caricamento delle righe IM", "transient_portal", { retryable: true });
-    }
-    const paired = properties.filter((row) => sameAddress(row.label, plan.source.fullAddress));
-    // Pair first; if an unknown label format prevents pairing, inspect all IM
-    // rows rather than risk creating a duplicate. NT/IN rows never enter here.
-    const selected = paired.length ? paired : properties;
-    const modal = this.page.locator('[role="dialog"]:visible').filter({ hasText: /Immobili\s*\/\s*Notizie\s*\/\s*Incarichi/i });
-    if (await modal.count()) {
-      const close = modal.getByRole("button", { name: /Chiudi|Close/i }).filter({ visible: true });
-      if (await close.count()) await close.last().click({ force: true });
-    }
-    return selected;
   }
 
   async listAllPropertiesForPeople(personIds: string[], plan: ImportV2Plan): Promise<CrmPropertySummary[]> {
@@ -2733,7 +2764,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async activityCard(propertyId: string): Promise<Locator> {
     await this.openProperty(propertyId);
-    return this.one(this.page.locator("article:visible").filter({ hasText: /Attivit[aà] e appuntamenti/i }), "Attività e appuntamenti", 20_000);
+    // Related-list cards may be nested in a record-wide article. Only the
+    // innermost card owns this heading and its New action.
+    const cards = this.page.locator("article:visible").filter({ hasText: /Attivit[aà] e appuntamenti/i });
+    return this.one(cards.filter({ hasNot: cards }), "Attività e appuntamenti", 20_000);
   }
 
   private async readActivityEvidence(propertyId: string, description: string, status: string): Promise<{

@@ -19,9 +19,10 @@ import { unitKey } from "./model.js";
 import { runSettingsSchema, runSettings } from "./run-options.js";
 import { pendingUnitImport } from "./import-queue.js";
 import { unitQuerySchema } from "./query.js";
+import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 
 const id = z.string().min(1).max(200);
-const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
+const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), ownershipParts: z.array(z.object({ rightType: z.string().max(200), shareOriginal: z.string().max(100) })).max(100).optional(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
 
 export type TerritorySessionOptions = {
   profileDirectory: string; assetDirectory: string; live: boolean;
@@ -133,7 +134,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       ipcMain.handle(`territory:${name}`, (event, value) => {
         if (event.sender !== options.contents || event.senderFrame !== options.contents.mainFrame) throw new Error("Richiesta non autorizzata");
         if (closing && !["snapshot", "detail", "sync-status", "pause"].includes(name)) throw new Error("Worker V2 si sta chiudendo: attendo il checkpoint");
-        if (syncing && ["annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove", "queue-clear"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
+        if (syncing && ["sister-street-settings", "annotate", "correct", "start", "associate", "configure-tests", "bind-network", "save-zone", "save-query", "queue-add", "queue-remove", "queue-clear"].includes(name)) throw new Error("Attendi il salvataggio in corso prima di modificare la memoria");
         return handler(value);
       });
     };
@@ -183,6 +184,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("history-review", () => application.historyReview());
     handle("associate", async value => { const v = z.object({ propertyId: id, streetId: id }).parse(value); await application.associate(v.propertyId, v.streetId); });
     handle("annotate", async value => { const v = z.object({ streetId: id, note: z.string().max(5000), attention: z.boolean() }).parse(value); await application.annotate(v.streetId, v.note, v.attention); });
+    handle("sister-street-settings", async value => { const v = z.object({ streetId: id, settings: sisterStreetSettingsSchema }).strict().parse(value); await application.configureSisterStreet(v.streetId, v.settings); });
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
       if (syncing) throw new Error("Attendi la sincronizzazione prima di avviare una via");

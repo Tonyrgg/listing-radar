@@ -50,9 +50,10 @@ export function importAge(at: string | null, now = Date.now()) {
 export function importProgress(state: TerritoryState, streetIds: string[], now = Date.now()) {
   const units = Object.values(state.units).filter(u => u.streetIds.some(id => streetIds.includes(id)));
   const observations = (runId: string) => units.flatMap(u => u.observations.filter(o => o.runId === runId && (!o.streetId || streetIds.includes(o.streetId))).map(o => ({ unit: u, observation: o })));
-  const names = new Set(state.streets.filter(s => streetIds.includes(s.id)).flatMap(s => [s.name, s.sisterName].map(normalizeSisterStreet)));
+  const names = new Set(state.streets.filter(s => streetIds.includes(s.id)).flatMap(s => [s.name, s.sisterName, state.memories[s.id]?.sisterSearch?.resultName ?? ""].filter(Boolean).map(normalizeSisterStreet)));
   const scanInventory = (run: Run) => {
     const checkpoint = run.checkpoint as SisterStreetRunCheckpoint | undefined;
+    const runNames = new Set([...names, ...checkpoint?.variants?.map(v => normalizeSisterStreet(v.text)) ?? []]);
     if (!checkpoint?.results?.some(result => result.inventoryProperties)) return { keys: [...new Set(run.itemKeys)], complete: run.state === "completed" };
     const keys = new Set<string>();
     let complete = run.state === "completed";
@@ -64,9 +65,9 @@ export function importProgress(state: TerritoryState, streetIds: string[], now =
         // A floor without a civic is still an exact street name, not a different road.
         const name = address && normalizeSisterStreet(identity ? identity.street : parsePropertyAddress(address).address);
         if (!name) { complete = false; continue; }
-        if (!names.has(name)) {
+        if (!runNames.has(name)) {
           // An unrecognised address cannot prove that this row belongs elsewhere.
-          if (!state.streets.some(s => [s.name, s.sisterName].some(value => normalizeSisterStreet(value) === name))) complete = false;
+          if (!state.streets.some(s => [s.name, s.sisterName, state.memories[s.id]?.sisterSearch?.resultName ?? ""].some(value => normalizeSisterStreet(value) === name))) complete = false;
           continue;
         }
         if (property.municipality.toUpperCase() !== "BITONTO" || !property.sheet || !property.parcel) { complete = false; continue; }

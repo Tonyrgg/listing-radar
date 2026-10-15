@@ -104,6 +104,8 @@ export type SisterStreetRunCheckpoint = {
     refinementCloudStreet?: string | null;
     /** @deprecated Dizione Cloud dei checkpoint precedenti alla 0.33.43. */
     refinementSecondaryStreet?: string | null;
+    sisterSearchText?: string | null;
+    sisterResultName?: string | null;
   };
   status: "running" | "paused" | "completed" | "failed";
   startedAt: string;
@@ -281,6 +283,8 @@ type StreetRunOptions = {
   expandAllOwners?: boolean;
   expandCoOwners?: boolean;
   prepareSearchAutomatically?: boolean;
+  sisterSearchText?: string | null;
+  sisterResultName?: string | null;
   strategy?: "bulk_exact_variants" | "civic_fallback";
   mode?: "dry_run" | "live";
   importJobId?: string | null;
@@ -353,6 +357,8 @@ export class SisterStreetRun {
   private readonly mode: "dry_run" | "live";
   private readonly filters: StreetPropertyFilters;
   private readonly engine: "lavorazione" | "rifinitura" | "portoni";
+  private sisterSearchText = "";
+  private sisterResultName = "";
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
     this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, {
@@ -376,6 +382,10 @@ export class SisterStreetRun {
 
   async run(requestedStreet: string, resume?: SisterStreetRunCheckpoint): Promise<SisterStreetRunCheckpoint> {
     if (resume) resume = restoreStreetAcquisitionEvidence(resume);
+    // Resume with the original search, even if the dossier was edited later.
+    this.sisterSearchText = (resume ? resume.runSettings?.sisterSearchText : this.options.sisterSearchText)?.trim() ?? "";
+    this.sisterResultName = (resume ? resume.runSettings?.sisterResultName : this.options.sisterResultName)?.trim() ?? "";
+    if (resume && normalizeSisterStreet(resume.requestedStreet) !== normalizeSisterStreet(requestedStreet)) throw new Error("Il checkpoint appartiene a una via diversa");
     await this.options.onProgress?.({
       phase: "preparing", variantIndex: 0, variantTotal: 0, variantSourceId: null,
       current: 0, total: 0, address: null,
@@ -409,6 +419,8 @@ export class SisterStreetRun {
             acquireOwners: this.acquireOwners,
             keepAcquisition: this.options.keepAcquisition === true,
             filters: this.filters,
+            sisterSearchText: this.sisterSearchText || null,
+            sisterResultName: this.sisterResultName || null,
           },
           consecutiveEmptyByVariant: Object.fromEntries(variants.map((variant) => [
             variant.key,
@@ -432,6 +444,8 @@ export class SisterStreetRun {
             acquireOwners: this.acquireOwners,
             keepAcquisition: this.options.keepAcquisition === true,
             filters: this.filters,
+            sisterSearchText: this.sisterSearchText || null,
+            sisterResultName: this.sisterResultName || null,
             importStreet: this.options.importStreet?.replace(/\s+/g, " ").trim() || null,
             refinementCloudStreet: this.options.refinementCloudStreet?.replace(/\s+/g, " ").trim()
               || this.options.refinementSecondaryStreet?.replace(/\s+/g, " ").trim()
@@ -697,7 +711,7 @@ export class SisterStreetRun {
     await this.assertSession();
     const select = this.page.locator(ADDRESS_SELECT);
     if (await select.count() === 1) {
-      const aperte = exactStreetVariants(normalizeSisterStreet(requestedStreet), await readOptions(select));
+      const aperte = exactStreetVariants(this.sisterResultName || normalizeSisterStreet(requestedStreet), await readOptions(select));
       if (aperte.length) return aperte;
     }
     return this.prepareStreet(requestedStreet);
@@ -713,12 +727,12 @@ export class SisterStreetRun {
     await municipality.selectOption(bitonto.value);
 
     const toponym = form.locator('select[name="toponimo"]');
-    const parsed = splitSisterStreetInput(requestedStreet, await readOptions(toponym));
+    const parsed = splitSisterStreetInput(this.sisterResultName || requestedStreet, await readOptions(toponym));
     await toponym.selectOption(parsed.toponymValue);
-    await form.locator('input[name="indirizzo"]').fill(parsed.addressText);
-    const exactMode = form.locator('input[name="parIntera"][value="1"]');
+    await form.locator('input[name="indirizzo"]').fill(this.sisterSearchText || parsed.addressText);
+    const exactMode = form.locator(`input[name="parIntera"][value="${this.sisterSearchText ? "0" : "1"}"]`);
     if (await exactMode.count() !== 1) {
-      throw new WorkerError("Modalità di ricerca per dizione esatta non riconosciuta", "portal_error", { portal: "SISTER" }, true);
+      throw new WorkerError("Modalità di ricerca SISTER non riconosciuta", "portal_error", { portal: "SISTER" }, true);
     }
     await exactMode.check();
     await clickAndWait(this.page, form.locator('input[name="ricerca"]'), "la ricerca della via");
@@ -762,7 +776,7 @@ export class SisterStreetRun {
         true,
       );
     }
-    const normalizedRequestedStreet = normalizeSisterStreet(requestedStreet);
+    const normalizedRequestedStreet = normalizeSisterStreet(this.sisterResultName || requestedStreet);
     const variants = exactStreetVariants(normalizedRequestedStreet, await readOptions(select));
     if (!variants.length) {
       throw new WorkerError(
@@ -837,7 +851,7 @@ export class SisterStreetRun {
       });
       try {
         await this.ensureAddressList(requestedStreet);
-        const liveOptions = exactStreetVariants(requestedStreet, await readOptions(this.page.locator(ADDRESS_SELECT)));
+        const liveOptions = exactStreetVariants(this.sisterResultName || requestedStreet, await readOptions(this.page.locator(ADDRESS_SELECT)));
         /* Il testo visibile puo' comparire piu' volte e, dopo un ritorno o una
          * ripreparazione, SISTER puo' anche riordinare le option. Il value
          * completo e' l'identita' piu' forte della voce scelta: usarlo prima

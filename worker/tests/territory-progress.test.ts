@@ -27,6 +27,15 @@ function apply(state: TerritoryState, keys: string[], days = 5, cohort = "scan")
   state.runs.push({ id: `apply:${state.runs.length}`, streetId: street.id, operation: "apply", origin: "simulation", state: "completed", startedAt: ago(days), endedAt: ago(days), total: keys.length, handled: keys.length, itemKeys: keys, error: null, acquisitionRunId: cohort, imports: Object.fromEntries(keys.map(key => [key, { at: ago(days), crmId: `crm:${key}` }])) });
 }
 describe("Età e percentuale import nell'ultima acquisizione", () => {
+  it("mantiene il denominatore della via con dizione SISTER insegnata, anche dopo una modifica successiva", () => {
+    const { state, scan } = fixture(1);
+    scan.checkpoint = { variants: [{ text: "VIA BORGO SAN FRANCESCO" }], results: [{ outcome: "found", inventoryProperties: [
+      { municipality: "BITONTO", sheet: "49", parcel: "93", subaltern: "1", address: "VIA BORGO SAN FRANCESCO n. 10", category: "A/3" },
+      { municipality: "BITONTO", sheet: "49", parcel: "94", subaltern: "2", address: "VIA BORGO SAN FRANCESCO n. 10", category: "C/6" },
+    ] }] };
+    state.memories[street.id] = { note: "", attention: false, updatedAt: ago(1), sisterSearch: { searchText: "FRANC", resultName: "VIA SAN FRANCESCO" } };
+    expect(importProgress(state, [street.id], now)).toMatchObject({ observed: 2, total: 2, complete: true });
+  });
   it("conta gli indirizzi senza civico con piano e il subalterno vuoto, senza attribuire altre vie", () => {
     const { state, keys, scan } = fixture(1);
     scan.checkpoint = { results: [{ outcome: "found", inventoryProperties: [

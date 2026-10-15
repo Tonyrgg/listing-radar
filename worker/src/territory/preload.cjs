@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   syncStatus: () => ipcRenderer.invoke('territory:sync-status'),
   sync: direction => ipcRenderer.invoke('territory:sync', direction),
   annotate: value => ipcRenderer.invoke('territory:annotate', value),
+  configureSisterStreet: value => ipcRenderer.invoke('territory:sister-street-settings', value),
   correct: value => ipcRenderer.invoke('territory:correct', value),
   start: value => ipcRenderer.invoke('territory:start', value),
   pause: () => ipcRenderer.invoke('territory:pause'),

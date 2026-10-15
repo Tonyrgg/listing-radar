@@ -1,0 +1,53 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { TerritoryStore } from "../src/territory/store.js";
+import { TerritoryApplication } from "../src/territory/application.js";
+import { SimulationProvider, simulationSource } from "../src/territory/providers.js";
+import { matchHistoricalStreet } from "../src/territory/history.js";
+import { sisterStreetSettingsSchema } from "../src/territory/sister-street-settings.js";
+import type { Street } from "../src/territory/model.js";
+const street: Street = { id: "1", name: "Via San Francesco", sisterName: "VIA SAN FRANCESCO", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
+const directories: string[] = [];
+afterEach(async () => { await Promise.all(directories.splice(0).map(p => rm(p, { recursive: true, force: true }))); });
+describe("Tre nomi della via, memoria SISTER", () => {
+  it("conserva ricerca e risultato dopo note, riapertura e aggiornamento del catalogo", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sister-street-settings-")); directories.push(directory);
+    const store = await TerritoryStore.open(directory, [street]);
+    const app = new TerritoryApplication(store, new SimulationProvider(store, 0));
+    await app.configureSisterStreet(street.id, { searchText: "  BORGO  ", resultName: " VIA BORGO SAN FRANCESCO " });
+    await app.annotate(street.id, "Nota operatore", false);
+    const reopened = await TerritoryStore.open(directory, [{ ...street, name: "Via S. Francesco" }]);
+    const state = reopened.read();
+    expect(state.memories[street.id]).toMatchObject({ note: "Nota operatore", sisterSearch: { searchText: "BORGO", resultName: "VIA BORGO SAN FRANCESCO" } });
+    expect(state.streets[0]!.name).toBe("Via S. Francesco");
+    const source = { ...simulationSource(street, 1, "run"), fullAddress: "VIA BORGO SAN FRANCESCO n. 10" };
+    expect(matchHistoricalStreet(source, state.streets, undefined, state.memories).map(s => s.id)).toEqual([street.id]);
+    source.fullAddress = "VIA BORGO n. 10";
+    expect(matchHistoricalStreet(source, state.streets, undefined, state.memories)).toEqual([]);
+    await new TerritoryApplication(reopened, new SimulationProvider(reopened, 0)).configureSisterStreet(street.id, {});
+    expect(reopened.read().memories[street.id]!.sisterSearch).toEqual({ searchText: "", resultName: "" });
+  });
+  it("rifiuta istruzioni multilinea, campi inattesi e testi troppo lunghi", () => {
+    expect(() => sisterStreetSettingsSchema.parse({ searchText: "a\nb" })).toThrow();
+    expect(() => sisterStreetSettingsSchema.parse({ resultName: "a".repeat(201) })).toThrow();
+    expect(() => sisterStreetSettingsSchema.parse({ name: "rinomina" })).toThrow();
+  });
+  it("porta la ricerca del tracciato nella scheda associata senza sovrascrivere una scelta ufficiale", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sister-street-binding-")); directories.push(directory);
+    const network: Street = { ...street, id: "network:1", catalogKind: "network", geometry: { type: "LineString", coordinates: [[16.6, 41.1], [16.61, 41.11]] } };
+    const store = await TerritoryStore.open(directory, [street, network]);
+    const app = new TerritoryApplication(store, new SimulationProvider(store, 0));
+    await app.configureSisterStreet(network.id, { searchText: "BORGO", resultName: "VIA BORGO SAN FRANCESCO" });
+    await app.bindNetwork(network.id, street.id);
+    expect(store.read().memories[street.id]!.sisterSearch).toEqual({ searchText: "BORGO", resultName: "VIA BORGO SAN FRANCESCO" });
+    await app.configureSisterStreet(street.id, { searchText: "SCELTA OPERATORE" });
+    const another = { ...network, id: "network:2" };
+    await store.change(state => { state.streets.push(another); });
+    await app.configureSisterStreet(another.id, { searchText: "ALTRA RICERCA" });
+    await app.bindNetwork(another.id, street.id);
+    expect(store.read().memories[street.id]!.sisterSearch?.searchText).toBe("SCELTA OPERATORE");
+    expect(store.read().memories[another.id]!.sisterSearch?.searchText).toBe("ALTRA RICERCA");
+  });
+});

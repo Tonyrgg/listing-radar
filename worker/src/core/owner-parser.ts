@@ -43,7 +43,7 @@ export function parseOwnerBlock(raw: string): CadastralOwner {
   const rightType = lines.find((line, index) =>
     index > personIndex
     && !taxCodeFromLine(line)
-    && isOwnershipRight(line)) ?? "";
+    && (isOwnershipRight(line) || /^(?:usufrutt|uso(?:\s|$)|abitaz|superfic|enfiteu|concedente)/i.test(normalizeRightType(line)))) ?? "";
   const shareWasDefaulted = !shareText && isOwnershipRight(rightType);
   const share = parseShare(shareWasDefaulted ? "1/1" : shareText);
 

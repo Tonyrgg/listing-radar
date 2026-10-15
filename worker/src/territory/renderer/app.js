@@ -720,6 +720,16 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       $("street-tools").innerHTML =
         `<div class="street-secondary">${view.hasInventory ? `<div class="actions"><button data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Consulta corrispondenze CRM</button></div><p class="meta">La coda confronta automaticamente ogni immobile prima di scrivere.</p>` : ""}${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
       if ($("open-units")) $("open-units").onclick = () => switchTab("units");
+      $("street-tools").insertAdjacentHTML("afterbegin", `<details class="operation-options" data-disclosure="sister-street-names"><summary>Come cercare questa via in SISTER</summary><form id="sister-street-form"><fieldset ${disabled}><legend class="sr-only">Nomi della via in SISTER</legend><p class="meta">Nome della scheda: <strong>${escape(s.name)}</strong></p><div class="operation-fields"><label for="sister-search-text">Parte di parola<input id="sister-search-text" maxlength="200" value="${escape(detail.memory.sisterSearch?.searchText ?? "")}" placeholder="Es. LILLO" aria-describedby="sister-names-help"></label><label for="sister-result-name">Voce esatta nell’elenco SISTER<input id="sister-result-name" maxlength="200" value="${escape(detail.memory.sisterSearch?.resultName ?? "")}" placeholder="${escape(s.sisterName)}" aria-describedby="sister-names-help"></label></div><p class="meta" id="sister-names-help">Copia la voce completa, incluso VIA o PIAZZA. I campi vuoti usano la ricerca automatica. Il nome della scheda resta invariato; le acquisizioni da riprendere conservano la ricerca iniziale.</p><div class="form-actions"><button>Salva ricerca SISTER</button><button type="button" data-cancel>Annulla</button></div></fieldset></form></details>`);
+      $("sister-street-form").oninput = event => markDirty(event.currentTarget);
+      $("sister-street-form").onsubmit = safe(async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        await api.configureSisterStreet({ streetId: selectedStreet, settings: { searchText: $("sister-search-text").value, resultName: $("sister-result-name").value } });
+        saved(form);
+        await refresh();
+        feedback("Ricerca SISTER conservata per questa via");
+      });
       $("memory-form").oninput = (event) => markDirty(event.currentTarget);
       $("memory-form").onsubmit = safe(async (event) => {
         event.preventDefault();

@@ -28,6 +28,8 @@ export type SourceOwner = {
   birthProvince: string | null;
   rightType: string;
   sharePercentage: number | null;
+  /** Original SISTER ownership rows before consolidating the same fiscal identity. */
+  ownershipParts?: Array<{ rightType: string; shareOriginal: string }>;
   contacts: SourceContact;
   /** Set only for explicitly authorised production test records. */
   privateNotes?: string | null;

@@ -1,5 +1,24 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Versione 0.34.22: recupero letture, quote e nomi SISTER
+
+Le letture V2 che restano bloccate sui filtri o sul caricamento ricevono fino a **tre refresh**, oltre al tentativo iniziale. Una pagina non caricata non prova l'assenza di un immobile. Non vengono ricaricate finestre di modifica, merge o salvataggi incerti e non viene ripetuta alla cieca una scrittura. L'elenco completo immobili del nominativo viene chiuso prima del recupero perché è una finestra di sola lettura.
+
+Il contatore **Immobili/Notizie/Incarichi** include anche NT e IN: una lista interamente caricata contenente solo queste voci è valida e non genera l'errore delle righe IM mancanti. Un elenco incompleto resta da recuperare. Le card annidate non fanno contare due volte «Attività e appuntamenti» o la related list. Nel merge i radio vengono risolti per nome anche dopo un riordino, selezionati tramite tastiera quando necessario e verificati stabili; fino a tre passaggi recuperano le scelte azzerate da Lightning prima dell'unica conferma di salvataggio.
+
+Più righe di **proprietà** dello stesso CF vengono consolidate per immobile, sommando le frazioni esattamente prima della percentuale; restano conservate le righe e le quote originali. L'usufrutto e gli altri diritti non entrano nella somma. Identità senza CF, quote non interpretabili e somme superiori al 100% non vengono rese valide artificialmente. Il piano CRM gestisce anche le quote duplicate delle vecchie acquisizioni che conservano ancora le righe distinte, unendo i recapiti. Non ricostruisce quote già perse nei vecchi archivi.
+
+In **Scheda via → Impostazioni della via → Come cercare questa via in SISTER** si salvano due testi:
+
+- **Parte di parola**, inviato letteralmente nella ricerca SISTER con modalità parte di parola;
+- **Voce esatta nell'elenco SISTER**, incluso VIA/PIAZZA, usata per scegliere solo i risultati coincidenti, escludendo traverse e nomi simili.
+
+Il nome della scheda resta distinto. I campi vuoti usano il comportamento automatico precedente; svuotare e salvare ripristina quel comportamento. Ogni acquisizione congela entrambi i testi nel proprio checkpoint. Cambiare la scheda modifica solo le acquisizioni nuove. La memoria condivisa JSON conserva le scelte dopo riapertura, sincronizzazione e aggiornamento dell'inventario, senza migrazioni SQL. L'associazione del tracciato trasferisce la ricerca nella scheda ufficiale solo se questa non ha già una scelta dell'operatore. I conteggi dell'inventario riconoscono la dizione scelta nella run anche se successivamente modificata.
+
+Verifiche: regressioni sulle quote, sulle impostazioni persistenti e sui checkpoint; fixture Chrome per tre refresh, related list solo NT/IN, card annidate e radio azzerati dal rerender; verifica Electron del modulo a 390/1024/1600 px e della conservazione dopo riapertura. Nessuna scrittura di collaudo sui dati reali Tecnocloud.
+
+Esito locale del 15 ottobre: **107 gruppi, 876 test superati**, build TypeScript e desktop, controllo UI desktop e stati della scheda via superati. Installer `worker/release/Property Data Worker Setup 0.34.22.exe` verificato nei contenuti (versione, recupero, consolidamento quote, renderer e preload). Pubblicazione sul canale GitHub aggiornamenti autorizzata esplicitamente dall'utente il 15 ottobre, con commit e sorgenti pubblicati, installer ricostruito e verifica del manifest e degli asset.
+
 ## Versione 0.34.21: portafogli completi e recupero degli accantonamenti
 
 Nelle impostazioni della via, **Acquisisci tutte le proprietà degli intestatari** apre il portafoglio di ogni persona fisica incontrata, una volta per CF nella run. Legge tutti gli intestatari e le quote di ciascun immobile e conserva i dati in V2, senza avviare Tecnocloud e senza espandere ricorsivamente altri portafogli. Categorie A/C e Comune di Bitonto restano il perimetro; il filtro categorie vale anche per i portafogli, mentre piani e civici valgono soltanto per la via iniziale. L'associazione delle proprietà esterne richiede un nome ufficiale univoco; quelle non associabili restano in memoria e nelle query, senza inventare una posizione o autorizzare un import senza via.

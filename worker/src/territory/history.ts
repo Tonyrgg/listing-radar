@@ -43,7 +43,7 @@ function acquisitionInventory(entry: HistoryJob, state: TerritoryState, sources:
     if (municipality.toUpperCase() !== "BITONTO" || !sheet || !parcel || !address) { unresolved = true; return; }
     const source = [...sources.values()].find(source => source.municipality === municipality && source.cadastral.sheet === sheet && source.cadastral.parcel === parcel && source.cadastral.subaltern === subaltern);
     const probe: SourceProperty = source ?? { sourcePropertyId: "inventory", jobId: entry.job.id, municipality, fullAddress: address, cadastral: { sheet, parcel, subaltern, income: null, urbanSection: null, parcelDenomination: null }, category: "", propertyClass: null, consistency: null, owners: [], activity: { enabled: false, description: null, contactMode: "Telefonata", status: "Da eseguire" } };
-    const matches = matchHistoricalStreet({ ...probe, fullAddress: address }, state.streets);
+    const matches = matchHistoricalStreet({ ...probe, fullAddress: address }, state.streets, undefined, state.memories);
     if (matches.length !== 1) { unresolved = true; return; }
     // A cadastral lot without a subaltern can be counted in the inventory,
     // while remaining blocked by Import V2's stricter writing requirements.
@@ -118,7 +118,7 @@ function insertObservation(state: TerritoryState, source: SourceProperty, proper
   if (verifiedAt && crmId && (!unit.importedAt || Date.parse(verifiedAt) >= Date.parse(unit.importedAt))) { unit.importedAt = verifiedAt; unit.crmId = crmId; }
   return added;
 }
-export function matchHistoricalStreet(source: SourceProperty, streets: Street[], explicit?: string) {
+export function matchHistoricalStreet(source: SourceProperty, streets: Street[], explicit?: string, memories: TerritoryState["memories"] = {}) {
   if (explicit) { const street = streets.find(s => s.id === explicit && !s.needsReview && s.catalogKind !== "network"); if (!street) throw new Error("Codvia esplicito non valido"); return [street]; }
   const address = stripSisterMunicipalityPrefix(source.fullAddress, source.municipality);
   // The explicit SISTER civic delimiter also covers numeric suffixes (110/13)
@@ -130,7 +130,7 @@ export function matchHistoricalStreet(source: SourceProperty, streets: Street[],
   // This does not relax the stricter CRM property identity comparison.
   const name = normalizeSisterStreet(explicitCivic?.[1] ?? identity?.street ?? withoutDetails);
   if (!name) return [];
-  return streets.filter(s => s.catalogKind !== "network" && !s.needsReview && [s.name, s.sisterName].some(n => normalizeSisterStreet(n) === name));
+  return streets.filter(s => s.catalogKind !== "network" && !s.needsReview && [s.name, s.sisterName, memories[s.id]?.sisterSearch?.resultName ?? ""].some(n => normalizeSisterStreet(n) === name));
 }
 
 /** Revisit unresolved rows after catalogue/parser updates, using unique names only. */
@@ -141,7 +141,7 @@ export function resolveRecognizedHistory(state: TerritoryState) {
   for (const job of state.history ?? []) {
     job.issues = job.issues.filter(issue => {
       if (!issue.source || !issue.at) return true;
-      const matches = matchHistoricalStreet(issue.source, state.streets, state.historicalStreetMappings?.[issue.propertyId]);
+      const matches = matchHistoricalStreet(issue.source, state.streets, state.historicalStreetMappings?.[issue.propertyId], state.memories);
       if (matches.length !== 1) return true;
       const street = matches[0]!;
       insertObservation(state, issue.source, issue.propertyId, job.id, street.id, issue.at, at, issue.verifiedAt ?? null, issue.crmId ?? null, issue.importVerified ?? Boolean(issue.verifiedAt && issue.crmId), issue.activityEligible ?? false);
@@ -190,7 +190,7 @@ export async function adoptHistory(store: TerritoryStore, snapshot: HistorySnaps
         const at = timestamp(row.created_at ?? job.started_at ?? job.created_at, record.acquiredAt ?? record.at);
         if (verified) { record.imported++; report.importedEvidence++; }
         const explicit = mappings[property.id] ?? state.historicalStreetMappings?.[property.id];
-        const matches = matchHistoricalStreet(source, state.streets, explicit);
+        const matches = matchHistoricalStreet(source, state.streets, explicit, state.memories);
         if (matches.length !== 1) { record.issues.push({ propertyId: property.id, address: property.address, reason: matches.length ? "Nome presente su più Codvia: serve un'associazione esplicita" : "Via da associare all'inventario ufficiale", source, at, verifiedAt, crmId: historicalCrmId, importVerified: verified, activityEligible: activityEligible(property) }); continue; }
         const street = matches[0]!;
         if (explicit) (state.historicalStreetMappings ??= {})[property.id] = street.id;

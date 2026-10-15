@@ -91,6 +91,7 @@ export class LiveProvider implements TerritoryProvider {
     let contacts: ExcelContactsAdapter | null = null;
     if (this.config.contactsExcelPath) { contacts = new ExcelContactsAdapter(this.config.contactsExcelPath); await contacts.load(); }
     const prior = checkpoint as SisterStreetRunCheckpoint | undefined;
+    const streetSearch = this.store?.read().memories[street.id]?.sisterSearch;
     let portfolioAnomaly = false;
     const readThisRun = new Set<string>();
     const runner = new SisterStreetRun(tabs.sisterPage, {
@@ -98,6 +99,7 @@ export class LiveProvider implements TerritoryProvider {
       // The street inventory includes dwellings and category C (e.g. garages).
       filters: prior?.runSettings?.filters ?? prior?.filters ?? filters ?? { residentialOnly: false },
       strategy: "bulk_exact_variants", prepareSearchAutomatically: true, keepAcquisition: true,
+      sisterSearchText: streetSearch?.searchText, sisterResultName: streetSearch?.resultName,
       // Live is SISTER acquisition here, never a CRM write or a stable worker job.
       mode: "live", importJobId: runId, isCancelled: paused, onCheckpoint: save,
       reuseProperty: async (property, portfolio) => {

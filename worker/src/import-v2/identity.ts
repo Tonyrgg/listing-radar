@@ -332,7 +332,7 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
   const inScopeOwners = source.owners.filter((owner) => {
     return isManagedOwnershipRight(owner.rightType);
   });
-  const normalizedOwners = inScopeOwners.map((owner) => ({
+  let normalizedOwners = inScopeOwners.map((owner) => ({
     ...owner,
     taxCode: canonicalTaxCode(owner.taxCode),
     fullName: owner.fullName.replace(/\s+/g, " ").trim(),
@@ -356,14 +356,21 @@ export function buildPlan(source: SourceProperty): ImportV2Plan {
       details: { sourcePersonIds: invalidShares.map(owner => owner.sourcePersonId) },
     });
   }
-  const duplicateTaxCodes = normalizedOwners
-    .map((owner) => owner.taxCode)
-    .filter((taxCode, index, all) => all.indexOf(taxCode) !== index);
-  if (duplicateTaxCodes.length) {
-    throw new ImportV2Error("Lo stesso codice fiscale compare più volte tra gli intestatari", "invalid_source", {
-      details: { taxCodes: [...new Set(duplicateTaxCodes)] },
-    });
+  // Older acquisitions may still contain one row for each ownership quota.
+  // Only the in-scope ownership rights reach here; usufruct never joins them.
+  const grouped = new Map<string, typeof normalizedOwners>();
+  for (const owner of normalizedOwners) {
+    const group = grouped.get(owner.taxCode) ?? []; group.push(owner); grouped.set(owner.taxCode, group);
   }
+  normalizedOwners = [...grouped.values()].map(group => {
+    const first = group[0]!;
+    if (group.length === 1) return first;
+    const sharePercentage = Number(group.reduce((sum, owner) => sum + owner.sharePercentage!, 0).toFixed(6));
+    if (!isValidOwnershipShare(sharePercentage)) throw new ImportV2Error("Somma delle quote di proprietà non valida per lo stesso intestatario", "invalid_source");
+    return { ...first, sharePercentage,
+      ownershipParts: group.flatMap(owner => owner.ownershipParts ?? [{ rightType: owner.rightType, shareOriginal: `${owner.sharePercentage}/100` }]),
+      contacts: { phones: [...new Set(group.flatMap(o => o.contacts.phones))], emails: [...new Set(group.flatMap(o => o.contacts.emails))] } };
+  });
   const normalizedSource: SourceProperty = {
     ...source,
     cadastral: { ...source.cadastral, subaltern: String(source.cadastral.subaltern ?? "").trim() },

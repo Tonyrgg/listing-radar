@@ -2,6 +2,7 @@ import type { Locator, Page } from "playwright";
 
 import { SelectorConfigurationError, WorkerError } from "../../core/errors.js";
 import { isOwnershipRight, parseOwnerBlock } from "../../core/owner-parser.js";
+import { consolidateOwnershipShares } from "../../core/ownership-shares.js";
 import { businessOwnerReason, maskOwnerTaxCode } from "../../core/owner-kind.js";
 import { stripSisterMunicipalityPrefix } from "../../core/normalize.js";
 import { logger } from "../../logger.js";
@@ -554,7 +555,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
       for (let index = 0; index < await blocks.count(); index += 1) {
         this.addOwner(owners, parseOwnerBlock((await blocks.nth(index).innerText()).trim()), rowIndex);
       }
-      return owners;
+      return consolidateOwnershipShares(owners);
     }
 
     this.require(
@@ -710,7 +711,7 @@ export class PlaywrightSisterAdapter implements SisterAdapter {
         }
       }
     }
-    return owners;
+    return consolidateOwnershipShares(owners);
   }
 
   private async returnToResultsAfterOwnerNoMatch(rowIndex: number) {

@@ -17,6 +17,7 @@ const browserBackedTests = [
   "tests/chrome-tab-driveability.test.ts",
   "tests/crm-person-seeds.test.ts",
   "tests/import-v2-collapsed-merge.test.ts",
+  "tests/import-v2-loading-reconciliation.test.ts",
   "tests/import-v2-filter-drawer.test.ts",
   "tests/import-v2-person-search.test.ts",
   "tests/import-v2-tecnocloud-ui-port.test.ts",

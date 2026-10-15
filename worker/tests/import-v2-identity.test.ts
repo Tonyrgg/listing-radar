@@ -44,6 +44,18 @@ const source = (overrides: Partial<SourceProperty> = {}): SourceProperty => ({
 });
 
 describe("Import V2 identity", () => {
+  it("consolida le quote di proprietà di vecchie acquisizioni senza sommare usufrutto o perdere recapiti", () => {
+    const input = source();
+    input.owners[0]!.sharePercentage = 25;
+    input.owners.push({ ...input.owners[0]!, sourcePersonId: "second-quota", sharePercentage: 75, contacts: { phones: ["3331234567"], emails: [] } }, { ...input.owners[0]!, sourcePersonId: "usufruct", rightType: "Usufrutto", sharePercentage: 100 });
+    const result = buildPlan(input);
+    expect(result.source.owners).toHaveLength(1);
+    expect(result.source.owners[0]).toMatchObject({ sourcePersonId: "person-1", sharePercentage: 100, contacts: { phones: ["3331234567"] } });
+    expect(result.source.owners[0]!.ownershipParts).toHaveLength(2);
+    expect(input.owners).toHaveLength(3);
+    input.owners[1]!.sharePercentage = 100;
+    expect(() => buildPlan(input)).toThrow("Somma delle quote");
+  });
   it("riconosce lo stesso insieme di proprietari in ordine diverso senza cambiare il piano operativo", () => {
     const input = source();
     input.owners[0]!.sharePercentage = 50;
