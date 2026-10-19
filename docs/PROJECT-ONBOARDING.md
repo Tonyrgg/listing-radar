@@ -1,5 +1,13 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> Rollout Market Observer del 19 ottobre 2026: migration **0028–0033** applicate,
+> registry con filiale Tecnocasa confermata, RE/MAX attivo solo su URL noti
+> (missing OFF), scheduler riattivato. Ripristinate in 0031 le letture fingerprint
+> circoscritte perse con 0022. Proiezioni ricalcolate senza inventare dati; smoke
+> autenticato e primo giro remoto completati. Il campione di 50 immobili non ha
+> ancora ground truth umana: ranking e Sold Radar non sono certificati.
+> Risultati, prove, limiti e procedura: [report operativo](property-lifecycle/23-operational-rollout-validation.md).
+
 ## 1. Scopo del documento
 
 Questo documento è il punto di ingresso per un nuovo agente AI o un nuovo sviluppatore. Va letto prima di modificare codice, dati, migrazioni, automazioni browser o flussi operativi.
