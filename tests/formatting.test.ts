@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCurrency, formatDateTime, formatNumber, formatShouty, isUsableText } from "@/lib/formatting";
+import { formatCurrency, formatDate, formatDateTime, formatNumber, formatShouty, formatTime, isUsableText } from "@/lib/formatting";
 
 /**
  * `Intl.NumberFormat` di suo raggruppa solo da cinque cifre in su: senza dirlo
@@ -8,6 +8,19 @@ import { formatCurrency, formatDateTime, formatNumber, formatShouty, isUsableTex
  * legge 700 o 70.000. In un tool che si guarda, non si legge, è un errore.
  */
 describe("come si scrivono i numeri", () => {
+  it("keeps the evidence observation day identical across UTC server and Rome browser", () => {
+    expect(formatDate("2026-10-14T23:15:00Z")).toBe("15 ott 2026");
+    expect(formatDate("2026-01-31T23:30:00Z")).toBe("1 feb 2026");
+    expect(formatTime("2026-10-14T23:15:00Z")).toBe("01:15");
+    expect(formatTime("2026-01-31T23:30:00Z")).toBe("00:30");
+  });
+
+  it("preserves a date-only portal claim without inventing an observation time", () => {
+    expect(formatDate("2026-05-05")).toBe("5 mag 2026");
+    expect(formatDate(null)).toBe("Non disponibile");
+    expect(formatDate("not a date")).toBe("Non disponibile");
+    expect(formatTime(null)).toBe("");
+  });
   it("shows observation timestamps in the market timezone independently of the server timezone",()=>{
     expect(formatDateTime("2026-10-19T18:29:00Z")).toContain("20:29");
     expect(formatDateTime("2026-01-19T18:29:00Z")).toContain("19:29");

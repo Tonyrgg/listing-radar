@@ -1,3 +1,5 @@
+const MARKET_TIME_ZONE = "Europe/Rome";
+
 export function formatCurrency(value: number | null | undefined) {
   if (value == null) {
     return "Non disponibile";
@@ -36,7 +38,7 @@ export function formatDateTime(value: string | null | undefined) {
     dateStyle: "medium",
     timeStyle: "short",
     // Observations concern the Bitonto market; server and browser must show the same instant.
-    timeZone: "Europe/Rome",
+    timeZone: MARKET_TIME_ZONE,
   }).format(date);
 }
 
@@ -53,6 +55,7 @@ export function formatDate(value: string | null | undefined) {
 
   return new Intl.DateTimeFormat("it-IT", {
     dateStyle: "medium",
+    timeZone: MARKET_TIME_ZONE,
   }).format(date);
 }
 
@@ -63,7 +66,11 @@ export function formatTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
 
-  return new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("it-IT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: MARKET_TIME_ZONE,
+  }).format(date);
 }
 
 export function formatPlainText(value: string | null | undefined) {

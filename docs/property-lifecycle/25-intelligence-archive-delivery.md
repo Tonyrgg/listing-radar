@@ -3,7 +3,8 @@
 ## Release e target
 
 - Base: `ab233ef`, successiva alla Phase 2 consegnata e al rollout operativo.
-- Implementazione: `bc57e0a`; correzioni emerse dallo smoke: `eeb05c7`.
+- Implementazione: `bc57e0a`; correzioni emerse dallo smoke: `eeb05c7`, `ecfd885`
+  e successiva correzione del giorno di osservazione fra server UTC e browser.
 - Production: <https://listing-radar-mu.vercel.app>.
 - Supabase autorizzato: `eqqmglsxwbsihrlecnun`, migration **0001–0034** allineate.
 - Nuova migration: `0034_intelligence_archive_public_records.sql`; nessuna migration
@@ -211,7 +212,8 @@ Property `53390232-8a25-446e-b832-4841f513e877`, sempre una sola scheda.
 
 ## Test e verifiche
 
-- Vitest completo: **526 PASS, 25 SKIP**, 56 file passati e 2 saltati.
+- Vitest completo, eseguito anche con server timezone UTC: **528 PASS, 25 SKIP**,
+  56 file passati e 2 saltati.
 - SQL su PostgreSQL/PGlite: migration 0034 reale, archivio senza listing corrente,
   selezione rapporto attivo contro chiuso più recente, nessuna duplicazione della
   property, registro documentale, date NULL, anon senza accesso, pesi score.
@@ -222,6 +224,11 @@ Property `53390232-8a25-446e-b832-4841f513e877`, sempre una sola scheda.
 - `npm run design:check`: token allineati e contrasto PASS nei due temi.
 - Timestamp delle osservazioni in Europe/Rome, deterministici fra Vercel e browser,
   con regressione ora legale/solare; i claim di data restano distinti dagli istanti di osservazione.
+- Lo smoke ha rilevato un errore React di idratazione nel dossier: un'osservazione
+  delle 23:15 UTC appariva il 14 ottobre sul server e il 15 nel browser. Riprodotto
+  con dev server UTC, corretto centralmente in `formatDate`/`formatTime`, senza
+  cambiare il dato salvato. Test del passaggio di mezzanotte e fine mese, e claim
+  data-only preservato; nessun nuovo errore testuale nella rilettura locale.
 - HTTP senza sessione: `/intelligence`, `/map`, `/fonti` → 307 `/login`;
   `/api/health` → 200. Nessuna autenticazione indebolita.
 - Smoke autenticato production: ricerca Crocifisso, dossier e prove, assenza
@@ -231,6 +238,10 @@ Property `53390232-8a25-446e-b832-4841f513e877`, sempre una sola scheda.
   crema, contrasto leggibile, nessun clipping superiore della scheda.
 - A 390 px, larghezza documento 380 px su viewport 390 px: nessun overflow
   orizzontale della pagina; navigazione, ricerca e catalogo documentale consultabili.
+- Dossier verificato anche a 1024 e 1600 px. A Piazza Cattedrale 23 è consultabile
+  la pratica 3/2024/SCA del 9 gennaio 2024, protocollo 1014, con fonte, hash e
+  riferimento catastale: collegamento all'edificio, unità ancora da verificare,
+  nessuna certificazione automatica. Tap mobile sul marker apre il dossier.
 
 Le 25 integrazioni saltate non vengono dichiarate eseguite. Il typecheck web non
 equivale a certificare tutti i test/build del desktop monorepo, non modificato.
