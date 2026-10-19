@@ -42,7 +42,7 @@ import {
   locationPrecisionLabel,
   opportunityReasonLabel,
   publicationStateLabel,
-  saleStatusLabel,
+  propertyStateLabel,
 } from "@/lib/property-lifecycle/read-models/presentation";
 import { formaPosizione } from "@/lib/map/posizione-casa";
 import type { LifecyclePropertyDetail } from "@/lib/property-lifecycle/read-models/types";
@@ -353,7 +353,7 @@ export function SchedaMercato({
               {indirizzo}
             </h1>
             <Stato forma={formaFromPropertyState(property.propertyState)}>
-              {saleStatusLabel(property.saleStatus)}
+              {propertyStateLabel(property.propertyState)}
             </Stato>
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
@@ -373,6 +373,7 @@ export function SchedaMercato({
                 </span>
               ))}
           </p>
+          {detail.marketObservation?.agentName ? <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">Agente dichiarato: {detail.marketObservation.agentName}{detail.marketObservation.sourceUrl ? <> · <a className="underline" href={detail.marketObservation.sourceUrl} target="_blank" rel="noreferrer">prova primaria</a></> : null}</p> : null}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -404,6 +405,7 @@ export function SchedaMercato({
         <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(currentAsking)}</strong>
         <span>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</span>
         <span>Monitorato dal {formatDate(property.firstSeenAt)}</span>
+        {Date.parse(marketAnchor)<Date.parse(property.firstSeenAt)?<span>Prima evidenza pubblica {formatDate(marketAnchor)}</span>:null}
         {detail.marketObservation?.soldAt ? <span>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</span> : detail.marketObservation?.soldObservedAt ? <span>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</span> : null}
         {detail.marketObservation?.priceConflict ? <Meta>Le fonti mostrano prezzi diversi: il prezzo indicato proviene dalla pubblicazione selezionata.</Meta> : null}
         {prezzoFonte?.reductionPercent!=null && prezzoFonte.reductionPercent>0 ? <span className="text-[var(--lr-ok)]">−{formatNumber(prezzoFonte.reductionPercent)}% sulla stessa pubblicazione</span> : null}
@@ -443,7 +445,7 @@ export function SchedaMercato({
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="space-y-4">
-          <MuroDiFoto
+          {detail.imageUrls.length ? <MuroDiFoto
             urls={detail.imageUrls}
             alt={indirizzo}
             didascalia={
@@ -452,7 +454,7 @@ export function SchedaMercato({
                 ? `foto del ${formatDate(property.trueMarketStartLowerBound)} — la più vecchia che abbiamo`
                 : undefined
             }
-          />
+          /> : null}
 
           <section id="storico" className="scroll-mt-20"><RigaDiVita eventi={detail.events} prove={prove} /></section>
           <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
@@ -482,7 +484,7 @@ export function SchedaMercato({
                   ) : null}
                 </div>
                 <Stato forma={formaFromPropertyState(property.propertyState)}>
-                  {saleStatusLabel(property.saleStatus)}
+                  {propertyStateLabel(property.propertyState)}
                 </Stato>
               </div>
 

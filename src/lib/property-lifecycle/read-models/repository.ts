@@ -873,7 +873,7 @@ export class PropertyLifecycleReadRepository {
           .select("publication_id,first_asking_price,latest_asking_price,reduction_percent,drop_count,canonical_url,first_price_observed_at,latest_price_observed_at,drop_dates")
           .in("agency_listing_id", agencyListingIds) : Promise.resolve({data:[],error:null}),
         agencyListingIds.length ? this.db.from("market_observer_agency_listing_intelligence")
-          .select("agency_listing_id,state,latest_asking_price,price_source_url,sold_at,sold_observed_at,source_price_conflict,exit_classification,exit_confidence,classified_at")
+          .select("agency_listing_id,state,latest_asking_price,price_source_url,sold_at,sold_observed_at,source_price_conflict,exit_classification,exit_confidence,classified_at,agent_name")
           .in("agency_listing_id",agencyListingIds).order("last_seen_at",{ascending:false}) : Promise.resolve({data:[],error:null}),
       ]);
     [
@@ -1002,6 +1002,7 @@ export class PropertyLifecycleReadRepository {
         soldAt:stringValue(market.sold_at),soldObservedAt:stringValue(market.sold_observed_at),
         priceConflict:Boolean(market.source_price_conflict),classification:String(market.exit_classification),
         confidence:numberValue(market.exit_confidence),classifiedAt:stringValue(market.classified_at),
+        agentName:stringValue(market.agent_name),
       }} : {}),
       events: eventRows.map((row) => ({
         id: String(row.id),

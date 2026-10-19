@@ -47,6 +47,17 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   const assessment=await row("select market_observer_assess_opportunity('UNKNOWN','OFF_MARKET_NO_SALE_EVIDENCE',180,0,0,0) assessment");
   expect(assessment.assessment).toMatchObject({score:55,components:{unsold_exit:25,observed_age:30}});
  });
+ it('keeps one archive row and selects the active relationship ahead of a more recently updated closed relationship',async()=>{
+  await db.exec(await sql('0034_intelligence_archive_public_records.sql'));
+  await db.exec(`insert into properties(canonical_attributes) values('{"address":"Via Due Agenzie 1"}');
+    insert into agency_listings(property_id,agency_id,state,last_seen_at)
+    select p.id,a.id,case when a.slug='ad-maiora-bitonto' then 'ACTIVE' else 'OFF_MARKET_NO_SALE_EVIDENCE' end,
+      case when a.slug='ad-maiora-bitonto' then '2026-10-01'::timestamptz else '2026-10-19'::timestamptz end
+    from properties p cross join agencies a where a.slug in ('ad-maiora-bitonto','futura-immobiliare-bitonto');`);
+  expect((await row('select count(*)::integer n from market_observer_intelligence')).n).toBe(2);
+  expect((await row('select count(*)::integer n from market_observer_property_archive')).n).toBe(1);
+  expect(await row('select agency_role,state from market_observer_property_archive')).toEqual({agency_role:'OUR_AGENCY',state:'ACTIVE'});
+ });
  it('preserves human agency decisions, maps the specific own branch and rejects shared RE/MAX IDs',async()=>{
   expect(await row("select market_role,settings from agencies where slug='ad-maiora-bitonto'"))
    .toEqual({market_role:'OUR_AGENCY',settings:{humanValue:true}});

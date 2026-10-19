@@ -1,0 +1,18 @@
+:global(.leaflet-tooltip).hover {
+  white-space: normal;
+  max-width: min(23rem, 80vw);
+  max-height: min(36rem, calc(70vh - 2rem));
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--lr-surface);
+  color: var(--lr-ink);
+  border: 1px solid var(--lr-line);
+  border-radius: var(--lr-radius-control);
+  font-family: var(--lr-font-sans);
+  box-shadow: var(--lr-floating);
+}
+.marker:focus {
+  outline: 3px solid var(--lr-accent);
+  outline-offset: 3px;
+  border-radius: 50%;
+}

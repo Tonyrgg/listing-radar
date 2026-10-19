@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     template: "%s · Listing Radar",
   },
   description:
-    "CRM privato per monitorare, archiviare e qualificare annunci immobiliari a Bitonto.",
+    "Archivio di intelligence immobiliare, territorio e prove pubbliche di Bitonto, Palombaio e Mariotto.",
   robots: {
     index: false,
     follow: false,

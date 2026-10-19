@@ -230,6 +230,7 @@ export interface LifecyclePropertyDetail {
     publicationId: string | null; latestPrice: number | null; sourceUrl: string | null;
     soldAt: string | null; soldObservedAt: string | null; priceConflict: boolean;
     classification: string; confidence: number | null; classifiedAt: string | null;
+    agentName?: string | null;
   };
   publicationPrices?: Array<{
     publicationId: string; firstPrice: number | null; latestPrice: number | null;
