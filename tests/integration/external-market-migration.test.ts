@@ -17,7 +17,8 @@ describe.sequential("External evidence migrations on actual PostgreSQL", () => {
       "0015_market_observer_intelligence.sql","0016_market_observer_private_projection.sql","0017_resource_compaction.sql",
       "0018_compaction_index_headroom.sql","0019_bounded_identity_fingerprints.sql","0020_fingerprint_update_uniqueness.sql",
       "0021_market_observer_read_indexes.sql","0022_market_observer_semantics.sql","0023_market_observer_projections.sql",
-      "0024_external_market_evidence.sql","0025_external_market_projections.sql","0026_external_market_primary_verifier.sql"]) {
+      "0024_external_market_evidence.sql","0025_external_market_projections.sql","0026_external_market_primary_verifier.sql",
+      "0031_restore_bounded_observation_fingerprints.sql"]) {
       await db.exec((await readFile(`supabase/migrations/${file}`,"utf8")).replace(/create extension if not exists pgcrypto;/g,""));
     }
   }, 30_000);
@@ -85,6 +86,19 @@ describe.sequential("External evidence migrations on actual PostgreSQL", () => {
   it("same-publication price change creates a true price drop",async()=>{
     await observe(); await observe({price:155000,observedAt:"2026-10-15T20:32:28.000Z"});
     expect((await row("select count(*)::integer n from events where event_type='PRICE_DROP'")).n).toBe(1);
+  });
+  it("a changed observation never expands another publication's compacted fingerprint history",async()=>{
+    const first=await observe();
+    // An unrelated archived record must not even be decoded. The pre-fix full
+    // archive scan casts this invalid UUID before filtering on snapshot_id.
+    await db.exec(`insert into image_fingerprint_archive_groups(row_data,observations)
+      values('{}','[{"id":"unrelated-history-must-not-be-decoded"}]')`);
+    const second=await observe({price:155000,observedAt:"2026-10-15T20:32:28.000Z"});
+    expect(second.propertyId).toBe(first.propertyId);
+    expect(second.snapshotId).not.toBe(first.snapshotId);
+    expect((await row("select count(*)::integer n from events where event_type='PRICE_DROP'")).n).toBe(1);
+    expect(await row("select first_asking_price,latest_asking_price from market_observer_publication_metrics where publication_id=$1",[first.publicationId]))
+      .toEqual({first_asking_price:195000,latest_asking_price:155000});
   });
   it("portal refresh does not create a price drop",async()=>{
     await observe(); await observe({modifiedLabel:"15/10/2026",observedAt:"2026-10-15T20:32:28.000Z"});
