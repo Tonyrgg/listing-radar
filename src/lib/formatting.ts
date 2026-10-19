@@ -35,6 +35,8 @@ export function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("it-IT", {
     dateStyle: "medium",
     timeStyle: "short",
+    // Observations concern the Bitonto market; server and browser must show the same instant.
+    timeZone: "Europe/Rome",
   }).format(date);
 }
 

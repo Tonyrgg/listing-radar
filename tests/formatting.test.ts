@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCurrency, formatNumber, formatShouty, isUsableText } from "@/lib/formatting";
+import { formatCurrency, formatDateTime, formatNumber, formatShouty, isUsableText } from "@/lib/formatting";
 
 /**
  * `Intl.NumberFormat` di suo raggruppa solo da cinque cifre in su: senza dirlo
@@ -8,6 +8,11 @@ import { formatCurrency, formatNumber, formatShouty, isUsableText } from "@/lib/
  * legge 700 o 70.000. In un tool che si guarda, non si legge, è un errore.
  */
 describe("come si scrivono i numeri", () => {
+  it("shows observation timestamps in the market timezone independently of the server timezone",()=>{
+    expect(formatDateTime("2026-10-19T18:29:00Z")).toContain("20:29");
+    expect(formatDateTime("2026-01-19T18:29:00Z")).toContain("19:29");
+    expect(formatDateTime(null)).toBe("Non disponibile");
+  });
   it("separa le migliaia anche a quattro cifre", () => {
     expect(formatCurrency(7000)).toContain("7.000");
     expect(formatNumber(1000)).toBe("1.000");

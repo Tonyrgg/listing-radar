@@ -78,7 +78,8 @@ export const vistaPrivati = vista("privateRadar", (repository) =>
 export const vistaAgenzia = vista("agency", (repository, slug: string) =>
   repository.agency(slug),
 );
-export const vistaCasa = vista("property", (repository, id: string, historyPage: number = 1) =>
+// DTO revision: deployment must not reuse an earlier cached dossier without agent provenance.
+export const vistaCasa = vista("property-dossier-v2", (repository, id: string, historyPage: number = 1) =>
   repository.property(id,historyPage),
 );
 export const vistaMovimenti = vista("marketEvents", (repository, limite: number) =>

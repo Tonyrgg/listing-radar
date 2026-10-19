@@ -1,5 +1,14 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Archivio Intelligence, 19 ottobre 2026:** il nuovo brief utente sostituisce
+> l'impostazione CRM della web app. La navigazione ordinaria è **Intelligence,
+> Territorio, Fonti**, più impostazioni. Oggi, Acquisizioni e Diario rimandano
+> all'archivio; backend, dati e worker desktop restano conservati. Migration
+> **0034** applicata: una riga per property, registro documentale pubblico sulle
+> tabelle edilizie esistenti, pesi opportunità riequilibrati. Audit prima delle
+> modifiche: [24](property-lifecycle/24-intelligence-archive-audit.md).
+> Report e limiti: [25](property-lifecycle/25-intelligence-archive-delivery.md).
+
 > Rollout Market Observer del 19 ottobre 2026: migration **0028–0033** applicate,
 > registry con filiale Tecnocasa confermata, RE/MAX attivo solo su URL noti
 > (missing OFF), scheduler riattivato. Ripristinate in 0031 le letture fingerprint
@@ -14,7 +23,7 @@ Questo documento è il punto di ingresso per un nuovo agente AI o un nuovo svilu
 
 Listing Radar non è un singolo scraper. È un sistema privato composto da:
 
-- una web app CRM e operativa;
+- una web app di intelligence immobiliare, con backend CRM storico conservato;
 - Property Lifecycle Radar V2 per osservare il mercato pubblico;
 - Property Data Worker per acquisire dati catastali da SISTER e importarli in Tecnocloud;
 - una Chrome extension per arricchimenti manuali;
@@ -53,10 +62,10 @@ Quando un README storico contraddice il codice o una migration più recente, non
 
 ## 3. Utente, obiettivo e tono del prodotto
 
-Il prodotto è un CRM privato per un flusso immobiliare operativo, usato principalmente da una singola persona. L'utente deve capire immediatamente:
+La web app è un archivio privato di intelligence immobiliare, usato principalmente da una singola persona. L'utente deve capire immediatamente:
 
-- che cosa richiede attenzione;
-- qual è il prossimo passo;
+- che cosa sappiamo di un immobile e della sua storia;
+- da quale fonte e osservazione proviene ogni conclusione;
 - quali dati sono certi, stimati o sconosciuti;
 - perché il sistema propone un match, un'opportunità o una transizione;
 - dove si è fermata un'automazione e come riprenderla senza duplicare dati.
@@ -178,7 +187,20 @@ Condividono repository e principi di audit, ma non hanno lo stesso modello dati 
 
 Route Next.js. Le aree private sono sotto `app/(private)/`.
 
-Route principali (dopo la riscrittura del 25 agosto 2026):
+Route ordinarie dopo il brief archivio del 19 ottobre 2026:
+
+- `/intelligence`: Mercato completo, Opportunità, Usciti, Venduti;
+- `/map`: Territorio, tutti gli stati V2, clustering, scheda hover/focus/tap e
+  ricerca delle pratiche edilizie/documenti pubblici;
+- `/fonti`: stato effettivo, inventario, errori, baseline e ultime sincronizzazioni;
+- `/casa/[id]`: dossier con panoramica, storia/prove, pubblicazioni, territorio
+  e documenti di edificio; nessuna creazione lead o diario;
+- `/settings`: amministrazione e strumenti tecnici conservati.
+
+Le route CRM storiche sotto elencate restano nel repository per compatibilità,
+non sono più il modello di navigazione. `/dashboard`, `/listings`, `/lifecycle`,
+`/acquisition/**`, `/logbook/**` rimandano a Intelligence; i dati non sono cancellati.
+Inventario storico delle route e dei caller (precedente al nuovo brief):
 
 - `/dashboard` — «Oggi»: le fasce del lavoro aperto;
 - `/acquisition/today` — coda commerciale di appuntamenti, follow-up e lead;
