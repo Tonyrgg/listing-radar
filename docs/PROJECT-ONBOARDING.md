@@ -879,6 +879,8 @@ Una modifica adapter richiede almeno:
 
 `npm.cmd run build` produce la build Next.js. Il deploy non è implicito e richiede autorizzazione.
 
+La build web usa `tsconfig.web.json`: controllo TypeScript strict su app/src e route generate, senza includere i test che importano il desktop Worker. Il 19 ottobre il controllo indiscriminato del monorepo riproduceva errori di target BigInt e di identità fra due installazioni Supabase nel test Territorio, impedendo i deploy web successivi alla Phase 2. `npm run typecheck` controlla la stessa configurazione web; `npm run typecheck:all` conserva il controllo esteso precedente e rende visibili quei problemi di confine. Nessun `ignoreBuildErrors`, modifica al desktop o rimozione di test: Vitest continua a eseguire le suite root e il Worker mantiene la propria build/check.
+
 ### Worker Windows
 
 Da `worker/`:

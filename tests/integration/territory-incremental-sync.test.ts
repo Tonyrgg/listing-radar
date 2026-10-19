@@ -22,7 +22,7 @@ async function setup() {
   const client = { rpc: async (name: string, args: Record<string, unknown>) => {
     const entries = Object.entries(args), casts: Record<string,string> = { p_workspace_id: "uuid", p_owner_id: "uuid", p_profile_kind: "text", p_since: "bigint", p_expected_revision: "bigint", p_changes: "jsonb", p_state: "jsonb" };
     if (!/^(read_territory_workspace_changes|save_territory_workspace_changes|save_territory_lab_workspace)$/.test(name)) throw new Error("Unexpected RPC");
-    try { const result = await db.query<{ data: any }>(`select public.${name}(${entries.map(([key], i) => `${key} => $${i+1}::${casts[key]}`).join(",")}) as data`, entries.map(([key,v]) => casts[key] === "jsonb" ? JSON.stringify(v) : v)); return { data: result.rows[0]!.data, error: null }; }
+    try { const result = await db.query<{ data: unknown }>(`select public.${name}(${entries.map(([key], i) => `${key} => $${i+1}::${casts[key]}`).join(",")}) as data`, entries.map(([key,v]) => casts[key] === "jsonb" ? JSON.stringify(v) : v)); return { data: result.rows[0]!.data, error: null }; }
     catch (error) { return { data: null, error }; }
   } } as unknown as SupabaseClient;
   const read = async (since: number) => { const result = await client.rpc("read_territory_workspace_changes", { p_workspace_id: workspace, p_owner_id: owner, p_profile_kind: "live", p_since: since }); if (result.error) throw result.error; return result.data; };
