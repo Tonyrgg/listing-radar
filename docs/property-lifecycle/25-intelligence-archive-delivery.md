@@ -4,7 +4,9 @@
 
 - Base: `ab233ef`, successiva alla Phase 2 consegnata e al rollout operativo.
 - Implementazione: `bc57e0a`; correzioni emerse dallo smoke: `eeb05c7`, `ecfd885`
-  e successiva correzione del giorno di osservazione fra server UTC e browser.
+  e `a94a7e7` per il giorno di osservazione fra server UTC e browser.
+- Deploy funzionale finale Vercel **7185646245**, commit `a94a7e7`, **SUCCESS**
+  alle 21:38 UTC del 19 ottobre. Smoke autenticato successivo completato.
 - Production: <https://listing-radar-mu.vercel.app>.
 - Supabase autorizzato: `eqqmglsxwbsihrlecnun`, migration **0001–0034** allineate.
 - Nuova migration: `0034_intelligence_archive_public_records.sql`; nessuna migration
@@ -229,6 +231,10 @@ Property `53390232-8a25-446e-b832-4841f513e877`, sempre una sola scheda.
   con dev server UTC, corretto centralmente in `formatDate`/`formatTime`, senza
   cambiare il dato salvato. Test del passaggio di mezzanotte e fine mese, e claim
   data-only preservato; nessun nuovo errore testuale nella rilettura locale.
+- Verifica production dopo il deploy `a94a7e7`: dossier Crocifisso completo,
+  osservazione corretta al 15 ottobre nelle prove espanse, nessun nuovo errore
+  React in console. I due errori storici dei deploy precedenti restano distinguibili
+  dal timestamp, non sono stati cancellati o nascosti.
 - HTTP senza sessione: `/intelligence`, `/map`, `/fonti` → 307 `/login`;
   `/api/health` → 200. Nessuna autenticazione indebolita.
 - Smoke autenticato production: ricerca Crocifisso, dossier e prove, assenza
