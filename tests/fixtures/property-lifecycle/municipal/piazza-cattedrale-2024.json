@@ -1,0 +1,58 @@
+{
+  "source": "https://www.opendata.maggioli.cloud/dataset/4980aa37-bd65-4cee-a912-dc3b61373ab9/resource/ccd323fa-55f5-4159-9ad6-c49eba97872a/download/comune-di-bitonto-elenco-pratiche_2024.csv",
+  "sourceSha256": "373edf7aa3792104206b138d9cc0e356a5b747cbacd296b73e6f6d177dc693cb",
+  "privacy": "Only administrative/address/declared cadastral fields retained; no people, free subjects or companies",
+  "rows": [
+    {
+      "Applicazione": "ape",
+      "Numero Pratica": "3/2024/SCA",
+      "Anno": "2024",
+      "Tipo Pratica": "Agibilita' - Segnalazione Certificata di Agibilita'",
+      "Data Protocollo": "2024-01-09",
+      "Numero Protocollo": "1014",
+      "Data Rilascio": "",
+      "Situazione Pratica": "Presentata Domanda",
+      "Via": "PIAZZA CATTEDRALE",
+      "Civico": "23",
+      "Comune": "BITONTO",
+      "Tipo Catasto": "URBANO",
+      "Foglio": "49",
+      "Particella": "1485",
+      "Subalterno": "22"
+    },
+    {
+      "Applicazione": "ape",
+      "Numero Pratica": "3/2024/SCA",
+      "Anno": "2024",
+      "Tipo Pratica": "Agibilita' - Segnalazione Certificata di Agibilita'",
+      "Data Protocollo": "2024-01-09",
+      "Numero Protocollo": "1014",
+      "Data Rilascio": "",
+      "Situazione Pratica": "Presentata Domanda",
+      "Via": "PIAZZA CATTEDRALE",
+      "Civico": "23",
+      "Comune": "BITONTO",
+      "Tipo Catasto": "URBANO",
+      "Foglio": "49",
+      "Particella": "1485",
+      "Subalterno": "22"
+    },
+    {
+      "Applicazione": "ape",
+      "Numero Pratica": "3/2024/SCA",
+      "Anno": "2024",
+      "Tipo Pratica": "Agibilita' - Segnalazione Certificata di Agibilita'",
+      "Data Protocollo": "2024-01-09",
+      "Numero Protocollo": "1014",
+      "Data Rilascio": "",
+      "Situazione Pratica": "Presentata Domanda",
+      "Via": "PIAZZA CATTEDRALE",
+      "Civico": "23",
+      "Comune": "BITONTO",
+      "Tipo Catasto": "URBANO",
+      "Foglio": "49",
+      "Particella": "1485",
+      "Subalterno": "22"
+    }
+  ]
+}

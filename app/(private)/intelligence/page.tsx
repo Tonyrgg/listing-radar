@@ -11,7 +11,7 @@ import { opportunityReasonLabel, evidenceSourceLabel, propertyStateLabel, humani
 
 export const metadata:Metadata={title:"Intelligence"};
 const tabs={mercato:"Mercato",opportunita:"Opportunità",usciti:"Usciti",venduti:"Venduti"};
-const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte"];
+const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti"];
 const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","trio","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA"];
 export default async function IntelligencePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
   await connection();
@@ -22,7 +22,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
   const now=await readNow(),db=getSupabaseServiceClient();
   const [result,agencies,metrics]=await Promise.all([
-    readIntelligence(db,{view,page,query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte")}).catch(()=>null),
+    readIntelligence(db,{view,page,query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
@@ -44,6 +44,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
           {field("giorni","Età mercato minima, giorni","number")}{select("ribassato","Ribassi confermati",{yes:"Con ribassi",no:"Senza ribassi osservati"})}{select("fonte","Fonte pubblicazione",Object.fromEntries(sourceOptions.map(s=>[s,s==="REMAX"?"RE/MAX":s==="IMMOBILIARE"?"Immobiliare.it":humanize(s)])))}
           {view==="opportunita"?field("punteggio","Punteggio minimo","number"):null}{field("ribasso","Riduzione minima %","number")}
           {view==="venduti"||view==="usciti"?select("esito","Classificazione uscita",EXIT_LABELS):null}
+          {select("atti","Evidenze territoriali dell’edificio",{documents:"Con documenti pubblici",recent:"Con pratica o atto recente, 90 giorni",signals:"Con nuovo segnale territoriale"})}
         </div><div className="mt-3 flex gap-2"><button className={buttonClass("secondary")}>Applica filtri</button><Link href={`?vista=${view}`} className={buttonClass("quiet")}>Azzera</Link></div>
       </details>
     </form>

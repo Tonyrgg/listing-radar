@@ -1,0 +1,40 @@
+[
+  {
+    "file": "page-1.html",
+    "source": "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio",
+    "page": 1,
+    "observedAt": "2026-10-19T21:54:10.885Z",
+    "originalSha256": "ef2fdf8629268c2712ade3f88f81b03ee748a622a9d652d5a61a65f2c6aa465e",
+    "privacy": "Body/header/scripts removed; free subjects minimized; original structural table/pagination retained."
+  },
+  {
+    "file": "page-2.html",
+    "source": "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio",
+    "page": 2,
+    "observedAt": "2026-10-19T21:54:10.901Z",
+    "originalSha256": "ec12fef9fcf1bf5597e79e55bbfc4f3ecd4760128dd2c35416832651e2cf027f",
+    "privacy": "Body/header/scripts removed; free subjects minimized; original structural table/pagination retained."
+  },
+  {
+    "file": "page-16.html",
+    "source": "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio",
+    "page": 16,
+    "observedAt": "2026-10-19T21:54:10.907Z",
+    "originalSha256": "1aee2b69a639238f66d00ac11345de79b864437d12831f808627e61ef84158ee",
+    "privacy": "Body/header/scripts removed; free subjects minimized; original structural table/pagination retained."
+  },
+  {
+    "file": "detail-10579138.html",
+    "source": "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio/-/papca/display/10579138",
+    "observedAt": "2026-10-19T21:54:10.914Z",
+    "originalSha256": "456033c20f550cff10df75d5be53d9e9df32ca689b1854a9491fe1d43ae28476",
+    "privacy": "Administrative fields and public download controls retained; operator and signatories omitted."
+  },
+  {
+    "file": "detail-10579137.html",
+    "source": "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio/-/papca/display/10579137",
+    "observedAt": "2026-10-19T21:54:10.920Z",
+    "originalSha256": "72a2dec4b6810f2b3a8f0ccda905716bcf490707c85cfc0c9fe2f7f783a34dd9",
+    "privacy": "Administrative fields and public download controls retained; operator and signatories omitted."
+  }
+]

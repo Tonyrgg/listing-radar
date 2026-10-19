@@ -52,7 +52,7 @@ export default async function FontiPage() {
     vistaAgenzie(),
     Promise.resolve().then(() => readExternalSourceStatus(getSupabaseServiceClient())).catch(() => null),
     getSupabaseServiceClient().from("sync_runs").select("agency_id,health_state,diagnostics,absence_evaluation_allowed,inventory_complete").order("started_at",{ascending:false}).limit(100),
-    getSupabaseServiceClient().from("building_data_import_runs").select("source_key,status,finished_at,grouped_records,errors").order("started_at",{ascending:false}).limit(12),
+    getSupabaseServiceClient().from("building_data_import_runs").select("source_key,status,finished_at,grouped_records,errors,health_state,pages,inventory_complete,structure_fingerprint,diagnostics").order("started_at",{ascending:false}).limit(30),
   ]);
 
   if (!vista.available || !vista.data) {
@@ -257,8 +257,9 @@ export default async function FontiPage() {
 
       <section className="border-t border-[var(--lr-line-quiet)] pt-4">
         <h2 className="text-[length:var(--lr-text-section)] font-[650]">Fonti territoriali pubbliche</h2>
-        <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{run.source_key==="comune-bitonto-prg-catalog"?"Comune · SIT / PRG, catalogo documenti":"Comune · registro pratiche edilizie"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
-        <Meta>Import settimanale nel registro esistente. Nessun documento certifica automaticamente conformità o proprietà.</Meta>
+        <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{({"comune-bitonto-prg-catalog":"Comune · SIT / PRG","comune-bitonto-albo":"Comune · Albo Pretorio","comune-bitonto-elenco-pratiche-2025":"Comune · registro edilizio 2025, senza indirizzi"} as Record<string,string>)[run.source_key]??"Comune · registro edilizio 2024"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record{run.pages?` · ${run.pages} pagine`:""}</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{run.source_key==="comune-bitonto-albo"?<Meta>{run.inventory_complete?"Inventory completa delle pubblicazioni esposte":"Inventory non completata"} · PDF non scaricati automaticamente</Meta>:null}{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
+        <Meta>Albo giornaliero; registri statici e catalogo a cadenza settimanale nello stesso scheduler. Nessuna rimozione dedotta da fetch falliti. Dataset 2023/2022/2021 non reperiti; non equivale a zero pratiche.</Meta>
+        <Meta>SUE/SUAP: inventario pubblico non dimostrato. SIT: progetto QGIS pubblico verificato con 86 riferimenti a layer; servizio WMS non operativo nel controllo, nessuna geometria normativa assegnata. <a className="underline" href="https://sit.egov.ba.it/custom_static/html/wms-qgis/bitonto.qgs" target="_blank" rel="noreferrer">Progetto ufficiale</a></Meta>
       </section>
 
       <Meta className="px-1">

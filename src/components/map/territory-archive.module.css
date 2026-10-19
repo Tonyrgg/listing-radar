@@ -21,3 +21,17 @@
   outline-offset: 3px;
   border-radius: 50%;
 }
+.recordPopup :global(.leaflet-popup-content-wrapper),
+.recordPopup :global(.leaflet-popup-tip) {
+  background: var(--lr-surface);
+  color: var(--lr-ink);
+  border: 1px solid var(--lr-line);
+}
+.recordPopup :global(.leaflet-popup-content) {
+  font-family: var(--lr-font-sans);
+  overflow-wrap: anywhere;
+  margin: 16px;
+}
+.recordPopup :global(.leaflet-popup-content) a {
+  color: var(--lr-ink);
+}

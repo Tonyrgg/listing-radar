@@ -1,5 +1,13 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Public Records Phase 2, 20 ottobre 2026:** migration **0035–0037** applicate;
+> Albo pubblico incrementale, registro edilizio 2025 con soli metadata, contesto
+> edificio/via/area e layer documentale sulle strutture esistenti. BUILDING_DATA_SYNC
+> giornaliero, fonti statiche settimanali per policy. Nessun lead o property creati
+> dai documenti; unità e catasto non certificati. Audit [26](property-lifecycle/26-public-records-phase2-audit.md),
+> consegna [27](property-lifecycle/27-public-records-phase2-delivery.md),
+> catalogo SIT [28](property-lifecycle/28-sit-layer-catalog.md).
+
 > **Archivio Intelligence, 19 ottobre 2026:** il nuovo brief utente sostituisce
 > l'impostazione CRM della web app. La navigazione ordinaria è **Intelligence,
 > Territorio, Fonti**, più impostazioni. Oggi, Acquisizioni e Diario rimandano

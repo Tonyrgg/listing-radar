@@ -21,7 +21,7 @@ import {
 import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
 import { runExternalSourceJob } from "@/lib/property-lifecycle/external/runtime";
-import { importBitontoPlanCatalog } from "@/lib/property-lifecycle/buildings/document-catalog";
+import { syncPublicRecordSources } from "@/lib/property-lifecycle/buildings/sync";
 
 export type LifecycleAssetProcessor = (
   listing: NormalizedListingV2,
@@ -208,6 +208,10 @@ async function executeBuildingDataSync(
   fetcher: typeof fetch,
 ): Promise<void> {
   const { sourceKey, sourceUrl } = buildingSource(job);
+  if(sourceKey === DEFAULT_BUILDING_PRACTICE_SOURCE_KEY) {
+    await syncPublicRecordSources(db,fetcher);
+    return;
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
@@ -243,9 +247,6 @@ async function executeBuildingDataSync(
           ? job.payload.applicationCode
           : "ape",
     });
-    if(sourceKey === DEFAULT_BUILDING_PRACTICE_SOURCE_KEY) {
-      await importBitontoPlanCatalog(db,fetcher);
-    }
   } finally {
     clearTimeout(timeout);
   }

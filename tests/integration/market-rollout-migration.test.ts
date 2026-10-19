@@ -30,6 +30,36 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
  afterEach(async()=>{await db.exec('rollback');});
  afterAll(async()=>{await db?.close();});
  async function row(query:string,args:unknown[]=[]){return (await db.query<Record<string,unknown>>(query,args)).rows[0];}
+ it('persists public territorial records atomically, deduplicates observations, preserves history and building versus unit semantics',async()=>{
+  await db.exec((await sql('0006_bitonto_street_registry.sql')).replace(/create extension if not exists pgcrypto;/g,''));
+  await db.exec(await sql('0034_intelligence_archive_public_records.sql'));
+  await db.exec(await sql('0035_public_records_territorial_intelligence.sql'));
+  await db.exec(await sql('0036_public_records_context_indexes.sql'));
+  await db.exec(await sql('0037_public_records_street_aggregation.sql'));
+  const loc=(await row("insert into locations(raw_text,municipality,locality,street_name,street_number,scope_state,resolution_method,resolution_confidence,precision_level,normalized_key) values('Piazza Cattedrale 23','Bitonto','Bitonto','Piazza Cattedrale','23','IN_SCOPE','TEST',1,'EXACT_ADDRESS','piazza-test') returning id")).id;
+  const b=(await row("insert into buildings(location_id,normalized_key,display_name) values($1,'it|ba|bitonto|bitonto|piazza cattedrale|23','Piazza Cattedrale 23') returning id",[loc])).id;
+  await db.exec(`insert into properties(primary_location_id,canonical_attributes) values('${loc}','{"address":"Piazza Cattedrale 23"}');`);
+  const run=(await row("insert into building_data_import_runs(source_key) values('comune-bitonto-albo') returning id")).id;
+  const record={sourceRecordKey:'golden-record',contentHash:'hash1',practiceNumber:'3/2024/SCA',year:'2024',title:'Agibilità · 3/2024/SCA',recordType:'AGIBILITY_SIGNAL',documentDate:'2024-01-09',
+   sourceUrl:'https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio/-/papca/display/123',classificationConfidence:.95,
+   sanitizedPayload:{addresses:[{normalizedKey:'it|ba|bitonto|bitonto|piazza cattedrale|23',displayName:'Piazza Cattedrale 23',streetName:'Piazza Cattedrale',streetNumber:'23'}],cadastralReferences:[{sheet:'49',parcel:'1485',subaltern:'22'}]},metadata:{unitMatch:'REVIEW_REQUIRED'}};
+  const persist=async(at:string,r=record)=>row('select persist_public_records_atomic($1,$2,$3,$4) result',[run,'comune-bitonto-albo',at,JSON.stringify([r])]);
+  expect((await persist('2026-10-19T10:00:00Z')).result).toMatchObject({inserted:1,updated:0,links:1});
+  await persist('2026-10-19T11:00:00Z');
+  expect((await row('select count(*)::int n from building_practice_observations')).n).toBe(1);
+  expect((await row('select first_seen_at<last_seen_at advanced from building_practice_records')).advanced).toBe(true);
+  expect(await row('select relation_scope,unit_match,building_id from market_observer_public_record_property_links')).toEqual({relation_scope:'BUILDING',unit_match:'REVIEW_REQUIRED',building_id:b});
+  expect((await row('select count(*)::int n from properties')).n).toBe(1);
+  expect((await row('select count(*)::int n from acquisition_leads')).n).toBe(0);
+  expect((await row('select recent_public_record_count from market_observer_property_public_record_summary')).recent_public_record_count).toBe(0);
+  await persist('2026-10-19T12:00:00Z',{...record,contentHash:'hash2',title:'Agibilità · metadata aggiornati'});
+  expect((await row('select count(*)::int n from building_practice_observations')).n).toBe(2);
+  expect((await row('select published_at from market_observer_public_records')).published_at).toBeNull();
+  await db.exec('savepoint invalid_public_record');
+  await expect(persist('2026-10-19T13:00:00Z',{...record,contentHash:'broken',classificationConfidence:2})).rejects.toThrow();
+  await db.exec('rollback to savepoint invalid_public_record');
+  expect((await row('select content_hash from building_practice_records')).content_hash).toBe('hash2');
+ });
  it('projects the complete property archive and municipal register without creating leads or inferring unit/document dates',async()=>{
   await db.exec(await sql('0034_intelligence_archive_public_records.sql'));
   await db.exec(`insert into properties(property_type,canonical_attributes) values

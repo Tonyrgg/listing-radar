@@ -2,6 +2,7 @@ import { Meta } from "@/components/ui/primitives";
 import { formatCurrency,formatDate,formatNumber } from "@/lib/formatting";
 import { EXIT_LABELS,marketAgeLabel,type IntelligenceRow } from "@/lib/property-lifecycle/read-models/intelligence";
 import { humanize,locationPrecisionLabel,propertyStateLabel } from "@/lib/property-lifecycle/read-models/presentation";
+import { PUBLIC_RECORD_LABELS } from "@/lib/property-lifecycle/buildings/read-model";
 export function PropertyHover({row,now}:{row:IntelligenceRow;now:number}) {
   const attrs=row.attributes??{},features=attrs.features&&typeof attrs.features==="object"?attrs.features as Record<string,unknown>:{};
   const extras=Object.entries({elevator:"Ascensore",balcony:"Balcone",terrace:"Terrazzo",garden:"Giardino",parking:"Posto auto",garage:"Garage"}).filter(([key])=>features[key]===true).map(([,label])=>label);
@@ -17,6 +18,7 @@ export function PropertyHover({row,now}:{row:IntelligenceRow;now:number}) {
     {row.relaunch_count?<Meta>{row.relaunch_count} ripubblicazioni rilevate</Meta>:null}
     {row.sold_at?<Meta>Vendita dichiarata {formatDate(row.sold_at)}</Meta>:row.sold_observed_at?<Meta>Segnale vendita osservato {formatDate(row.sold_observed_at)}</Meta>:null}
     <Meta>{row.publication_count??0} pubblicazioni · {row.evidence_count??0} prove{row.document_count?` · ${row.document_count} pratiche edificio, unità da verificare`:""}</Meta>
+    {row.public_record_count?<div><p>Documenti pubblici: {row.public_record_count} · collegati all’edificio</p>{row.latest_public_record_type?<Meta>Ultimo: {PUBLIC_RECORD_LABELS[row.latest_public_record_type]??"Atto pubblico"}{row.latest_public_record_date?` · ${formatDate(row.latest_public_record_date)}`:""}</Meta>:null}<Meta>Singola unità da verificare.</Meta></div>:null}
     {row.publication_sources?.length?<Meta>Fonti: {row.publication_sources.join(", ")}</Meta>:null}
     <Meta>{locationPrecisionLabel(row.location_precision??"UNKNOWN")}{(row.opportunity_score??0)>0?` · Opportunità indicativa ${formatNumber(row.opportunity_score??0)}/100`:""}</Meta>
     <p className="border-t border-[var(--lr-line-quiet)] pt-2 font-medium">Clicca il punto per aprire il dossier</p>

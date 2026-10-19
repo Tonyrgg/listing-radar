@@ -203,7 +203,7 @@ export function classifyBuildingIntervention(
 
 function practiceKey(row: Map<string, string>): string {
   const application = folded(field(row, "Applicazione") ?? "unknown");
-  const year = folded(field(row, "Anno") ?? "undated");
+  const year = folded(declaredYear(row) ?? "undated");
   const explicit =
     field(row, "Numero Pratica") ??
     field(row, "Codice Pratica") ??
@@ -224,6 +224,10 @@ function practiceKey(row: Map<string, string>): string {
       parcel: field(row, "Particella"),
     })
   );
+}
+
+function declaredYear(row: Map<string,string>): string | null {
+  return field(row,"Anno") ?? field(row,"Numero Pratica")?.match(/\/(20\d{2}|19\d{2})(?:\/|$)/)?.[1] ?? null;
 }
 
 function localityFromStreet(value: string): "Bitonto" | "Palombaio" | "Mariotto" {
@@ -348,8 +352,8 @@ export function normalizeBuildingPracticeRows(
       applicationCode: folded(firstField(group, "Applicazione") ?? "unknown"),
       practiceNumber: firstField(group, "Numero Pratica"),
       protocolNumber: firstField(group, "Numero Protocollo"),
-      year: firstField(group, "Anno"),
-      practiceType: firstField(group, "Tipo Pratica"),
+      year: group.map(declaredYear).find(Boolean) ?? null,
+      practiceType: firstField(group, "Tipo Pratica") ?? firstField(group,"Numero Pratica")?.match(/\/(SCIA|CILA|SCA|CDU|PDC|SANATORIA|CONDONO)$/i)?.[1] ?? null,
       practiceStatus: firstField(group, "Situazione Pratica"),
       interventionType,
       occurredAt,
