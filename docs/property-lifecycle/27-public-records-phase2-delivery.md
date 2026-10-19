@@ -182,6 +182,11 @@ settimanale e tolleranza di scheduling nella policy centrale. Runtime via main,
 nessuna distribuzione desktop SISTER/Tecnocloud. Fonti portali e Studi Santi
 non sono state riattivate o aggirate.
 
+Verifica runtime remoto: workflow **39333305693**, commit `d02d385`,
+BUILDING_DATA_SYNC, **SUCCESS**. Le cadenze evitano di rileggere fonti appena
+sincronizzate. Il primo successivo avvio cron giornaliero resta da monitorare;
+non viene dichiarato già osservato un evento futuro.
+
 ## Remaining gaps
 
 Copertura documentale parziale; annuali mancanti; 2025 senza campi territoriali;
