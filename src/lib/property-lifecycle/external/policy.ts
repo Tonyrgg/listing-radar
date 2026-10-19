@@ -6,6 +6,7 @@ export const EXTERNAL_POLICY = {
     identity: 0.9, agent: 0.9, primaryCapture: 0.9, indexCapture: 0.65, invalidClaim: 0.45, contradictionPenalty: 0.2 },
   http: { concurrency: 1, delayMs: 1500, timeoutMs: 20_000, retries: 2, maxPages: 100, maxBodyBytes: 5_000_000 },
   deepRotationHours: 168,
+  knownVerifierIntervalHours: 24,
   configRefreshMs: 30_000,
 } as const;
 export const EXTERNAL_SOURCES = ["WIKICASA", "IMMOBILIARE", "CASA", "REMAX", "IDEALISTA", "SEARCH_INDEX"] as const;

@@ -23,6 +23,7 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
    ('ad-maiora-bitonto','Human confirmed','test','https://agency.test','https://agency.test','OUR_AGENCY','{"humanValue":true}'),
    ('futura-immobiliare-bitonto','Futura','test-futura','https://futura.test','https://futura.test','UNKNOWN','{"requestDelayMs":1700}');`);
   await db.exec(await sql('0028_bitonto_market_agency_registry.sql'));
+  await db.exec(await sql('0033_confirm_specific_own_agency_branch.sql'));
   await db.exec(await sql('0031_restore_bounded_observation_fingerprints.sql'));
  },30000);
  beforeEach(async()=>{await db.exec('begin');});
@@ -34,6 +35,7 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
    .toEqual({market_role:'OUR_AGENCY',settings:{humanValue:true}});
   expect((await row("select settings->>'requestDelayMs' delay from agencies where slug='futura-immobiliare-bitonto'")).delay).toBe('1700');
   expect((await row("select market_role from agencies where slug='tecnocasa-bitonto-matteotti'")).market_role).toBe('OUR_AGENCY');
+  expect((await row("select settings->'marketObserverRegistry'->'humanConfirmed' confirmed from agencies where slug='tecnocasa-bitonto-matteotti'")).confirmed).toBe(true);
   expect(await row("select external_agency_id,normalized_name from market_observer_agency_identities where source_key='REMAX'"))
    .toEqual({external_agency_id:null,normalized_name:'remax stella polare - bari via caduti del lavoro'});
   expect((await row("select bool_and(not enabled and not missing_enabled) safe from market_observer_sources")).safe).toBe(true);

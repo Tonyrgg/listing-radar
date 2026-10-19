@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { LifecycleJobQueue, type LifecycleJobType } from "../src/lib/property-lifecycle/jobs/queue";
 import { runLifecycleWorkerOnce } from "../src/lib/property-lifecycle/jobs/worker";
+import { enqueueDueKnownMarketVerifiers } from "../src/lib/property-lifecycle/external/scheduling";
 
 /**
  * Remote scheduler and queue drainer for the Property Lifecycle jobs.
@@ -138,11 +139,14 @@ async function main(): Promise<void> {
 
   const jobType = flag("enqueue") as LifecycleJobType | null;
   const wantsDrain = process.argv.includes("--drain");
-  if (!jobType && !wantsDrain) {
-    throw new Error("Specificare --enqueue=<JOB_TYPE> e/o --drain.");
+  const wantsKnownVerifiers = process.argv.includes("--enqueue-known-verifiers");
+  if (!jobType && !wantsDrain && !wantsKnownVerifiers) {
+    throw new Error("Specificare --enqueue=<JOB_TYPE>, --enqueue-known-verifiers e/o --drain.");
   }
 
   console.error(`[remote-worker] project=${ref}`);
+  if (wantsKnownVerifiers) console.info(JSON.stringify({ action: "enqueue-known-verifiers",
+    ...await enqueueDueKnownMarketVerifiers(db) }));
   if (jobType) await enqueue(db, jobType);
   if (wantsDrain) await drain(db);
 }

@@ -70,6 +70,7 @@ jobs:
         run: |
           npx tsx scripts/property-lifecycle-remote-worker.ts \
             --confirm-project="$SUPABASE_PROJECT_REF" \
+            --enqueue-known-verifiers \
             --enqueue="${{ steps.decide.outputs.job_type }}" \
             ${{ steps.decide.outputs.rotate }} \
             --drain \
