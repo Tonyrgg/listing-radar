@@ -3,71 +3,27 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { Building2, Cog, Inbox, MapPinned, Radar, ScanSearch, ClipboardList, NotebookTabs } from "lucide-react";
+import { Building2, Cog, MapPinned, Radar } from "lucide-react";
 
-/**
- * Cinque destinazioni, più le impostazioni tenute separate in fondo.
- * Ogni sezione porta dentro le proprie sotto-pagine: niente più orfani.
- */
+/** The archive, its territory and the reliability of its sources. */
 const primaryItems = [
-  {
-    href: "/acquisition/today",
-    label: "Oggi",
-    hint: "Il lavoro da fare",
-    icon: Inbox,
-    owns: ["/acquisition/today"],
-  },
-  {
-    href: "/acquisition",
-    label: "Acquisizioni",
-    hint: "Notizie e opportunità",
-    icon: ClipboardList,
-    owns: ["/acquisition"],
-  },
-  {
-    href: "/dashboard",
-    label: "Mercato",
-    hint: "Cambi e occasioni",
-    icon: Radar,
-    owns: ["/dashboard", "/incoming", "/reports"],
-  },
-  {
-    href: "/logbook",
-    label: "Diario",
-    hint: "Storico e Focus",
-    icon: NotebookTabs,
-    owns: ["/logbook", "/contacts", "/cerca"],
-  },
-  {
-    href: "/listings",
-    label: "Immobili",
-    hint: "Archivio e schede",
-    icon: Building2,
-    owns: ["/listings"],
-  },
   {
     href: "/intelligence",
     label: "Intelligence",
-    hint: "Opportunità e cambi",
+    hint: "Immobili, storia e prove",
     icon: Radar,
     /* Le fonti stanno qui: dicono di chi ti puoi fidare, che è la prima
      * domanda dei segnali. */
-    owns: ["/intelligence", "/lifecycle", "/fonti"],
-  },
-  {
-    href: "/matching",
-    label: "Commerciale",
-    hint: "Richieste e immobili",
-    icon: ScanSearch,
-    owns: ["/matching", "/requests", "/portfolio", "/zones", "/matching-settings"],
+    owns: ["/intelligence", "/lifecycle", "/casa"],
   },
   {
     href: "/map",
     label: "Territorio",
-    hint: "Aree operative",
+    hint: "Mappa e documenti pubblici",
     icon: MapPinned,
     owns: ["/map"],
   },
+  { href: "/fonti", label: "Fonti", hint: "Letture e affidabilità", icon: Building2, owns: ["/fonti"] },
 ] as const;
 
 const settingsItem = {
@@ -79,7 +35,6 @@ const settingsItem = {
 } as const;
 
 function isActive(pathname: string, owns: readonly string[]) {
-  if (pathname.startsWith("/acquisition/today") && owns.includes("/acquisition")) return false;
   return owns.some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
 

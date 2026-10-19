@@ -9,7 +9,6 @@ import { Card, Chip, EmptyState, Label, Meta, Stripe, buttonClass } from "@/comp
 import { Fonte } from "@/components/ui/atoms";
 import { formatDateTime, formatNumber } from "@/lib/formatting";
 import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
-import { getSourcesSummary } from "@/lib/sources-health";
 import type { SourceHealth } from "@/components/ui/atoms";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { readExternalSourceStatus } from "@/lib/property-lifecycle/read-models/external";
@@ -49,21 +48,21 @@ const tono: Record<SourceHealth, "action" | "warn" | "danger" | "neutral"> = {
 export default async function FontiPage() {
   await connection();
 
-  const [sommario, vista, external] = await Promise.all([
-    getSourcesSummary(),
+  const [vista, external, recentRuns, municipalRuns] = await Promise.all([
     vistaAgenzie(),
     Promise.resolve().then(() => readExternalSourceStatus(getSupabaseServiceClient())).catch(() => null),
+    getSupabaseServiceClient().from("sync_runs").select("agency_id,health_state,diagnostics,absence_evaluation_allowed,inventory_complete").order("started_at",{ascending:false}).limit(100),
+    getSupabaseServiceClient().from("building_data_import_runs").select("source_key,status,finished_at,grouped_records,errors").order("started_at",{ascending:false}).limit(12),
   ]);
 
   if (!vista.available || !vista.data) {
     return (
       <div className="space-y-5">
         <PageHeader
-          eyebrow="Oggi"
           title="Le fonti"
           description="Di chi ci si può fidare stamattina."
-          backHref="/dashboard"
-          backLabel="Torna a Oggi"
+          backHref="/intelligence"
+          backLabel="Torna all’archivio"
         />
         <Card>
           <EmptyState
@@ -101,13 +100,16 @@ export default async function FontiPage() {
     ...agenzie.map((agency) => agency.latestSyncCounts?.inScope ?? 0),
   );
   const lette = agenzie.filter((agency) => agency.salute === "healthy").length;
+  const latest=new Map<string,{diagnostics:Record<string,unknown>;absence_evaluation_allowed:boolean;inventory_complete:boolean}>();
+  for(const run of recentRuns.data??[])if(!latest.has(run.agency_id))latest.set(run.agency_id,run);
+  const municipal=new Map<string,NonNullable<typeof municipalRuns.data>[number]>();
+  for(const run of municipalRuns.data??[])if(!municipal.has(run.source_key))municipal.set(run.source_key,run);
 
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Segnali"
-        title="Di chi ti puoi fidare oggi"
-        description="Quali agenzie sono state lette all'ultimo giro, con quali limiti, e cosa tiene ognuna. Serve prima di leggere qualunque altra cosa: una lista più corta può voler dire un mercato fermo, oppure una fonte rotta."
+        title="Fonti"
+        description="Ultima sincronizzazione, copertura e problemi delle fonti. Le letture fallite non autorizzano scomparse."
         actions={
           <Chip tone={lette === agenzie.length ? "action" : "warn"} dot>
             {lette} su {agenzie.length} lette per intero
@@ -118,7 +120,7 @@ export default async function FontiPage() {
 
       {/* La regola non negoziabile del progetto, scritta dove serve. */}
       {external ? <Card className="p-4"><h2 className="font-[650]">Prove dalle fonti esterne</h2><Meta>In questa fase i portali non autorizzano assenze. Una verifica puntuale non dimostra un inventario completo.</Meta><div className="mt-3 divide-y divide-[var(--lr-line-quiet)]">{external.map(source=><div key={source.key} className="flex flex-wrap justify-between gap-2 py-3"><strong>{({WIKICASA:"Wikicasa",IMMOBILIARE:"Immobiliare.it",CASA:"Casa.it",IDEALISTA:"Idealista",SEARCH_INDEX:"Indice storico"} as Record<string,string>)[source.key] ?? source.key}</strong><div className="text-[length:var(--lr-text-meta)]"><p>{!source.enabled ? "Disattivata" : source.state==="FAILED" ? "Non letta" : source.state==="DEGRADED" ? "Lettura parziale" : source.state==="RUNNING" ? "Lettura in corso" : source.inventoryComplete ? "Inventario completo nello scope configurato" : source.state ? "Verifica puntuale" : "In attesa del primo run"} · {source.projectionsEnabled ? "Prove usate nell’intelligence" : "Prove in valutazione"}</p><Meta>{source.finishedAt ? `Ultimo run ${formatDateTime(source.finishedAt)} · ` : ""}{source.discovered} annunci · {source.details} dettagli richiesti{source.key==="WIKICASA" ? ` · ${source.baselineReady ? "baseline pronta" : "baseline da verificare"}` : ""}</Meta></div></div>)}</div></Card> : null}
-      {sommario.broken.length ? (
+      {agenzie.some(a=>a.salute==="broken") ? (
         <Card className="p-4">
           <div className="flex gap-3">
             <Stripe tone="danger" />
@@ -127,7 +129,7 @@ export default async function FontiPage() {
               <p className="mt-1.5 max-w-prose text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
                 Gli immobili delle fonti non lette <strong>non sono spariti</strong>: restano
                 come li abbiamo visti l&apos;ultima volta. Un crawler fermo non prova la
-                scomparsa di un annuncio, e il sistema non ne ha dichiarato uscito nemmeno uno.
+                scomparsa di un annuncio, e non autorizza nuove assenze.
               </p>
             </div>
           </div>
@@ -153,6 +155,9 @@ export default async function FontiPage() {
             const nota = cieca
               ? "risponde, ma non ha restituito nessun immobile"
               : spiegazione[String(agency.latestHealth ?? "").toUpperCase()];
+            const run=latest.get(agency.id),diagnostics=run?.diagnostics??{};
+            const inventory=diagnostics.inventory as {reasons?:string[]}|undefined;
+            const problems=typeof diagnostics.error==="string"?diagnostics.error:(inventory?.reasons??[]).filter(r=>/http_status|error|failed|missing|mismatch/i.test(r)).join(" · ");
 
             return (
               <div
@@ -167,6 +172,8 @@ export default async function FontiPage() {
                     {nota ?? "stato non noto"}
                     {esclusi ? ` · ${formatNumber(esclusi)} fuori perimetro` : ""}
                   </Meta>
+                  {problems?<p className="mt-1 break-words text-[length:var(--lr-text-meta)] text-[var(--lr-danger)]">Ultimo problema: {problems}</p>:null}
+                  {run?<Meta>{run.inventory_complete?"Inventario completo":"Inventario incompleto"} · {run.absence_evaluation_allowed?"Controllo assenze autorizzato dalla baseline":"Nessuna nuova assenza autorizzata"}</Meta>:null}
                 </div>
 
                 {/* Una barra per fonte: piena se letta tutta, vuota se rotta. */}
@@ -247,6 +254,12 @@ export default async function FontiPage() {
           })}
         </div>
       </Card>
+
+      <section className="border-t border-[var(--lr-line-quiet)] pt-4">
+        <h2 className="text-[length:var(--lr-text-section)] font-[650]">Fonti territoriali pubbliche</h2>
+        <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{run.source_key==="comune-bitonto-prg-catalog"?"Comune · SIT / PRG, catalogo documenti":"Comune · registro pratiche edilizie"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
+        <Meta>Import settimanale nel registro esistente. Nessun documento certifica automaticamente conformità o proprietà.</Meta>
+      </section>
 
       <Meta className="px-1">
         Le fonti con limiti noti restano utili: quello che dichiarano è valido, ma la data

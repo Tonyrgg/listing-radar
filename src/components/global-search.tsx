@@ -19,7 +19,7 @@ export function CercaGlobale({
   if (collapsed) {
     return (
       <Link
-        href="/cerca"
+        href="/intelligence"
         aria-label="Cerca in tutto"
         title="Cerca in tutto"
         className={clsx(
@@ -34,19 +34,19 @@ export function CercaGlobale({
   }
 
   return (
-    <form action="/cerca" role="search" className={clsx("relative block", className)}>
+    <form action="/intelligence" role="search" className={clsx("relative block", className)}>
       <Search
         aria-hidden="true"
         className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--lr-ink-3)]"
       />
       <label className="sr-only" htmlFor="cerca-ovunque">
-        Cerca case, clienti e zone
+        Cerca nell’archivio immobiliare
       </label>
       <input
         id="cerca-ovunque"
         type="search"
         name="q"
-        placeholder="Cerca in tutto…"
+        placeholder="Cerca un immobile…"
         autoComplete="off"
         className={controlClass(undefined, { conIcona: true })}
       />

@@ -6,22 +6,21 @@ product
 
 ## Users
 
-Listing Radar e un CRM privato usato da una singola persona per intercettare,
-completare, confrontare e archiviare annunci immobiliari. L'utente apre il
-prodotto per svolgere rapidamente una coda di lavoro, non per consultare una
-dashboard analitica generica.
+Un agente immobiliare che consulta rapidamente ciò che sappiamo degli immobili
+di Bitonto, Palombaio e Mariotto, al desktop in ufficio e da telefono sul territorio.
+La consultazione parte da indirizzo, mappa, agenzia o documento, senza agenda commerciale.
 
 ## Product Purpose
 
-Il prodotto raccoglie segnalazioni da email, provider locali e import del
-browser. Il primo obiettivo operativo e completare i nuovi arrivi, trasformando
-le segnalazioni parziali in schede immobiliari utilizzabili. In seconda battuta
-deve mettere in evidenza ribassi, privati probabili e opportunita che richiedono
-una valutazione.
+Listing Radar è un archivio di intelligence immobiliare. Property Lifecycle V2
+conserva immobili, pubblicazioni, osservazioni, timeline, prezzi e prove pubbliche.
+Intelligence, Territorio e Fonti sono le tre destinazioni principali; il dossier
+immobile riunisce le informazioni verificabili. Opportunità è una lettura motivata
+dell'archivio, non una pipeline. Il backend CRM storico resta per compatibilità.
 
-Il prodotto ha successo quando l'utente capisce subito cosa richiede attenzione,
-completa gli annunci con pochi passaggi e conserva una vista affidabile dello
-stato delle acquisizioni.
+Il successo si misura dalla facilità di capire cosa sappiamo e da quale prova,
+distinguendo date dichiarate, prima osservazione, assenze, vendite e incertezze.
+Nessuna attività del giorno, diario, reminder o creazione lead nella consultazione.
 
 ## Brand Personality
 
@@ -35,15 +34,15 @@ dashboard SaaS promozionale.
 - Dashboard decorative con gradienti, bagliori, vetro o colori neon.
 - Pannelli pieni di score tecnici senza una motivazione comprensibile.
 - Layout stretti che sprecano spazio disponibile su monitor desktop.
-- Interfacce che nascondono il prossimo passo dietro statistiche descrittive.
+- Interfacce che nascondono le prove dietro score e workflow personali.
 
 ## Design Principles
 
-1. La coda da completare viene prima delle statistiche.
-2. Ogni segnale deve suggerire un'azione o spiegare perche conta.
+1. L’immobile, la sua storia e le prove vengono prima degli score.
+2. Ogni interpretazione spiega perché conta e conserva la provenienza.
 3. Le informazioni secondarie restano disponibili senza competere con il lavoro corrente.
 4. La densita e utile quando mantiene gerarchia, ritmo e leggibilita.
-5. Gli stati di acquisizione devono essere visibili e comprensibili.
+5. UNKNOWN e REVIEW restano espliciti; nessuna precisione non dimostrata.
 
 ## Accessibility & Inclusion
 

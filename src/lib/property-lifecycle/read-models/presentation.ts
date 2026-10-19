@@ -1,4 +1,5 @@
 const EVENT_LABELS: Record<string, string> = {
+  SOURCE_STATUS_CHANGED: "Stato dichiarato dalla fonte aggiornato",
   NEW_LISTING: "Nuovo annuncio",
   PROPERTY_DISCOVERED: "Proprietà rilevata",
   PUBLICATION_DISCOVERED: "Nuova pubblicazione",

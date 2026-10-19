@@ -8,7 +8,9 @@ import { getProperty } from "@/lib/matching/repository";
 import { vistaCasa } from "@/lib/property-lifecycle/read-models/server";
 
 import { LifecycleUnavailable } from "@/app/(private)/lifecycle/_components/ui";
-import { PropertyLogbook } from "@/components/property-logbook";
+import { PublicRecords } from "@/components/public-records";
+import { readPropertyPublicRecords } from "@/lib/property-lifecycle/buildings/read-model";
+import { getSupabaseServiceClient } from "@/lib/supabase/service";
 
 import { SchedaMercato } from "./mercato";
 import { SchedaNostra } from "./nostra";
@@ -43,8 +45,11 @@ export default async function CasaPage({
   ]);
 
   if (vistaMercato.available && vistaMercato.data) {
+    const records=await readPropertyPublicRecords(getSupabaseServiceClient(),vistaMercato.data).catch(()=>null);
     return <><SchedaMercato detail={vistaMercato.data} user={user} now={now} />
-      <PropertyLogbook propertyId={id}/></>;
+      <section id="documenti" className="mt-6 scroll-mt-20"><h2 className="mb-3 text-[length:var(--lr-text-section)] font-[650]">Documenti ed evidenze pubbliche</h2>
+        {records?<PublicRecords records={records} propertyContext />:<p>Il registro documentale non è momentaneamente raggiungibile. Le altre informazioni del dossier restano disponibili.</p>}
+      </section></>;
   }
 
   /* Se non è una casa osservata, può essere una che teniamo noi: gli

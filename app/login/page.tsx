@@ -14,8 +14,8 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  if (!isAuthRequired()) redirect("/dashboard");
-  if (await getCurrentUser()) redirect("/dashboard");
+  if (!isAuthRequired()) redirect("/intelligence");
+  if (await getCurrentUser()) redirect("/intelligence");
   const { error } = await searchParams;
 
   return (

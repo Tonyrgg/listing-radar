@@ -295,11 +295,19 @@ export function extractPuntoCasaPaginationUrls(html: string): string[] {
 
 export function normalizePuntoCasaDetail(document: SourceDocument): NormalizedListingV2 {
   const { body, headers, status: responseStatus, url: responseUrl } = document.response;
+  const expected=new URL(document.item.url);
+  const samePublication=(value:string)=>{
+    const actual=new URL(value);
+    return actual.hostname.replace(/^www\./,"")===expected.hostname.replace(/^www\./,"")
+      && actual.pathname.replace(/\/+$/,"")===expected.pathname.replace(/\/+$/,"");
+  };
+  if(!samePublication(responseUrl))throw new Error(`PuntoCasa detail identity changed after redirect: ${responseUrl}.`);
   const $ = load(body);
   const canonical = canonicalUrl(
     extractMeta($, "og:url") ?? document.item.url,
     PUNTOCASA_BASE_URL,
   );
+  if(!samePublication(canonical))throw new Error(`PuntoCasa canonical identity differs from inventory: ${canonical}.`);
   const title =
     cleanText($("h2.ptitle, h1.entry-title").first().text()) ??
     cleanText(extractMeta($, "og:title")?.replace(/\s*-\s*PuntoCasaGroup\s*$/i, ""));

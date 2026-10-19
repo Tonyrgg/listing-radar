@@ -166,6 +166,19 @@ describe("Iconacasa V2 adapter", () => {
   });
 });
 
+describe("Live validation redirect regressions",()=>{
+  it("rejects PuntoCasa redirects to a different property even if the destination has a valid listing",()=>{
+    const doc=sourceDocument("puntocasa-active-detail.html","https://www.puntocasagroup.it/property-item/bitonto-zona-via-palombaio/","bitonto-zona-via-palombaio");
+    doc.response.url="https://www.puntocasagroup.it/property-item/bitonto-zona-via-palombaio-3/";
+    expect(()=>normalizePuntoCasaDetail(doc)).toThrow("identity changed after redirect");
+  });
+  it.each(["https://www.vistocasa.com/it/404.aspx?agenziaid=56","https://www.vistocasa.com/it/ricerca.aspx"])("rejects a Vistocasa HTTP 200 non-detail destination %s",url=>{
+    const doc=sourceDocument("vistocasa-active-detail.html","https://www.vistocasa.com/it/immobile.aspx?articoliid=10002","10002");
+    doc.response.url=url;
+    expect(()=>normalizeVistocasaDetail(doc)).toThrow("identity changed or publication unavailable");
+  });
+});
+
 describe("Vistocasa V2 adapter", () => {
   it("uses the complete embedded map inventory and excludes rentals", () => {
     const result = parseVistocasaInventoryHtml(fixture("vistocasa-inventory.html"));

@@ -263,12 +263,16 @@ export function parseVistocasaInventoryHtml(
 
 export function normalizeVistocasaDetail(document: SourceDocument): NormalizedListingV2 {
   const { body, headers, status: responseStatus, url: responseUrl } = document.response;
+  if(sourceIdFromUrl(responseUrl)!==document.item.externalId) {
+    throw new Error(`Vistocasa detail identity changed or publication unavailable: ${responseUrl}.`);
+  }
   const $ = load(body);
   const canonical = canonicalUrl(
     extractMeta($, "og:url") ?? document.item.url,
     VISTOCASA_BASE_URL,
   );
   const externalId = sourceIdFromUrl(canonical) ?? document.item.externalId;
+  if(externalId!==document.item.externalId)throw new Error(`Vistocasa canonical identity differs from inventory: ${canonical}.`);
   const title = detailTitle($);
   if (!title) {
     throw new Error(`Vistocasa detail ${canonical} has no title.`);

@@ -192,7 +192,7 @@ describe("sistema di design", () => {
       const source = read(file);
 
       /* Una pagina che rimanda altrove non arriva mai a mostrare un titolo. */
-      if (/permanentRedirect\(|redirect\(/.test(source)) return false;
+      if (/permanentRedirect\(|\bredirect\(/.test(source)) return false;
 
       return !/export const metadata|generateMetadata/.test(source);
     });

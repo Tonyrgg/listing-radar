@@ -8,7 +8,6 @@ import { logout } from "@/app/login/actions";
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { CercaGlobale } from "@/components/global-search";
 import { SidebarNav } from "@/components/sidebar-nav";
-import { QuickRequestButton, QuickRequestDrawer } from "@/components/matching/quick-request";
 import { FlashToast } from "@/components/ui/feedback";
 import { GlobalActionLoader } from "@/components/ui/global-action-loader";
 import { buttonClass } from "@/components/ui/primitives";
@@ -111,7 +110,6 @@ export function AppShellFrame({
           * Ricerca, tema e uscita vivono nella testata: a 84 px non ci stanno,
           * e lì stanno anche nel riferimento. */}
         <div className="mt-6 min-h-0 flex-1">
-          <QuickRequestButton compact={collapsed} className={clsx("mb-4 w-full", collapsed && "px-0")} />
           <SidebarNav collapsed={collapsed} />
         </div>
       </aside>
@@ -144,7 +142,6 @@ export function AppShellFrame({
             <Brand />
             <div className="flex shrink-0 items-center gap-2">
               <ThemeToggle compact />
-              <QuickRequestButton compact />
               {showLogout ? (
                 <form action={logout}>
                   <PendingSubmitButton
@@ -174,7 +171,6 @@ export function AppShellFrame({
         </main>
       </div>
 
-      <QuickRequestDrawer />
       <FlashToast flash={flash} />
     </div>
   );

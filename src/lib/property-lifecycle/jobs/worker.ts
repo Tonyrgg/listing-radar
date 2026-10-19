@@ -21,6 +21,7 @@ import {
 import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
 import { runExternalSourceJob } from "@/lib/property-lifecycle/external/runtime";
+import { importBitontoPlanCatalog } from "@/lib/property-lifecycle/buildings/document-catalog";
 
 export type LifecycleAssetProcessor = (
   listing: NormalizedListingV2,
@@ -242,6 +243,9 @@ async function executeBuildingDataSync(
           ? job.payload.applicationCode
           : "ape",
     });
+    if(sourceKey === DEFAULT_BUILDING_PRACTICE_SOURCE_KEY) {
+      await importBitontoPlanCatalog(db,fetcher);
+    }
   } finally {
     clearTimeout(timeout);
   }

@@ -30,6 +30,23 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
  afterEach(async()=>{await db.exec('rollback');});
  afterAll(async()=>{await db?.close();});
  async function row(query:string,args:unknown[]=[]){return (await db.query<Record<string,unknown>>(query,args)).rows[0];}
+ it('projects the complete property archive and municipal register without creating leads or inferring unit/document dates',async()=>{
+  await db.exec(await sql('0034_intelligence_archive_public_records.sql'));
+  await db.exec(`insert into properties(property_type,canonical_attributes) values
+    ('Appartamento','{"address":"Via Test 2","surfaceSqm":80,"rooms":3}'),
+    ('Villa','{"address":"Contrada senza annuncio"}');
+    insert into building_practice_records(source_key,source_record_key,application_code,practice_type,intervention_type,occurred_at,content_hash,sanitized_payload)
+    values('municipal','scia-1','ape','SCIA - Segnalazione','OTHER','2024-01-01','hash','{"addresses":[]}');`);
+  expect((await row('select count(*)::integer n from market_observer_property_archive')).n).toBe(2);
+  expect(await row("select surface_sqm,rooms,publication_count from market_observer_property_archive where address='Via Test 2'"))
+    .toEqual({surface_sqm:'80',rooms:'3',publication_count:0});
+  expect(await row('select record_type,published_at,document_date,building_ids from market_observer_public_records'))
+    .toEqual({record_type:'SCIA',published_at:null,document_date:null,building_ids:[]});
+  expect((await row('select count(*)::integer n from acquisition_leads')).n).toBe(0);
+  expect((await row("select has_table_privilege('anon','market_observer_property_archive','select') allowed")).allowed).toBe(false);
+  const assessment=await row("select market_observer_assess_opportunity('UNKNOWN','OFF_MARKET_NO_SALE_EVIDENCE',180,0,0,0) assessment");
+  expect(assessment.assessment).toMatchObject({score:55,components:{unsold_exit:25,observed_age:30}});
+ });
  it('preserves human agency decisions, maps the specific own branch and rejects shared RE/MAX IDs',async()=>{
   expect(await row("select market_role,settings from agencies where slug='ad-maiora-bitonto'"))
    .toEqual({market_role:'OUR_AGENCY',settings:{humanValue:true}});

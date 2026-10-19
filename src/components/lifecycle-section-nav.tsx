@@ -1,11 +1,9 @@
 import { SectionNav } from "@/components/ui/section-nav";
 
 const items = [
-  { href: "/lifecycle", label: "Sintesi", icon: "radar" },
-  { href: "/lifecycle/opportunities", label: "Opportunità", icon: "flame" },
-  { href: "/lifecycle/private", label: "Privati", icon: "user" },
+  { href: "/intelligence", label: "Archivio", icon: "radar" },
   { href: "/fonti", label: "Fonti", icon: "building" },
-  { href: "/lifecycle/review", label: "Da decidere", icon: "scale" },
+  { href: "/lifecycle/review", label: "Corrispondenze da verificare", icon: "scale" },
 ] as const;
 
 /**

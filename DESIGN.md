@@ -1,6 +1,6 @@
 ---
 name: Listing Radar
-description: CRM operativo privato per completare e valutare annunci immobiliari.
+description: Archivio di intelligence immobiliare, territorio e prove pubbliche.
 source: src/styles/tokens.css
 verify: npm run design:check
 colors:
@@ -98,9 +98,8 @@ components:
 **Creative North Star: "Il Registro Operativo"**
 
 Listing Radar deve sembrare uno spazio di lavoro privato, calmo e sempre sotto
-controllo. La densità serve a ridurre i passaggi: la coda corrente domina, i
-segnali di acquisizione restano visibili e le statistiche non competono con la
-prossima azione.
+controllo. La densità serve a ridurre i passaggi: la consultazione degli immobili domina,
+le prove restano raggiungibili e gli score non competono con i fatti.
 
 Il sistema rifiuta l'estetica da dashboard promozionale. Niente decorazioni
 gratuite, pannelli analitici equivalenti o score tecnici privi di una
@@ -336,7 +335,7 @@ Una sola voce, in italiano, per tutte e tre le superfici.
 ## Do's and Don'ts
 
 ### Do:
-- **Do** mettere la coda da completare prima delle statistiche.
+- **Do** mettere immobili e prove prima di statistiche e score.
 - **Do** far gridare una cosa sola per schermata.
 - **Do** tenere identica la struttura di una riga fra i suoi stati.
 - **Do** spiegare ogni opportunità con una motivazione comprensibile.

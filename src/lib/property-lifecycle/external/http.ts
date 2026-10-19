@@ -1,4 +1,15 @@
 import { EXTERNAL_POLICY } from "./policy";
+import { load } from "cheerio";
+
+/** Contact-form reCAPTCHA scripts are not an access challenge. Actual denial pages remain blocked. */
+export function hasPublicAccessChallenge(html:string):boolean {
+  if(/cf-chl-|__cf_chl_/i.test(html))return true;
+  const $=load(html),title=$("title").text().trim();
+  if(/^(?:attention required|just a moment|access denied|captcha|verifica di sicurezza)/i.test(title))return true;
+  $("script,style,footer,nav,header").remove();
+  const text=$("main").length?$("main").text():$("body").text();
+  return /verify (?:that )?you are human|complete the captcha|checking your browser|verifica di essere (?:un )?umano/i.test(text);
+}
 
 export class SourceAccessError extends Error {
   constructor(public readonly reason: string, public readonly status: number | null = null, public readonly retryAfterMs = 0) { super(reason); }
@@ -60,7 +71,7 @@ export class ExternalPublicHttp {
           chunks.push(chunk.value);
         }
         const body = Buffer.concat(chunks).toString("utf8");
-        if (/cf-chl-|captcha|Attention Required|access denied/i.test(body)) { this.circuitOpen = true; throw new SourceAccessError("challenge_page", response.status); }
+        if (hasPublicAccessChallenge(body)) { this.circuitOpen = true; throw new SourceAccessError("challenge_page", response.status); }
         return { body, status: response.status, url };
       } catch (error) {
         if (error instanceof SourceAccessError || attempt === EXTERNAL_POLICY.http.retries) throw error;

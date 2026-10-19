@@ -15,7 +15,7 @@ export function PageHeader({
   backLabel,
   nav,
 }: Readonly<{
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
@@ -38,9 +38,9 @@ export function PageHeader({
 
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
-          <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
+          {eyebrow ? <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
             {eyebrow}
-          </p>
+          </p> : null}
           <h1 className="font-display mt-2 text-[length:var(--lr-text-page)] leading-tight text-balance text-[var(--lr-ink)]">
             {title}
           </h1>

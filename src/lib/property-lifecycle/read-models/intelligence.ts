@@ -25,11 +25,18 @@ export interface IntelligenceRow {
   agency_role?: string; agent_name?: string | null;
   market_evidence_provenance?: { source?: string; url?: string; observedAt?: string; claimedAt?: string; confidence?: number };
   publication_date_disagreement?: boolean;
+  property_type?: string | null; surface_sqm?: number | null; rooms?: number | null;
+  attributes?: Record<string,unknown>; publication_count?: number; publication_sources?: string[];
+  updated_at?: string; building_id?: string | null; document_count?: number; evidence_count?: number;
+  latitude?: number | null; longitude?: number | null; location_precision?: string | null;
+  relaunch_count?: number; street_name?: string | null; street_number?: string | null;
 }
 export interface IntelligenceFilters {
   view: IntelligenceView; page: number; query?: string; classification?: string;
   agency?: string; locality?: string; zone?: string; state?: string;
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
+  propertyType?: string; minimumPrice?: number; maximumPrice?: number; minimumSqm?: number; maximumSqm?: number;
+  reduced?: string; source?: string;
 }
 export function marketAgeLabel(firstSeen: string, earliest: string | null, end: string | number): string {
   const publicDate = earliest && Date.parse(earliest) < Date.parse(firstSeen);
@@ -41,16 +48,27 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
 }
 export async function readIntelligence(db: SupabaseClient, filters: IntelligenceFilters) {
   const size=40;
-  let request=db.from("market_observer_intelligence").select("*");
+  let request=db.from("market_observer_property_archive").select("*");
   if (filters.view === "venduti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE"]);
   if (filters.view === "usciti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE", "WITHDRAWN", "RELISTED", "AGENCY_CHANGED", "UNKNOWN_EXIT", "MISSING_UNCONFIRMED"]);
   if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).neq("exit_classification", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");
   if (filters.classification && EXIT_LABELS[filters.classification]) request=request.eq("exit_classification", filters.classification);
-  if (filters.query?.trim()) request=request.ilike("address", `%${filters.query.trim().replace(/[%_\\]/g, "").slice(0,120)}%`);
+  if (filters.query?.trim()) {
+    const term=filters.query.trim().replace(/[%_\\,()]/g, "").slice(0,120);
+    if(term)request=request.or(`address.ilike.%${term}%,agency_name.ilike.%${term}%,zone_name.ilike.%${term}%,locality.ilike.%${term}%`);
+  }
   if (filters.agency && /^[0-9a-f-]{36}$/i.test(filters.agency)) request=request.eq("agency_id",filters.agency);
   if (filters.locality) request=request.eq("locality",filters.locality.slice(0,80));
   if (filters.zone?.trim()) request=request.ilike("zone_name",`%${filters.zone.trim().replace(/[%_\\]/g,"").slice(0,80)}%`);
   if (filters.state && ["ACTIVE","EXIT_PENDING","CLOSED_SOLD","CLOSED_WITHDRAWN","CLOSED_SWITCHED","CLOSED_TO_PRIVATE","OFF_MARKET_NO_SALE_EVIDENCE"].includes(filters.state)) request=request.eq("state",filters.state);
+  if(filters.propertyType)request=request.ilike("property_type",`%${filters.propertyType.replace(/[%_\\]/g, "").slice(0,60)}%`);
+  if(filters.source)request=request.contains("publication_sources",[filters.source.slice(0,100)]);
+  if(filters.reduced==="yes")request=request.gt("drop_count",0);
+  if(filters.reduced==="no")request=request.eq("drop_count",0);
+  for(const [field,min,max] of [["latest_asking_price",filters.minimumPrice,filters.maximumPrice],["surface_sqm",filters.minimumSqm,filters.maximumSqm]] as const){
+    if(min!=null && Number.isFinite(min) && min>=0)request=request.gte(field,min);
+    if(max!=null && Number.isFinite(max) && max>=0)request=request.lte(field,max);
+  }
   for (const [key,value,maximum] of [["known_market_age",filters.minimumAge,36500],["opportunity_score",filters.minimumScore,100],["reduction_percent",filters.minimumReduction,100]] as const) {
     if (value != null && Number.isFinite(value) && value >= 0) request=request.gte(key,Math.min(maximum,value));
   }

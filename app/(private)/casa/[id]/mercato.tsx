@@ -12,7 +12,6 @@ import {
   certaintyFromConfidence,
   formaFromAgencyState,
   formaFromPropertyState,
-  livelloFromOpportunity,
 } from "@/components/ui/atoms";
 import {
   Campo,
@@ -58,7 +57,6 @@ import {
   ageDays,
 } from "@/app/(private)/lifecycle/_components/ui";
 import styles from "@/app/(private)/lifecycle/lifecycle.module.css";
-import { linkMarketOpportunity } from "@/app/(private)/intelligence/actions";
 
 export const metadata: Metadata = { title: "Scheda della casa" };
 
@@ -74,13 +72,6 @@ export const metadata: Metadata = { title: "Scheda della casa" };
  * misure, chi la vende, dove sta. Le correzioni in fondo, perché si guarda
  * prima e si decide dopo.
  */
-
-/** Cosa farci, adesso. Non è un punteggio: è un verbo. */
-const AZIONE = {
-  alta: "Da chiamare",
-  media: "Da tenere d'occhio",
-  bassa: "Nessuna urgenza",
-} as const;
 
 /** I metodi che datano la casa guardando le foto, non l'annuncio. */
 function dataDallaFoto(method: string | null) {
@@ -334,9 +325,6 @@ export function SchedaMercato({
     detail.opportunity && !hasNoRealSignal(detail.opportunity.reasons)
       ? detail.opportunity.reasons
       : [];
-  const azione = detail.opportunity
-    ? AZIONE[livelloFromOpportunity(detail.opportunity.level)]
-    : null;
   const forma = formaPosizione(detail.location);
 
   return (
@@ -344,7 +332,7 @@ export function SchedaMercato({
       {/* Dove sei e come si torna indietro: una riga sola, poi la casa. */}
       <nav className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
         <Link
-          href="/listings"
+          href="/intelligence"
           className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--lr-ink)]"
         >
           <ArrowLeft aria-hidden="true" className="size-4" />
@@ -365,7 +353,7 @@ export function SchedaMercato({
               {indirizzo}
             </h1>
             <Stato forma={formaFromPropertyState(property.propertyState)}>
-              La tiene un&apos;agenzia · la osserviamo
+              {saleStatusLabel(property.saleStatus)}
             </Stato>
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
@@ -408,6 +396,10 @@ export function SchedaMercato({
         </div>
       </header>
 
+      <nav aria-label="Sezioni del dossier" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">
+        {[["panoramica","Panoramica"],["storico","Storico e prove"],["pubblicazioni","Pubblicazioni"],["territorio","Territorio"],["documenti","Documenti pubblici"]].map(([id,label])=><a key={id} href={`#${id}`} className={buttonClass("quiet",{compact:true})}>{label}</a>)}
+      </nav>
+
       <section className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-[var(--lr-line-quiet)] py-3" aria-label="Situazione osservata">
         <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(currentAsking)}</strong>
         <span>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</span>
@@ -415,18 +407,15 @@ export function SchedaMercato({
         {detail.marketObservation?.soldAt ? <span>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</span> : detail.marketObservation?.soldObservedAt ? <span>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</span> : null}
         {detail.marketObservation?.priceConflict ? <Meta>Le fonti mostrano prezzi diversi: il prezzo indicato proviene dalla pubblicazione selezionata.</Meta> : null}
         {prezzoFonte?.reductionPercent!=null && prezzoFonte.reductionPercent>0 ? <span className="text-[var(--lr-ok)]">−{formatNumber(prezzoFonte.reductionPercent)}% sulla stessa pubblicazione</span> : null}
-        {detail.opportunity ? <span>Opportunità <strong>{formatNumber(detail.opportunity.score??0)}/100</strong></span> : null}
       </section>
 
       {/* Cosa fare adesso, con gli indizi che lo reggono. Mai il giudizio da
         * solo: un giudizio senza gli indizi è un'opinione. */}
-      {azione && indizi.length ? (
-        <section className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] px-4 py-3">
+      {detail.opportunity && indizi.length ? (
+        <details className="rounded-[var(--lr-radius-container)] border border-[var(--lr-line-quiet)] px-4 py-3">
+          <summary className="cursor-pointer font-medium">Interpretazione opportunità · {formatNumber(detail.opportunity.score??0)}/100</summary>
           <div className="min-w-0 shrink-0">
-            <Label>Cosa fare adesso</Label>
-            <p className="text-[length:var(--lr-text-record)] font-[650] leading-tight text-[var(--lr-ink)]">
-              {azione}
-            </p>
+            <Label>Indizi osservati</Label>
             <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
               {formatNumber(indizi.length)}{" "}
               {indizi.length === 1 ? "indizio" : "indizi"} su{" "}
@@ -444,16 +433,12 @@ export function SchedaMercato({
               </li>
             ))}
           </ul>
-          {detail.opportunity && (detail.opportunity.score ?? 0)>0 ? <form action={linkMarketOpportunity}>
-            <input type="hidden" name="opportunity_id" value={detail.opportunity.id}/>
-            <PendingSubmitButton className={buttonClass("primary")} pendingLabel="Collego l’opportunità">Porta in Acquisizioni</PendingSubmitButton>
-          </form> : null}
           {detail.opportunity?.evidenceSummary.components ? <details className="basis-full text-[length:var(--lr-text-meta)]">
             <summary className="cursor-pointer py-2">Come si compone il punteggio</summary>
             <ul className="space-y-1 py-2">{Object.entries(detail.opportunity.evidenceSummary.components as Record<string,unknown>).map(([key,points])=><li key={key}>{({observed_age:"Presenza osservata",price_drops:"Numero di ribassi",price_reduction:"Entità del ribasso",relistings:"Ripubblicazioni",unsold_exit:"Uscita senza prova di vendita",agency_change:"Cambio agenzia",pending_exit:"Uscita da verificare",agency_to_private:"Passaggio a privato"} as Record<string,string>)[key] ?? humanize(key)}: <strong>{String(points)} punti</strong></li>)}</ul>
-            <Meta>Regole versione {String(detail.opportunity.evidenceSummary.ruleVersion ?? 1)}. È una priorità di lavoro, non una scadenza dell’incarico.</Meta>
+            <Meta>Regole versione {String(detail.opportunity.evidenceSummary.ruleVersion ?? 1)}. Priorità indicativa da verificare, non probabilità di acquisizione né scadenza dell’incarico.</Meta>
           </details> : null}
-        </section>
+        </details>
       ) : null}
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -469,7 +454,7 @@ export function SchedaMercato({
             }
           />
 
-          <RigaDiVita eventi={detail.events} prove={prove} />
+          <section id="storico" className="scroll-mt-20"><RigaDiVita eventi={detail.events} prove={prove} /></section>
           <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
             {(detail.historyPage??1)>1?<Link href={`?storia=${(detail.historyPage??1)-1}`} className={buttonClass("secondary")}>Storico più recente</Link>:<span/>}
             <Meta>Pagina {detail.historyPage??1} di eventi e prove</Meta>
@@ -478,7 +463,7 @@ export function SchedaMercato({
         </div>
 
         <div className="space-y-4">
-          <Card>
+          <Card id="panoramica">
             <CardBody className="space-y-5">
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-[var(--lr-line-quiet)] pb-4">
                 <div className="min-w-0">
@@ -540,7 +525,7 @@ export function SchedaMercato({
             </CardBody>
           </Card>
 
-          <Card>
+          <Card id="pubblicazioni">
             <CardHeader
               title="Chi la vende"
               meta={`${formatNumber(property.agencies.length)} ${property.agencies.length === 1 ? "agenzia osservata" : "agenzie osservate"} · ${property.activePrivateCount ? `${formatNumber(property.activePrivateCount)} privato` : "nessun privato"}`}
@@ -565,7 +550,7 @@ export function SchedaMercato({
             * civico. Se non sappiamo dov'è, la scheda non compare: un riquadro
             * che dice «posizione ignota» occupa spazio per dire niente. */}
           {detail.location && forma !== "niente" ? (
-            <Card>
+            <Card id="territorio">
               <CardHeader
                 title="Dove si trova"
                 meta={locationPrecisionLabel(detail.location.precision)}

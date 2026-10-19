@@ -271,3 +271,7 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* The hover dossier carries data; do not constrain it to a one-line map label. */
+.leaflet-tooltip.territory-hover { white-space: normal; max-width: min(23rem, 80vw); padding: 14px; background: var(--lr-surface); color: var(--lr-ink); border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); font-family: var(--lr-font-sans); box-shadow: var(--lr-floating); }
+.territory-property-marker:focus { outline: 3px solid var(--lr-accent); outline-offset: 3px; border-radius: 50%; }
