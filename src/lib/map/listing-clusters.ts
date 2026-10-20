@@ -17,7 +17,7 @@ function clusterCellSize(zoom: number) {
   if (zoom >= 15) return 0.00056;
   if (zoom >= 14) return 0.0011;
   if (zoom >= 13) return 0.0022;
-  return 0.0044;
+  return 0.0044 * 2 ** (12 - zoom);
 }
 
 function coordinateKey(pin: ListingMapPin) {
