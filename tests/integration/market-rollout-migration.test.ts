@@ -38,6 +38,7 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec(await sql('0037_public_records_street_aggregation.sql'));
   await db.exec(await sql('0038_territorial_knowledge_graph.sql'));
   await db.exec(await sql('0039_territorial_context_timeline.sql'));
+  await db.exec(await sql('0040_historical_public_records.sql'));
   const loc=(await row("insert into locations(raw_text,municipality,locality,street_name,street_number,scope_state,resolution_method,resolution_confidence,precision_level,normalized_key) values('Piazza Cattedrale 23','Bitonto','Bitonto','Piazza Cattedrale','23','IN_SCOPE','TEST',1,'EXACT_ADDRESS','piazza-test') returning id")).id;
   const b=(await row("insert into buildings(location_id,normalized_key,display_name) values($1,'it|ba|bitonto|bitonto|piazza cattedrale|23','Piazza Cattedrale 23') returning id",[loc])).id;
   await db.exec(`insert into properties(primary_location_id,canonical_attributes) values('${loc}','{"address":"Piazza Cattedrale 23"}');`);
@@ -85,6 +86,41 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec(`insert into buildings(location_id,normalized_key,display_name) values('${loc}','legacy-duplicate','Piazza Cattedrale 23, variante');`);
   expect((await row('select classification from market_observer_building_duplicate_candidates')).classification).toBe('PROBABLE_SAME_BUILDING');
   expect((await row('select count(*)::int n from buildings')).n).toBe(2); // Candidate only: no destructive merge.
+  const token='10000000-0000-4000-8000-000000000001';
+  const history=await row('select claim_public_record_history(2022,$1) result',[token]);
+  const historyRun=history.result.id;
+  await db.exec('savepoint lease_reject');
+  await expect(db.query('select claim_public_record_history(2023,$1)',['10000000-0000-4000-8000-000000000002'])).rejects.toThrow('already leased');
+  await db.exec('rollback to lease_reject');
+  const liveBefore=await row("select count(*)::int n from building_data_import_runs where run_kind='LIVE'");
+  await db.query("select commit_public_record_history($1,$2,'[]','{}','{\"done\":[\"official-id\"]}','{\"scanned\":50,\"inventoryComplete\":true}',true,null)",[historyRun,token]);
+  expect((await row('select checkpoint from building_data_import_runs where id=$1',[historyRun])).checkpoint.done).toEqual(['official-id']);
+  expect((await row("select count(*)::int n from building_data_import_runs where run_kind='LIVE'")).n).toBe(liveBefore.n);
+  expect((await row('select count(*)::int n from market_observer_territorial_history where historical_record_density>0')).n).toBeGreaterThan(0);
+  const resumed=await row('select claim_public_record_history(2022,$1) result',[token]);
+  expect(resumed.result.id).toBe(historyRun);expect(resumed.result.checkpoint.done).toEqual(['official-id']);
+  await db.query("select commit_public_record_history($1,$2,'[]','{}','{}','{}',false,'HTTP 403')",[historyRun,token]);
+  expect((await row('select status from building_data_import_runs where id=$1',[historyRun])).status).toBe('FAILED');
+  await row('select claim_public_record_history(2022,$1) result',[token]);
+  const historical={...record,sourceRecordKey:'historical-2022',contentHash:'history-2022',documentDate:'2022-05-10',year:'2022'};
+  const activityBefore=(await row('select activity from market_observer_graph_street_context where street_id=$1',[sid])).activity;
+  const historyPersist=()=>row("select commit_public_record_history($1,$2,$3,'{}','{}','{}') result",[historyRun,token,JSON.stringify([historical])]);
+  expect((await historyPersist()).result).toMatchObject({inserted:1,updated:0});
+  const densityBefore=(await row('select historical_record_density from market_observer_territorial_history where scope=\'BUILDING\' and id=$1',[b])).historical_record_density;
+  expect((await historyPersist()).result).toMatchObject({inserted:0,updated:0});
+  expect((await row("select count(*)::int n from building_practice_observations o join building_practice_records r on r.id=o.practice_record_id where r.source_record_key='historical-2022'")).n).toBe(1);
+  expect((await row("select recent90 from market_observer_graph_record_facts where source_record_key='historical-2022'")).recent90).toBe(false);
+  expect((await row('select activity from market_observer_graph_street_context where street_id=$1',[sid])).activity).toEqual(activityBefore);
+  expect((await row('select historical_record_density from market_observer_territorial_history where scope=\'BUILDING\' and id=$1',[b])).historical_record_density).toBe(densityBefore);
+  expect((await row("select count(*)::int n from read_territorial_timeline('BUILDING',$1,100,0) where event_kind='PUBLIC_RECORD' and event_at::date='2022-05-10'",[b])).n).toBe(1);
+  await db.exec("create function auth.uid() returns uuid language sql as $$select '10000000-0000-4000-8000-000000000099'::uuid$$");
+  await db.query("select review_public_record_street($1,0,'hash2','UNKNOWN',null)",[rid]);
+  expect((await row('select human_overrides from public_record_territorial_resolutions where record_id=$1',[rid])).human_overrides['0'].decision).toBe('UNKNOWN');
+  await db.exec('savepoint stale_review');
+  await expect(db.query("select review_public_record_street($1,0,'old-hash','SAME_STREET',$2)",[rid,sid])).rejects.toThrow('Stale');
+  await db.exec('rollback to stale_review');
+
+
  });
  it('projects the complete property archive and municipal register without creating leads or inferring unit/document dates',async()=>{
   await db.exec(await sql('0034_intelligence_archive_public_records.sql'));

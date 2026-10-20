@@ -6,7 +6,7 @@ import { PUBLIC_RECORD_POLICY as P, PRACTICES_2025 } from "./public-record-polic
 import { recomputeTerritorialGraph } from "./graph-recompute";
 
 async function due(db: SupabaseClient,key: string,hours: number) {
-  const r=await db.from("building_data_import_runs").select("finished_at").eq("source_key",key).eq("status","SUCCEEDED").order("finished_at",{ascending:false}).limit(1).maybeSingle();
+  const r=await db.from("building_data_import_runs").select("finished_at").eq("source_key",key).eq("run_kind","LIVE").eq("status","SUCCEEDED").order("finished_at",{ascending:false}).limit(1).maybeSingle();
   if(r.error)throw Error(r.error.message);
   return !r.data?.finished_at || Date.now()-Date.parse(r.data.finished_at)>=hours*3600000;
 }

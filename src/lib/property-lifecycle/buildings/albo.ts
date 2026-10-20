@@ -19,7 +19,7 @@ export function safeAlboOffice(value:string):string|null {
   if(!/^\d+(?:\.\d+)*\s*[-–]/.test(value))return null;
   return value.split(/\b(?:dott\.?|dirigente|firmatario|sig\.)\b/i)[0].trim().slice(0,250);
 }
-export function parseAlboInventory(html: string) {
+export function parseAlboInventory(html: string, maxPages: number = P.maxPages) {
   const $ = load(html), pager = $(".pagination .active").first().text().match(/Pagina\s+(\d+)\s+di\s+(\d+)\s+\((\d+)\s+risultati\)/i);
   if (!pager || !$("table.master-detail-list-table th").text().includes("Oggetto")) throw Error("Albo inventory structure changed");
   const items: AlboItem[] = [];
@@ -33,7 +33,7 @@ export function parseAlboInventory(html: string) {
   }
   const next = $('a[href]').toArray().map(a => $(a).attr("href")!).find(u => u.includes("paginationAction=NEXT"));
   const page = +pager[1], pages = +pager[2], total = +pager[3];
-  if (!items.length || page > pages || pages > P.maxPages || (page < pages && !next)) throw Error("Albo incomplete pagination");
+  if (!items.length || page > pages || pages > maxPages || (page < pages && !next)) throw Error("Albo incomplete pagination");
   return { items, page, pages, total, next: next ? safeAlboUrl(next) : null, fingerprint: hashValue({ headers: $("table.master-detail-list-table th").map((_, a) => $(a).text().replace(/\s+/g," ").trim()).get(), policy: P.version }) };
 }
 export function parseAlboDetail(html: string, expectedId: string) {
@@ -56,17 +56,23 @@ export class AlboHttp {
   private cookies = new Map<string,string>();
   constructor(private readonly fetcher: typeof fetch = fetch, private readonly delayMs: number = P.delayMs) {}
   async get(url: string): Promise<string> {
+    return this.request(url);
+  }
+  async post(url: string, body: URLSearchParams): Promise<string> {
+    return this.request(url, body);
+  }
+  private async request(url: string, body?: URLSearchParams): Promise<string> {
     safeAlboUrl(url);
     for (let attempt = 0; ; attempt++) {
       if (this.delayMs) await new Promise(r => setTimeout(r,this.delayMs * 2 ** attempt));
-      const r = await this.fetcher(url, { signal: AbortSignal.timeout(P.requestTimeoutMs), redirect: "error", headers: { cookie: [...this.cookies.values()].join("; "), "user-agent": "ListingRadarLifecycle/2.0 (+public territorial records)" } });
+      const r = await this.fetcher(url, { method: body ? "POST" : "GET", body, signal: AbortSignal.timeout(P.requestTimeoutMs), redirect: "error", headers: { cookie: [...this.cookies.values()].join("; "), "user-agent": "ListingRadarLifecycle/2.0 (+public territorial records)" } });
       if ((r.status === 429 || r.status >= 500) && attempt < P.retries) continue;
       if (!r.ok) throw Error(`Albo HTTP ${r.status}`);
       for (const value of r.headers.getSetCookie()) { const pair = value.split(";")[0]; this.cookies.set(pair.split("=")[0],pair); }
       if (Number(r.headers.get("content-length")) > P.maxHtmlBytes) throw Error("Albo page too large");
-      const body = await r.text();
-      if (Buffer.byteLength(body) > P.maxHtmlBytes || /cf-chl-|<title>\s*(?:Attention Required|Just a moment)/i.test(body)) throw Error("Albo response unavailable or too large");
-      return body;
+      const html = await r.text();
+      if (Buffer.byteLength(html) > P.maxHtmlBytes || /cf-chl-|<title>\s*(?:Attention Required|Just a moment)/i.test(html)) throw Error("Albo response unavailable or too large");
+      return html;
     }
   }
 }
