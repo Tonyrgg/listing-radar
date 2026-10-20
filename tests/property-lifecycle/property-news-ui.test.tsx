@@ -10,4 +10,5 @@ it('public news separates fact, interpretation, unknown sale intent and expandab
  const html=renderToStaticMarkup(<PropertyNewsList rows={[row]}/>);
  for(const expected of ['Fatto','Interpretazione','Non sappiamo','futura vendita non è dimostrata','Prove e provenienza','riga 22','https://official.example/record.csv','non identifica la singola unità'])expect(html).toContain(expected);
  expect(html).not.toContain('Crea lead');expect(html).not.toContain('incarico scaduto');
+ expect(html).toContain('Immobili conosciuti nell’edificio');expect(html).not.toContain('annunci attivi');
 });

@@ -193,8 +193,33 @@ design:check: PASS. Nessun test saltato viene dichiarato eseguito.
 
 ## Deployment
 
-Migration production applicate. Release web/runtime e smoke autenticato saranno
-registrati qui a verifica completata. Nessuna distribuzione del desktop.
+Migration **0042-0044** applicate e dry-run finale allineato.
+Web production Vercel: release funzionale `fcbfe8d`, deployment **7203064418**;
+correzione del filtro periodo `b9972ab`, deployment **7208211462**, SUCCESS.
+Runtime GitHub Actions **39443632124**, commit `fcbfe8d`, SUCCESS:
+un job BUILDING_DATA_SYNC eseguito, zero falliti. Il backend delle revisioni web
+successive e identico. Nessuna distribuzione o modifica del desktop.
+
+Smoke autenticato production: Notizie 90 giorni vuoto correttamente, storico
+**1.322 fatti/combinazioni**, 25 per pagina, provenienza espansa con riga e hash.
+Filtro periodo verificato dopo navigazione client; controllo corretto.
+Dossier reale Piazza Cattedrale 23: SCA 3/2024, data documento 09/01/2024,
+un immobile attivo conosciuto, identita della singola unita non asserita.
+Fonti: storico completato, sezioni fonti lette senza errore di disponibilita.
+Territorio: contesto di Via Giovanna da Durazzo 35 letto correttamente, due atti
+storici, attivita recente zero e punto stradale indicativo. Livello edifici
+attivato; tooltip verificato anche da tastiera per Via Torre d'Agera 6:
+tre segnali (cambio d'uso, ampliamento, manutenzione), precisione STREET e
+singole unita da verificare. Screenshot `building-signals-map.png`.
+Responsive 390x844: larghezza contenuto 380, nessun overflow orizzontale.
+Zero errori/warning console nelle pagine verificate.
+
+Replay semantico production: **4.074/4.074** timestamp di proiezione invariati,
+1.319 fatti, zero HTTP fonte e zero scritture lead.
+Prove locali, screenshot, metriche e `release-proof.json` con la revisione finale:
+`C:/Users/ruggi/listing-radar-validation/2026-10-20/public-property-facts/`.
+Il commit conclusivo aggiorna solo report, terminologia dei conteggi e prove;
+non modifica il modello o i dati estratti.
 
 ## Remaining limitations / readiness
 
