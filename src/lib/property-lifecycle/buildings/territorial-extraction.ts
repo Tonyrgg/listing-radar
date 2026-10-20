@@ -1,6 +1,7 @@
 import { normalizeStreetName } from "@/lib/street-registry/official-inventory";
 import { canonicalBuildingAddress } from "./address";
 import { PUBLIC_RECORD_POLICY as P } from "./public-record-policy";
+import {parseCivics} from './territorial-graph';
 export interface RegistryStreet { id: string; canonical_name: string; official_type?: string; official_description?: string; locality: string | null; geometry?: unknown }
 export interface TerritorialReference {
   streetId: string; streetName: string; locality: string; civicText: string | null; civics: string[];
@@ -8,7 +9,7 @@ export interface TerritorialReference {
   matcherVersion: string; reasons: string[]; normalizedKeys: string[]; candidateStreetIds?:string[];
 }
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[’‘`]/g,"'").replace(/[–—]/g,'-').toUpperCase();
 const expand = (s: string) => normalizeStreetName(s).replace(/^V LE /,"VIALE ").replace(/^P ZZA /,"PIAZZA ").replace(/^C SO /,"CORSO ").replace(/\bPROFESSOR(?:E)?\b/g,"PROF").replace(/\bDOTTOR(?:E)?\b/g,"DOTT").replace(/\bSS\b/g,"SANTI");
 function streetPattern(name: string) {
   const words = expand(name).split(" ");
@@ -19,7 +20,7 @@ export function extractTerritorialReferences(text: string, streets: RegistryStre
   const body = fold(text), candidates: Array<{ street: RegistryStreet; start: number; end: number }> = [];
   for (const street of streets) {
     if (!/^(?:VIA|VIALE|PIAZZA|CORSO|STRADA|CONTRADA|CORTE|VICO|LARGO|TRAVERSA|VICOLO)\b/.test(expand(street.canonical_name))) continue;
-    const aliases = new Set([street.canonical_name, `${street.official_type??""} ${street.official_description??""}`.trim()].filter(Boolean));
+    const aliases = new Set([street.canonical_name,street.canonical_name.replace(/\b(?:PROF\.?|PROFESSORE|DOTT\.?|DOTTORE|MONS\.?|MONSIGNORE)\s+/gi,''), `${street.official_type??""} ${street.official_description??""}`.trim()].filter(Boolean));
     for (const alias of aliases) for (const match of body.matchAll(streetPattern(alias))) candidates.push({street,start:match.index!,end:match.index!+match[0].length});
   }
   // An abbreviated spelling which resolves to more than one official street is not auto-resolved.
@@ -28,9 +29,8 @@ export function extractTerritorialReferences(text: string, streets: RegistryStre
   for (const c of chosen) {
     const candidateIds=[...new Set(candidates.filter(o=>o.start===c.start&&o.end===c.end).map(o=>o.street.id))].sort();
     const registryAmbiguous=candidateIds.length>1;
-    const tail = body.slice(c.end), m = tail.match(/^\s*,?\s*(?:(?:CIV(?:ICI|ICO|V)?|N)\.?\s*)?(\d+\s*[A-Z]?(?:\s*[/,\-]\s*\d+\s*[A-Z]?){0,5}|S\.?N\.?C\.?)\b/);
-    const raw = m?.[1]?.trim() ?? null, range = raw != null && /\d\s*-\s*\d/.test(raw), snc = raw != null && /^S\.?N\.?C/i.test(raw);
-    const civics = !raw || range || snc ? [] : [...new Set(raw.split(/[/,]/).map(v=>v.replace(/\s/g,"").toLowerCase()))];
+    const tail = body.slice(c.end), m = tail.match(/^\s*,?\s*(?:(?:CIV(?:ICI|ICO|V)?|N)\.?\s*)?(\d+(?:\s*\/\s*[A-Z]|[A-Z])?(?:\s*[/,\-]\s*\d+(?:\s*\/\s*[A-Z]|[A-Z])?){0,5}|S\.?N\.?C\.?)\b/);
+    const raw=m?.[1]?.trim()??null,parsed=parseCivics(raw),range=parsed.state==='RANGE',snc=parsed.state==='SNC',civics=parsed.values;
     const locality = /MARIOTTO/i.test(c.street.locality??"") ? "Mariotto" : /PALOMBAIO/i.test(c.street.locality??"") ? "Palombaio" : "Bitonto";
     const addresses = registryAmbiguous?[]:civics.map(civic => canonicalBuildingAddress({municipality:"Bitonto",locality,scope:"IN_SCOPE",precision:"EXACT_ADDRESS",streetName:c.street.canonical_name,streetNumber:civic})).filter(a=>a!=null);
     const ref: TerritorialReference = { streetId:registryAmbiguous?"":c.street.id, streetName:c.street.canonical_name, locality, civicText:raw, civics,

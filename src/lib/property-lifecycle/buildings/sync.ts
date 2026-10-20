@@ -3,6 +3,7 @@ import { BuildingIntelligenceImporter, DEFAULT_BUILDING_PRACTICE_SOURCE_KEY, DEF
 import { importAlboRecords } from "./albo-importer";
 import { importBitontoPlanCatalog, BITONTO_PLAN_SOURCE } from "./document-catalog";
 import { PUBLIC_RECORD_POLICY as P, PRACTICES_2025 } from "./public-record-policy";
+import { recomputeTerritorialGraph } from "./graph-recompute";
 
 async function due(db: SupabaseClient,key: string,hours: number) {
   const r=await db.from("building_data_import_runs").select("finished_at").eq("source_key",key).eq("status","SUCCEEDED").order("finished_at",{ascending:false}).limit(1).maybeSingle();
@@ -35,6 +36,8 @@ export async function syncPublicRecordSources(db:SupabaseClient,fetcher:typeof f
     {key:BITONTO_PLAN_SOURCE,hours:P.staticIntervalHours,run:()=>importBitontoPlanCatalog(db,fetcher)},
   ];
   for(const s of sources){try{results[s.key]=await due(db,s.key,s.hours)?await s.run():{skipped:"not_due"};}catch(e){errors.push(`${s.key}: ${String(e)}`);}}
+  // Reconcile derived context even when a source is not due or another source fails.
+  try{results.territorialGraph=await recomputeTerritorialGraph(db,true);}catch(e){errors.push(`territorialGraph: ${String(e)}`);}
   if(errors.length)throw Error(errors.join("; "));
   return results;
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Link from 'next/link';
 import { connection } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
@@ -48,7 +49,10 @@ export default async function CasaPage({
     const records=await readPropertyTerritorialContext(getSupabaseServiceClient(),vistaMercato.data).catch(()=>null);
     return <><SchedaMercato detail={vistaMercato.data} user={user} now={now} />
       <section id="documenti" className="mt-6 scroll-mt-20"><h2 className="mb-3 text-[length:var(--lr-text-section)] font-[650]">Documenti ed evidenze pubbliche</h2>
-        {records?<div className="space-y-5"><h3 className="font-[650]">Collegati all’edificio</h3><PublicRecords records={records.building} propertyContext />
+        {records?<div className="space-y-5"><div><h3 className="font-[650]">Specifici della singola unità · {records.specific.length}</h3><p>Nessuna prova identifica attualmente la singola unità. I contesti seguenti restano separati.</p></div>
+          <h3 className="font-[650]">Collegati all’edificio · {records.building.length}</h3>
+          <div className="flex flex-wrap gap-3">{records.buildingIds.map(b=><Link key={b} href={`/map?edificio=${b}#edificio`} className="underline">Apri contesto edificio</Link>)}{records.streetId?<Link href={`/map?via_id=${records.streetId}#contesto`} className="underline">Apri via · {records.recentStreet} atti recenti</Link>:null}</div>
+          <PublicRecords records={records.building} propertyContext />
           {records.street.length?<details><summary className="cursor-pointer py-2 font-[650]">Contesto della via · {records.street.length} atti</summary><PublicRecords records={records.street}/></details>:null}
           {records.area.length?<details><summary className="cursor-pointer py-2 font-[650]">Documenti di area · {records.area.length}</summary><PublicRecords records={records.area}/></details>:null}
           <p className="text-[var(--lr-ink-3)]">Il contesto di edificio, via o zona non certifica l’identità della singola unità né la conformità dell’immobile.</p>

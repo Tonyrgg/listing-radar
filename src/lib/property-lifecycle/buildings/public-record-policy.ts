@@ -1,6 +1,6 @@
 /** Single versioned policy. None of these signals imply a commercial lead or legal conformity. */
 export const PUBLIC_RECORD_POLICY = Object.freeze({
-  version: "bitonto_public_records_v2", classifierVersion: "territorial_rules_v1", matcherVersion: "official_street_civic_v1",
+  version: "bitonto_public_records_v2", classifierVersion: "territorial_rules_v1", matcherVersion: "official_street_civic_v2",
   alboSource: "comune-bitonto-albo", alboUrl: "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio",
   requestTimeoutMs: 25_000, maxHtmlBytes: 1_500_000, maxPdfBytes: 8_000_000,
   delayMs: 450, retries: 2, maxPages: 60, deepRotationDays: 7,

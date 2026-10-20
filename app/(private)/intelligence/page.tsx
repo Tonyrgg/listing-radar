@@ -44,7 +44,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
           {field("giorni","Età mercato minima, giorni","number")}{select("ribassato","Ribassi confermati",{yes:"Con ribassi",no:"Senza ribassi osservati"})}{select("fonte","Fonte pubblicazione",Object.fromEntries(sourceOptions.map(s=>[s,s==="REMAX"?"RE/MAX":s==="IMMOBILIARE"?"Immobiliare.it":humanize(s)])))}
           {view==="opportunita"?field("punteggio","Punteggio minimo","number"):null}{field("ribasso","Riduzione minima %","number")}
           {view==="venduti"||view==="usciti"?select("esito","Classificazione uscita",EXIT_LABELS):null}
-          {select("atti","Evidenze territoriali dell’edificio",{documents:"Con documenti pubblici",recent:"Con pratica o atto recente, 90 giorni",signals:"Con nuovo segnale territoriale"})}
+          {select("atti","Contesto territoriale",{specific:"Con documenti specifici dell’unità",building:"Con documenti dell’edificio",building_recent:"Con attività edificio, 90 giorni",street_recent:"In via con attività, 90 giorni",documents:"Con documenti pubblici, filtro precedente",recent:"Con atto recente, filtro precedente",signals:"Con nuovo segnale territoriale"})}
         </div><div className="mt-3 flex gap-2"><button className={buttonClass("secondary")}>Applica filtri</button><Link href={`?vista=${view}`} className={buttonClass("quiet")}>Azzera</Link></div>
       </details>
     </form>

@@ -32,6 +32,8 @@ export interface IntelligenceRow {
   relaunch_count?: number; street_name?: string | null; street_number?: string | null;
   public_record_count?:number;recent_public_record_count?:number;new_territorial_signal_count?:number;
   latest_public_record_date?:string|null;latest_public_record_title?:string|null;latest_public_record_type?:string|null;
+  specific_record_count?:number;building_record_count?:number;recent_building_count?:number;recent_street_count?:number;
+  context_building_ids?:string[];context_street_id?:string|null;
 }
 export interface IntelligenceFilters {
   view: IntelligenceView; page: number; query?: string; classification?: string;
@@ -50,10 +52,14 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
 }
 export async function readIntelligence(db: SupabaseClient, filters: IntelligenceFilters) {
   const size=40;
-  let request=db.from("market_observer_territorial_property_archive").select("*");
+  let request=db.from("market_observer_graph_property_archive").select("*");
   if(filters.publicRecords==="documents")request=request.gt("public_record_count",0);
   if(filters.publicRecords==="recent")request=request.gt("recent_public_record_count",0);
   if(filters.publicRecords==="signals")request=request.gt("new_territorial_signal_count",0);
+  if(filters.publicRecords==='specific')request=request.gt('specific_record_count',0);
+  if(filters.publicRecords==='building')request=request.gt('building_record_count',0);
+  if(filters.publicRecords==='building_recent')request=request.gt('recent_building_count',0);
+  if(filters.publicRecords==='street_recent')request=request.gt('recent_street_count',0);
   if (filters.view === "venduti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE"]);
   if (filters.view === "usciti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE", "WITHDRAWN", "RELISTED", "AGENCY_CHANGED", "UNKNOWN_EXIT", "MISSING_UNCONFIRMED"]);
   if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).neq("exit_classification", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");

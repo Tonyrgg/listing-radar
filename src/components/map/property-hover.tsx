@@ -18,7 +18,7 @@ export function PropertyHover({row,now}:{row:IntelligenceRow;now:number}) {
     {row.relaunch_count?<Meta>{row.relaunch_count} ripubblicazioni rilevate</Meta>:null}
     {row.sold_at?<Meta>Vendita dichiarata {formatDate(row.sold_at)}</Meta>:row.sold_observed_at?<Meta>Segnale vendita osservato {formatDate(row.sold_observed_at)}</Meta>:null}
     <Meta>{row.publication_count??0} pubblicazioni · {row.evidence_count??0} prove{row.document_count?` · ${row.document_count} pratiche edificio, unità da verificare`:""}</Meta>
-    {row.public_record_count?<div><p>Documenti pubblici: {row.public_record_count} · collegati all’edificio</p>{row.latest_public_record_type?<Meta>Ultimo: {PUBLIC_RECORD_LABELS[row.latest_public_record_type]??"Atto pubblico"}{row.latest_public_record_date?` · ${formatDate(row.latest_public_record_date)}`:""}</Meta>:null}<Meta>Singola unità da verificare.</Meta></div>:null}
+    <div><Meta>Documenti specifici: {row.specific_record_count??0} · documenti edificio: {row.building_record_count??row.public_record_count??0}</Meta><Meta>Attività via: {row.recent_street_count??0} atti negli ultimi 90 giorni</Meta>{row.latest_public_record_type?<Meta>Ultimo edificio: {PUBLIC_RECORD_LABELS[row.latest_public_record_type]??"Atto pubblico"}{row.latest_public_record_date?` · ${formatDate(row.latest_public_record_date)}`:""}</Meta>:null}</div>
     {row.publication_sources?.length?<Meta>Fonti: {row.publication_sources.join(", ")}</Meta>:null}
     <Meta>{locationPrecisionLabel(row.location_precision??"UNKNOWN")}{(row.opportunity_score??0)>0?` · Opportunità indicativa ${formatNumber(row.opportunity_score??0)}/100`:""}</Meta>
     <p className="border-t border-[var(--lr-line-quiet)] pt-2 font-medium">Clicca il punto per aprire il dossier</p>

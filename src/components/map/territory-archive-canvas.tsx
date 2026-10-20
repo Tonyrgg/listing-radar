@@ -12,6 +12,8 @@ import { BITONTO_CENTER } from "@/lib/map/constants";
 import styles from "./territory-archive.module.css";
 import { PublicRecordPoints } from "./public-record-points";
 import type { PublicRecordMapPoint } from "@/lib/property-lifecycle/buildings/read-model";
+import type {BuildingMapPoint} from '@/lib/property-lifecycle/buildings/graph-read-model';
+import {BuildingPoints} from './building-points';
 
 const categoryColors={active:MAP_DATA_COLORS.info,sold:MAP_DATA_COLORS.positive,exit:MAP_DATA_COLORS.attention,unknown:MAP_DATA_COLORS.muted,interesting:MAP_DATA_COLORS.accentuated};
 function Points({rows,now}:{rows:IntelligenceRow[];now:number}) {
@@ -32,10 +34,16 @@ function Points({rows,now}:{rows:IntelligenceRow[];now:number}) {
     </Marker>;
   })}</>;
 }
-export function TerritoryArchiveCanvas({rows,now,recordPoints=[]}:{rows:IntelligenceRow[];now:number;recordPoints?:PublicRecordMapPoint[]}) {
+function ContextBounds({coordinates}:{coordinates:string}){
+ const map=useMap();useEffect(()=>{if(!coordinates)return;map.fitBounds(coordinates.split(';').map(p=>p.split(',').map(Number) as [number,number]),{padding:[35,35],maxZoom:17,animate:false});},[map,coordinates]);return null;
+}
+export function TerritoryArchiveCanvas({rows,now,recordPoints=[],buildingPoints=[],showProperties=true}:{rows:IntelligenceRow[];now:number;recordPoints?:PublicRecordMapPoint[];buildingPoints?:BuildingMapPoint[];showProperties?:boolean}) {
+  const fallback=showProperties&&rows.length?[]:buildingPoints.length?buildingPoints:recordPoints;
   return <MapContainer center={[BITONTO_CENTER.latitude,BITONTO_CENTER.longitude]} zoom={14} scrollWheelZoom className="h-[min(70vh,48rem)] min-h-[28rem] w-full rounded-[var(--lr-radius-container)] border border-[var(--lr-line)]" style={{zIndex:0}}>
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-    <Points rows={rows} now={now}/>
+    <Points rows={showProperties?rows:[]} now={now}/>
     <PublicRecordPoints points={recordPoints}/>
+    <BuildingPoints points={buildingPoints}/>
+    <ContextBounds coordinates={fallback.map(p=>`${p.latitude},${p.longitude}`).join(';')}/>
   </MapContainer>;
 }

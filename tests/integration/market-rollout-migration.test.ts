@@ -36,6 +36,8 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec(await sql('0035_public_records_territorial_intelligence.sql'));
   await db.exec(await sql('0036_public_records_context_indexes.sql'));
   await db.exec(await sql('0037_public_records_street_aggregation.sql'));
+  await db.exec(await sql('0038_territorial_knowledge_graph.sql'));
+  await db.exec(await sql('0039_territorial_context_timeline.sql'));
   const loc=(await row("insert into locations(raw_text,municipality,locality,street_name,street_number,scope_state,resolution_method,resolution_confidence,precision_level,normalized_key) values('Piazza Cattedrale 23','Bitonto','Bitonto','Piazza Cattedrale','23','IN_SCOPE','TEST',1,'EXACT_ADDRESS','piazza-test') returning id")).id;
   const b=(await row("insert into buildings(location_id,normalized_key,display_name) values($1,'it|ba|bitonto|bitonto|piazza cattedrale|23','Piazza Cattedrale 23') returning id",[loc])).id;
   await db.exec(`insert into properties(primary_location_id,canonical_attributes) values('${loc}','{"address":"Piazza Cattedrale 23"}');`);
@@ -59,6 +61,30 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await expect(persist('2026-10-19T13:00:00Z',{...record,contentHash:'broken',classificationConfidence:2})).rejects.toThrow();
   await db.exec('rollback to savepoint invalid_public_record');
   expect((await row('select content_hash from building_practice_records')).content_hash).toBe('hash2');
+  expect(await row('select specific_record_count,building_record_count,unit_match from market_observer_graph_property_context')).toEqual({specific_record_count:0,building_record_count:1,unit_match:'REVIEW_REQUIRED'});
+  expect((await row("select count(*)::int n from read_territorial_timeline('BUILDING',$1,30,0) where event_kind='PUBLIC_RECORD'",[b])).n).toBe(1);
+  expect((await row("select has_function_privilege('anon','read_territorial_timeline(text,uuid,integer,integer)','execute') allowed")).allowed).toBe(false);
+  expect((await row("select territorial_activity(0,0,0,0,0) a")).a).toMatchObject({score:0,version:'territorial_activity_v1'});
+  const sid=(await row("insert into street_registry_streets(official_code,official_description,canonical_name,normalized_name,sister_search_name) values('golden-street','CATTEDRALE','Piazza Cattedrale','PIAZZA CATTEDRALE','CATTEDRALE') returning id")).id;
+  const graphLocation={id:loc,streetId:sid,civic:'23',status:'RESOLVED',version:'territorial_graph_v1'};
+  const rid=(await row("select id from building_practice_records where source_record_key='golden-record'")).id;
+  const graphRecord={id:rid,inputHash:'hash2',version:'territorial_graph_v1',references:[{streetId:sid,streetName:'Piazza Cattedrale',civics:['23'],civicState:'EXPLICIT'}],candidateBuildingIds:[b],unmatchedCause:null};
+  const reconcile=()=>row('select recompute_territorial_graph($1,$2) result',[JSON.stringify([graphLocation]),JSON.stringify([graphRecord])]);
+  expect((await reconcile()).result).toMatchObject({recordsProcessed:1,newBuildingLinks:0});
+  const evaluated=(await row('select evaluated_at from public_record_territorial_resolutions')).evaluated_at;
+  await reconcile();expect((await row('select evaluated_at from public_record_territorial_resolutions')).evaluated_at).toEqual(evaluated);
+  expect((await row('select count(*)::int n from building_practice_observations')).n).toBe(2);
+  expect((await row('select street_record_count from market_observer_graph_property_context')).street_record_count).toBe(1);
+  expect((await row('select public_record_count from market_observer_graph_street_context where street_id=$1',[sid])).public_record_count).toBe(1);
+  expect((await row("select count(*)::int n from read_territorial_timeline('STREET',$1,30,0) where event_kind='PUBLIC_RECORD'",[sid])).n).toBe(1);
+  await db.exec("update building_practice_records set document_date=current_date,source_status='REVOKED' where id='"+rid+"'");
+  expect(await row('select recent30,recent90 from market_observer_graph_record_facts')).toMatchObject({recent30:false,recent90:false});
+  await db.exec("update building_practice_records set source_status='Revocato' where id='"+rid+"'");
+  expect(await row('select recent30,recent90 from market_observer_graph_record_facts')).toMatchObject({recent30:false,recent90:false});
+  expect((await row('select count(*)::int n from market_observer_building_duplicate_candidates')).n).toBe(0);
+  await db.exec(`insert into buildings(location_id,normalized_key,display_name) values('${loc}','legacy-duplicate','Piazza Cattedrale 23, variante');`);
+  expect((await row('select classification from market_observer_building_duplicate_candidates')).classification).toBe('PROBABLE_SAME_BUILDING');
+  expect((await row('select count(*)::int n from buildings')).n).toBe(2); // Candidate only: no destructive merge.
  });
  it('projects the complete property archive and municipal register without creating leads or inferring unit/document dates',async()=>{
   await db.exec(await sql('0034_intelligence_archive_public_records.sql'));

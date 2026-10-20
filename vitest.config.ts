@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     restoreMocks: true,
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["worker/**", "node_modules/**"],
   },
   resolve: {

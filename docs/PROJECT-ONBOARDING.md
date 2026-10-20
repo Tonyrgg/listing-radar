@@ -1,5 +1,15 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Public Records Phase 3, 20 ottobre 2026:** migration **0038–0039** applicate.
+> Risoluzioni territoriali derivate versionate, contesti edificio/via/property,
+> candidati duplicati senza merge, attività pubblica spiegabile e timeline nello
+> stesso Territorio. Hash e prime osservazioni dei documenti conservati, nessuna
+> coordinata property inferita da una strada, nessun impatto sullo score commerciale.
+> Audit prima del matcher: [29](property-lifecycle/29-territorial-graph-audit.md).
+> Il runtime BUILDING_DATA_SYNC ricalcola anche le relazioni; comando dedicato
+> `scripts/territorial-graph.ts` in dry-run predefinito, scrittura solo con
+> `--apply --confirm-project=<ref>`. SISTER/Tecnocloud non modificati.
+
 > **Public Records Phase 2, 20 ottobre 2026:** migration **0035–0037** applicate;
 > Albo pubblico incrementale, registro edilizio 2025 con soli metadata, contesto
 > edificio/via/area e layer documentale sulle strutture esistenti. BUILDING_DATA_SYNC
