@@ -153,7 +153,7 @@ via/civico/lettere/intervallo/SNC, ambiguità, building HIGH, unità REVIEW,
 catasto dichiarato, privacy, documento area e golden case reale.
 
 - PostgreSQL/PGlite esegue 0035, 0036 e 0037 reali, con le dipendenze.
-- Suite completa: **550 PASS, 25 SKIP**, 57 file passati e 2 saltati. Le integrazioni
+- Suite completa finale: **551 PASS, 25 SKIP**, 57 file passati e 2 saltati. Le integrazioni
   saltate non vengono dichiarate eseguite. Typecheck web, lint, build Next e design
   check: PASS. Il desktop non è stato modificato né ricertificato.
 - Contesto edificio: prima circa **6.694/6.660 ms**, dopo indici e join
@@ -195,3 +195,60 @@ nessun resolver ufficiale catastale/unità; WMS live non operativo; WFS non
 dimostrato; nessuna normativa interpretata automaticamente; nessun full-text
 universale o download di tutti i PDF. I sei collegamenti a property sono
 contesto di edificio, non documenti certificati della singola unità.
+
+## Chiusura operativa e smoke autenticato del 20 ottobre
+
+Web production: <https://listing-radar-mu.vercel.app>. Il rilascio iniziale
+`02309a4` è completato; durante lo smoke sono emersi e sono stati corretti
+tre problemi della mappa: marker documentali coperti da quelli immobiliari,
+zoom iniziale non sincronizzato nel layer documenti e aggregazione troppo
+fine nella vista regionale. Fix `4551380`, `8ef02bc`, `8e47aeb`; nessuna nuova
+fonte o funzionalità commerciale. Regression test per lo zoom regionale,
+suite completa rieseguita, typecheck, lint e build finali PASS.
+
+Versione funzionale verificata: **`8e47aebbca47fc403fd40fc751765e47260135af`**,
+deploy production **7194285563**, Vercel SUCCESS. Schema remoto allineato
+fino a 0037, verificato nuovamente con dry-run senza migration pendenti.
+L'eventuale commit successivo del presente report modifica solo documentazione.
+
+| Verifica production autenticata | Esito osservato |
+| --- | --- |
+| Territorio e layer documenti | 673 property, 342 record localizzabili su 2.447; punti di strada esplicitamente indicativi |
+| Atto Mazzini 51–57 | Date e fonte visibili; intervallo non risolto, nessuna property associata |
+| Contesto Castelfidardo | 4 documenti, 3 recenti, 1 property attiva; contesto della strada esplicito |
+| Ricerca Fornelli + 36A + 2026 | Restituisce l'atto 691/2026 con i civici dichiarati 36A/36B |
+| Intelligence, filtro documenti edificio | 6 property, compresa Piazza Cattedrale 23 |
+| Piazza Cattedrale 23 | Pratica 3/2024/SCA del 09/01/2024, protocollo 1014; fonte/hash e foglio 49, particella 1485, sub 22 verificati nell'espansione |
+| Semantica del dossier | Edificio, via e area separati; singola unità da verificare |
+| Fonti | Albo 74/16 pagine; 2025 1.161; PRG 22; lacune annuali e SIT non operativo espliciti |
+| Mobile 390×844 | Dossier e ricerca documentale: larghezza documento 380 px, nessun overflow orizzontale nel caso provato |
+| Accesso anonimo | /map, /intelligence e /fonti: 307 verso /login; /api/health: 200 |
+
+Sul deploy finale il click fisico del gruppo Piazza Cattedrale apre le due
+pratiche corrette (475/2024/CILA e 3/2024/SCA), senza aprire un dossier immobile.
+La vista regionale ora aggrega ulteriormente i punti; gruppi vicini possono
+ancora sovrapporsi a scala molto ampia: ingrandire o cercare la via per
+distinguerli. Il controllo da tastiera apre il gruppo selezionato.
+
+Nessun nuovo errore/warning console nei controlli eseguiti. Non è una
+certificazione di ogni browser, viewport o combinazione di filtri.
+I filtri documentali si combinano con l'eventuale contesto via selezionato;
+«Azzera» rimuove anche quel vincolo prima di una ricerca globale.
+
+Scheduler: run pianificata `39379020100` del 20 ottobre completata con successo,
+ma riferita a **DEEP_SYNC_AGENCY**, non Public Records. Il BUILDING_DATA_SYNC
+remoto è quello manuale verificato sopra; nessun successivo evento cron Public
+Records viene dichiarato osservato. Verificare il prossimo avvio giornaliero
+e il primo Albo nuovamente dovuto, senza forzare fetch ripetuti oggi.
+
+Privacy operativa: eliminati 120 file temporanei grezzi di questa fase
+(45.751.903 byte), inclusi HTML Albo e CSV di audit con campi non necessari.
+Restano fixture minimizzate, metriche aggregate, hash e prove UI. Nessuna
+cancellazione di dati Supabase o di file delle fasi precedenti.
+
+Prove locali: `C:/Users/ruggi/listing-radar-validation/2026-10-20/public-records/`.
+Comprendono metriche, log finali e screenshot desktop/mobile del golden case.
+
+Conclusione: **READY WITH LIMITATIONS** per consultazione Public Records.
+Albo e registri importati sono operativi; precisione empirica dei match non
+certificata, annuali incompleti, WMS non disponibile e singole unità in REVIEW.
