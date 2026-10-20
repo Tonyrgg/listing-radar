@@ -12,8 +12,9 @@ export function NewsCardContent({ candidate: c, feedback, actions }: {
 }) {
     const r = c.anchor, Icon = c.group === 'units' ? (r.event_type === 'FUSIONE' ? Merge : Split) : c.group === 'construction' ? Construction : c.group === 'completion' ? Check : c.group === 'commercial' ? Store : c.group === 'land' ? Map : c.group === 'direct' ? Banknote : r.event_type === 'CAMBIO_DESTINAZIONE_USO' ? House : Search;
     const status = feedback?.status;
+    const address = r.street && r.civic ? `${r.street} ${r.civic}` : c.sourceContext?.addressClaim || r.street || r.area_name || 'Localizzazione da verificare';
     return <>
-  <div className="flex items-start gap-3"><Icon aria-hidden="true" className="mt-1 size-5 shrink-0 text-[var(--lr-ink-2)]"/><div className="min-w-0 space-y-2"><h3 className="text-[length:var(--lr-text-record)] font-[650] leading-snug">{c.title}</h3><p className="font-medium">{formatShouty([r.street, r.civic].filter(Boolean).join(' ') || c.sourceContext?.addressClaim || r.area_name || 'Localizzazione da verificare')}</p></div></div>
+  <div className="flex items-start gap-3"><Icon aria-hidden="true" className="mt-1 size-5 shrink-0 text-[var(--lr-ink-2)]"/><div className="min-w-0 space-y-2"><h3 className="text-[length:var(--lr-text-record)] font-[650] leading-snug">{c.title}</h3><p className="font-medium">{formatShouty(address)}</p></div></div>
   <Meta>Atto del {formatDate(administrativeDate(r))}{r.practice_number ? ` · ${r.practice_number}` : ''}{status && status !== 'NEW' ? ` · ${{ INTERESTING: 'Segnata interessante', DEEPENING: 'Da approfondire', ENRICHED: 'Approfondimento disponibile', NOT_USEFUL: 'Scartata', ARCHIVED: 'Archiviata' }[status]}` : c.utility === 'REVIEW' ? ' · Da chiarire' : null}{feedback && feedback.source_signature !== c.signature ? ' · Prove aggiornate dopo la tua valutazione' : null}</Meta>
   <p>{r.event_subtype === 'REGULARIZATION_REFERENCE' ? 'La pratica richiama una trasformazione da regolarizzare.' : 'La pratica dichiara:'} <span>«{r.evidence_text}».</span></p>
   <p><span className="font-medium">Perché può interessarti · </span>{c.why}</p>

@@ -37,7 +37,7 @@ export async function decideNews(id: string, decision: NewsDecision, reason: str
         const r = await db.rpc('review_public_news', { p_id: id, p_decision: decision, p_reason: reason, p_revision: revision, p_event_type: c.anchor.event_type, p_signature: c.signature });
         if (r.error)
             throw Error(r.error.message);
-        let feedback = r.data as NewsFeedback;
+        let feedback = (Array.isArray(r.data) ? r.data[0] : r.data) as NewsFeedback;
         if (decision === 'DEEPEN') {
             try {
                 const enriched = await deepenNews(getSupabaseServiceClient(), c);
@@ -47,7 +47,7 @@ export async function decideNews(id: string, decision: NewsDecision, reason: str
                 const end = await db.rpc('complete_public_news_deepening', { p_id: id, p_revision: feedback.revision, p_enrichment: enriched });
                 if (end.error)
                     throw Error(end.error.message);
-                feedback = end.data as NewsFeedback;
+                feedback = (Array.isArray(end.data) ? end.data[0] : end.data) as NewsFeedback;
             }
             catch {
                 return { feedback, error: 'Valutazione salvata. Approfondimento incompleto: puoi riprovare senza perdere la decisione.' };
