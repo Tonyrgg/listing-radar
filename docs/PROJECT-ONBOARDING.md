@@ -1,5 +1,22 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Public Records Phase 4, 20 ottobre 2026:** migrations **0040–0041** applicate.
+> Albo storico 2021–2026 completato con policy territoriale, checkpoint/lease e health
+> distinta dal live: **1.627 nuovi record, 4.074 totali**. Replay production senza
+> nuove versioni; hash e first_seen dei 2.447 documenti precedenti conservati.
+> Strade con storia 164→292, property con contesto strada 104→133 ed edificio 6→8.
+> Nessun merge, property o lead creato. Revisione tecnica in Fonti/Corrispondenze;
+> 71 codici strada restano REVIEW. Il registro 2025 rimane senza territorializzazione.
+> Audit/accesso [32](property-lifecycle/32-historical-albo-access-plan.md),
+> identità [33](property-lifecycle/33-territorial-identity-review.md), ricerca ufficiale
+> [34](property-lifecycle/34-2025-territorial-data-search.md), specifica export non inviata
+> [35](property-lifecycle/35-territorial-export-request.md), consegna e limiti
+> [36](property-lifecycle/36-historical-intelligence-delivery.md).
+> Comando `scripts/public-records-history.ts --year=2026`: dry-run predefinito;
+> `--apply --confirm-project=<ref>` per ingestione/ripresa. Il piano storico congelato
+> non attesta una nuova osservazione live; `--refresh-inventory` forza la rilettura.
+> Nessun backfill storico automatico dal cron; SISTER/Tecnocloud non modificati.
+
 > **Public Records Phase 3, 20 ottobre 2026:** migration **0038–0039** applicate.
 > Risoluzioni territoriali derivate versionate, contesti edificio/via/property,
 > candidati duplicati senza merge, attività pubblica spiegabile e timeline nello

@@ -70,7 +70,7 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   const sid=(await row("insert into street_registry_streets(official_code,official_description,canonical_name,normalized_name,sister_search_name) values('golden-street','CATTEDRALE','Piazza Cattedrale','PIAZZA CATTEDRALE','CATTEDRALE') returning id")).id;
   const graphLocation={id:loc,streetId:sid,civic:'23',status:'RESOLVED',version:'territorial_graph_v1'};
   const rid=(await row("select id from building_practice_records where source_record_key='golden-record'")).id;
-  const graphRecord={id:rid,inputHash:'hash2',version:'territorial_graph_v1',references:[{streetId:sid,streetName:'Piazza Cattedrale',civics:['23'],civicState:'EXPLICIT'}],candidateBuildingIds:[b],unmatchedCause:null};
+  const graphRecord={id:rid,inputHash:'hash2',version:'territorial_graph_v1',references:[{streetId:sid,streetName:'Piazza Cattedrale',civics:['23'],civicState:'EXPLICIT',candidateStreetIds:[sid]}],candidateBuildingIds:[b],unmatchedCause:null};
   const reconcile=()=>row('select recompute_territorial_graph($1,$2) result',[JSON.stringify([graphLocation]),JSON.stringify([graphRecord])]);
   expect((await reconcile()).result).toMatchObject({recordsProcessed:1,newBuildingLinks:0});
   const evaluated=(await row('select evaluated_at from public_record_territorial_resolutions')).evaluated_at;
@@ -106,7 +106,9 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   const historical={...record,sourceRecordKey:'historical-2022',contentHash:'history-2022',documentDate:'2022-05-10',year:'2022'};
   const activityBefore=(await row('select activity from market_observer_graph_street_context where street_id=$1',[sid])).activity;
   const historyPersist=()=>row("select commit_public_record_history($1,$2,$3,'{}','{}','{}') result",[historyRun,token,JSON.stringify([historical])]);
+  const originalDensity=(await row("select historical_record_density from market_observer_territorial_history where scope='BUILDING' and id=$1",[b])).historical_record_density;
   expect((await historyPersist()).result).toMatchObject({inserted:1,updated:0});
+  expect((await row("select historical_record_density from market_observer_territorial_history where scope='BUILDING' and id=$1",[b])).historical_record_density).toBe(Number(originalDensity)+1);
   expect((await row("select count(*)::int n from market_observer_graph_record_streets s join building_practice_records r on r.id=s.record_id where r.source_record_key='historical-2022'")).n).toBe(0); // No legacy fallback before conservative projection.
 
   const densityBefore=(await row('select historical_record_density from market_observer_territorial_history where scope=\'BUILDING\' and id=$1',[b])).historical_record_density;
@@ -119,6 +121,13 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec("create function auth.uid() returns uuid language sql as $$select '10000000-0000-4000-8000-000000000099'::uuid$$");
   await db.query("select review_public_record_street($1,0,'hash2','UNKNOWN',null)",[rid]);
   expect((await row('select human_overrides from public_record_territorial_resolutions where record_id=$1',[rid])).human_overrides['0'].decision).toBe('UNKNOWN');
+  await db.query("select review_public_record_street($1,0,'hash2','SAME_STREET',$2)",[rid,sid]);
+  expect((await row('select references_json from public_record_territorial_resolutions where record_id=$1',[rid])).references_json[0].streetId).toBe(sid);
+  await db.query("select review_public_record_street($1,0,'hash2','DIFFERENT',null)",[rid]);
+  expect((await row('select references_json from public_record_territorial_resolutions where record_id=$1',[rid])).references_json[0].streetId).toBeNull();
+  expect((await row('select jsonb_array_length(review_history)::int n from public_record_territorial_resolutions where record_id=$1',[rid])).n).toBe(3);
+  expect((await row("select has_function_privilege('anon','review_public_record_street(uuid,integer,text,text,uuid)','execute') allowed")).allowed).toBe(false);
+
   await db.exec('savepoint stale_review');
   await expect(db.query("select review_public_record_street($1,0,'old-hash','SAME_STREET',$2)",[rid,sid])).rejects.toThrow('Stale');
   await db.exec('rollback to stale_review');

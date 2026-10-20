@@ -61,4 +61,10 @@ Audit esteso: 2026 completato in lettura (3.488 righe, 201 candidati). Il primo 
 
 ## Ripresa operativa
 
+Il checkpoint ora conserva anche il piano minimizzato dell'inventory completa.
+La ripresa predefinita usa quel piano congelato: non certifica un nuovo fetch
+né la presenza live. Per rileggere l'inventory usare `--refresh-inventory`;
+se cambia, l'accettazione esplicita va fornita insieme alla rilettura:
+`--refresh-inventory --accept-manifest=<hash verificato nel dry-run>`.
+
 `npx tsx --env-file=.env.local scripts/public-records-history.ts --year=2025` esegue soltanto inventory/dry-run. Aggiungere `--apply --confirm-project=<ref>` per il batch. La stessa chiamata riprende il checkpoint dopo il rilascio/scadenza del lease; nessuna nuova versione degli ID invariati. Se il manifest cambia, il processo si ferma: dopo revisione esplicita usare `--accept-manifest=<hash del nuovo dry-run>`. Vengono rivalutati gli ID, senza cancellare documenti o prove. Nessun backfill storico avviato dallo scheduler live.
