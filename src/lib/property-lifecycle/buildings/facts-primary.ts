@@ -3,7 +3,8 @@ import {hashValue} from '../contracts/normalized-listing';
 import {normalizeBuildingPracticeRows,parseBuildingPracticeCsv} from './practices';
 import {extractPropertyFacts,deepCandidate,FACT_POLICY,type PropertyFact} from './property-facts';
 import {allFactRecords,readSemanticProjections,type SemanticProjection} from './facts-projection';
-export interface PrimaryFacts {sourceKey:string;sourceRecordKey:string;events:PropertyFact[]}
+import type {NewsSourceContext} from './news-triage';
+export interface PrimaryFacts {sourceKey:string;sourceRecordKey:string;events:PropertyFact[];newsContext?:NewsSourceContext}
 /** Operates on the already-fetched CSV in memory, stores no free subject/person data. */
 export function csvPrimaryFacts(csv:string,sourceKey:string,url:string,observedAt:string):PrimaryFacts[]{
  const hash=hashValue(csv),groups=new Map<string,PropertyFact[]>();
@@ -28,7 +29,7 @@ export async function bindPrimaryFacts(db:SupabaseClient,inputs:PrimaryFacts[]){
   const events=input.events.map(e=>{const existing=old.find(o=>o.event_type===e.event_type&&o.evidence_location.source_hash===e.evidence_location.source_hash&&o.evidence_location.field===e.evidence_location.field);return existing??{...e,id:hashValue({recordId:r.id,type:e.event_type,field:e.evidence_location.field,page:e.evidence_location.page})};});
   // Preserve separately verified deep-document evidence for the same record version.
   for(const e of old.filter(e=>e.evidence_location.field==='pdf.text'))if(!events.some(v=>v.event_type===e.event_type))events.push(e);
-  out.set(r.id,{version:FACT_POLICY.version,events:events.slice(0,FACT_POLICY.maxEvents),candidate:deepCandidate(r),primaryReviewed:true,status:events.length?'EXTRACTED':'NO_SUPPORTED_FACT',...(prior?.hash===r.content_hash&&prior.projection.deep?{deep:prior.projection.deep}:{})});
+  out.set(r.id,{version:FACT_POLICY.version,events:events.slice(0,FACT_POLICY.maxEvents),candidate:deepCandidate(r),primaryReviewed:true,status:events.length?'EXTRACTED':'NO_SUPPORTED_FACT',...(input.newsContext?{newsContext:input.newsContext}:prior?.hash===r.content_hash&&prior.projection.newsContext?{newsContext:prior.projection.newsContext}:{}),...(prior?.hash===r.content_hash&&prior.projection.deep?{deep:prior.projection.deep}:{})});
  }
  return out;
 }

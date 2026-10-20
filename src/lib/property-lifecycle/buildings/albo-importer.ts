@@ -4,6 +4,7 @@ import { AlboHttp, collectAlboInventory, parseAlboDetail } from "./albo";
 import { extractTerritorialReferences, type RegistryStreet } from "./territorial-extraction";
 import { PUBLIC_RECORD_POLICY as P, classifyPublicRecord } from "./public-record-policy";
 import {extractPropertyFacts} from './property-facts';
+import {newsSourceContext} from './news-source-context';
 import {hashValue} from '../contracts/normalized-listing';
 import type {PrimaryFacts} from './facts-primary';
 
@@ -28,7 +29,7 @@ export async function importAlboRecords(db: SupabaseClient, options: {fetcher?: 
       const old=before.get(item.id), lastDetail=old?.metadata?.detailObservedAt;
       if(old?.metadata?.inventoryMarker===item.marker && old.metadata?.policyVersion===P.version && lastDetail && Date.parse(observedAt)-Date.parse(lastDetail)<P.deepRotationDays*86400000){unchanged.push(old.id);continue;}
       const detail = parseAlboDetail(await http.get(item.url),item.id); details++;
-      options.onPrimaryFacts?.({sourceKey:P.alboSource,sourceRecordKey:item.id,events:extractPropertyFacts(item.id,{text:detail.subject,field:'albo.subject',sourceUrl:item.url,sourceHash:hashValue(detail),observedAt,territorialScopeVerified:extractTerritorialReferences(detail.subject,streets).length>0},detail.documentDate??detail.actDate??item.start)});
+      options.onPrimaryFacts?.({sourceKey:P.alboSource,sourceRecordKey:item.id,events:extractPropertyFacts(item.id,{text:detail.subject,field:'albo.subject',sourceUrl:item.url,sourceHash:hashValue(detail),observedAt,territorialScopeVerified:extractTerritorialReferences(detail.subject,streets).length>0},detail.documentDate??detail.actDate??item.start),newsContext:newsSourceContext(detail.subject,item.url,hashValue(detail),observedAt)});
       records.push(prepareAlboRecord(item,detail,streets,observedAt));
     }
     let inserted=0,updated=0,links=0;

@@ -1,6 +1,7 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {cheapFacts,deepCandidate,FACT_POLICY,type FactRecord,type PropertyFact} from './property-facts';
-export interface SemanticProjection {version:string;events:PropertyFact[];candidate:{priority:number;reason:string};status:'EXTRACTED'|'NO_SUPPORTED_FACT'|'REVIEW';primaryReviewed?:boolean;deep?:{status:string;url?:string;reason?:string}}
+import type {NewsSourceContext} from './news-triage';
+export interface SemanticProjection {version:string;events:PropertyFact[];candidate:{priority:number;reason:string};status:'EXTRACTED'|'NO_SUPPORTED_FACT'|'REVIEW';primaryReviewed?:boolean;newsContext?:NewsSourceContext;deep?:{status:string;url?:string;reason?:string}}
 export async function allFactRecords(db:SupabaseClient){
  const rows:FactRecord[]=[];for(let from=0;;from+=500){const q=await db.from('market_observer_public_records').select('id,content_hash,source_key,source_record_key,source_url,record_type,practice_type,intervention_type,record_date,source_status,document_urls,territorial_references').order('id').range(from,from+499);if(q.error)throw Error(q.error.message);rows.push(...q.data as FactRecord[]);if(q.data.length<500)break;}return rows;
 }

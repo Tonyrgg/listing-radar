@@ -146,8 +146,36 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec('savepoint stale_review');
   await expect(db.query("select review_public_record_street($1,0,'old-hash','SAME_STREET',$2)",[rid,sid])).rejects.toThrow('Stale');
   await db.exec('rollback to stale_review');
-
-
+  // News workflow: real migration/RPCs, isolated from original facts and CRM.
+  await db.exec("create or replace function auth.uid() returns uuid language sql as $$select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),'10000000-0000-4000-8000-000000000099')::uuid$$");
+  await db.exec(await sql('0045_public_news_triage.sql'));
+  await db.exec("insert into auth.users values('10000000-0000-4000-8000-000000000099'),('10000000-0000-4000-8000-000000000098');grant usage on schema auth to authenticated;");
+  await db.exec('savepoint old_news');
+  await expect(db.query("select review_public_news($1,'INTERESTING',null,0,'FRAZIONAMENTO','sig')",[rid])).rejects.toThrow('2026');
+  await db.exec('rollback to old_news');
+  await persist('2026-10-20T12:00:00Z',{...record,sourceRecordKey:'news2026',contentHash:'news2026',documentDate:'2026-03-14',year:'2026'});
+  const nid=(await row("select id from building_practice_records where source_record_key='news2026'")).id;
+  await row('select recompute_territorial_graph($1,$2)',[JSON.stringify([]),JSON.stringify([{...graphRecord,id:nid,inputHash:'news2026'}])]);
+  const nf=extractPropertyFacts(nid as string,{text:'divisione in due unità',field:'Oggetto',sourceUrl:'https://www.comune.bitonto.ba.it/test',sourceHash:'a'.repeat(64),observedAt:'2026-10-20T12:00:00Z'},'2026-03-14');
+  await row('select project_public_record_facts($1)',[JSON.stringify([{recordId:nid,inputHash:'news2026',projection:{...projection,events:nf}}])]);
+  const originalFacts=(await row('select semantic_projection from public_record_territorial_resolutions where record_id=$1',[nid])).semantic_projection;
+  await db.query("select observe_public_news($1,'FRAZIONAMENTO','sig')",[nid]);await db.query("select observe_public_news($1,'FRAZIONAMENTO','sig')",[nid]);
+  expect((await row('select shown::int n from public_record_news_feedback_stats')).n).toBe(1);
+  const decide=(d:string,reason:string|null,revision:number)=>row('select * from review_public_news($1,$2,$3,$4,$5,$6)',[nid,d,reason,revision,'FRAZIONAMENTO','sig']);
+  expect(await decide('INTERESTING',null,0)).toMatchObject({decision:'INTERESTING',status:'INTERESTING',revision:1});
+  expect(await decide('DEEPEN',null,1)).toMatchObject({decision:'DEEPEN',status:'DEEPENING',revision:2});
+  await row('select complete_public_news_deepening($1,2,$2)',[nid,JSON.stringify({checkedAt:'2026-10-20',facts:[],gaps:['UNKNOWN']})]);
+  expect(await decide('NOT_USEFUL','TOO_IMPRECISE',3)).toMatchObject({decision:'NOT_USEFUL',reason:'TOO_IMPRECISE',status:'NOT_USEFUL',revision:4});
+  await db.exec('savepoint concurrent_news');
+  await expect(row('select complete_public_news_deepening($1,2,$2)',[nid,JSON.stringify({facts:[]})])).rejects.toThrow('Review changed');
+  await db.exec('rollback to concurrent_news');
+  expect(await row('select shown::int,interesting::int,deepened::int,rejected::int,reasons from public_record_news_feedback_stats')).toEqual({shown:1,interesting:0,deepened:1,rejected:1,reasons:['TOO_IMPRECISE']});
+  expect((await row('select semantic_projection from public_record_territorial_resolutions where record_id=$1',[nid])).semantic_projection).toEqual(originalFacts);
+  expect((await row('select count(*)::int n from acquisition_leads')).n).toBe(0);
+  expect((await row("select has_function_privilege('anon','review_public_news(uuid,text,text,integer,text,text)','execute') ok")).ok).toBe(false);
+  await db.exec("set local role authenticated;select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000098',true)");
+  expect((await row('select count(*)::int n from public_record_news_feedback')).n).toBe(0);
+  await db.exec('reset role');
  });
  it('projects the complete property archive and municipal register without creating leads or inferring unit/document dates',async()=>{
   await db.exec(await sql('0034_intelligence_archive_public_records.sql'));

@@ -6,7 +6,9 @@ import {parseBuildingPracticeCsv,normalizeBuildingPracticeRows} from '../src/lib
 import {DEFAULT_BUILDING_PRACTICE_SOURCE_KEY as KEY,DEFAULT_BUILDING_PRACTICE_SOURCE_URL as URL2024} from '../src/lib/property-lifecycle/buildings/importer';
 import {PRACTICES_2025} from '../src/lib/property-lifecycle/buildings/public-record-policy';
 import {AlboHttp,parseAlboDetail} from '../src/lib/property-lifecycle/buildings/albo';
-import {allFactRecords,projectPropertyFacts,type SemanticProjection} from '../src/lib/property-lifecycle/buildings/facts-projection';
+import {allFactRecords,readSemanticProjections,projectPropertyFacts,type SemanticProjection} from '../src/lib/property-lifecycle/buildings/facts-projection';
+import {NEWS_POLICY,romeToday} from '../src/lib/property-lifecycle/buildings/news-triage';
+import {newsSourceContext} from '../src/lib/property-lifecycle/buildings/news-source-context';
 import {cheapFacts,deepCandidate,extractPropertyFacts,FACT_POLICY,type FactRecord} from '../src/lib/property-lifecycle/buildings/property-facts';
 import {extractKnownPdfFacts} from '../src/lib/property-lifecycle/buildings/facts-pdf';
 const args=process.argv.slice(2),apply=args.includes('--apply'),primary=args.includes('--primary'),resume=args.includes('--resume');
@@ -18,8 +20,9 @@ const db=createClient(url,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{persistS
 type SourceRecord=FactRecord&{source_record_key:string;document_urls:string[];territorial_references:unknown[]};
 async function main(){
  await mkdir(out.replace(/[\\/][^\\/]+$/,''),{recursive:true});
- const records=await allFactRecords(db) as SourceRecord[],at=new Date().toISOString();
- let rows=records.map(record=>({recordId:record.id,inputHash:record.content_hash,projection:{version:FACT_POLICY.version,events:cheapFacts(record,at),candidate:deepCandidate(record),status:'REVIEW'} as SemanticProjection}));
+ const records=await allFactRecords(db) as SourceRecord[],previous=await readSemanticProjections(db),at=new Date().toISOString();
+ const current=(r:SourceRecord)=>!!r.record_date&&r.record_date>=NEWS_POLICY.start&&r.record_date<=romeToday(Date.now());
+ let rows=records.map(record=>({recordId:record.id,inputHash:record.content_hash,projection:previous.get(record.id)?.hash===record.content_hash?previous.get(record.id)!.projection:{version:FACT_POLICY.version,events:cheapFacts(record,at),candidate:deepCandidate(record),status:'REVIEW'} as SemanticProjection}));
  const diagnostics:Array<Record<string,unknown>>=[];
  if(resume){const previous=JSON.parse(await readFile(out,'utf8'));const old=new Map(previous.rows.map((r:typeof rows[number])=>[r.recordId,r]));rows=rows.map(r=>{const p=old.get(r.recordId) as typeof r|undefined;if(p?.inputHash!==r.inputHash)return r;p.projection.events=[...r.projection.events,...p.projection.events.filter(e=>e.evidence_location.field!=='practice_type')];return p;});diagnostics.push(...previous.diagnostics);}
  const byId=new Map(rows.map(r=>[r.recordId,r]));
@@ -34,7 +37,7 @@ async function main(){
    const existing=new Map(records.filter(r=>r.source_key===key).map(r=>[r.source_record_key,r]));let matched=0;
    for(let index=0;index<raw.length;index++){
     const normalized=normalizeBuildingPracticeRows([raw[index]]).records[0];if(!normalized)continue;
-    const record=existing.get(normalized.sourceRecordKey);if(!record)continue;matched++;
+    const record=existing.get(normalized.sourceRecordKey);if(!record||!current(record))continue;matched++;
     const row=byId.get(record.id)!;row.projection.primaryReviewed=true;
     for(const field of ['Oggetto','Oggetto Fascicolo','Tipo Pratica']){
      const text=Object.entries(raw[index]).find(([k])=>k.replace(/\s/g,'').toLowerCase()===field.replace(/\s/g,'').toLowerCase())?.[1];if(!text)continue;
@@ -44,19 +47,19 @@ async function main(){
    }
    diagnostics.push({source:key,status:'OK',rows:raw.length,matchedRows:matched,sha256:hash,rawRetained:false});await save();
   }
-  const http=new AlboHttp(),candidates=records.filter(r=>r.source_key==='comune-bitonto-albo').sort((a,b)=>deepCandidate(b).priority-deepCandidate(a).priority||(b.record_date??'').localeCompare(a.record_date??'')).slice(0,limit);
+  const http=new AlboHttp(),candidates=records.filter(r=>r.source_key==='comune-bitonto-albo'&&current(r)).sort((a,b)=>deepCandidate(b).priority-deepCandidate(a).priority||(b.record_date??'').localeCompare(a.record_date??'')).slice(0,limit);
   for(const record of candidates){
    const row=byId.get(record.id)!;if(resume&&!args.includes('--refresh-albo')&&row.projection.primaryReviewed)continue;
    try{const html=await http.get(record.source_url!),detail=parseAlboDetail(html,record.source_record_key);
     const events=extractPropertyFacts(record.id,{text:detail.subject,field:'albo.subject',sourceUrl:record.source_url!,sourceHash:createHash('sha256').update(html).digest('hex'),observedAt:at,territorialScopeVerified:record.territorial_references?.length>0},detail.documentDate??detail.actDate??record.record_date);
-    row.projection.events=[...events,...row.projection.events.filter(e=>e.evidence_location.field==='pdf.text'&&!events.some(v=>v.event_type===e.event_type))];row.projection.primaryReviewed=true;row.projection.status=events.length?'EXTRACTED':'NO_SUPPORTED_FACT';
+    row.projection.events=[...row.projection.events,...events.filter(e=>!row.projection.events.some(v=>v.id===e.id))];row.projection.newsContext=newsSourceContext(detail.subject,record.source_url!,createHash('sha256').update(html).digest('hex'),at);row.projection.primaryReviewed=true;row.projection.status=row.projection.events.length?'EXTRACTED':'NO_SUPPORTED_FACT';
     diagnostics.push({recordId:record.id,status:'OK',events:events.length,documentUrls:detail.documents});
    }catch(e){diagnostics.push({recordId:record.id,status:'REVIEW',reason:String(e)});row.projection.status='REVIEW';}
    await save();
   }
  }
  const pdfLimit=Math.min(FACT_POLICY.pdfLimit,Math.max(0,Number(value('--pdf-limit')??0)));
- const pdfCandidates=records.filter(r=>byId.get(r.id)!.projection.candidate.priority>=70&&!byId.get(r.id)!.projection.deep)
+ const pdfCandidates=records.filter(r=>current(r)&&byId.get(r.id)!.projection.candidate.priority>=70&&!byId.get(r.id)!.projection.deep)
   .map(r=>({record:r,urls:(diagnostics.find(d=>d.recordId===r.id&&d.status==='OK')?.documentUrls??r.document_urls??[]) as string[]})).filter(r=>r.urls.length).slice(0,pdfLimit);
  for(const {record,urls} of pdfCandidates){const row=byId.get(record.id)!;try{const result=await extractKnownPdfFacts(record.id,urls[0],record.record_date);
   row.projection.events=row.projection.events.filter(e=>e.evidence_location.field!=='pdf.text'||e.evidence_location.source_url!==urls[0]);

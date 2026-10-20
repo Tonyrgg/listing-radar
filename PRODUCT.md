@@ -22,6 +22,11 @@ Il successo si misura dalla facilità di capire cosa sappiamo e da quale prova,
 distinguendo date dichiarate, prima osservazione, assenze, vendite e incertezze.
 Nessuna attività del giorno, diario, reminder o creazione lead nella consultazione.
 
+Notizie da valutare è una coda di intelligence con controllo umano, limitata
+agli atti amministrativi dal 1 gennaio 2026 a oggi. Interessante, Approfondisci
+e Non utile salvano una valutazione personale senza cambiare le prove o creare
+lead. Lo storico spiega il presente e resta consultabile separatamente.
+
 ## Brand Personality
 
 Sobrio, operativo, affidabile. L'interfaccia deve trasmettere controllo e

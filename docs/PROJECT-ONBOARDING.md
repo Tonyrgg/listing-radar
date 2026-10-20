@@ -1,5 +1,12 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **News Triage V1, 20 ottobre 2026:** migration **0045**, coda Notizie da valutare
+> con data amministrativa 2026, filtro di utilità e decisioni personali persistenti.
+> Approfondimento limitato a schede/PDF già noti; nessun lead o nuova fonte.
+> Audit: 274 documenti 2026, 237 REVIEW riletti; 8 facts su 6 pratiche, tre situazioni
+> da approfondire e nessuna promozione automatica. L'asta già aggiudicata non viene
+> presentata come disponibile. [Audit](property-lifecycle/39-news-triage-audit.md).
+
 > **Public property facts, 20 ottobre 2026:** proiezione `property_facts_v1` sui
 > 4.074 record esistenti, migrations **0042-0044**. 1.319 fatti sostenuti e tre
 > combinazioni documentali; nessun lead o nuova fonte. Intelligence/Notizie,
