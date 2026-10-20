@@ -22,12 +22,8 @@ function fold(value: string): string {
 }
 
 function canonicalCivic(value: string): string | null {
-  const folded = fold(value).replace(/\s+/g, "");
-  const match = folded.match(/^0*(\d+)([a-z]{0,2})$/);
-  if (!match?.[1]) {
-    return null;
-  }
-  return String(Number(match[1])) + (match[2] ?? "");
+  const parsed=parseCivics(value.replace(/^\s*(?:numero|nro|civico|n)\.?\s*/i,''));
+  return parsed.state==='EXPLICIT'&&parsed.values.length===1?parsed.values[0]:null;
 }
 
 function canonicalLocality(value: string | null): CanonicalBuildingAddress["locality"] {

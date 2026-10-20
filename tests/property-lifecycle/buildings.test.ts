@@ -11,6 +11,9 @@ import {
 } from "@/lib/property-lifecycle/buildings/practices";
 
 describe("Property Lifecycle building addresses", () => {
+  it.each(['14/16','14-16','51–57'])('does not turn range %s into a concatenated exact civic',streetNumber=>{
+    expect(canonicalBuildingAddress({scope:'IN_SCOPE',precision:'EXACT_ADDRESS',municipality:'Bitonto',locality:'Bitonto',streetName:'Via Test',streetNumber})).toBeNull();
+  });
   it("creates a stable civic-level identity for exact in-scope addresses", () => {
     expect(
       canonicalBuildingAddress({
