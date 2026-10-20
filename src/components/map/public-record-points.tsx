@@ -16,7 +16,7 @@ export function PublicRecordPoints({points}:{points:PublicRecordMapPoint[]}){
   const color=/PLAN|VARIANT|HERITAGE/.test(first.category)?MAP_DATA_COLORS.positive:/WORK|VIABILITY/.test(first.category)?MAP_DATA_COLORS.attention:/ORDER|ORDINANZA/.test(first.category)?MAP_DATA_COLORS.accentuated:MAP_DATA_COLORS.info;
   const label=`${unique.length} documenti pubblici · ${first.streetName}`;
   const icon=L.divIcon({className:styles.marker,iconSize:[30,30],iconAnchor:[15,15],html:`<span style="display:grid;place-items:center;width:30px;height:30px;border-radius:6px;border:2px solid ${MAP_INK.halo};background:${color};color:${MAP_INK.onColor};font-weight:650">${unique.length>1?unique.length:"▤"}</span>`});
-  return <Marker key={c.id} position={[c.latitude,c.longitude]} icon={icon} title={label} keyboard eventHandlers={{add:e=>e.target.getElement()?.setAttribute("aria-label",label)}}>
+  return <Marker key={c.id} position={[c.latitude,c.longitude]} icon={icon} title={label} keyboard zIndexOffset={1000} eventHandlers={{add:e=>e.target.getElement()?.setAttribute("aria-label",label)}}>
     <Popup className={styles.recordPopup} maxWidth={340} maxHeight={360}>
       <strong>Documenti pubblici · {unique.length}</strong><p>Posizione indicativa sulla strada, non del civico o dell’appartamento.</p>
       <ul className="space-y-3">{unique.slice(0,8).map(r=><li key={r.recordId}><span>{PUBLIC_RECORD_LABELS[r.category]??"Atto pubblico"}</span><br/><Link className="underline" href={`/map?atto=${r.recordId}#atto`}>{r.title}</Link></li>)}</ul>
