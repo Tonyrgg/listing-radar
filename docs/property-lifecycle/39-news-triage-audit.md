@@ -95,3 +95,12 @@ dello stesso edificio, senza certificare la stessa unità.
 
 La lettura è assistita dall'agente: **non è un holdout umano indipendente** e non
 costituisce una misura di precisione commerciale.
+
+## Checkpoint dopo il run operativo
+
+Il run BUILDING_DATA_SYNC `39485401931` ha poi aggiornato l'inventory Albo già
+configurata: otto nuovi documenti ordinari, nessuna nuova fonte. L'archivio sale
+a **4.082 documenti / 1.323 facts / 9 facts 2026**. Il nono fact è un
+LAVORO_STRADALE, ARCHIVE_ONLY: aggiungere questa riga alla tabella precedente
+porta a 9 totali, 0 candidati automatici, 4 archivio, 5 REVIEW. Le card utili
+restano tre, senza promuovere il fatto stradale recente.

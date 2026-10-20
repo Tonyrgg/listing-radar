@@ -3,8 +3,10 @@
 ## 2026 FACTS / NEWS CANDIDATES / REVIEW POOL
 
 [Audit completo e tabella per tipo](39-news-triage-audit.md).
-4.074 documenti, 1.319 facts originali conservati integralmente, tre nuove prove
-selezionate: **1.322 facts**, di cui **8 nel 2026**. Una card per pratica:
+Audit iniziale su 4.074 documenti, 1.319 facts originali conservati integralmente,
+tre nuove prove selezionate: **1.322 facts**, di cui **8 nel 2026**. Il successivo
+run ordinario della fonte Albo esistente ha portato a **4.082 documenti, 1.323
+facts e 9 facts 2026**: il nuovo fatto stradale resta ARCHIVE_ONLY. Una card per pratica:
 tre REVIEW, tre ARCHIVE_ONLY, zero NEWS_CANDIDATE automatici.
 237/237 schede REVIEW 2026 rilette, tre PDF già associati esaminati; nessuna fonte
 aggiunta, nessun crawler esteso. La coda non viene riempita con gli atti 2024/25.
@@ -86,15 +88,51 @@ facts invariati e zero lead. Test TS: finestra Roma, raggruppamento, storico
 come contesto, FROM/TO, manutenzione, gara aggiudicata, contabilità, filtri.
 Test UI: blocchi leggibili, nessuna griglia a tre colonne, dettagli chiusi.
 Parser PDF serverless esercitato con contenitore PDF reale; host/MIME/dimensione
-e indisponibilità verificati. Risultati finali e smoke sotto, dopo il rilascio.
+e indisponibilità verificati.
+
+Risultato finale: **668 test passati, 25 saltati**, 64 file passati e 2 saltati.
+Typecheck web, ESLint, build Next.js e design:check passati. Gli skip sono quelli
+già presenti: non sono dichiarati passati. Smoke autenticato in produzione:
+filtro Vendita diretta, persistenza ENRICHED dopo navigazione/reload e replay,
+PDF primario di cinque pagine letto, catasto letterale estratto da scheda e PDF
+(Fg 49, particella 387, subb. 1 e 2) senza unit match, statistiche uniche e motivi
+facoltativi visibili. Nessun giudizio INTERESTING/NOT_USEFUL inventato in production:
+questi percorsi sono verificati in SQL. La richiesta DEEPEN è uno smoke tecnico
+eseguito dall'agente, **non una valutazione umana di opportunità**.
+
+QA responsive a 390 / 1024 / 1600 pixel: nessun overflow; azioni mobile verticali,
+44px, dettagli chiusi all'apertura. Torre d'Agera 6, atto 10/10/2024, verificato
+nello storico e assente nella coda operativa.
 
 ## DEPLOYMENT
 
 Target Supabase `eqqmglsxwbsihrlecnun`: 0001–0044 già presenti, dry-run ha indicato
 soltanto 0045, applicata con successo il 20/10/2026. PostgREST notificato.
 Web production: https://listing-radar-mu.vercel.app.
-Versione e smoke autenticato da riportare a verifica conclusa. Nessun intervento
-su SISTER/Tecnocloud o rilascio desktop.
+Implementazione `d32e646`, correzioni necessarie `ecf5751`, `150d5e4`,
+versione funzionale finale **`9f7bdfb`**. Deploy Vercel production **7209454829**
+riuscito. Primo run lifecycle **39485401931** su d32e646: 1 eseguito, 0 falliti.
+Replay lifecycle **39486777347** sul commit funzionale finale 9f7bdfb: riuscito,
+1 eseguito, 0 falliti. Migrazioni 0001–0045 allineate sul target.
+Nessun intervento su SISTER/Tecnocloud o rilascio desktop.
+
+Verifica database dopo il run: tutti i 4.074 record preesistenti mantengono hash
+e first_seen, tutti i 1.319 facts originali sono identici. Lead rimasti **1**;
+nessun lead generato dalla review. Le property correnti sono 677: non si dichiara
+un confronto con il vecchio campione da 673, precedente a run ordinari del mercato;
+il workflow di triage non contiene alcuna scrittura sulle property.
+
+Screenshot e prove locali:
+`C:/Users/ruggi/listing-radar-validation/2026-10-20/news-triage/`.
+`before-desktop.png`, `desktop-final.png`, `desktop-card.png`, `mobile-full.png`,
+`mobile-enriched-full.png`, `mobile-final.png`, `tablet-archive.png`, report JSON
+e log dei gate. Il filtro indirizzo Ariosto trova anche il claim testuale non
+territorializzato. Dopo lo smoke: due situazioni Da valutare e una ENRICHED nel
+filtro Da approfondire; tutte e tre restano REVIEW nella classificazione automatica.
+
+Prontezza: **READY WITH LIMITATIONS** per il triage assistito. Non è un motore
+di previsione vendita validato: zero promozioni automatiche sono un esito corretto
+quando le prove non bastano. Nessuna nuova fonte e nessun workflow CRM.
 
 ## LIMITATIONS
 
