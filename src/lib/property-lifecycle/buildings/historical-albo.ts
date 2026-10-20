@@ -7,6 +7,19 @@ import {classifyPublicRecord} from './public-record-policy';
 export const HISTORY_POLICY=Object.freeze({version:'territorial_relevance_v1',url:'https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/storico-atti',minYear:2021,maxYear:2026,maxYearRecords:6500,maxCandidateRatio:0.35,maxPages:330,pageSize:50,leaseSeconds:600,batchSize:25});
 const ns='_jcitygovalbopubblicazioni_WAR_jcitygovalbiportlet_';
 export interface HistoricalCandidate {id:string;url:string;registration:string;act:string;category:string;start:string|null;end:string|null;marker:string}
+export interface HistoricalPlan {year:number;total:number;pages:number;fingerprint:string|null;candidates:HistoricalCandidate[];manifest:string;inventoryObservedAt?:string}
+export function validateHistoricalPlan(plan:HistoricalPlan,year:number){
+ if(plan.year!==year||plan.total<1||plan.total>HISTORY_POLICY.maxYearRecords||plan.pages<1||plan.pages>HISTORY_POLICY.maxPages||!plan.candidates.length||plan.candidates.length/plan.total>HISTORY_POLICY.maxCandidateRatio||hashValue(plan.candidates)!==plan.manifest)throw Error('Invalid historical checkpoint plan');
+ const seen=new Set<string>();for(const c of plan.candidates){if(!/^\d+$/.test(c.id)||seen.has(c.id)||!safeAlboUrl(c.url).endsWith('/papca/display/'+c.id)||(!c.registration.startsWith(`${year}/`)&&!c.act.startsWith(`${year}/`)))throw Error('Invalid historical checkpoint identity');seen.add(c.id);}
+ return plan;
+}
+export function resumeHistoricalCheckpoint(previous:{manifest?:string;done?:string[]},manifest:string,acceptedManifest?:string){
+ if(previous.manifest&&previous.manifest!==manifest){
+  if(acceptedManifest!==manifest)throw Error('Historical manifest changed; manual review required before resume');
+  return {manifest,done:[] as string[]}; // Re-evaluate identities; never deletes source records or evidence.
+ }
+ return {manifest,done:previous.done??[]};
+}
 export function territorialRelevance(subject:string,category:string,streets:RegistryStreet[]){
  const refs=extractTerritorialReferences(subject,streets),cadastre=extractDeclaredCadastralReferences(subject),type=classifyPublicRecord(subject,category).type;
  // Exclude routine personnel/finance/publication notices even if an office address is present.
@@ -38,6 +51,6 @@ export async function historicalInventory(http:Pick<AlboHttp,'get'|'post'>,year:
  if(seen.size!==total)throw Error('Historical inventory incomplete');
  if(!candidates.length||candidates.length/seen.size>HISTORY_POLICY.maxCandidateRatio)throw Error('Historical candidate count anomaly');
  candidates.sort((a,b)=>a.id.localeCompare(b.id));
- return {year,total:seen.size,pages:expected,fingerprint,candidates,manifest:hashValue(candidates)};
+ return {year,total:seen.size,pages:expected,fingerprint,candidates,manifest:hashValue(candidates),inventoryObservedAt:new Date().toISOString()};
 }
 export function historyItem(candidate:HistoricalCandidate,subject:string):AlboItem{return {...candidate,subject};}

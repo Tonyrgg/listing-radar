@@ -39,6 +39,7 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec(await sql('0038_territorial_knowledge_graph.sql'));
   await db.exec(await sql('0039_territorial_context_timeline.sql'));
   await db.exec(await sql('0040_historical_public_records.sql'));
+  await db.exec(await sql('0041_historical_projection_guard.sql'));
   const loc=(await row("insert into locations(raw_text,municipality,locality,street_name,street_number,scope_state,resolution_method,resolution_confidence,precision_level,normalized_key) values('Piazza Cattedrale 23','Bitonto','Bitonto','Piazza Cattedrale','23','IN_SCOPE','TEST',1,'EXACT_ADDRESS','piazza-test') returning id")).id;
   const b=(await row("insert into buildings(location_id,normalized_key,display_name) values($1,'it|ba|bitonto|bitonto|piazza cattedrale|23','Piazza Cattedrale 23') returning id",[loc])).id;
   await db.exec(`insert into properties(primary_location_id,canonical_attributes) values('${loc}','{"address":"Piazza Cattedrale 23"}');`);
@@ -106,6 +107,8 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   const activityBefore=(await row('select activity from market_observer_graph_street_context where street_id=$1',[sid])).activity;
   const historyPersist=()=>row("select commit_public_record_history($1,$2,$3,'{}','{}','{}') result",[historyRun,token,JSON.stringify([historical])]);
   expect((await historyPersist()).result).toMatchObject({inserted:1,updated:0});
+  expect((await row("select count(*)::int n from market_observer_graph_record_streets s join building_practice_records r on r.id=s.record_id where r.source_record_key='historical-2022'")).n).toBe(0); // No legacy fallback before conservative projection.
+
   const densityBefore=(await row('select historical_record_density from market_observer_territorial_history where scope=\'BUILDING\' and id=$1',[b])).historical_record_density;
   expect((await historyPersist()).result).toMatchObject({inserted:0,updated:0});
   expect((await row("select count(*)::int n from building_practice_observations o join building_practice_records r on r.id=o.practice_record_id where r.source_record_key='historical-2022'")).n).toBe(1);

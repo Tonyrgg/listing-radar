@@ -58,3 +58,7 @@ riceve indirizzi da persone, oggetti liberi o protocolli. Ricerca complementare
 e specifica export nel report di consegna.
 
 Audit esteso: 2026 completato in lettura (3.488 righe, 201 candidati). Il primo tentativo 2025 si ? fermato correttamente su registro 2026/921, atto 2025/75. Verificato che il filtro ? una unione registro/atto; policy corretta prima di qualsiasi ingestion.
+
+## Ripresa operativa
+
+`npx tsx --env-file=.env.local scripts/public-records-history.ts --year=2025` esegue soltanto inventory/dry-run. Aggiungere `--apply --confirm-project=<ref>` per il batch. La stessa chiamata riprende il checkpoint dopo il rilascio/scadenza del lease; nessuna nuova versione degli ID invariati. Se il manifest cambia, il processo si ferma: dopo revisione esplicita usare `--accept-manifest=<hash del nuovo dry-run>`. Vengono rivalutati gli ID, senza cancellare documenti o prove. Nessun backfill storico avviato dallo scheduler live.

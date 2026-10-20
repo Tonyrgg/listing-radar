@@ -65,7 +65,9 @@ export class AlboHttp {
     safeAlboUrl(url);
     for (let attempt = 0; ; attempt++) {
       if (this.delayMs) await new Promise(r => setTimeout(r,this.delayMs * 2 ** attempt));
-      const r = await this.fetcher(url, { method: body ? "POST" : "GET", body, signal: AbortSignal.timeout(P.requestTimeoutMs), redirect: "error", headers: { cookie: [...this.cookies.values()].join("; "), "user-agent": "ListingRadarLifecycle/2.0 (+public territorial records)" } });
+      let r:Response;
+      try{r = await this.fetcher(url, { method: body ? "POST" : "GET", body, signal: AbortSignal.timeout(P.requestTimeoutMs), redirect: "error", headers: { cookie: [...this.cookies.values()].join("; "), "user-agent": "ListingRadarLifecycle/2.0 (+public territorial records)" } });}
+      catch(error){if(attempt<P.retries)continue;const cause=(error as {cause?:{code?:string;message?:string}}).cause;const diagnostic=cause?.code??(cause?.message==='unexpected redirect'?'UNEXPECTED_REDIRECT':'TRANSPORT_ERROR');throw Error(`Albo network unavailable after bounded retries (${diagnostic})`);}
       if ((r.status === 429 || r.status >= 500) && attempt < P.retries) continue;
       if (!r.ok) throw Error(`Albo HTTP ${r.status}`);
       for (const value of r.headers.getSetCookie()) { const pair = value.split(";")[0]; this.cookies.set(pair.split("=")[0],pair); }
