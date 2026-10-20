@@ -1,6 +1,6 @@
 "use client";
-import { useMemo,useState } from "react";
-import { Marker,Popup,useMapEvents,useMap } from "react-leaflet";
+import { useCallback,useMemo,useSyncExternalStore } from "react";
+import { Marker,Popup,useMap } from "react-leaflet";
 import L from "leaflet";
 import Link from "next/link";
 import { listingClusters } from "@/lib/map/listing-clusters";
@@ -8,7 +8,10 @@ import { MAP_DATA_COLORS,MAP_INK } from "@/lib/design/map-palette";
 import { PUBLIC_RECORD_LABELS,type PublicRecordMapPoint } from "@/lib/property-lifecycle/buildings/read-model";
 import styles from "./territory-archive.module.css";
 export function PublicRecordPoints({points}:{points:PublicRecordMapPoint[]}){
- const map=useMap(),[zoom,setZoom]=useState(map.getZoom());useMapEvents({zoomend:()=>setZoom(map.getZoom())});
+ const map=useMap();
+ const subscribe=useCallback((onChange:()=>void)=>{map.on("zoomend",onChange);return()=>{map.off("zoomend",onChange);};},[map]);
+ const readZoom=useCallback(()=>map.getZoom(),[map]);
+ const zoom=useSyncExternalStore(subscribe,readZoom,readZoom);
  const index=useMemo(()=>new Map(points.map(p=>[p.id,p])),[points]);
  const clusters=useMemo(()=>listingClusters(points.map(p=>({id:p.id,title:p.title,addressRaw:p.streetName,source:"Comune",url:`/map?atto=${p.recordId}#atto`,price:null,sqm:null,latitude:p.latitude,longitude:p.longitude})),zoom),[points,zoom]);
  return <>{clusters.map(c=>{
