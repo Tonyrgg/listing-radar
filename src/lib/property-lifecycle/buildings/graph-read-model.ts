@@ -6,6 +6,7 @@ export interface StreetContext {street_id:string;canonical_name:string;locality:
 export interface TerritorialEvent {event_id:string;event_at:string;event_kind:string;title:string;relation_scope:'BUILDING'|'STREET';date_precision:string;source_url:string|null;record_id:string|null;property_id:string|null;priceFrom?:number|null;priceTo?:number|null}
 export interface BuildingMapPoint {id:string;title:string;latitude:number;longitude:number;precision_type:string;street_id:string|null;known_properties:number;active_properties:number;public_record_count:number;recent30:number;recent90:number;last_activity:string|null;activity:Activity;categories:string[]}
 export const activityLabel=(score:number)=>score>=50?'Alta':score>=25?'Moderata':score>0?'Limitata':'Nessuna recente';
+export const buildingPointPrecision=(hasCoordinates:boolean,sourcePrecision:string)=>!hasCoordinates?'STREET':sourcePrecision==='EXACT_COORDINATES'?'BUILDING':sourcePrecision==='STREET_ONLY'?'STREET':'APPROXIMATE';
 async function mapRows<T>(db:SupabaseClient,table:string,fields:string,key:string,activeOnly=false,recentOnly=false){
  const rows:T[]=[];for(let from=0;;from+=500){let q=db.from(table).select(fields).order(key).range(from,from+499);if(activeOnly)q=q.eq('record_status','active').not('geometry','is',null);if(recentOnly)q=q.gt('recent90',0);const r=await q;if(r.error)throw Error(r.error.message);rows.push(...r.data as T[]);if(r.data.length<500)return rows;}
 }
@@ -24,7 +25,7 @@ export async function readBuildingMap(db:SupabaseClient){
  const points:BuildingMapPoint[]=[];
  for(const b of bs){const exact=b.latitude!=null&&b.longitude!=null;const p=exact?{latitude:b.latitude!,longitude:b.longitude!}:b.street_id?streetPoints.get(b.street_id):null;
   if(!p||p.latitude<40.8||p.latitude>41.3||p.longitude<16.2||p.longitude>16.9)continue;
-  points.push({id:b.building_id,title:b.display_name,latitude:p.latitude,longitude:p.longitude,precision_type:exact?b.precision_type:'STREET',street_id:b.street_id,known_properties:b.known_properties,active_properties:b.active_properties,public_record_count:b.public_record_count,recent30:b.recent30,recent90:b.recent90,last_activity:b.last_activity,activity:b.activity,categories:[...new Set(Object.values(b.categories_by_record))]});}
+  points.push({id:b.building_id,title:b.display_name,latitude:p.latitude,longitude:p.longitude,precision_type:buildingPointPrecision(exact,b.precision_type),street_id:b.street_id,known_properties:b.known_properties,active_properties:b.active_properties,public_record_count:b.public_record_count,recent30:b.recent30,recent90:b.recent90,last_activity:b.last_activity,activity:b.activity,categories:[...new Set(Object.values(b.categories_by_record))]});}
  const recent=await mapRows<{street_id:string;recent90:number}>(db,'market_observer_graph_street_context','street_id,recent90','street_id',false,true);
  return {points,total:bs.length,located:points.length,summaries:Object.fromEntries(bs.map(b=>[b.building_id,{known:b.known_properties,active:b.active_properties,score:b.activity.score}])),recentStreets:recent.filter(s=>s.recent90>0).map(s=>s.street_id)};
 }
