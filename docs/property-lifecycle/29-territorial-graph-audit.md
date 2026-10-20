@@ -72,6 +72,12 @@ L'elenco generico ha unicamente Ufficio Responsabile in più; conteggi protocoll
 e conteggi per ufficio sono aggregati, monitoraggio procedimenti descrive tipi
 e tempi amministrativi. Nessuno offre un resolver indirizzo/catasto per pratica.
 Non vengono usati oggetti liberi o persone per dedurre una localizzazione.
+Verificati anche gli schemi dei due cataloghi dei provvedimenti dirigenziali
+(52.807 e 14 righe): contengono oggetto/contenuto ed estremi del fascicolo,
+senza colonne indirizzo, civico, catasto o codice pratica collegabile. Non è
+stata dimostrata una corrispondenza strutturata. L'eventuale riscontro di una
+singola pratica nei riferimenti liberi resta UNKNOWN, da verificare in modo
+mirato; non sono stati scaricati o indicizzati i 52.807 contenuti.
 
 Fonti riproducibili:
 - [Catalogo Bitonto](https://www.opendata.maggioli.cloud/api/3/action/package_search?q=Bitonto&rows=100).
@@ -92,3 +98,12 @@ da/a. Nessuna ricerca per nominativo eseguita. Due pagine non certificano la
 completezza di ogni anno, allegato o categoria. Nessun crawl di 1.257 pagine
 né download PDF; ingestion corrente e storico restano distinti. L'Albo corrente
 ora espone 306 ID: non si riscrivono i 74 atti della Phase 2 per inseguire il count.
+
+## Verifica finale del percorso civici CSV
+
+Lettura HTTP della stessa risorsa primaria 2024, senza conservarne il body:
+8.934 righe APE, 1.190 pratiche, 507 con indirizzo nel parser finale.
+Nessun intervallo numerico nel campo Civico delle righe APE attuali. Il
+percorso CSV e il confine condiviso dell'identità edificio rifiutano comunque
+gli intervalli futuri: `14/16` non può diventare il falso civico `1416`.
+Nessun record storico è stato riscritto per applicare questa protezione.

@@ -6,6 +6,8 @@
 > stesso Territorio. Hash e prime osservazioni dei documenti conservati, nessuna
 > coordinata property inferita da una strada, nessun impatto sullo score commerciale.
 > Audit prima del matcher: [29](property-lifecycle/29-territorial-graph-audit.md).
+> Consegna, confronto prima/dopo e limiti: [30](property-lifecycle/30-territorial-knowledge-graph-delivery.md).
+> Analisi dei 74 atti esistenti: [31](property-lifecycle/31-albo-territorial-review.md).
 > Il runtime BUILDING_DATA_SYNC ricalcola anche le relazioni; comando dedicato
 > `scripts/territorial-graph.ts` in dry-run predefinito, scrittura solo con
 > `--apply --confirm-project=<ref>`. SISTER/Tecnocloud non modificati.
