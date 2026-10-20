@@ -182,6 +182,6 @@ export function filterNews(candidates: NewsCandidate[], feedback: NewsFeedback[]
         if (c.utility === 'ARCHIVE_ONLY')
             return false;
         const f = decisions.get(c.id), s = f?.status ?? 'NEW';
-        return (status === 'interesting' ? s === 'INTERESTING' : status === 'deepen' ? ['DEEPENING', 'ENRICHED'].includes(s) : status === 'rejected' ? s === 'NOT_USEFUL' : s === 'NEW') && (type === 'all' || c.group === type) && (!building || c.anchor.building_id === building) && `${c.anchor.street ?? ''} ${c.anchor.civic ?? ''} ${c.anchor.area_name ?? ''}`.toLocaleLowerCase('it').includes(query.toLocaleLowerCase('it'));
+        return (status === 'interesting' ? s === 'INTERESTING' : status === 'deepen' ? ['DEEPENING', 'ENRICHED'].includes(s) : status === 'rejected' ? s === 'NOT_USEFUL' : s === 'NEW') && (type === 'all' || c.group === type) && (!building || c.anchor.building_id === building) && `${c.anchor.street ?? ''} ${c.anchor.civic ?? ''} ${c.anchor.area_name ?? ''} ${c.sourceContext?.addressClaim ?? ''}`.toLocaleLowerCase('it').includes(query.trim().toLocaleLowerCase('it'));
     });
 }
