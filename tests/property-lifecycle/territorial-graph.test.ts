@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {resolveStreet,resolveLocation,resolveRecord,parseCivics,streetKey,territorialRecordRecent,type GraphRecord} from '@/lib/property-lifecycle/buildings/territorial-graph';
 import {extractTerritorialReferences} from '@/lib/property-lifecycle/buildings/territorial-extraction';
+import {splitCivicNumbers} from '@/lib/property-lifecycle/buildings/address';
 const streets=[{id:'m',canonical_name:'VIA GIACOMO MATTEOTTI',locality:null},{id:'f',canonical_name:'VIA PROF. NICOLA FORNELLI',locality:null},{id:'d',canonical_name:"VIA TORRE D’AGERA",locality:null},{id:'p',canonical_name:'VIA QUARTO - MARIOTTO',locality:'MARIOTTO'},{id:'r',canonical_name:'CORSO VITTORIO EMANUELE II',locality:null}];
 const location=(id='l',street='Via G. Matteotti',civic='14/A')=>resolveLocation({id,municipality:'Bitonto',scope_state:'IN_SCOPE',locality:'Bitonto',street_name:street,street_number:civic},streets);
 const record=(extra:Partial<GraphRecord>={}):GraphRecord=>({id:'r',source_key:'official',record_type:'CILA',content_hash:'source-hash',area_name:null,addresses:[{streetName:'Via G. Matteotti',streetNumber:'14A'}],cadastral_references:[],building_ids:[],...extra});
@@ -12,6 +13,7 @@ describe('Conservative territorial graph',()=>{
  it('does not alias two possible official streets',()=>expect(resolveStreet('Via G. Matteotti',null,[...streets,{id:'other',canonical_name:'Via Giuseppe Matteotti',locality:null}]).status).toBe('REVIEW'));
  it('keeps duplicate official IDs in review',()=>expect(resolveStreet('Via Giacomo Matteotti',null,[streets[0],{...streets[0],id:'dup'}]).status).toBe('REVIEW'));
  it('normalizes letter civics',()=>{expect(parseCivics('14/A').values).toEqual(['14a']);expect(parseCivics('014 A').values).toEqual(['14a']);});
+ it('keeps the municipal CSV path equally conservative before evidence is sanitized',()=>{expect(splitCivicNumbers('51/57')).toEqual([]);expect(splitCivicNumbers('14-16')).toEqual([]);expect(splitCivicNumbers('14/A')).toEqual(['14a']);expect(splitCivicNumbers('14, 16A')).toEqual(['14','16a']);});
  it('retains the letter in new source observations, before sanitization',()=>expect(extractTerritorialReferences('VIA GIACOMO MATTEOTTI 14/A',streets)[0].civics).toEqual(['14a']));
  it('does not interpret a numeric slash as two new building identities',()=>expect(extractTerritorialReferences('VIA GIACOMO MATTEOTTI 51/57',streets)[0].normalizedKeys).toEqual([]));
  it.each(['14-16','51/57','51–57','30/36 E','14/16A'])('never expands range %s',v=>expect(parseCivics(v)).toEqual({state:'RANGE',values:[]}));

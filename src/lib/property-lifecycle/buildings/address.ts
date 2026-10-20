@@ -1,4 +1,5 @@
 import type { NormalizedLocation } from "@/lib/property-lifecycle/contracts/normalized-listing";
+import {parseCivics} from './territorial-graph';
 
 export interface CanonicalBuildingAddress {
   normalizedKey: string;
@@ -89,18 +90,5 @@ export function canonicalBuildingAddress(
 }
 
 export function splitCivicNumbers(value: string | null | undefined): string[] {
-  if (!value?.trim()) {
-    return [];
-  }
-  return [
-    ...new Set(
-      [
-        ...value
-          .replace(/(\d)\s*\/\s*([a-z])\b/gi, "$1$2")
-          .matchAll(/\d+\s*[a-z]{0,2}/gi),
-      ]
-        .map((match) => canonicalCivic(match[0]))
-        .filter((civic): civic is string => Boolean(civic)),
-    ),
-  ];
+  return parseCivics(value).values;
 }

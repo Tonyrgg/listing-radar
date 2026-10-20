@@ -61,8 +61,9 @@ describe("Property Lifecycle building addresses", () => {
     ).toBeNull();
   });
 
-  it("splits multi-civic public-practice values deterministically", () => {
-    expect(splitCivicNumbers("26/28/030 A; 28")).toEqual(["26", "28", "30a"]);
+  it("splits explicit civic lists but retains ambiguous numeric slashes for review", () => {
+    expect(splitCivicNumbers("26, 28, 030 A; 28")).toEqual(["26", "28", "30a"]);
+    expect(splitCivicNumbers("26/28/030 A; 28")).toEqual([]);
   });
 });
 
@@ -83,7 +84,7 @@ describe("Comune di Bitonto building-practice normalization", () => {
       eligibleRows: 4,
       skippedApplicationRows: 1,
       duplicateRows: 1,
-      unmatchedRecords: 1,
+      unmatchedRecords: 2,
     });
     expect(result.records).toHaveLength(3);
     expect(result.records[0]).toMatchObject({
@@ -91,12 +92,13 @@ describe("Comune di Bitonto building-practice normalization", () => {
       interventionType: "FRAZIONAMENTO",
       occurredAt: "2026-02-15T00:00:00.000Z",
     });
-    expect(result.records[0]?.addresses.map((address) => address.streetNumber)).toEqual([
-      "26",
-      "28",
-      "30",
-    ]);
+    expect(result.records[0]?.addresses).toEqual([]); // Source range/list is ambiguous; retain the practice, not invented civics.
     expect(result.records[0]?.cadastralReferences).toHaveLength(2);
+  });
+  it("retains exact civics when the CSV declares an explicit comma-separated list",()=>{
+    const explicit=normalizeBuildingPracticeRows(parseBuildingPracticeCsv(csv.replaceAll('26/28/30','"26,28,30"')));
+    expect(explicit.records[0].addresses.map(a=>a.streetNumber)).toEqual(['26','28','30']);
+    expect(explicit.unmatchedRecords).toBe(1);
   });
 
   it("keeps direct personal and company fields out of the sanitized projection", () => {
