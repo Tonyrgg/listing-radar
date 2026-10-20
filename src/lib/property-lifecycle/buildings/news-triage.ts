@@ -6,6 +6,14 @@ export type NewsDecision = 'INTERESTING' | 'DEEPEN' | 'NOT_USEFUL';
 export type NewsStatus = 'NEW' | 'INTERESTING' | 'DEEPENING' | 'ENRICHED' | 'NOT_USEFUL' | 'ARCHIVED';
 export type Utility = 'ARCHIVE_ONLY' | 'REVIEW' | 'NEWS_CANDIDATE';
 export interface NewsEnrichment {
+    attributes?: {
+        label: string;
+        claim: string;
+        url: string;
+        hash: string;
+        page: number | null;
+        field: string;
+    }[];
     checkedAt: string;
     facts: FactNews['fact'][];
     history: {

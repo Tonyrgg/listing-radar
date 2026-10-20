@@ -4,6 +4,18 @@ import { parseAlboDetail, safeAlboUrl } from './albo';
 import { extractPropertyFacts } from './property-facts';
 import { NEWS_POLICY, administrativeDate, type NewsCandidate, type NewsEnrichment } from './news-triage';
 const hosts = new Set(['bitonto.trasparenza-valutazione-merito.it', 'municipium-images-production.s3-eu-west-1.amazonaws.com', 'www.comune.bitonto.ba.it']);
+/** Literal bounded technical claims, never a certified cadastral/property match. */
+export function newsTechnicalClaims(text: string, url: string, hash: string, field: string, page: number | null = null): NonNullable<NewsEnrichment['attributes']> {
+    const rules: [
+        string,
+        RegExp
+    ][] = [
+        ['Catasto dichiarato', /(?:foglio|Fg\.?)\s*\d+[A-Z/]*\s*[,;]?\s*(?:p\.?\s*lla|particella)\s*\.?\s*[\d/-]+(?:\s*[,;]?\s*sub(?:b|altern[oi])?\.?\s*\d+(?:\s*(?:e|,)\s*\d+)*)?/gi],
+        ['Superficie dichiarata', /superficie\s+(?:(?:utile|complessiva|totale|commerciale)\s+)?(?:di\s+)?(?:mq\.?\s*)?\d+(?:[.,]\d+)?\s*(?:m[q²]|metri\s+quadrati)/gi],
+        ['Piano dichiarato', /\bpiano\s+(?:terra|terreno|seminterrato|rialzato|primo|secondo|terzo|quarto|quinto|sesto|\d+\b)/gi]
+    ];
+    return rules.flatMap(([label, pattern]) => [...text.matchAll(pattern)].slice(0, 3).map(m => ({ label, claim: m[0].slice(0, 180), url, hash, page, field }))).slice(0, 9);
+}
 /** Only a URL already attached to this record may reach this reader. No redirects/discovery. */
 export async function readKnownNewsPdf(id: string, url: string, date: string | null, fetcher: typeof fetch = fetch) {
     const u = new URL(url);
@@ -50,14 +62,17 @@ export async function readKnownNewsPdf(id: string, url: string, date: string | n
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
         return await Promise.race([(async () => {
-                const facts = [];
+                const facts = [], attributes: NonNullable<NewsEnrichment['attributes']> = [];
                 for (let i = 1; i <= Math.min(pdf.numPages, NEWS_POLICY.maxPdfPages); i++) {
                     const page = await pdf.getPage(i), content = await page.getTextContent();
                     const text = content.items.map(v => 'str' in v ? v.str + ('hasEOL' in v && v.hasEOL ? '\n' : ' ') : '').join('').slice(0, 80000);
                     facts.push(...extractPropertyFacts(id, { text, field: 'pdf.text', sourceUrl: url, sourceHash: hash, observedAt: at, page: i }, date));
+                    // The first page's subject is useful; later normative references are not promoted.
+                    if (i === 1)
+                        attributes.push(...newsTechnicalClaims(text, url, hash, 'pdf.text', i));
                     page.cleanup();
                 }
-                return { facts: facts.slice(0, 40), hash, pages: Math.min(pdf.numPages, NEWS_POLICY.maxPdfPages), truncated: pdf.numPages > NEWS_POLICY.maxPdfPages };
+                return { facts: facts.slice(0, 40), attributes, hash, pages: Math.min(pdf.numPages, NEWS_POLICY.maxPdfPages), truncated: pdf.numPages > NEWS_POLICY.maxPdfPages };
             })(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('Tempo di lettura PDF esaurito')), 12000); })]);
     }
     finally {
@@ -67,7 +82,7 @@ export async function readKnownNewsPdf(id: string, url: string, date: string | n
     }
 }
 export async function deepenNews(db: SupabaseClient, c: NewsCandidate, fetcher: typeof fetch = fetch): Promise<NewsEnrichment> {
-    const result: NewsEnrichment = { checkedAt: new Date().toISOString(), facts: [], history: c.context.map(r => ({ id: r.event_id, type: r.event_type, date: administrativeDate(r), url: r.evidence_location.source_url })).slice(0, 40), market: [], references: null, gaps: [], sources: [] };
+    const result: NewsEnrichment = { checkedAt: new Date().toISOString(), facts: [], attributes: [], history: c.context.map(r => ({ id: r.event_id, type: r.event_type, date: administrativeDate(r), url: r.evidence_location.source_url })).slice(0, 40), market: [], references: null, gaps: [], sources: [] };
     const record = await db.from('market_observer_public_records').select('source_key,source_record_key,source_url,document_urls,addresses,cadastral_references,territorial_references').eq('id', c.id).single();
     if (record.error)
         throw Error('Documento non disponibile');
@@ -82,6 +97,7 @@ export async function deepenNews(db: SupabaseClient, c: NewsCandidate, fetcher: 
             if (Buffer.byteLength(html) > 1500000)
                 throw Error('SIZE');
             const detail = parseAlboDetail(html, r.source_record_key), hash = createHash('sha256').update(html).digest('hex');
+            result.attributes!.push(...newsTechnicalClaims(detail.subject, url, hash, 'albo.subject'));
             result.facts.push(...extractPropertyFacts(c.id, { text: detail.subject, field: 'albo.subject', sourceUrl: url, sourceHash: hash, observedAt: result.checkedAt, territorialScopeVerified: (r.territorial_references ?? []).length > 0 }, detail.documentDate ?? detail.actDate ?? administrativeDate(c.anchor)));
             result.sources.push({ url, status: 'Letto', hash });
         }
@@ -96,6 +112,7 @@ export async function deepenNews(db: SupabaseClient, c: NewsCandidate, fetcher: 
         try {
             const parsed = await readKnownNewsPdf(c.id, pdf, administrativeDate(c.anchor), fetcher);
             result.facts.push(...parsed.facts);
+            result.attributes!.push(...parsed.attributes);
             result.sources.push({ url: pdf, status: 'Letto', hash: parsed.hash, pages: parsed.pages });
             if (parsed.truncated)
                 result.gaps.push('Lettura limitata alle prime 20 pagine.');
