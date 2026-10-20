@@ -3,6 +3,7 @@ import {PGlite} from '@electric-sql/pglite';
 import {afterAll,afterEach,beforeAll,beforeEach,describe,expect,it} from 'vitest';
 import {parseExternalHtml} from '@/lib/property-lifecycle/external/adapters';
 import manifest from '../fixtures/property-lifecycle/external/remax/manifest.json';
+import {extractPropertyFacts} from '@/lib/property-lifecycle/buildings/property-facts';
 
 describe.sequential('Controlled market rollout on PostgreSQL',()=>{
  let db:PGlite;
@@ -40,6 +41,9 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   await db.exec(await sql('0039_territorial_context_timeline.sql'));
   await db.exec(await sql('0040_historical_public_records.sql'));
   await db.exec(await sql('0041_historical_projection_guard.sql'));
+  await db.exec(await sql('0042_public_record_property_facts.sql'));
+  await db.exec(await sql('0043_property_facts_market_read.sql'));
+  await db.exec(await sql('0044_property_facts_graph_read.sql'));
   const loc=(await row("insert into locations(raw_text,municipality,locality,street_name,street_number,scope_state,resolution_method,resolution_confidence,precision_level,normalized_key) values('Piazza Cattedrale 23','Bitonto','Bitonto','Piazza Cattedrale','23','IN_SCOPE','TEST',1,'EXACT_ADDRESS','piazza-test') returning id")).id;
   const b=(await row("insert into buildings(location_id,normalized_key,display_name) values($1,'it|ba|bitonto|bitonto|piazza cattedrale|23','Piazza Cattedrale 23') returning id",[loc])).id;
   await db.exec(`insert into properties(primary_location_id,canonical_attributes) values('${loc}','{"address":"Piazza Cattedrale 23"}');`);
@@ -73,6 +77,17 @@ describe.sequential('Controlled market rollout on PostgreSQL',()=>{
   const graphRecord={id:rid,inputHash:'hash2',version:'territorial_graph_v1',references:[{streetId:sid,streetName:'Piazza Cattedrale',civics:['23'],civicState:'EXPLICIT',candidateStreetIds:[sid]}],candidateBuildingIds:[b],unmatchedCause:null};
   const reconcile=()=>row('select recompute_territorial_graph($1,$2) result',[JSON.stringify([graphLocation]),JSON.stringify([graphRecord])]);
   expect((await reconcile()).result).toMatchObject({recordsProcessed:1,newBuildingLinks:0});
+  const facts=extractPropertyFacts(rid as string,{text:'divisione in due unità',field:'Oggetto',sourceUrl:'https://www.comune.bitonto.ba.it/test',sourceHash:'a'.repeat(64),observedAt:'2026-10-20T12:00:00Z'},'2024-01-09');
+  const projection={version:'property_facts_v1',events:facts,status:'EXTRACTED'};
+  await row('select project_public_record_facts($1) n',[JSON.stringify([{recordId:rid,inputHash:'hash2',projection}])]);
+  expect(await row('select event_type,territorial_level,building_id,property_id from market_observer_property_facts')).toMatchObject({event_type:'FRAZIONAMENTO',territorial_level:'BUILDING',building_id:b,property_id:null});
+  const semanticAt=(await row('select semantic_evaluated_at from public_record_territorial_resolutions')).semantic_evaluated_at;
+  await row('select project_public_record_facts($1) n',[JSON.stringify([{recordId:rid,inputHash:'hash2',projection}])]);
+  expect((await row('select semantic_evaluated_at from public_record_territorial_resolutions')).semantic_evaluated_at).toEqual(semanticAt);
+  await db.exec('savepoint stale_semantic');
+  await expect(row('select project_public_record_facts($1)',[JSON.stringify([{recordId:rid,inputHash:'old-hash',projection}])])).rejects.toThrow('Stale semantic input');
+  await db.exec('rollback to stale_semantic');
+  expect((await row("select has_function_privilege('anon','project_public_record_facts(jsonb)','EXECUTE') ok")).ok).toBe(false);
   const evaluated=(await row('select evaluated_at from public_record_territorial_resolutions')).evaluated_at;
   await reconcile();expect((await row('select evaluated_at from public_record_territorial_resolutions')).evaluated_at).toEqual(evaluated);
   expect((await row('select count(*)::int n from building_practice_observations')).n).toBe(2);

@@ -1,5 +1,14 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Public property facts, 20 ottobre 2026:** proiezione `property_facts_v1` sui
+> 4.074 record esistenti, migrations **0042-0044**. 1.319 fatti sostenuti e tre
+> combinazioni documentali; nessun lead o nuova fonte. Intelligence/Notizie,
+> dossier e tooltip edificio distinguono fatti, interpretazione e vendita ignota.
+> Zero notizie accettate negli ultimi 90 giorni; lo storico non diventa recente
+> per la data di import. 1.639 record restano REVIEW. Report e limiti:
+> [37](property-lifecycle/37-public-property-facts-delivery.md),
+> [campione 50 e Top 50](property-lifecycle/38-property-facts-quality-and-top50.md).
+
 > **Public Records Phase 4, 20 ottobre 2026:** migrations **0040–0041** applicate.
 > Albo storico 2021–2026 completato con policy territoriale, checkpoint/lease e health
 > distinta dal live: **1.627 nuovi record, 4.074 totali**. Replay production senza

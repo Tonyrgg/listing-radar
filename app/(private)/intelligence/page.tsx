@@ -8,6 +8,7 @@ import { readNow } from "@/lib/clock";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { EXIT_LABELS, INTELLIGENCE_VIEWS, marketAgeLabel, readIntelligence, readAgencyMarketIntelligence, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
 import { opportunityReasonLabel, evidenceSourceLabel, propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import {PropertyNews} from '@/components/property-news';
 
 export const metadata:Metadata={title:"Intelligence"};
 const tabs={mercato:"Mercato",opportunita:"Opportunità",usciti:"Usciti",venduti:"Venduti"};
@@ -17,6 +18,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   await connection();
   const params=await searchParams;
   const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
+  if(value('vista')==='notizie')return <div className="space-y-5"><PageHeader title="Intelligence" description="Immobili, pubblicazioni e storia del mercato di Bitonto, Palombaio e Mariotto."/><nav aria-label="Viste Intelligence" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">{Object.entries({...tabs,notizie:'Notizie'}).map(([t,label])=><Link key={t} href={`?vista=${t}`} aria-current={t==='notizie'?'page':undefined} className={buttonClass(t==='notizie'?'secondary':'quiet')}>{label}</Link>)}</nav><PropertyNews params={params} now={await readNow()}/></div>;
   const requested=value("vista"),view:IntelligenceView=INTELLIGENCE_VIEWS.includes(requested as IntelligenceView)?requested as IntelligenceView:"mercato";
   const page=Math.max(1,Math.min(10000,Math.floor(Number(value("pagina"))||1)));
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
@@ -31,7 +33,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
   return <div className="space-y-5">
     <PageHeader title="Intelligence" description="Immobili, pubblicazioni e storia del mercato di Bitonto, Palombaio e Mariotto."/>
-    <nav aria-label="Viste Intelligence" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">{INTELLIGENCE_VIEWS.map(t=><Link key={t} href={`?vista=${t}`} aria-current={t===view?"page":undefined} className={buttonClass(t===view?"secondary":"quiet")}>{tabs[t]}</Link>)}</nav>
+    <nav aria-label="Viste Intelligence" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">{INTELLIGENCE_VIEWS.map(t=><Link key={t} href={`?vista=${t}`} aria-current={t===view?"page":undefined} className={buttonClass(t===view?"secondary":"quiet")}>{tabs[t]}</Link>)}<Link href="?vista=notizie" className={buttonClass('quiet')}>Notizie</Link></nav>
     <form method="get" className="space-y-3">
       <input type="hidden" name="vista" value={view}/>
       <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto]">{field("q","Indirizzo o civico","search","Cerca nell’archivio…")}{select("agenzia","Agenzia",Object.fromEntries((agencies.data??[]).map(a=>[a.id,a.name])))}<button className={buttonClass("secondary")}>Cerca</button></div>

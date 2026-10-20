@@ -4,19 +4,23 @@ import { importAlboRecords } from "./albo-importer";
 import { importBitontoPlanCatalog, BITONTO_PLAN_SOURCE } from "./document-catalog";
 import { PUBLIC_RECORD_POLICY as P, PRACTICES_2025 } from "./public-record-policy";
 import { recomputeTerritorialGraph } from "./graph-recompute";
+import { projectPropertyFacts } from "./facts-projection";
+import {bindPrimaryFacts,csvPrimaryFacts,type PrimaryFacts} from './facts-primary';
 
 async function due(db: SupabaseClient,key: string,hours: number) {
   const r=await db.from("building_data_import_runs").select("finished_at").eq("source_key",key).eq("run_kind","LIVE").eq("status","SUCCEEDED").order("finished_at",{ascending:false}).limit(1).maybeSingle();
   if(r.error)throw Error(r.error.message);
   return !r.data?.finished_at || Date.now()-Date.parse(r.data.finished_at)>=hours*3600000;
 }
-async function importCsvSource(db:SupabaseClient,key:string,url:string,fetcher:typeof fetch){
+async function importCsvSource(db:SupabaseClient,key:string,url:string,fetcher:typeof fetch,onFacts:(facts:PrimaryFacts[])=>void){
   try{
     const r=await fetcher(url,{signal:AbortSignal.timeout(60000),redirect:"error"});
     if(!r.ok)throw Error(`Municipal dataset HTTP ${r.status}`);
     if(Number(r.headers.get("content-length"))>25*1024*1024)throw Error("Municipal CSV exceeds limit");
     const bytes=new Uint8Array(await r.arrayBuffer());if(bytes.byteLength>25*1024*1024)throw Error("Municipal CSV exceeds limit");
-    const result=await new BuildingIntelligenceImporter(db).importCsv({sourceKey:key,sourceUrl:url,csv:new TextDecoder().decode(bytes),sourceEtag:r.headers.get("etag"),applicationCode:"ape"});
+    const csv=new TextDecoder().decode(bytes);
+    const result=await new BuildingIntelligenceImporter(db).importCsv({sourceKey:key,sourceUrl:url,csv,sourceEtag:r.headers.get("etag"),applicationCode:"ape"});
+    onFacts(csvPrimaryFacts(csv,key,url,new Date().toISOString()));
     const status=await db.from("building_data_import_runs").update({health_state:result.status==="SUCCEEDED"?"HEALTHY":"DEGRADED",inventory_complete:result.status==="SUCCEEDED",pages:1,
       diagnostics:{coverage:key===PRACTICES_2025.key?"2025 metadata only; no address/cadastral fields exposed":"2024 declared address/cadastral references",policyVersion:P.version}}).eq("id",result.importRunId);
     if(status.error)throw Error(status.error.message);
@@ -29,15 +33,17 @@ async function importCsvSource(db:SupabaseClient,key:string,url:string,fetcher:t
 /** Existing job, independently due sources; a failed static dataset must not suppress the Albo. */
 export async function syncPublicRecordSources(db:SupabaseClient,fetcher:typeof fetch=fetch){
   const results:Record<string,unknown>={},errors:string[]=[];
+  const primary:PrimaryFacts[]=[];
   const sources:Array<{key:string;hours:number;run:()=>Promise<unknown>}>= [
-    {key:P.alboSource,hours:P.alboIntervalHours,run:()=>importAlboRecords(db,{fetcher})},
-    {key:DEFAULT_BUILDING_PRACTICE_SOURCE_KEY,hours:P.staticIntervalHours,run:()=>importCsvSource(db,DEFAULT_BUILDING_PRACTICE_SOURCE_KEY,DEFAULT_BUILDING_PRACTICE_SOURCE_URL,fetcher)},
-    {key:PRACTICES_2025.key,hours:P.staticIntervalHours,run:()=>importCsvSource(db,PRACTICES_2025.key,PRACTICES_2025.url,fetcher)},
+    {key:P.alboSource,hours:P.alboIntervalHours,run:async()=>{const facts:PrimaryFacts[]=[];const result=await importAlboRecords(db,{fetcher,onPrimaryFacts:f=>facts.push(f)});primary.push(...facts);return result;}},
+    {key:DEFAULT_BUILDING_PRACTICE_SOURCE_KEY,hours:P.staticIntervalHours,run:()=>importCsvSource(db,DEFAULT_BUILDING_PRACTICE_SOURCE_KEY,DEFAULT_BUILDING_PRACTICE_SOURCE_URL,fetcher,fs=>primary.push(...fs))},
+    {key:PRACTICES_2025.key,hours:P.staticIntervalHours,run:()=>importCsvSource(db,PRACTICES_2025.key,PRACTICES_2025.url,fetcher,fs=>primary.push(...fs))},
     {key:BITONTO_PLAN_SOURCE,hours:P.staticIntervalHours,run:()=>importBitontoPlanCatalog(db,fetcher)},
   ];
   for(const s of sources){try{results[s.key]=await due(db,s.key,s.hours)?await s.run():{skipped:"not_due"};}catch(e){errors.push(`${s.key}: ${String(e)}`);}}
   // Reconcile derived context even when a source is not due or another source fails.
   try{results.territorialGraph=await recomputeTerritorialGraph(db,true);}catch(e){errors.push(`territorialGraph: ${String(e)}`);}
+  try{const r=await projectPropertyFacts(db,true,primary.length?await bindPrimaryFacts(db,primary):undefined);results.propertyFacts={processed:r.processed,events:r.events,review:r.review};}catch(e){errors.push(`propertyFacts: ${String(e)}`);}
   if(errors.length)throw Error(errors.join("; "));
   return results;
 }

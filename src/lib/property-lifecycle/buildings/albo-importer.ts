@@ -3,12 +3,15 @@ import {prepareAlboRecord} from "./albo-record";
 import { AlboHttp, collectAlboInventory, parseAlboDetail } from "./albo";
 import { extractTerritorialReferences, type RegistryStreet } from "./territorial-extraction";
 import { PUBLIC_RECORD_POLICY as P, classifyPublicRecord } from "./public-record-policy";
+import {extractPropertyFacts} from './property-facts';
+import {hashValue} from '../contracts/normalized-listing';
+import type {PrimaryFacts} from './facts-primary';
 
 export async function readRegistryStreets(db: SupabaseClient): Promise<RegistryStreet[]> {
   const rows: RegistryStreet[] = [];
   for(let from=0;;from+=500){ const r=await db.from("street_registry_streets").select("id,canonical_name,official_type,official_description,locality,geometry").eq("record_status","active").order("id").range(from,from+499); if(r.error)throw Error(r.error.message);rows.push(...r.data);if(r.data.length<500)return rows; }
 }
-export async function importAlboRecords(db: SupabaseClient, options: {fetcher?: typeof fetch; dryRun?: boolean; observedAt?: string; delayMs?: number} = {}) {
+export async function importAlboRecords(db: SupabaseClient, options: {fetcher?: typeof fetch; dryRun?: boolean; observedAt?: string; delayMs?: number;onPrimaryFacts?:(facts:PrimaryFacts)=>void} = {}) {
   const observedAt = options.observedAt ?? new Date().toISOString(), http = new AlboHttp(options.fetcher,options.delayMs);
   let runId: string | null = null;
   if(!options.dryRun){const r=await db.from("building_data_import_runs").insert({source_key:P.alboSource,source_url:P.alboUrl,started_at:observedAt}).select("id").single();if(r.error)throw Error(r.error.message);runId=r.data.id;}
@@ -25,6 +28,7 @@ export async function importAlboRecords(db: SupabaseClient, options: {fetcher?: 
       const old=before.get(item.id), lastDetail=old?.metadata?.detailObservedAt;
       if(old?.metadata?.inventoryMarker===item.marker && old.metadata?.policyVersion===P.version && lastDetail && Date.parse(observedAt)-Date.parse(lastDetail)<P.deepRotationDays*86400000){unchanged.push(old.id);continue;}
       const detail = parseAlboDetail(await http.get(item.url),item.id); details++;
+      options.onPrimaryFacts?.({sourceKey:P.alboSource,sourceRecordKey:item.id,events:extractPropertyFacts(item.id,{text:detail.subject,field:'albo.subject',sourceUrl:item.url,sourceHash:hashValue(detail),observedAt,territorialScopeVerified:extractTerritorialReferences(detail.subject,streets).length>0},detail.documentDate??detail.actDate??item.start)});
       records.push(prepareAlboRecord(item,detail,streets,observedAt));
     }
     let inserted=0,updated=0,links=0;

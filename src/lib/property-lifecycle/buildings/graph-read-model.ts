@@ -1,11 +1,12 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {streetRepresentativePoint,type StreetLineGeometry} from '@/lib/street-registry/metrics';
+import {readFactNews,factLabel} from './facts-read-model';
 export interface Activity {version:string;score:number;breakdown:Record<string,number>;reasons:Record<string,number>}
 export interface AreaDocument {id:string;title:string;area_name:string|null;document_url:string|null;source_url:string|null}
 export interface BuildingContext {building_id:string;display_name:string;street_id:string|null;street_name:string|null;canonical_street:string|null;civic:string|null;civic_variants:string[];locality:string|null;latitude:number|null;longitude:number|null;precision_type:string;canonical_civic:string|null;known_properties:number;active_properties:number;historical_properties:number;sold_observed:number;publications:number;agencies:string[];public_record_count:number;recent30:number;recent90:number;last_activity:string|null;categories_by_record:Record<string,string>;declared_cadastral_references:unknown[];activity:Activity;territorial_resolution:Record<string,unknown>;duplicate_candidates?:Array<{building_id:string;candidate_id:string;classification:string}>}
 export interface StreetContext {street_id:string;canonical_name:string;locality:string|null;known_properties:number;active_properties:number;historical_properties:number;sold_observed:number;agencies:string[];known_buildings:number;public_record_count:number;recent30:number;recent90:number;last_activity:string|null;categories_by_record:Record<string,string>;activity:Activity}
 export interface TerritorialEvent {event_id:string;event_at:string;event_kind:string;title:string;relation_scope:'BUILDING'|'STREET';date_precision:string;source_url:string|null;record_id:string|null;property_id:string|null;priceFrom?:number|null;priceTo?:number|null}
-export interface BuildingMapPoint {id:string;title:string;latitude:number;longitude:number;precision_type:string;street_id:string|null;known_properties:number;active_properties:number;public_record_count:number;recent30:number;recent90:number;last_activity:string|null;activity:Activity;categories:string[]}
+export interface BuildingMapPoint {id:string;title:string;latitude:number;longitude:number;precision_type:string;street_id:string|null;known_properties:number;active_properties:number;public_record_count:number;recent30:number;recent90:number;last_activity:string|null;activity:Activity;categories:string[];factCount?:number;factLabels?:string[]}
 export const activityLabel=(score:number)=>score>=50?'Alta':score>=25?'Moderata':score>0?'Limitata':'Nessuna recente';
 export const buildingPointPrecision=(hasCoordinates:boolean,sourcePrecision:string)=>!hasCoordinates?'STREET':sourcePrecision==='EXACT_COORDINATES'?'BUILDING':sourcePrecision==='STREET_ONLY'?'STREET':'APPROXIMATE';
 async function mapRows<T>(db:SupabaseClient,table:string,fields:string,key:string,activeOnly=false,recentOnly=false){
@@ -24,10 +25,12 @@ export async function readGraphContext(db:SupabaseClient,scope:'BUILDING'|'STREE
 export async function readBuildingMap(db:SupabaseClient){
  const [bs,ss]=await Promise.all([mapRows<BuildingContext>(db,'market_observer_graph_building_context','*','building_id'),mapRows<{id:string;geometry:StreetLineGeometry|null}>(db,'street_registry_streets','id,geometry','id',true)]);
  const streetPoints=new Map(ss.map(s=>[s.id,streetRepresentativePoint(s.geometry)]));
+ const facts=await readFactNews(db,Date.now()).catch(()=>[]);
  const points:BuildingMapPoint[]=[];
  for(const b of bs){const exact=b.latitude!=null&&b.longitude!=null;const p=exact?{latitude:b.latitude!,longitude:b.longitude!}:b.street_id?streetPoints.get(b.street_id):null;
   if(!p||p.latitude<40.8||p.latitude>41.3||p.longitude<16.2||p.longitude>16.9)continue;
   points.push({id:b.building_id,title:b.display_name,latitude:p.latitude,longitude:p.longitude,precision_type:buildingPointPrecision(exact,b.precision_type),street_id:b.street_id,known_properties:b.known_properties,active_properties:b.active_properties,public_record_count:b.public_record_count,recent30:b.recent30,recent90:b.recent90,last_activity:b.last_activity,activity:b.activity,categories:[...new Set(Object.values(b.categories_by_record))]});}
  const recent=await mapRows<{street_id:string;recent90:number}>(db,'market_observer_graph_street_context','street_id,recent90','street_id',false,true);
+ for(const point of points){const es=facts.filter(e=>e.building_id===point.id);point.factCount=es.length;point.factLabels=[...new Set(es.map(e=>factLabel(e.event_type)))].slice(0,3);}
  return {points,total:bs.length,located:points.length,summaries:Object.fromEntries(bs.map(b=>[b.building_id,{known:b.known_properties,active:b.active_properties,score:b.activity.score}])),recentStreets:recent.filter(s=>s.recent90>0).map(s=>s.street_id)};
 }
