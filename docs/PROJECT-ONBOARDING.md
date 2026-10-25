@@ -3,7 +3,9 @@
 > **CoreImmobiliare, 26 ottobre 2026:** Docker avviato e L01 Auth/PostgREST/Next
 > concluso su progetto locale isolato. Web 712 test passati, 25 saltati;
 > migrazioni **0046–0051 applicate online** dopo backup dello schema.
-> Worker 0.34.26 preparato. [Consegna, eccezione locale e distribuzione](COREIMMOBILIARE-ROLLOUT-2026-10-26.md).
+> Worker **0.34.26 pubblicato e download binario verificato**; web READY su
+> listing-radar-mu.vercel.app. Rilettura primaria circoscritta completata,
+> senza nuove fonti o notizie inventate. [Consegna, eccezione locale e distribuzione](COREIMMOBILIARE-ROLLOUT-2026-10-26.md).
 
 > **Radar, transizioni immobiliari utili — 25 ottobre 2026, locale:** nuove policy
 > `property_facts_v2` / `news_triage_v2`, cambi d'uso con prima/dopo, unità dichiarate,

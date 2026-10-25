@@ -118,6 +118,15 @@ Log autorevole:
 `C:/Users/ruggi/listing-radar-validation/2026-10-25-core-consolidation/worker-full-final.log`.
 La prova del software non certifica la latenza o l'esito di run reali sui portali.
 
+## Distribuzione del 26 ottobre
+
+Worker **0.34.26 pubblicato** su GitHub, sorgente `923c0d4`. Manifest,
+tre parti scaricate e installer ricomposto verificati via SHA-256. Build e
+smoke V2 integrato passati; installer non firmato. Le installazioni sui PC
+non sono state dichiarate aggiornate. Il browser collegato non espone una
+sessione SISTER/Tecnocloud per le misure reali.
+[Consegna completa](COREIMMOBILIARE-ROLLOUT-2026-10-26.md).
+
 ## Diagnosi ancora da chiudere
 
 1. Misurare le durate reali per capire quanto pesano ricerca, nominativi,

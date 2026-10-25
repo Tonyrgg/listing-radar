@@ -1,5 +1,12 @@
 # Listing Radar — Cambiamenti immobiliari utili
 
+**Aggiornamento 26 ottobre:** migrazioni 0046–0051 applicate online e web
+distribuito. L01 Auth/PostgREST/Next passato. Rilettura primaria di 12 schede
+note: 10 elaborate, due strutture non riconosciute con proiezioni conservate;
+nessuna nuova fonte. Snapshot 4.102 documenti / 1.328 fatti, zero nuove notizie.
+[Consegna e prove correnti](COREIMMOBILIARE-ROLLOUT-2026-10-26.md).
+Le sezioni seguenti documentano la preparazione locale del 25 ottobre.
+
 Consegna locale del 25 ottobre 2026. Implementate `property_facts_v2` e
 `news_triage_v2`; migrazione **0051 preparata e provata su PostgreSQL incorporato,
 non applicata online**. Non sono stati importati nuovi record in produzione.
