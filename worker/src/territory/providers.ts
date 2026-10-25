@@ -100,10 +100,12 @@ class VirtualCrmPort implements TecnocloudV2Port {
     return this.store.change(s => {
       const activities = s.virtualActivities ??= {};
       const key = `${propertyId}|${plan.source.sourcePropertyId}`;
-      if (activities[key]) return { activityId: activities[key].id, outcome: "existing" as const };
+      if (activities[key]) return { activityId: activities[key].id, outcome: "existing" as const,
+        descriptionVerified: activities[key].activity.description === plan.source.activity.description,
+        statusVerified: activities[key].activity.status === plan.source.activity.status, expectedStatus: plan.source.activity.status };
       const id = randomUUID();
       activities[key] = { id, propertyId, activity: structuredClone(plan.source.activity) };
-      return { activityId: id, outcome: "created" as const };
+      return { activityId: id, outcome: "created" as const, descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status };
     });
   }
   async recover() {}

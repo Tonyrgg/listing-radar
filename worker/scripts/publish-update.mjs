@@ -115,5 +115,9 @@ try {
   await command("gh", ["release", "edit", tag, "--repo", repository, "--draft=false", "--latest"]);
   console.log(`Release ${tag} pubblicata e verificata su GitHub (${chunks.length} parti, ${installer.length} byte).`);
 } finally {
-  await rm(temporaryDirectory, { recursive: true, force: true });
+  const cleanupDirectory = path.resolve(temporaryDirectory);
+  if (path.dirname(cleanupDirectory) !== path.resolve(tmpdir()) || !path.basename(cleanupDirectory).startsWith("listing-radar-release-")) {
+    throw new Error("Pulizia release fermata: directory temporanea inattesa.");
+  }
+  await rm(cleanupDirectory, { recursive: true, force: true });
 }

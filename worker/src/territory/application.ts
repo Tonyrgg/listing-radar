@@ -1,4 +1,5 @@
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
+import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import { ImportV2Engine } from "../import-v2/engine.js";
 import { failureFromError } from "../import-v2/errors.js";
@@ -22,6 +23,7 @@ import { buildCadastralKey } from "../core/normalize.js";
 import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "./import-queue.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import { canEnableQueuedActivity, runActivitySummary } from "./activity-plan.js";
+import { recordCandidateLookupTiming } from "./import-timing.js";
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: sources, checkpoint: _checkpoint, ...run }: Run) => ({ ...run,
@@ -321,11 +323,22 @@ export class TerritoryApplication {
       (current.skipped ??= {})[key] = { at, reason, address: source.fullAddress }; current.handled = index + 1; current.waiting = null;
     }); this.changed();
   }
+  private async readCandidates(run: Run, street: import("./model.js").Street, source: SourceProperty, attempt = 1) {
+    const startedAt = performance.now();
+    try {
+      const result = await this.provider.candidates(street, source);
+      await recordCandidateLookupTiming(this.store.diagnosticsDirectory, run.id, source.sourcePropertyId, performance.now() - startedAt, attempt);
+      return result;
+    } catch (error) {
+      await recordCandidateLookupTiming(this.store.diagnosticsDirectory, run.id, source.sourcePropertyId, performance.now() - startedAt, attempt, failureFromError(error, "queued").kind);
+      throw error;
+    }
+  }
   private async execute(run: Run) {
     let currentKey: string | null = null;
     try {
       this.provider.beginOperation?.(run.operation);
-      const street = this.store.read().streets.find(s => s.id === run.streetId)!;
+      const street = this.store.readSelected(state => state.streets.find(s => s.id === run.streetId))!;
       if (run.operation === "scan") {
         const complete = await this.provider.scan(street, run.id, run.checkpoint, async (source, context) => {
           let key: string | undefined;
@@ -362,34 +375,38 @@ export class TerritoryApplication {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null }); return; }
           const key = run.itemKeys[index]!;
-          if (run.operation === "apply" && this.store.read().runs.find(r => r.id === run.id)?.imports?.[key]?.crmId) {
+          if (run.operation === "apply" && this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.imports?.[key]?.crmId))) {
             await this.store.change(s => settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key));
             await this.updateRun(run.id, { handled: index + 1 }); continue;
           }
           currentKey = key;
           if (this.active) { this.active.currentKey = key; this.active.stage = "queued"; this.active.attempt = 1; this.changed(); }
-          const state = this.store.read(), unit = state.units[key]!; const source = run.applySources?.[key] ?? effectiveSource(unit);
+          const { unit, street } = this.store.readSelected(state => {
+            const unit = state.units[key]!;
+            const street = run.unitStreetIds?.[key] ? state.streets.find(s => s.id === run.unitStreetIds![key]) : run.selectionScope ? state.streets.find(s => unit.streetIds.some(id => id === s.id || state.networkBindings?.[id]?.officialId === s.id) && run.selectionScope!.includes(s.id)) : state.streets.find(s => s.id === run.streetId);
+            return { unit, street };
+          });
+          const source = run.applySources?.[key] ?? effectiveSource(unit);
           const settings = run.unitSettings?.[key] ?? run.settings!;
-          const street = run.unitStreetIds?.[key] ? state.streets.find(s => s.id === run.unitStreetIds![key]) : run.selectionScope ? state.streets.find(s => unit.streetIds.some(id => id === s.id || state.networkBindings?.[id]?.officialId === s.id) && run.selectionScope!.includes(s.id))! : state.streets.find(s => s.id === run.streetId)!;
           try {
             if (!street) throw new Error("Via non disponibile per questo immobile: nessuna scrittura");
             if (run.operation === "compare") {
               let assessment;
-              try { const result = await this.provider.candidates(street, source); assessment = assess(source, result.rows, result.complete); }
+              try { const result = await this.readCandidates(run, street, source); assessment = assess(source, result.rows, result.complete); }
               catch (error) { assessment = { ...assess(source, [], false), reason: sanitizeSensitiveText(error instanceof Error ? error.message : "Ricerca non riuscita") }; }
               await this.store.change(s => { this.provider.rememberCloud?.(s); const u = s.units[key]!; u.assessment = assessment; appendUnitEvent(u, [run.id, key, "compared"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, sourceId: source.sourcePropertyId, assessment, message: assessment.reason }); });
             } else {
               // A plan is a preview, not permission to trust an old CRM read.
               let fresh;
               for (let attempt = 0; ; attempt++) {
-                try { fresh = await this.provider.candidates(street, source); break; }
+                try { fresh = await this.readCandidates(run, street, source, attempt + 1); break; }
                 catch (error) {
                   const failure = failureFromError(error, "planned");
                   if (failure.global || !failure.retryable || attempt >= 1 || this.isPaused()) throw error;
                   await (await this.provider.port()).recover("planned", error);
                 }
               }
-              if (this.store.read().runs.find(r => r.id === run.id)?.waiting) await this.updateRun(run.id, { waiting: null });
+              if (this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.waiting))) await this.updateRun(run.id, { waiting: null });
               const assessment = assess(source, fresh.rows, fresh.complete);
               if (assessment.kind === "unknown") {
                 await this.store.change(s => { s.units[key]!.assessment = assessment; });
@@ -397,7 +414,7 @@ export class TerritoryApplication {
               }
               if (!this.provider.canWrite(key, source)) throw new Error("Scrittura non autorizzata per questo immobile");
               if (assessment.kind === "review" || (settings.importPolicy === "existing_only" && assessment.kind === "create")) {
-                const checkpoint = this.store.read().checkpoints[source.sourcePropertyId];
+                const checkpoint = this.store.readSelected(state => state.checkpoints[source.sourcePropertyId]);
                 if (checkpoint && checkpoint.stage !== "completed") {
                   await this.store.change(s => { s.units[key]!.assessment = assessment; });
                   throw new Error("Corrispondenza cambiata per una scrittura da verificare: piano conservato, nessuna scrittura ripetuta.");
@@ -407,7 +424,7 @@ export class TerritoryApplication {
               }
               const plan = buildPlan(source);
               const narrowed = fresh.rows.filter(c => c.id === assessment.candidateId);
-              const prior = this.store.read().checkpoints[source.sourcePropertyId];
+              const prior = this.store.readSelected(state => state.checkpoints[source.sourcePropertyId]);
               this.provider.authorizeWrite(source, prior?.propertyResolution?.kind === "create" && !prior.crmPropertyId ? "create" : assessment.kind as "create" | "update");
               const requireExisting = settings.importPolicy === "existing_only" || (prior?.propertyResolution?.kind === "create" ? false : assessment.kind === "update");
               const crm = await this.provider.port();
@@ -425,7 +442,7 @@ export class TerritoryApplication {
                 u.assessment = { ...assessment, kind: outcome.state === "completed" ? "synced" : "review", reason: outcome.failure?.message ?? "Indirizzo, catasto e intestatari riletti e verificati.", candidateId: outcome.crmPropertyId };
                 if (outcome.state === "completed") {
                   u.crmId = outcome.crmPropertyId; u.importedAt = s.runs.find(r => r.id === run.id)?.imports?.[key]?.at ?? now();
-                  if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] = { at: u.importedAt, crmId: outcome.crmPropertyId };
+                  if (outcome.crmPropertyId) (s.runs.find(r => r.id === run.id)!.imports ??= {})[key] ??= { at: u.importedAt, crmId: outcome.crmPropertyId };
                   resolveUnitQuarantine(s, u, now());
                   settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key);
                   s.runs.find(r => r.id === run.id)!.handled = index + 1;
@@ -447,7 +464,7 @@ export class TerritoryApplication {
           } catch (error) {
             if (run.operation !== "apply") throw error;
             if (this.isPaused()) { await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now() }); return; }
-            const failure = failureFromError(error, this.store.read().checkpoints[source.sourcePropertyId]?.stage ?? "queued");
+            const failure = failureFromError(error, this.store.readSelected(state => state.checkpoints[source.sourcePropertyId]?.stage) ?? "queued");
             if (failure.kind === "operator_pause") { await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now() }); return; }
             if (failure.global && ["global_session", "global_portal", "cloud_unavailable"].includes(failure.kind)) { await this.waitForRecovery(run, failure.message); index--; continue; }
             await this.deferUnit(run, key, index, source, failure.message);

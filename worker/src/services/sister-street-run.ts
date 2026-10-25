@@ -147,9 +147,18 @@ export function restoreStreetAcquisitionEvidence(checkpoint: SisterStreetRunChec
 }
 
 export function hasRetryableAcquisitionRecords(checkpoint: SisterStreetRunCheckpoint | null | undefined): boolean {
-  return Boolean(checkpoint?.results.some((result) =>
-    result.recordLedger?.some((record) => record.status === "completed_with_anomalies"),
-  ));
+  return Array.isArray(checkpoint?.results) && checkpoint.results.some((result) =>
+    Array.isArray(result?.recordLedger) && result.recordLedger.some((record) => record.status === "completed_with_anomalies"),
+  );
+}
+
+/** A street is complete only when no owner row still needs another acquisition attempt. */
+export function isCompleteStreetAcquisition(checkpoint: SisterStreetRunCheckpoint): boolean {
+  return checkpoint.status === "completed"
+    && !checkpoint.lastError
+    && Array.isArray(checkpoint.results) && checkpoint.results.length > 0
+    && checkpoint.results.every(result => result && ["found", "empty"].includes(result.outcome))
+    && !hasRetryableAcquisitionRecords(checkpoint);
 }
 
 /**
@@ -1018,6 +1027,7 @@ export class SisterStreetRun {
     const filterSkips = { ...(previousPartial?.filterSkips ?? {}) };
     const recordLedger: SisterAcquisitionRecord[] = [...(previousPartial?.recordLedger ?? [])];
     const recordByKey = new Map(recordLedger.map((record) => [record.key, record]));
+    let publishedNextCursor: { position: number; key: string } | null = null;
     const warnings: string[] = (previousPartial?.warnings ?? [])
       .filter((warning) => !warning.startsWith("Pausa richiesta"));
     const recordLabel = (property: CadastralProperty) => {
@@ -1070,7 +1080,11 @@ export class SisterStreetRun {
           label: recordLabel(property),
           ownerNames: [],
         };
-        await publishPartial?.(snapshot("paused", cursor));
+        // The previous row already committed this cursor together with its
+        // completed ledger entry. Do not rewrite the same full checkpoint.
+        if (publishedNextCursor?.position !== cursor.position || publishedNextCursor.key !== cursor.key) {
+          await publishPartial?.(snapshot("paused", cursor));
+        }
         const filterDecision = decideStreetProperty(property, this.filters);
         if (!filterDecision.eligible) {
           filteredPropertyKeys.push(propertyKey);
@@ -1095,6 +1109,7 @@ export class SisterStreetRun {
             label: recordLabel(next),
             ownerNames: [],
           } : null));
+          publishedNextCursor = next ? { position: propertyIndex + 2, key: buildCadastralKey(next) } : null;
           await this.options.onProgress?.({
             phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
             current: propertyIndex + 1, total: properties.length, address: property.address,
@@ -1266,6 +1281,7 @@ export class SisterStreetRun {
           label: recordLabel(next),
           ownerNames: [],
         } : null));
+        publishedNextCursor = next ? { position: propertyIndex + 2, key: buildCadastralKey(next) } : null;
         await this.options.onProgress?.({
           phase: "reading-owners", variantIndex, variantTotal, variantSourceId: variant.sourceId,
           current: propertyIndex + 1, total: properties.length, address: property.address,

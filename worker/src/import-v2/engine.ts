@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { mergePrivateNotes, personWriteModel } from "./contacts.js";
 import { isTransientCloudError } from "./cloud-retry.js";
 import { failureFromError, ImportV2Error } from "./errors.js";
@@ -42,6 +43,7 @@ const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
   activity_synced: "completed",
   completed: "completed",
 };
+const timingMs = (elapsed: number) => Math.max(0, Math.round(elapsed * 1000) / 1000);
 
 export type ImportV2EngineOptions = {
   replaceUnlistedPrimary?: boolean;
@@ -159,6 +161,13 @@ export class ImportV2Engine {
   private readonly requireExistingProperty: boolean;
   private readonly preferRegistryDuplicates: boolean;
   private readonly replaceUnlistedPrimary: boolean;
+  private checkpointSaveElapsedMs = 0;
+
+  private async saveCheckpoint(checkpoint: ImportV2Checkpoint): Promise<void> {
+    const startedAt = performance.now();
+    try { await this.store.save(checkpoint); }
+    finally { this.checkpointSaveElapsedMs += performance.now() - startedAt; }
+  }
 
   constructor(
     private readonly crm: TecnocloudV2Port,
@@ -212,7 +221,7 @@ export class ImportV2Engine {
       // Before this version a crash after Save left no durable submission boundary.
       // Do not mistake a historical identical Task for that uncertain write.
       checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: checkpoint.updatedAt, submittedAt: checkpoint.updatedAt, baselineIds: [], legacyUncertain: true };
-      await this.store.save(checkpoint);
+      await this.saveCheckpoint(checkpoint);
     }
     // A saved transition may have lost its audit response during a gateway
     // outage. Reconcile that deterministic event before any further CRM work.
@@ -227,22 +236,44 @@ export class ImportV2Engine {
         return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "paused", stage: checkpoint.stage, failure };
       }
     }
+    let sessionPreflightDone = false;
     while (checkpoint.stage !== "completed") {
+      const executedStage = checkpoint.stage;
+      const stageAttempt = checkpoint.attempts + 1;
+      const stageStartedAt = performance.now();
+      this.checkpointSaveElapsedMs = 0;
+      let stageDurationMs = 0;
+      let operationDurationMs = 0;
+      let operationFinished = false;
+      let checkpointSaveDurationMs = 0;
+      let operationStartedAt = stageStartedAt;
       try {
         onStage?.(checkpoint.stage, {
-          attempt: checkpoint.attempts + 1,
+          attempt: stageAttempt,
           maxAttempts: this.maxTransientAttempts,
           previousFailure: checkpoint.lastError,
         });
         this.throwIfInterruptionRequested();
-        await this.crm.assertSession();
+        // The browser adapter checks the session before every CRM action and
+        // navigation. Keep one engine-level preflight for port implementations
+        // and tests, but do not repeat the same DOM probe at every checkpoint.
+        if (!sessionPreflightDone) {
+          await this.crm.assertSession();
+          sessionPreflightDone = true;
+        }
+        operationStartedAt = performance.now();
         checkpoint = await this.executeStage(checkpoint);
+        operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
+        operationFinished = true;
         checkpoint.attempts = 0;
         checkpoint.lastError = null;
         checkpoint.nextAttemptAt = null;
         checkpoint.updatedAt = this.now().toISOString();
-        await this.store.save(checkpoint);
+        await this.saveCheckpoint(checkpoint);
+        checkpointSaveDurationMs = timingMs(this.checkpointSaveElapsedMs);
+        stageDurationMs = timingMs(performance.now() - stageStartedAt);
       } catch (error) {
+        if (!operationFinished) operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
         if (isTransientCloudError(error)) {
           const failure = failureFromError(new ImportV2Error(
             error instanceof Error ? error.message : "Supabase temporaneamente non raggiungibile",
@@ -263,8 +294,10 @@ export class ImportV2Engine {
         }
         if (failure.retryable && checkpoint.attempts < this.maxTransientAttempts) {
           this.throwIfInterruptionRequested();
-          await this.store.save(checkpoint);
-          await this.store.recordEvent(checkpoint, "retry_scheduled", { attempt: checkpoint.attempts, failure });
+          await this.saveCheckpoint(checkpoint);
+          checkpointSaveDurationMs = timingMs(this.checkpointSaveElapsedMs);
+          stageDurationMs = timingMs(performance.now() - stageStartedAt);
+          await this.store.recordEvent(checkpoint, "retry_scheduled", { attempt: checkpoint.attempts, failure, executedStage, durationMs: stageDurationMs, operationDurationMs, checkpointSaveDurationMs });
           try { await this.crm.recover(checkpoint.stage, error); }
           catch (recoveryError) {
             const recoveryFailure = failureFromError(recoveryError, checkpoint.stage, this.now());
@@ -280,7 +313,7 @@ export class ImportV2Engine {
         return { itemId: checkpoint.itemId, propertyId: checkpoint.propertyId, crmPropertyId: checkpoint.crmPropertyId, syncedPeople: checkpoint.syncedPeople, state: "quarantined", stage: checkpoint.stage, failure };
       }
       try {
-        await this.store.recordEvent(checkpoint, "stage_completed", { stage: checkpoint.stage });
+        await this.store.recordEvent(checkpoint, "stage_completed", { stage: checkpoint.stage, executedStage, attempt: stageAttempt, durationMs: stageDurationMs, operationDurationMs, checkpointSaveDurationMs });
       } catch (error) {
         const failure = failureFromError(new ImportV2Error(
           error instanceof Error ? error.message : "Audit Cloud non raggiungibile",
@@ -401,7 +434,7 @@ export class ImportV2Engine {
           checkpoint.updatedAt = this.now().toISOString();
           // A relationship retry resumes here instead of reopening every
           // person record that was already verified successfully.
-          await this.store.save(checkpoint);
+          await this.saveCheckpoint(checkpoint);
         }
         this.throwIfInterruptionRequested();
         const ownerships = await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
@@ -422,11 +455,11 @@ export class ImportV2Engine {
       case "verified": {
         if (plan.source.activity.enabled && !checkpoint.activityWrite) {
           checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: this.now().toISOString(), submittedAt: null, baselineIds: [] };
-          await this.store.save(checkpoint);
+          await this.saveCheckpoint(checkpoint);
         }
         const activityEvidence = await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan, checkpoint.activityWrite ? {
           state: structuredClone(checkpoint.activityWrite),
-          persist: async state => { checkpoint.activityWrite = structuredClone(state); await this.store.save(checkpoint); },
+          persist: async state => { checkpoint.activityWrite = structuredClone(state); await this.saveCheckpoint(checkpoint); },
         } : undefined);
         if (plan.source.activity.enabled && (activityEvidence.outcome === "disabled" || activityEvidence.descriptionVerified === false || activityEvidence.statusVerified === false)) {
           throw new ImportV2Error("L'attività prevista dal piano non è stata verificata: immobile conservato, attività da completare", "verification_failed", { retryable: true });
@@ -505,7 +538,7 @@ export class ImportV2Engine {
       // owner's transient error must not replay successful writes/merges.
       checkpoint.syncedPeople = [...synced];
       checkpoint.updatedAt = this.now().toISOString();
-      await this.store.save(checkpoint);
+      await this.saveCheckpoint(checkpoint);
     }
     return synced;
   }

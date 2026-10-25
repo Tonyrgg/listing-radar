@@ -11,12 +11,16 @@ import { hydrateCloudMemory } from "./cloud-memory.js";
 import { hydrateQuarantine } from "./quarantine.js";
 import { ImportV2Error } from "../import-v2/errors.js";
 
+type ReadonlyData<T> = T extends object ? { readonly [P in keyof T]: ReadonlyData<T[P]> } : T;
+type MutableData<T> = T extends object ? { -readonly [P in keyof T]: MutableData<T[P]> } : T;
+
 /** An independent, atomic ledger. Never opens the stable worker's files or env. */
 export class TerritoryStore {
   private queue: Promise<unknown> = Promise.resolve();
   private committedRevision = 0;
   /** Advances only after the atomic file replacement succeeds. */
   get revision() { return this.committedRevision; }
+  get diagnosticsDirectory() { return path.dirname(this.filename); }
   private constructor(private readonly filename: string, private state: TerritoryState, readonly deviceId: string) {}
   static async open(directory: string, streets: Street[]) {
     await mkdir(directory, { recursive: true });
@@ -59,6 +63,10 @@ export class TerritoryStore {
     return store;
   }
   read(): TerritoryState { return structuredClone(this.state); }
+  /** Clone only the requested data; callers cannot mutate the live ledger through the selector. */
+  readSelected<T>(select: (state: ReadonlyData<TerritoryState>) => T): MutableData<T> {
+    return structuredClone(select(this.state)) as MutableData<T>;
+  }
   async backupBeforeSharedRecovery() {
     try { await writeFile(`${this.filename}.before-shared-recovery.json`, JSON.stringify(this.state), { encoding: "utf8", mode: 0o600, flag: "wx" }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }

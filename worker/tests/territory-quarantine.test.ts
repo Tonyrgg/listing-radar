@@ -17,13 +17,16 @@ afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).m
 async function setup() { const dir = await mkdtemp(path.join(os.tmpdir(), "quarantine-")); dirs.push(dir); return { dir, store: await TerritoryStore.open(dir, [street]) }; }
 async function execute(app: TerritoryApplication, operation: "scan" | "apply", keys: string[] = []) { await app.start(street.id, operation, keys); await app.waitForIdle(); }
 describe("acquisizioni concluse e quarantena indipendente", () => {
-  it("il provider reale conclude nonostante righe anomale o filtrate, ma non nasconde un'interruzione", async () => {
+  it("il provider reale conclude con esclusioni intenzionali e conserva da riprendere anomalie o risultati mancanti", async () => {
     const provider = new LiveProvider({ cdpUrl: "http://127.0.0.1:9223", sisterTabMatch: "sister", crmTabMatch: "crm", allowedCadastralKeys: [], allowedTaxCodes: [], allowCreate: false }, () => false);
     vi.spyOn(provider as unknown as { tabs(): Promise<unknown> }, "tabs").mockResolvedValue({ sisterPage: {} });
-    const result = { status: "completed", totalSkippedPropertyRows: 2, lastError: null } as SisterStreetRunCheckpoint;
+    const result = { status: "completed", totalSkippedPropertyRows: 2, lastError: null, results: [{ outcome: "found", recordLedger: [{ status: "skipped" }] }] } as SisterStreetRunCheckpoint;
     const run = vi.spyOn(SisterStreetRun.prototype, "run").mockResolvedValue(result);
     const args = [street, "run", undefined, async () => {}, async () => {}, () => false] as const;
     expect(await provider.scan(...args)).toBe(true);
+    run.mockResolvedValue({ ...result, results: [{ outcome: "found", recordLedger: [{ status: "completed_with_anomalies" }] }] } as SisterStreetRunCheckpoint);
+    expect(await provider.scan(...args)).toBe(false);
+    run.mockResolvedValue({ ...result, results: undefined as never }); expect(await provider.scan(...args)).toBe(false);
     run.mockResolvedValue({ ...result, status: "paused" }); expect(await provider.scan(...args)).toBe(false);
     run.mockResolvedValue({ ...result, lastError: "Sessione scaduta" }); expect(await provider.scan(...args)).toBe(false);
   });
@@ -51,13 +54,13 @@ describe("acquisizioni concluse e quarantena indipendente", () => {
     const reopened = await TerritoryStore.open(dir, [street]);
     expect(Object.values(reopened.read().quarantine!)).toHaveLength(2);
   });
-  it("chiude le vecchie false acquisizioni parziali senza acquisire o scrivere nei portali", async () => {
+  it.each(["completed", "completed_with_anomalies"] as const)("ripristina lo stato storico coerente con le righe %s senza operazioni sui portali", async recordStatus => {
     const { dir, store } = await setup(); const at = new Date().toISOString();
-    await store.change(state => { state.runs.push({ id: "old", streetId: street.id, operation: "scan", origin: "live", state: "paused", startedAt: at, endedAt: null, handled: 57, total: null, error: "Acquisizione parziale: i dati letti restano conservati.", itemKeys: [], checkpoint: { status: "completed", lastError: null, completedAt: at, updatedAt: at, results: [{ outcome: "found", inventoryProperties: [{ municipality: "BITONTO", sheet: "49", parcel: "93", subaltern: "", address: "Via Mameli 14", category: "C/2" }], recordLedger: [{ key: "BITONTO|49|93|", status: "completed_with_anomalies", anomaly: "Identità catastale incompleta", label: "Via Mameli 14", completedAt: at }] }] } }); });
+    await store.change(state => { state.runs.push({ id: "old", streetId: street.id, operation: "scan", origin: "live", state: "paused", startedAt: at, endedAt: null, handled: 57, total: null, error: "Acquisizione parziale: i dati letti restano conservati.", itemKeys: [], checkpoint: { status: "completed", lastError: null, completedAt: at, updatedAt: at, results: [{ outcome: "found", inventoryProperties: [{ municipality: "BITONTO", sheet: "49", parcel: "93", subaltern: "", address: "Via Mameli 14", category: "C/2" }], recordLedger: [{ key: "BITONTO|49|93|", status: recordStatus, anomaly: "Identità catastale incompleta", label: "Via Mameli 14", completedAt: at }] }] } }); });
     const reopened = await TerritoryStore.open(dir, [street]);
-    expect(reopened.read().runs[0]).toMatchObject({ state: "completed", endedAt: at, error: null });
-    expect(Object.values(reopened.read().quarantine!)).toMatchObject([{ reason: "Identità catastale incompleta", recordKey: "BITONTO|49|93|" }]);
-    const again = await TerritoryStore.open(dir, [street]); expect(Object.keys(again.read().quarantine!)).toHaveLength(1);
+    expect(reopened.read().runs[0]).toMatchObject(recordStatus === "completed" ? { state: "completed", endedAt: at, error: null } : { state: "paused", endedAt: null });
+    if (recordStatus === "completed_with_anomalies") expect(Object.values(reopened.read().quarantine!)).toMatchObject([{ reason: "Identità catastale incompleta", recordKey: "BITONTO|49|93|" }]);
+    const again = await TerritoryStore.open(dir, [street]); expect(Object.keys(again.read().quarantine ?? {})).toHaveLength(recordStatus === "completed" ? 0 : 1);
     expect(Object.keys(again.read().virtualCrm)).toHaveLength(0);
   });
   it("non trasforma una lettura interrotta in conclusa", async () => {

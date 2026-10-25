@@ -79,7 +79,7 @@ export class CloudIdentityMemory {
           const rows: CrmPropertySummary[] = [];
           for (const id of known.crmIds) {
             let row: CrmPropertySummary;
-            try { row = await base.readProperty(id); }
+            try { row = await (base.readPropertyIdentity ? base.readPropertyIdentity(id) : base.readProperty(id)); }
             catch (error) { if (!readFailed(error)) throw error; unreadable = true; this.record("properties", key, [], "unconfirmed"); break; }
             if (!matches(plan.source, row)) {
               unreadable ||= !row.cadastral?.sheet || !row.cadastral.parcel || Boolean(plan.source.cadastral.urbanSection && !row.cadastral.urbanSection);

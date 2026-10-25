@@ -5,6 +5,7 @@ import { buildPlan } from "../import-v2/identity.js";
 import { TerritoryStore } from "./store.js";
 import { rememberCheckpoint } from "./unit-memory.js";
 import { unitKey as importKey } from "./model.js";
+import { recordImportTiming } from "./import-timing.js";
 
 /** Reuses the verified Import V2 engine with a completely independent ledger. */
 export class TerritoryImportStore implements ImportV2Store {
@@ -39,11 +40,12 @@ export class TerritoryImportStore implements ImportV2Store {
     const id = `import:${checkpoint.itemId}:completed`;
     if (!state.events.some(e => e.id === id)) state.events.push({ id, streetId: this.streetId, at: checkpoint.updatedAt, text: "Aggiornamento verificato nel gestionale", unitKey: checkpoint.plan ? importKey(checkpoint.plan.source) : undefined });
   }
-  async recordEvent(checkpoint: ImportV2Checkpoint, event: string) {
+  async recordEvent(checkpoint: ImportV2Checkpoint, event: string, details: Record<string, unknown> = {}) {
+    await recordImportTiming(this.ledger.diagnosticsDirectory, this.runId, checkpoint, event, details);
     if (event !== "stage_completed" || checkpoint.stage !== "completed") return;
     // The normal path already committed proof and audit in the same transaction.
     // Keep recovery of checkpoints written by older versions.
-    if (this.ledger.read().events.some(e => e.id === `import:${checkpoint.itemId}:completed`)) return;
+    if (this.ledger.readSelected(state => state.events.some(e => e.id === `import:${checkpoint.itemId}:completed`))) return;
     await this.ledger.change(state => { this.remember(state, checkpoint, "stage_completed"); this.completedEvent(state, checkpoint); });
   }
   async quarantine(checkpoint: ImportV2Checkpoint, failure: ImportV2Failure) { await this.ledger.change(state => { state.checkpoints[checkpoint.propertyId] = structuredClone({ ...checkpoint, lastError: failure }); this.remember(state, checkpoint, "import_quarantined", failure); }); }

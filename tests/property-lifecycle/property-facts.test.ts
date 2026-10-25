@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {extractPropertyFacts,cheapFacts,combinePropertyFacts,factRank} from '@/lib/property-lifecycle/buildings/property-facts';
+import {extractPropertyFacts,cheapFacts,combinePropertyFacts,factRank,FACT_POLICY} from '@/lib/property-lifecycle/buildings/property-facts';
 const evidence={field:'Oggetto',sourceUrl:'https://www.comune.bitonto.ba.it/example',sourceHash:'a'.repeat(64),observedAt:'2026-10-20T12:00:00Z'};
 const parse=(text:string,date='2026-10-01')=>extractPropertyFacts('record',{...evidence,text},date);
 describe('Public property facts are primary-evidence-bound',()=>{
@@ -10,7 +10,18 @@ describe('Public property facts are primary-evidence-bound',()=>{
   ['sanatoria','SANATORIA'],['accertamento di conformità','ACCERTAMENTO_CONFORMITA'],['condono edilizio','CONDONO'],
   ['cessazione dell’attività commerciale','CESSAZIONE_ATTIVITA'],['variante urbanistica','VARIANTE_URBANISTICA'],['piano delle alienazioni','ALIENAZIONE'],
   ['vendita di terreno','ALIENAZIONE'],['manutenzione bagno','MANUTENZIONE_ORDINARIA'],['lavori stradali','LAVORO_STRADALE'],
- ])('extracts %s with a verbatim source span',(text,type)=>{const e=parse(text).find(e=>e.event_type===type)!;expect(e).toBeDefined();expect(text.slice(e.evidence_location.start,e.evidence_location.end)).toBe(e.evidence_text);expect(e.classification_version).toBe('property_facts_v1');});
+ ])('extracts %s with a verbatim source span',(text,type)=>{const e=parse(text).find(e=>e.event_type===type)!;expect(e).toBeDefined();expect(text.slice(e.evidence_location.start,e.evidence_location.end)).toBe(e.evidence_text);expect(e.classification_version).toBe(FACT_POLICY.version);});
+ it.each(['cambio destinazione d’uso da uso ufficio ad uso abitativo','mutamento della destinazione d’uso da direzionale a residenziale','cambio di destinazione d’uso da uffici ad abitazioni'])('reads an explicit office-to-home transition: %s',text=>{
+  const fact=parse(text).find(f=>f.event_type==='CAMBIO_DESTINAZIONE_USO')!;
+  expect(fact).toMatchObject({from_use:'OFFICE',to_use:'RESIDENTIAL'});
+  expect(text.slice(fact.evidence_location.start,fact.evidence_location.end)).toBe(fact.evidence_text);
+ });
+ it.each(['divisione in due appartamenti','suddivisione in 3 abitazioni'])('reads the stated unit count: %s',text=>expect(parse(text).find(f=>f.event_type==='FRAZIONAMENTO')?.units_after).toBe(text.includes('due')?2:3));
+ it('records explicit buildability changes in both directions without deriving them from a plan or a cadastral category',()=>{
+  expect(parse('Approvazione: terreno da non edificabile a edificabile').find(f=>f.event_type==='BUILDABILITY_CHANGED')).toMatchObject({from_use:'NON_BUILDABLE',to_use:'BUILDABLE'});
+  expect(parse('area da edificabile a inedificabile').find(f=>f.event_type==='BUILDABILITY_CHANGED')).toMatchObject({from_use:'BUILDABLE',to_use:'NON_BUILDABLE'});
+  for(const text of ['variante urbanistica','terreno agricolo','terreno da agricolo a edificabile','terreno da edificabile a edificabile','non prevede il passaggio del terreno da non edificabile a edificabile','Se il terreno da non edificabile a edificabile cambia valore']) expect(parse(text).some(f=>f.event_type==='BUILDABILITY_CHANGED')).toBe(false);
+ });
  it.each(['CILA','SCIA','CILA comunicazione inizio lavori asseverata','Segnalazione certificata di inizio lavori','nessun intervento','non prevede frazionamento','senza frazionamento','regolamento per frazionamento','tariffe per nuova costruzione','alienazione di automezzi','fusione di società','inagibilità'])('does not promote %s to an unsupported transformation/start',(text)=>expect(parse(text)).toHaveLength(0));
  it('generated labels, inferred intervention and generic creation time are not evidence',()=>{expect(cheapFacts({id:'x',content_hash:'a',source_key:'test',source_url:'https://test.it',record_type:'FRAZIONAMENTO',intervention_type:'FRAZIONAMENTO',record_date:null},evidence.observedAt)).toEqual([]);});
  it('keeps counts/use only from explicit spans, never cadastral categories',()=>{expect(parse('divisione in due unità')[0].units_after).toBe(2);expect(parse('frazionamento')[0].units_after).toBeNull();expect(parse('frazionamento')[0].derived_signals).not.toContain('NEW_UNITS_POSSIBLE');const change=parse('cambio destinazione d’uso da deposito a residenziale')[0];expect(change).toMatchObject({from_use:'WAREHOUSE',to_use:'RESIDENTIAL'});expect(change.derived_signals).toContain('PROPERTY_FUNCTION_TRANSFORMED');expect(parse('cambio destinazione d’uso categoria C/2 A/3')[0].from_use).toBeNull();});

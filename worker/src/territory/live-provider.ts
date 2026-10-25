@@ -3,7 +3,7 @@ import { ImportV2Error } from "../import-v2/errors.js";
 import type { TerritoryStore } from "./store.js";
 import type { TecnocloudV2Port } from "../import-v2/ports.js";
 import { connectToChrome, connectToCrmChrome, type ChromeTabs, type CrmChromeTab } from "../services/chrome.js";
-import { SisterStreetRun, hasRetryableAcquisitionRecords, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { SisterStreetRun, hasRetryableAcquisitionRecords, isCompleteStreetAcquisition, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { buildPlan } from "../import-v2/identity.js";
 import { ExcelContactsAdapter } from "../adapters/excel/index.js";
@@ -132,6 +132,6 @@ export class LiveProvider implements TerritoryProvider {
       },
     });
     const result = await runner.run(street.sisterName, prior && hasRetryableAcquisitionRecords(prior) ? prepareStreetAcquisitionRetry(prior) : prior);
-    return result.status === "completed" && !result.lastError;
+    return isCompleteStreetAcquisition(result);
   }
 }

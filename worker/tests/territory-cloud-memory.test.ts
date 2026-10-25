@@ -18,6 +18,28 @@ function setup(known = true) {
   return { state, base, memory, port };
 }
 describe("Memoria verificata di immobili e proprietari Cloud", () => {
+  it("confronta gli ID noti senza aprire i collegamenti e mantiene la rilettura completa per la verifica finale", async () => {
+    const { state, base } = setup();
+    const identity = vi.fn().mockResolvedValue(property);
+    const port = new CloudIdentityMemory(state).port({ ...base, readPropertyIdentity: identity } as unknown as TecnocloudV2Port);
+    expect(await port.findPropertiesByCadastralIdentity(plan)).toEqual([property]);
+    expect(identity).toHaveBeenCalledExactlyOnceWith(property.id);
+    expect(base.readProperty).not.toHaveBeenCalled();
+    expect(base.findPropertiesByCadastralIdentity).not.toHaveBeenCalled();
+    await port.readProperty(property.id);
+    expect(base.readProperty).toHaveBeenCalledExactlyOnceWith(property.id);
+  });
+
+  it("una lettura di sola identita fallita non autorizza la creazione di una scheda nota", async () => {
+    const { state, base } = setup();
+    base.findPropertiesByCadastralIdentity.mockResolvedValue([]);
+    const identity = vi.fn().mockRejectedValue(new ImportV2Error("Timeout caricamento", "transient_portal", { retryable: true }));
+    const port = new CloudIdentityMemory(state).port({ ...base, readPropertyIdentity: identity } as unknown as TecnocloudV2Port);
+    await expect(port.findPropertiesByCadastralIdentity(plan)).rejects.toThrow("nessuna creazione");
+    expect(base.readProperty).not.toHaveBeenCalled();
+    expect(base.findPropertiesByCadastralIdentity).toHaveBeenCalledOnce();
+  });
+
   it("riapre direttamente gli ID noti, aggiorna la verifica e conserva gli ID dopo una nuova acquisizione", async () => {
     const { state, base, memory, port } = setup();
     expect(await port.findPropertiesByCadastralIdentity(plan)).toEqual([property]);

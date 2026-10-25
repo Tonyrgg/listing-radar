@@ -71,7 +71,7 @@ describe("Schede reali scelte esplicitamente nel laboratorio", () => {
       const filters = (this as unknown as { filters: StreetPropertyFilters }).filters;
       expect(isStrategicNetworkCategory("A/3", filters.residentialOnly)).toBe(true);
       scopes.push(isStrategicNetworkCategory("C/6", filters.residentialOnly));
-      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0 } as SisterStreetRunCheckpoint;
+      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0, results: [{ outcome: "empty" }] } as SisterStreetRunCheckpoint;
     });
     const sink = async () => {}, save = async () => {};
     await provider.scan(street, "new", null, sink, save, () => false);
@@ -102,7 +102,7 @@ describe("Schede reali scelte esplicitamente nel laboratorio", () => {
     vi.spyOn(provider as unknown as { tabs(): Promise<ChromeTabs> }, "tabs").mockResolvedValue({ sisterPage: {} } as ChromeTabs);
     vi.spyOn(SisterStreetRun.prototype, "run").mockImplementation(async function (this: SisterStreetRun) {
       scopes.push((this as unknown as { filters: StreetPropertyFilters }).filters);
-      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0 } as SisterStreetRunCheckpoint;
+      return { status: "completed", lastError: null, totalSkippedPropertyRows: 0, results: [{ outcome: "empty" }] } as SisterStreetRunCheckpoint;
     });
     await provider.scan(street, "new", null, async () => {}, async () => {}, () => false, filters);
     const priorFilters = normalizeStreetPropertyFilters({ residentialOnly: false, minCivicNumber: 30 });

@@ -1,5 +1,10 @@
 # Listing Radar
 
+Consegna locale del 25 ottobre 2026: nuova area privata `/richieste`, con verifiche
+documentali e richieste inbound separate. Ingresso API soltanto locale e spento di
+default; migration 0046 preparata, nessun deploy o collegamento Meta/WhatsApp.
+Vedi [stato, limiti e collaudo](docs/SELLER-WORKBENCH.md).
+
 ## Stato attuale e avvio
 
 Property Lifecycle V2 è l'archivio immobiliare autorevole. Il lavoro quotidiano parte da `/acquisition/today`; `/acquisition` gestisce le notizie, `/logbook` lo storico universale, `/logbook/month` il mese e il Focus, `/acquisition/stale` le piste ferme, `/acquisition/zone` la zona e `/acquisition/kpi` i KPI commerciali. `listings` e le sezioni legacy sotto sono in dismissione: i dettagli storici di questo README non prevalgono su `docs/PROJECT-ONBOARDING.md` e sulle migration correnti.

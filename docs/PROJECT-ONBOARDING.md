@@ -1,5 +1,38 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **CoreImmobiliare, 26 ottobre 2026:** Docker avviato e L01 Auth/PostgREST/Next
+> concluso su progetto locale isolato. Web 712 test passati, 25 saltati;
+> migrazioni **0046–0051 applicate online** dopo backup dello schema.
+> Worker 0.34.26 preparato. [Consegna, eccezione locale e distribuzione](COREIMMOBILIARE-ROLLOUT-2026-10-26.md).
+
+> **Radar, transizioni immobiliari utili — 25 ottobre 2026, locale:** nuove policy
+> `property_facts_v2` / `news_triage_v2`, cambi d'uso con prima/dopo, unità dichiarate,
+> passaggi espliciti di edificabilità da verificare e riduzione dei lavori generici
+> nella coda. Migrazione **0051 preparata, non applicata online**; storico e scelte
+> manuali conservati. [Implementazione, prove e fonti candidate](RADAR-TRANSITIONS-DELIVERY.md).
+
+> **Worker V2, ottimizzazione locale del 25 ottobre 2026:** confronto degli ID noti
+> senza letture dei collegamenti proprietari, letture locali selettive e misure
+> persistenti del percorso operativo, inclusa la ricerca iniziale. Benchmark
+> sintetico, prove, comandi e limiti in [WORKER-V2-PERFORMANCE.md](WORKER-V2-PERFORMANCE.md).
+
+> **CoreImmobiliare, ciclo locale del 25 ottobre 2026:** implementati prove
+> immutabili per import Worker V2 e diagnostica per proprietario, validatore dei
+> giudizi Radar, coda Richieste paginata, provenienza, appuntamenti fissati/svolti,
+> registri TonyBook e selezione esplicita di verifiche, consegne simulate e
+> adattatore Meta con fixture. Migration **0046–0050 preparate, non applicate online**.
+> Il percorso Auth/PostgREST isolato è predisposto ma non eseguito: motore Docker
+> locale non avviato. Nessuna release Worker o attivazione esterna.
+> [Consegna e limiti](COREIMMOBILIARE-LOCAL-DELIVERY.md).
+
+> **Richieste e verifiche, 25 ottobre 2026 — solo locale:** nuova area `/richieste`,
+> ingresso server autenticato e idempotente, storico e prossime azioni; migration
+> **0046** preparata, non applicata online. Le notizie interessanti possono generare
+> una verifica esplicita, senza inferire contatti. Meta/WhatsApp/notifiche esterne
+> non collegati; dati titolare/privacy ancora da definire. Pacchetto di revisione
+> 50 immobili + 20 opportunità + 10 venduti + 3 notizie, senza giudizi inventati.
+> [Consegna, collaudo e limiti](SELLER-WORKBENCH.md).
+
 > **News Triage V1, 20 ottobre 2026:** migration **0045**, coda Notizie da valutare
 > con data amministrativa 2026, filtro di utilità e decisioni personali persistenti.
 > Approfondimento limitato a schede/PDF già noti; nessun lead o nuova fonte.
@@ -760,7 +793,18 @@ e descrizione coerenti.
 
 Le anomalie confluiscono nel registro persistente `worker-errors.json` con
 origine «Sorveglianza automatica», job, immobile e codice del controllo. Lo
-stesso controllo sullo stesso job non crea duplicati alle riprese. La Cronologia
+stesso controllo sullo stesso job, immobile e `sourcePersonId` non crea duplicati
+alle riprese: due proprietari con la stessa anomalia conservano due segnalazioni.
+La chiave deterministica viene ricalcolata anche sui record persistiti; i vecchi
+record senza `sourcePersonId` mantengono la deduplica per job/codice/immobile e
+non sopprimono le nuove segnalazioni di proprietari identificati.
+Questa integrazione W01 copre il runner precedente (`desktop/main.ts` e
+`services/run-auditor.ts`); le prove per singolo import del runtime Territorio
+V2 sono ambito di W02. Verifica locale W01 del 25 ottobre 2026: 15 test passati
+tra `run-auditor.test.ts` e `desktop-run-auditor.test.ts`, build Worker e controllo
+TypeScript desktop (`tsc -p worker/tsconfig.desktop.json --noEmit`) passati;
+fixture e registro simulato, nessuna sessione o scrittura CRM.
+La Cronologia
 è l'unica superficie che le mostra; una run regolare non aggiunge rumore.
 
 ### Import Cloud su due pagine

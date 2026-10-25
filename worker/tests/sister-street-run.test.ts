@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { chromium, type Page } from "playwright";
 
-import { SisterStreetRun } from "../src/services/sister-street-run.js";
+import { isCompleteStreetAcquisition, SisterStreetRun, type SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
 
 function preparedAddressListPage(options: Array<{ text: string; value: string }>) {
   const optionLocator = {
@@ -32,6 +32,19 @@ function preparedAddressListPage(options: Array<{ text: string; value: string }>
 }
 
 describe("run lunga SISTER dalla pagina preparata manualmente", () => {
+  it("lascia riprendibile una via con intestatari non letti e chiude solo senza anomalie ritentabili", () => {
+    const checkpoint = {
+      status: "completed", lastError: null, results: [{
+        outcome: "found", recordLedger: [{ key: "BITONTO|1|2|3", status: "completed_with_anomalies" }],
+      }],
+    } as unknown as SisterStreetRunCheckpoint;
+    expect(isCompleteStreetAcquisition(checkpoint)).toBe(false);
+    expect(isCompleteStreetAcquisition({ ...checkpoint, results: [{ outcome: "empty" } as never] })).toBe(true);
+    expect(isCompleteStreetAcquisition({ ...checkpoint, results: [] })).toBe(false);
+    expect(isCompleteStreetAcquisition({ ...checkpoint, results: undefined as never })).toBe(false);
+    expect(isCompleteStreetAcquisition({ ...checkpoint, lastError: "Risposta non verificata" })).toBe(false);
+  });
+
   it("con comproprietari attivi sviluppa ogni intestatario e prosegue fino al civico successivo", async () => {
     const portfolioVisits: string[] = [];
     const server = createServer((request, response) => {
@@ -98,10 +111,12 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       await page.goto(`http://127.0.0.1:${port}/addresses`);
       const sourceProperties: string[] = [];
       const expandedProperties: string[] = [];
+      const checkpoints: SisterStreetRunCheckpoint[] = [];
       const checkpoint = await new SisterStreetRun(page, {
         expandAllOwners: true,
         expandCoOwners: true,
         filters: { residentialOnly: true },
+        onCheckpoint: checkpoint => { checkpoints.push(checkpoint); },
         onPropertyAcquired: (_variant, property) => { sourceProperties.push(property.parcel); },
         onOwnerPropertiesAcquired: (_variant, _source, _owner, properties) => {
           expandedProperties.push(...properties.map((property) => property.parcel));
@@ -117,6 +132,13 @@ describe("run lunga SISTER dalla pagina preparata manualmente", () => {
       expect(portfolioVisits.filter((visit) => visit.includes("intestatoSelezionato=SECONDO-")).length).toBe(2);
       expect(checkpoint).toMatchObject({ status: "completed", totalAcceptedProperties: 4, totalOwnersRead: 4 });
       expect(checkpoint.results[0]?.expandedOwnerKeys).toHaveLength(4);
+      // The next-row cursor is durable after row one, without an identical
+      // second write before reading row two. All owners above remain present.
+      expect(checkpoints.filter(saved => {
+        const result = saved.results[0];
+        return result?.cursor?.position === 2 && result.cursor.ownerNames.length === 0
+          && result.recordLedger?.length === 1 && result.outcome === "paused";
+      })).toHaveLength(1);
     } finally {
       await browser.close();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

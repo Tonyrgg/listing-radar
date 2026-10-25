@@ -4,6 +4,7 @@ import { sanitizeSensitiveText } from "../logger.js";
 import { unitKey, type TerritoryState, type Unit, type UnitEvent } from "./model.js";
 import type { SourceProperty, ImportV2Checkpoint } from "../import-v2/model.js";
 import type { PropertyMemory } from "../import-v2/memory-store.js";
+import { freezeRunImport } from "./activity-plan.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const validAt = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? value : null;
@@ -32,6 +33,10 @@ export function rememberCheckpoint(state: TerritoryState, memory: PropertyMemory
   if (!unit || unit.key !== unitKey(source)) throw new Error("Identità della memoria immobile non coerente");
   const operationId = context ? unitOperation(runId, unit.key) : legacyOperation(source.jobId, source.sourcePropertyId);
   const completed = memory.event === "stage_completed" && checkpoint?.stage === "completed" && !checkpoint.lastError && Boolean(checkpoint.crmPropertyId);
+  if (completed && context) {
+    const run = state.runs.find(r => r.id === runId);
+    if (run) freezeRunImport(run, checkpoint!);
+  }
   const kind = completed ? "import_completed" : memory.event;
   const origin = context?.origin ?? "live";
   appendUnitEvent(unit, [operationId, kind, kind === "import_started" || failure || completed ? memory.at : checkpoint?.stage], {
@@ -50,7 +55,7 @@ export function rememberCheckpoint(state: TerritoryState, memory: PropertyMemory
     if (!unit.importedAt || (at && Date.parse(at) >= Date.parse(unit.importedAt))) { unit.importedAt = at; unit.crmId = checkpoint!.crmPropertyId; }
     if (context && at) {
       const run = state.runs.find(r => r.id === runId);
-      if (run) (run.imports ??= {})[unit.key] = { at, crmId: checkpoint!.crmPropertyId! };
+      if (run) (run.imports ??= {})[unit.key] ??= { at, crmId: checkpoint!.crmPropertyId! };
     }
   }
 }

@@ -44,7 +44,7 @@ describe("memoria individuale degli immobili", () => {
   it("conserva un successo prima dell'avanzamento della run e lo recupera dopo un'interruzione", async () => {
     const { store, app, directory } = await setup(); await app.start(street.id, "scan"); await app.waitForIdle();
     const unit = app.detail(street.id).units[0]!, src = effectiveSource(unit);
-    await store.change(s => { s.runs.push({ id: "apply", streetId: street.id, operation: "apply", origin: "simulation", state: "running", startedAt: "2026-10-07T09:00:00Z", endedAt: null, error: null, handled: 0, total: 2, itemKeys: Object.keys(s.units).slice(0, 2) }); });
+    await store.change(s => { s.runs.push({ id: "apply", streetId: street.id, operation: "apply", origin: "simulation", state: "running", startedAt: "2026-10-07T09:00:00Z", endedAt: null, error: null, handled: 0, total: 2, applySources: { [unit.key]: src }, itemKeys: Object.keys(s.units).slice(0, 2) }); });
     const port = new TerritoryImportStore(store, street.id, "apply"), cp = await port.loadOrCreate(buildPlan(src));
     Object.assign(cp, { stage: "completed", crmPropertyId: "verified", updatedAt: "2026-10-07T10:00:00Z" }); await port.save(cp);
     const committedRevision = store.revision;

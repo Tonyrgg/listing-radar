@@ -1,5 +1,16 @@
 # Property Worker: Worker V2 e laboratorio Territorio
 
+## Sviluppo locale W02 — prove di import congelate
+
+Ogni nuovo import V2 conserva nella stessa transazione locale una prova sulla
+propria run: operazione, immobile, ID CRM, data, piano attività ed evidenza.
+Il riepilogo non legge più il checkpoint corrente dell'immobile, quindi una
+seconda run non modifica il risultato storico della prima. Descrizione, stato,
+operazione e identità devono essere coerenti per confermare un'attività.
+Le run precedenti prive di questa prova restano non confermate; nessun recupero
+retroattivo presunto. La sincronizzazione unisce i singoli import e conserva
+conflitti fra prove discordanti. Nessuna release o operazione CRM effettuata.
+
 ## Versione 0.34.25: attività per ogni import esplicitamente selezionato
 
 Tre condizioni riprodotte potevano ancora saltare le attività: immobili storici o acquisiti tramite portafoglio esclusi nonostante la modalità scelta nella coda; un piano precedente «Nessuna attività» riutilizzato anche scegliendo Killer; un Task storico dello stesso immobile con descrizione e stato uguali considerato sufficiente per il nuovo import.
@@ -480,3 +491,29 @@ Il Dossier mostra Acquisisci → Confronta → Controlla e applica e il prossimo
 In Immobili si cerca per indirizzo, catasto o intestatario e si filtra l’esito. Seleziona pronti opera sulle righe filtrate; Deseleziona svuota la scelta. Il riepilogo distingue nuove schede, aggiornamenti e selezionati fuori dai filtri. Le schede senza autorizzazione offrono Scegli per il collaudo: apre le autorizzazioni, senza abilitarle automaticamente.
 
 Note e correzioni hanno Salva/Annulla e stato non salvato; nessun refresh le scarta. I dettagli aperti, il focus da tastiera e la posizione di lettura restano conservati negli aggiornamenti. L’analisi dei componenti e i criteri sono in [PROPERTY-WORKER-V2-DESIGN.md](PROPERTY-WORKER-V2-DESIGN.md).
+
+## Ottimizzazione iniziale Worker V2 (25 ottobre 2026)
+
+Il motore Import V2 eseguiva `assertSession()` prima di ciascuna delle nove transizioni di fase di un import completo. L'adattatore Tecnocloud controlla già la sessione prima di ogni azione CRM e navigazione. Il motore ora mantiene un preflight per import e lascia attivi i controlli dell'adattatore durante l'esecuzione: per un import completo evita otto probe DOM duplicati senza rimuovere le protezioni che precedono le letture e scritture del CRM.
+
+Il motore emette `durationMs`, `operationDurationMs` e `checkpointSaveDurationMs`. Il primo intervento non conservava questi dettagli nel registro locale V2: il collegamento è stato completato nella prosecuzione descritta in `listing-radar/docs/WORKER-V2-PERFORMANCE.md`. Ora il profilo V2 registra `import-v2-timings.jsonl`, inclusa la ricerca preliminare. Il tempo dei checkpoint comprende anche i salvataggi interni dopo ciascun nominativo; una misura del solo motore non equivale al tempo della run completa.
+
+**Verifiche locali di questa modifica:** 44 test motore/store; 64 test dell'adattatore Tecnocloud UI; 15 test di recupero/caricamento/parallelo; `npm.cmd run build` Worker. Nessun accesso live a Tecnocloud/SISTER e nessuna scrittura remota.
+
+**Domande ancora aperte, da rispondere con le prove delle run:** quale fase domina il tempo? Quanto costano i lookup e le riletture? Quanti retry sono portale, rete o indici? Quali fonti di acquisizione o casi SISTER lasciano nominativi fuori dall'inventario? L'esecuzione V2 corrente usa un solo tab CRM: un'eventuale concorrenza multipagina va progettata e misurata con i lock per proprietario/immobile prima di abilitarla.
+### Completezza acquisizione: anomalie ritentabili non chiudono più la run
+
+Il percorso SISTER V2 poteva restituire una via come completata pur avendo righe `completed_with_anomalies`. Le righe e le prove restavano nel checkpoint, ma l'app non rendeva disponibile la ripresa mirata. Ora `LiveProvider.scan` considera conclusa la via solo se non ci sono errori globali né righe ritentabili. In presenza di anomalie la run resta in pausa; Riprendi usa `prepareStreetAcquisitionRetry`, riapre le sole righe anomale e mantiene quelle già acquisite o escluse intenzionalmente.
+
+**Verifiche locali aggiuntive:** 35 test SISTER/territorio/resilienza e build Worker passati. La pausa non elimina righe e non trasforma una mancata lettura in esclusione definitiva.
+## Prosecuzione Worker V2: prestazioni misurate e diagnosi locale
+
+Implementati il confronto di sola identità degli immobili noti (la verifica finale conserva proprietari e quote), le letture selettive del ledger e il collegamento effettivo delle misure al file `import-v2-timings.jsonl`. Registrati anche ricerca preliminare, errori di lookup, tentativi effettivi e tutti i salvataggi interni del checkpoint. Il report segnala assenza di campioni, righe non valide e conflitti, senza scambiarli per import conclusi. Eliminata anche la riscrittura del cursore SISTER già persistito con la riga precedente; il campione mantiene tutti gli intestatari e una sola scrittura di quel confine.
+
+Benchmark su 1.000 immobili sintetici, 100 letture di checkpoint, mediana di tre giri: copia dell'intero archivio 637,723 ms; lettura selettiva 0,219 ms. Differenza locale 637,504 ms; non è una misura dell'intero import o della latenza Tecnocloud.
+
+Verifiche: 131 test in quindici suite passati (107 sul percorso import e 24 su SISTER); ultimo affinamento ricontrollato su due suite (45 test già compresi nel perimetro), TypeScript e compilazione desktop passati. Smoke compilato: un immobile simulato concluso, dieci misure leggibili e comando report eseguito. Nessuna release o sessione reale SISTER/Tecnocloud.
+
+Dettaglio: `C:/Users/ruggi/listing-radar/docs/WORKER-V2-PERFORMANCE.md`. Prove: `C:/Users/ruggi/listing-radar-validation/2026-10-25-worker-v2-performance/local-reads-1000.json` e `timing-report-synthetic-final.json`.
+
+Prossima diagnosi: tempi reali per fase e costo dei recuperi annidati (fino a quattro esecuzioni della lettura nell'adattatore e tre tentativi della fase). Il V2 operativo resta a una scheda CRM; l'eventuale parallelismo va adattato con lock e prove prima di attivarlo. La sequenza storica dei 13 task non è stata azzerata o rilanciata da questa prosecuzione.

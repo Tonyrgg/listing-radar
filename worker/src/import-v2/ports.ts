@@ -56,6 +56,8 @@ export interface TecnocloudV2Port {
   updateProperty(propertyId: string, plan: ImportV2Plan): Promise<CrmPropertySnapshot>;
   /** Replaces private full/bare ownerships; corporate and usufruct links survive untouched. */
   replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options?: OwnershipSyncOptions): Promise<CrmOwnershipSnapshotResult>;
+  /** Identity-only reread for candidate lookup; final verification still requires readProperty. */
+  readPropertyIdentity?(propertyId: string): Promise<CrmPropertySummary>;
   readProperty(propertyId: string): Promise<CrmPropertySnapshot>;
   ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest): Promise<{
     activityId: string | null;

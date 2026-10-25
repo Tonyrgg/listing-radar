@@ -1,17 +1,21 @@
 import { hashValue } from '../contracts/normalized-listing';
 
 /** Relevance is information value, NEVER sale probability. Changes require a new version. */
-export const FACT_POLICY = Object.freeze({version:'property_facts_v1', confidence:{explicit:.95,practice:.9},
+export const FACT_POLICY = Object.freeze({version:'property_facts_v2', confidence:{explicit:.95,practice:.9},
   maxSpan:180, maxEvents:40, deepLimit:80, pdfLimit:8, recentDays:90,
   ranking:{relevance:.65,recency:.15,precision:.1,confidence:.08,novelty:.02},
 });
 type Rule = {type:string;pattern:RegExp;relevance:number;proximity:'DIRECT'|'NEAR'|'POSSIBLE'|'CONTEXT'};
 const r=(type:string,pattern:RegExp,relevance:number,proximity:Rule['proximity']='POSSIBLE'):Rule=>({type,pattern,relevance,proximity});
+const useName='commerciale|residenziale|ufficio?|direzionale|deposito|magazzino|abitazion[ei]|abitativ[oa]';
+const useTransition=new RegExp(`da\\s+(?:uso\\s+|destinazione\\s+)?(${useName})\\s+(?:a|ad)\\s+(?:uso\\s+|destinazione\\s+)?(${useName})\\b`,'i');
+const buildabilityTransition=/(?:terren[oi]|are[ae]|lott[oi])\s+da\s+(non\s+edificabil[ei]|inedificabil[ei]|edificabil[ei])\s+(?:a|ad|in)\s+(non\s+edificabil[ei]|inedificabil[ei]|edificabil[ei])/i;
 export const FACT_RULES:Rule[]=[
  r('DEMOLIZIONE_RICOSTRUZIONE',/demolizione\s+(?:e\s+|con\s+(?:successiva\s+)?)ricostruzione/i,85,'NEAR'),
- r('FRAZIONAMENTO',/frazionamento(?:\s+(?:dell['’]|di\s+)(?:unità|unita|immobile))?|divisione\s+in\s+(?:più|due|tre|\d+)\s+unit[àa]|realizzazione\s+di\s+(?:due|tre|\d+)\s+unit[àa]|suddivisione\s+(?:in\s+(?:più|due|tre|\d+)\s+unit[àa]|dell['’]unit[àa])|separazione\s+funzionale\s+(?:di\s+)?unit[àa]|creazione\s+di\s+unit[àa]\s+autonome/i,90,'NEAR'),
+ r('FRAZIONAMENTO',/frazionamento(?:\s+(?:dell['’]|di\s+)(?:unità|unita|immobile))?|divisione\s+in\s+(?:più|due|tre|\d+)\s+unit[àa]|realizzazione\s+di\s+(?:due|tre|\d+)\s+unit[àa]|suddivisione\s+(?:in\s+(?:più|due|tre|\d+)\s+unit[àa]|dell['’]unit[àa])|separazione\s+funzionale\s+(?:di\s+)?unit[àa]|creazione\s+di\s+unit[àa]\s+autonome|(?:divisione|suddivisione)\s+in\s+(?:due|tre|\d+)\s+(?:appartamenti|abitazioni)/i,90,'NEAR'),
  r('FUSIONE',/(?:fusione|accorpamento|unificazione)(?:\s+(?:di\s+|delle?\s+|tra\s+)?(?:due\s+|tre\s+|\d+\s+|più\s+)?(?:unit[àa]|immobili|appartamenti))?|collegamento\s+funzionale\s+di\s+unit[àa]/i,80,'NEAR'),
- r('CAMBIO_DESTINAZIONE_USO',/(?:cambio|cambiamento|mutamento|modifica)\s+(?:di\s+|della\s+)?destinazione\s+d['’]?uso(?:\s+da\s+(?:commerciale|residenziale|ufficio|deposito|magazzino|abitazione)\s+(?:a|ad)\s+(?:commerciale|residenziale|ufficio|deposito|magazzino|abitazione))?/i,90,'NEAR'),
+ r('CAMBIO_DESTINAZIONE_USO',new RegExp(`(?:cambio|cambiamento|mutamento|modifica)\\s+(?:di\\s+|della\\s+)?destinazione\\s+d['’]?uso(?:\\s+${useTransition.source})?`,'i'),90,'NEAR'),
+ r('BUILDABILITY_CHANGED',buildabilityTransition,95),
  r('NUOVA_COSTRUZIONE',/nuova\s+costruzione|costruzione\s+di\s+(?:un\s+)?nuovo\s+fabbricato/i,85,'NEAR'),
  r('DEMOLIZIONE',/demolizione\s+(?:di\s+|del\s+|dell['’])(?:un\s+)?(?:fabbricato|edificio|immobile|opere\s+abusive)/i,65),
  r('RISTRUTTURAZIONE_IMPORTANTE',/ristrutturazione\s+(?:integrale|totale|pesante|importante)|ristrutturazione\s+edilizia\s+(?:integrale|totale|pesante)/i,70,'NEAR'),
@@ -65,6 +69,7 @@ export function extractPropertyFacts(recordId:string,evidence:FactEvidence,event
    if(partial)match[0]+=partial[0];
    const before=text.slice(Math.max(0,match.index-110),match.index),sentence=text.slice(Math.max(0,text.lastIndexOf('.',match.index)+1),match.index);
    if(invalidContext.test(before)||/\b(?:regolamento|linee\s+guida|diritti\s+di\s+segreteria|tariffe|modulistica|elenco\s+documenti|requisiti|normativa)\b/i.test(sentence))continue;
+   if(rule.type==='BUILDABILITY_CHANGED'&&/non\s+(?:preved\w*|consent\w*|autorizz\w*|è\s+previst\w*)|nessun\s+(?:passaggio|cambiamento)|\b(?:se|qualora|potrebbe|ipotetico)\b/i.test(sentence))continue;
    // A PDF can quote entire laws and hypothetical alternatives. Only operative
    // assertions/subject clauses are eligible, never a keyword in legal boilerplate.
    if(evidence.field==='pdf.text'){
@@ -86,10 +91,13 @@ export function extractPropertyFacts(recordId:string,evidence:FactEvidence,event
    if(match[0].length>FACT_POLICY.maxSpan)continue;
    const context=text.slice(Math.max(0,match.index-70),match.index+match[0].length+120);
    const lifecycle=/lavori\s+(?:iniziati|avviati)/i.test(context)?'STARTED':/lavori\s+in\s+corso/i.test(context)?'ONGOING_DECLARED':/lavori\s+ultimati|comunicazione\s+(?:di\s+)?fine\s+lavori|certificato\s+di\s+ultimazione/i.test(context)?'COMPLETED':/rilascio|rilasciato|autorizza(?:to|zione)/i.test(before)?'AUTHORIZED':/istanza|richiesta|domanda|presentazion/i.test(before)?'PLANNED':null;
-   const uses=match[0].match(/da\s+(commerciale|residenziale|ufficio|deposito|magazzino|abitazione)\s+(?:a|ad)\s+(commerciale|residenziale|ufficio|deposito|magazzino|abitazione)/i);
-   const mapUse=(v:string)=>({commerciale:'COMMERCIAL',residenziale:'RESIDENTIAL',abitazione:'RESIDENTIAL',ufficio:'OFFICE',deposito:'WAREHOUSE',magazzino:'WAREHOUSE'}[v.toLowerCase()]??null);
+   const uses=match[0].match(useTransition);
+   const mapUse=(v:string)=>/^(?:residenziale|abitazion[ei]|abitativ[oa])$/i.test(v)?'RESIDENTIAL':/^(?:ufficio?|direzionale)$/i.test(v)?'OFFICE':/^(?:deposito|magazzino)$/i.test(v)?'WAREHOUSE':/^commerciale$/i.test(v)?'COMMERCIAL':null;
+   const buildability=rule.type==='BUILDABILITY_CHANGED'?match[0].match(buildabilityTransition):null;
+   const mapBuildability=(value:string)=>/^(?:non\s+|in)edificabil/i.test(value)?'NON_BUILDABLE':'BUILDABLE';
+   if(buildability&&mapBuildability(buildability[1])===mapBuildability(buildability[2]))continue;
    // Counts are accepted only from the evidence span itself; no planimetry or unrelated numbers.
-   const after=transition?.[2]??match[0].match(/(?:in|di)\s+(due|tre|\d+)\s+unit[àa]/i)?.[1];
+   const after=transition?.[2]??match[0].match(/(?:in|di)\s+(due|tre|\d+)\s+(?:unit[àa]|appartamenti|abitazioni)/i)?.[1];
    const count=(s:string)=>Number(({una:1,uno:1,due:2,tre:3} as Record<string,number>)[s.toLowerCase()]??s);
    const derived:string[]=[];
    const historicalCompletion=evidence.field==='pdf.text'&&rule.type==='FINE_LAVORI';
@@ -97,20 +105,20 @@ export function extractPropertyFacts(recordId:string,evidence:FactEvidence,event
    const reportedBy=reported?`${reported[3]}-${reported[2]}-${reported[1]}`:null;
    const supporting=evidence.field==='albo.subject'&&/affidamento|liquidazione|impegno\s+di\s+spesa|rimborso/i.test(text);
    const regularization=['FRAZIONAMENTO','FUSIONE','DEMOLIZIONE','DEMOLIZIONE_RICOSTRUZIONE','NUOVA_COSTRUZIONE','AMPLIAMENTO','RISTRUTTURAZIONE','CAMBIO_DESTINAZIONE_USO'].includes(rule.type)&&/sanatoria|accertamento\s+di\s+conformit/i.test(text);
-   if(!partial&&!regularization&&rule.type==='FRAZIONAMENTO'&&/unit[àa]|appartament/i.test(match[0]))derived.push('NEW_UNITS_POSSIBLE');
+   if(!partial&&!regularization&&rule.type==='FRAZIONAMENTO'&&/unit[àa]|appartament|abitazioni/i.test(match[0]))derived.push('NEW_UNITS_POSSIBLE');
    if(uses&&mapUse(uses[1])!=='RESIDENTIAL'&&mapUse(uses[2])==='RESIDENTIAL')derived.push('PROPERTY_FUNCTION_TRANSFORMED');
    if(rule.type==='CESSAZIONE_ATTIVITA')derived.push('POSSIBLE_COMMERCIAL_SPACE_TRANSITION');
-   if(!supporting&&/URBANISTIC|EDIFICATORIO|LOTTIZZAZIONE|PIANO_ATTUATIVO/.test(rule.type))derived.push('URBAN_PLANNING_CHANGE','LAND_TO_WATCH');
+   if(!supporting&&/URBANISTIC|EDIFICATORIO|LOTTIZZAZIONE|PIANO_ATTUATIVO|BUILDABILITY/.test(rule.type))derived.push('URBAN_PLANNING_CHANGE','LAND_TO_WATCH');
    facts.push({id:hashValue({recordId,type:rule.type,field:evidence.field,page:evidence.page??null}),event_type:rule.type,event_subtype:supporting?'SUPPORTING_ADMINISTRATION':partial?'PARTIAL_ASSET':regularization?'REGULARIZATION_REFERENCE':evidence.field==='pdf.text'||evidence.field==='albo.subject'?'SOURCE_ASSERTION':'DECLARED_IN_PRACTICE',
     event_date:historicalCompletion?null:eventDate,document_date:eventDate,completion_reported_by:reportedBy,date_evidence:reported?`${reported[1]}/${reported[2]}/${reported[3]}`:null,date_semantics:!historicalCompletion&&eventDate?'DOCUMENT_DATE':'UNKNOWN',observed_at:evidence.observedAt,confidence:evidence.field==='practice_type'?FACT_POLICY.confidence.practice:FACT_POLICY.confidence.explicit,
     evidence_text:match[0],evidence_location:{field:evidence.field,page:evidence.page??null,row:evidence.row??null,start:match.index,end:match.index+match[0].length,source_hash:evidence.sourceHash,source_url:evidence.sourceUrl},
     classification_version:FACT_POLICY.version,real_estate_relevance:supporting?25:partial?55:regularization?Math.min(65,rule.relevance):rule.relevance,sale_proximity:supporting?'CONTEXT':partial||regularization?'POSSIBLE':rule.proximity,works_lifecycle:lifecycle,
     units_before:transition?count(transition[1]):null,units_after:after?count(after):null,
-    from_use:uses?mapUse(uses[1]):null,to_use:uses?mapUse(uses[2]):null,ownership_scope:/\bcomunal[ei]|pubblic[oi]\b/i.test(match[0])?'PUBLIC':/\bprivat[oi]\b/i.test(match[0])?'PRIVATE':'UNKNOWN',derived_signals:derived});break;
+    from_use:buildability?mapBuildability(buildability[1]):uses?mapUse(uses[1]):null,to_use:buildability?mapBuildability(buildability[2]):uses?mapUse(uses[2]):null,ownership_scope:/\bcomunal[ei]|pubblic[oi]\b/i.test(match[0])?'PUBLIC':/\bprivat[oi]\b/i.test(match[0])?'PRIVATE':'UNKNOWN',derived_signals:derived});break;
   }
  }
  const types=new Set(facts.map(f=>f.event_type));
- return facts.filter(f=>!(types.has('DEMOLIZIONE_RICOSTRUZIONE')&&f.event_type==='DEMOLIZIONE')&&!(types.has('RISTRUTTURAZIONE_IMPORTANTE')&&f.event_type==='RISTRUTTURAZIONE')).slice(0,FACT_POLICY.maxEvents);
+ return facts.filter((f,index,all)=>all.findIndex(other=>other.event_type===f.event_type)===index&&!(types.has('DEMOLIZIONE_RICOSTRUZIONE')&&f.event_type==='DEMOLIZIONE')&&!(types.has('RISTRUTTURAZIONE_IMPORTANTE')&&f.event_type==='RISTRUTTURAZIONE')).slice(0,FACT_POLICY.maxEvents);
 }
 
 export interface FactRecord {id:string;content_hash:string;source_key:string;source_url:string|null;record_type:string;practice_type?:string|null;intervention_type?:string;record_date:string|null;source_status?:string;sanitized_payload?:Record<string,unknown>}

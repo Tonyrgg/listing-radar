@@ -18,7 +18,7 @@ import { loadConfig, type WorkerConfig } from "../config.js";
 import { logger, sanitizeSensitiveText } from "../logger.js";
 import { automaticRetryAttempts, buildAutomaticSkipImpact, canAutomaticallyRecoverPropertyFailure } from "../core/automatic-skip.js";
 import { inspectAcquisitionQueue } from "../services/acquisition-queue.js";
-import { auditImportRun, auditStreetRun, type RunAuditFinding } from "../services/run-auditor.js";
+import { auditImportRun, auditStreetRun, runAuditDiagnosticKey, type RunAuditFinding } from "../services/run-auditor.js";
 import { buildPropertyRunLedger, partitionPropertyJobs, partitionPropertyRuns } from "../services/run-ledger.js";
 import { mergedRunIds } from "../services/run-merge.js";
 import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../services/refinement-seed.js";
@@ -618,10 +618,19 @@ async function recordRunAuditFindings(
 ) {
   let stored = 0;
   for (const finding of findings) {
+    const key = runAuditDiagnosticKey({
+      jobId: context.jobId,
+      code: finding.code,
+      propertyId: finding.propertyId,
+      sourcePersonId: finding.details.sourcePersonId,
+    });
     const alreadyStored = diagnosticErrors.some((item) => item.source === "run-auditor"
-      && item.jobId === context.jobId
-      && item.details.auditCode === finding.code
-      && item.details.propertyId === (finding.propertyId ?? null));
+      && runAuditDiagnosticKey({
+        jobId: item.jobId,
+        code: item.details.auditCode,
+        propertyId: item.details.propertyId,
+        sourcePersonId: item.details.sourcePersonId,
+      }) === key);
     if (alreadyStored) continue;
     await recordDiagnosticErrorSafely({
       source: "run-auditor",

@@ -176,7 +176,10 @@ describe("sorveglianza automatica delle run", () => {
     const findings = auditImportRun({
       job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
       graph: {
-        properties: [property, { ...property, id: "property-2", cadastral_key: "BITONTO|50|200|2" }] as never,
+        properties: [
+          { ...property, crm_record_id: "a0VRD00000ABCdeAAA" },
+          { ...property, id: "property-2", cadastral_key: "BITONTO|50|200|2", crm_record_id: "a0VRD00000ABCdeBBB" },
+        ] as never,
         people: [] as never,
         ownerships: [],
       },
@@ -195,5 +198,78 @@ describe("sorveglianza automatica delle run", () => {
       code: "crm_identity_reused",
       details: expect.objectContaining({ propertyIds: ["property-1", "property-2"] }),
     })]);
+  });
+
+  it("segnala riferimenti diversi dell'immobile senza ripetere scritture", () => {
+    const findings = auditImportRun({
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: { properties: [{ ...property, crm_record_id: "crm-other" }] as never, people: [], ownerships: [] },
+      items: [item] as never,
+    });
+    expect(findings).toEqual([expect.objectContaining({
+      code: "crm_identity_mismatch", propertyId: property.id,
+      details: expect.objectContaining({ checkpointCrmId: "crm-property-1", propertyCrmId: "crm-other" }),
+    })]);
+  });
+
+  it("accetta lo stesso ID Salesforce a 15 e 18 caratteri senza ignorare le maiuscole", () => {
+    const run = (storedId: string) => auditImportRun({
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: { properties: [{ ...property, crm_record_id: storedId }] as never, people: [], ownerships: [] },
+      items: [{ ...item, checkpoint: { ...item.checkpoint, crmPropertyId: "a0VRD00000ABCdeAAA" } }] as never,
+    });
+    expect(run(" a0VRD00000ABCde ")).toEqual([]);
+    expect(run("a0vrd00000abcde").map(finding => finding.code)).toEqual(["crm_identity_mismatch"]);
+  });
+
+  it("conserva interi gli identificativi che non sono Salesforce", () => {
+    const findings = auditImportRun({
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: { properties: [{ ...property, crm_record_id: "crm-property-long-record-B" }] as never, people: [], ownerships: [] },
+      items: [{ ...item, checkpoint: { ...item.checkpoint, crmPropertyId: "crm-property-long-record-A" } }] as never,
+    });
+    expect(findings.map(finding => finding.code)).toEqual(["crm_identity_mismatch"]);
+  });
+
+  it("accetta ID persona Salesforce equivalenti e segnala riferimenti immobile mancanti", () => {
+    const input = {
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: {
+        properties: [property] as never,
+        people: [{ id: "person-1", crm_record_id: "003RD00000ABCde" }] as never,
+        ownerships: [],
+      },
+      items: [{ ...item, checkpoint: { ...item.checkpoint, syncedPeople: [
+        { ...item.checkpoint.syncedPeople[0], crmPersonId: "003RD00000ABCdeAAA" },
+      ] } }] as never,
+    };
+    expect(auditImportRun(input)).toEqual([]);
+    for (const missing of ["checkpoint", "archive"]) {
+      const findings = auditImportRun({
+        ...input,
+        graph: { ...input.graph, properties: [{ ...property,
+          crm_record_id: missing === "archive" ? null : property.crm_record_id }] as never },
+        items: [{ ...item, checkpoint: { ...item.checkpoint,
+          syncedPeople: [],
+          crmPropertyId: missing === "checkpoint" ? null : property.crm_record_id } }] as never,
+      });
+      expect(findings.map(finding => finding.code)).toEqual(["crm_identity_missing"]);
+    }
+  });
+
+  it("segnala separatamente le identita discordanti o mancanti dei proprietari presenti nell'archivio", () => {
+    const findings = auditImportRun({
+      job: { ...job, acquisition: { importOptions: { activityMode: "plain", importCoOwners: false } } } as never,
+      graph: {
+        properties: [property] as never,
+        people: [{ id: "person-1", crm_record_id: "crm-other-person" }, { id: "person-2", crm_record_id: null }] as never,
+        ownerships: [],
+      },
+      items: [item] as never,
+    });
+    expect(findings.map(finding => [finding.code, finding.details.sourcePersonId])).toEqual([
+      ["crm_person_identity_mismatch", "person-1"],
+      ["crm_person_identity_missing", "person-2"],
+    ]);
   });
 });

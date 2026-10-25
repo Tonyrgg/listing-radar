@@ -18,6 +18,20 @@ async function setup() {
   return { app, store };
 }
 describe("Proiezioni della memoria V2", () => {
+  it("le letture selettive restano isolate e osservano solo commit conclusi", async () => {
+    const { store } = await setup();
+    const key = store.readSelected(state => Object.keys(state.units)[0])!;
+    const selected = store.readSelected(state => ({ unit: state.units[key]!, missing: state.checkpoints.missing }));
+    const original = selected.unit.observations[0]!.source.fullAddress;
+    selected.unit.observations[0]!.source.fullAddress = "Modifica della copia";
+    selected.unit.streetIds.push("inventata");
+    expect(selected.missing).toBeUndefined();
+    expect(store.readSelected(state => state.units[key]!.observations[0]!.source.fullAddress)).toBe(original);
+    expect(store.readSelected(state => state.units[key]!.streetIds.includes("inventata"))).toBe(false);
+    await store.change(state => { state.units[key]!.note = "Commit conservato"; });
+    expect(store.readSelected(state => state.units[key]!.note)).toBe("Commit conservato");
+  });
+
   it("l'indice conserva il riepilogo per vie collegate, proprietà condivise e quarantena", async () => {
     const { app, store } = await setup();
     const keys = app.detail("a").units.slice(0, 2).map(u => u.key);

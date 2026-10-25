@@ -1,0 +1,17 @@
+{
+  "externalId": "local-test-001",
+  "formVersion": "seller_v1",
+  "name": "Persona fittizia di collaudo",
+  "phone": "+390000000000",
+  "answers": {
+    "situation": "considering_sale",
+    "role": "owner",
+    "locality": "Bitonto",
+    "propertyType": "apartment",
+    "timing": "undecided"
+  },
+  "callbackRequested": true,
+  "whatsappOptIn": false,
+  "privacyVersion": "LOCAL_TEST_NOT_FOR_PUBLIC_USE",
+  "attribution": { "source": "local_test" }
+}

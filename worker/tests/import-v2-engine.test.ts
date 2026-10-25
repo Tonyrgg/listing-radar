@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { performance } from "node:perf_hooks";
 
 import { ImportV2Engine } from "../src/import-v2/engine.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
@@ -58,6 +59,7 @@ class MemoryStore implements ImportV2Store {
   quarantined: Array<{ sourcePropertyId: string; failure: ImportV2Failure }> = [];
   paused: ImportV2Failure[] = [];
   events: string[] = [];
+  eventDetails: Array<Record<string, unknown>> = [];
 
   async loadOrCreate(plan: ImportV2Plan): Promise<ImportV2Checkpoint> {
     const current = this.checkpoints.get(plan.source.sourcePropertyId);
@@ -85,7 +87,7 @@ class MemoryStore implements ImportV2Store {
     this.checkpoints.set(checkpoint.propertyId, structuredClone(checkpoint));
   }
 
-  async recordEvent(_checkpoint: ImportV2Checkpoint, event: string) { this.events.push(event); }
+  async recordEvent(_checkpoint: ImportV2Checkpoint, event: string, details: Record<string, unknown> = {}) { this.events.push(event); this.eventDetails.push(details); }
   async quarantine(checkpoint: ImportV2Checkpoint, failure: ImportV2Failure) {
     this.quarantined.push({ sourcePropertyId: checkpoint.propertyId, failure });
   }
@@ -102,6 +104,7 @@ class FakeCrm implements TecnocloudV2Port {
   merges: MergeRequest[] = [];
   activities: string[] = [];
   recoveries = 0;
+  sessionAssertions = 0;
   replaceCalls = 0;
   lastOwnershipOptions: OwnershipSyncOptions = {};
   replaceFailures = 0;
@@ -110,6 +113,7 @@ class FakeCrm implements TecnocloudV2Port {
   nextProperty = 1;
 
   async assertSession() {
+    this.sessionAssertions += 1;
     if (this.sessionFailure) throw this.sessionFailure;
   }
 
@@ -220,6 +224,36 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("conta nei tempi del checkpoint anche i salvataggi dei singoli nominativi", async () => {
+    let clock = 0;
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    class TimedStore extends MemoryStore {
+      override async save(checkpoint: ImportV2Checkpoint) { clock += 11; await super.save(checkpoint); }
+    }
+    class TimedCrm extends FakeCrm {
+      override async searchPeopleByExactTaxCode(taxCode: string) { clock += 23; return super.searchPeopleByExactTaxCode(taxCode); }
+    }
+    try {
+      const store = new TimedStore();
+      expect((await new ImportV2Engine(new TimedCrm(), store).run(property())).state).toBe("completed");
+      expect(store.eventDetails.find(detail => detail.executedStage === "people_resolved")).toMatchObject({
+        operationDurationMs: 46, checkpointSaveDurationMs: 33, durationMs: 79,
+      });
+    } finally { now.mockRestore(); }
+  });
+
+  it("esegue un solo preflight sessione per import", async () => {
+    const crm = new FakeCrm(), store = new MemoryStore();
+    const outcome = await new ImportV2Engine(crm, store).run(property());
+
+    expect(outcome.state).toBe("completed");
+    expect(crm.sessionAssertions).toBe(1);
+    const completedStages = store.eventDetails.filter((details) => details.stage === "planned" || details.durationMs !== undefined);
+    expect(completedStages.length).toBeGreaterThan(0);
+    expect(completedStages.every((details) => ["durationMs", "operationDurationMs", "checkpointSaveDurationMs"]
+      .every((key) => Number.isFinite(details[key]) && Number(details[key]) >= 0))).toBe(true);
+  });
+
   it("conserva il confine del salvataggio e recupera l'attività senza ripetere l'import", async () => {
     const store = new MemoryStore(); let saves = 0;
     class InterruptedActivityCrm extends FakeCrm {
@@ -636,11 +670,13 @@ describe("Import V2 engine", () => {
     }
     const crm = new CountReadsCrm();
     crm.replaceFailures = 2;
-    const outcome = await new ImportV2Engine(crm, new MemoryStore(), { maxTransientAttempts: 3 }).run(property());
+    const store = new MemoryStore();
+    const outcome = await new ImportV2Engine(crm, store, { maxTransientAttempts: 3 }).run(property());
 
     expect(outcome.state).toBe("completed");
     expect(crm.recoveries).toBe(2);
     expect(crm.personReads).toHaveLength(2);
+    expect(store.eventDetails.find(detail => detail.stage === "ownerships_synced")).toMatchObject({ executedStage: "property_synced", attempt: 3 });
     expect([...crm.properties.values()][0]?.owners).toHaveLength(2);
   });
 

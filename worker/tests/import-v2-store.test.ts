@@ -48,8 +48,9 @@ describe("checkpoint Import V2", () => {
       updatedAt: "2026-09-29T12:50:15.000Z",
     } as ImportV2Checkpoint;
     const store = new SupabaseImportV2Store(client as never);
-    await store.recordEvent(checkpoint, "stage_completed", { stage: "planned" });
+    await store.recordEvent(checkpoint, "stage_completed", { stage: "planned", durationMs: 142 });
     expect(payloads).toHaveLength(2);
+    expect(payloads[0]?.details).toEqual({ stage: "planned", durationMs: 142 });
     expect(payloads[0]?.event_key).toBe(payloads[1]?.event_key);
     expect(String(payloads[0]?.event_key)).toHaveLength(64);
   });

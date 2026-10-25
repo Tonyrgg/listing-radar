@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "core:review": "node scripts/seller-review-report.mjs",
+    "core:tonybook": "tsx scripts/tonybook-session.ts",
+    "core:auth:prepare": "node scripts/check-seller-auth-local.mjs",
+    "core:auth:check": "node scripts/check-seller-auth-local.mjs --run",
+    "core:ui:check": "tsx scripts/check-seller-workbench-ui.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

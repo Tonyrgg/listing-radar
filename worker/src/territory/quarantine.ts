@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { buildPlan, splitSourcePersonName } from "../import-v2/identity.js";
 import { buildCadastralKey } from "../core/normalize.js";
 import { sanitizeSensitiveText } from "../logger.js";
-import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { isCompleteStreetAcquisition, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { effectiveSource, type QuarantineItem, type Run, type TerritoryState, type Unit } from "./model.js";
 import type { SourceProperty } from "../import-v2/model.js";
 
@@ -62,8 +62,7 @@ export function hydrateQuarantine(state: TerritoryState) {
     collectScanQuarantine(state, run);
     const checkpoint = run.checkpoint as SisterStreetRunCheckpoint | undefined;
     // Repair only the old false partial state, with conclusive saved portal evidence.
-    if (run.state === "paused" && run.error?.startsWith("Acquisizione parziale:") && checkpoint?.status === "completed" && !checkpoint.lastError
-      && checkpoint.results.every(result => ["found", "empty"].includes(result.outcome))) {
+    if (run.state === "paused" && run.error?.startsWith("Acquisizione parziale:") && checkpoint && isCompleteStreetAcquisition(checkpoint)) {
       run.state = "completed"; run.endedAt = checkpoint.completedAt ?? checkpoint.updatedAt; run.error = null;
     }
   }

@@ -60,8 +60,9 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
     return b; // The shared value remains in place; both proposals remain reviewable.
   };
   const merge = (prior: unknown, a: unknown, b: unknown, path: string[]): unknown => {
-    if (equal(a, b) || equal(prior, b)) return structuredClone(a);
-    if (equal(prior, a)) return structuredClone(b);
+    const runCopies = path[0] === "runs" && path.length === 2 && object(a) && object(b);
+    if (!runCopies && (equal(a, b) || equal(prior, b))) return structuredClone(a);
+    if (!runCopies && equal(prior, a)) return structuredClone(b);
     const field = path.at(-1)!;
     if ((field === "geometry" || field === "geometryEvidence") && path[0] !== "networkBindings") return structuredClone(b ?? a);
     if (field === "geometry" && path[0] === "networkBindings") return conflict(path, a, b);
@@ -102,7 +103,24 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
       if (path[0] === "importQueue" && path.length === 2 || field === "assessment") return structuredClone(order(a, b) > 0 ? a : b);
       if (path[0] === "runs" && path.length === 2) {
         const score = (v: Record<string, unknown>) => `${v.endedAt ? "2" : "1"}:${String(v.handled ?? 0).padStart(10, "0")}:${stamp(v)}`;
-        return structuredClone(score(a) > score(b) ? a : b);
+        const selected = structuredClone(score(a) > score(b) ? a : b);
+        // Completion facts are atomic and append-only, independently of the run cursor.
+        const old = object(prior) && object(prior.imports) ? prior.imports : {};
+        const left = object(a.imports) ? a.imports : {}, right = object(b.imports) ? b.imports : {};
+        const imports: Record<string, unknown> = {};
+        for (const key of new Set([...Object.keys(old), ...Object.keys(left), ...Object.keys(right)])) {
+          const before = old[key], x = left[key], y = right[key];
+          if (before !== undefined) {
+            imports[key] = structuredClone(before);
+            for (const value of [x, y]) if (value !== undefined && !equal(value, before)) conflict([...path, "imports", key], before, value);
+          } else if (x === undefined || y === undefined || equal(x, y)) imports[key] = structuredClone(x ?? y);
+          else {
+            conflict([...path, "imports", key], x, y);
+            imports[key] = structuredClone(order(x, y) < 0 ? x : y);
+          }
+        }
+        if (Object.keys(imports).length) selected.imports = imports;
+        return selected;
       }
       const result: Record<string, unknown> = Object.create(null);
       for (const key of new Set([...Object.keys(a), ...Object.keys(b), ...Object.keys(object(prior) ? prior : {})])) {

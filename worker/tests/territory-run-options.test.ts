@@ -48,8 +48,7 @@ describe("Opzioni operative V2, congelate per run", () => {
     expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito", "Eseguito", "Eseguito"]);
     expect(runActivitySummary(store.read(), store.read().runs.at(-1)!)).toEqual({ created: 3, recovered: 0, disabled: 0, unconfirmed: 0 });
     const summaryState = store.read(), summaryRun = summaryState.runs.at(-1)!;
-    const cp = summaryState.checkpoints[summaryRun.applySources![keys[0]!]!.sourcePropertyId]!;
-    cp.activityEvidence!.operationId = "old-operation";
+    summaryRun.imports![keys[0]!]!.proof!.evidence!.operationId = "old-operation";
     expect(runActivitySummary(summaryState, summaryRun).unconfirmed).toBe(1);
     const reopened = await TerritoryStore.open(directory, [street]);
     expect(reopened.read().runs.at(-1)!.applySources).toEqual(store.read().runs.at(-1)!.applySources);

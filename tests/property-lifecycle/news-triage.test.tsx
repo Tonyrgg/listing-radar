@@ -6,18 +6,38 @@ import {buildNewsCandidates,classifyNews,filterNews,romeToday,type NewsFeedback}
 import {newsSourceContext} from '@/lib/property-lifecycle/buildings/news-source-context';
 import {NewsCardContent} from '@/components/news-card';
 import type {FactNews} from '@/lib/property-lifecycle/buildings/facts-read-model';
+import {filterFactNews} from '@/lib/property-lifecycle/buildings/facts-read-model';
 const now=Date.parse('2026-10-20T12:00:00Z');
 function row(text:string,date='2026-03-14',id='record'):FactNews{const f=extractPropertyFacts(id,{text,field:'Oggetto',sourceUrl:'https://official.example/record',sourceHash:'a'.repeat(64),observedAt:'2026-10-20T12:00:00Z'},date)[0];return{...f,event_id:f.id,record_id:id,fact:f,source:'Comune di Bitonto',territorial_level:'BUILDING',building_id:'building',street:'Via Test',civic:'18',active_properties:0,historical_properties:0,rank:90} as unknown as FactNews;}
 describe('Human news triage policy',()=>{
  it('uses 2026 administrative dates, never import time; keeps history intact',()=>{const old=row('frazionamento','2024-10-10'),current=row('frazionamento','2026-01-01','new'),future=row('frazionamento','2026-12-01','future'),all=[old,current,future],before=JSON.stringify(all);expect(buildNewsCandidates(all,now).map(c=>c.id)).toEqual(['new']);expect(JSON.stringify(all)).toBe(before);});
  it('includes today in Rome even when UTC is still yesterday',()=>{expect(romeToday(Date.parse('2026-10-19T23:00:00Z'))).toBe('2026-10-20');});
- it('reuses old transformation as context for a 2026 SCA without resurfacing the old card',()=>{const rows=[row('frazionamento','2024-10-10','old'),row('SCA','2026-09-01','new')],c=buildNewsCandidates(rows,now);expect(c).toHaveLength(1);expect(c[0].utility).toBe('NEWS_CANDIDATE');expect(c[0].context[0].record_id).toBe('old');});
+ it('reuses an evidenced unit transformation as context for a 2026 SCA without resurfacing the old card',()=>{const rows=[row('divisione in due unità','2024-10-10','old'),row('SCA','2026-09-01','new')],c=buildNewsCandidates(rows,now);expect(c).toHaveLength(1);expect(c[0].utility).toBe('NEWS_CANDIDATE');expect(c[0].context[0].record_id).toBe('old');});
  it('isolated SCA and maintenance stay in the archive',()=>{for(const text of ['SCA','manutenzione straordinaria','sanatoria'])expect(classifyNews(row(text)).utility).toBe('ARCHIVE_ONLY');});
  it('does not promote unknown use or equivalent use; promotes explicit residential conversion',()=>{expect(classifyNews(row("cambio destinazione d’uso")).utility).toBe('REVIEW');expect(classifyNews(row("cambio destinazione d’uso da deposito a residenziale")).utility).toBe('NEWS_CANDIDATE');expect(buildNewsCandidates([row("cambio destinazione d’uso da deposito a residenziale")],now)[0].title).toBe('Da deposito a abitazione');});
  it('groups multiple facts of the same practice into one candidate',()=>{const a=row('demolizione e ricostruzione'),b=row('sopraelevazione');expect(buildNewsCandidates([a,b],now)).toHaveLength(1);});
- it('searches an address declared in the source without inventing a resolved building',()=>{const r=row('sopraelevazione');r.building_id=null;r.street=null;r.civic=null;const c=buildNewsCandidates([r],now,{record:{disposition:'LOCATION_CLAIM',claim:'Palombaio via Ariosto',addressClaim:'Palombaio via Ariosto',url:'https://official.example',hash:'a'.repeat(64),observedAt:'2026-10-20'}});expect(filterNews(c,[],'new','all',' ariosto ')).toHaveLength(1);expect(c[0].anchor.building_id).toBeNull();});
+ it('searches an address declared in the source without inventing a resolved building',()=>{const r=row('cambio destinazione d’uso da ufficio a abitazione');r.building_id=null;r.street=null;r.civic=null;const c=buildNewsCandidates([r],now,{record:{disposition:'LOCATION_CLAIM',claim:'Palombaio via Ariosto',addressClaim:'Palombaio via Ariosto',url:'https://official.example',hash:'a'.repeat(64),observedAt:'2026-10-20'}});expect(filterNews(c,[],'new','all',' ariosto ')).toHaveLength(1);expect(c[0].anchor.building_id).toBeNull();});
  it('qualifies already awarded sales and accounting, never offers them as available assets',()=>{const r=row('alienazione di immobile'),awarded=newsSourceContext('Approvazione delle risultanze di gara e aggiudicazione definitiva','https://official.example','hash','2026-10-20')!;expect(buildNewsCandidates([r],now,{record:awarded})[0]).toMatchObject({utility:'REVIEW',title:'Alienazione già aggiudicata'});const accounting=newsSourceContext('Accertamento in entrata','https://official.example','hash','2026-10-20')!;expect(buildNewsCandidates([r],now,{record:accounting})[0].utility).toBe('ARCHIVE_ONLY');});
- it('does not turn area-only construction into an exact actionable asset',()=>{const r=row('nuova costruzione');r.building_id=null;expect(buildNewsCandidates([r],now)[0].utility).toBe('REVIEW');});
+ it('archives generic works, even with a building, while keeping useful unit changes in the same document',()=>{
+  for(const text of ['sopraelevazione','nuova costruzione','demolizione e ricostruzione','comunicazione fine lavori']) expect(filterNews(buildNewsCandidates([row(text)],now),[])).toHaveLength(0);
+  const candidates=buildNewsCandidates([row('sopraelevazione'),row('divisione in due appartamenti')],now);
+  expect(candidates[0]).toMatchObject({utility:'NEWS_CANDIDATE',group:'units'}); expect(candidates[0].facts).toHaveLength(2);
+  expect(buildNewsCandidates([row('sopraelevazione','2024-01-01','old'),row('SCA','2026-09-01','new')],now)[0].utility).toBe('ARCHIVE_ONLY');
+  const indirect={disposition:'INDIRECT_WORKSITE' as const,claim:'Ordinanza per un cantiere',url:'https://official.example',hash:'a'.repeat(64),observedAt:'2026-10-20'};
+  expect(filterNews(buildNewsCandidates([row('demolizione e ricostruzione')],now,{record:indirect}),[])).toHaveLength(0);
+ });
+ it('keeps human choices visible when a generic work is archived by the new policy',()=>{
+  const candidates=buildNewsCandidates([row('sopraelevazione')],now);
+  const feedback={candidate_id:'record',decision:'INTERESTING',status:'INTERESTING'} as NewsFeedback;
+  expect(filterNews(candidates,[feedback],'interesting')).toHaveLength(1);
+  expect(feedback.decision).toBe('INTERESTING');
+ });
+ it('shows explicit buildability direction as a statement to verify, not an approved legal condition',()=>{
+  const candidate=buildNewsCandidates([row('terreno da non edificabile a edificabile')],now)[0];
+  expect(candidate).toMatchObject({utility:'REVIEW',group:'land',title:'Terreno: da non edificabile a edificabile'});
+  expect(filterFactNews([candidate.anchor],{type:'land',period:'all'},now)).toHaveLength(1);
+  expect(buildNewsCandidates([row('variante urbanistica'),candidate.anchor],now)[0].title).toBe(candidate.title);
+ });
  it('filters decisions, types, address and enriched deepening',()=>{const c=buildNewsCandidates([row('frazionamento')],now),f={candidate_id:'record',decision:'INTERESTING',status:'INTERESTING'} as NewsFeedback;expect(filterNews(c,[f])).toHaveLength(0);expect(filterNews(c,[f],'interesting','units','Test')).toHaveLength(1);expect(filterNews(c,[f],'interesting','land')).toHaveLength(0);expect(filterNews(c,[{...f,status:'ENRICHED'}],'deepen')).toHaveLength(1);expect(filterNews(c,[{...f,status:'NOT_USEFUL'}],'rejected')).toHaveLength(1);});
  it('renders readable single-column content with collapsed technical proof and no CRM',()=>{const c=buildNewsCandidates([row('frazionamento')],now)[0],html=renderToStaticMarkup(<NewsCardContent candidate={c} actions={<button>Approfondisci</button>}/>);for(const text of ['Immobile diviso in più unità','Cosa sappiamo','Perché può interessarti','Cosa non sappiamo','Dettagli tecnici','Prove e provenienza','Approfondisci'])expect(html).toContain(text);expect(html).not.toMatch(/<details[^>]*\bopen\b/);expect(html).not.toContain('grid-cols-3');expect(html).not.toContain('Crea lead');expect(html.split('<details')[0]).not.toContain('confidence');expect(html.split('<details')[0]).not.toContain('property_facts_v1');});
 });

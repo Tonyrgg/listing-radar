@@ -1,5 +1,5 @@
 import type { FactNews } from './facts-read-model';
-export const NEWS_POLICY = Object.freeze({ version: 'news_triage_v1', start: '2026-01-01', pageSize: 20, maxPdfBytes: 8 * 1024 * 1024, maxPdfPages: 20 });
+export const NEWS_POLICY = Object.freeze({ version: 'news_triage_v2', start: '2026-01-01', pageSize: 20, maxPdfBytes: 8 * 1024 * 1024, maxPdfPages: 20 });
 export const NEWS_TYPES: Record<string, string> = { all: 'Tutti i tipi', units: 'Nuove unità', transformation: 'Trasformazioni', completion: 'Lavori conclusi', construction: 'Nuove costruzioni', commercial: 'Locali commerciali', land: 'Terreni / urbanistica', direct: 'Vendita diretta' };
 export const REJECTION_REASONS: Record<string, string> = { NOT_TOWARD_SALE: 'Non porta verso una vendita', TOO_GENERIC: 'Intervento troppo generico', COMMON_PART: 'Parte comune / non unità', IRRELEVANT_USE_CHANGE: 'Cambio d’uso irrilevante', TOO_IMPRECISE: 'Troppo poco preciso', ALREADY_KNOWN: 'Informazione già nota', OTHER: 'Altro' };
 export type NewsDecision = 'INTERESTING' | 'DEEPEN' | 'NOT_USEFUL';
@@ -97,7 +97,7 @@ export interface NewsCandidate {
 export function romeToday(now: number) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); }
 export const administrativeDate = (r: FactNews) => r.fact.document_date ?? r.event_date;
 export function operationalFact(r: FactNews, now: number) { const d = administrativeDate(r); return !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && d >= NEWS_POLICY.start && d <= romeToday(now); }
-const transformative = new Set(['FRAZIONAMENTO', 'FUSIONE', 'CAMBIO_DESTINAZIONE_USO', 'NUOVA_COSTRUZIONE', 'DEMOLIZIONE_RICOSTRUZIONE', 'AMPLIAMENTO', 'SOPRAELEVAZIONE', 'RISTRUTTURAZIONE_IMPORTANTE']);
+const transformative = new Set(['FRAZIONAMENTO', 'FUSIONE', 'CAMBIO_DESTINAZIONE_USO']);
 export function classifyNews(row: FactNews, context: FactNews[] = []): {
     utility: Utility;
     reason: string;
@@ -118,27 +118,29 @@ export function classifyNews(row: FactNews, context: FactNews[] = []): {
         return ['RESIDENTIAL', 'COMMERCIAL'].includes(f.to_use) ? out('NEWS_CANDIDATE', 'EXPLICIT_USE_CONVERSION', 'transformation', 90) : out('REVIEW', 'COMMERCIAL_USEFULNESS_TO_VERIFY', 'transformation', 55);
     }
     if (['FRAZIONAMENTO', 'FUSIONE'].includes(t))
-        return /unità|unita|immobili|appartament/i.test(f.evidence_text) || f.units_before !== null || f.units_after !== null ? out('NEWS_CANDIDATE', 'UNIT_REORGANIZATION', 'units', 90) : out('REVIEW', 'UNIT_EXTENT_TO_VERIFY', 'units', 65);
-    if (['NUOVA_COSTRUZIONE', 'DEMOLIZIONE_RICOSTRUZIONE', 'SOPRAELEVAZIONE'].includes(t))
-        return out('NEWS_CANDIDATE', 'NEW_BUILT_ASSET', 'construction', 85);
-    if (t === 'AMPLIAMENTO')
-        return out('REVIEW', 'EXTENT_TO_VERIFY', 'construction', 60);
+        return /unità|unita|immobili|appartament|abitazioni/i.test(f.evidence_text) || [f.units_before,f.units_after].some(value=>typeof value==='number'&&Number.isInteger(value)&&value>0) ? out('NEWS_CANDIDATE', 'UNIT_REORGANIZATION', 'units', 90) : out('REVIEW', 'UNIT_EXTENT_TO_VERIFY', 'units', 65);
+    if (['NUOVA_COSTRUZIONE', 'DEMOLIZIONE_RICOSTRUZIONE', 'SOPRAELEVAZIONE', 'AMPLIAMENTO', 'RISTRUTTURAZIONE_IMPORTANTE'].includes(t))
+        return out('ARCHIVE_ONLY', 'GENERIC_WORKS_WITHOUT_ASSET_TRANSITION', 'construction');
     if (t === 'FINE_LAVORI' || t === 'SCA_AGIBILITA') {
-        const prior = context.some(p => p.building_id && p.building_id === row.building_id && p.record_id !== row.record_id && administrativeDate(p) && administrativeDate(p)! <= administrativeDate(row)! && transformative.has(p.event_type) && !['PARTIAL_ASSET', 'REGULARIZATION_REFERENCE', 'SUPPORTING_ADMINISTRATION'].includes(p.event_subtype ?? ''));
+        const prior = context.some(p => p.building_id && p.building_id === row.building_id && p.record_id !== row.record_id && administrativeDate(p) && administrativeDate(p)! <= administrativeDate(row)! && transformative.has(p.event_type) && classifyNews(p).utility === 'NEWS_CANDIDATE');
         if (f.completion_reported_by && f.completion_reported_by < NEWS_POLICY.start)
             return out('ARCHIVE_ONLY', 'HISTORICAL_COMPLETION_REFERENCE', 'completion');
-        return t === 'FINE_LAVORI' || prior ? out('NEWS_CANDIDATE', prior ? 'COMPLETION_AFTER_TRANSFORMATION' : 'EXPLICIT_COMPLETION', 'completion', 95) : out('ARCHIVE_ONLY', 'ISOLATED_AGIBILITY', 'completion');
+        return prior ? out('NEWS_CANDIDATE', 'COMPLETION_AFTER_TRANSFORMATION', 'completion', 95) : out('ARCHIVE_ONLY', 'COMPLETION_WITHOUT_ASSET_TRANSITION', 'completion');
     }
     if (['CESSAZIONE_ATTIVITA', 'TRASFERIMENTO_ATTIVITA'].includes(t))
         return out('NEWS_CANDIDATE', 'BUSINESS_PREMISES_TO_VERIFY', 'commercial', 80);
+    if (t === 'BUILDABILITY_CHANGED')
+        return out('REVIEW', 'DECLARED_BUILDABILITY_TRANSITION_TO_VERIFY', 'land', 85);
     if (['VARIANTE_URBANISTICA', 'CAMBIO_DESTINAZIONE_URBANISTICA', 'POTENZIALE_EDIFICATORIO_MODIFICATO', 'BUILDABILITY_CHANGED', 'NUOVA_LOTTIZZAZIONE', 'PIANO_ATTUATIVO'].includes(t))
         return out('REVIEW', 'PLANNING_EFFECT_TO_VERIFY', 'land', 70);
-    if (t === 'RISTRUTTURAZIONE_IMPORTANTE')
-        return out('REVIEW', 'MAJOR_WORKS_TO_VERIFY', 'transformation', 60);
     return out('ARCHIVE_ONLY', 'GENERIC_OR_ISOLATED_CONTEXT');
 }
 const titles: Record<string, string> = { FRAZIONAMENTO: 'Immobile diviso in più unità', FUSIONE: 'Unità riunite in un immobile', NUOVA_COSTRUZIONE: 'Nuovo fabbricato', DEMOLIZIONE_RICOSTRUZIONE: 'Fabbricato da ricostruire', SOPRAELEVAZIONE: 'Un nuovo piano da verificare', AMPLIAMENTO: 'Immobile in ampliamento', FINE_LAVORI: 'Lavori conclusi', SCA_AGIBILITA: 'Agibilità dopo una trasformazione', ALIENAZIONE: 'Alienazione di un immobile', DISMISSIONE: 'Patrimonio in dismissione', CESSAZIONE_ATTIVITA: 'Un’attività ha dichiarato la cessazione', TRASFERIMENTO_ATTIVITA: 'Possibile cambio del locale commerciale' };
 export function newsTitle(r: FactNews) {
+    if (r.event_type === 'BUILDABILITY_CHANGED') {
+        const states: Record<string,string> = { NON_BUILDABLE: 'non edificabile', BUILDABLE: 'edificabile' };
+        return r.fact.from_use && r.fact.to_use ? `Terreno: da ${states[r.fact.from_use] ?? 'stato precedente'} a ${states[r.fact.to_use] ?? 'stato da verificare'}` : 'Edificabilità da chiarire';
+    }
     if (r.event_type === 'CAMBIO_DESTINAZIONE_USO') {
         const uses: Record<string, string> = { WAREHOUSE: 'deposito', OFFICE: 'ufficio', RESIDENTIAL: 'abitazione', COMMERCIAL: 'locale commerciale' };
         return r.fact.from_use && r.fact.to_use ? `Da ${uses[r.fact.from_use] ?? 'uso precedente'} a ${uses[r.fact.to_use] ?? 'nuovo uso'}` : 'Cambio d’uso da chiarire';
@@ -170,7 +172,7 @@ export function buildNewsCandidates(rows: FactNews[], now: number, sourceContext
             reason = 'SALE_ALREADY_AWARDED';
             priority = 55;
         }
-        if (sourceContext?.disposition === 'INDIRECT_WORKSITE') {
+        if (sourceContext?.disposition === 'INDIRECT_WORKSITE' && utility !== 'ARCHIVE_ONLY') {
             utility = 'REVIEW';
             reason = 'WORKSITE_INDIRECT_EVIDENCE';
             priority = 60;
@@ -180,16 +182,16 @@ export function buildNewsCandidates(rows: FactNews[], now: number, sourceContext
             reason = 'ASSET_LOCATION_TO_VERIFY';
             priority = Math.min(priority, 65);
         }
-        result.push({ id, anchor, facts, context, utility, reason, group, priority, title: sourceContext?.disposition === 'ALREADY_AWARDED' ? 'Alienazione già aggiudicata' : sourceContext?.disposition === 'INDIRECT_WORKSITE' ? 'Un cantiere di ricostruzione da localizzare' : newsTitle(anchor), why: sourceContext?.disposition === 'ALREADY_AWARDED' ? 'L’aggiudicazione risulta già approvata: serve verificare l’esito, non presumere un bene ancora disponibile.' : sourceContext?.disposition === 'INDIRECT_WORKSITE' ? 'Un’ordinanza di circolazione richiama un cantiere; non dimostra titolo edilizio o unità disponibili.' : why, unknown: 'La futura vendita non è dimostrata. Il collegamento allo stabile non identifica la singola unità.', signature: facts.map(r => `${r.event_id}:${r.evidence_location.source_hash}`).sort().join('|') + (sourceContext ? `|${sourceContext.hash}:${sourceContext.disposition}` : ''), sourceContext });
+        result.push({ id, anchor, facts, context, utility, reason, group, priority, title: sourceContext?.disposition === 'ALREADY_AWARDED' ? 'Alienazione già aggiudicata' : sourceContext?.disposition === 'INDIRECT_WORKSITE' ? 'Un cantiere di ricostruzione da localizzare' : newsTitle(anchor), why: sourceContext?.disposition === 'ALREADY_AWARDED' ? 'L’aggiudicazione risulta già approvata: serve verificare l’esito, non presumere un bene ancora disponibile.' : sourceContext?.disposition === 'INDIRECT_WORKSITE' ? 'Un’ordinanza di circolazione richiama un cantiere; non dimostra titolo edilizio o unità disponibili.' : why, unknown: group === 'land' ? 'Vigenza, condizioni urbanistiche e particella interessata restano da verificare. La dichiarazione non certifica l’edificabilità del terreno né una futura vendita.' : 'La futura vendita non è dimostrata. Il collegamento allo stabile non identifica la singola unità.', signature: NEWS_POLICY.version + '|' + facts.map(r => `${r.event_id}:${r.evidence_location.source_hash}:${r.classification_version}:${r.fact.from_use ?? ''}:${r.fact.to_use ?? ''}:${r.fact.units_before ?? ''}:${r.fact.units_after ?? ''}`).sort().join('|') + (sourceContext ? `|${sourceContext.hash}:${sourceContext.disposition}` : ''), sourceContext });
     }
     return result.sort((a, b) => b.priority - a.priority || (administrativeDate(b.anchor) ?? '').localeCompare(administrativeDate(a.anchor) ?? '') || a.id.localeCompare(b.id));
 }
 export function filterNews(candidates: NewsCandidate[], feedback: NewsFeedback[], status = 'new', type = 'all', query = '', building = '') {
     const decisions = new Map(feedback.map(f => [f.candidate_id, f]));
     return candidates.filter(c => {
-        if (c.utility === 'ARCHIVE_ONLY')
-            return false;
         const f = decisions.get(c.id), s = f?.status ?? 'NEW';
+        if (c.utility === 'ARCHIVE_ONLY' && !f?.decision)
+            return false;
         return (status === 'interesting' ? s === 'INTERESTING' : status === 'deepen' ? ['DEEPENING', 'ENRICHED'].includes(s) : status === 'rejected' ? s === 'NOT_USEFUL' : s === 'NEW') && (type === 'all' || c.group === type) && (!building || c.anchor.building_id === building) && `${c.anchor.street ?? ''} ${c.anchor.civic ?? ''} ${c.anchor.area_name ?? ''} ${c.sourceContext?.addressClaim ?? ''}`.toLocaleLowerCase('it').includes(query.trim().toLocaleLowerCase('it'));
     });
 }

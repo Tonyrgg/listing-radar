@@ -43,10 +43,8 @@ function recordIdFromUrl(rawUrl: string, entity: "account" | "immobile"): string
 
 /** Salesforce alterna lo stesso record fra ID case-sensitive da 15 caratteri
  * e ID da 18 con checksum. Il prefisso da 15 e' l'identita' comune. */
-export function sameCrmRecordId(left: string | null | undefined, right: string | null | undefined): boolean {
-  if (!left || !right) return false;
-  return left.slice(0, 15) === right.slice(0, 15);
-}
+export { sameCrmRecordId } from "../core/crm-record-id.js";
+import { sameCrmRecordId } from "../core/crm-record-id.js";
 
 function crmRecordKey(value: string): string {
   return value.slice(0, 15);
@@ -2752,6 +2750,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         ? { before: structuredClone(currentPrimary), afterPersonId: desiredPrimary[0]!.personId } : undefined;
       return { propertyId, owners, removedPersonIds, ...(ownershipReplacement ? { ownershipReplacement } : {}) };
     });
+  }
+
+  async readPropertyIdentity(propertyId: string): Promise<CrmPropertySummary> {
+    const virtual = this.virtualProperties.get(propertyId);
+    if (virtual) {
+      const { owners: _owners, ...identity } = virtual;
+      return structuredClone(identity);
+    }
+    return this.readAction("Rilettura identita immobile", () => this.readPropertySummary(propertyId));
   }
 
   async readProperty(propertyId: string): Promise<CrmPropertySnapshot> {

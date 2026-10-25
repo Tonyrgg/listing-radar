@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { Building2, Cog, MapPinned, Radar } from "lucide-react";
+import { Building2, Cog, MapPinned, Radar, ClipboardList } from "lucide-react";
 
 /** The archive, its territory and the reliability of its sources. */
 const primaryItems = [
+  { href: "/richieste", label: "Richieste", hint: "Telefonate e verifiche", icon: ClipboardList, owns: ["/richieste"] },
   {
     href: "/intelligence",
     label: "Intelligence",

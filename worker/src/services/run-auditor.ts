@@ -1,6 +1,7 @@
 import type { ImportV2Checkpoint, ImportV2Plan } from "../import-v2/model.js";
 import type { ImportV2ItemRow, JobRow, PersonRow, PropertyRow } from "./repository.js";
 import type { SisterStreetRunCheckpoint } from "./sister-street-run.js";
+import { crmRecordIdentity, sameCrmRecordId } from "../core/crm-record-id.js";
 
 export type RunAuditFinding = {
   code: string;
@@ -9,6 +10,23 @@ export type RunAuditFinding = {
   propertyId?: string | null;
   details: Record<string, unknown>;
 };
+
+/** Shared by new findings and persisted diagnostics, including older records. */
+export function runAuditDiagnosticKey(input: {
+  jobId: string | null;
+  code: unknown;
+  propertyId?: unknown;
+  sourcePersonId?: unknown;
+}): string {
+  // Tuple encoding avoids delimiter collisions; missing person IDs retain the
+  // historical job/code/property identity without suppressing identified owners.
+  return JSON.stringify([
+    input.jobId,
+    input.code,
+    input.propertyId ?? null,
+    typeof input.sourcePersonId === "string" ? input.sourcePersonId : null,
+  ]);
+}
 
 type AuditGraph = {
   properties: PropertyRow[];
@@ -50,9 +68,10 @@ export function auditImportRun(input: {
   const importCoOwners = options?.importCoOwners !== false;
   const activityMode = String(options?.activityMode ?? "");
   const propertyById = new Map(input.graph.properties.map((property) => [property.id, property]));
+  const personById = new Map(input.graph.people.map((person) => [person.id, person]));
   const itemsByCrmProperty = new Map<string, ImportV2ItemRow[]>();
   for (const item of input.items) {
-    const crmPropertyId = item.checkpoint?.crmPropertyId?.slice(0, 15);
+    const crmPropertyId = crmRecordIdentity(item.checkpoint?.crmPropertyId ?? "");
     if (!crmPropertyId) continue;
     const grouped = itemsByCrmProperty.get(crmPropertyId) ?? [];
     grouped.push(item);
@@ -76,6 +95,42 @@ export function auditImportRun(input: {
 
   for (const item of completedItems(input.items)) {
     const property = propertyById.get(item.property_id);
+    for (const syncedPerson of item.checkpoint?.syncedPeople ?? []) {
+      const person = personById.get(syncedPerson.sourcePersonId);
+      const checkpointPersonId = syncedPerson.crmPersonId?.trim() ?? "";
+      const storedPersonId = person?.crm_record_id?.trim() ?? "";
+      if (checkpointPersonId && storedPersonId && !sameCrmRecordId(checkpointPersonId, storedPersonId)) {
+        findings.push({
+          code: "crm_person_identity_mismatch",
+          status: "needs_review",
+          propertyId: item.property_id,
+          message: "Il checkpoint e l'archivio Worker indicano due nominativi CRM diversi per lo stesso proprietario: verifica il collegamento prima di considerare concluso l'import.",
+          details: {
+            sourcePersonId: syncedPerson.sourcePersonId,
+            checkpointCrmPersonId: checkpointPersonId,
+            storedCrmPersonId: storedPersonId,
+            cadastralKey: property?.cadastral_key,
+            propertyAddress: property?.address,
+          },
+        });
+      } else if (person && (!checkpointPersonId || !storedPersonId)) {
+        findings.push({
+          code: "crm_person_identity_missing",
+          status: "needs_review",
+          propertyId: item.property_id,
+          message: "Proprietario incluso nell'import concluso senza un riferimento CRM verificabile sia nel checkpoint sia nell'archivio Worker.",
+          details: {
+            sourcePersonId: syncedPerson.sourcePersonId,
+            checkpointCrmPersonId: checkpointPersonId || null,
+            storedCrmPersonId: storedPersonId || null,
+            personFoundInWorkerArchive: Boolean(person),
+            cadastralKey: property?.cadastral_key,
+            propertyAddress: property?.address,
+          },
+        });
+      }
+    }
+
     const expectedOwnerIds = new Set(input.graph.ownerships
       .filter((ownership) => ownership.property_id === item.property_id)
       .map((ownership) => ownership.person_id));
@@ -143,15 +198,32 @@ export function auditImportRun(input: {
       }
     }
 
-    if (!item.checkpoint?.crmPropertyId || !property?.crm_record_id) {
+    const checkpointCrmId = item.checkpoint?.crmPropertyId?.trim() ?? "";
+    const propertyCrmId = property?.crm_record_id?.trim() ?? "";
+    if (checkpointCrmId && propertyCrmId && !sameCrmRecordId(checkpointCrmId, propertyCrmId)) {
+      findings.push({
+        code: "crm_identity_mismatch",
+        status: "needs_review",
+        propertyId: item.property_id,
+        message: "La run e la coda Worker indicano due schede CRM diverse per lo stesso immobile: verifica l'identità prima di considerare l'import concluso.",
+        details: {
+          checkpointCrmId,
+          propertyCrmId,
+          cadastralKey: property?.cadastral_key,
+          propertyAddress: property?.address,
+        },
+      });
+    }
+
+    if (!checkpointCrmId || !propertyCrmId) {
       findings.push({
         code: "crm_identity_missing",
         status: "needs_review",
         propertyId: item.property_id,
         message: "Immobile concluso senza un riferimento Cloud verificabile nel checkpoint e nella coda.",
         details: {
-          checkpointCrmId: item.checkpoint?.crmPropertyId ?? null,
-          propertyCrmId: property?.crm_record_id ?? null,
+          checkpointCrmId: checkpointCrmId || null,
+          propertyCrmId: propertyCrmId || null,
           cadastralKey: property?.cadastral_key,
           propertyAddress: property?.address,
         },
