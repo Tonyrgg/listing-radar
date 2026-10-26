@@ -811,6 +811,55 @@ describe("Import V2 engine", () => {
     expect(result.quarantined).toHaveLength(0);
   });
 
+  it("sospende prima del CRM se la risposta al checkpoint si perde e riprende senza duplicati", async () => {
+    const store = new MemoryStore(), crm = new FakeCrm();
+    const load = store.loadOrCreate.bind(store);
+    const read = vi.spyOn(store, "loadOrCreate").mockImplementationOnce(async plan => {
+      await load(plan); // The insert committed, but its response was lost.
+      throw new Error("fetch failed");
+    });
+    const first = await new ImportV2Engine(crm, store).run(property());
+    expect(first).toMatchObject({ state: "paused", failure: { kind: "cloud_unavailable", global: true, details: { checkpointLoaded: false } } });
+    expect(crm.sessionAssertions).toBe(0);
+    expect(crm.people.size).toBe(0);
+    expect(store.quarantined).toEqual([]);
+    read.mockRestore();
+    const engine = new ImportV2Engine(crm, store);
+    expect((await engine.run(property())).state).toBe("completed");
+    expect((await engine.run(property())).state).toBe("completed");
+    expect(crm.people.size).toBe(2);
+    expect(crm.properties.size).toBe(1);
+    expect(crm.activities).toHaveLength(1);
+  });
+
+  it("non nasconde un errore permanente nel caricamento del checkpoint", async () => {
+    const store = new MemoryStore(), crm = new FakeCrm();
+    vi.spyOn(store, "loadOrCreate").mockRejectedValue(new Error("permission denied"));
+    await expect(new ImportV2Engine(crm, store).run(property())).rejects.toThrow("permission denied");
+    expect(crm.sessionAssertions).toBe(0);
+  });
+
+  it("rispetta la pausa anche nel secondo passaggio e conserva il resto per la ripresa", async () => {
+    class InitiallyUnavailableCrm extends FakeCrm {
+      unavailable = 2;
+      override async assertSession() {
+        if (this.unavailable-- > 0) throw new ImportV2Error("Indice in ritardo", "transient_portal", { retryable: true });
+        return super.assertSession();
+      }
+    }
+    const crm = new InitiallyUnavailableCrm(), store = new MemoryStore();
+    const notified = vi.fn();
+    const result = await runImportV2Batch(new ImportV2Engine(crm, store, { maxTransientAttempts: 1 }),
+      [property(), property("property-2")], undefined, () => crm.properties.size === 1, notified);
+    expect(result.completed.map(item => item.propertyId)).toEqual(["property-1"]);
+    expect(result.paused?.failure?.kind).toBe("operator_pause");
+    expect(notified).toHaveBeenLastCalledWith(result.paused);
+    expect(store.checkpoints.get("property-2")?.stage).toBe("queued");
+    expect((await new ImportV2Engine(crm, store).run(property("property-2"))).state).toBe("completed");
+    expect(crm.properties.size).toBe(2);
+    expect(crm.people.size).toBe(2);
+  });
+
   it("ferma la coda dopo l'immobile corrente conservando il completato", async () => {
     const crm = new FakeCrm();
     const result = await runImportV2Batch(

@@ -119,6 +119,25 @@ export async function runImportV2Batch(
   const result: ImportV2BatchResult = { completed: [], quarantined: [], paused: null };
   const total = properties.length;
   const deferred: Array<{ source: SourceProperty | (() => SourceProperty); position: number }> = [];
+  const pauseAfterOutcome = (outcome: ImportV2Outcome): boolean => {
+    if (!shouldPauseAfterItem()) return false;
+    result.paused = {
+      ...outcome,
+      state: "paused",
+      failure: {
+        kind: "operator_pause",
+        message: "Run messa in pausa dopo l'immobile corrente; checkpoint conservato",
+        retryable: false,
+        global: true,
+        stage: outcome.stage,
+        details: { pauseRequested: true, stopAfterNextImport: true },
+        occurredAt: new Date().toISOString(),
+      },
+    };
+    // Parallel lanes must also observe an operator pause raised after an item.
+    onOutcome?.(result.paused);
+    return true;
+  };
   for (const [position, source] of properties.entries()) {
     const property = typeof source === "function" ? source() : source;
     const outcome = await engine.run(property, (stage, retry) => onProgress?.({
@@ -138,22 +157,7 @@ export async function runImportV2Batch(
       result.paused = outcome;
       break;
     }
-    if (shouldPauseAfterItem()) {
-      result.paused = {
-        ...outcome,
-        state: "paused",
-        failure: {
-          kind: "operator_pause",
-          message: "Run messa in pausa dopo l'immobile corrente; checkpoint conservato",
-          retryable: false,
-          global: true,
-          stage: outcome.stage,
-          details: { pauseRequested: true, stopAfterNextImport: true },
-          occurredAt: new Date().toISOString(),
-        },
-      };
-      break;
-    }
+    if (pauseAfterOutcome(outcome)) break;
   }
   if (!result.paused) {
     for (const item of deferred) {
@@ -165,6 +169,7 @@ export async function runImportV2Batch(
       if (outcome.state === "completed") result.completed.push(outcome);
       else if (outcome.state === "quarantined") result.quarantined.push(outcome);
       else { result.paused = outcome; break; }
+      if (pauseAfterOutcome(outcome)) break;
     }
   }
   return result;

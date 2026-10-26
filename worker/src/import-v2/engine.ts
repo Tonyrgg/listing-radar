@@ -216,7 +216,19 @@ export class ImportV2Engine {
       return { itemId: source.sourcePropertyId, propertyId: source.sourcePropertyId, crmPropertyId: null, syncedPeople: [], state: "quarantined", stage: "queued", failure };
     }
 
-    let checkpoint = await this.store.loadOrCreate(plan);
+    let checkpoint: ImportV2Checkpoint;
+    try {
+      checkpoint = await this.store.loadOrCreate(plan);
+    } catch (error) {
+      // No durable checkpoint was read: stop before any CRM action and let
+      // the next run reconcile a possibly committed load/create operation.
+      if (!isTransientCloudError(error)) throw error;
+      const failure = failureFromError(new ImportV2Error(
+        "Supabase temporaneamente non raggiungibile. Ripresa disponibile senza scritture CRM.",
+        "cloud_unavailable", { global: true, retryable: true, details: { checkpointLoaded: false } },
+      ), "queued", this.now());
+      return { itemId: source.sourcePropertyId, propertyId: source.sourcePropertyId, crmPropertyId: null, syncedPeople: [], state: "paused", stage: "queued", failure };
+    }
     if (checkpoint.stage === "verified" && checkpoint.plan?.source.activity.enabled && !checkpoint.activityWrite) {
       // Before this version a crash after Save left no durable submission boundary.
       // Do not mistake a historical identical Task for that uncertain write.
