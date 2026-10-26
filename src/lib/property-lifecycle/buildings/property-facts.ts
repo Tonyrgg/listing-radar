@@ -1,4 +1,5 @@
 import { hashValue } from '../contracts/normalized-listing';
+import { judicialArchiveOnly } from './public-record-policy';
 
 /** Relevance is information value, NEVER sale probability. Changes require a new version. */
 export const FACT_POLICY = Object.freeze({version:'property_facts_v2', confidence:{explicit:.95,practice:.9},
@@ -58,6 +59,7 @@ export interface PropertyFact {id:string;event_type:string;event_subtype:string|
 const invalidContext=/(?:non\s+(?:preved(?:e|ono)|comport(?:a|ano)|costituisce|riguard(?:a|ano))\s+(?:la\s+|il\s+|alcun[ao]?\s+)?|senza(?:\s+il\s+preventivo)?|esclus[oa]|non\s+è\s+previst[oa])\s*$/i;
 export function extractPropertyFacts(recordId:string,evidence:FactEvidence,eventDate:string|null):PropertyFact[]{
  const text=evidence.text.normalize('NFC'), facts:PropertyFact[]=[];
+ if(judicialArchiveOnly(text))return [];
  if(/partecipazione\s+(?:al\s+)?master|corso\s+di\s+formazione|formazione\s+in\s+materia/i.test(text))return [];
  if(evidence.field==='albo.subject'&&evidence.territorialScopeVerified===false&&!/\b(?:Bitonto|Palombaio|Mariotto)\b/i.test(text))return [];
  for(const rule of FACT_RULES){

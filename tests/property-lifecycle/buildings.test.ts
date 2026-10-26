@@ -97,11 +97,50 @@ describe("Comune di Bitonto building-practice normalization", () => {
     });
     expect(result.records[0]?.addresses).toEqual([]); // Source range/list is ambiguous; retain the practice, not invented civics.
     expect(result.records[0]?.cadastralReferences).toHaveLength(2);
+    expect(result.dataQuality).toMatchObject({
+      earliestProtocolDate: "2026-02-15",
+      latestProtocolDate: "2026-03-04",
+      groupsWithProtocolDate: 3,
+      groupsWithoutProtocolDate: 0,
+      groupsWithAddress: 1,
+      groupsWithCadastralReference: 3,
+      primaryDocumentLinks: 0,
+    });
   });
   it("retains exact civics when the CSV declares an explicit comma-separated list",()=>{
     const explicit=normalizeBuildingPracticeRows(parseBuildingPracticeCsv(csv.replaceAll('26/28/30','"26,28,30"')));
     expect(explicit.records[0].addresses.map(a=>a.streetNumber)).toEqual(['26','28','30']);
     expect(explicit.unmatchedRecords).toBe(1);
+  });
+
+  it("can profile every application without mixing their practice identities",()=>{
+    const result=normalizeBuildingPracticeRows([
+      {Applicazione:"ape","Numero Pratica":"1/2025/CILA","Data Protocollo":"2025-01-02",Oggetto:"Frazionamento"},
+      {Applicazione:"apg","Numero Pratica":"1/2025/CILA","Data Protocollo":"2025-01-03",Oggetto:"Variazione urbanistica"},
+    ],{applicationCode:null});
+    expect(result.records).toHaveLength(2);
+    expect(result.dataQuality.applicationCounts).toEqual({ape:1,apg:1});
+    expect(result.dataQuality.primaryDocumentLinks).toBe(0);
+  });
+
+  it("rejects impossible protocol dates and refuses an identity assembled from conflicting rows",()=>{
+    const invalid=normalizeBuildingPracticeRows([{Applicazione:'ape','Numero Pratica':'12/2025/SCIA','Numero Protocollo':'123','Data Protocollo':'31/02/2025'}],{includeProtocolIdentity:true});
+    expect(invalid.records[0].occurredAt).toBeNull();
+    expect(invalid.records[0].sanitizedPayload.registryIdentity).toBeNull();
+    const result=normalizeBuildingPracticeRows([
+      {Applicazione:'ape','Numero Pratica':'12/2025/SCIA','Numero Protocollo':'123','Data Protocollo':'01/03/2025'},
+      {Applicazione:'ape','Numero Pratica':'12/2025/SCIA','Numero Protocollo':'124','Data Protocollo':'02/03/2025'},
+    ],{includeProtocolIdentity:true});
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].sanitizedPayload.registryIdentity).toBeNull();
+    expect(result.dataQuality).toMatchObject({groupsWithProtocolDate:1,earliestProtocolDate:'2025-03-01',latestProtocolDate:'2025-03-02'});
+  });
+
+  it.each(['2026-09-16T00:00:00','2026-09-16T00:00:00+02:00','16/09/2026 10:20:30'])('keeps the administrative day independent of the timezone: %s',date=>{
+    const result=normalizeBuildingPracticeRows([{Applicazione:'ape','Numero Pratica':'12/2026/SCIA','Numero Protocollo':'123','Data Protocollo':date}],{includeProtocolIdentity:true});
+    expect(result.records[0].occurredAt).toBe('2026-09-16T00:00:00.000Z');
+    expect(result.records[0].sanitizedPayload.registryIdentity).toMatchObject({protocolDate:'2026-09-16'});
+    expect(result.dataQuality.latestProtocolDate).toBe('2026-09-16');
   });
 
   it("keeps direct personal and company fields out of the sanitized projection", () => {

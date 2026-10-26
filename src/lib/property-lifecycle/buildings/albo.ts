@@ -12,7 +12,7 @@ export function publicDate(value: string): string | null {
 }
 export function safeAlboUrl(value: string) {
   const url = new URL(value, P.alboUrl);
-  if (url.protocol !== "https:" || url.hostname !== new URL(P.alboUrl).hostname || !url.pathname.startsWith("/web/trasparenza/")) throw Error("Unapproved Albo URL");
+  if (url.protocol !== "https:" || url.username || url.password || url.hostname !== new URL(P.alboUrl).hostname || !url.pathname.startsWith("/web/trasparenza/")) throw Error("Unapproved Albo URL");
   return url.href;
 }
 export function safeAlboOffice(value:string):string|null {

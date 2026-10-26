@@ -12,6 +12,7 @@ import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
 import type { SourceHealth } from "@/components/ui/atoms";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { readExternalSourceStatus } from "@/lib/property-lifecycle/read-models/external";
+import {isPracticeIndexSource,TERRITORY_PROTOCOLS} from '@/lib/property-lifecycle/buildings/public-record-policy';
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Fonti" };
@@ -259,9 +260,21 @@ export default async function FontiPage() {
 
       <section className="border-t border-[var(--lr-line-quiet)] pt-4">
         <h2 className="text-[length:var(--lr-text-section)] font-[650]">Fonti territoriali pubbliche</h2>
-        <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{({"comune-bitonto-prg-catalog":"Comune · SIT / PRG","comune-bitonto-albo":"Comune · Albo Pretorio","comune-bitonto-elenco-pratiche-2025":"Comune · registro edilizio 2025, senza indirizzi"} as Record<string,string>)[run.source_key]??"Comune · registro edilizio 2024"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record{run.pages?` · ${run.pages} pagine`:""}</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{run.source_key==="comune-bitonto-albo"?<Meta>{run.inventory_complete?"LIVE · inventory completa delle pubblicazioni esposte":"LIVE · inventory non completata"} · {run.input_rows} pubblicazioni esposte · PDF non scaricati automaticamente</Meta>:null}{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
+        <Link className={buttonClass("secondary",{compact:true})} href="/fonti/pratiche">Pratiche e documenti da approfondire</Link>
+        <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{({"comune-bitonto-protocolli-territorio":"Comune · protocolli Territorio / SUAP","comune-bitonto-prg-catalog":"Comune · SIT / PRG","comune-bitonto-albo":"Comune · Albo Pretorio","comune-bitonto-elenco-pratiche-2025":"Comune · registro edilizio 2025, senza indirizzi"} as Record<string,string>)[run.source_key]??"Comune · registro edilizio 2024"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record{run.pages?` · ${run.pages} pagine`:""}</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{run.source_key==="comune-bitonto-albo"?<Meta>{run.inventory_complete?"LIVE · inventory completa delle pubblicazioni esposte":"LIVE · inventory non completata"} · {run.input_rows} pubblicazioni esposte · PDF non scaricati automaticamente</Meta>:null}{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
+        <div className="mt-3 space-y-2">
+          {[...municipal.values()].filter(run=>run.source_key.startsWith("comune-bitonto-elenco-pratiche")||isPracticeIndexSource(run.source_key)).map(run=>{
+            const quality=(run.diagnostics??{}) as Record<string,unknown>;
+            const date=(key:string)=>typeof quality[key]==="string"?String(quality[key]):"n.d.";
+            const count=(key:string)=>typeof quality[key]==="number"?Number(quality[key]):"n.d.";
+            const applicationCounts=quality.applicationCounts&&typeof quality.applicationCounts==="object"?quality.applicationCounts as Record<string,number>:{};
+            const applications=Object.entries(applicationCounts).sort(([left],[right])=>left.localeCompare(right)).map(([application,records])=>`${application.toUpperCase()}: ${records}`).join(" · ");
+            return <Meta key={`${run.source_key}-quality`}>{run.source_key===TERRITORY_PROTOCOLS.key?"Protocolli Territorio / SUAP":run.source_key.endsWith("2025")?"Pratiche 2025":"Pratiche 2024"}: protocolli {date("earliestProtocolDate")} → {date("latestProtocolDate")} · applicazioni {applications||"n.d."} · pratiche con civico {count("groupsWithAddress")} · con riferimenti catastali {count("groupsWithCadastralReference")} · link diretti nel registro {count("primaryDocumentLinks")} · righe ricondotte alla stessa pratica {count("duplicateRows")}. L’esito dei lavori richiede il documento primario.</Meta>;
+          })}
+        </div>
         <Meta>Albo giornaliero; registri statici e catalogo a cadenza settimanale nello stesso scheduler. Nessuna rimozione dedotta da fetch falliti. Dataset 2023/2022/2021 non reperiti; non equivale a zero pratiche.</Meta>
         <Meta>SUE/SUAP: inventario pubblico non dimostrato. SIT: progetto QGIS pubblico verificato con 86 riferimenti a layer; servizio WMS non operativo nel controllo, nessuna geometria normativa assegnata. <a className="underline" href="https://sit.egov.ba.it/custom_static/html/wms-qgis/bitonto.qgs" target="_blank" rel="noreferrer">Progetto ufficiale</a></Meta>
+        <Meta>OMI: fonte di contesto per fasce di zona, non valore del singolo immobile. La consultazione pubblica è disponibile <a className="underline" href="https://www1.agenziaentrate.gov.it/servizi/geopoi_omi/index.htm" target="_blank" rel="noreferrer">sulla mappa dell’Agenzia delle Entrate</a>; il download strutturato richiede accesso all’area riservata, quindi non viene acquisito automaticamente.</Meta>
       </section>
 
       <Meta className="px-1">

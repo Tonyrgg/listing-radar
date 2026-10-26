@@ -1,14 +1,20 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {hashValue} from '../contracts/normalized-listing';
 import {normalizeBuildingPracticeRows,parseBuildingPracticeCsv} from './practices';
+import {isPracticeIndexSource} from './public-record-policy';
 import {extractPropertyFacts,deepCandidate,FACT_POLICY,type PropertyFact} from './property-facts';
 import {allFactRecords,readSemanticProjections,type SemanticProjection} from './facts-projection';
 import type {NewsSourceContext} from './news-triage';
-export interface PrimaryFacts {sourceKey:string;sourceRecordKey:string;events:PropertyFact[];newsContext?:NewsSourceContext}
+export interface PrimaryFacts {sourceKey:string;sourceRecordKey:string;events:PropertyFact[];newsContext?:NewsSourceContext;indexOnly?:boolean}
 /** Operates on the already-fetched CSV in memory, stores no free subject/person data. */
 export function csvPrimaryFacts(csv:string,sourceKey:string,url:string,observedAt:string):PrimaryFacts[]{
  const hash=hashValue(csv),groups=new Map<string,PropertyFact[]>();
  const raw=parseBuildingPracticeCsv(csv);
+ if(isPracticeIndexSource(sourceKey)){
+  // Keep one empty projection per normalized registry record so a prior
+  // text-only inference is cleared on replay; these catalogues are not acts.
+  return normalizeBuildingPracticeRows(raw,{applicationCode:null}).records.map(record=>({sourceKey,sourceRecordKey:record.sourceRecordKey,events:[],indexOnly:true}));
+ }
  for(let i=0;i<raw.length;i++){
   const n=normalizeBuildingPracticeRows([raw[i]]).records[0];if(!n)continue;
   const events=groups.get(n.sourceRecordKey)??[];
@@ -29,7 +35,7 @@ export async function bindPrimaryFacts(db:SupabaseClient,inputs:PrimaryFacts[]){
   const events=input.events.map(e=>{const existing=old.find(o=>o.event_type===e.event_type&&o.evidence_location.source_hash===e.evidence_location.source_hash&&o.evidence_location.field===e.evidence_location.field);return existing?.classification_version===e.classification_version?existing:{...e,observed_at:existing?.observed_at??e.observed_at,id:hashValue({recordId:r.id,type:e.event_type,field:e.evidence_location.field,page:e.evidence_location.page})};});
   // Preserve separately verified deep-document evidence for the same record version.
   for(const e of old.filter(e=>e.evidence_location.field==='pdf.text'))if(!events.some(v=>v.event_type===e.event_type))events.push(e);
-  out.set(r.id,{version:FACT_POLICY.version,events:events.slice(0,FACT_POLICY.maxEvents),candidate:deepCandidate(r),primaryReviewed:true,status:events.length?'EXTRACTED':'NO_SUPPORTED_FACT',...(input.newsContext?{newsContext:input.newsContext}:prior?.hash===r.content_hash&&prior.projection.newsContext?{newsContext:prior.projection.newsContext}:{}),...(prior?.hash===r.content_hash&&prior.projection.deep?{deep:prior.projection.deep}:{})});
+  out.set(r.id,{version:FACT_POLICY.version,events:events.slice(0,FACT_POLICY.maxEvents),candidate:input.indexOnly?{priority:80,reason:'PRIMARY_DOCUMENT_REQUIRED'}:deepCandidate(r),primaryReviewed:!input.indexOnly||events.some(event=>event.evidence_location.field==='pdf.text'),status:events.length?'EXTRACTED':input.indexOnly?'REVIEW':'NO_SUPPORTED_FACT',...(input.newsContext?{newsContext:input.newsContext}:prior?.hash===r.content_hash&&prior.projection.newsContext?{newsContext:prior.projection.newsContext}:{}),...(prior?.hash===r.content_hash&&prior.projection.deep?{deep:prior.projection.deep}:{})});
  }
  return out;
 }

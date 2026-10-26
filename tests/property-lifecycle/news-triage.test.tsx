@@ -10,6 +10,10 @@ import {filterFactNews} from '@/lib/property-lifecycle/buildings/facts-read-mode
 const now=Date.parse('2026-10-20T12:00:00Z');
 function row(text:string,date='2026-03-14',id='record'):FactNews{const f=extractPropertyFacts(id,{text,field:'Oggetto',sourceUrl:'https://official.example/record',sourceHash:'a'.repeat(64),observedAt:'2026-10-20T12:00:00Z'},date)[0];return{...f,event_id:f.id,record_id:id,fact:f,source:'Comune di Bitonto',territorial_level:'BUILDING',building_id:'building',street:'Via Test',civic:'18',active_properties:0,historical_properties:0,rank:90} as unknown as FactNews;}
 describe('Human news triage policy',()=>{
+ it('excludes judicial context even when an older fact was previously extracted',()=>{
+  const context=newsSourceContext('Vendita giudiziaria di immobile','https://official.example','hash','2026-10-20')!;
+  expect(buildNewsCandidates([row('frazionamento')],now,{record:context})).toEqual([]);
+ });
  it('uses 2026 administrative dates, never import time; keeps history intact',()=>{const old=row('frazionamento','2024-10-10'),current=row('frazionamento','2026-01-01','new'),future=row('frazionamento','2026-12-01','future'),all=[old,current,future],before=JSON.stringify(all);expect(buildNewsCandidates(all,now).map(c=>c.id)).toEqual(['new']);expect(JSON.stringify(all)).toBe(before);});
  it('includes today in Rome even when UTC is still yesterday',()=>{expect(romeToday(Date.parse('2026-10-19T23:00:00Z'))).toBe('2026-10-20');});
  it('reuses an evidenced unit transformation as context for a 2026 SCA without resurfacing the old card',()=>{const rows=[row('divisione in due unità','2024-10-10','old'),row('SCA','2026-09-01','new')],c=buildNewsCandidates(rows,now);expect(c).toHaveLength(1);expect(c[0].utility).toBe('NEWS_CANDIDATE');expect(c[0].context[0].record_id).toBe('old');});

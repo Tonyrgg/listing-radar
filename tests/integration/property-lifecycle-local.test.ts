@@ -1496,9 +1496,29 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       updatedRecords: 0,
       unchangedRecords: 0,
       duplicateRows: 1,
-      unmatchedRecords: 1,
-      buildingLinks: 4,
-      eventCount: 4,
+      unmatchedRecords: 2,
+      buildingLinks: 1,
+      eventCount: 1,
+      dataQuality: {
+        earliestProtocolDate: "2026-02-15",
+        latestProtocolDate: "2026-03-04",
+        groupsWithProtocolDate: 3,
+        groupsWithoutProtocolDate: 0,
+        groupsWithAddress: 1,
+        groupsWithCadastralReference: 3,
+        applicationCounts: { ape: 3 },
+        primaryDocumentLinks: 0,
+      },
+    });
+
+    const firstRun = await db
+      .from("building_data_import_runs")
+      .select("diagnostics")
+      .eq("id", first.importRunId)
+      .single();
+    expect(firstRun.data?.diagnostics).toMatchObject({
+      latestProtocolDate: "2026-03-04",
+      primaryDocumentLinks: 0,
     });
 
     const repeated = await importer.importCsv({
@@ -1528,14 +1548,14 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
       insertedRecords: 0,
       updatedRecords: 1,
       unchangedRecords: 2,
-      eventCount: 3,
+      eventCount: 0,
     });
 
     expect(await countRows(db, "building_practice_records")).toBe(3);
     expect(await countRows(db, "building_practice_observations")).toBe(4);
     expect(
       await countRows(db, "building_practice_buildings", "practice_record_id"),
-    ).toBe(4);
+    ).toBe(1);
     const practices = await db
       .from("building_practice_records")
       .select("sanitized_payload")
@@ -1547,7 +1567,7 @@ localDescribe("Property Lifecycle local Supabase end-to-end", () => {
     const links = await db
       .from("building_practice_buildings")
       .select("practice_record_id,building_id");
-    expect(links.data).toHaveLength(4);
+    expect(links.data).toHaveLength(1);
     const linkedProperties = await db
       .from("properties")
       .select("id")

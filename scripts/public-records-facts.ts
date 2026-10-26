@@ -5,6 +5,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {bindPrimaryFacts,csvPrimaryFacts,type PrimaryFacts} from '../src/lib/property-lifecycle/buildings/facts-primary';
 import {DEFAULT_BUILDING_PRACTICE_SOURCE_KEY as KEY,DEFAULT_BUILDING_PRACTICE_SOURCE_URL as URL2024} from '../src/lib/property-lifecycle/buildings/importer';
 import {PRACTICES_2025} from '../src/lib/property-lifecycle/buildings/public-record-policy';
+import {read2025PracticeIndex} from '../src/lib/property-lifecycle/buildings/protocol-index';
 import {AlboHttp,AlboDetailUnavailableError,parseAlboDetail} from '../src/lib/property-lifecycle/buildings/albo';
 import {allFactRecords,readSemanticProjections,projectPropertyFacts,type SemanticProjection} from '../src/lib/property-lifecycle/buildings/facts-projection';
 import {NEWS_POLICY,romeToday} from '../src/lib/property-lifecycle/buildings/news-triage';
@@ -35,9 +36,11 @@ async function main(){
  if(primary){
   for(const [key,sourceUrl] of [[KEY,URL2024],[PRACTICES_2025.key,PRACTICES_2025.url]]){
    if(resume&&!args.includes('--refresh-csv')&&diagnostics.some(d=>d.source===key&&d.status==='OK'))continue;
-   const response=await fetch(sourceUrl,{redirect:'error',signal:AbortSignal.timeout(60000)});if(!response.ok)throw Error(`Known CSV HTTP ${response.status}`);
-   const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>25*1024*1024)throw Error('Known CSV too large');
-   const body=new TextDecoder().decode(bytes),hash=createHash('sha256').update(bytes).digest('hex'),inputs=csvPrimaryFacts(body,key,sourceUrl,at);
+   let body:string;
+   if(key===PRACTICES_2025.key)body=(await read2025PracticeIndex()).csv;
+   else{const response=await fetch(sourceUrl,{redirect:'error',signal:AbortSignal.timeout(60000)});if(!response.ok)throw Error(`Known CSV HTTP ${response.status}`);
+    const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>25*1024*1024)throw Error('Known CSV too large');body=new TextDecoder().decode(bytes);}
+   const hash=createHash('sha256').update(body).digest('hex'),inputs=csvPrimaryFacts(body,key,sourceUrl,at);
    const existing=new Set(records.filter(r=>r.source_key===key&&current(r)).map(r=>r.source_record_key));
    await bind(inputs.filter(input=>existing.has(input.sourceRecordKey)));
    diagnostics.push({source:key,status:'OK',records:inputs.length,matchedRecords:inputs.filter(input=>existing.has(input.sourceRecordKey)).length,sha256:hash,rawRetained:false});await save();

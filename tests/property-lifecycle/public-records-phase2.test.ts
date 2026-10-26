@@ -6,6 +6,8 @@ import { inspectPublicPdf } from "@/lib/property-lifecycle/buildings/document-fe
 import { classifyPublicRecord } from "@/lib/property-lifecycle/buildings/public-record-policy";
 import { normalizeBuildingPracticeRows } from "@/lib/property-lifecycle/buildings/practices";
 import { importAlboRecords } from "@/lib/property-lifecycle/buildings/albo-importer";
+import { csvPrimaryFacts } from "@/lib/property-lifecycle/buildings/facts-primary";
+import { PRACTICES_2025 } from "@/lib/property-lifecycle/buildings/public-record-policy";
 import goldenPractice from "../fixtures/property-lifecycle/municipal/piazza-cattedrale-2024.json";
 const fixture=(s:string)=>readFileSync(`tests/fixtures/property-lifecycle/municipal/albo/${s}.html`,"utf8");
 const street:RegistryStreet={id:"matteotti",canonical_name:"VIA GIACOMO MATTEOTTI",locality:"BITONTO"};
@@ -21,6 +23,13 @@ describe("Public Albo inventory and detail, real minimized markup",()=>{
  it("rejects a duplicate stable ID on a later real inventory page",async()=>{const first=parseAlboInventory(fixture("page-1")).items[0].id,second=parseAlboInventory(fixture("page-2")).items[0].id;const get=vi.fn().mockResolvedValueOnce(fixture("page-1")).mockResolvedValueOnce(fixture("page-2").replaceAll(`/display/${second}`,`/display/${first}`));await expect(collectAlboInventory({get})).rejects.toThrow("Duplicate");});
 });
 describe("Conservative official street and civic evidence",()=>{
+ it("keeps 2025 practice index entries searchable without deriving facts from their text",()=>{
+  const csv='Applicazione,Numero Pratica,Oggetto,Data Protocollo,Numero Protocollo\nape,1/2025/CILA,"Mario Privato - frazionamento in due unità",2025-01-02,100\napg,2/2025/SCIA,"Cambio destinazione d uso",2025-01-03,101';
+  const facts=csvPrimaryFacts(csv,PRACTICES_2025.key,PRACTICES_2025.url,"2026-10-26T00:00:00Z");
+  expect(facts).toHaveLength(2);
+  expect(facts.every(row=>row.events.length===0)).toBe(true);
+  expect(JSON.stringify(facts)).not.toContain("Mario Privato");
+ });
  it("resolves an unambiguous declared initial and exact civic to the existing building key",()=>{const [r]=extractTerritorialReferences("VIA G. MATTEOTTI N. 14 - lavori",[street]);expect(r.streetId).toBe("matteotti");expect(r.civics).toEqual(["14"]);expect(r.scope).toBe("BUILDING");expect(r.normalizedKeys[0]).toContain("via giacomo matteotti|14");expect(r.reasons).toContain("property_unit_not_asserted");});
  it("keeps a street-only record without fabricating a civic",()=>{const [r]=extractTerritorialReferences("VIA GIACOMO MATTEOTTI - divieto di sosta",[street]);expect(r.scope).toBe("STREET");expect(r.normalizedKeys).toEqual([]);});
  it("does not expand a civic range or associate its endpoints as units",()=>{const [r]=extractTerritorialReferences("VIA GIACOMO MATTEOTTI, CIV 51-57 - divieto",[street]);expect(r.civicState).toBe("RANGE");expect(r.civics).toEqual([]);});

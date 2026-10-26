@@ -1,5 +1,13 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Radar, Supabase e coda documenti del 26 ottobre:** migrazioni **0052–0055 online**,
+> collaudo Supabase isolato e UI autenticata operativi con `core:radar:check -- --ui`.
+> Registro 2025 APE/APG e nuovi protocolli territoriali tramite API regionale;
+> pratica/atto collegabili solo con identificativi coincidenti. Coda in
+> `/fonti/pratiche` con filtro terreni/urbanistica; procedure giudiziarie escluse
+> dal trattamento.
+> [Implementazione, prove e limiti](RADAR-DOCUMENTS-DELIVERY-2026-10-26.md).
+
 > **Worker V2, ripresa e pause del 26 ottobre:** pacchetto **0.34.28** qualificato
 > con **944 test passati in 115 suite**. Gestiti la risposta persa al caricamento
 > iniziale del checkpoint e lo stop dopo l'immobile anche nel passaggio di recupero.
@@ -12,6 +20,12 @@
 > Campione mirato: 45 gruppi / 184 righe, 34 archivio e 11 da approfondire con
 > documenti primari; quattro corrispondenze di identificativi già in archivio.
 > Nessun fatto o notizia creati. [Qualificazione e limiti](RADAR-PROTOCOL-QUALIFICATION-2026-10-26.md).
+
+> **Radar, copertura fonti edilizie del 26 ottobre:** il registro 2025 contiene
+> 1.161 pratiche `ape` e 1.631 `apg`; il sync leggeva soltanto `ape`. Ora entrambe
+> restano indicizzate senza derivare fatti dal testo privo di atto primario. Le run
+> riportano intervallo protocolli, copertura territoriale, duplicati e link agli atti.
+> OMI resta consultazione manuale. [Implementazione e limiti](RADAR-SOURCE-COVERAGE-2026-10-26.md).
 
 > **Worker V2, tempi reali del 26 ottobre:** correzione del percorso ricerca CF
 > distribuita con la **0.34.27**, installata e verificata su questo PC.

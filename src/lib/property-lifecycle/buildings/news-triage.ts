@@ -1,5 +1,5 @@
 import type { FactNews } from './facts-read-model';
-export const NEWS_POLICY = Object.freeze({ version: 'news_triage_v2', start: '2026-01-01', pageSize: 20, maxPdfBytes: 8 * 1024 * 1024, maxPdfPages: 20 });
+export const NEWS_POLICY = Object.freeze({ version: 'news_triage_v3', start: '2026-01-01', pageSize: 20, maxPdfBytes: 8 * 1024 * 1024, maxPdfPages: 20 });
 export const NEWS_TYPES: Record<string, string> = { all: 'Tutti i tipi', units: 'Nuove unità', transformation: 'Trasformazioni', completion: 'Lavori conclusi', construction: 'Nuove costruzioni', commercial: 'Locali commerciali', land: 'Terreni / urbanistica', direct: 'Vendita diretta' };
 export const REJECTION_REASONS: Record<string, string> = { NOT_TOWARD_SALE: 'Non porta verso una vendita', TOO_GENERIC: 'Intervento troppo generico', COMMON_PART: 'Parte comune / non unità', IRRELEVANT_USE_CHANGE: 'Cambio d’uso irrilevante', TOO_IMPRECISE: 'Troppo poco preciso', ALREADY_KNOWN: 'Informazione già nota', OTHER: 'Altro' };
 export type NewsDecision = 'INTERESTING' | 'DEEPEN' | 'NOT_USEFUL';
@@ -70,7 +70,7 @@ export interface NewsFeedback {
     }[];
 }
 export interface NewsSourceContext {
-    disposition: 'ACCOUNTING_ONLY' | 'ALREADY_AWARDED' | 'INDIRECT_WORKSITE' | 'LOCATION_CLAIM';
+    disposition: 'ACCOUNTING_ONLY' | 'ALREADY_AWARDED' | 'INDIRECT_WORKSITE' | 'LOCATION_CLAIM' | 'JUDICIAL_ARCHIVE_ONLY';
     addressClaim?: string;
     field?: string;
     row?: number;
@@ -156,6 +156,7 @@ export function buildNewsCandidates(rows: FactNews[], now: number, sourceContext
     }
     const result: NewsCandidate[] = [];
     for (const [id, facts] of groups) {
+        if(sourceContexts[id]?.disposition==='JUDICIAL_ARCHIVE_ONLY')continue;
         const first = facts[0], context = first.building_id ? real.filter(r => r.building_id === first.building_id && r.record_id !== id && administrativeDate(r) && administrativeDate(r)! <= administrativeDate(first)!) : [];
         const ranked = facts.map(anchor => ({ anchor, ...classifyNews(anchor, context) })).sort((a, b) => b.priority - a.priority || a.anchor.event_id.localeCompare(b.anchor.event_id)), best = ranked[0];
         const { anchor, group } = best;

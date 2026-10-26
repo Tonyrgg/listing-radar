@@ -5,6 +5,8 @@ import {
 } from "@/lib/property-lifecycle/buildings/address";
 import { hashValue } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { resolveMonitoredGeography } from "@/lib/property-lifecycle/geography/scope";
+import { judicialArchiveOnly,practiceDocumentTopics } from "./public-record-policy";
+import { administrativeIdentity } from "./practice-documents";
 
 export const BUILDING_INTERVENTION_TYPES = [
   "MANUTENZIONE_STRAORDINARIA",
@@ -54,6 +56,16 @@ export interface BuildingPracticeNormalizationResult {
   skippedApplicationRows: number;
   duplicateRows: number;
   unmatchedRecords: number;
+  dataQuality: {
+    earliestProtocolDate: string | null;
+    latestProtocolDate: string | null;
+    groupsWithProtocolDate: number;
+    groupsWithoutProtocolDate: number;
+    groupsWithAddress: number;
+    groupsWithCadastralReference: number;
+    applicationCounts: Record<string, number>;
+    primaryDocumentLinks: 0;
+  };
   warnings: string[];
 }
 
@@ -166,7 +178,7 @@ function parseDate(value: string | null): string | null {
     return null;
   }
   const italian = value.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/,
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
   );
   if (italian?.[1] && italian[2] && italian[3]) {
     const timestamp = Date.UTC(
@@ -175,12 +187,19 @@ function parseDate(value: string | null): string | null {
       Number(italian[1]),
       Number(italian[4] ?? 0),
       Number(italian[5] ?? 0),
+      Number(italian[6] ?? 0),
     );
     const date = new Date(timestamp);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    return Number.isNaN(date.getTime()) || date.getUTCFullYear()!==Number(italian[3]) || date.getUTCMonth()!==Number(italian[2])-1 || date.getUTCDate()!==Number(italian[1]) || date.getUTCHours()!==Number(italian[4]??0) || date.getUTCMinutes()!==Number(italian[5]??0) || date.getUTCSeconds()!==Number(italian[6]??0) ? null : date.toISOString().slice(0,10)+'T00:00:00.000Z';
   }
+  const iso=value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if(!iso)return null;
+  const calendar=new Date(Date.UTC(Number(iso[1]),Number(iso[2])-1,Number(iso[3])));
+  if(calendar.toISOString().slice(0,10)!==value.slice(0,10))return null;
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  // Administrative dates are calendar days. A timezone-less CKAN midnight
+  // must not move to the previous day on a PC configured for Europe/Rome.
+  return Number.isNaN(parsed.getTime()) ? null : value.slice(0,10)+'T00:00:00.000Z';
 }
 
 export function classifyBuildingIntervention(
@@ -222,6 +241,7 @@ function practiceKey(row: Map<string, string>): string {
       civic: field(row, "Civico"),
       sheet: field(row, "Foglio"),
       parcel: field(row, "Particella"),
+      sourceRowId:field(row,"_id"),
     })
   );
 }
@@ -316,7 +336,7 @@ function firstField(rows: Map<string, string>[], ...aliases: string[]): string |
 
 export function normalizeBuildingPracticeRows(
   rawRows: CsvRow[],
-  options: { applicationCode?: string | null } = { applicationCode: "ape" },
+  options: { applicationCode?: string | null; includeProtocolIdentity?:boolean } = { applicationCode: "ape" },
 ): BuildingPracticeNormalizationResult {
   const rows = rawRows.map(indexedRow);
   const requestedApplication =
@@ -340,6 +360,9 @@ export function normalizeBuildingPracticeRows(
     );
     const normalizedAddresses = addresses(group);
     const references = cadastralReferences(group);
+    const identities=options.includeProtocolIdentity?group.map(row=>administrativeIdentity(field(row,"Numero Pratica"),field(row,"Numero Protocollo"),parseDate(field(row,"Data Protocollo"))?.slice(0,10))):[];
+    const uniqueIdentities=[...new Map(identities.filter(identity=>identity!==null).map(identity=>[JSON.stringify(identity),identity])).values()];
+    const registryIdentity=identities.length&&identities.every(identity=>identity!==null)&&uniqueIdentities.length===1?uniqueIdentities[0]:null;
     const occurredAt =
       parseDate(firstField(group, "Data Rilascio")) ??
       parseDate(firstField(group, "Data Protocollo")) ??
@@ -359,6 +382,8 @@ export function normalizeBuildingPracticeRows(
       occurredAt,
       addresses: normalizedAddresses,
       cadastralReferences: references,
+      ...(options.includeProtocolIdentity?{registryIdentity,documentSearchTopics:[...new Set(group.flatMap(row=>{const text=field(row,"Oggetto")??"";return practiceDocumentTopics(text,classifyBuildingIntervention(text));}))]}:{}),
+      ...(group.some(row=>judicialArchiveOnly(field(row,"Oggetto")??""))?{treatment:"ARCHIVE_ONLY_JUDICIAL"}:{}),
     };
     return {
       sourceRecordKey,
@@ -381,6 +406,12 @@ export function normalizeBuildingPracticeRows(
     warnings.push("missing_application_column");
   }
 
+  const protocolDates = eligible
+    .map((row) => parseDate(field(row, "Data Protocollo"))?.slice(0, 10) ?? null)
+    .filter((value): value is string => value !== null)
+    .sort();
+  const groupsWithProtocolDate=[...groups.values()].filter(group=>group.some(row=>parseDate(field(row,"Data Protocollo"))!==null)).length;
+
   return {
     records,
     inputRows: rows.length,
@@ -388,6 +419,19 @@ export function normalizeBuildingPracticeRows(
     skippedApplicationRows: rows.length - eligible.length,
     duplicateRows: Math.max(0, eligible.length - groups.size),
     unmatchedRecords: records.filter((record) => record.addresses.length === 0).length,
+    dataQuality: {
+      earliestProtocolDate: protocolDates[0] ?? null,
+      latestProtocolDate: protocolDates.at(-1) ?? null,
+      groupsWithProtocolDate,
+      groupsWithoutProtocolDate: records.length - groupsWithProtocolDate,
+      groupsWithAddress: records.filter((record) => record.addresses.length > 0).length,
+      groupsWithCadastralReference: records.filter((record) => record.cadastralReferences.length > 0).length,
+      applicationCounts: Object.fromEntries(
+        [...records.reduce((counts, record) => counts.set(record.applicationCode, (counts.get(record.applicationCode) ?? 0) + 1), new Map<string, number>())].sort(([left], [right]) => left.localeCompare(right)),
+      ),
+      // This source publishes an index, not primary document URLs.
+      primaryDocumentLinks: 0,
+    },
     warnings,
   };
 }

@@ -6,8 +6,10 @@ import {
   parseBuildingPracticeCsv,
 } from "@/lib/property-lifecycle/buildings/practices";
 import { hashValue } from "@/lib/property-lifecycle/contracts/normalized-listing";
+import {isPracticeIndexSource} from './public-record-policy';
 
 export interface BuildingPracticeImportInput {
+  importRunId?: string;
   sourceKey: string;
   sourceUrl: string;
   csv: string;
@@ -35,6 +37,7 @@ export interface BuildingPracticeImportResult {
   unmatchedRecords: number;
   buildingLinks: number;
   eventCount: number;
+  dataQuality: ReturnType<typeof normalizeBuildingPracticeRows>["dataQuality"];
   warnings: string[];
 }
 
@@ -202,7 +205,7 @@ export class BuildingIntelligenceImporter {
     input: BuildingPracticeImportInput,
   ): Promise<BuildingPracticeImportResult> {
     const observedAt = input.observedAt ?? new Date().toISOString();
-    const run = await this.db
+    const run = input.importRunId ? await this.db.from('building_data_import_runs').select('id,source_key,status').eq('id',input.importRunId).single() : await this.db
       .from("building_data_import_runs")
       .insert({
         source_key: input.sourceKey,
@@ -214,6 +217,7 @@ export class BuildingIntelligenceImporter {
       .select("id")
       .single();
     throwIfError(run.error);
+    if(input.importRunId&&((run.data as {source_key?:string;status?:string})?.source_key!==input.sourceKey||(run.data as {status?:string})?.status!=='RUNNING'))throw Error('Running source import required');
     const importRunId = (run.data as { id: string } | null)?.id;
     if (!importRunId) {
       throw new Error("Building-practice import run returned no id.");
@@ -222,7 +226,8 @@ export class BuildingIntelligenceImporter {
     try {
       const normalized = normalizeBuildingPracticeRows(
         parseBuildingPracticeCsv(input.csv),
-        { applicationCode: input.applicationCode ?? "ape" },
+        { applicationCode: input.applicationCode === undefined ? "ape" : input.applicationCode,
+          includeProtocolIdentity: isPracticeIndexSource(input.sourceKey) },
       );
       const existing = await allSourcePractices(this.db, input.sourceKey);
       const existingByKey = new Map(
@@ -300,6 +305,7 @@ export class BuildingIntelligenceImporter {
 
       const uniqueAddresses = new Map<string, CanonicalBuildingAddress>();
       for (const record of normalized.records) {
+        if(record.sanitizedPayload.treatment==='ARCHIVE_ONLY_JUDICIAL')continue;
         for (const address of record.addresses) {
           uniqueAddresses.set(address.normalizedKey, address);
         }
@@ -327,6 +333,7 @@ export class BuildingIntelligenceImporter {
         payload: Record<string, unknown>;
       }> = [];
       for (const record of normalized.records) {
+        if(record.sanitizedPayload.treatment==='ARCHIVE_ONLY_JUDICIAL')continue;
         const practiceRecordId = practiceIds.get(record.sourceRecordKey);
         if (!practiceRecordId) {
           continue;
@@ -403,6 +410,7 @@ export class BuildingIntelligenceImporter {
         unmatchedRecords: normalized.unmatchedRecords,
         buildingLinks: links.length,
         eventCount,
+        dataQuality: normalized.dataQuality,
         warnings: normalized.warnings,
       };
       await this.finishRun(importRunId, {
@@ -416,6 +424,10 @@ export class BuildingIntelligenceImporter {
         unmatched_records: result.unmatchedRecords,
         building_links: result.buildingLinks,
         event_count: result.eventCount,
+        diagnostics: {
+          ...result.dataQuality,
+          duplicateRows: result.duplicateRows,
+        },
         warnings: result.warnings,
       });
       return result;

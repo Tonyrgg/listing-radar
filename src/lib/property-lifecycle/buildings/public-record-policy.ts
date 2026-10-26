@@ -1,6 +1,6 @@
 /** Single versioned policy. None of these signals imply a commercial lead or legal conformity. */
 export const PUBLIC_RECORD_POLICY = Object.freeze({
-  version: "bitonto_public_records_v2", classifierVersion: "territorial_rules_v1", matcherVersion: "official_street_civic_v2",
+  version: "bitonto_public_records_v3", classifierVersion: "territorial_rules_v1", matcherVersion: "official_street_civic_v2",
   alboSource: "comune-bitonto-albo", alboUrl: "https://bitonto.trasparenza-valutazione-merito.it/web/trasparenza/albo-pretorio",
   requestTimeoutMs: 25_000, maxHtmlBytes: 1_500_000, maxPdfBytes: 8_000_000,
   delayMs: 450, retries: 2, maxPages: 60, deepRotationDays: 7,
@@ -9,8 +9,23 @@ export const PUBLIC_RECORD_POLICY = Object.freeze({
 });
 export const PRACTICES_2025 = {
   key: "comune-bitonto-elenco-pratiche-2025",
-  url: "https://www.opendata.maggioli.cloud/dataset/eec7cd4f-6059-433d-82ee-e09b9f881064/resource/a987f1b8-6c59-4703-bb84-f65fb5f60a6b/download/comune-di-bitonto-elenco-pratiche-edilizie-2025.csv",
+  url: "https://dati.puglia.it/v2/dataset/comune-di-bitonto-elenco-pratiche-edilizie-2025",
 };
+export const TERRITORY_PROTOCOLS={key:'comune-bitonto-protocolli-territorio',url:'https://dati.puglia.it/v2/dataset/comune-di-bitonto-elenco-pratiche'};
+export const PRACTICE_INDEX_SOURCE_KEYS=[PRACTICES_2025.key,TERRITORY_PROTOCOLS.key];
+export const isPracticeIndexSource=(key:string)=>PRACTICE_INDEX_SOURCE_KEYS.includes(key);
+export function judicialArchiveOnly(text:string){
+  return /esecuzion[ei]\s+immobiliar|vendit[ae]\s+(?:giudiziar|forzat)|pignorament|liquidazione\s+giudiziale|procedura\s+(?:fallimentare|concorsuale)|curatore\s+fallimentare/i.test(text);
+}
+export function practiceDocumentTopics(text:string,intervention:string){
+  if(judicialArchiveOnly(text)||/accesso\s+(?:(?:agli|ai|a|ad)\s+)?(?:atti|documenti|documentazione)|accesso\s+documentale|idoneit[àa]\s+abitativa|numerazione\s+civica/i.test(text))return [] as string[];
+  const topics:string[]=[];
+  const mapped:Record<string,string>={FRAZIONAMENTO:'SPLIT',FUSIONE_ACCOPPIAMENTO:'MERGE',CAMBIO_DESTINAZIONE_USO:'USE_CHANGE',FINE_LAVORI:'COMPLETION',AGIBILITA:'COMPLETION',NUOVA_COSTRUZIONE:'NEW_BUILDING'};
+  if(mapped[intervention])topics.push(mapped[intervention]);
+  if(/\b(?:inedificabil|edificabil|edificator)/i.test(text))topics.push('BUILDABILITY_MENTION');
+  if(/variante\s+(?:urbanistica|al\s+(?:PRG|PUG))|(?:cambio|modifica)\s+(?:della\s+)?destinazione\s+urbanistica|lottizzazion|piano\s+(?:urbanistico\s+)?attuativo/i.test(text))topics.push('PLANNING_CHANGE');
+  return topics;
+}
 export const RECORD_TYPES: Record<string, string> = {
   BUILDING_PERMIT: "Permesso di costruire", CILA: "CILA", SCIA: "SCIA", AGIBILITY_SIGNAL: "Segnale di agibilità",
   SANATORIA: "Sanatoria", CONDONO: "Condono", DEMOLITION_ORDER: "Ordinanza di demolizione",
