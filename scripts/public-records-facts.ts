@@ -5,7 +5,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {bindPrimaryFacts,csvPrimaryFacts,type PrimaryFacts} from '../src/lib/property-lifecycle/buildings/facts-primary';
 import {DEFAULT_BUILDING_PRACTICE_SOURCE_KEY as KEY,DEFAULT_BUILDING_PRACTICE_SOURCE_URL as URL2024} from '../src/lib/property-lifecycle/buildings/importer';
 import {PRACTICES_2025} from '../src/lib/property-lifecycle/buildings/public-record-policy';
-import {AlboHttp,parseAlboDetail} from '../src/lib/property-lifecycle/buildings/albo';
+import {AlboHttp,AlboDetailUnavailableError,parseAlboDetail} from '../src/lib/property-lifecycle/buildings/albo';
 import {allFactRecords,readSemanticProjections,projectPropertyFacts,type SemanticProjection} from '../src/lib/property-lifecycle/buildings/facts-projection';
 import {NEWS_POLICY,romeToday} from '../src/lib/property-lifecycle/buildings/news-triage';
 import {newsSourceContext} from '../src/lib/property-lifecycle/buildings/news-source-context';
@@ -50,7 +50,7 @@ async function main(){
     const events=extractPropertyFacts(record.id,{text:detail.subject,field:'albo.subject',sourceUrl:record.source_url!,sourceHash:createHash('sha256').update(html).digest('hex'),observedAt:at,territorialScopeVerified:record.territorial_references?.length>0},detail.documentDate??detail.actDate??record.record_date);
     alboInputs.push({sourceKey:record.source_key,sourceRecordKey:record.source_record_key,events,newsContext:newsSourceContext(detail.subject,record.source_url!,createHash('sha256').update(html).digest('hex'),at)});
     diagnostics.push({recordId:record.id,status:'OK',events:events.length,documentUrls:detail.documents});
-   }catch(e){diagnostics.push({recordId:record.id,status:'REVIEW',reason:String(e)});} // Keep the last verified projection on source failure.
+   }catch(e){diagnostics.push({recordId:record.id,status:'REVIEW',...(e instanceof AlboDetailUnavailableError?{code:e.code}:{}),reason:String(e)});} // Keep the last verified projection on source failure.
    await save();
   }
   await bind(alboInputs);await save();

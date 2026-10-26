@@ -71,8 +71,24 @@ la prova prestazionale della consegna.
   non firmato, 99.871.906 byte, SHA-256
   `1173c341c870d8242bb0e2280b5181ddec7f833ec282a10c89f39ade1d119997`.
 
-Stato di questa revisione: pronto per la pubblicazione della 0.34.27; l'esito
-del canale e dell'aggiornamento installato è riportato dopo la consegna.
+## Consegna e aggiornamento installato
+
+**0.34.27 pubblicata**, sorgente `217359d`, con manifest, tre parti e installer
+ricomposto verificati tramite download completo e SHA-256.
+[Release e installer](https://github.com/Tonyrgg/listing-radar/releases/tag/property-worker-v0.34.27).
+
+**Installata su questo PC il 26 ottobre mattina**, installer uscita 0.
+Versione dell'eseguibile e del pacchetto installato 0.34.27 confermate;
+adattatore installato identico alla compilazione qualificata. Confronto prima
+e dopo: **1.350 immobili conservati**, nessuna unità, checkpoint o scheda di via
+mancante; tutte le 2.043 schede di via conservate. Gli altri due PC non sono
+stati aggiornati o verificati da questa sessione.
+
+Ricerca sintetica dopo l'aggiornamento: assenza di risultati confermata,
+6.086,353 ms. È una verifica funzionale, non parte del confronto ABBAAB.
+Connessione Chrome di lavoro ancora attiva. Report `installed.json`,
+`archive-preservation-morning.json` e `post-update-calibration.json` nella
+cartella di evidenze. Nessuna scrittura di dati CRM in questi controlli.
 
 Per ripetere il controllo della ricerca vuota con tempo misurato, Worker fermo
 e Chrome di lavoro aperto:

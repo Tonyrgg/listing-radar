@@ -1,7 +1,9 @@
 # Manuale operativo e tecnico di Listing Radar
 
 > **Worker V2, tempi reali del 26 ottobre:** correzione del percorso ricerca CF
-> qualificata per la 0.34.27. Confronto alternato sullo stesso nominativo:
+> distribuita con la **0.34.27**, installata e verificata su questo PC.
+> Archivio locale conservato: 1.350 immobili e 2.043 schede di via.
+> Confronto alternato sullo stesso nominativo:
 > mediana 10.039,680 → 5.348,385 ms; nessuna scrittura CRM. Suite completa:
 > **941 test passati**. [Protocollo, limiti e consegna](WORKER-V2-LIVE-PERFORMANCE-2026-10-26.md).
 

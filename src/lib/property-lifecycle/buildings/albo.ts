@@ -36,9 +36,20 @@ export function parseAlboInventory(html: string, maxPages: number = P.maxPages) 
   if (!items.length || page > pages || pages > maxPages || (page < pages && !next)) throw Error("Albo incomplete pagination");
   return { items, page, pages, total, next: next ? safeAlboUrl(next) : null, fingerprint: hashValue({ headers: $("table.master-detail-list-table th").map((_, a) => $(a).text().replace(/\s+/g," ").trim()).get(), policy: P.version }) };
 }
+export class AlboDetailUnavailableError extends Error {
+  readonly code = "PUBLICATION_UNAVAILABLE";
+  constructor() {
+    super("Il portale non rende consultabile il dettaglio dell’atto.");
+    this.name = "AlboDetailUnavailableError";
+  }
+}
 export function parseAlboDetail(html: string, expectedId: string) {
   const $ = load(html), field = (name: string) => $(`tr.ap-${name}`).find("td").eq(1).text().replace(/\s+/g," ").trim();
-  if (!field("oggetto") || !field("numeroRegistro")) throw Error("Albo detail structure changed");
+  if (!field("oggetto") || !field("numeroRegistro")) {
+    const message = $(".portlet-msg-error,.portlet-msg-info,.alert").text().replace(/\s+/g," ").trim();
+    if (/\batto non disponibile o non pi[uù] in pubblicazione\b/i.test(message)) throw new AlboDetailUnavailableError();
+    throw Error("Albo detail structure changed");
+  }
   const canonical = $('link[rel="canonical"]').attr("href");
   if (canonical?.includes("/papca/display/") && !canonical.endsWith("/" + expectedId)) throw Error("Albo detail identity changed");
   const documents = new Set<string>();
