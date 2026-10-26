@@ -6,6 +6,7 @@
     "core:review": "node scripts/seller-review-report.mjs",
     "core:tonybook": "tsx scripts/tonybook-session.ts",
     "core:tonybook:groups": "tsx scripts/tonybook-groups.ts",
+    "core:radar:protocols": "tsx scripts/qualify-bitonto-protocols.ts",
     "core:auth:prepare": "node scripts/check-seller-auth-local.mjs",
     "core:auth:check": "node scripts/check-seller-auth-local.mjs --run",
     "core:ui:check": "tsx scripts/check-seller-workbench-ui.ts",

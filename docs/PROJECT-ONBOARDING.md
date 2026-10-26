@@ -3,8 +3,15 @@
 > **Worker V2, ripresa e pause del 26 ottobre:** pacchetto **0.34.28** qualificato
 > con **944 test passati in 115 suite**. Gestiti la risposta persa al caricamento
 > iniziale del checkpoint e lo stop dopo l'immobile anche nel passaggio di recupero.
-> Su questo PC resta installata la 0.34.27; nessun nuovo import live e nessuna
+> Su questo PC **0.34.28 installata e verificata nei file**, archivio invariato;
+> applicazione lasciata chiusa. Nessun nuovo import live e nessuna
 > percentuale aggiuntiva di velocità. [Correzioni, prove e limiti](WORKER-V2-RECOVERY-2026-10-26.md).
+
+> **Radar, fonte protocolli del 26 ottobre:** lettore circoscritto implementato
+> in `core:radar:protocols`, senza collegamento al crawler o scritture production.
+> Campione mirato: 45 gruppi / 184 righe, 34 archivio e 11 da approfondire con
+> documenti primari; quattro corrispondenze di identificativi già in archivio.
+> Nessun fatto o notizia creati. [Qualificazione e limiti](RADAR-PROTOCOL-QUALIFICATION-2026-10-26.md).
 
 > **Worker V2, tempi reali del 26 ottobre:** correzione del percorso ricerca CF
 > distribuita con la **0.34.27**, installata e verificata su questo PC.

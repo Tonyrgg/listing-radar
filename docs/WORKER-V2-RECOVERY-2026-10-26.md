@@ -14,7 +14,11 @@ Tre regressioni nuove: checkpoint registrato con risposta persa, errore permanen
 
 Suite completa: **944 test passati in 115 suite**, uscita 0, 316,72 secondi. Build desktop e installer 0.34.28 passati. Il codice motore/coda nell'ASAR del pacchetto coincide con la compilazione qualificata. Installer non firmato, SHA-256 `9ee9ccfcbce66569031e3d0491532c2084260d79138fdd1891a2c187ea46aec0`, 99.872.093 byte.
 
-Consegna sul [canale Worker 0.34.28](https://github.com/Tonyrgg/listing-radar/releases/tag/property-worker-v0.34.28), con verifica del manifest e del download ricomposto dopo la pubblicazione. La versione installata su questo PC resta 0.34.27: nessuna chiusura o riapertura dell'applicazione durante questo intervento in background. Gli esiti della nuova versione sono collaudi del pacchetto, non una prova di installazione locale.
+Consegna sul [canale Worker 0.34.28](https://github.com/Tonyrgg/listing-radar/releases/tag/property-worker-v0.34.28): manifest e download ricomposto verificati dopo la pubblicazione.
+
+### Aggiornamento installazione — prosecuzione successiva
+
+Dopo la nuova autorizzazione a proseguire, **0.34.28 installata su questo PC**, installer uscita 0. Verificato prima che non vi fossero run attive, chiusa normalmente l'applicazione e usato l'installer silenzioso senza riapertura automatica. Versione e codice motore/coda nell'ASAR installato coincidono con il pacchetto qualificato. Le 1.350 unità e le 2.043 schede di via sono identiche al precedente archivio: zero elementi mancanti o modificati. L'app è rimasta chiusa; nessun nuovo import completo o verifica operativa dopo il riavvio è dichiarato. Gli altri due PC non sono stati aggiornati.
 
 ## Prestazioni: cosa manca ancora
 
