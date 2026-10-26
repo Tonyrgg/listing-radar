@@ -600,6 +600,22 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     });
   }
 
+  private async personSearchField(): Promise<Locator> {
+    const route = new URL(this.page.url()).pathname;
+    const listPage = [ACCOUNT_LIST, PROPERTY_LIST].some(pathname => route === pathname || route === `${pathname}/Default`);
+    const recordPage = /^\/CRMImmobiliareLightning\/s\/(?:account|immobile)\/[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?(?:\/(?!(?:edit|new|clone|delete|merge)(?:\/|$))[^/]+)?\/?$/i.test(route);
+    const search = this.page.locator('input[title="Search..."]').filter({ visible: true });
+    // The global search is already mounted on a settled list/detail page.
+    // Reusing it avoids rebuilding the entire Lightning shell per owner.
+    // Never reuse a global-search result: an old zero must not confirm a new search.
+    if ((listPage || recordPage) && await search.count() === 1
+      && !await this.page.locator('[role="dialog"]:visible').count()
+      && !await this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }).count()
+      && !await this.searchIsBusy()) return search;
+    await this.navigate(ACCOUNT_LIST);
+    return this.one(this.page.locator('input[title="Search..."]').filter({ visible: true }), "Barra di ricerca nominativi");
+  }
+
   async searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]> {
     return this.readAction("Ricerca nominativo per codice fiscale", async () => {
       const expected = canonicalTaxCode(taxCode);
@@ -609,8 +625,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if (cached) return structuredClone(cached);
       let requests: ReturnType<TecnocloudUiV2Port["watchSearchRequests"]> | null = null;
       try {
-        await this.navigate(ACCOUNT_LIST);
-        const search = await this.one(this.page.locator('input[title="Search..."]').filter({ visible: true }), "Barra di ricerca nominativi");
+        const search = await this.personSearchField();
         await search.fill("");
         // The Lightning global-search component does not reliably update its
         // internal query from Playwright's atomic fill event. Real key events
@@ -618,7 +633,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         const typingRequests = this.watchSearchRequests();
         let typingStable = 0;
         try {
-          await search.pressSequentially(expected, { delay: 55 });
+          // Keep real key events and the settling checks, without a fixed
+          // 55ms pause after each character (880ms per 16-character CF).
+          await search.pressSequentially(expected);
           for (let wait = 0; wait < 60 && typingStable < 3; wait += 1) {
             await this.assertSession();
             await this.assertSearchHealthy(typingRequests.failed());
