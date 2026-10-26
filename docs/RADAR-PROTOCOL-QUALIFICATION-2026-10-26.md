@@ -47,6 +47,12 @@ I sette gruppi senza corrispondenza di identificativi non sono sette nuove notiz
 
 Prima occorrono una via pubblica e verificabile al documento primario e un collegamento deterministico a luogo/pratica. Poi si possono leggere gli atti pertinenti e riusare le regole V2, mantenendo la distinzione fra richiesta, autorizzazione e lavori eseguiti. Senza queste prove la fonte rimane uno strumento di ricerca assistita: nessun backfill o notifica automatica.
 
+### Sportello SUE: percorso pubblico controllato
+
+Dalla mappa del sito comunale sono stati seguiti i collegamenti allo sportello. La consultazione web iniziale non ha recuperato le pagine; HTTP diretto ha invece raggiunto la [scheda del servizio SUE](https://sportellotelematico.comune.bitonto.ba.it/procedure:c_a893:accedere.servizi.sue), la pagina di approfondimento e la categoria Edilizia, tutte con HTTP 200. La scheda descrive accesso con identità digitale e monitoraggio della propria pratica. Non è stato individuato in queste pagine un collegamento ai documenti primari degli undici gruppi. Nessun accesso autenticato, invio o richiesta agli uffici eseguito; questa verifica non dimostra che tutti gli atti siano assenti da ogni altra sezione pubblica.
+
+La vecchia pagina `https://egov.ba.it/sue` non è stata recuperata dalla connessione della sessione. Non si deduce da questo che il servizio sia cessato. La [pagina comunale SIT/PRG](https://www.comune.bitonto.ba.it/it/page/sit-sue-e-prg) pubblica tavole e DPP; non è la prova del cambio di destinazione di una particella.
+
 ## Collaudo
 
 Sei nuove regressioni automatiche: accessi amministrativi, prova primaria richiesta, descrizioni generiche, date nulle/impossibili, duplicati e identità mancanti, uffici e conteggi. ESLint e TypeScript passati. Suite complessiva: **728 passati, 25 saltati**, 78 suite passate e due saltate. Prova live del comando e confronto circoscritto con l'archivio completati; questi risultati non sono giudizi commerciali umani sul dossier.
