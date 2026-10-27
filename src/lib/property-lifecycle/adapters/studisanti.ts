@@ -143,7 +143,7 @@ function studiSantiAssets($: CheerioAPI): NormalizedAsset[] {
       try {
         const url = new URL(candidate, STUDI_SANTI_BASE_URL);
         if (
-          url.hostname.toLocaleLowerCase("it") !== "studisantiimmobiliare.it" ||
+          url.hostname.toLocaleLowerCase("it").replace(/^www\./, "") !== "studisantiimmobiliare.it" ||
           !/\/preview\/imm_[^/]+\.(?:jpe?g|png|webp)$/i.test(url.pathname)
         ) {
           return;
@@ -438,7 +438,11 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
         pagesVisited: 1,
         expectedPages: 1,
         requiredMarkers,
-        reasons: [`http_status:${response.status}`],
+        reasons: [
+          `http_status:${response.status}`,
+          ...(response.status===403 && /cloudflare/i.test(response.headers.get("server")??response.body)
+            ? ["source_access_denied:cloudflare", "automatic_retry_not_evidence_of_listing_absence"] : []),
+        ],
       };
       return {
         items: [],

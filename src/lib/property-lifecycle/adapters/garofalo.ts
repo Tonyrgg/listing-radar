@@ -104,7 +104,12 @@ interface GarofaloInventoryPage extends InventoryResult {
 
 function parsePayload(body: string): GarofaloPayload | null {
   try {
-    return JSON.parse(body) as GarofaloPayload;
+    // The API now mixes numeric identifiers/flags with their historical string
+    // representation. Normalize only scalar numbers at this adapter boundary;
+    // never coerce objects to "[object Object]" or change completeness checks.
+    return JSON.parse(body, (_key, value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? String(value) : value,
+    ) as GarofaloPayload;
   } catch {
     return null;
   }

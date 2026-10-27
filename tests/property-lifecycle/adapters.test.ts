@@ -319,6 +319,14 @@ describe("Studi Santi V2 adapter", () => {
     expect(result.location).toMatchObject({ municipality: null, scope: "OUT_OF_SCOPE" });
   });
 
+  it("keeps the same gallery when the source serves images on its www host", () => {
+    const url="https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/";
+    const original=sourceDocument("studisanti-active-detail.html",url,"3902");
+    const changed={...original,response:{...original.response,body:original.response.body.replaceAll("https://studisantiimmobiliare.it/","https://www.studisantiimmobiliare.it/")}};
+    expect(normalizeStudiSantiDetail(changed).assets).toHaveLength(normalizeStudiSantiDetail(original).assets.length);
+    expect(normalizeStudiSantiDetail(changed).assets.length).toBeGreaterThan(0);
+  });
+
   it("freezes absence decisions when the sitemap contract changes", () => {
     const result = parseStudiSantiSitemap("<html><body>maintenance</body></html>");
     expect(result.healthState).toBe("STRUCTURE_CHANGED");
@@ -617,6 +625,16 @@ describe("Futura Immobiliare V2 adapter", () => {
 });
 
 describe("Garofalo Immobiliare V2 adapter", () => {
+  it("accepts mixed numeric API identifiers and flags without losing records", () => {
+    const historical = fixture("garofalo-inventory.json");
+    const numeric = JSON.stringify(JSON.parse(historical), (_key,value) =>
+      typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : value,
+    );
+    const before=parseGarofaloInventoryJson(historical),after=parseGarofaloInventoryJson(numeric);
+    expect(after.complete).toBe(true);
+    expect(after.items).toEqual(before.items);
+    expect(after.diagnostics.parseErrorCount).toBe(0);
+  });
   it("extracts a complete 20-record Flazio golden sale inventory using numeric identity", () => {
     const result = parseGarofaloInventoryJson(fixture("garofalo-inventory.json"));
     expect(result.healthState).toBe("HEALTHY");
