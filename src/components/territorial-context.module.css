@@ -15,7 +15,7 @@
 .overview p { margin-block: 8px; }
 .facts { display: grid; gap: 8px; margin-block: 12px; }
 .facts > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
-.facts dt { color: var(--lr-muted); }
+.facts dt { color: var(--lr-ink-3); }
 .facts dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .identity { max-width: 70ch; }
 .caution { margin-block: 16px; padding: 12px 16px; border: 1px solid var(--lr-line-quiet); border-radius: var(--lr-radius-control); background: var(--lr-raised); line-height: 1.6; }
@@ -26,7 +26,7 @@
 .timeline > p { max-width: 75ch; }
 .timeline ol { margin-top: 20px; }
 .timeline li { padding-block: 20px; }
-.timeline time { color: var(--lr-muted); font-variant-numeric: tabular-nums; }
+.timeline time { color: var(--lr-ink-3); font-variant-numeric: tabular-nums; }
 .timeline li > div > p { max-width: 70ch; margin-block: 8px; font-size: 1rem; font-weight: 500; line-height: 1.5; }
 .timeline li a { display: inline-flex; align-items: center; min-height: 36px; }
 @media (max-width: 640px) {
