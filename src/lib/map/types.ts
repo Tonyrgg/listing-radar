@@ -59,6 +59,12 @@ export interface MapArea {
   updatedAt: string | null;
 }
 
+/** Saved operational boundaries with the explicit agent assignment. */
+export type TerritoryWorkArea = Pick<MapArea, "id" | "name" | "agentId" | "geometry"> & {
+  color: string;
+  agentName: string | null;
+};
+
 export interface MapStreet {
   id: string;
   name: string;

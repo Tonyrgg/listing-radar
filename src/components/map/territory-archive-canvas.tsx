@@ -15,6 +15,7 @@ import type { PublicRecordMapPoint } from "@/lib/property-lifecycle/buildings/re
 import type {BuildingMapPoint} from '@/lib/property-lifecycle/buildings/graph-read-model';
 import {BuildingPoints} from './building-points';
 import type {InternalZone} from '@/lib/matching/types';
+import type {TerritoryWorkArea} from '@/lib/map/types';
 
 const categoryColors={active:MAP_DATA_COLORS.info,sold:MAP_DATA_COLORS.positive,exit:MAP_DATA_COLORS.attention,unknown:MAP_DATA_COLORS.muted,interesting:MAP_DATA_COLORS.accentuated};
 function Points({rows,now,selected,onSelect}:{rows:IntelligenceRow[];now:number;selected?:string|null;onSelect?:(id:string)=>void}) {
@@ -36,18 +37,19 @@ function Points({rows,now,selected,onSelect}:{rows:IntelligenceRow[];now:number;
     </Marker>;
   })}</>;
 }
-function ViewControls({coordinates}:{coordinates:string}){
+function ViewControls({coordinates,workAreas}:{coordinates:string;workAreas:TerritoryWorkArea[]}){
  const map=useMap();
- return <div className="lr-map-view-controls"><button type="button" onClick={()=>map.setView([BITONTO_CENTER.latitude,BITONTO_CENTER.longitude],14,{animate:false})}>Centra Bitonto</button><button type="button" disabled={!coordinates} onClick={()=>map.fitBounds(coordinates.split(';').map(p=>p.split(',').map(Number) as [number,number]),{padding:[35,35],maxZoom:17,animate:false})}>Inquadra risultati</button></div>;
+ return <div className="lr-map-view-controls"><button type="button" onClick={()=>map.setView([BITONTO_CENTER.latitude,BITONTO_CENTER.longitude],14,{animate:false})}>Centra Bitonto</button><button type="button" disabled={!coordinates} onClick={()=>map.fitBounds(coordinates.split(';').map(p=>p.split(',').map(Number) as [number,number]),{padding:[35,35],maxZoom:17,animate:false})}>Inquadra risultati</button>{workAreas.length?<button type="button" onClick={()=>{const bounds=L.featureGroup(workAreas.map(area=>L.geoJSON(area.geometry as GeoJSON.GeoJsonObject))).getBounds();if(bounds.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:16,animate:false});}}>Inquadra zone di lavoro</button>:null}</div>;
 }
-export function TerritoryArchiveCanvas({rows,now,recordPoints=[],buildingPoints=[],zones=[],showProperties=true,selected,onSelect}:{selected?:string|null;onSelect?:(id:string)=>void;rows:IntelligenceRow[];now:number;recordPoints?:PublicRecordMapPoint[];buildingPoints?:BuildingMapPoint[];zones?:InternalZone[];showProperties?:boolean}) {
+export function TerritoryArchiveCanvas({rows,now,recordPoints=[],buildingPoints=[],zones=[],workAreas=[],showProperties=true,selected,onSelect}:{selected?:string|null;onSelect?:(id:string)=>void;rows:IntelligenceRow[];now:number;recordPoints?:PublicRecordMapPoint[];buildingPoints?:BuildingMapPoint[];zones?:InternalZone[];workAreas?:TerritoryWorkArea[];showProperties?:boolean}) {
   const visiblePoints=[...(showProperties?rows:[]),...buildingPoints,...recordPoints];
   return <MapContainer center={[BITONTO_CENTER.latitude,BITONTO_CENTER.longitude]} zoom={14} scrollWheelZoom={true} className="h-[min(70vh,48rem)] min-h-[28rem] w-full rounded-[var(--lr-radius-container)] border border-[var(--lr-line)]" style={{zIndex:0}}>
     <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+    {workAreas.map(area=><GeoJSON key={area.id} data={area.geometry as GeoJSON.GeoJsonObject} style={{color:area.color,weight:3,fillColor:area.color,fillOpacity:.12}}><BoundedTooltip><strong>{area.name}</strong><p>{area.agentName?`Assegnata a: ${area.agentName}`:area.agentId?'Assegnazione da verificare':'Senza assegnazione'}</p></BoundedTooltip></GeoJSON>)}
     <Points rows={showProperties?rows:[]} now={now} selected={selected} onSelect={onSelect}/>
     <PublicRecordPoints points={recordPoints}/>
     <BuildingPoints points={buildingPoints}/>
     {zones.map(zone=>zone.geometry?<GeoJSON key={zone.id} data={zone.geometry as GeoJSON.GeoJsonObject} style={{color:zone.color??"#276b52",weight:3,fillColor:zone.color??"#4f9b78",fillOpacity:.16}}/>:null)}
-    <ViewControls coordinates={visiblePoints.map(p=>`${p.latitude},${p.longitude}`).join(';')}/>
+    <ViewControls coordinates={visiblePoints.map(p=>`${p.latitude},${p.longitude}`).join(';')} workAreas={workAreas}/>
   </MapContainer>;
 }
