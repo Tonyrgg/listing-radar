@@ -7,36 +7,32 @@ import { PublicRecords } from "@/components/public-records";
 import { Meta,EmptyState,controlClass,buttonClass } from "@/components/ui/primitives";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { readNow } from "@/lib/clock";
-import { PUBLIC_RECORD_LABELS,readPublicRecords,readPublicRecordMap,readRecordContext } from "@/lib/property-lifecycle/buildings/read-model";
-import {readGraphContext,readBuildingMap} from '@/lib/property-lifecycle/buildings/graph-read-model';
+import { PUBLIC_RECORD_LABELS,readPublicRecords,readRecordContext } from "@/lib/property-lifecycle/buildings/read-model";
+import {readGraphContext} from '@/lib/property-lifecycle/buildings/graph-read-model';
 import {TerritorialContext} from '@/components/territorial-context';
-import type { IntelligenceRow } from "@/lib/property-lifecycle/read-models/intelligence";
+import {readTerritoryProperties} from "@/lib/property-lifecycle/read-models/territory-server";
 export const metadata:Metadata={title:"Territorio"};
 export default async function MapPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
   await connection();
   const params=await searchParams,value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
-  const db=getSupabaseServiceClient(),rows:IntelligenceRow[]=[];
-  let failed=false;
-  for(let from=0;;from+=500){
-    const r=await db.from("market_observer_graph_property_archive").select("*").order("property_id").range(from,from+499);
-    if(r.error){failed=true;break;} const page=(r.data??[]) as IntelligenceRow[];rows.push(...page);if(page.length<500)break;
-  }
+  const db=getSupabaseServiceClient();
+  const propertyRead=readTerritoryProperties().catch(()=>null);
   const page=Math.max(1,Math.floor(Number(value("pagina"))||1));
   const uuid=(s:string)=>/^[0-9a-f-]{36}$/i.test(s)?s:undefined;
   const streetId=uuid(value("via_id")),recordId=uuid(value("atto")),buildingId=uuid(value('edificio'));
   const territorialPage=Math.max(1,Math.min(1000,Math.floor(Number(value('storia_territorio'))||1)));
-  const [records,recordMap,context,streetSummary,buildingSummary,buildingMap]=await Promise.all([
+  const [records,context,streetSummary,buildingSummary]=await Promise.all([
     readPublicRecords(db,{query:value("documento"),civic:value("civico"),year:value("anno"),type:value("tipo_atto"),source:value("fonte_atto"),zone:value("area"),streetId,page}).catch(()=>null),
-    readPublicRecordMap(db).catch(()=>null),
     recordId?readRecordContext(db,recordId).catch(()=>null):Promise.resolve(null),
     streetId?readGraphContext(db,'STREET',streetId,territorialPage).catch(()=>null):Promise.resolve(null),
     buildingId?readGraphContext(db,'BUILDING',buildingId,territorialPage).catch(()=>null):Promise.resolve(null),
-    readBuildingMap(db).catch(()=>null),
   ]);
+  const {data:zoneRows}=await db.from("internal_zones").select("*").eq("is_active",true).not("geometry","is",null).order("zone_number");
+  const rows=await propertyRead;
   const nextUrl=(n:number)=>{const q=new URLSearchParams({pagina:String(n)});for(const key of ["documento","civico","anno","tipo_atto","fonte_atto","area","via_id"])if(value(key))q.set(key,value(key));return `?${q}#documenti-pubblici`;};
   return <div className="space-y-6">
     <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato."/>
-    {failed?<EmptyState title="Mappa dell’archivio non disponibile" description="La lettura dei dati non è completa. Riprova tra poco; nessun punto è stato cancellato."/>:<TerritoryArchive rows={rows} now={await readNow()} recordMap={recordMap} buildingMap={buildingMap}/>}
+    {!rows?<EmptyState title="Mappa dell’archivio non disponibile" description="La lettura dei dati non è completa. Riprova tra poco; nessun punto è stato cancellato."/>:<TerritoryArchive rows={rows} now={await readNow()} zones={(zoneRows??[]) as import("@/lib/matching/types").InternalZone[]}/>}
     {recordId?<section id="atto" className="scroll-mt-24 space-y-3 border-t border-[var(--lr-line)] pt-5"><h2 className="text-[length:var(--lr-text-section)] font-[650]">Atto e contesto territoriale</h2>{context?.record?<><PublicRecords records={[context.record]}/>
       {context.buildings.map(b=><div key={b.building_id} className="py-2"><h3 className="font-[650]"><Link className="underline" href={`/map?edificio=${b.building_id}#edificio`}>Edificio: {b.display_name}</Link></h3><Meta>{b.known_properties} immobili conosciuti · {b.active_properties} attivi · {b.publications} pubblicazioni storiche · {b.observed_agencies} agenzie osservate · {b.public_record_count} documenti pubblici</Meta><Meta>Collegamento di edificio; singola unità da verificare.</Meta></div>)}
       {context.properties.length?<div><h3 className="font-[650]">Immobili conosciuti nell’edificio</h3><ul className="space-y-2">{context.properties.map(p=><li key={p.property_id}><Link href={`/casa/${p.property_id}#documenti`} className="underline">{p.address}</Link><Meta>Contesto edificio, non prova sulla singola unità.</Meta></li>)}</ul></div>:<Meta>Nessuna property associata con precisione sufficiente. Il record resta nell’archivio territoriale.</Meta>}</>:<p>Atto non disponibile o lettura temporaneamente fallita. Cerca nel registro sottostante.</p>}</section>:null}

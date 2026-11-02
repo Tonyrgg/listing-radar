@@ -1,5 +1,7 @@
 :global(.leaflet-tooltip).hover {
   white-space: normal;
+  width: min(23rem, 80vw);
+  min-width: min(12rem, 72vw);
   max-width: min(23rem, 80vw);
   max-height: min(36rem, calc(70vh - 2rem));
   overflow-y: auto;
@@ -13,7 +15,13 @@
   box-shadow: var(--lr-floating);
 }
 .hover > div {
+  width: 100%;
   max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.hover :global(.leaflet-tooltip-content) {
+  width: 100%;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 .marker:focus {
@@ -34,4 +42,38 @@
 }
 .recordPopup :global(.leaflet-popup-content) a {
   color: var(--lr-ink);
+}
+.archive :global(.lr-territory-desk) {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  padding: 16px;
+  background: var(--lr-surface);
+  border: 1px solid var(--lr-line-quiet);
+  border-radius: var(--lr-radius-container);
+}
+.archive :global(.lr-territory-tools) { display: flex; flex-direction: column; gap: 18px; }
+.archive :global(.lr-territory-tools) h2 { font-size: 1rem; font-weight: 650; }
+.archive :global(.lr-territory-tools) h3 { margin-bottom: 8px; font-size: .75rem; font-weight: 650; text-transform: uppercase; color: var(--lr-muted); }
+.archive :global(.lr-territory-tools) fieldset { max-height: 18rem; overflow-y: auto; }
+.archive :global(.lr-territory-tools) label { font-size: .875rem; }
+.archive :global(.lr-territory-map) { min-width: 0; position: relative; }
+.archive :global(.lr-territory-legend) { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; }
+.archive :global(.lr-map-selection) { padding: 16px; margin-top: 12px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-container); background: var(--lr-surface); }
+.archive :global(.lr-map-selection) > div + div { width: 100%; max-width: 65ch; }
+.archive :global(.lr-map-selection) > a { margin-top: 16px; }
+.archive :global(.lr-map-view-controls) { position: absolute; top: 12px; right: 12px; z-index: 1000; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 65px); }
+.archive :global(.lr-map-view-controls) button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--lr-line); border-radius: var(--lr-radius-control); background: var(--lr-surface); color: var(--lr-ink); font: inherit; font-size: .8125rem; cursor: pointer; }
+.archive :global(.lr-map-view-controls) button:disabled { opacity: .6; cursor: default; }
+.archive :global(.lr-record-meta) { margin-top: 6px; font-size: .8125rem; color: var(--lr-muted); }
+.archive :global(.lr-public-record) { padding-block: 12px; border-bottom: 1px solid var(--lr-line-quiet); }
+@media (max-width: 900px) {
+  .archive :global(.lr-territory-desk) { grid-template-columns: 1fr; }
+  .archive :global(.lr-territory-tools) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .archive :global(.lr-territory-tools) > h2,
+  .archive :global(.lr-territory-tools) > details { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .archive :global(.lr-territory-tools) { grid-template-columns: 1fr; }
 }
