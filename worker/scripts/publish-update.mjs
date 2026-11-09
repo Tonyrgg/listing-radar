@@ -35,9 +35,11 @@ async function ensurePublishedSourceMatchesInstaller() {
   const worktree = await command("git", ["status", "--porcelain"]);
   if (worktree) throw new Error("La release e bloccata: il worktree contiene modifiche non committate.");
   const localHead = await command("git", ["rev-parse", "HEAD"]);
-  const defaultBranch = await command("gh", ["api", `repos/${repository}`, "--jq", ".default_branch"]);
-  const remoteHead = await command("gh", ["api", `repos/${repository}/commits/${defaultBranch}`, "--jq", ".sha"]);
-  if (localHead !== remoteHead) throw new Error(`La release e bloccata: HEAD non coincide con ${defaultBranch} remoto.`);
+  const requestedSource = process.argv.find(arg => arg.startsWith("--source-ref="))?.slice("--source-ref=".length);
+  if (requestedSource && !/^[a-zA-Z0-9._/-]+$/.test(requestedSource)) throw new Error("Riferimento sorgente non valido");
+  const source = requestedSource ?? await command("gh", ["api", `repos/${repository}`, "--jq", ".default_branch"]);
+  const remoteHead = await command("gh", ["api", `repos/${repository}/commits/${source}`, "--jq", ".sha"]);
+  if (localHead !== remoteHead) throw new Error(`La release e bloccata: HEAD non coincide con ${source} remoto.`);
   return localHead;
 }
 

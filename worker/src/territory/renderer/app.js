@@ -1075,12 +1075,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           ? "Salvataggio…"
           : memory.pending
             ? "Modifiche in attesa"
-            : "Archivio sincronizzato"
+            : memory.checkedAt ? "Questa postazione è sincronizzata" : "Verifica sincronizzazione…"
       : "Sincronizzazione";
     $("cloud-memory").title =
       memory.error ||
       (online
-        ? "Vie, immobili, note e storico sincronizzati su Supabase"
+        ? "Le modifiche di questa postazione sono confermate online. Un PC spento o senza rete invia le proprie modifiche quando il Worker torna aperto e connesso."
         : "Memoria condivisa locale");
     if (memory.error) feedback(memory.error, true, { deduplicate: true });
     $("memory-pull").textContent = online
@@ -1101,8 +1101,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           ? "Salvataggio in corso…"
           : memory.pending
             ? "Modifiche locali in attesa di sincronizzazione."
-            : memory.syncedAt
-              ? `Ultima sincronizzazione: ${date(memory.syncedAt)}`
+            : memory.checkedAt
+              ? `Ultimo controllo online: ${date(memory.checkedAt)}${memory.syncedAt ? ` · Ultimo aggiornamento condiviso: ${date(memory.syncedAt)}` : ""}`
               : "Non ancora sincronizzata");
     $("quarantine-open").textContent = `Quarantena (${snapshot.quarantineCount || 0})`;
     $("history-review").hidden = !snapshot.historyIssues;

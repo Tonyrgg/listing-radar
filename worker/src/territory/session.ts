@@ -44,6 +44,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   let syncing = false;
   let closing = false;
   let memoryError: string | null = null;
+  let checkedAt: string | null = null;
+  let unsubscribeCommits: (() => void) | undefined;
   let sync: TerritorySync | null = null;
   let credentialDigest = "";
   const publish = () => { if (!options.contents.isDestroyed()) options.contents.send("territory:changed"); options.changed?.(); };
@@ -57,7 +59,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         sync = await openOnlineMemory(store, options.profileDirectory, credentials);
         credentialDigest = nextDigest;
       }
-      await sync.reconcile(); memoryError = null;
+      await sync.reconcile(); memoryError = null; checkedAt = new Date().toISOString();
     } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Sincronizzazione.`; }
     finally {
       syncing = false; publish();
@@ -105,6 +107,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
 
     const inventory = JSON.parse(await readFile(path.join(options.assetDirectory, "renderer/inventory.json"), "utf8")) as { streets: Street[] };
     store = await TerritoryStore.open(options.profileDirectory, inventory.streets);
+    unsubscribeCommits = store.onCommit(scheduleSync);
     let provider;
     let liveConfig: LiveConfig | null = null;
     if (options.live) {
@@ -158,7 +161,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         return { selected: config.allowedCadastralKeys.length, allowCreate: config.allowCreate };
       } finally { syncing = false; }
     });
-    handle("sync-status", async () => sync ? { ...await sync.status(), syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", syncing, error: memoryError });
+    handle("sync-status", async () => sync ? { ...await sync.status(), checkedAt, syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", checkedAt, syncing, error: memoryError });
     handle("sync-review", async () => {
       if (application.hasActiveRun) throw new Error("Attendi la fine del lavoro prima di scegliere tra modifiche concorrenti");
       for (const issue of Object.values(store.read().syncConflicts ?? {}).filter(c => !c.resolvedAt)) {
@@ -255,11 +258,12 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         closing = true;
         application.pause(); await application.waitForIdle();
         await syncLoop.close();
+        unsubscribeCommits?.();
         channels.forEach(channel => ipcMain.removeHandler(channel));
         releaseProfile?.(); releaseProfile = undefined;
       },
     };
   } catch (error) {
-    syncLoop.stop(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
+    syncLoop.stop(); unsubscribeCommits?.(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
   }
 }
