@@ -1,3 +1,4 @@
+import {intelligenceSort,compareUnitPrices} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "usciti", "venduti"] as const;
@@ -36,7 +37,7 @@ export interface IntelligenceRow {
   context_building_ids?:string[];context_street_id?:string|null;
 }
 export interface IntelligenceFilters {
-  view: IntelligenceView; page: number; query?: string; classification?: string;
+  view: IntelligenceView; page: number; sort?:string; direction?:string; query?: string; classification?: string;
   agency?: string; locality?: string; zone?: string; state?: string;
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
   propertyType?: string; minimumPrice?: number; maximumPrice?: number; minimumSqm?: number; maximumSqm?: number;
@@ -50,9 +51,8 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
   if (days == null) return "Anzianità da verificare";
   return publicDate ? `Sul mercato da almeno ${days} giorni` : `Monitorato da ${days} giorni`;
 }
-export async function readIntelligence(db: SupabaseClient, filters: IntelligenceFilters) {
-  const size=40;
-  let request=db.from("market_observer_graph_property_archive").select("*");
+function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
+  let request=db.from("market_observer_graph_property_archive").select(fields);
   if(filters.publicRecords==="documents")request=request.gt("public_record_count",0);
   if(filters.publicRecords==="recent")request=request.gt("recent_public_record_count",0);
   if(filters.publicRecords==="signals")request=request.gt("new_territorial_signal_count",0);
@@ -83,11 +83,31 @@ export async function readIntelligence(db: SupabaseClient, filters: Intelligence
   for (const [key,value,maximum] of [["known_market_age",filters.minimumAge,36500],["opportunity_score",filters.minimumScore,100],["reduction_percent",filters.minimumReduction,100]] as const) {
     if (value != null && Number.isFinite(value) && value >= 0) request=request.gte(key,Math.min(maximum,value));
   }
-  request=filters.view === "opportunita" ? request.order("opportunity_score", { ascending:false, nullsFirst:false }) : request.order("last_seen_at",{ascending:false});
-  const { data,error }=await request.order("row_id").range((filters.page-1)*size,filters.page*size);
-  if(error) throw new Error(error.message);
-  const rows=(data ?? []) as IntelligenceRow[];
-  return { rows:rows.slice(0,size), hasNext:rows.length>size };
+  return request;
+}
+export async function readIntelligence(db:SupabaseClient,filters:IntelligenceFilters){
+ const size=40,sort=intelligenceSort(filters.sort,filters.direction,filters.view),offset=(filters.page-1)*size;
+ if(sort.key==="metro"){
+  const light:Pick<IntelligenceRow,"row_id"|"latest_asking_price"|"surface_sqm">[]=[];
+  for(let from=0;;from+=500){
+   const r=await intelligenceRequest(db,filters,"row_id,latest_asking_price,surface_sqm").order("row_id").range(from,from+499);
+   if(r.error)throw new Error(r.error.message);
+   const batch=(r.data??[]) as unknown as typeof light;
+   light.push(...batch);if(batch.length<500)break;
+  }
+  light.sort((a,b)=>compareUnitPrices(a,b,sort.ascending));
+  const ids=light.slice(offset,offset+size).map(r=>r.row_id);
+  if(!ids.length)return {rows:[] as IntelligenceRow[],hasNext:false};
+  const r=await db.from("market_observer_graph_property_archive").select("*").in("row_id",ids);
+  if(r.error)throw new Error(r.error.message);
+  const byId=new Map((r.data as IntelligenceRow[]??[]).map(row=>[row.row_id,row]));
+  if(ids.some(id=>!byId.has(id)))throw new Error("Archivio cambiato durante l’ordinamento, riprova.");
+  return {rows:ids.map(id=>byId.get(id)!),hasNext:light.length>offset+size};
+ }
+ const {data,error}=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
+ if(error)throw new Error(error.message);
+ const rows=(data??[]) as unknown as IntelligenceRow[];
+ return {rows:rows.slice(0,size),hasNext:rows.length>size};
 }
 
 export interface AgencyMarketIntelligence { agency_id: string; name: string; market_role: string; active_listings: number;

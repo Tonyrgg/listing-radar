@@ -1,5 +1,7 @@
 'use client';
 import Link from 'next/link';
+import {useRouter} from 'next/navigation';
+import {ConfirmDialog} from '@/components/ui/feedback';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {ZoneMap} from '@/components/matching/zone-map';
 import {buttonClass,controlClass,Meta} from '@/components/ui/primitives';
@@ -15,6 +17,8 @@ export function WorkAreaEditor({initialAreas,agents,initialId,startNew=false}:{i
   const [geometry,setGeometry]=useState<GeoJsonGeometry|null>(initial?.geometry??null);
   const [drawing,setDrawing]=useState(false),[editing,setEditing]=useState(false),[pending,setPending]=useState(false);
   const mapPanel=useRef<HTMLDivElement>(null);
+  const router=useRouter();
+  const [leaveChoice,setLeaveChoice]=useState<{kind:'area';area:MapArea|null}|{kind:'territory'}|null>(null);
   const [message,setMessage]=useState(''),[error,setError]=useState(initialId&&!initial?'La zona richiesta non è disponibile. Seleziona una zona dall’elenco.':'');
   const dirty=name!==(selected?.name??'')||color!==(selected?.color??MAP_DATA_COLORS.accentuated)||agentId!==(selected?.agentId??'')||JSON.stringify(geometry)!==JSON.stringify(selected?.geometry??null);
   const shapes=useMemo(()=>areas.map(a=>({shapeId:a.id,zoneId:a.id,name:a.name,color:a.color,geometry:a.geometry})),[areas]);
@@ -26,10 +30,13 @@ export function WorkAreaEditor({initialAreas,agents,initialId,startNew=false}:{i
     window.addEventListener('beforeunload',warn);
     return()=>window.removeEventListener('beforeunload',warn);
   },[dirty]);
-  function canLeave(){return !dirty||window.confirm('Le modifiche non sono salvate. Vuoi abbandonarle?');}
   function showMap(){mapPanel.current?.scrollIntoView({behavior:'smooth',block:'center'});}
   function choose(area:MapArea|null){
-    if(pending||!canLeave())return;
+    if(pending)return;
+    if(dirty){setLeaveChoice({kind:'area',area});return;}
+    applyChoice(area);
+  }
+  function applyChoice(area:MapArea|null){
     setSelected(area);setCreationId(crypto.randomUUID());setName(area?.name??'');setColor(area?.color??MAP_DATA_COLORS.accentuated);setAgentId(area?.agentId??'');setGeometry(area?.geometry??null);
     setEditing(false);setDrawing(false);setError('');setMessage('');
   }
@@ -45,7 +52,8 @@ export function WorkAreaEditor({initialAreas,agents,initialId,startNew=false}:{i
     finally{setPending(false);}
   }
   return <>
-    <div className="flex flex-wrap items-center justify-between gap-3"><Link href="/map" className={buttonClass('quiet')} onClick={event=>{if(pending||!canLeave())event.preventDefault();}}>← Torna a Territorio</Link><button type="button" className={buttonClass('secondary')} disabled={pending} onClick={()=>choose(null)}>Nuova zona</button></div>
+    <ConfirmDialog open={leaveChoice!==null} title="Abbandonare le modifiche?" description="Le modifiche non salvate ai confini o ai dati della zona andranno perse." confirmLabel="Abbandona modifiche" cancelLabel="Continua a modificare" onCancel={()=>setLeaveChoice(null)} onConfirm={()=>{const choice=leaveChoice;setLeaveChoice(null);if(choice?.kind==='territory')router.push('/map');else if(choice?.kind==='area')applyChoice(choice.area);}}/>
+    <div className="flex flex-wrap items-center justify-between gap-3"><Link href="/map" className={buttonClass('quiet')} onClick={event=>{if(pending){event.preventDefault();return;}if(dirty){event.preventDefault();setLeaveChoice({kind:'territory'});}}}>← Torna a Territorio</Link><button type="button" className={buttonClass('secondary')} disabled={pending} onClick={()=>choose(null)}>Nuova zona</button></div>
     <div className="grid items-start gap-6 xl:grid-cols-[20rem_minmax(0,1fr)]">
       <div className="space-y-5">
         <label className="block"><span className="mb-1 block">Zona da modificare</span><select className={controlClass()} value={selected?.id??''} disabled={pending} onChange={event=>choose(areas.find(a=>a.id===event.target.value)??null)}><option value="">Nuova zona</option>{areas.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>

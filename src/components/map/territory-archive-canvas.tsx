@@ -49,7 +49,7 @@ export function TerritoryArchiveCanvas({rows,now,recordPoints=[],buildingPoints=
     <Points rows={showProperties?rows:[]} now={now} selected={selected} onSelect={onSelect}/>
     <PublicRecordPoints points={recordPoints}/>
     <BuildingPoints points={buildingPoints}/>
-    {zones.map(zone=>zone.geometry?<GeoJSON key={zone.id} data={zone.geometry as GeoJSON.GeoJsonObject} style={{color:zone.color??"#276b52",weight:3,fillColor:zone.color??"#4f9b78",fillOpacity:.16}}/>:null)}
+    {zones.map(zone=>zone.geometry?<GeoJSON key={zone.id} data={zone.geometry as GeoJSON.GeoJsonObject} style={{color:zone.color??MAP_DATA_COLORS.positive,weight:3,fillColor:zone.color??MAP_DATA_COLORS.positive,fillOpacity:.16}}/>:null)}
     <ViewControls coordinates={visiblePoints.map(p=>`${p.latitude},${p.longitude}`).join(';')} workAreas={workAreas}/>
   </MapContainer>;
 }

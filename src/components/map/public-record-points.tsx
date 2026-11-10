@@ -5,7 +5,8 @@ import L from "leaflet";
 import Link from "next/link";
 import { listingClusters } from "@/lib/map/listing-clusters";
 import { MAP_DATA_COLORS,MAP_INK } from "@/lib/design/map-palette";
-import { PUBLIC_RECORD_LABELS,type PublicRecordMapPoint } from "@/lib/property-lifecycle/buildings/read-model";
+import { PUBLIC_RECORD_LABELS } from "@/lib/property-lifecycle/buildings/public-record-labels";
+import type {PublicRecordMapPoint} from "@/lib/property-lifecycle/buildings/read-model";
 import styles from "./territory-archive.module.css";
 export function PublicRecordPoints({points}:{points:PublicRecordMapPoint[]}){
  const map=useMap();

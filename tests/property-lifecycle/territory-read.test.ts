@@ -2,23 +2,32 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 const mocks=vi.hoisted(()=>({range:vi.fn(),select:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("next/cache",()=>({unstable_cache:(fn:unknown)=>fn}));
-vi.mock("@/lib/supabase/service",()=>({getSupabaseServiceClient:()=>({from:()=>({select:(fields:string)=>{mocks.select(fields);return {order:()=>({range:mocks.range})};}})})}));
+vi.mock("@/lib/supabase/service",()=>({getSupabaseServiceClient:()=>({from:(view:string)=>({select:(fields:string)=>{mocks.select(view,fields);return {order:()=>({range:(from:number,to:number)=>mocks.range(view,from,to)})};}})})}));
 import {readTerritoryProperties} from "@/lib/property-lifecycle/read-models/territory-server";
-
+const propertyView="market_observer_property_archive";
+const graphView="market_observer_graph_property_context";
+const documentView="market_observer_property_public_record_summary";
 describe("territorial map projection",()=>{
- beforeEach(()=>vi.clearAllMocks());
- it("reads beyond the first API page and keeps only map attributes",async()=>{
-  const row={property_id:"test",attributes:{floor:0,features:{garden:true},sourcePayload:{large:"unused"}}};
-  mocks.range.mockResolvedValueOnce({data:Array.from({length:1000},()=>row),error:null}).mockResolvedValueOnce({data:[{...row,property_id:"last"}],error:null});
+ beforeEach(()=>vi.resetAllMocks());
+ function fixture(failedView?:string){
+  const rows=Array.from({length:1001},(_,i)=>({property_id:"p"+i,attributes:{floor:0,features:{garden:true},sourcePayload:{large:"unused"}}}));
+  const datasets:Record<string,unknown[]>={[propertyView]:rows,[graphView]:rows.map(r=>({property_id:r.property_id,building_record_count:1})),[documentView]:[]};
+  mocks.range.mockImplementation(async(view:string,from:number,to:number)=>view===failedView?{data:null,error:{message:"source unavailable"}}:{data:datasets[view].slice(from,to+1),error:null});
+ }
+ it("reads every bounded property page and joins the separate graph projection",async()=>{
+  fixture();
   const rows=await readTerritoryProperties();
   expect(rows).toHaveLength(1001);
-  expect(rows.at(-1)?.property_id).toBe("last");
-  expect(mocks.range.mock.calls).toEqual([[0,999],[1000,1999]]);
+  expect(rows.at(-1)?.property_id).toBe("p1000");
+  expect(mocks.range).toHaveBeenCalledWith(propertyView,0,63);
+  expect(mocks.range).toHaveBeenCalledWith(propertyView,960,1023);
+  expect(mocks.range).toHaveBeenCalledWith(graphView,1000,1999);
   expect(rows[0].attributes).toEqual({floor:0,features:{garden:true}});
-  expect(mocks.select.mock.calls[0][0]).not.toContain("*");
+  expect(rows[0].building_record_count).toBe(1);
+  expect(mocks.select.mock.calls.every(([,fields])=>!fields.includes("*"))).toBe(true);
  });
- it("rejects incomplete reads instead of presenting a partial archive as complete",async()=>{
-  mocks.range.mockResolvedValueOnce({data:Array.from({length:1000},()=>({property_id:"test"})),error:null}).mockResolvedValueOnce({data:null,error:{message:"source unavailable"}});
+ it.each([propertyView,graphView,documentView])("rejects an incomplete %s branch instead of showing a partial map",async(view)=>{
+  fixture(view);
   await expect(readTerritoryProperties()).rejects.toThrow("source unavailable");
  });
 });

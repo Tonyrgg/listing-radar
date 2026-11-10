@@ -1,10 +1,7 @@
 import {normalizeStreetName} from '@/lib/street-registry/official-inventory';
 import type {RegistryStreet} from './territorial-extraction';
 export const TERRITORIAL_GRAPH_VERSION='territorial_graph_v1';
-export function territorialRecordRecent(date:string|null|undefined,status:string|null|undefined,now:number,days:number){
- const day=Math.floor(now/86400000)*86400000,value=date?Date.parse(date):NaN;
- return !/annull|revocat|revok|cancel/i.test(status??'')&&Number.isFinite(value)&&value<=day&&day-value<=days*86400000;
-}
+export {territorialRecordRecent} from './territorial-date';
 export const UNMATCHED_CAUSES=['NO_ADDRESS_AVAILABLE','STREET_ONLY','STREET_AND_CIVIC_NOT_IN_REGISTRY','CIVIC_AMBIGUOUS','MULTIPLE_BUILDING_CANDIDATES','LOCALITY_ONLY','CADASTRAL_ONLY','AREA_DOCUMENT','DATASET_WITHOUT_TERRITORIAL_FIELDS','NORMALIZATION_FAILURE','OTHER'] as const;
 export type UnmatchedCause=typeof UNMATCHED_CAUSES[number];
 export function streetKey(value:string){

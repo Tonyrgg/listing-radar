@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LifecyclePropertyDetail } from "@/lib/property-lifecycle/read-models/types";
 import { canonicalBuildingAddress } from "./address";
-import { RECORD_TYPES } from "./public-record-policy";
 import type { TerritorialReference } from "./territorial-extraction";
 import { streetRepresentativePoint,type StreetLineGeometry } from "@/lib/street-registry/metrics";
 import {parseCivics} from './territorial-graph';
@@ -66,11 +65,7 @@ export async function readPropertyPublicRecords(db:SupabaseClient, detail:Lifecy
   if(r.error)throw Error(r.error.message);return (r.data??[]) as PublicRecord[];
 }
 
-export const PUBLIC_RECORD_LABELS: Record<string,string>={
-  ...RECORD_TYPES,
-  SCIA:"SCIA",CILA:"CILA",SANATORIA:"Sanatoria",CONDONO:"Condono",AGIBILITA:"Agibilità",
-  PERMESSO_COSTRUIRE:"Permesso di costruire",URBAN_PLAN:"Piano e cartografia",OTHER:"Altra pratica pubblica",
-};
+export {PUBLIC_RECORD_LABELS} from "./public-record-labels";
 
 /** Contextual records remain separate from civic/building links. No unit claim. */
 export async function readPropertyTerritorialContext(db:SupabaseClient,detail:LifecyclePropertyDetail){

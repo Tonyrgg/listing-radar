@@ -4,6 +4,10 @@ import Link from "next/link";
 
 import { MappaDellaCasa } from "@/components/casa/mappa-della-casa";
 import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
+import { CopySourceLink } from "@/components/casa/copy-source-link";
+import { PropertyPriceHistory } from "@/components/casa/property-price-history";
+import { isMarketMove } from "@/lib/property-lifecycle/read-models/market-events";
+import {dossierContext,dossierReturn} from "@/lib/property-lifecycle/read-models/dossier-context";
 import { marketAgeLabel } from "@/lib/property-lifecycle/read-models/intelligence";
 import { RigaDiVita } from "@/components/casa/riga-di-vita";
 import { PendingSubmitButton } from "@/components/loading-controls";
@@ -20,7 +24,6 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
-  Label,
   Meta,
   Scelta,
   Testo,
@@ -31,7 +34,6 @@ import { getSourceLabel } from "@/lib/labels";
 import {
   formatCurrency,
   formatDate,
-  formatDays,
   formatNumber,
   formatShouty,
 } from "@/lib/formatting";
@@ -40,6 +42,7 @@ import {
   hasNoRealSignal,
   humanize,
   identityOutcomeLabel,
+  lifecycleEventLabel,
   locationPrecisionLabel,
   opportunityReasonLabel,
   publicationStateLabel,
@@ -55,24 +58,10 @@ import {
 } from "@/app/(private)/lifecycle/actions";
 import {
   ExternalSourceLink,
-  ageDays,
 } from "@/app/(private)/lifecycle/_components/ui";
 import styles from "@/app/(private)/lifecycle/lifecycle.module.css";
 
 export const metadata: Metadata = { title: "Scheda della casa" };
-
-/**
- * La scheda di una casa che osserviamo.
- *
- * Prima era un dossier: otto riquadri di numeri, tre navigazioni sovrapposte e
- * una foto alta quanto lo schermo. Diceva tutto e non rispondeva a niente.
- *
- * Adesso l'ordine è quello delle domande vere. In alto chi è e cosa ci si fa
- * adesso — la decisione, con gli indizi che la reggono. Sotto, a sinistra, le
- * prove nel tempo: le foto e la riga di vita. A destra i numeri fermi: prezzo,
- * misure, chi la vende, dove sta. Le correzioni in fondo, perché si guarda
- * prima e si decide dopo.
- */
 
 /** I metodi che datano la casa guardando le foto, non l'annuncio. */
 function dataDallaFoto(method: string | null) {
@@ -106,27 +95,6 @@ function proveDistinte(evidence: LifecyclePropertyDetail["evidence"]) {
     (a.sourceRecordedAt ?? a.observedAt).localeCompare(
       b.sourceRecordedAt ?? b.observedAt,
     ),
-  );
-}
-
-/** Un numero fermo, con la sua etichetta. La griglia non cambia mai posto. */
-function Misura({
-  label,
-  children,
-  nota,
-}: Readonly<{ label: string; children: React.ReactNode; nota?: string }>) {
-  return (
-    <div className="min-w-0">
-      <Label>{label}</Label>
-      <p className="mt-0.5 text-[length:var(--lr-text-record)] text-[var(--lr-ink)]">
-        {children}
-      </p>
-      {nota ? (
-        <p className="mt-1 text-[length:var(--lr-text-meta)] leading-snug text-[var(--lr-ink-3)]">
-          {nota}
-        </p>
-      ) : null}
-    </div>
   );
 }
 
@@ -226,299 +194,64 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
   );
 }
 
-export function SchedaMercato({
-  detail,
-  user,
-  now,
-}: Readonly<{
-  detail: LifecyclePropertyDetail;
-  user: Awaited<ReturnType<typeof getCurrentUser>>;
-  now: number;
-}>) {
-  const property = detail.property;
-  const saleDate = detail.marketObservation?.soldAt ?? detail.marketObservation?.soldObservedAt;
-  const marketEnd = saleDate ? Date.parse(saleDate) : now;
-  const currentAsking = detail.marketObservation?.latestPrice ?? property.currentPrice;
-  const marketAnchor = property.earliestMarketEvidenceAt ?? property.firstSeenAt;
-  const giorniDiMercato = ageDays(marketAnchor, marketEnd);
-  const agenziaAttiva = property.agencies.find(
-    (agency) => agency.state === "ACTIVE",
-  );
-  const giorniInAgenzia = ageDays(agenziaAttiva?.firstSeenAt ?? null, now);
-  const indirizzo = property.address
-    ? formatShouty(property.address)
-    : formatShouty(property.title);
 
-  /* `rawText` è spesso il titolone dell'annuncio in stampatello: come posizione
-   * si scrivono via, zona e comune, che è quello che si stava cercando. */
-  const posizione = detail.location
-    ? [
-        ...new Set(
-          [
-            detail.location.streetName,
-            detail.location.locality,
-            detail.location.municipality,
-          ]
-            .filter(Boolean)
-            .map((parte) => formatShouty(String(parte))),
-        ),
-      ].join(" · ")
-    : null;
-  const dove = posizione || property.locality || null;
-  const prove = proveDistinte(detail.evidence);
-  const prezzoFonte = detail.publicationPrices?.find(price=>price.publicationId === (detail.marketObservation?.publicationId ?? detail.publications[0]?.id));
-  const prezzoIniziale = prezzoFonte?.firstPrice ?? null;
-  const scarto =
-    prezzoIniziale != null && prezzoFonte?.latestPrice != null
-      ? prezzoFonte.latestPrice - prezzoIniziale
-      : null;
-  const euroAlMq =
-    currentAsking != null && property.surfaceSqm
-      ? Math.round(currentAsking / property.surfaceSqm)
-      : null;
-  const indizi =
-    detail.opportunity && !hasNoRealSignal(detail.opportunity.reasons)
-      ? detail.opportunity.reasons
-      : [];
-  const forma = formaPosizione(detail.location);
+export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonly<{
+ detail:LifecyclePropertyDetail;user:Awaited<ReturnType<typeof getCurrentUser>>;now:number;children?:React.ReactNode;origin?:string;returnTo?:string;
+}>){
+ const property=detail.property;
+ const saleDate=detail.marketObservation?.soldAt??detail.marketObservation?.soldObservedAt;
+ const marketEnd=saleDate?Date.parse(saleDate):now;
+ const currentAsking=detail.marketObservation?.latestPrice??property.currentPrice;
+ const marketAnchor=property.earliestMarketEvidenceAt??property.firstSeenAt;
+ const indirizzo=formatShouty(property.address||property.title);
+ const dove=[...new Set([detail.location?.streetName,detail.location?.locality,detail.location?.municipality||property.locality].filter(Boolean))].join(" · ");
+ const euroAlMq=currentAsking!=null&&property.surfaceSqm?Math.round(currentAsking/property.surfaceSqm):null;
+ const prove=proveDistinte(detail.evidence);
+ const forma=formaPosizione(detail.location);
+ const source=detail.marketObservation?.sourceUrl??detail.publications[0]?.canonicalUrl??detail.privatePublications[0]?.canonicalUrl;
+ const recentEvents=[...detail.events].filter(e=>isMarketMove(e.eventType)).sort((a,b)=>b.occurredAt.localeCompare(a.occurredAt));
+ const indizi=detail.opportunity&&!hasNoRealSignal(detail.opportunity.reasons)?detail.opportunity.reasons:[];
+ const drops=detail.priceHistory.filter(e=>e.eventType==="PRICE_DROP").length;
+ const sourcePrice=detail.publicationPrices?.find(p=>p.publicationId===(detail.marketObservation?.publicationId??detail.publications[0]?.id));
+ const sourceCount=detail.publications.length+detail.privatePublications.length;
+ const context=dossierContext(origin,detail.marketObservation?.classification,property.saleStatus);
+ const returnHref=dossierReturn(returnTo,context.view);
+ const historyUrl=(page:number)=>"?"+new URLSearchParams({origine:context.view,ritorno:returnHref,storia:String(page)})+"#storico";
+ const historyFirst=context.view==="usciti"||context.view==="venduti";
 
-  return (
-    <div className="space-y-4">
-      {/* Dove sei e come si torna indietro: una riga sola, poi la casa. */}
-      <nav className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-        <Link
-          href="/intelligence"
-          className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--lr-ink)]"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          Archivio
-        </Link>
-        {dove ? (
-          <>
-            <span aria-hidden="true">/</span>
-            <span className="text-[var(--lr-ink-2)]">{dove}</span>
-          </>
-        ) : null}
-      </nav>
+ const historySection=(<section id="storico" className="lr-case-section"><h2>Storico e prove</h2><RigaDiVita eventi={detail.events} prove={prove}/><nav className="lr-radar-pagination" aria-label="Pagine dello storico">{(detail.historyPage??1)>1?<Link href={historyUrl((detail.historyPage??1)-1)} className={buttonClass("secondary",{compact:true})}>Più recenti</Link>:<span/>}<Meta>Pagina {detail.historyPage??1}</Meta>{detail.historyHasNext?<Link href={historyUrl((detail.historyPage??1)+1)} className={buttonClass("secondary",{compact:true})}>Precedenti</Link>:<span/>}</nav></section>);
+ return <div className="lr-case-page" data-context={context.tone}>
+  <header className="lr-case-header"><div><Link href={returnHref} className="lr-case-back"><ArrowLeft size={14} aria-hidden="true"/> Torna a {context.label}</Link><span className="lr-case-context-label">{context.label} · {context.view==="opportunita"?"Analisi":context.view==="venduti"?"Esito":context.view==="usciti"?"Storico":"Scheda immobile"}</span><h1>{indirizzo}</h1><p>{dove||"Posizione da verificare"}</p></div><Stato forma={formaFromPropertyState(property.propertyState)}>{propertyStateLabel(property.propertyState)}</Stato></header>
+  <div className="lr-case-grid">
+   <div className="lr-case-main" aria-label="Dossier dell’immobile">
+    <section id="panoramica" className="lr-case-overview">
+     <div className="lr-case-identity"><div><h2>{context.title}</h2><p>{context.description}</p></div><div className="lr-case-price"><strong>{formatCurrency(currentAsking)}</strong><span className="lr-case-price-label">{context.view==="venduti"||context.view==="usciti"?"Ultimo prezzo richiesto":"Prezzo richiesto"}</span><span>{euroAlMq!=null?formatNumber(euroAlMq)+" €/m²":"Prezzo richiesto"}</span></div></div>
+     <div className="lr-case-tags">{[property.propertyType?humanize(property.propertyType):null,property.surfaceSqm!=null?formatNumber(property.surfaceSqm)+" m²":null,property.rooms!=null?formatNumber(property.rooms)+" locali":null].filter(Boolean).map(t=><span key={t}>{t}</span>)}</div>
 
-      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 className="text-[length:var(--lr-text-section)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
-              {indirizzo}
-            </h1>
-            <Stato forma={formaFromPropertyState(property.propertyState)}>
-              {propertyStateLabel(property.propertyState)}
-            </Stato>
-          </div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-            {[
-              agenziaAttiva?.name ?? property.agencies[0]?.name ?? null,
-              property.propertyType ? humanize(property.propertyType) : null,
-              dove,
-              detail.location
-                ? locationPrecisionLabel(detail.location.precision)
-                : null,
-            ]
-              .filter(Boolean)
-              .map((pezzo, indice) => (
-                <span key={pezzo as string}>
-                  {indice ? "· " : ""}
-                  {pezzo}
-                </span>
-              ))}
-          </p>
-          {detail.marketObservation?.agentName ? <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">Agente dichiarato: {detail.marketObservation.agentName}{detail.marketObservation.sourceUrl ? <> · <a className="underline" href={detail.marketObservation.sourceUrl} target="_blank" rel="noreferrer">prova primaria</a></> : null}</p> : null}
-        </div>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {detail.publications[0]?.canonicalUrl ? (
-            <a
-              href={detail.publications[0].canonicalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonClass("secondary", { compact: true })}
-            >
-              Annuncio
-            </a>
-          ) : null}
-          <a
-            href="#correggi"
-            className={buttonClass("secondary", { compact: true })}
-          >
-            <FileCheck2 aria-hidden="true" className="size-4" />
-            Correggi
-          </a>
-        </div>
-      </header>
-
-      <nav aria-label="Sezioni del dossier" className="lr-dossier-nav">
-        {[["panoramica","Panoramica"],["storico","Storico e prove"],["pubblicazioni","Pubblicazioni"],["territorio","Territorio"],["eventi-pubblici","Trasformazioni"],["documenti","Documenti pubblici"]].map(([id,label])=><a key={id} href={`#${id}`} className={buttonClass("quiet",{compact:true})}>{label}</a>)}
-      </nav>
-
-      <section id="panoramica" className="lr-property-summary" aria-label="Informazioni principali">
-        <dl className="lr-property-facts">
-          <div><dt>Ultimo prezzo richiesto</dt><dd>{formatCurrency(currentAsking)}</dd>{euroAlMq?<Meta>{formatNumber(euroAlMq)} €/m²</Meta>:null}{scarto?<Meta>{scarto<0?"Ribasso":"Aumento"} di {formatCurrency(Math.abs(scarto))} sulla stessa pubblicazione</Meta>:null}</div>
-          <div><dt>Superficie</dt><dd>{property.surfaceSqm!=null?`${formatNumber(property.surfaceSqm)} m²`:"Non dichiarata"}</dd></div>
-          <div><dt>Locali</dt><dd>{property.rooms!=null?formatNumber(property.rooms):"Non dichiarati"}</dd></div>
-          <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><Meta>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</Meta></div>
-        </dl>
-        <p className="lr-record-meta">{detail.location?locationPrecisionLabel(detail.location.precision):"Posizione da verificare"} · Vendita: {property.saleStatus==="SOLD_CONFIRMED"?"confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"non venduto, confermato manualmente":"esito non confermato"}</p>
-        {detail.marketObservation?.soldAt?<Meta>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</Meta>:detail.marketObservation?.soldObservedAt?<Meta>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</Meta>:null}
-        {detail.marketObservation?.priceConflict?<Meta>Prezzi discordanti tra fonti: confronta le pubblicazioni qui sotto.</Meta>:null}
-      </section>
-
-      {/* Cosa fare adesso, con gli indizi che lo reggono. Mai il giudizio da
-        * solo: un giudizio senza gli indizi è un'opinione. */}
-      {detail.opportunity && indizi.length ? (
-        <details className="rounded-[var(--lr-radius-container)] border border-[var(--lr-line-quiet)] px-4 py-3">
-          <summary className="cursor-pointer font-medium">Interpretazione opportunità · {formatNumber(detail.opportunity.score??0)}/100</summary>
-          <div className="min-w-0 shrink-0">
-            <Label>Indizi osservati</Label>
-            <p className="mt-0.5 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-              {formatNumber(indizi.length)}{" "}
-              {indizi.length === 1 ? "indizio" : "indizi"} su{" "}
-              {formatNumber(Math.max(indizi.length, 4))}
-            </p>
-          </div>
-
-          <ul className="flex min-w-0 flex-wrap gap-1.5">
-            {indizi.map((reason) => (
-              <li
-                key={reason}
-                className="inline-flex min-h-8 items-center rounded-[var(--lr-radius-pill)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-3 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]"
-              >
-                {opportunityReasonLabel(reason)}
-              </li>
-            ))}
-          </ul>
-          {detail.opportunity?.evidenceSummary.components ? <details className="basis-full text-[length:var(--lr-text-meta)]">
-            <summary className="cursor-pointer py-2">Come si compone il punteggio</summary>
-            <ul className="space-y-1 py-2">{Object.entries(detail.opportunity.evidenceSummary.components as Record<string,unknown>).map(([key,points])=><li key={key}>{({observed_age:"Presenza osservata",price_drops:"Numero di ribassi",price_reduction:"Entità del ribasso",relistings:"Ripubblicazioni",unsold_exit:"Uscita senza prova di vendita",agency_change:"Cambio agenzia",pending_exit:"Uscita da verificare",agency_to_private:"Passaggio a privato"} as Record<string,string>)[key] ?? humanize(key)}: <strong>{String(points)} punti</strong></li>)}</ul>
-            <Meta>Regole versione {String(detail.opportunity.evidenceSummary.ruleVersion ?? 1)}. Priorità indicativa da verificare, non probabilità di acquisizione né scadenza dell’incarico.</Meta>
-          </details> : null}
-        </details>
-      ) : null}
-
-      <div className="lr-property-body">
-        <div className="space-y-4">
-          <MuroDiFoto
-            urls={detail.imageUrls}
-            alt={indirizzo}
-            didascalia={
-              dataDallaFoto(property.trueMarketStartMethod) &&
-              property.trueMarketStartLowerBound
-                ? `foto del ${formatDate(property.trueMarketStartLowerBound)} — la più vecchia che abbiamo`
-                : undefined
-            }
-          />
-
-        </div>
-
-        <div className="space-y-4">
-          <Card id="caratteristiche">
-            <CardHeader title="Caratteristiche e osservazioni"/>
-            <CardBody className="space-y-5">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-                <Misura label="Tipologia">{property.propertyType?humanize(property.propertyType):"Non dichiarata"}</Misura>
-                <Misura label="Posizione">{detail.location?locationPrecisionLabel(detail.location.precision):"Da verificare"}</Misura>
-                <Misura label="Ripubblicazioni">
-                  {formatNumber(property.relaunchCount)}
-                </Misura>
-                <Misura label="Osservata con questa agenzia">
-                  {giorniInAgenzia != null ? formatDays(giorniInAgenzia) : "—"}
-                </Misura>
-                <div className="col-span-2">
-                  <Misura
-                    label={Date.parse(marketAnchor)<Date.parse(property.firstSeenAt)?"Anzianità pubblica dimostrabile":"Durata del monitoraggio"}
-                    nota="Prima osservazione o data di pubblicazione dichiarata dalla fonte. Non indica l’inizio di un incarico."
-                  >
-                    {giorniDiMercato != null ? (
-                      <Dato
-                        certainty={certaintyFromConfidence(
-                          1,
-                        )}
-                      >
-                        {marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}
-                      </Dato>
-                    ) : (
-                      "non lo sappiamo"
-                    )}
-                  </Misura>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-
-        </div>
-      </div>
-
-      <div className="lr-property-sources">
-          <Card id="pubblicazioni">
-            <CardHeader
-              title="Chi la vende"
-              meta={`${formatNumber(property.agencies.length)} ${property.agencies.length === 1 ? "agenzia osservata" : "agenzie osservate"} · ${property.activePrivateCount ? `${formatNumber(property.activePrivateCount)} privato` : "nessun privato"}`}
-            />
-            <CardBody>
-              <ChiLaTiene detail={detail} />
-              {detail.publicationPrices?.length ? <details className="mt-4 border-t border-[var(--lr-line-quiet)] pt-2">
-                <summary className="cursor-pointer py-2 font-medium">Prezzi per pubblicazione</summary>
-                <ul className="space-y-3 py-2">{detail.publicationPrices.map(price=><li key={price.publicationId}>
-                  <a href={price.sourceUrl} target="_blank" rel="noreferrer" className="font-medium underline">{new URL(price.sourceUrl).hostname}</a>
-                  <p>Primo {formatCurrency(price.firstPrice)} · ultimo {formatCurrency(price.latestPrice)} · {price.dropCount} ribassi</p>
-                  {price.firstObservedAt ? <Meta>Primo prezzo osservato il {formatDate(price.firstObservedAt)}{price.latestObservedAt ? ` · ultimo prezzo documentato il ${formatDate(price.latestObservedAt)}` : ""}</Meta> : null}
-                  {price.dropDates?.length ? <Meta>Ribassi rilevati: {price.dropDates.map(date=>formatDate(date)).join(", ")}</Meta> : null}
-                </li>)}</ul>
-                <Meta>Le date dei ribassi indicano quando li abbiamo rilevati, non quando il portale li ha applicati.</Meta>
-              </details> : null}
-            </CardBody>
-          </Card>
-
-          {/* La mappa entra solo se abbiamo qualcosa da mostrarci: lo spillo
-            * dove la casa la conosciamo, l'area quando sappiamo la via e non il
-            * civico. Se non sappiamo dov'è, la scheda non compare: un riquadro
-            * che dice «posizione ignota» occupa spazio per dire niente. */}
-          {detail.location && forma !== "niente" ? (
-            <Card id="territorio">
-              <CardHeader
-                title="Dove si trova"
-                meta={locationPrecisionLabel(detail.location.precision)}
-              />
-              <CardBody className="space-y-2">
-                <MappaDellaCasa
-                  posizione={detail.location}
-                  etichetta={indirizzo}
-                />
-                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                  <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
-                  <Dato
-                    certainty={certaintyFromConfidence(
-                      detail.location.confidence,
-                      { manuallyVerified: detail.location.manuallyVerified },
-                    )}
-                  >
-                    {dove ?? "posizione parziale"}
-                  </Dato>
-                  {forma === "area" ? (
-                    <span>· la casa sta in quest&apos;area, non nel centro del cerchio</span>
-                  ) : null}
-                </p>
-              </CardBody>
-            </Card>
-          ) : null}
-      </div>
-
-      <div className="lr-property-history">
-          <section id="storico" className="scroll-mt-20"><RigaDiVita eventi={detail.events} prove={prove} /></section>
-          <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
-            {(detail.historyPage??1)>1?<Link href={`?storia=${(detail.historyPage??1)-1}`} className={buttonClass("secondary")}>Storico più recente</Link>:<span/>}
-            <Meta>Pagina {detail.historyPage??1} di eventi e prove</Meta>
-            {detail.historyHasNext?<Link href={`?storia=${(detail.historyPage??1)+1}`} className={buttonClass("secondary")}>Eventi e prove precedenti</Link>:null}
-          </nav>
-      </div>
-
-      {/* Le correzioni restano in fondo: si guarda prima, si decide dopo. */}
-      <details id="correggi" className="lr-property-corrections"><summary>Correggi o segnala un dato</summary><Card>
+     {context.view!=="mercato"?<section className="lr-case-focus" aria-label={"Sintesi "+context.label}>
+      <div className="lr-case-focus-heading"><h3>{context.view==="opportunita"?"Perché compare tra le opportunità":context.view==="venduti"?context.outcome:"Cosa è successo all’annuncio"}</h3>{context.view==="opportunita"&&detail.opportunity?.score!=null?<span>Indice {formatNumber(detail.opportunity.score)}/100</span>:null}</div>
+      {context.view==="opportunita"?<><ul>{indizi.length?indizi.map(reason=><li key={reason}>{opportunityReasonLabel(reason)}</li>):<li>La motivazione della segnalazione resta da verificare.</li>}</ul><p>Questi indizi non dimostrano intenzione di vendere o scadenza dell’incarico.</p></>:<>
+       <dl className="lr-case-outcome-facts">{context.view!=="venduti"?<div><dt>Classificazione attuale</dt><dd>{context.outcome}</dd></div>:null}<div><dt>Ultima presenza</dt><dd>{formatDate(property.lastSeenAt)}</dd></div><div><dt>{context.view==="venduti"?"Segnale di vendita":"Classificazione rilevata"}</dt><dd>{formatDate(context.view==="venduti"?saleDate:detail.marketObservation?.classifiedAt)}</dd></div></dl>
+       <p>{context.view==="venduti"?(context.confirmed?"La vendita risulta confermata dalle informazioni disponibili. Il prezzo effettivo di compravendita non è disponibile.":context.probable?"È presente un segnale probabile: la vendita resta da confermare. Il richiesto non è il prezzo di compravendita.":"Non risulta una vendita confermata. La vista di provenienza non costituisce una prova."):"L’uscita o l’assenza di un annuncio non dimostra una vendita. Lo storico mostra eventuali ripubblicazioni o cambi di agenzia."}</p><a href="#storico">Leggi lo storico e le prove ↓</a>
+      </>}
+     </section>:null}
+     <div className="lr-case-photo-summary">
+      <MuroDiFoto urls={detail.imageUrls} alt={indirizzo} didascalia={dataDallaFoto(property.trueMarketStartMethod)&&property.trueMarketStartLowerBound?"Foto datata "+formatDate(property.trueMarketStartLowerBound):undefined}/>
+      <div><h3 className="lr-case-label">In sintesi</h3><dl className="lr-case-summary">
+       <div><dt>{context.view==="venduti"?"Osservazione della vendita":"Presenza osservata"}</dt><dd>{context.view==="venduti"&&saleDate&&Date.parse(saleDate)<=Date.parse(property.firstSeenAt)?"Segnale già presente al primo riscontro":marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</dd><p>Prima osservazione: {formatDate(property.firstSeenAt)}</p></div>
+       <div><dt>Prezzo</dt><dd>{formatNumber(sourcePrice?.dropCount??drops)} ribassi registrati</dd><p>{detail.marketObservation?.priceConflict?"Prezzi discordanti tra le fonti":sourcePrice?.firstPrice!=null?"Primo prezzo: "+formatCurrency(sourcePrice.firstPrice):"Storico iniziale non disponibile"}</p></div>
+       <div><dt>Pubblicazioni</dt><dd>{formatNumber(sourceCount)} {sourceCount===1?"pubblicazione":"pubblicazioni"}</dd><p>{property.relaunchCount?formatNumber(property.relaunchCount)+" ripubblicazioni osservate":"Nessuna ripubblicazione registrata"}</p></div>
+       <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><p>{saleDate?"Segnale di vendita: "+formatDate(saleDate):property.saleStatus==="SOLD_CONFIRMED"?"Vendita confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"Non venduto, confermato manualmente":"Vendita non confermata"}</p></div>
+      </dl></div>
+     </div>
+    </section>
+    {historyFirst?historySection:null}
+    <section id="prezzi" className="lr-case-section"><h2>Storico del prezzo richiesto</h2><PropertyPriceHistory events={detail.priceHistory} currentPrice={currentAsking} conflict={detail.marketObservation?.priceConflict}/></section>
+    <section id="pubblicazioni" className="lr-case-section"><h2>Pubblicazioni e prezzi per fonte</h2><ChiLaTiene detail={detail}/>{detail.publicationPrices?.length?<div className="lr-case-price-sources">{detail.publicationPrices.map(price=><div key={price.publicationId}><a href={price.sourceUrl} target="_blank" rel="noreferrer">{new URL(price.sourceUrl).hostname.replace(/^www\./,"")}</a><span>{formatCurrency(price.firstPrice)} → {formatCurrency(price.latestPrice)}</span><span>{price.dropCount} ribassi</span></div>)}</div>:null}</section>
+    {detail.location&&forma!=="niente"?<section id="territorio" className="lr-case-section"><h2>Posizione <span>{locationPrecisionLabel(detail.location.precision)}</span></h2><MappaDellaCasa posizione={detail.location} etichetta={indirizzo}/><p className="lr-case-footnote"><MapPin size={13} aria-hidden="true"/>{dove}{forma==="area"?" · area indicativa, non posizione esatta dell’immobile":""}</p></section>:null}
+    {!historyFirst?historySection:null}
+    {children}
+          <details id="correggi" className="lr-property-corrections"><summary>Correggi o segnala un dato</summary><Card>
         <CardHeader
           title="Correggi quello che sappiamo"
           meta="Ogni correzione resta scritta con il tuo nome, la data e il motivo. Quello che confermi non viene più sovrascritto da solo."
@@ -636,6 +369,16 @@ export function SchedaMercato({
           )}
         </CardBody>
       </Card></details>
-    </div>
-  );
+
+   </div>
+   <aside className="lr-case-aside" aria-label="Azioni e riscontri">
+    <section><h2>Azioni</h2>{source?<><a href={source} target="_blank" rel="noreferrer" className="lr-case-source-button">Apri annuncio originale ↗</a><CopySourceLink url={source}/></>:<p className="lr-case-muted">Nessun annuncio originale collegato.</p>}<a href="#correggi" className="lr-case-copy"><FileCheck2 size={14} aria-hidden="true"/> Correggi o segnala un dato</a></section>
+    <section><h2>Verifiche aperte</h2><ul className="lr-case-checks">{detail.marketObservation?.priceConflict?<li>Prezzi discordanti tra fonti.</li>:null}{!detail.location||!detail.location.manuallyVerified?<li>Posizione {detail.location?locationPrecisionLabel(detail.location.precision).toLowerCase():"non disponibile"}, da verificare.</li>:null}{property.saleStatus!=="SOLD_CONFIRMED"&&property.saleStatus!=="NOT_SOLD_CONFIRMED"?<li>Esito della vendita non confermato.</li>:null}{!detail.marketObservation?.priceConflict&&detail.location?.manuallyVerified&&["SOLD_CONFIRMED","NOT_SOLD_CONFIRMED"].includes(property.saleStatus)?<li>Nessuna delle verifiche principali resta aperta.</li>:null}</ul></section>
+    {indizi.length&&(detail.opportunity?.score??0)>0&&(context.view==="mercato"||context.view==="opportunita")?<section><h2>Motivi della segnalazione</h2>{context.view!=="opportunita"?<ul className="lr-case-reasons">{indizi.map(reason=><li key={reason}>{opportunityReasonLabel(reason)}</li>)}</ul>:<a href="#panoramica" className="lr-case-text-link">Rileggi i motivi della segnalazione</a>}<p className="lr-case-muted">Indice {formatNumber(detail.opportunity?.score??0)}/100. Ordina gli indizi, non misura una probabilità di vendita.</p>{detail.opportunity?.evidenceSummary.components?<details><summary>Come si compone l’indice</summary><ul className="lr-case-muted">{Object.entries(detail.opportunity.evidenceSummary.components as Record<string,unknown>).map(([k,v])=><li key={k}>{({observed_age:"Presenza osservata",price_drops:"Ribassi",price_reduction:"Entità del ribasso",relistings:"Ripubblicazioni",unsold_exit:"Uscita senza vendita",agency_change:"Cambio agenzia",pending_exit:"Uscita da verificare",agency_to_private:"Passaggio a privato"} as Record<string,string>)[k]??humanize(k)}: {String(v)}</li>)}</ul></details>:null}</section>:null}
+    <section><h2>Ultimi eventi {detail.historyPage&&detail.historyPage>1?"in questa pagina":""}</h2>{recentEvents.length?<ol className="lr-case-events">{recentEvents.slice(0,5).map(e=><li key={e.id}><time>{formatDate(e.occurredAt)}</time><p>{lifecycleEventLabel(e.eventType)}</p><span>{e.actorType==="ADAPTER"?"Letto dalla fonte":e.actorType==="USER"?"Registrato manualmente":"Dedotto dal sistema"}</span></li>)}</ol>:<p className="lr-case-muted">Nessun cambiamento di mercato in questa pagina dello storico.</p>}<a href="#storico" className="lr-case-text-link">Tutto lo storico e le prove</a></section>
+    <section><h2>Fonti</h2>{detail.marketObservation?.agentName?<p className="lr-case-muted">Agente dichiarato: {detail.marketObservation.agentName}</p>:null}<ul className="lr-case-sources">{detail.publications.map(pub=><li key={pub.id}><a href={pub.canonicalUrl} target="_blank" rel="noreferrer">{pub.agencyName||getSourceLabel(pub.sourceKey)} ↗</a><span>Vista {formatDate(pub.lastSeenAt)}</span></li>)}{detail.privatePublications.map(pub=><li key={pub.id}><a href={pub.canonicalUrl} target="_blank" rel="noreferrer">{getSourceLabel(pub.source)} ↗</a><span>Vista {formatDate(pub.lastSeenAt)}</span></li>)}</ul></section>
+    <nav className="lr-case-section-links" aria-label="Sezioni del dossier"><a href="#prezzi">Storico prezzi</a><a href="#pubblicazioni">Pubblicazioni</a>{detail.location&&forma!=="niente"?<a href="#territorio">Posizione</a>:null}<a href="#eventi-pubblici">Trasformazioni</a><a href="#documenti">Documenti pubblici</a></nav>
+   </aside>
+  </div>
+ </div>;
 }
