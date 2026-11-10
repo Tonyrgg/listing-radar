@@ -2,7 +2,7 @@
 
 ## Stato della consegna
 
-Implementazione del 10 novembre 2026. Versione candidata **0.34.30**, non pubblicata sul canale aggiornamenti e non installata sui PC. La coda reale di Via Gorizia resta **stopped**. Nessun import o salvataggio CRM avviato durante questo intervento.
+Implementazione del 10 novembre 2026. Versione **0.34.30 pubblicata** su richiesta successiva dell'utente: [release GitHub](https://github.com/Tonyrgg/listing-radar/releases/tag/property-worker-v0.34.30), commit `0a39a08`, canale aggiornamenti e ricomposizione binaria verificati. L'installazione sui PC non è stata verificata. La coda reale di Via Gorizia resta **stopped**. Nessun import o salvataggio CRM avviato durante questo intervento.
 
 La migrazione **0063** per il coordinamento delle attività tra postazioni è applicata su Supabase. La verifica di disponibilità ha confermato RPC presente e zero prenotazioni: non sono stati inseriti contatti, immobili o attività di prova in produzione.
 
