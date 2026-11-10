@@ -45,8 +45,8 @@ describe("Opzioni operative V2, congelate per run", () => {
     await app.enqueue(keys); await app.startQueue(keys, { activityMode: "killer" }); await app.waitForIdle();
     expect(store.read().runs.at(-1)!.state).toBe("completed");
     expect(Object.values(store.read().runs.at(-1)!.applySources!).map(s => s.activity.description)).toEqual(["Non vende", "Ci abita", "Segreteria"]);
-    expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito", "Eseguito", "Eseguito"]);
-    expect(runActivitySummary(store.read(), store.read().runs.at(-1)!)).toEqual({ created: 3, recovered: 0, disabled: 0, unconfirmed: 0 });
+    expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito"]);
+    expect(runActivitySummary(store.read(), store.read().runs.at(-1)!)).toEqual({ created: 1, recovered: 0, coveredProperty:0,coveredClient:2,disabled: 0, unconfirmed: 0 });
     const summaryState = store.read(), summaryRun = summaryState.runs.at(-1)!;
     summaryRun.imports![keys[0]!]!.proof!.evidence!.operationId = "old-operation";
     expect(runActivitySummary(summaryState, summaryRun).unconfirmed).toBe(1);

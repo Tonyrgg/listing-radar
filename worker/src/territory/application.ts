@@ -24,6 +24,7 @@ import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import { canEnableQueuedActivity, runActivitySummary } from "./activity-plan.js";
 import { recordCandidateLookupTiming } from "./import-timing.js";
+import {planActivityCandidates} from '../import-v2/activity-policy.js';
 
 const now = () => new Date().toISOString();
 const publicRun = ({ applySources: sources, checkpoint: _checkpoint, ...run }: Run) => ({ ...run,
@@ -38,6 +39,19 @@ export class TerritoryApplication {
   constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000) {}
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null; }
+  previewQueueActivities(keys:string[],value?:unknown){
+    const settings=runSettings(value),state=this.store.read();
+    const sources=[...new Set(keys)].map((key,index)=>{
+      const unit=state.units[key];if(!unit||!state.importQueue?.[key])throw Error('La coda è cambiata: aggiorna la selezione');
+      const recovery=pendingUnitImport(state,key);
+      if(recovery){
+        return settings.activityMode!=='none'&&canEnableQueuedActivity(recovery.checkpoint)
+          ?sourceForApply(recovery.source,{...recovery.settings,activityMode:settings.activityMode},true,index+1):recovery.source;
+      }
+      return sourceForApply(effectiveSource(unit),settings,true,index+1);
+    });
+    return {...planActivityCandidates(sources),revision:this.store.revision};
+  }
   refreshAuthorization() { this.presentationRevision++; this.changed(); }
   importQueue() {
     const state = this.store.read();
@@ -126,7 +140,7 @@ export class TerritoryApplication {
     const matching = observations.filter(o => o.source.jobId === currentSource?.jobId);
     const acquiredAt = observations.find(o => o.source.sourcePropertyId === currentSource?.sourcePropertyId)?.at ?? (matching.length === 1 ? matching[0]!.at : null);
     const currentItem = currentKey && currentSource ? { key: currentKey, source: currentSource, position: unitPosition(currentSource), note: state.units[currentKey]?.note ?? "", acquiredAt, crmId: state.checkpoints[currentSource.sourcePropertyId]?.crmPropertyId ?? null, stage: this.active?.stage ?? "queued", attempt: this.active?.attempt ?? 1 } : null;
-    return { currentItem, revision: this.store.revision, presentationRevision: this.presentationRevision, minute: Math.floor(Date.now() / 60000), queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: streetSummaries(state), activeRun: activeRun ? publicRun(activeRun) : null };
+    return { currentItem, revision: this.store.revision, presentationRevision: this.presentationRevision, minute: Math.floor(Date.now() / 60000), queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: streetSummaries(state), activeRun: activeRun ? {...publicRun(activeRun),activitySummary:runActivitySummary(state,activeRun)} : null };
   }
   detail(streetId: string) {
     const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);
@@ -402,7 +416,7 @@ export class TerritoryApplication {
                 try { fresh = await this.readCandidates(run, street, source, attempt + 1); break; }
                 catch (error) {
                   const failure = failureFromError(error, "planned");
-                  if (failure.global || !failure.retryable || attempt >= 1 || this.isPaused()) throw error;
+                  if (failure.global || !failure.retryable || failure.details.readRecoveryExhausted || attempt >= 1 || this.isPaused()) throw error;
                   await (await this.provider.port()).recover("planned", error);
                 }
               }
@@ -431,7 +445,7 @@ export class TerritoryApplication {
               const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
                 this.provider.rememberCloud?.(state);
                 appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-              }), { isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
+              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:()=>this.store.readSelected(state=>Object.values(state.checkpoints)),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
               const outcome = await engine.run(plan.source, (stage, retry) => {
                 if (this.active && (this.active.stage !== stage || this.active.attempt !== retry.attempt)) {
                   this.active.stage = stage; this.active.attempt = retry.attempt; this.changed();

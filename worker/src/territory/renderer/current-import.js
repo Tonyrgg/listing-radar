@@ -5,7 +5,7 @@ export const importStageLabels = {
   queued: 'Confronto con Tecnocloud', planned: 'Verifico i proprietari', people_resolved: 'Aggiorno le anagrafiche',
   people_synced: 'Identifico la scheda immobile', property_resolved: 'Salvo i dati immobile',
   property_synced: 'Collego gli intestatari', ownerships_synced: 'Verifico la scheda salvata',
-  verified: 'Compilo l’attività', activity_synced: 'Registro il risultato', completed: 'Import verificato',
+  verified: 'Verifico le attività e completo la lavorazione', activity_synced: 'Registro l’esito dell’attività', completed: 'Lavorazione verificata',
 };
 export function currentImportHtml(item, run, { escape, date }) {
   if (!item) return '<p class="meta">Preparo il primo immobile della selezione…</p>';

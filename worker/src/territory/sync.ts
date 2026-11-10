@@ -6,6 +6,7 @@ import type { TerritoryState } from "./model.js";
 import type { TerritoryStore } from "./store.js";
 import { validateCloudMemory } from "./cloud-memory.js";
 import { diffRecords, mergeTerritory, recordsState, syncRecords, type SyncRecord } from "./sync-records.js";
+import {SharedActivityWriteGuard} from './activity-write-guard.js';
 
 export type TerritorySyncConfig = { url: string; key: string; workspaceId: string; ownerId: string; profileKind: "live" | "simulation"; environment?: "online" };
 export type SyncBinding = { revision: number; localHash: string; syncedAt: string | null; workspaceId?: string; ownerId?: string; profileKind?: string; url?: string; baseline?: TerritoryState };
@@ -38,6 +39,7 @@ function validateState(state: TerritoryState, kind: TerritorySyncConfig["profile
   }
 }
 export class TerritorySync {
+  activityWriteGuard(){return new SharedActivityWriteGuard(this.client,this.config);}
   private readonly client: SupabaseClient;
   private digestCache: { revision: number; hash: string; conflicts: NonNullable<TerritoryState["syncConflicts"]>[string][] } | null = null;
   private bindingCache: { stamp: string; value: SyncBinding } | null = null;

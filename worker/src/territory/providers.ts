@@ -1,6 +1,8 @@
 ﻿import { randomUUID } from "node:crypto";
 import type { CrmPersonSnapshot, CrmPropertySnapshot, CrmPropertySummary, ImportV2Plan, SourceProperty } from "../import-v2/model.js";
-import type { MergeRequest, OwnershipWrite, OwnershipSyncOptions, TecnocloudV2Port } from "../import-v2/ports.js";
+import type {ActivityWriteRequest, MergeRequest, OwnershipWrite, OwnershipSyncOptions, TecnocloudV2Port } from "../import-v2/ports.js";
+import {romeDay} from '../import-v2/activity-policy.js';
+import type {CrmActivityHistory} from '../import-v2/model.js';
 import { isManagedCrmOwnership } from "../import-v2/ownership-policy.js";
 import type { PersonWriteModel } from "../import-v2/contacts.js";
 import { sameCadastralIdentity } from "../import-v2/identity.js";
@@ -13,6 +15,7 @@ export type ScanContext = { portfolio?: boolean; reused?: boolean; ownersComplet
 export type ScanSink = (source: SourceProperty, context?: ScanContext) => Promise<void>;
 const simulatedSearchMatch = (source: SourceProperty["cadastral"], candidate: CrmPropertySummary["cadastral"]) => sameCadastralIdentity({ ...source, income: null, subaltern: source.subaltern.trim() || candidate?.subaltern || "" }, candidate ? { ...candidate, income: null } : null);
 export interface TerritoryProvider {
+  activityWriteGuard?:()=>import('../import-v2/activity-write-guard.js').ActivityWriteGuard|undefined;
   origin: "simulation" | "live";
   rememberCloud?(state: import("./model.js").TerritoryState): void;
   beginOperation?(operation: "scan" | "compare" | "apply"): void;
@@ -95,18 +98,29 @@ class VirtualCrmPort implements TecnocloudV2Port {
     });
   }
   async readProperty(id: string) { const p = this.store.read().virtualCrm[id]; if (!p) throw new Error("Scheda di prova assente"); return p; }
-  async ensureActivity(propertyId: string, plan: ImportV2Plan) {
+  async readActivityHistory(propertyId:string,clientId:string):Promise<CrmActivityHistory>{
+    const state=this.store.read(),records=Object.values(state.virtualActivities??{});
+    const rows=records.map(row=>({id:row.id,propertyId:row.propertyId,clientId:row.clientId??state.virtualCrm[row.propertyId]?.owners.find(o=>o.role==='Proprietario Principale')?.personId??null,
+      activityDate:row.activityDate??null,createdAt:row.createdAt??null,description:row.activity.description??'',status:row.activity.status}));
+    const incomplete=rows.some(row=>(row.propertyId===propertyId||row.clientId===clientId)&&(!row.activityDate&&!row.createdAt));
+    return {records:rows,propertyComplete:!incomplete,clientComplete:!incomplete,checkedAt:new Date().toISOString()};
+  }
+  async ensureActivity(propertyId: string, plan: ImportV2Plan,request?:ActivityWriteRequest) {
     if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled" as const };
-    return this.store.change(s => {
+    if(request&&!request.state.submittedAt){request.state={...request.state,submittedAt:new Date().toISOString()};await request.persist(request.state);}
+    const result=await this.store.change(s => {
       const activities = s.virtualActivities ??= {};
       const key = `${propertyId}|${plan.source.sourcePropertyId}`;
       if (activities[key]) return { activityId: activities[key].id, outcome: "existing" as const,
         descriptionVerified: activities[key].activity.description === plan.source.activity.description,
         statusVerified: activities[key].activity.status === plan.source.activity.status, expectedStatus: plan.source.activity.status };
       const id = randomUUID();
-      activities[key] = { id, propertyId, activity: structuredClone(plan.source.activity) };
-      return { activityId: id, outcome: "created" as const, descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status };
+      activities[key] = { id, propertyId, activity: structuredClone(plan.source.activity),clientId:request?.client?.id??s.virtualCrm[propertyId]?.owners.find(o=>o.role==='Proprietario Principale')?.personId,activityDate:romeDay(new Date()),createdAt:new Date().toISOString() };
+      return { activityId: id, outcome: "created" as const, descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status,
+        propertyId,clientId:activities[key].clientId,activityDay:activities[key].activityDate,checkedAt:new Date().toISOString() };
     });
+    if(request){request.state={...request.state,savedActivityId:result.activityId};await request.persist(request.state);}
+    return result;
   }
   async recover() {}
 }

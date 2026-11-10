@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   configureTests: value => ipcRenderer.invoke('territory:configure-tests', value),
   detail: id => ipcRenderer.invoke('territory:detail', id),
   queue: () => ipcRenderer.invoke('territory:queue'),
+  queuePreview: value => ipcRenderer.invoke('territory:queue-preview',value),
   enqueue: value => ipcRenderer.invoke('territory:queue-add', value),
   dequeue: value => ipcRenderer.invoke('territory:queue-remove', value),
   clearQueue: value => ipcRenderer.invoke('territory:queue-clear', value),

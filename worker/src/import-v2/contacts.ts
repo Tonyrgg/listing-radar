@@ -45,6 +45,18 @@ export type PersonWriteModel = {
   privateNotes: string | null;
 };
 
+/** An exact current snapshot can avoid opening and saving an unchanged form.
+ * Missing fields are never treated as evidence of equality. */
+export function personNeedsWrite(existing:CrmPersonSnapshot,desired:PersonWriteModel):boolean{
+  const text=(value:string|null|undefined)=>String(value??'').trim().replace(/\s+/g,' ').toLocaleUpperCase('it-IT');
+  const values=(items:string[],normalize:(s:string)=>string)=>[...new Set(items.map(normalize).filter(Boolean))].sort().join('|');
+  return existing.taxCode!==desired.taxCode||existing.firstName==null||existing.lastName==null
+    ||text(existing.firstName)!==text(desired.firstName)||text(existing.lastName)!==text(desired.lastName)
+    ||text(existing.birthDate)!==text(desired.birthDate)||text(existing.birthPlace)!==text(desired.birthPlace)||text(existing.birthProvince)!==text(desired.birthProvince)
+    ||values(existing.phones,canonicalPhone)!==values(desired.phones,canonicalPhone)||values(existing.emails,canonicalEmail)!==values(desired.emails,canonicalEmail)
+    ||(existing.privateNotes??'').trim()!==(desired.privateNotes??'').trim();
+}
+
 export const PHONE_FIELD_LABELS = ["Cellulare", "Telefono fisso", "Telefono Ufficio", "Altro telefono"] as const;
 export type PhoneFieldLabel = (typeof PHONE_FIELD_LABELS)[number];
 

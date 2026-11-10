@@ -899,7 +899,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .reverse()
             .map(
               (run) =>
-                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " import riusciti su " + run.total : run.handled + " immobili"}</p>${run.operation === 'scan' && (run.reusedKeys?.length || run.portfolioKeys?.length) ? `<p class="meta">${run.reusedKeys?.length || 0} riutilizzati dalla memoria · ${run.portfolioKeys?.length || 0} trovati nei portafogli</p>` : ''}<p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
+                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " lavorazioni verificate su " + run.total : run.handled + " immobili"}</p>${run.operation === 'scan' && (run.reusedKeys?.length || run.portfolioKeys?.length) ? `<p class="meta">${run.reusedKeys?.length || 0} riutilizzati dalla memoria · ${run.portfolioKeys?.length || 0} trovati nei portafogli</p>` : ''}<p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
             )
             .join("") ||
           '<li class="explanation">Nessuna operazione su questa via.</li>'

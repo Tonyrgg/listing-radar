@@ -22,7 +22,6 @@ import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
 import { resolveSyncConflict } from "./sync-records.js";
-import { canEnableQueuedActivity } from "./activity-plan.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), ownershipParts: z.array(z.object({ rightType: z.string().max(200), shareOriginal: z.string().max(100) })).max(100).optional(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -123,7 +122,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store);
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard());
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {
@@ -194,6 +193,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     });
     handle("detail", value => application.detail(id.parse(value)));
     handle("queue", () => application.importQueue());
+    handle('queue-preview',value=>{const v=z.object({keys:z.array(id).max(10000),settings:z.unknown().optional()}).strict().parse(value);return application.previewQueueActivities(v.keys,v.settings);});
     handle("queue-add", value => { const v = z.object({ keys: z.array(id).min(1).max(10000), streetId: id.optional() }).strict().parse(value); return application.enqueue(v.keys, v.streetId); });
     handle("queue-remove", value => { const v = z.object({ keys: z.array(id).min(1).max(10000) }).strict().parse(value); return application.dequeue(v.keys); });
     handle("queue-clear", value => { const v = z.object({ revision: z.number().int().nonnegative() }).strict().parse(value); return application.clearQueue(v.revision); });
@@ -220,19 +220,14 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const state = store.read();
         const settings = runSettings(v.settings);
         const recoveries = v.selected.map(key => pendingUnitImport(state, key)).filter(r => r !== null);
-        const activityCount = v.selected.filter(key => {
-          const recovery = pendingUnitImport(state, key);
-          if (recovery) return recovery.source.activity.enabled || settings.activityMode !== "none" && canEnableQueuedActivity(recovery.checkpoint);
-          if (settings.activityMode === "none") return false;
-          return Boolean(state.units[key]);
-        }).length;
-        const activityText = activityCount
-          ? `Il piano prevede ${activityCount} attività. Opzione scelta: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. La scelta vale anche per gli immobili dello storico e dei portafogli selezionati. I piani senza attività possono attivarla; un'attività già inviata da verificare conserva le opzioni originali.`
+        const activityPlan = application.previewQueueActivities(v.selected, settings);
+        const activityText = activityPlan.enabled
+          ? `Al massimo ${activityPlan.candidateActivities} nuove attività per ${activityPlan.enabled} immobili: gli immobili dello stesso cliente sono raggruppati. Le attività già inserite nel mese sull'immobile o oggi sul cliente possono ridurre ancora il totale. Si controlla la data di inserimento, non la scadenza. Opzione scelta: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. I piani senza attività possono attivarla; un'attività già inviata da verificare conserva le opzioni originali.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
-          type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",
+          type: "warning", title: operational ? "Conferma lavorazione nel gestionale" : "Schede di prova concordate",
           message: `Applicare le modifiche a ${v.selected.length} immobili selezionati nel gestionale reale?`,
-          detail: `Per i nuovi lavori saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.replaceUnlistedPrimary ? "Un principale Cloud verificato ma assente dagli intestatari SISTER verrà sostituito con quello con quota maggiore; a parità di quota, il primo SISTER." : "Il principale Cloud viene conservato."} ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${recoveries.length ? `${recoveries.length} immobili hanno scritture da verificare: conservano dati e opzioni originali, indicati nel riepilogo della coda.` : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Ogni successo viene conservato subito. Gli immobili non conclusi restano in coda, senza una run da riprendere.`,
+          detail: `Per i nuovi lavori saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.replaceUnlistedPrimary ? "Un principale Cloud verificato ma assente dagli intestatari SISTER verrà sostituito con quello con quota maggiore; a parità di quota, il primo SISTER." : "Il principale Cloud viene conservato."} ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${recoveries.length ? `${recoveries.length} immobili hanno scritture da verificare: conservano dati e opzioni originali, indicati nel riepilogo della coda.` : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Una lavorazione con attività termina solo dopo aver verificato l'attività inserita o quella già presente che la copre. I lavori senza attività restano distinti. Gli esiti sono conservati subito; gli immobili non conclusi restano in coda.`,
           buttons: ["Torna al piano", operational ? "Applica agli immobili selezionati" : "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return null;

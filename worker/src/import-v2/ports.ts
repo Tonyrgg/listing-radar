@@ -12,6 +12,7 @@ import type {
   SourceProperty,
   SyncedPerson,
 } from "./public-types.js";
+import type {ActivityEvidence,CrmActivityHistory} from './model.js';
 
 export type OwnershipSyncOptions = {
   /** Explicit V2 policy: replace a principal who is absent from verified SISTER owners. */
@@ -59,17 +60,14 @@ export interface TecnocloudV2Port {
   /** Identity-only reread for candidate lookup; final verification still requires readProperty. */
   readPropertyIdentity?(propertyId: string): Promise<CrmPropertySummary>;
   readProperty(propertyId: string): Promise<CrmPropertySnapshot>;
-  ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest): Promise<{
-    activityId: string | null;
-    outcome: "created" | "existing" | "disabled";
-    descriptionVerified?: boolean;
-    statusVerified?: boolean;
-    expectedStatus?: "Da eseguire" | "Eseguito";
-  }>;
+  readActivityHistory?(propertyId:string,clientId:string):Promise<CrmActivityHistory>;
+  ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest): Promise<ActivityEvidence>;
   recover(stage: ImportV2Checkpoint["stage"], error: unknown): Promise<void>;
 }
 
 export type ActivityWriteRequest = {
+  client?:{id:string;name:string;taxCode:string;phones:string[]};
+  history?:{propertyId:string;clientId:string;baselineIds:string[];checkedAt:string};
   state: NonNullable<ImportV2Checkpoint["activityWrite"]>;
   /** Must commit before clicking Save; a failed commit forbids the CRM write. */
   persist: (state: NonNullable<ImportV2Checkpoint["activityWrite"]>) => Promise<void>;

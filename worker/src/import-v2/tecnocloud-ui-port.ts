@@ -1,5 +1,11 @@
 import type { Locator, Page, Request, Response } from "playwright";
 import { cloudActivityEvidence } from "./activity-evidence.js";
+import {readCrmActivityHistory} from './activity-history-reader.js';
+import {activityTaskFragments,mergeTaskFragment,savedActivityIds,taskSnapshot,type TaskFragment} from './activity-records.js';
+import {activityDay} from './activity-policy.js';
+import type {ActivityEvidence,CrmActivitySnapshot} from './model.js';
+import {readActivityDetailDom} from './activity-detail-reader.js';
+import {activityResponseText} from './activity-response.js';
 
 import { ImportV2Error } from "./errors.js";
 import { logger } from "../logger.js";
@@ -322,6 +328,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       isInterruptionRequested?: () => boolean;
       cadastralLookupOnly?: boolean;
       recoverReadLoading?: boolean;
+      maxReadRecoveries?:number;
       submittedActivities?: Set<string>;
     } = {},
   ) { this.submittedActivities = options.submittedActivities ?? new Set<string>(); }
@@ -375,8 +382,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     for (let attempt = 0; ; attempt++) {
       try { return await this.action(label, operation); }
       catch (error) {
-        if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable || attempt >= 3
+        if (!this.options.recoverReadLoading || !(error instanceof ImportV2Error) || error.kind !== "transient_portal" || !error.options.retryable
           || !/timeout|caricament|non disponibile entro|non si è aperto|lookup non è tornato|non ha completato|ricerca immobili non confermata|ricerca CF.*ambigua|CF non è rimasto stabile/i.test(error.message)) throw error;
+        if(attempt>=(this.options.maxReadRecoveries??3))throw new ImportV2Error(error.message,error.kind,{...error.options,details:{...error.options.details,readRecoveryExhausted:true}});
         this.throwIfInterruptionRequested();
         await this.assertSession();
         // A dialog may contain a pending/uncertain write. Keep its checkpoint
@@ -2795,13 +2803,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return this.one(cards.filter({ hasNot: cards }), "Attività e appuntamenti", 20_000);
   }
 
-  private async readActivityEvidence(propertyId: string, description: string, status: string, scope?: { excludedIds: ReadonlySet<string>; submitted: boolean }): Promise<{
+  async readActivityHistory(propertyId:string,clientId:string){
+    return this.action('Storico attività',()=>readCrmActivityHistory(this.page,{propertyId,clientId,
+      propertyUrl:this.propertyUrl(propertyId),clientUrl:this.personUrl(clientId),assertSession:()=>this.assertSession(),stopOnPropertyCoverage:true}));
+  }
+
+  private async readActivityEvidence(propertyId: string, description: string, status: string, scope?: { excludedIds: ReadonlySet<string>; submitted: boolean; activityId?:string;clientId?:string }): Promise<{
     card: Locator;
     activityId: string | null;
     found: boolean;
     descriptionVerified: boolean;
     statusVerified: boolean;
     knownIds: string[];
+    task?:CrmActivitySnapshot;
   }> {
     const expected = normalized(description);
     const expectedStatus = normalized(status);
@@ -2809,13 +2823,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     let responseActivityId: string | null = null;
     let unresolvedResponse = false;
     const knownIds = new Set<string>();
+    const fragments=new Map<string,TaskFragment>();
     const responseTasks = new Set<Promise<void>>();
     const requests = this.watchSearchRequests();
     const inspect = (response: Response) => {
       if (!response.ok() || !["xhr", "fetch"].includes(response.request().resourceType())) return;
       let task: Promise<void>;
-      task = response.text().then((body) => {
-        const evidence = cloudActivityEvidence(body, propertyId, description, status, scope?.excludedIds);
+      task = activityResponseText(response).then((body) => {
+        for(const row of activityTaskFragments(body,scope?.clientId))mergeTaskFragment(fragments,row);
+        const evidence = cloudActivityEvidence(body, propertyId, description, status, scope?.excludedIds,scope?.activityId);
         for (const id of evidence.knownIds) knownIds.add(id);
         if (evidence.found) { responseMatched = true; responseActivityId = evidence.activityId; }
         if (evidence.unresolved) unresolvedResponse = true;
@@ -2852,6 +2868,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const visibleMatched = visibleRows.some(({ text, ids }) => {
         const id = ids.find(id => !scope?.excludedIds.has(id.slice(0, 15)));
         if (scope && !id) return false;
+        if(scope?.activityId&&id?.slice(0,15)!==scope.activityId.slice(0,15))return false;
         const value = normalized(text);
         const statuses = value.match(/(?:NON\s+)?ESEGUITO|DA ESEGUIRE/g) ?? [];
         const descriptionMatches = scope ? text.split(/\r?\n/).some(line => normalized(line).replace(/^DESCRIZIONE\s*:?\s*/, "") === expected) : value.includes(expected);
@@ -2859,11 +2876,39 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (matches) visibleId = id ?? null;
         return matches;
       });
-      const found = responseMatched || visibleMatched;
+      // A related-list response can omit WhatId/Status. Follow the actual
+      // persisted Task link once, instead of reloading the same list three times.
+      const suspects=[...fragments.values()].filter(row=>(!scope?.activityId||sameCrmRecordId(row.id,scope.activityId))
+        &&!scope?.excludedIds.has(row.id.slice(0,15))&&normalized(row.description)===expected);
+      for(const suspect of suspects.slice(0,10)){
+        const needsDetail=!responseMatched||scope?.clientId&&!taskSnapshot(suspect);
+        if(!needsDetail)break;
+        const link=this.page.locator(`a[href*="${suspect.id.slice(0,15)}"]`).filter({visible:true});
+        if(await link.count()!==1)continue;
+        const href=await link.getAttribute('href');if(!href)continue;
+        const target=new URL(href,this.page.url());if(target.origin!==new URL(this.page.url()).origin)continue;
+        await this.page.goto(target.href,{waitUntil:'commit',timeout:20_000});
+        let stable=0;
+        for(let wait=0;wait<32&&stable<3;wait++){
+          await this.assertSession();stable=!requests.pending()&&!responseTasks.size&&!(await this.searchIsBusy())?stable+1:0;
+          if(stable<3)await this.pauseAwareWait(250);
+        }
+        await Promise.all(responseTasks);
+        const detail=await readActivityDetailDom(this.page,suspect.id);
+        if(detail){
+          mergeTaskFragment(fragments,detail);
+          const row=fragments.get(suspect.id.slice(0,15));
+          const evidence=cloudActivityEvidence(JSON.stringify({Id:row?.id,WhatId:row?.propertyId,Description:row?.description,Status:row?.status}),propertyId,description,status,scope?.excludedIds,scope?.activityId);
+          if(evidence.found){responseMatched=true;responseActivityId=evidence.activityId;}
+        }
+      }
+      const candidateId=(responseActivityId??visibleId) as string|null;
+      const snapshot=candidateId?taskSnapshot(fragments.get(candidateId.slice(0,15))??{id:candidateId}):null;
+      const found = (responseMatched || visibleMatched)&&(!scope?.clientId||Boolean(snapshot?.clientId&&sameCrmRecordId(snapshot.clientId,scope.clientId)&&activityDay(snapshot)));
       const descriptionVerified = found;
       const statusVerified = found;
-      if (!found && unresolvedResponse) throw new ImportV2Error("Un'attività CRM corrispondente non espone immobile o stato verificabili: recupero la lettura senza creare duplicati", "transient_portal", { retryable: true });
-      return { card, activityId: responseActivityId ?? visibleId, found, descriptionVerified, statusVerified, knownIds: [...knownIds] };
+      if (!found && unresolvedResponse) throw new ImportV2Error("L’attività CRM non espone ancora immobile, cliente o stato verificabili. Conservo il checkpoint senza ripetere il salvataggio.", "verification_failed");
+      return { card, activityId: candidateId, found, descriptionVerified, statusVerified, knownIds: [...knownIds],...(snapshot?{task:snapshot}:{}) };
     } finally {
       this.page.off("response", inspect);
       requests.stop();
@@ -2896,13 +2941,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
   }
 
-  async ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest): Promise<{
-    activityId: string | null;
-    outcome: "created" | "existing" | "disabled";
-    descriptionVerified?: boolean;
-    statusVerified?: boolean;
-    expectedStatus?: "Da eseguire" | "Eseguito";
-  }> {
+  async ensureActivity(propertyId: string, plan: ImportV2Plan, request?: ActivityWriteRequest): Promise<ActivityEvidence> {
     if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled", descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status };
     if (this.dryRun) return { activityId: null, outcome: "existing", expectedStatus: plan.source.activity.status };
     if (request?.state.legacyUncertain) throw new ImportV2Error("Attività di un vecchio lavoro dall'esito incerto: manca il riferimento del salvataggio. Immobile conservato; attività da verificare senza creare duplicati", "verification_failed");
@@ -2910,8 +2949,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       await this.page.bringToFront();
       const description = plan.source.activity.description?.trim() || "Inserire attività";
       const submissionKey = request ? `${propertyId}|${request.state.operationId}` : propertyId;
-      const scope = request ? { excludedIds: new Set(request.state.baselineIds), submitted: Boolean(request.state.submittedAt) } : undefined;
-      const before = await this.readActivityEvidence(propertyId, description, plan.source.activity.status, scope);
+      const scope = request ? { excludedIds: new Set(request.state.baselineIds), submitted: Boolean(request.state.submittedAt),
+        activityId:request.state.savedActivityId,...(request.state.submittedAt&&request.client?{clientId:request.client.id}:{}) } : undefined;
+      const checked=request?.history;
+      const checkedAt=checked?Date.parse(checked.checkedAt):NaN;
+      const freshHistory=Boolean(checked&&request?.client&&!request.state.submittedAt&&sameCrmRecordId(checked.propertyId,propertyId)
+        &&sameCrmRecordId(checked.clientId,request.client.id)&&Number.isFinite(checkedAt)&&Date.now()-checkedAt>=0&&Date.now()-checkedAt<60_000);
+      // The calendar checks already read the complete history. Keep that exact
+      // baseline instead of loading and parsing the same list a second time.
+      const before = freshHistory
+        ?{card:await this.activityCard(propertyId),activityId:null,found:false,descriptionVerified:false,statusVerified:false,knownIds:checked!.baselineIds,task:undefined}
+        :await this.readActivityEvidence(propertyId, description, plan.source.activity.status, scope);
       if (before.found && (!request || request.state.submittedAt)) {
         return {
           activityId: before.activityId,
@@ -2919,6 +2967,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           descriptionVerified: before.descriptionVerified,
           statusVerified: before.statusVerified,
           expectedStatus: plan.source.activity.status,
+          ...(before.task?{propertyId,clientId:before.task.clientId??undefined,activityDay:activityDay(before.task)??undefined,checkedAt:new Date().toISOString()}:{}),
         };
       }
       if (request?.state.submittedAt || this.submittedActivities.has(submissionKey)) {
@@ -2941,6 +2990,17 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       let clientValue = (await client.inputValue()).trim();
       for (let wait = 0; !clientValue && wait < 10; wait += 1) { await this.pauseAwareWait(250); clientValue = (await client.inputValue()).trim(); }
       if (!clientValue) throw new ImportV2Error("Cliente obbligatorio dell’attività non valorizzato", "transient_portal", { retryable: true });
+      if(request?.client){
+        const field=dialog.locator('c-input-field:has-text("Cliente")').filter({visible:true});
+        const lookup=field.locator('c-lookup');
+        if(await lookup.count()===1)await this.fillPersonLookup(lookup,client,request.client.id,personLookupTerms(request.client.name,request.client.taxCode),dialog,1,'Cliente attività',request.client.phones);
+        const actual=await field.evaluate(element=>{
+          const component=element as HTMLElement&{value?:unknown};
+          const nested=component.querySelector('c-lookup') as HTMLElement&{value?:unknown}|null;
+          return typeof nested?.value==='string'?nested.value:typeof component.value==='string'?component.value:component.querySelector('[data-recordid]')?.getAttribute('data-recordid')??null;
+        });
+        if(!actual||!sameCrmRecordId(actual,request.client.id))throw new ImportV2Error('Il cliente dell’attività non coincide con l’intestatario previsto. Nessun salvataggio.','verification_failed');
+      }
       await this.pick(dialog.locator('c-input-field:has-text("Modalit"):has-text("Contatto")').filter({ visible: true }), plan.source.activity.contactMode, "Modalità contatto");
       await this.pick(dialog.locator('c-input-field:has-text("Stato")').filter({ visible: true }), plan.source.activity.status, "Stato attività");
       if (normalized(await descriptionField.inputValue()) !== normalized(description)) {
@@ -2948,6 +3008,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva attività");
       const saveRequests = this.watchSearchRequests();
+      const savedIds=new Set<string>(),captureTasks=new Set<Promise<void>>();
+      const capture=(response:Response)=>{
+        if(!response.ok()||!['POST','PATCH'].includes(response.request().method()))return;
+        const submitted=response.request().postData()??'';
+        if(!submitted.includes(propertyId)&&!submitted.includes(encodeURIComponent(propertyId)))return;
+        let task:Promise<void>;task=activityResponseText(response).then(body=>{for(const id of savedActivityIds(body))savedIds.add(id);})
+          .catch(()=>undefined).finally(()=>captureTasks.delete(task));captureTasks.add(task);
+      };
+      this.page.on('response',capture);
       try {
         if (request) {
           request.state = { ...request.state, baselineIds: before.knownIds, submittedAt: new Date().toISOString() };
@@ -2967,7 +3036,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         if (saveStable < 4) {
           throw new ImportV2Error("Il salvataggio dell’attività non ha terminato le richieste Cloud", "global_portal", { global: true });
         }
+        await Promise.all(captureTasks);
+        if(request){
+          const ids=[...savedIds].filter(id=>!request.state.baselineIds.some(before=>sameCrmRecordId(before,id)));
+          request.state={...request.state,...(ids.length===1?{savedActivityId:ids[0]}:{}),saveAcknowledgedAt:new Date().toISOString()};
+          await request.persist(request.state);
+        }
       } finally {
+        this.page.off('response',capture);
         saveRequests.stop();
       }
       const followUp = this.page.locator('[role="dialog"]:visible').filter({ hasText: /Vuoi pianificare un'altra attività\/appuntamento/i });
@@ -2979,7 +3055,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
       }
       this.submittedActivities.add(submissionKey);
-      const after = await this.readActivityEvidence(propertyId, description, plan.source.activity.status, request ? { excludedIds: new Set(request.state.baselineIds), submitted: true } : undefined);
+      const after = await this.readActivityEvidence(propertyId, description, plan.source.activity.status, request ? { excludedIds: new Set(request.state.baselineIds), submitted: true,
+        activityId:request.state.savedActivityId,...(request.client?{clientId:request.client.id}:{}) } : undefined);
       if (!after.found) {
         // The save was submitted, therefore a blind retry could duplicate it.
         throw new ImportV2Error("L’attività salvata non è ancora verificabile nel Cloud. Import in pausa senza ripetere il salvataggio.", "global_portal", { global: true });
@@ -2990,6 +3067,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         descriptionVerified: after.descriptionVerified,
         statusVerified: after.statusVerified,
         expectedStatus: plan.source.activity.status,
+        ...(after.task?{propertyId,clientId:after.task.clientId??undefined,activityDay:activityDay(after.task)??undefined,checkedAt:new Date().toISOString()}:{}),
       };
     });
   }
