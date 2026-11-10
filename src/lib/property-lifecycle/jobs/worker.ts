@@ -143,14 +143,15 @@ async function executeAgencySync(
   }
   const { data, error } = await db
     .from("agencies")
-    .select("adapter_key")
+    .select("adapter_key,enabled")
     .eq("id", job.agency_id)
     .single();
   if (error) {
     throw new Error(error.message);
   }
-  const agency = data as { adapter_key: string };
-  await runAgencySync({
+  const agency = data as { adapter_key: string;enabled?:boolean };
+  if(agency.enabled===false)return;
+  const outcome=await runAgencySync({
     adapter: adapterFactory(agency.adapter_key),
     repository: new PropertyLifecycleRepository(db),
     mode: syncMode(job.job_type),
@@ -158,6 +159,8 @@ async function executeAgencySync(
     assetProcessor: (listing) => assetProcessor(listing, job.job_type),
     assertOwnership,
   });
+  console.info(JSON.stringify({action:'agency-sync',agencyId:job.agency_id,...outcome}));
+  if(outcome.healthState==='FAILED')throw Error(`Agency ${agency.adapter_key} source sync failed; previous observations preserved`);
 }
 
 async function executePostExitCheck(

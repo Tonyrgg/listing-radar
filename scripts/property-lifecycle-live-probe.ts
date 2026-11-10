@@ -8,7 +8,6 @@ const ADAPTER_KEYS = [
   "studiocasa",
   "futura",
   "garofalo",
-  "trio",
   "puntocasa",
   "momento",
 ] as const;

@@ -156,10 +156,11 @@ export default async function SettingsPage() {
       <PageHeader
         eyebrow="Impostazioni"
         title="Impostazioni"
-        description="Qui puoi verificare se la raccolta automatica e pronta. I dettagli tecnici sono disponibili solo quando servono."
+        description="Qui puoi verificare se la raccolta automatica è pronta. I dettagli tecnici sono disponibili solo quando servono."
       />
 
-      <section className="grid border-b border-[var(--lr-line-quiet)] md:grid-cols-2 xl:grid-cols-4">
+      <nav className="lr-tabs" aria-label="Sezioni delle impostazioni"><a href="#stato">Stato del sistema</a><a href="#programma">Worker desktop</a><a href="#estensione">Estensione</a><a href="#servizi">Ricerca e servizi</a></nav>
+      <section id="stato" className="grid border-b border-[var(--lr-line-quiet)] md:grid-cols-2 xl:grid-cols-4">
         <SystemCheck
           title="Ricezione email"
           detail={
@@ -319,7 +320,7 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      <section id="servizi" className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <article className="rounded-lg border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5">
           <h2 className="text-[length:var(--lr-text-section)] font-semibold text-[var(--lr-ink)]">
             Ricerca monitorata

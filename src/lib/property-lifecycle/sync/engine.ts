@@ -64,6 +64,7 @@ export async function runAgencySync(input: {
   };
   const detailErrors: Array<{ sourceKey: string; message: string }> = [];
   const assetWarnings: string[] = [];
+  let deferredIdentityCount=0;
 
   try {
     const inventory = await input.adapter.fetchInventory();
@@ -130,8 +131,9 @@ export async function runAgencySync(input: {
         }
 
         counts.inScopeCount += 1;
-        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)
-          ? await (input.assetProcessor ?? processListingAssets)(situato)
+        const fallback=situato.provenance.accessFallback===true;
+        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)||fallback
+          ? await (input.assetProcessor ?? processListingAssets)(fallback?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,2)}:situato)
           : { assets: [], warnings: [] };
         assetWarnings.push(...assetResult.warnings);
         input.assertOwnership?.();
@@ -141,6 +143,7 @@ export async function runAgencySync(input: {
           situato,
           assetResult.assets,
         );
+        if('deferred'in persisted&&persisted.deferred){deferredIdentityCount+=1;continue;}
         if (persisted.createdPublication) {
           counts.transitionedCount += 1;
         }
@@ -178,7 +181,7 @@ export async function runAgencySync(input: {
     const healthState = healthEvaluation.effectiveState;
     const inventoryComplete = healthEvaluation.inventoryComplete;
     const absenceEvaluationAllowed =
-      healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP";
+      healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP" && inventory.absenceAuthoritative!==false;
 
 
     const status: "SUCCEEDED" | "FAILED" | "PARTIAL" = healthState === "FAILED" ? "FAILED" : healthState === "HEALTHY" ? "SUCCEEDED" : "PARTIAL";
@@ -195,6 +198,8 @@ export async function runAgencySync(input: {
       structureFingerprint: inventory.structureFingerprint,
       diagnostics: {
         inventory: inventory.diagnostics,
+        deferredIdentityCount,
+        absenceAuthoritative:inventory.absenceAuthoritative!==false,
         detailErrorRatio,
         detailErrors,
         assetWarnings,

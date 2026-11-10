@@ -1,3 +1,4 @@
+import { Radar, MapPin, FileText, Search } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { PendingSubmitButton } from "@/components/loading-controls";
@@ -19,8 +20,8 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
-      <section className="w-full max-w-sm rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-6">
+    <main className="lr-workspace lr-auth-screen"><aside className="lr-auth-intro"><div className="lr-brand"><span className="lr-brand-symbol"><Radar size={24}/></span><span><strong>Listing Radar</strong><small>COREIMMOBILIARE</small></span></div><div><p className="lr-auth-eyebrow">BITONTO · PALOMBAIO · MARIOTTO</p><h2>Il tuo archivio immobiliare.</h2><p>Immobili, cambiamenti e documenti del territorio, con le prove a portata di mano.</p><ul><li><Search size={18}/> Confronta immobili e prezzi osservati</li><li><FileText size={18}/> Leggi le trasformazioni documentate</li><li><MapPin size={18}/> Collega le informazioni ai luoghi</li></ul></div><small>Uno spazio di lavoro privato.</small></aside><div className="lr-auth-form">
+      <section className="w-full max-w-sm">
         <div className="flex items-center gap-3">
           <span className="flex size-10 items-center justify-center">
             <span
@@ -59,7 +60,7 @@ export default async function LoginPage({
             Entra
           </PendingSubmitButton>
         </form>
-      </section>
+      </section></div>
     </main>
   );
 }

@@ -1,4 +1,5 @@
 import { HttpClient, type HttpResponse } from "@/lib/http/client";
+import {publisherFallback}from'./publisher-fallback';
 import {
   CONTRACT_VERSION,
   finalizeNormalizedListing,
@@ -667,6 +668,7 @@ export class StudioCasaAdapter implements PropertyLifecycleAdapter {
 
   async fetchInventory(): Promise<InventoryResult> {
     const response = await this.http.get(this.inventoryUrl);
+    if(response.status===403)return publisherFallback('studiocasa',this.http).fetchInventory(response);
     if (!response.ok) {
       const requiredMarkers = { successfulResponse: false };
       const diagnostics = {
@@ -775,6 +777,7 @@ export class StudioCasaAdapter implements PropertyLifecycleAdapter {
   }
 
   async fetchDetail(item: InventoryItem): Promise<SourceDocument> {
+    if(item.summary.accessFallback===true)return publisherFallback('studiocasa',this.http).fetchDetail(item);
     return {
       item,
       observedAt: new Date().toISOString(),
@@ -789,6 +792,7 @@ export class StudioCasaAdapter implements PropertyLifecycleAdapter {
   }
 
   async normalize(document: SourceDocument): Promise<NormalizedListingV2> {
+    if(document.item.summary.accessFallback===true)return publisherFallback('studiocasa',this.http).normalize(document);
     return normalizeStudioCasaDetail(document);
   }
 }

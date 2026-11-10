@@ -17,13 +17,10 @@ export default function AppError({
   }, [error]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
+    <main className="lr-workspace lr-status-page">
       <div className="w-full max-w-lg rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-6">
         <div className="flex items-start gap-3">
-          <span
-            aria-hidden="true"
-            className="w-[3px] shrink-0 self-stretch rounded-full bg-[var(--lr-danger)]"
-          />
+
           <AlertTriangle aria-hidden="true" className="mt-1 size-5 shrink-0 text-[var(--lr-danger)]" />
           <div className="min-w-0">
             <p className="text-[length:var(--lr-text-label)] font-[650] uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-danger)]">
@@ -33,9 +30,8 @@ export default function AppError({
               Non sono riuscito a mostrare questa pagina
             </h1>
             <p className="mt-3 text-[length:var(--lr-text-body)] text-[var(--lr-ink-2)]">
-              Nessun dato è andato perso: l&apos;errore riguarda solo la
-              visualizzazione. Riprova; se succede di nuovo, torna al lavoro
-              aperto e riapri la pagina da lì.
+              La pagina non è stata completata. Riprova oppure torna all’archivio.
+              Se avevi appena salvato una modifica, verifica il suo esito prima di ripeterla.
             </p>
             {error.digest ? (
               <p className="mt-3 font-mono text-[length:var(--lr-text-label)] text-[var(--lr-ink-3)]">

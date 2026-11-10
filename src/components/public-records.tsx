@@ -6,8 +6,8 @@ import { PUBLIC_RECORD_LABELS, type PublicRecord } from "@/lib/property-lifecycl
 export function PublicRecords({records,propertyContext=false}:{records:PublicRecord[];propertyContext?:boolean}) {
   return <div className="space-y-3">
     <Meta>{propertyContext?"Documenti associati al civico o edificio. Il collegamento alla singola unità non è verificato.":"Registri e documenti pubblici del Comune, conservati con fonte e data di osservazione."} Non costituiscono una verifica di conformità urbanistica, catastale o di proprietà.</Meta>
-    {!records.length?<p className="py-3 text-[var(--lr-ink-2)]">Nessun documento collegato con sufficiente precisione. L’assenza di documenti nell’archivio non prova l’assenza di pratiche.</p>:<div className="divide-y divide-[var(--lr-line-quiet)]">
-      {records.map(r=><article id={`record-${r.id}`} key={r.id} className="scroll-mt-20 py-4">
+    {!records.length?<p className="py-3 text-[var(--lr-ink-2)]">Nessun documento collegato con sufficiente precisione. L’assenza di documenti nell’archivio non prova l’assenza di pratiche.</p>:<div className="lr-public-register">
+      {records.map(r=><article id={`record-${r.id}`} key={r.id} className="lr-public-record scroll-mt-20">
         <div className="flex flex-wrap items-center gap-2"><Chip>{PUBLIC_RECORD_LABELS[r.record_type]??"Atto pubblico"}</Chip>{r.area_name?<Chip>{r.area_name} · documento di area</Chip>:null}{r.relation_scope==="STREET"?<Chip>Contesto della via</Chip>:r.relation_scope==="AREA"?<Chip>Documento di area</Chip>:propertyContext||r.relation_scope==="BUILDING"?<Chip>Collegato all’edificio · unità da verificare</Chip>:null}{r.source_status&&/annull|revocat/i.test(r.source_status)?<Chip tone="warn">Annullato o revocato dalla fonte</Chip>:null}</div>
         <h3 className="mt-2 font-[650]">{r.title}</h3>
         {r.address_text&&!r.resolved_references?<p className="mt-1 text-[var(--lr-ink-2)]">{r.address_text}</p>:null}

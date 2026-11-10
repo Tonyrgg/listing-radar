@@ -37,6 +37,7 @@ export type ZoneMapCanvasProps = {
   excludedZoneIds?: string[];
   highlightedZoneId?: string | null;
   draftGeometry?: GeoJsonGeometry | null;
+  draftColor?: string;
   point?: MapPoint | null;
   drawing?: boolean;
   vertexEditing?: boolean;
@@ -263,6 +264,7 @@ export function ZoneMapCanvas({
   excludedZoneIds = [],
   highlightedZoneId,
   draftGeometry,
+  draftColor,
   point,
   drawing = false,
   vertexEditing = false,
@@ -299,14 +301,14 @@ export function ZoneMapCanvas({
       <EditController
         active={vertexEditing}
         geometry={editingGeometry}
-        color={shapes.find((shape) => shape.zoneId === editingZoneId)?.color}
+        color={draftColor??shapes.find((shape) => shape.zoneId === editingZoneId)?.color}
         onEdited={onGeometryEdited}
       />
       <PointController enabled={allowPointSelection} onPointChange={onPointChange} />
       <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       {rendered.map((shape) => {
-        if (vertexEditing && shape.zoneId === editingZoneId) return null;
+        if ((vertexEditing || draftPositions) && shape.zoneId === editingZoneId) return null;
         const selected = selectedZoneIds.includes(shape.zoneId);
         const excluded = excludedZoneIds.includes(shape.zoneId);
         const highlighted = shape.zoneId === highlightedZoneId;
@@ -336,7 +338,7 @@ export function ZoneMapCanvas({
       {showZoneLabels ? <ZoneLabels shapes={rendered} highlightedZoneId={highlightedZoneId} /> : null}
 
       {draftPositions && !vertexEditing ? (
-        <Polygon positions={draftPositions} pathOptions={{ color: MAP_DATA_COLORS.positive, weight: 4, fillColor: MAP_DATA_COLORS.positive, fillOpacity: .28 }}>
+        <Polygon positions={draftPositions} pathOptions={{ color: draftColor??MAP_DATA_COLORS.positive, weight: 4, fillColor: draftColor??MAP_DATA_COLORS.positive, fillOpacity: .28 }}>
           <Tooltip sticky>Nuovo perimetro</Tooltip>
         </Polygon>
       ) : null}

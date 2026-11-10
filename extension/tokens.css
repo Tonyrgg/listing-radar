@@ -9,6 +9,21 @@
 
 :root {
   --lr-font-sans: "Instrument Sans", "Segoe UI", sans-serif;
+  --lr-web-canvas: #f4f4ef;
+  --lr-web-surface: #fffefb;
+  --lr-web-raised: #e9ece5;
+  --lr-web-hover: #f6f7f2;
+  --lr-web-ink: #253c35;
+  --lr-web-muted: #58685f;
+  --lr-web-line: #7e8a80;
+  --lr-web-divider: #dce1d8;
+  --lr-web-accent: #2f6653;
+  --lr-web-on-accent: #fffefb;
+  --lr-web-selected: #e2ede4;
+  --lr-web-sidebar: #223c33;
+  --lr-web-sidebar-selected: #365447;
+  --lr-web-sidebar-ink: #f3f5ef;
+  --lr-web-sidebar-muted: #b6c9bd;
   --lr-font-mono: "IBM Plex Mono", "Cascadia Mono", monospace;
   /* Daylight workspace: neutral, calm and precise on office monitors. */
   --lr-canvas: #e3eae6;
@@ -195,4 +210,18 @@
   --lr-data-muted: #a9bbb9;
   --lr-floating: 0 18px 46px rgb(0 0 0 / 0.34), 0 3px 10px rgb(0 0 0 / 0.22);
   color-scheme: dark;
+}
+
+/* Web-only dark workspace: data and controls retain the same hierarchy. */
+@media (prefers-color-scheme: dark) {
+ :root:not([data-theme="light"]) {
+  --lr-web-canvas:#17251f; --lr-web-surface:#20332a; --lr-web-raised:#2e4538; --lr-web-hover:#263b30;
+  --lr-web-ink:#edf1e6; --lr-web-muted:#b8c8ba; --lr-web-line:#84968a; --lr-web-divider:#3d5546;
+  --lr-web-accent:#9ed6ad; --lr-web-on-accent:#1c3024; --lr-web-selected:#345542;
+ }
+}
+:root[data-theme="dark"] {
+ --lr-web-canvas:#17251f; --lr-web-surface:#20332a; --lr-web-raised:#2e4538; --lr-web-hover:#263b30;
+ --lr-web-ink:#edf1e6; --lr-web-muted:#b8c8ba; --lr-web-line:#84968a; --lr-web-divider:#3d5546;
+ --lr-web-accent:#9ed6ad; --lr-web-on-accent:#1c3024; --lr-web-selected:#345542;
 }

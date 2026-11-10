@@ -32,7 +32,9 @@ export default async function MatchingOverviewPage() {
   const canCalculate = activeRequests.length > 0 && activeProperties.length > 0;
   /* Il consiglio parte da quello che blocca il confronto, non dal numero
    * più grande: una casa senza zona non entra in nessun abbinamento. */
-  const recommendation = matching.total === 0 && canCalculate
+  const recommendation = !activeRequests.length || !activeProperties.length
+    ? { title: !activeRequests.length ? "Nessuna richiesta attiva da confrontare" : "Nessun immobile disponibile da confrontare", detail: "Il confronto richiede almeno una richiesta attiva e un immobile disponibile. Completa l’archivio per valutare la copertura.", href: !activeRequests.length ? "/requests" : "/portfolio", kind: "link" as const }
+    : matching.total === 0 && canCalculate
     ? { title: "Non è ancora stato fatto nessun confronto", detail: `Ci sono ${formatNumber(activeRequests.length)} clienti in cerca e ${formatNumber(activeProperties.length)} case libere: il calcolo li mette a confronto.`, kind: "calculate" as const }
     : matching.compatible > 0
       ? { title: `${formatNumber(matching.compatible)} case vanno bene a qualcuno`, detail: "Sono quelle che rispettano tipologia, budget e zona di una richiesta aperta.", href: "/matching?solo=buone", kind: "link" as const }

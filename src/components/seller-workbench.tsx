@@ -17,16 +17,16 @@ const labels: Record<string,string> = {
 const date = (v: string) => new Intl.DateTimeFormat('it-IT',{timeZone:'Europe/Rome',dateStyle:'medium',timeStyle:'short'}).format(new Date(v));
 const sourceDate=(v:string)=>v.length===10?new Intl.DateTimeFormat('it-IT',{timeZone:'UTC',dateStyle:'medium'}).format(new Date(v)):date(v);
 export function SellerWorkbench({items,metrics,closed=false,pagination}:{items:SellerCase[];metrics:SellerMetrics;closed?:boolean;pagination?:Omit<SellerCasePage,'items'>}) {
-  return <main className="mx-auto max-w-[72ch] space-y-6">
-    <header className="space-y-3"><h1 className="text-[length:var(--lr-text-page)] font-semibold">Richieste e verifiche</h1>
+  return <div className="lr-case-workspace space-y-6">
+    <header className="lr-page-header space-y-3"><h1 className="text-[length:var(--lr-text-page)] font-semibold">Richieste e verifiche</h1>
       <p>Le richieste di telefonata e le verifiche documentali hanno percorsi distinti. Una notizia interessante non identifica un venditore.</p>
       <p className="text-[var(--lr-ink-2)]">Ingresso esterno in collaudo locale. Notifiche e WhatsApp non collegati: nessun messaggio viene inviato.</p>
-      <p>Esiti registrati — richieste: {metrics.received}; contatti avvenuti: {metrics.contacted}; appuntamenti fissati: {metrics.appointments}; appuntamenti svolti: {metrics.appointmentsHeld??0}; valutazioni svolte: {metrics.valuations}; incarichi: {metrics.mandates}. Verifiche documentali separate: {metrics.verifications}.</p>
+      <dl className="lr-workbench-metrics">{[['Richieste',metrics.received],['Contatti avvenuti',metrics.contacted],['Appuntamenti fissati',metrics.appointments],['Appuntamenti svolti',metrics.appointmentsHeld??0],['Valutazioni',metrics.valuations],['Incarichi',metrics.mandates],['Verifiche documentali',metrics.verifications]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       {!!metrics.bySource?.length&&<details><summary className="min-h-11 cursor-pointer py-3">Esiti per provenienza ricevuta</summary>{metrics.bySource.map(s=><p key={`${s.source}:${s.campaignId??''}`}>{s.source==='meta_form'?'Modulo Meta':s.source==='local_test'?'Collaudo locale':'Fonte non verificata'} · {s.campaignId?`campagna ${s.campaignId}`:'campagna non identificata'}: {s.received} richieste, {s.appointmentsHeld} appuntamenti svolti, {s.mandates} incarichi.</p>)}</details>}
       <nav aria-label="Stato delle pratiche" className="flex flex-wrap gap-2"><Link className={buttonClass(closed?'secondary':'primary')} href="/richieste">Aperte</Link><Link className={buttonClass(closed?'primary':'secondary')} href="/richieste?closed=1">Chiuse</Link><Link className={buttonClass('quiet')} href="/intelligence">Torna a Intelligence</Link><Link className={buttonClass('quiet')} href="/richieste/segnali">Segnali TonyBook</Link></nav>
     </header>
     {!items.length && <p>Nessuna pratica {closed ? 'chiusa' : 'aperta'}. Puoi pianificare una verifica da una notizia segnata interessante. Le richieste di prova entrano dall’ingresso locale protetto.</p>}
-    {items.map(item => <article key={`${item.id}:${item.revision}`} id={`pratica-${item.id}`} className="space-y-4 border-t border-[var(--lr-line)] py-6 break-words">
+    {items.map(item => <article key={`${item.id}:${item.revision}`} id={`pratica-${item.id}`} className="lr-case space-y-4 break-words">
       <div className="flex flex-wrap gap-2"><Chip>{item.kind==='INBOUND'?'Richiesta ricevuta':'Verifica documentale'}</Chip><Chip>{CASE_STATUSES[item.status]}</Chip></div>
       <h2 className="text-[length:var(--lr-text-section)]">{item.title}</h2>
       <Meta>Ricevuta il {date(item.created_at)}{item.next_action_at ? ` · ${ACTIONS[item.next_action]}: ${date(item.next_action_at)}` : ' · Nessun prossimo passo'}</Meta>
@@ -47,5 +47,5 @@ export function SellerWorkbench({items,metrics,closed=false,pagination}:{items:S
       {pagination.page>1 && <Link className={buttonClass('secondary')} href={`/richieste?${closed?'closed=1&':''}page=${pagination.page-1}`}>Precedenti</Link>}
       {pagination.hasNext && <Link className={buttonClass('secondary')} href={`/richieste?${closed?'closed=1&':''}page=${pagination.page+1}`}>Successive</Link>}
     </nav>}
-  </main>;
+  </div>;
 }

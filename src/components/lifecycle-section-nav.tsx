@@ -1,9 +1,10 @@
 import { SectionNav } from "@/components/ui/section-nav";
 
 const items = [
-  { href: "/intelligence", label: "Archivio", icon: "radar" },
   { href: "/fonti", label: "Fonti", icon: "building" },
-  { href: "/lifecycle/review", label: "Corrispondenze da verificare", icon: "scale" },
+  { href: "/fonti/pratiche", label: "Pratiche e documenti", icon: "scan" },
+  { href: "/fonti/corrispondenze", label: "Collegamenti territoriali", icon: "map" },
+  { href: "/lifecycle/review", label: "Identità immobili", icon: "scale" },
 ] as const;
 
 /**
@@ -13,6 +14,6 @@ const items = [
  */
 export function LifecycleSectionNav() {
   return (
-    <SectionNav items={items} ariaLabel="Sezioni dei segnali" exact={["/lifecycle"]} />
+    <SectionNav items={items} ariaLabel="Sezioni dei segnali" exact={["/fonti", "/fonti/pratiche", "/fonti/corrispondenze", "/lifecycle/review"]} />
   );
 }

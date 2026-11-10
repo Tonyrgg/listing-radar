@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { MappaDellaCasa } from "@/components/casa/mappa-della-casa";
+import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 import { marketAgeLabel } from "@/lib/property-lifecycle/read-models/intelligence";
 import { RigaDiVita } from "@/components/casa/riga-di-vita";
 import { PendingSubmitButton } from "@/components/loading-controls";
@@ -135,53 +136,7 @@ function MuroDiFoto({
   alt,
   didascalia,
 }: Readonly<{ urls: readonly string[]; alt: string; didascalia?: string }>) {
-  if (!urls.length) {
-    return (
-      <div className="grid aspect-[16/9] w-full place-items-center rounded-[var(--lr-radius-container)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] px-6 text-center text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-        Di questa casa non abbiamo nessuna foto
-      </div>
-    );
-  }
-
-  const [prima, ...altre] = urls;
-  const miniature = altre.slice(0, 3);
-  const restanti = altre.length - miniature.length;
-
-  return (
-    <div className="space-y-2">
-      <div
-        role="img"
-        aria-label={alt}
-        className="relative aspect-[16/9] w-full overflow-hidden rounded-[var(--lr-radius-container)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] bg-cover bg-center"
-        style={{ backgroundImage: `url("${prima}")` }}
-      >
-        {didascalia ? (
-          <span className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-[var(--lr-radius-pill)] border border-[var(--lr-line)] bg-[var(--lr-surface)]/95 px-2.5 py-1 text-[length:var(--lr-text-label)] font-medium text-[var(--lr-ink-2)]">
-            {didascalia}
-          </span>
-        ) : null}
-      </div>
-
-      {miniature.length ? (
-        <div className="grid grid-cols-4 gap-2">
-          {miniature.map((url, indice) => (
-            <span
-              key={url}
-              role="img"
-              aria-label={`${alt}, foto ${indice + 2}`}
-              className="block aspect-[4/3] overflow-hidden rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] bg-cover bg-center"
-              style={{ backgroundImage: `url("${url}")` }}
-            />
-          ))}
-          {restanti > 0 ? (
-            <span className="grid aspect-[4/3] place-items-center rounded-[var(--lr-radius-control)] border border-[var(--lr-line-quiet)] bg-[var(--lr-raised)] text-[length:var(--lr-text-meta)] text-[var(--lr-ink-2)]">
-              +{formatNumber(restanti)} foto
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
+  return <div className="lr-dossier-gallery"><ListingPhotoGallery title={alt} imageUrls={[...urls]}/>{didascalia?<Meta>{didascalia}</Meta>:null}</div>;
 }
 
 function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
@@ -397,18 +352,20 @@ export function SchedaMercato({
         </div>
       </header>
 
-      <nav aria-label="Sezioni del dossier" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">
-        {[["panoramica","Panoramica"],["storico","Storico e prove"],["pubblicazioni","Pubblicazioni"],["territorio","Territorio"],["documenti","Documenti pubblici"]].map(([id,label])=><a key={id} href={`#${id}`} className={buttonClass("quiet",{compact:true})}>{label}</a>)}
+      <nav aria-label="Sezioni del dossier" className="lr-dossier-nav">
+        {[["panoramica","Panoramica"],["storico","Storico e prove"],["pubblicazioni","Pubblicazioni"],["territorio","Territorio"],["eventi-pubblici","Trasformazioni"],["documenti","Documenti pubblici"]].map(([id,label])=><a key={id} href={`#${id}`} className={buttonClass("quiet",{compact:true})}>{label}</a>)}
       </nav>
 
-      <section className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-y border-[var(--lr-line-quiet)] py-3" aria-label="Situazione osservata">
-        <strong className="[font-family:var(--lr-font-mono)]">{formatCurrency(currentAsking)}</strong>
-        <span>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</span>
-        <span>Monitorato dal {formatDate(property.firstSeenAt)}</span>
-        {Date.parse(marketAnchor)<Date.parse(property.firstSeenAt)?<span>Prima evidenza pubblica {formatDate(marketAnchor)}</span>:null}
-        {detail.marketObservation?.soldAt ? <span>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</span> : detail.marketObservation?.soldObservedAt ? <span>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</span> : null}
-        {detail.marketObservation?.priceConflict ? <Meta>Le fonti mostrano prezzi diversi: il prezzo indicato proviene dalla pubblicazione selezionata.</Meta> : null}
-        {prezzoFonte?.reductionPercent!=null && prezzoFonte.reductionPercent>0 ? <span className="text-[var(--lr-ok)]">−{formatNumber(prezzoFonte.reductionPercent)}% sulla stessa pubblicazione</span> : null}
+      <section id="panoramica" className="lr-property-summary" aria-label="Informazioni principali">
+        <dl className="lr-property-facts">
+          <div><dt>Ultimo prezzo richiesto</dt><dd>{formatCurrency(currentAsking)}</dd>{euroAlMq?<Meta>{formatNumber(euroAlMq)} €/m²</Meta>:null}{scarto?<Meta>{scarto<0?"Ribasso":"Aumento"} di {formatCurrency(Math.abs(scarto))} sulla stessa pubblicazione</Meta>:null}</div>
+          <div><dt>Superficie</dt><dd>{property.surfaceSqm!=null?`${formatNumber(property.surfaceSqm)} m²`:"Non dichiarata"}</dd></div>
+          <div><dt>Locali</dt><dd>{property.rooms!=null?formatNumber(property.rooms):"Non dichiarati"}</dd></div>
+          <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><Meta>{marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</Meta></div>
+        </dl>
+        <p className="lr-record-meta">{detail.location?locationPrecisionLabel(detail.location.precision):"Posizione da verificare"} · Vendita: {property.saleStatus==="SOLD_CONFIRMED"?"confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"non venduto, confermato manualmente":"esito non confermato"}</p>
+        {detail.marketObservation?.soldAt?<Meta>Vendita dichiarata il {formatDate(detail.marketObservation.soldAt)}</Meta>:detail.marketObservation?.soldObservedAt?<Meta>Segnale di vendita osservato il {formatDate(detail.marketObservation.soldObservedAt)}</Meta>:null}
+        {detail.marketObservation?.priceConflict?<Meta>Prezzi discordanti tra fonti: confronta le pubblicazioni qui sotto.</Meta>:null}
       </section>
 
       {/* Cosa fare adesso, con gli indizi che lo reggono. Mai il giudizio da
@@ -443,9 +400,9 @@ export function SchedaMercato({
         </details>
       ) : null}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <div className="lr-property-body">
         <div className="space-y-4">
-          {detail.imageUrls.length ? <MuroDiFoto
+          <MuroDiFoto
             urls={detail.imageUrls}
             alt={indirizzo}
             didascalia={
@@ -454,51 +411,17 @@ export function SchedaMercato({
                 ? `foto del ${formatDate(property.trueMarketStartLowerBound)} — la più vecchia che abbiamo`
                 : undefined
             }
-          /> : null}
+          />
 
-          <section id="storico" className="scroll-mt-20"><RigaDiVita eventi={detail.events} prove={prove} /></section>
-          <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
-            {(detail.historyPage??1)>1?<Link href={`?storia=${(detail.historyPage??1)-1}`} className={buttonClass("secondary")}>Storico più recente</Link>:<span/>}
-            <Meta>Pagina {detail.historyPage??1} di eventi e prove</Meta>
-            {detail.historyHasNext?<Link href={`?storia=${(detail.historyPage??1)+1}`} className={buttonClass("secondary")}>Eventi e prove precedenti</Link>:null}
-          </nav>
         </div>
 
         <div className="space-y-4">
-          <Card id="panoramica">
+          <Card id="caratteristiche">
+            <CardHeader title="Caratteristiche e osservazioni"/>
             <CardBody className="space-y-5">
-              <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-[var(--lr-line-quiet)] pb-4">
-                <div className="min-w-0">
-                  <Label>Prezzo richiesto oggi</Label>
-                  <p className="text-[length:var(--lr-text-page)] font-[650] leading-tight tracking-[var(--lr-tracking-title)] text-[var(--lr-ink)]">
-                    {formatCurrency(currentAsking)}
-                  </p>
-                  {scarto || euroAlMq ? (
-                    <p className="mt-1 text-[length:var(--lr-text-meta)] text-[var(--lr-ink-3)]">
-                      {scarto
-                        ? `${scarto < 0 ? "↓ −" : "↑ +"}${formatCurrency(Math.abs(scarto))} dal primo prezzo`
-                        : null}
-                      {scarto && euroAlMq ? " · " : null}
-                      {euroAlMq ? `${formatNumber(euroAlMq)} €/m²` : null}
-                    </p>
-                  ) : null}
-                </div>
-                <Stato forma={formaFromPropertyState(property.propertyState)}>
-                  {propertyStateLabel(property.propertyState)}
-                </Stato>
-              </div>
-
               <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-                <Misura label="Superficie">
-                  {property.surfaceSqm != null
-                    ? `${formatNumber(property.surfaceSqm)} m²`
-                    : "non dichiarata"}
-                </Misura>
-                <Misura label="Locali">
-                  {property.rooms != null
-                    ? formatNumber(property.rooms)
-                    : "non dichiarati"}
-                </Misura>
+                <Misura label="Tipologia">{property.propertyType?humanize(property.propertyType):"Non dichiarata"}</Misura>
+                <Misura label="Posizione">{detail.location?locationPrecisionLabel(detail.location.precision):"Da verificare"}</Misura>
                 <Misura label="Ripubblicazioni">
                   {formatNumber(property.relaunchCount)}
                 </Misura>
@@ -527,6 +450,10 @@ export function SchedaMercato({
             </CardBody>
           </Card>
 
+        </div>
+      </div>
+
+      <div className="lr-property-sources">
           <Card id="pubblicazioni">
             <CardHeader
               title="Chi la vende"
@@ -579,11 +506,19 @@ export function SchedaMercato({
               </CardBody>
             </Card>
           ) : null}
-        </div>
+      </div>
+
+      <div className="lr-property-history">
+          <section id="storico" className="scroll-mt-20"><RigaDiVita eventi={detail.events} prove={prove} /></section>
+          <nav aria-label="Pagine dello storico" className="flex flex-wrap items-center justify-between gap-3">
+            {(detail.historyPage??1)>1?<Link href={`?storia=${(detail.historyPage??1)-1}`} className={buttonClass("secondary")}>Storico più recente</Link>:<span/>}
+            <Meta>Pagina {detail.historyPage??1} di eventi e prove</Meta>
+            {detail.historyHasNext?<Link href={`?storia=${(detail.historyPage??1)+1}`} className={buttonClass("secondary")}>Eventi e prove precedenti</Link>:null}
+          </nav>
       </div>
 
       {/* Le correzioni restano in fondo: si guarda prima, si decide dopo. */}
-      <Card id="correggi">
+      <details id="correggi" className="lr-property-corrections"><summary>Correggi o segnala un dato</summary><Card>
         <CardHeader
           title="Correggi quello che sappiamo"
           meta="Ogni correzione resta scritta con il tuo nome, la data e il motivo. Quello che confermi non viene più sovrascritto da solo."
@@ -700,7 +635,7 @@ export function SchedaMercato({
             />
           )}
         </CardBody>
-      </Card>
+      </Card></details>
     </div>
   );
 }
