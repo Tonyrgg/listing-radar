@@ -20,6 +20,7 @@ import { runSettingsSchema, runSettings } from "./run-options.js";
 import { pendingUnitImport } from "./import-queue.js";
 import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
+import {assertSynchronized,type TerritoryOperationLease} from "./operation-lease.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
 import { resolveSyncConflict } from "./sync-records.js";
 
@@ -46,6 +47,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   let checkedAt: string | null = null;
   let unsubscribeCommits: (() => void) | undefined;
   let sync: TerritorySync | null = null;
+  let operationLease:TerritoryOperationLease|null=null;
   let credentialDigest = "";
   const publish = () => { if (!options.contents.isDestroyed()) options.contents.send("territory:changed"); options.changed?.(); };
   const flushOnline = async () => {
@@ -59,7 +61,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         credentialDigest = nextDigest;
       }
       await sync.reconcile(); memoryError = null; checkedAt = new Date().toISOString();
-    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Sincronizzazione.`; }
+    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Memoria online.`; if(application?.hasActiveRun)application.pause(); }
     finally {
       syncing = false; publish();
     }
@@ -175,11 +177,21 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         await store.change(s => resolveSyncConflict(s, issue.id, result.response - 1)); notify();
       }
     });
+    const ensureSynchronized=async()=>{
+      await syncLoop.flush();
+      if(!sync)throw new Error("Memoria online non disponibile: impossibile avviare una lavorazione.");
+      const status=await sync.status();assertSynchronized(status,memoryError);return status;
+    };
+    const finishSharedSession=async()=>{
+      if(!operationLease?.held)return;
+      const status=await ensureSynchronized();await operationLease.release(status.revision);
+    };
     handle("sync", async value => {
       const direction = z.enum(["push", "pull"]).parse(value);
       if (options.onlineCredentials && options.live) {
         const before = sync ? await sync.status() : null;
         await syncLoop.flush(); if (memoryError) throw new Error(memoryError);
+        if(!application.hasActiveRun)await finishSharedSession();
         const after = await sync!.status(); return { ...after, changed: after.revision !== before?.revision };
       }
       if (syncing || application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione in corso");
@@ -210,7 +222,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("sister-street-settings", async value => { const v = z.object({ streetId: id, settings: sisterStreetSettingsSchema }).strict().parse(value); await application.configureSisterStreet(v.streetId, v.settings); });
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
-      if (options.onlineCredentials && options.live) await syncLoop.flush();
+      if (options.onlineCredentials && options.live) await ensureSynchronized();
       const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
       if (v.operation === "apply" && v.resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
@@ -232,12 +244,21 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         });
         if (result.response !== 1) return null;
       }
+      if(options.onlineCredentials && options.live){
+        if(application.hasActiveRun)throw new Error("C’è già una lavorazione attiva su questo PC.");
+        operationLease??=sync!.operationLease();
+        await operationLease.acquire(message=>{memoryError=message;application.pause();publish();});
+        try{await ensureSynchronized();}catch(error){try{await finishSharedSession();}catch{/* Keep reservation until this device reconciles. */}throw error;}
+      }
       options.beforeStart?.();
       try {
         const run = v.queue ? await application.startQueue(v.selected, v.settings, v.resumeId) : v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
-        void application.waitForIdle().finally(() => { options.afterIdle?.(); notify(); });
+        void application.waitForIdle().finally(async () => {
+          options.afterIdle?.();notify();
+          try{await finishSharedSession();}catch(error){memoryError=error instanceof Error?error.message:"Sessione da sincronizzare";publish();}
+        });
         return run;
-      } catch (error) { options.afterIdle?.(); throw error; }
+      } catch (error) { options.afterIdle?.();try{await finishSharedSession();}catch{/* Preserve pending local work. */}throw error; }
     });
     handle("pause", () => application.pause());
 
@@ -253,12 +274,13 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         closing = true;
         application.pause(); await application.waitForIdle();
         await syncLoop.close();
+        if(operationLease?.held){try{await finishSharedSession();}catch{/* Reservation retained for recovery. */}operationLease.stop();}
         unsubscribeCommits?.();
         channels.forEach(channel => ipcMain.removeHandler(channel));
         releaseProfile?.(); releaseProfile = undefined;
       },
     };
   } catch (error) {
-    syncLoop.stop(); unsubscribeCommits?.(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
+    (operationLease as TerritoryOperationLease|null)?.stop();syncLoop.stop(); unsubscribeCommits?.(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
   }
 }

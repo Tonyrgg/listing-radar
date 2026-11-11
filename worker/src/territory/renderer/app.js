@@ -1062,6 +1062,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("notice").hidden = Boolean(snapshot.operational);
     document.body.classList.toggle("operational", Boolean(snapshot.operational));
     $("cloud-memory").hidden = !memory.configured;
+    $("sync-now").hidden = !memory.configured;
     const online = memory.environment === "online";
     const conflictCount = memory.conflicts?.length || 0;
     $("memory-review").hidden = !conflictCount;
@@ -1092,7 +1093,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       ? "Memoria online"
       : "Memoria condivisa di prova";
     $("memory-description").textContent = online
-      ? "Un unico archivio per tutte le postazioni. Le modifiche vengono inviate dopo le azioni e durante le lavorazioni; ogni 15 secondi ricevi gli aggiornamenti degli altri PC. Senza rete il lavoro resta sul PC e viene inviato al ritorno della connessione. Se lo stesso dato è stato modificato in due modi, entrambe le proposte sono conservate per il confronto."
+      ? "Un unico archivio per tutte le postazioni. Le modifiche vengono inviate dopo le azioni e durante le lavorazioni; ogni 15 secondi ricevi gli aggiornamenti degli altri PC. Le nuove lavorazioni richiedono una sincronizzazione riuscita e una sola postazione alla volta. Se la rete manca durante il lavoro, la lavorazione si mette in pausa e i dati locali restano conservati. Se lo stesso dato è stato modificato in due modi, entrambe le proposte sono conservate per il confronto."
       : "Archivio nell'ambiente locale separato. Un conflitto conserva le tue modifiche e richiede un confronto.";
     if (memory.configured)
       $("memory-date").textContent =
@@ -1102,7 +1103,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           : memory.pending
             ? "Modifiche locali in attesa di sincronizzazione."
             : memory.checkedAt
-              ? `Ultimo controllo online: ${date(memory.checkedAt)}${memory.syncedAt ? ` · Ultimo aggiornamento condiviso: ${date(memory.syncedAt)}` : ""}`
+              ? `Revisione condivisa: ${memory.revision ?? "—"} · Ultimo controllo online: ${date(memory.checkedAt)}${memory.syncedAt ? ` · Ultimo aggiornamento condiviso: ${date(memory.syncedAt)}` : ""}`
               : "Non ancora sincronizzata");
     $("quarantine-open").textContent = `Quarantena (${snapshot.quarantineCount || 0})`;
     $("history-review").hidden = !snapshot.historyIssues;
@@ -1270,6 +1271,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         };
       });
   }
+  $("sync-now").onclick = safe(async () => {
+    if(dirty)throw new Error("Salva o annulla le modifiche prima di sincronizzare.");
+    if(syncBusy || snapshot.activeRun)throw new Error("Attendi la fine della lavorazione: durante il lavoro la sincronizzazione è automatica.");
+    syncBusy=true;$("sync-now").disabled=true;
+    try{feedback("Sincronizzazione in corso…");const result=await api.sync("push");await refresh();feedback(`Archivio sincronizzato · revisione ${result.revision}`);}
+    finally{syncBusy=false;$("sync-now").disabled=false;}
+  });
   $("cloud-memory").onclick = () => {
     if (dirty)
       return feedback(
