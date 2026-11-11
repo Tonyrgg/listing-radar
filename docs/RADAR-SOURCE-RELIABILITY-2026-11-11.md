@@ -24,8 +24,13 @@ il workflow corrente usa già Node24 e l'ultima run non presenta quel crash.
   lettura dei portali. Mostrano un avviso espandibile per fonti fallite, parziali,
   mai lette o con ultima lettura più vecchia di 24 ore. Un precedente stato
   HEALTHY non basta a dichiararle attuali; una run PARTIAL prevale su quello stato.
-- Il lettore OCR gestisce i rifiuti del motore senza il throw asincrono della
-  libreria e termina il worker fallito prima di ricrearlo per la foto successiva.
+- Il lettore OCR vive in un processo separato, riutilizzato e serializzato. Un
+  crash del motore non termina il drainer. Una lettura bloccata viene interrotta
+  dopo45secondi; il processo fallito viene terminato e ricreato alla foto successiva.
+  L'indisponibilità di questa verifica richiesta degrada la run e blocca le assenze.
+- I job attivi della stessa agenzia e dello stesso tipo condividono la chiave
+  anti-duplicati, indipendentemente dall'origine UI, cron o fan-out. I completati
+  non impediscono la scansione successiva. I vecchi job non vengono cancellati.
 
 ## Verifiche reali
 
@@ -34,6 +39,16 @@ per fonte: 7 inventari HEALTHY, 2 incompleti (Studi Santi, Studio Casa).
 Questi ultimi restituiscono 403 sul primario e 500 su alcune pagine del catalogo
 pubblico secondario. Nessun inventario parziale è stato certificato completo.
 Triocasa non viene interrogato.
+
+Seconda prova dei cataloghi pubblici: Studi Santi85/85, Studio Casa54/54,
+entrambi completi e sani. I500 sono intermittenti. I primari restano403 e il
+catalogo secondario non autorizza mai le assenze sul sito primario.
+
+Giro GitHub43088446022 completato SUCCESS: Garofalo39/39 in due job preesistenti,
+Momento2/2, zero errori. Nessun jobRUNNING residuo. La duplicazione osservata
+fra il job manuale e quello automatico ha motivato la chiave unica comune.
+Prova reale OCR locale su immagine sintetica VENDUTO: riconosciuta correttamente
+nel processo isolato; terminate correttamente anche le prove di crash e timeout.
 
 Recupero ordinario da questo PC, nessun job RUNNING al controllo iniziale:
 - Garofalo: run 83a11dcd-4e12-489a-870b-bb59b1300dab, 39/39 normalizzati,
@@ -45,9 +60,9 @@ Recupero ordinario da questo PC, nessun job RUNNING al controllo iniziale:
 
 Il recupero locale non ripara il 403 remoto né garantisce che server terzi
 restituiranno sempre risposte valide. Nessun proxy o aggiramento di challenge.
-Resta da qualificare un canale automatico alternativo per le fonti non accessibili
-dal runner, oppure ottenere accesso stabile dal fornitore. Non è stato installato
-un secondo scheduler: prima occorre evitare esecuzioni simultanee per agenzia.
+Le fonti sono tornate leggibili nelle prove finali; ciò non garantisce la loro
+disponibilità futura. Nessun secondo scheduler installato e nessuna protezione
+di accesso aggirata. Le nuove run mostrano e conservano le indisponibilità.
 I nove dettagli campionati non certificano l'intero archivio: la provenienza,
 la data e l'incertezza della fonte restano necessarie.
 
