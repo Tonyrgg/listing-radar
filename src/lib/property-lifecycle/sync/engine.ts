@@ -18,6 +18,8 @@ export interface SyncResult {
   inventoryComplete: boolean;
   absenceEvaluationAllowed: boolean;
   counts: SyncRunCounts;
+  sourceReasons?: string[];
+  responseStatus?: number;
 }
 
 function numericSetting(
@@ -65,6 +67,7 @@ export async function runAgencySync(input: {
   const detailErrors: Array<{ sourceKey: string; message: string }> = [];
   const assetWarnings: string[] = [];
   let deferredIdentityCount=0;
+  let persistedCount = 0;
 
   try {
     const inventory = await input.adapter.fetchInventory();
@@ -145,6 +148,7 @@ export async function runAgencySync(input: {
           assetResult.assets,
         );
         if('deferred'in persisted&&persisted.deferred){deferredIdentityCount+=1;continue;}
+        persistedCount += 1;
         if (persisted.createdPublication) {
           counts.transitionedCount += 1;
         }
@@ -160,7 +164,7 @@ export async function runAgencySync(input: {
     const detailErrorRatio =
       counts.discoveredCount === 0 ? 0 : counts.errorCount / counts.discoveredCount;
     const sourceHealthState: AdapterHealthState =
-      inventory.healthState === "HEALTHY" && detailErrorRatio > 0.1
+      inventory.healthState === "HEALTHY" && counts.errorCount > 0
         ? "DEGRADED"
         : inventory.healthState;
     const observedAt = input.observedAt ?? new Date().toISOString();
@@ -182,7 +186,8 @@ export async function runAgencySync(input: {
     const healthState = healthEvaluation.effectiveState;
     const inventoryComplete = healthEvaluation.inventoryComplete;
     const absenceEvaluationAllowed =
-      healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP" && inventory.absenceAuthoritative!==false;
+      healthEvaluation.absenceEvaluationAllowed && counts.errorCount === 0 &&
+      inventory.complete && mode !== "BOOTSTRAP" && inventory.absenceAuthoritative!==false;
 
 
     const status: "SUCCEEDED" | "FAILED" | "PARTIAL" = healthState === "FAILED" ? "FAILED" : healthState === "HEALTHY" ? "SUCCEEDED" : "PARTIAL";
@@ -206,8 +211,9 @@ export async function runAgencySync(input: {
         assetWarnings,
         durationMs: Date.now() - startedAt,
         processedCount: counts.normalizedCount,
+        persistedCount,
         successPercentage: counts.discoveredCount > 0
-          ? Math.round(100 * counts.normalizedCount / counts.discoveredCount) : 0,
+          ? Math.round(100 * persistedCount / counts.discoveredCount) : 0,
         timeoutCount: detailErrors.filter((issue) => /timeout|timed out|abort/i.test(issue.message)).length,
       },
     };
@@ -239,6 +245,8 @@ export async function runAgencySync(input: {
       inventoryComplete,
       absenceEvaluationAllowed,
       counts,
+      sourceReasons: inventory.diagnostics.reasons,
+      responseStatus: inventory.response?.status,
     };
   } catch (error) {
     await input.repository.recordAdapterHealth({

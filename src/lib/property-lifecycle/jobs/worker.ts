@@ -22,6 +22,7 @@ import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/nor
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
 import { runExternalSourceJob } from "@/lib/property-lifecycle/external/runtime";
 import { syncPublicRecordSources } from "@/lib/property-lifecycle/buildings/sync";
+import { writeAgencyRunReport } from './run-report';
 
 export type LifecycleAssetProcessor = (
   listing: NormalizedListingV2,
@@ -160,7 +161,14 @@ async function executeAgencySync(
     assertOwnership,
   });
   console.info(JSON.stringify({action:'agency-sync',agencyId:job.agency_id,...outcome}));
-  if(outcome.healthState==='FAILED')throw Error(`Agency ${agency.adapter_key} source sync failed; previous observations preserved`);
+  writeAgencyRunReport(agency.adapter_key, outcome);
+  if(outcome.healthState==='FAILED') {
+    const error = new Error(`Agency ${agency.adapter_key} source sync failed (${outcome.sourceReasons?.join(', ') || 'unavailable'}); previous observations preserved`);
+    // An access denial is not helped by hammering the same host again in this drain.
+    // Keep the failure visible and retry later; never reinterpret it as an empty inventory.
+    Object.assign(error, {retryAfterMs: [401,403].includes(outcome.responseStatus ?? 0) ? 3_600_000 : 300_000});
+    throw error;
+  }
 }
 
 async function executePostExitCheck(

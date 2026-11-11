@@ -9,11 +9,16 @@ export function isExplicitSoldText(text:string,confidence:number):boolean {
 }
 let worker:ReturnType<typeof createWorker>|undefined;
 export async function inspectSoldText(bytes:Uint8Array):Promise<boolean>{
-  worker??=createWorker("ita",1,{logger:()=>{},cachePath:tmpdir()});
+  worker??=createWorker("ita",1,{logger:()=>{},cachePath:tmpdir(),errorHandler:()=>{}});
   try {
     const image=await sharp(bytes).rotate().resize({width:1400,withoutEnlargement:true}).png().toBuffer();
     const result=await (await worker).recognize(image);
     return isExplicitSoldText(result.data.text,result.data.confidence);
-  } catch(error) { worker=undefined; throw error; }
+  } catch(error) {
+    const failedWorker = worker;
+    worker=undefined;
+    await failedWorker?.then(instance=>instance.terminate()).catch(()=>{});
+    throw error;
+  }
 }
 export async function closeSoldTextWorker(){if(worker){await(await worker).terminate();worker=undefined;}}
