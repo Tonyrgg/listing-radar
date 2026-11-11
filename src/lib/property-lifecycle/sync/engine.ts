@@ -163,8 +163,9 @@ export async function runAgencySync(input: {
 
     const detailErrorRatio =
       counts.discoveredCount === 0 ? 0 : counts.errorCount / counts.discoveredCount;
+    const soldTextUnverified = assetWarnings.some(warning => warning.startsWith('sold_text_inspection_failed:'));
     const sourceHealthState: AdapterHealthState =
-      inventory.healthState === "HEALTHY" && counts.errorCount > 0
+      inventory.healthState === "HEALTHY" && (counts.errorCount > 0 || soldTextUnverified)
         ? "DEGRADED"
         : inventory.healthState;
     const observedAt = input.observedAt ?? new Date().toISOString();
@@ -179,14 +180,14 @@ export async function runAgencySync(input: {
       expectedCount: inventory.diagnostics.expectedCount,
       parseErrorCount: counts.errorCount,
       structureFingerprint: inventory.structureFingerprint,
-      reasons: inventory.diagnostics.reasons,
+      reasons: [...inventory.diagnostics.reasons, ...(soldTextUnverified ? ['sold_text_verification_unavailable'] : [])],
       diagnostics: { ...inventory.diagnostics },
       responseStatus: inventory.response?.status,
     });
     const healthState = healthEvaluation.effectiveState;
     const inventoryComplete = healthEvaluation.inventoryComplete;
     const absenceEvaluationAllowed =
-      healthEvaluation.absenceEvaluationAllowed && counts.errorCount === 0 &&
+      healthEvaluation.absenceEvaluationAllowed && counts.errorCount === 0 && !soldTextUnverified &&
       inventory.complete && mode !== "BOOTSTRAP" && inventory.absenceAuthoritative!==false;
 
 

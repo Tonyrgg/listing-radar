@@ -190,6 +190,14 @@ function repository(decision: "IN_SCOPE" | "OUT_OF_SCOPE" | null) {
 }
 
 describe("geography reviews across syncs", () => {
+  it('keeps a failed requested sold-image inspection visible as an incomplete verification', async () => {
+    const {repository:repo}=repository(null);
+    repo.recordAdapterHealth=async input=>({effectiveState:input.state,inventoryComplete:true,absenceEvaluationAllowed:true} as never);
+    const result=await runAgencySync({adapter:new FixtureAdapter([listing('IN_SCOPE')]),repository:repo,mode:'DEEP_SYNC',
+      assetProcessor:async()=>({assets:[],warnings:['sold_text_inspection_failed:https://photo.example:OCR unavailable']})});
+    expect(result.healthState).toBe('DEGRADED');
+    expect(result.absenceEvaluationAllowed).toBe(false);
+  });
   it('does not certify a scan or evaluate absences when even one detail fails', async () => {
     const {repository:repo}=repository(null);
     const adapter=new FixtureAdapter([listing('IN_SCOPE')]);
