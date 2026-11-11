@@ -12,7 +12,7 @@ export async function GET() {
     const supabase = getSupabaseServiceClient();
     // Probe the archive users actually read, not an unrelated small table.
     const [{ error },state] = await Promise.all([
-      supabase.from("radar_property_read_model").select("property_id").limit(1),
+      supabase.from("radar_property_live_archive").select("property_id").limit(1),
       supabase.from("radar_read_model_state").select("refreshed_at,last_error,source_revision,refreshed_revision").single(),
     ]);
 

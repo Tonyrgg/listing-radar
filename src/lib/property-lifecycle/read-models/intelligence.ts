@@ -54,7 +54,7 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
   return publicDate ? `Sul mercato da almeno ${days} giorni` : `Monitorato da ${days} giorni`;
 }
 function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
-  let request=db.from("radar_property_read_model").select(fields);
+  let request=db.from("radar_property_live_archive").select(fields);
   for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
     if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
     if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);

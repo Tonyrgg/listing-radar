@@ -1,4 +1,5 @@
-import { ArrowLeft, CheckCircle2, FileCheck2, MapPin, ShieldCheck } from "lucide-react";
+import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
+import { ArrowLeft, CheckCircle2, FileCheck2, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -54,7 +55,6 @@ import type { LifecyclePropertyDetail } from "@/lib/property-lifecycle/read-mode
 import {
   flagPropertyForLifecycleReview,
   recordAgencyOutcomeOverride,
-  recordPropertySaleOverride,
 } from "@/app/(private)/lifecycle/actions";
 import {
   ExternalSourceLink,
@@ -199,6 +199,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
  detail:LifecyclePropertyDetail;user:Awaited<ReturnType<typeof getCurrentUser>>;now:number;children?:React.ReactNode;origin?:string;returnTo?:string;
 }>){
  const property=detail.property;
+ const manualSale=property.saleStatus==="SOLD_CONFIRMED"&&detail.manualOverrides.some(o=>o.key==="sale_status"&&o.value==="SOLD_CONFIRMED");
  const saleDate=detail.marketObservation?.soldAt??detail.marketObservation?.soldObservedAt;
  const marketEnd=saleDate?Date.parse(saleDate):now;
  const currentAsking=detail.marketObservation?.latestPrice??property.currentPrice;
@@ -231,7 +232,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
      {context.view!=="mercato"?<section className="lr-case-focus" aria-label={"Sintesi "+context.label}>
       <div className="lr-case-focus-heading"><h3>{context.view==="opportunita"?"Perché compare tra le opportunità":context.view==="venduti"?context.outcome:"Cosa è successo all’annuncio"}</h3>{context.view==="opportunita"&&detail.opportunity?.score!=null?<span>Indice {formatNumber(detail.opportunity.score)}/100</span>:null}</div>
       {context.view==="opportunita"?<><ul>{indizi.length?indizi.map(reason=><li key={reason}>{opportunityReasonLabel(reason)}</li>):<li>La motivazione della segnalazione resta da verificare.</li>}</ul><p>Questi indizi non dimostrano intenzione di vendere o scadenza dell’incarico.</p></>:<>
-       <dl className="lr-case-outcome-facts">{context.view!=="venduti"?<div><dt>Classificazione attuale</dt><dd>{context.outcome}</dd></div>:null}<div><dt>Ultima presenza</dt><dd>{formatDate(property.lastSeenAt)}</dd></div><div><dt>{context.view==="venduti"?"Segnale di vendita":"Classificazione rilevata"}</dt><dd>{formatDate(context.view==="venduti"?saleDate:detail.marketObservation?.classifiedAt)}</dd></div></dl>
+       <dl className="lr-case-outcome-facts">{context.view!=="venduti"?<div><dt>Classificazione attuale</dt><dd>{context.outcome}</dd></div>:null}<div><dt>Ultima presenza</dt><dd>{formatDate(property.lastSeenAt)}</dd></div><div><dt>{context.view==="venduti"?(manualSale?"Conferma manuale registrata":"Segnale di vendita"):"Classificazione rilevata"}</dt><dd>{formatDate(context.view==="venduti"?saleDate:detail.marketObservation?.classifiedAt)}</dd></div></dl>
        <p>{context.view==="venduti"?(context.confirmed?"La vendita risulta confermata dalle informazioni disponibili. Il prezzo effettivo di compravendita non è disponibile.":context.probable?"È presente un segnale probabile: la vendita resta da confermare. Il richiesto non è il prezzo di compravendita.":"Non risulta una vendita confermata. La vista di provenienza non costituisce una prova."):"L’uscita o l’assenza di un annuncio non dimostra una vendita. Lo storico mostra eventuali ripubblicazioni o cambi di agenzia."}</p><a href="#storico">Leggi lo storico e le prove ↓</a>
       </>}
      </section>:null}
@@ -241,7 +242,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
        <div><dt>{context.view==="venduti"?"Osservazione della vendita":"Presenza osservata"}</dt><dd>{context.view==="venduti"&&saleDate&&Date.parse(saleDate)<=Date.parse(property.firstSeenAt)?"Segnale già presente al primo riscontro":marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</dd><p>Prima osservazione: {formatDate(property.firstSeenAt)}</p></div>
        <div><dt>Prezzo</dt><dd>{formatNumber(sourcePrice?.dropCount??drops)} ribassi registrati</dd><p>{detail.marketObservation?.priceConflict?"Prezzi discordanti tra le fonti":sourcePrice?.firstPrice!=null?"Primo prezzo: "+formatCurrency(sourcePrice.firstPrice):"Storico iniziale non disponibile"}</p></div>
        <div><dt>Pubblicazioni</dt><dd>{formatNumber(sourceCount)} {sourceCount===1?"pubblicazione":"pubblicazioni"}</dd><p>{property.relaunchCount?formatNumber(property.relaunchCount)+" ripubblicazioni osservate":"Nessuna ripubblicazione registrata"}</p></div>
-       <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><p>{saleDate?"Segnale di vendita: "+formatDate(saleDate):property.saleStatus==="SOLD_CONFIRMED"?"Vendita confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"Non venduto, confermato manualmente":"Vendita non confermata"}</p></div>
+       <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><p>{saleDate?(manualSale?"Conferma manuale: ":"Segnale di vendita: ")+formatDate(saleDate):property.saleStatus==="SOLD_CONFIRMED"?"Vendita confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"Non venduto, confermato manualmente":"Vendita non confermata"}</p></div>
       </dl></div>
      </div>
     </section>
@@ -251,7 +252,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
     {detail.location&&forma!=="niente"?<section id="territorio" className="lr-case-section"><h2>Posizione <span>{locationPrecisionLabel(detail.location.precision)}</span></h2><MappaDellaCasa posizione={detail.location} etichetta={indirizzo}/><p className="lr-case-footnote"><MapPin size={13} aria-hidden="true"/>{dove}{forma==="area"?" · area indicativa, non posizione esatta dell’immobile":""}</p></section>:null}
     {!historyFirst?historySection:null}
     {children}
-          <details id="correggi" className="lr-property-corrections"><summary>Correggi o segnala un dato</summary><Card>
+          <details id="correggi" open className="lr-property-corrections"><summary>Correzione dati · azioni rapide</summary><Card>
         <CardHeader
           title="Correggi quello che sappiamo"
           meta="Ogni correzione resta scritta con il tuo nome, la data e il motivo. Quello che confermi non viene più sovrascritto da solo."
@@ -259,35 +260,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
         <CardBody>
           {user ? (
             <div className="grid gap-5 lg:grid-cols-3">
-              <form
-                action={recordPropertySaleOverride}
-                className={styles.manualForm}
-              >
-                <input type="hidden" name="propertyId" value={property.id} />
-                <Campo label="Questa casa è stata venduta?">
-                  <Scelta name="saleStatus" defaultValue={property.saleStatus}>
-                    <option value="UNKNOWN">Non lo sappiamo</option>
-                    <option value="SOLD_CONFIRMED">Sì, venduta</option>
-                    <option value="NOT_SOLD_CONFIRMED">No, non venduta</option>
-                  </Scelta>
-                </Campo>
-                <Campo label="Come lo sai?">
-                  <Testo
-                    name="reason"
-                    required
-                    minLength={5}
-                    placeholder="Es. me l'ha detto il proprietario al telefono"
-                  />
-                </Campo>
-                <PendingSubmitButton
-                  type="submit"
-                  pendingLabel="Registro"
-                  icon={<ShieldCheck aria-hidden="true" className="size-4" />}
-                  className={styles.primaryAction}
-                >
-                  Registra
-                </PendingSubmitButton>
-              </form>
+              <QuickSaleDecision propertyId={property.id} saleStatus={property.saleStatus}/>
 
               {property.agencies[0] ? (
                 <form

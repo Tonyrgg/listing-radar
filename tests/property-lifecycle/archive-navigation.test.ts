@@ -8,7 +8,7 @@ describe("archive sorting and dossier context",()=>{
   const order=vi.fn().mockReturnThis(),range=vi.fn().mockResolvedValue({data:Array.from({length:41},(_,i)=>({property_id:'p'+i})),error:null});
   const from=vi.fn(()=>({select:()=>({order,range})}));
   const result=await readIntelligence({from} as unknown as SupabaseClient,{view:'mercato',page:2,sort:'metro',direction:'desc'});
-  expect(from).toHaveBeenCalledWith('radar_property_read_model');
+  expect(from).toHaveBeenCalledWith('radar_property_live_archive');
   expect(order).toHaveBeenCalledWith('unit_asking_price',{ascending:false,nullsFirst:false});
   expect(range).toHaveBeenCalledExactlyOnceWith(40,80);
   expect(result.rows).toHaveLength(40);expect(result.hasNext).toBe(true);
@@ -24,6 +24,7 @@ describe("archive sorting and dossier context",()=>{
  });
  it("keeps navigation context distinct from the sale classification",()=>{
   const context=dossierContext("opportunita","ACTIVE","UNKNOWN");
+  expect(dossierContext("opportunita","SOLD_CONFIRMED","SOLD_CONFIRMED").view).toBe("venduti");
   expect(context.view).toBe("opportunita");expect(context.confirmed).toBe(false);
   expect(dossierContext("venduti","SOLD_PROBABLE","UNKNOWN")).toMatchObject({probable:true,confirmed:false,tone:"uncertain"});
   expect(dossierContext("venduti","SOLD_CONFIRMED","NOT_SOLD_CONFIRMED")).toMatchObject({confirmed:false,outcome:"Non venduto, confermato manualmente"});

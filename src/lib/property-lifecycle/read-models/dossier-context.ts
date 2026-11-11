@@ -5,7 +5,7 @@ export function dossierContext(requested:string|undefined,classification:string|
  const confirmed=!notSold&&(classification==="SOLD_CONFIRMED"||saleStatus==="SOLD_CONFIRMED");
  const probable=!notSold&&!confirmed&&classification==="SOLD_PROBABLE";
  const exited=["WITHDRAWN","RELISTED","AGENCY_CHANGED","UNKNOWN_EXIT","MISSING_UNCONFIRMED"].includes(classification??"");
- const view:DossierView=["mercato","opportunita","usciti","venduti"].includes(requested??"")?requested as DossierView:confirmed||probable?"venduti":exited?"usciti":"mercato";
+ const view:DossierView=confirmed||probable?"venduti":["mercato","opportunita","usciti","venduti"].includes(requested??"")?requested as DossierView:exited?"usciti":"mercato";
  const labels={mercato:"Mercato",opportunita:"Opportunità",usciti:"Usciti",venduti:"Venduti"};
  const titles={mercato:"Caratteristiche e presenza sul mercato",opportunita:"Analisi dell’opportunità",usciti:"Percorso di uscita dal mercato",venduti:"Esito della vendita"};
  const descriptions={mercato:"Prezzo richiesto, caratteristiche e pubblicazioni osservate.",opportunita:"Indizi che meritano una verifica, con le prove che li sostengono.",usciti:"Ultimo riscontro, classificazione dell’uscita ed eventuale ricomparsa.",venduti:"Distingui il segnale osservato dalla conferma di una vendita."};

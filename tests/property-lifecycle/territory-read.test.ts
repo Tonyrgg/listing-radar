@@ -4,7 +4,7 @@ vi.mock("server-only",()=>({}));
 vi.mock("next/cache",()=>({unstable_cache:(fn:unknown)=>fn}));
 vi.mock("@/lib/supabase/service",()=>({getSupabaseServiceClient:()=>({from:(view:string)=>({select:(fields:string)=>{mocks.select(view,fields);return {order:()=>({range:(from:number,to:number)=>mocks.range(view,from,to)})};}})})}));
 import {readTerritoryProperties} from "@/lib/property-lifecycle/read-models/territory-server";
-const propertyView="radar_property_read_model";
+const propertyView="radar_property_live_archive";
 const graphView="market_observer_graph_property_context";
 const documentView="market_observer_property_public_record_summary";
 describe("territorial map projection",()=>{

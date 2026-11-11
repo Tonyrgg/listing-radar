@@ -17,5 +17,5 @@ it("restricts both facts and market context to the dossier buildings in SQL",asy
  }} as unknown as SupabaseClient;
  await readFactNews(db,Date.now(),["building-one"]);
  expect(calls).toContainEqual(["market_observer_property_facts","in","building_id",["building-one"]]);
- expect(calls).toContainEqual(["radar_property_read_model","overlaps","context_building_ids",["building-one"]]);
+ expect(calls).toContainEqual(["radar_property_live_archive","overlaps","context_building_ids",["building-one"]]);
 });

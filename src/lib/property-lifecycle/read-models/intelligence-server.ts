@@ -8,6 +8,6 @@ import {readIntelligence,type IntelligenceFilters} from "./intelligence";
 // replace a valid cache entry with an empty archive.
 export const readCachedIntelligence=unstable_cache(
  (filters:IntelligenceFilters)=>readIntelligence(getSupabaseServiceClient(),filters),
- ["intelligence-indexed-v1",process.env.NEXT_PUBLIC_SUPABASE_URL??"unconfigured"],
+ ["intelligence-live-decisions-v2",process.env.NEXT_PUBLIC_SUPABASE_URL??"unconfigured"],
  {revalidate:60,tags:["lifecycle"]},
 );

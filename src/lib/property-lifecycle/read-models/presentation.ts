@@ -139,6 +139,7 @@ export function agencyListingStateLabel(value: string): string {
 }
 
 export function opportunityReasonLabel(value: string): string {
+  if(value === "manual_sale_confirmed") return "Vendita confermata manualmente";
   if(value === "identifiable_civic") return "Indirizzo con civico: immobile più facilmente individuabile";
   if(value === "identifiable_street") return "Via conosciuta";
   if(value === "identifiable_coordinates") return "Posizione precisa disponibile";

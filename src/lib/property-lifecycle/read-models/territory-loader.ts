@@ -15,7 +15,7 @@ async function pages(db:SupabaseClient,view:string,fields:string,size:number){
 
 /** Read the complete indexed snapshot, never rebuild the graph per page. */
 export async function loadTerritoryProperties(db:SupabaseClient):Promise<IntelligenceRow[]>{
- const properties=await pages(db,'radar_property_read_model',TERRITORY_PROPERTY_FIELDS,1000);
+ const properties=await pages(db,'radar_property_live_archive',TERRITORY_PROPERTY_FIELDS,1000);
  const seen=new Set<unknown>();
  return properties.map(row=>{
   if(!row.property_id||seen.has(row.property_id))throw Error('Territory read: missing or duplicate property identity');

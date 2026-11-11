@@ -9,4 +9,4 @@ export {TERRITORY_PROPERTY_FIELDS} from './territory-loader';
 
 export const readTerritoryProperties=unstable_cache(async()=>{
  return loadTerritoryProperties(getSupabaseServiceClient());
-},["territory-properties-v3-indexed",process.env.NEXT_PUBLIC_SUPABASE_URL??"unconfigured"],{revalidate:60,tags:["lifecycle"]});
+},["territory-properties-v4-live-decisions",process.env.NEXT_PUBLIC_SUPABASE_URL??"unconfigured"],{revalidate:60,tags:["lifecycle"]});

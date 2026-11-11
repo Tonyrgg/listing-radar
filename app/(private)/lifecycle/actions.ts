@@ -60,6 +60,8 @@ function revalidateLifecycle(propertyId?: string) {
   /* Le viste dell'archivio vivono un minuto in cache: una decisione presa
    * adesso deve vedersi adesso, non al prossimo minuto. */
   revalidateTag(LIFECYCLE_CACHE_TAG, { expire: 0 });
+  revalidatePath("/intelligence");
+  revalidatePath("/map");
   revalidatePath("/lifecycle");
   revalidatePath("/lifecycle/opportunities");
   revalidatePath("/lifecycle/agencies");
@@ -107,22 +109,8 @@ export async function recordPropertySaleOverride(formData: FormData) {
     throw new Error("Stato vendita non supportato.");
   }
   const db = getSupabaseServiceClient();
-  const current = await db
-    .from("properties")
-    .select("sale_status")
-    .eq("id", propertyId)
-    .single();
-  if (current.error) throw new Error(current.error.message);
-  await new PropertyLifecycleRepository(db).recordManualOverride({
-    targetType: "PROPERTY",
-    targetId: propertyId,
-    overrideKey: "sale_status",
-    overrideValue: nextState,
-    previousValue: current.data.sale_status,
-    reason,
-    source: "LIFECYCLE_UI_MANUAL_CONFIRMATION",
-    createdBy,
-  });
+  const {error}=await db.rpc("record_radar_sale_decision",{p_property_id:propertyId,p_status:nextState,p_reason:reason,p_created_by:createdBy});
+  if(error)throw new Error(error.message);
   revalidateLifecycle(propertyId);
 }
 
@@ -217,4 +205,16 @@ export async function recordReviewDecision(formData: FormData) {
     .eq("id", reviewId);
   if (update.error) throw new Error(update.error.message);
   revalidateLifecycle(review.data.property_id ?? undefined);
+}
+
+export async function saveQuickPropertySaleDecision(_previous:{ok:boolean;message:string;status?:string},formData:FormData){
+ try{
+  const status=String(formData.get('saleStatus')??'');
+  const note=String(formData.get('reason')??'').trim();
+  const defaults:Record<string,string>={SOLD_CONFIRMED:'Vendita confermata manualmente dall’operatore.',NOT_SOLD_CONFIRMED:'Immobile non venduto: conferma manuale dell’operatore.',UNKNOWN:'Esito della vendita da verificare: decisione manuale dell’operatore.'};
+  if(!PROPERTY_SALE_STATES.has(status))return {ok:false,message:'Scegli un esito valido.'};
+  if(!note)formData.set('reason',defaults[status]);
+  await recordPropertySaleOverride(formData);
+  return {ok:true,status,message:status==='SOLD_CONFIRMED'?'Vendita registrata. Immobile spostato nei Venduti.':'Correzione registrata e aggiornata nell’archivio.'};
+ }catch{return {ok:false,message:'Salvataggio non riuscito. La correzione non è confermata: riprova.'};}
 }
