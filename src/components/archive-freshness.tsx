@@ -16,6 +16,6 @@ export async function ArchiveFreshness(){
       <p className="mt-1">Gli ultimi dati raccolti restano consultabili; non attestano un aggiornamento completo del mercato.</p>
       <ul className="ml-4 list-disc">{issues.map(source=><li key={source.name}>{source.name}: {source.note || 'lettura da verificare'}</li>)}</ul>
       <Link className="underline" href="/fonti">Dettagli delle fonti</Link>
-    </details> : <p>Le letture delle agenzie risultano sane nelle ultime 24 ore. I dati restano quelli dichiarati dalle fonti.</p>}
+    </details> : <p>{sources.total > 0 ? 'Le letture delle agenzie risultano sane nelle ultime 24 ore. I dati restano quelli dichiarati dalle fonti.' : 'Nessuna fonte agenzia abilitata da verificare.'}</p>}
  </div>;
 }
