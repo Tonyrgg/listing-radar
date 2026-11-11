@@ -1,4 +1,4 @@
-/* Compact operational register: identity → decision → action. */
+/* Shared operational register. Acquired streets use the flat table below. */
 .worker-register { --register-rule: var(--lr-line-quiet); }
 html[data-theme=dark] .worker-register {
  --lr-canvas:#151a17; --lr-surface:#1c231e; --lr-raised:#283229;
@@ -176,4 +176,83 @@ html[data-theme=dark] .worker-register {
  .worker-register .queue-controls > label { width:100%; max-width:none; min-width:0; flex:auto; }
  .register-summary { gap:12px; flex-wrap:wrap; }
  .worker-register .query-fields { grid-template-columns:1fr; }
+}
+
+/* Acquired street: one title, one toolbar, one row per property. */
+.worker-register #detail-dialog[data-street-phase=populated][open] { display:flex; flex-direction:column; overflow:hidden; }
+.worker-register #detail-dialog[data-street-phase=populated] > .dialog-bar { flex:none; height:48px; min-height:48px; padding:6px 20px; }
+.worker-register #detail-dialog[data-street-phase=populated] .street-inspector { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; padding:0; }
+.worker-register .street-inspector .detail-header { display:block; flex:none; min-height:82px; padding:14px 160px 14px 20px; border-bottom:0; }
+.worker-register .street-inspector .detail-header h2 { font-size:22px; font-weight:600; line-height:1.3; margin:5px 0 0; }
+.worker-register .street-inspector .street-context { display:block; }
+.worker-register .street-inspector .street-context .eyebrow { font-size:11px; letter-spacing:0; }
+.worker-register #detail-dialog[data-street-phase=populated] .street-settings { position:absolute; z-index:30; top:18px; right:20px; margin:0; border:0; padding:0; }
+.worker-register .street-settings > summary { display:flex; align-items:center; gap:7px; list-style:none; padding:7px 10px; border:1px solid var(--lr-line); border-radius:5px; min-height:36px; color:var(--lr-ink-2); font-size:12px; }
+.worker-register .street-settings > summary::-webkit-details-marker { display:none; }
+.worker-register #detail-dialog[data-street-phase=populated] #street-tools { position:absolute; top:44px; right:0; width:min(620px,calc(100vw - 56px)); max-height:65dvh; overflow:auto; padding:16px 20px; background:var(--lr-surface); border:1px solid var(--lr-line); border-radius:6px; box-shadow:0 8px 24px #0003; }
+.worker-register #street-tools .street-secondary { display:block; }
+.worker-register #street-tools .street-secondary > * { margin-block:0 14px; }
+.worker-register #street-tools .actions { justify-content:flex-start; }
+.worker-register #street-tools .import-summary { margin:12px 0; padding:0; }
+.worker-register .street-inspector #street-actionbar:empty { display:none; }
+.worker-register .street-inspector #street-actionbar { flex:none; padding:0 20px; }
+.worker-register .street-inspector .tabs { flex:none; min-height:40px; padding:0 20px; gap:24px; }
+.worker-register .street-inspector .tabs button { font-size:12px; padding:9px 0; }
+.worker-register .street-inspector .tabs .ui-icon { display:none; }
+.worker-register #detail-dialog[data-street-phase=populated] .detail-content { flex:1; min-height:0; display:flex; flex-direction:column; padding:0; overflow:auto; }
+.worker-register .street-inspector .unit-toolbar { display:flex; flex:none; align-items:center; gap:10px; margin:0; padding:12px 20px; background:var(--lr-canvas); }
+.worker-register .unit-toolbar .unit-search-control { display:flex; flex:1; min-width:100px; align-items:center; gap:8px; height:38px; padding:0 10px; border:1px solid var(--lr-line); border-radius:5px; background:var(--lr-surface); }
+.worker-register .unit-search-control > .ui-icon { color:var(--lr-ink-3); width:15px; height:15px; }
+.worker-register .unit-search-control input { border:0; border-radius:0; outline-offset:2px; min-height:34px; padding:6px 0; width:100%; min-width:0; background:transparent; font-size:12px; }
+.worker-register .unit-toolbar .unit-state-control { display:block; width:190px; max-width:30%; }
+.worker-register .unit-toolbar .unit-state-control select { width:100%; font-size:12px; }
+.worker-register .unit-toolbar .unit-filter-panel { position:relative; flex:none; margin:0; padding:0; border:0; background:none; }
+.worker-register .unit-toolbar .unit-filter-panel > summary { display:flex; align-items:center; gap:6px; list-style:none; padding:7px 10px; border:1px solid var(--lr-line); border-radius:5px; color:var(--lr-ink-2); min-height:38px; font-size:12px; }
+.worker-register .unit-filter-popover { position:absolute; z-index:25; top:44px; right:0; width:min(680px,calc(100vw - 50px)); max-height:60dvh; overflow:auto; padding:16px; border:1px solid var(--lr-line); border-radius:6px; background:var(--lr-surface); box-shadow:0 8px 24px #0003; }
+.worker-register .unit-filter-popover .unit-filter-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.worker-register .unit-table-scroll { flex:1; min-height:0; overflow:auto; padding:0 20px; overscroll-behavior:contain; }
+.worker-register .unit-table { width:100%; min-width:920px; max-width:none; table-layout:fixed; border-collapse:separate; border-spacing:0; text-align:left; }
+.unit-table .col-select { width:32px; }.unit-table .col-civic { width:60px; }.unit-table .col-floor { width:65px; }.unit-table .col-type { width:114px; }.unit-table .col-sheet { width:55px; }.unit-table .col-parcel { width:67px; }.unit-table .col-sub { width:44px; }.unit-table .col-owner { width:auto; }.unit-table .col-state { width:124px; }.unit-table .col-open { width:77px; }
+.worker-register .unit-table thead th { position:sticky; top:0; z-index:4; height:34px; padding:7px 8px; border:0; border-block:1px solid var(--lr-line-quiet); background:var(--lr-surface); color:var(--lr-ink-3); font-size:12px; font-weight:500; text-transform:none; letter-spacing:0; }
+.worker-register .unit-table tbody .unit-table-row > :is(td,th) { height:58px; padding:8px; border:0; border-bottom:1px solid var(--lr-line-quiet); background:transparent; font-size:13px; font-weight:400; vertical-align:middle; }
+.worker-register .unit-table tbody .unit-table-row > th { color:var(--lr-ink); font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; }
+.worker-register .unit-table tbody .unit-table-row > :first-child { padding-left:0; }
+.worker-register .unit-table-row { cursor:pointer; }
+.worker-register .unit-table-row[data-selected=true], .worker-register .unit-table-row[data-expanded=true] { background:var(--lr-raised); box-shadow:none; }
+.worker-register .unit-table-row:hover { background:color-mix(in srgb,var(--lr-raised) 60%,transparent); }
+.worker-register .unit-table .cat-number { color:var(--lr-ink-2); font-variant-numeric:tabular-nums; }
+.worker-register .unit-table small { display:block; margin-top:3px; font-size:10px; color:var(--lr-ink-3); line-height:1.3; }
+.worker-register .unit-table .table-owner > span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--lr-ink-2); }
+.worker-register .unit-table .table-type { color:var(--lr-ink); }
+.worker-register .table-state { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--lr-ink-2); white-space:nowrap; }
+.worker-register .table-state::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--lr-ink-3); }
+.worker-register .table-state[data-decision=review] { color:var(--lr-warn); }
+.worker-register .table-state[data-decision=review]::before { background:var(--lr-warn); }
+.worker-register .table-state[data-decision=synced], .worker-register .table-state[data-decision=unchanged] { color:var(--lr-ok); }
+.worker-register .table-state[data-decision=synced]::before, .worker-register .table-state[data-decision=unchanged]::before { background:var(--lr-ok); }
+.worker-register .unit-table .table-open { padding:6px 5px; min-height:34px; font-size:11px; gap:3px; }
+.worker-register .unit-table .table-open .ui-icon { width:12px; height:12px; }
+.worker-register .unit-table-detail > td { padding:16px 20px; border:0; border-bottom:1px solid var(--lr-line); background:var(--lr-surface); }
+.worker-register .unit-table-detail header { display:flex; align-items:baseline; gap:12px; margin-bottom:12px; color:var(--lr-ink-3); font-size:12px; }
+.worker-register .unit-table-detail header strong { font-size:14px; color:var(--lr-ink); }
+.worker-register .unit-expanded .unit-register-details { padding:0; border:0; display:block; }
+.worker-register .unit-expanded .unit-register-details > details { width:100%; border-top:1px solid var(--lr-line-quiet); }
+.worker-register .unit-expanded .unit-register-details > details > summary { padding:10px 0; min-height:38px; font-size:12px; }
+.worker-register .unit-expanded .unit-register-details > details[open] > summary { color:var(--lr-ink); }
+.worker-register .street-inspector .selection-bar { position:static; flex:none; min-height:62px; margin:0; padding:10px 20px; gap:8px; box-shadow:none; flex-wrap:wrap; }
+.worker-register .street-inspector .selection-bar strong { font-size:12px; font-weight:500; }
+.worker-register .street-inspector .selection-bar .actions { gap:6px; }
+.worker-register .street-inspector .selection-bar button { font-size:12px; }
+.worker-register .street-inspector #selection-plan:empty { display:none; }
+.worker-register .street-inspector .detail-content[aria-labelledby=tab-quarantine], .worker-register .street-inspector .detail-content[aria-labelledby=tab-history] { display:block; padding:16px 20px; }
+@media(max-width:560px) {
+ .worker-register .street-inspector .detail-header { padding-left:14px; padding-right:120px; }
+ .worker-register .street-inspector .detail-header h2 { font-size:19px; }
+ .worker-register #detail-dialog[data-street-phase=populated] .street-settings { right:14px; }
+ .worker-register .street-inspector .unit-toolbar { gap:6px; padding:10px 14px; flex-wrap:wrap; }
+ .worker-register .unit-toolbar .unit-search-control { flex-basis:100%; }
+ .worker-register .unit-toolbar .unit-state-control { max-width:none; flex:1; }
+ .worker-register .unit-table-scroll { padding:0 14px; }
+ .worker-register .street-inspector .selection-bar { padding:10px 14px; }
+ .worker-register .unit-filter-popover { width:calc(100vw - 36px); }
 }

@@ -146,7 +146,9 @@ try {
   assert.deepEqual(after.runs.at(-1).activitySummary, { created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 2, unconfirmed: 0 });
   assert.equal((await page.evaluate(key => window.territory.unitDetail(key), first.key)).source.fullAddress, streets[0].name + ' N. 14 Piano 2');
   await page.locator('#detail-close').click(); await openStreet(page, streets[0]);
-  assert.ok((await page.locator('[data-unit="' + first.key + '"] h3').textContent()).includes('14 Piano 2'));
+  const updatedRow=page.locator('[data-unit="' + first.key + '"]');
+  assert.ok((await updatedRow.locator('th[scope=row]').getAttribute('title')).includes('14 Piano 2'));
+  await updatedRow.locator('[data-unit-open]').click();
   const cloud = await page.evaluate(key => window.territory.unitDetail(key), first.key);
   assert.ok(cloud.cloud.property.lastVerifiedAt, 'L’immobile conserva la verifica Cloud');
   assert.ok(cloud.cloud.people.every(p => p.evidence?.lastVerifiedAt), 'Ogni intestatario conserva la verifica per CF');

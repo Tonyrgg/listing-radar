@@ -35,7 +35,7 @@ try{
  await openStreet(page,street);await page.locator('.unit-register').first().waitFor();
  const mapBefore = await page.locator('#map').boundingBox();
  assert.equal(await page.locator('#detail-dialog').evaluate(d=>d.matches(':modal')),false);
- assert.equal(await page.locator('.unit-key-facts').first().locator('dt').allTextContents().then(labels=>['Civico','Piano','Tipologia catastale','Foglio','Particella','Sub'].every(label=>labels.includes(label))),true);
+ assert.equal(await page.locator('.unit-table thead th').allTextContents().then(labels=>['Civico','Piano','Tipologia','Foglio','Particella','Sub'].every(label=>labels.includes(label))),true);
  await page.locator('#detail-close').click();
  const mapAfter = await page.locator('#map').boundingBox();
  assert.equal(mapBefore.width,mapAfter.width,'Sidebar must not shrink the map');
@@ -45,8 +45,8 @@ try{
  await capture(page,{animations:'disabled',timeout:30000,path:path.join(output,'02-via-immobili.png')});
  const first=page.locator('.unit-register').first();await first.locator('[data-unit-select]').check();
  assert.equal(await first.getAttribute('data-selected'),'true');
- await first.locator('details').first().locator('summary').click();await first.locator('.owner-name strong').first().waitFor();
- await capture(page,{animations:'disabled',timeout:30000,path:path.join(output,'03-intestatari.png')});await first.locator('details').first().locator('summary').click();
+ await first.locator('[data-unit-open]').click();const opened=page.locator('.unit-table-detail').filter({has:page.locator('.unit-expanded')});await opened.locator('details').first().locator('summary').click();await opened.locator('.owner-name strong').first().waitFor();
+ await capture(page,{animations:'disabled',timeout:30000,path:path.join(output,'03-intestatari.png')});await first.locator('[data-unit-open]').click();
  await page.locator('#enqueue').click();await page.locator('#detail-close').click();await page.locator('#queue-manager').click();await page.locator('#queue-content').waitFor();
  for(const width of [1440,1024,390]){
   await page.setViewportSize({width,height:860});

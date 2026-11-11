@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { streetSearchReady, openStreet } from "./fixtures/street-search.mjs";
+import { streetSearchReady, openStreet, openStreetSettings } from "./fixtures/street-search.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.resolve(root, "../.runtime/territory-quarantine-check");
 await mkdir(output, { recursive: true });
@@ -26,8 +26,11 @@ try {
   await until(page, async id => (await window.territory.detail(id)).runs.at(-1)?.state === "completed", street.id);
   const detail = await page.evaluate(id => window.territory.detail(id), street.id);
   assert.equal(detail.units.length, 5); assert.equal(detail.quarantine.length, 1);
-  await until(page, () => document.querySelector(".detail-header .status")?.textContent.includes("conclusa"));
-  assert.ok((await page.locator(".acquisition-state, .detail-header .status").textContent()).includes("conclusa"));
+  await until(page, () => document.querySelector('#detail-dialog').dataset.streetPhase==='populated');
+  await openStreetSettings(page);
+  await page.locator('[data-disclosure=street-progress]').evaluate(el=>el.open=true);
+  assert.ok((await page.locator('[data-disclosure=street-progress] .status').first().textContent()).includes('conclusa'));
+  await page.locator('.street-settings > summary').click();
   assert.equal(await page.locator("#resume").count(), 0);
   const keys = detail.units.filter(u => ["1", "2", "3", "6"].includes(u.source.cadastral.subaltern)).map(u => u.key);
   const originalBad = detail.quarantine.find(q => q.source?.owners[0]?.taxCode === "DA_COMPLETARE");
@@ -53,7 +56,7 @@ try {
   }
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.locator("#detail-close").click(); await openStreet(page, street);
-  await until(page, () => document.querySelector("#tab-quarantine")?.textContent.includes("Quarantena 2"));
+  await until(page, () => document.querySelector("#tab-quarantine")?.textContent.includes("Da verificare 2"));
   assert.equal(await page.locator("#resume").count(), 0);
   await page.locator("#tab-quarantine").click();
   assert.equal(await page.locator(".quarantine-item").count(), 2);

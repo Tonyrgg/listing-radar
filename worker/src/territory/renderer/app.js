@@ -5,6 +5,7 @@ import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
 import { createToast, isBrowserWarning } from "./toast.js";
 import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitRecordHtml, unitImportTone } from "./unit-card.js";
+import { unitTableHtml } from "./unit-table.js";
 import { wireUnitEditors } from "./unit-editor.js";
 import { createQueuePanel } from "./queue-panel.js";
 import { createFilterPicker } from "./filter-picker.js";
@@ -142,13 +143,15 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     historyLimit = 50;
   let unitSearch = "",
     unitFilter = "",
-    renderedContext = null;
+    renderedContext = null, expandedUnitKey = null;
   // Restore reading and keyboard context across data refreshes, by record identity.
   function remember(root) {
     const active = document.activeElement;
     const locate = (element) =>
       element.id
         ? `#${CSS.escape(element.id)}`
+        : element.closest('[data-unit-editor]') && element.name
+          ? `[data-unit-editor="${CSS.escape(element.closest('[data-unit-editor]').dataset.unitEditor)}"] [name="${CSS.escape(element.name)}"]`
         : element.dataset.testKey
           ? `[data-test-key="${CSS.escape(element.dataset.testKey)}"]`
           : element.closest("[data-unit]")
@@ -170,6 +173,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       scroll: root.scrollTop,
       dialogScroll: $("detail-dialog").scrollTop,
       bodyScroll: root.querySelector("#detail-body")?.scrollTop || 0,
+      tableScroll: root.querySelector('.unit-table-scroll')?.scrollTop || 0,
+      tableLeft: root.querySelector('.unit-table-scroll')?.scrollLeft || 0,
       start: active.selectionStart,
       end: active.selectionEnd,
     };
@@ -191,6 +196,10 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("detail-dialog").scrollTop = state.dialogScroll;
     if (root.querySelector("#detail-body"))
       root.querySelector("#detail-body").scrollTop = state.bodyScroll;
+    if(root.querySelector('.unit-table-scroll')) {
+      root.querySelector('.unit-table-scroll').scrollTop=state.tableScroll||0;
+      root.querySelector('.unit-table-scroll').scrollLeft=state.tableLeft||0;
+    }
   }
   function draftStatus() {
     $("draft-status").hidden = !dirty;
@@ -220,7 +229,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     );
   }
   function unitFiltersHtml() {
-    return `<details class="unit-filter-panel operation-options" data-disclosure="unit-filters"><summary>Filtra immobili</summary><div class="unit-filter-fields"><div id="unit-floors"></div><div id="unit-categories"></div><div id="unit-owners"></div><label>Import Cloud<select id="unit-imports"><option value="any">Tutti</option><option value="never">Mai importati</option><option value="imported">Con import verificato</option></select></label><label>Ultimo import più vecchio di (giorni)<input id="unit-age" type="number" min="0" max="36500" value="${unitFilters.age ?? ''}" placeholder="Nessun limite"></label><div class="unit-civic-range"><label>Dal civico<input id="unit-min-civic" type="number" min="0" max="999999" value="${unitFilters.minCivic ?? ''}" placeholder="Inizio"></label><label>Al civico<input id="unit-max-civic" type="number" min="0" max="999999" value="${unitFilters.maxCivic ?? ''}" placeholder="Fine"></label></div></div><div class="actions"><button id="unit-reset-filters" class="quiet">Azzera filtri immobili</button></div><p class="meta">I filtri si combinano. Piani e civici non rilevati restano esclusi quando richiesti.</p></details>`;
+    const active=[unitFilters.floors.length,unitFilters.categories.length,unitFilters.owners.length,unitFilters.imports!=='any',unitFilters.age!==null,unitFilters.minCivic!==null||unitFilters.maxCivic!==null].filter(Boolean).length;
+    return `<details class="unit-filter-panel operation-options" data-disclosure="unit-filters"><summary>${icon("filter")}Filtri${active?` (${active})`:""}</summary><div class="unit-filter-popover"><div class="unit-filter-fields"><div id="unit-floors"></div><div id="unit-categories"></div><div id="unit-owners"></div><label>Import Cloud<select id="unit-imports"><option value="any">Tutti</option><option value="never">Mai importati</option><option value="imported">Con import verificato</option></select></label><label>Ultimo import più vecchio di (giorni)<input id="unit-age" type="number" min="0" max="36500" value="${unitFilters.age ?? ''}" placeholder="Nessun limite"></label><div class="unit-civic-range"><label>Dal civico<input id="unit-min-civic" type="number" min="0" max="999999" value="${unitFilters.minCivic ?? ''}" placeholder="Inizio"></label><label>Al civico<input id="unit-max-civic" type="number" min="0" max="999999" value="${unitFilters.maxCivic ?? ''}" placeholder="Fine"></label></div></div><div class="actions"><button id="unit-reset-filters" class="quiet">Azzera filtri immobili</button></div><p class="meta">I filtri si combinano. Piani e civici non rilevati restano esclusi quando richiesti.</p></div></details>`;
   }
   function bindUnitFilters() {
     const units = detail.units, owners = new Map();
@@ -587,6 +597,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !event.defaultPrevented && $("detail-dialog").open) {
       event.preventDefault();
+      const popup=$("inspector").querySelector('.street-settings[open],.unit-filter-panel[open]');
+      if(popup){popup.open=false;popup.querySelector(':scope > summary')?.focus();return;}
       closeDialog();
     }
   });
@@ -640,8 +652,15 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     await refresh();
     $("inspector").scrollTop = 0;
     const layer = layers.get(selectedStreet);
-    if (layer)
-      map.fitBounds(layer.getBounds(), { padding: [45, 45], maxZoom: 17, animate: false });
+    if (layer) {
+      const canvas=map.getContainer().getBoundingClientRect();
+      const visibleWidth=$("detail-dialog").getBoundingClientRect().left-canvas.left;
+      // Pan within the full-width canvas; the inspector never resizes the map.
+      const padding=visibleWidth>=220
+        ? {paddingTopLeft:[32,170],paddingBottomRight:[canvas.width-visibleWidth+32,80]}
+        : {padding:[45,45]};
+      map.fitBounds(layer.getBounds(), { ...padding, maxZoom:17, animate:false });
+    }
     else
       feedback(
         "Questa via è censita ma non ha ancora una geometria. La scheda e i processi sono disponibili.",
@@ -664,21 +683,21 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     renderedContext = context;
     $("inspector").classList.add("street-inspector");
     const badge = view.hasInventory ? statusHtml(s) : `<span class="status acquisition-state" data-phase="${view.phase}">${{ unacquired: "Mai acquisita", acquiring: "Acquisizione in corso", interrupted: "Acquisizione da riprendere" }[view.phase]}</span>`;
-    const header = `<div class="street-context"><span class="eyebrow">${streetIdentity(s)}</span>${badge}</div><h2>${escape(s.name)}</h2>${view.hasInventory ? progressHtml(s) : ""}`;
+    const header = `<div class="street-context"><span class="eyebrow">${streetIdentity(s)}</span>${view.hasInventory ? "" : badge}</div><h2>${escape(s.name)}</h2>`;
     if (!view.hasInventory) {
       const title = s.needsReview ? "Associa il tracciato a una via" : view.phase === "acquiring" ? "Acquisizione da SISTER in corso" : view.phase === "interrupted" ? "Riprendi la prima acquisizione" : "Acquisisci i dati di questa via";
       const description = s.needsReview ? "Scegli la via ufficiale per leggere i suoi dati catastali." : view.phase === "interrupted" ? "Il lavoro già svolto è conservato. Riprendi dallo stesso punto." : "Leggi immobili e intestatari da SISTER e conservali nella memoria del Worker.";
       const button = view.phase === "acquiring" ? "" : s.needsReview ? '<button id="first-associate" class="primary">Associa via ufficiale</button>' : view.phase === "interrupted" ? '<button id="resume" class="primary">Riprendi acquisizione</button>' : '<button class="primary" data-operation="scan">Acquisisci via</button>';
-      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">Seleziona gli immobili acquisiti e aggiungili alla coda per importarli in Tecnocloud.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details>`;
+      $("inspector").innerHTML = `<header class="detail-header">${header}</header><section class="street-before-acquisition"><div class="acquisition-heading">${icon("download")}<h3>${title}</h3></div><p>${description}</p><div id="detail-run" class="run-inline" hidden></div><div class="actions">${button}</div>${s.needsReview ? "" : '<p class="acquisition-caption">Seleziona gli immobili acquisiti e aggiungili alla coda per importarli in Tecnocloud.</p>'}</section><details class="street-settings" data-disclosure="street-settings"><summary>${icon("settings")}Strumenti</summary><div id="street-tools" class="street-tools"></div></details>`;
     } else if (sameContext) {
       $("inspector").querySelector(".detail-header").innerHTML = header;
       $("tab-units").innerHTML = `${icon("building")}Immobili ${s.count}`;
-      $("tab-quarantine").innerHTML = `${icon("warning")}Quarantena ${detail.quarantine?.length || 0}`;
+      $("tab-quarantine").innerHTML = `Da verificare ${detail.quarantine?.length || 0}`;
     } else
       $("inspector").innerHTML =
-        `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-actionbar" class="street-actionbar"></div><details class="street-settings" data-disclosure="street-settings"><summary>Impostazioni della via</summary><div id="street-tools" class="street-tools"></div></details><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
+        `<div id="detail-run" class="run-inline" hidden></div><header class="detail-header">${header}</header><div id="street-actionbar" class="street-actionbar"></div><details class="street-settings" data-disclosure="street-settings"><summary>${icon("settings")}Strumenti</summary><div id="street-tools" class="street-tools"></div></details><nav class="tabs" role="tablist" aria-label="Dettaglio della via">${[
                     ["units", `Immobili ${s.count}`],
-          ["quarantine", `Quarantena ${detail.quarantine?.length || 0}`],
+          ["quarantine", `Da verificare ${detail.quarantine?.length || 0}`],
           ["history", "Storico"],
         ]
           .map(
@@ -725,11 +744,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (["synced", "unchanged"].includes(u.assessment?.kind))
         counts.aligned++;
     }
-    const actions = `<div class="register-instruction"><strong>Seleziona gli immobili da lavorare</strong><span>Filtra l’elenco, controlla le schede e aggiungi la selezione alla coda.</span></div>`;
+
     {
-      if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
+      if (view.hasInventory) $("street-actionbar").innerHTML = resume;
       $("street-tools").innerHTML =
-        `<div class="street-secondary">${view.hasInventory ? `<div class="actions"><button data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Consulta corrispondenze CRM</button></div><p class="meta">La coda confronta automaticamente ogni immobile prima di scrivere.</p>` : ""}${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
+        `<div class="street-secondary">${view.hasInventory ? `<details data-disclosure="street-progress"><summary>Stato delle acquisizioni</summary>${badge}${progressHtml(s)}</details>` : ""}${view.hasInventory ? `<div class="actions"><button data-operation="scan" ${disabled || s.needsReview ? "disabled" : ""}>Aggiorna da SISTER</button><button class="quiet" data-operation="compare" ${disabled || !s.count ? "disabled" : ""}>Consulta corrispondenze CRM</button></div><p class="meta">La coda confronta automaticamente ogni immobile prima di scrivere.</p>` : ""}${operationOptions("scan", disabled)}<details class="street-notes" data-disclosure="notes"><summary>Annotazioni della via</summary><form id="memory-form"><label for="street-note">Note operative</label><textarea id="street-note" rows="3" placeholder="Indicazioni utili…">${escape(detail.memory.note)}</textarea><div class="form-actions"><button>Salva note</button><button type="button" data-cancel>Annulla</button></div></form></details></div>`;
       if ($("open-units")) $("open-units").onclick = () => switchTab("units");
       $("street-tools").insertAdjacentHTML("afterbegin", `<details class="operation-options" data-disclosure="sister-street-names"><summary>Come cercare questa via in SISTER</summary><form id="sister-street-form"><fieldset ${disabled}><legend class="sr-only">Nomi della via in SISTER</legend><p class="meta">Nome della scheda: <strong>${escape(s.name)}</strong></p><div class="operation-fields"><label for="sister-search-text">Parte di parola<input id="sister-search-text" maxlength="200" value="${escape(detail.memory.sisterSearch?.searchText ?? "")}" placeholder="Es. LILLO" aria-describedby="sister-names-help"></label><label for="sister-result-name">Voce esatta nell’elenco SISTER<input id="sister-result-name" maxlength="200" value="${escape(detail.memory.sisterSearch?.resultName ?? "")}" placeholder="${escape(s.sisterName)}" aria-describedby="sister-names-help"></label></div><p class="meta" id="sister-names-help">Copia la voce completa, incluso VIA o PIAZZA. I campi vuoti usano la ricerca automatica. Il nome della scheda resta invariato; le acquisizioni da riprendere conservano la ricerca iniziale.</p><div class="form-actions"><button>Salva ricerca SISTER</button><button type="button" data-cancel>Annulla</button></div></fieldset></form></details>`);
       $("sister-street-form").oninput = event => markDirty(event.currentTarget);
@@ -807,7 +826,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label for="unit-search">Cerca negli immobili<input id="unit-search" type="search" placeholder="Indirizzo, catasto o intestatario…" value="${escape(unitSearch)}"></label><label for="unit-filter">Mostra immobili<select id="unit-filter"><option value="">Tutti (${detail.units.length})</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai importati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label></div><p class="queue-summary" ${detail.units.length ? "" : "hidden"}>${rows.length} immobili · Ordinati per civico, piano e catasto</p>${detail.units.length ? unitFiltersHtml() : ""}<div class="units-grid">${rows.length ? rows.map(unitHtml).join("") : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o esito per ritrovare le schede." : "Aggiorna la lettura da SISTER, modificando i filtri se necessario."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}</div><footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p class="explanation" id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label class="unit-search-control" for="unit-search"><span class="sr-only">Cerca negli immobili</span>${icon("search")}<input id="unit-search" type="search" placeholder="Cerca civico, catasto o intestatario" value="${escape(unitSearch)}"></label><label class="unit-state-control" for="unit-filter"><span class="sr-only">Mostra immobili</span><select id="unit-filter" aria-label="Mostra immobili"><option value="">Tutti</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai importati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label>${detail.units.length ? unitFiltersHtml() : ""}</div>${rows.length ? unitTableHtml(rows,{escape,selected,disabled:Boolean(snapshot.activeRun),queued:new Set(snapshot.queueKeys),expandedKey:expandedUnitKey,renderDetails:unitHtml}) : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o azzera i filtri." : "Aggiorna la lettura da SISTER."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}<footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p hidden id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -859,7 +878,19 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         const count = await api.enqueue({ keys: [...selected], streetId: selectedStreet });
         selected.clear(); await refresh(); feedback(`${count} immobili aggiunti alla coda.`);
       });
-      $("detail-body").querySelectorAll(".unit").forEach(card => { card.onclick = event => { if (event.target.closest("input, label, button, summary, details, a, textarea, select") || window.getSelection()?.toString()) return; const input = card.querySelector("[data-unit-select]"); if (input && !input.disabled) input.click(); }; });
+      $("detail-body").querySelectorAll('[data-unit-open]').forEach(button => {
+        button.onclick = () => {
+          if(dirty)return feedback("Salva o annulla le correzioni prima di aprire un altro immobile.",true);
+          const key=button.dataset.unitOpen;
+          expandedUnitKey=expandedUnitKey===key?null:key;
+          renderDetail();
+          [...$("detail-body").querySelectorAll('[data-unit-open]')].find(b=>b.dataset.unitOpen===key)?.focus({preventScroll:true});
+        };
+      });
+      $("detail-body").querySelectorAll('.unit-table-row').forEach(row=>{row.onclick=event=>{
+        if(event.target.closest('input,label,button,a')||window.getSelection()?.toString())return;
+        row.querySelector('[data-unit-open]').click();
+      };});
       $("detail-body")
         .querySelectorAll("[data-unit-select]")
         .forEach((input) => {
@@ -970,15 +1001,15 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     if (state) restore($("inspector"), state);
   }
   function unitHtml(u) {
-    return unitRecordHtml(u, { escape, date, selected: selected.has(u.key), selectionDisabled: Boolean(snapshot.activeRun) || snapshot.queueKeys.includes(u.key), editDisabled: Boolean(snapshot.activeRun), allowTestChoice: !snapshot.operational, footer: snapshot.queueKeys.includes(u.key) ? '<span class="status icon-label">' + icon("layers") + 'In coda</span>' : "" });
+    return unitRecordHtml(u, { escape, date, detailsOnly: true, selected: selected.has(u.key), selectionDisabled: Boolean(snapshot.activeRun) || snapshot.queueKeys.includes(u.key), editDisabled: Boolean(snapshot.activeRun), allowTestChoice: !snapshot.operational, footer: snapshot.queueKeys.includes(u.key) ? '<span class="status icon-label">' + icon("layers") + 'In coda</span>' : "" });
   }
 
   function updateSelection() {
     if (!$("enqueue")) return;
     const records = detail.units.filter(u => selected.has(u.key)), visible = new Set(unitRows().map(u => u.key));
     const fresh = records.filter(u => !snapshot.queueKeys.includes(u.key)), hidden = records.filter(u => !visible.has(u.key)).length;
-    $("selection-count").textContent = qty(selected.size, "immobile selezionato", "immobili selezionati");
-    $("selection-plan").textContent = `${fresh.length} da aggiungere alla coda${hidden ? ` · ${hidden} fuori dai filtri` : ""}`;
+    $("selection-count").textContent = `${unitRows().length !== detail.units.length ? `${unitRows().length} di ${detail.units.length} immobili · ` : ""}${selected.size} selezionati`;
+    $("selection-plan").textContent = hidden ? `${hidden} selezionati fuori dai filtri` : "";
     $("enqueue").disabled = !fresh.length || Boolean(snapshot.activeRun);
     const queued = detail.units.filter(u => snapshot.queueKeys.includes(u.key)).length;
     $("enqueue").hidden = !fresh.length && queued > 0;
@@ -988,7 +1019,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     const stage = queued && !fresh.length ? 2 : 1;
     steps.forEach((item, i) => { item.removeAttribute("aria-current"); item.dataset.done = String(i < stage); if (i === stage) item.setAttribute("aria-current", "step"); });
     $("enqueue").innerHTML = `${icon("layers")}Aggiungi alla coda (${fresh.length})`;
-    $("clear-selection").disabled = !selected.size;
+    $("clear-selection").disabled = !selected.size; $("clear-selection").hidden = !selected.size;
     $("unit-filter").querySelector('[value="selected"]').textContent = `Solo selezionati (${selected.size})`;
     $("selection-help").textContent = "L’aggiunta conserva la selezione nella coda. L’import si avvia dal pulsante Coda sulla mappa.";
   }
@@ -1602,6 +1633,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   });
   document.addEventListener("click", (event) => {
     if (!$("tools").contains(event.target)) $("tools").open = false;
+    $("inspector").querySelectorAll('.street-settings[open],.unit-filter-panel[open]').forEach(popup=>{
+      if(!popup.contains(event.target))popup.open=false;
+    });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && $("tools").open) {
@@ -1611,7 +1645,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   });
   const queryPanel = createQueryPanel({ api, escape, feedback, notifyRunIssue, snapshot: () => snapshot, refresh, openQueue: () => queuePanel.open(),
     open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire le query.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); $("inspector").innerHTML = ""; $("detail-dialog").scrollTop = 0; openDialog("Query immobili"); return true; },
-    openUnit: async unit => { if (!unit.streetIds.length) return feedback("Associa questo immobile a una via dallo storico prima di lavorarlo.", true); await choose(unit.streetIds[0]); const card = [...$("inspector").querySelectorAll("[data-unit]")].find(c => c.dataset.unit === unit.key); if (card) { card.querySelector('[data-disclosure$=":record"]').open = true; card.scrollIntoView({ block: "start", behavior: "smooth" }); } }
+    openUnit: async unit => { if (!unit.streetIds.length) return feedback("Associa questo immobile a una via dallo storico prima di lavorarlo.", true); await choose(unit.streetIds[0]); expandedUnitKey=unit.key; renderDetail(); const panel=document.getElementById(`unit-panel-${unit.key}`); if(panel){panel.querySelector('[data-disclosure$=":record"]').open=true;panel.scrollIntoView({block:"nearest"});} }
   });
   const queuePanel = createQueuePanel({ api, escape, date, feedback, safe, markDirty, saved, remember, restore, progressContent, notifyRunIssue,
     snapshot: () => snapshot, dirty: () => dirty, refresh,

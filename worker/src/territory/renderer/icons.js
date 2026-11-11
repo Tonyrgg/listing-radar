@@ -25,6 +25,8 @@ const paths = {
   plus: '<path d="M12 4v16M4 12h16"/>',
   link: '<path d="m10 13 4-4m-5 8-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 6a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  'chevron-right': '<path d="m9 5 7 7-7 7"/>',
+  'chevron-up': '<path d="m5 15 7-7 7 7"/>',
 };
 export function icon(name) {
   return `<svg class="ui-icon" data-icon="${name}" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.info}</svg>`;
