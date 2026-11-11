@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
-import { mergePrivateNotes, personWriteModel } from "./contacts.js";
+import { mergePrivateNotes, personWriteModel,personNeedsWrite } from "./contacts.js";
+import {sameCrmRecordId} from '../core/crm-record-id.js';
 import { isTransientCloudError } from "./cloud-retry.js";
 import { failureFromError, ImportV2Error } from "./errors.js";
 import {
@@ -30,6 +31,9 @@ import type {
 } from "./model.js";
 import type { ImportV2Store, OwnershipWrite, TecnocloudV2Port } from "./ports.js";
 import { isManagedCrmOwnership } from "./ownership-policy.js";
+import {activityCoverage,activityPrimaryOwner,romeDay,validActivityCoverage,verifiedActivityFacts} from './activity-policy.js';
+import {rememberVerifiedActivity,verifiedClientActivities,withClientActivityLock} from './activity-client-lock.js';
+import type {ActivityClaim,ActivityWriteGuard} from './activity-write-guard.js';
 
 const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
   queued: "planned",
@@ -46,6 +50,12 @@ const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
 const timingMs = (elapsed: number) => Math.max(0, Math.round(elapsed * 1000) / 1000);
 
 export type ImportV2EngineOptions = {
+  activityWriteGuard?:ActivityWriteGuard;
+  requireSharedActivityGuard?:boolean;
+  skipUnchangedPeople?:boolean;
+  calendarActivityPolicy?:boolean;
+  /** Shared durable facts, including uncertain saves on other properties. */
+  relatedActivityCheckpoints?:()=>ImportV2Checkpoint[];
   replaceUnlistedPrimary?: boolean;
   maxTransientAttempts: number;
   now?: () => Date;
@@ -162,6 +172,11 @@ export class ImportV2Engine {
   private readonly preferRegistryDuplicates: boolean;
   private readonly replaceUnlistedPrimary: boolean;
   private checkpointSaveElapsedMs = 0;
+  private readonly calendarActivityPolicy:boolean;
+  private readonly relatedActivityCheckpoints?:()=>ImportV2Checkpoint[];
+  private readonly activityWriteGuard?:ActivityWriteGuard;
+  private readonly requireSharedActivityGuard:boolean;
+  private readonly skipUnchangedPeople:boolean;
 
   private async saveCheckpoint(checkpoint: ImportV2Checkpoint): Promise<void> {
     const startedAt = performance.now();
@@ -175,6 +190,11 @@ export class ImportV2Engine {
     options: Partial<ImportV2EngineOptions> = {},
   ) {
     this.maxTransientAttempts = Math.max(1, options.maxTransientAttempts ?? 3);
+    this.calendarActivityPolicy=options.calendarActivityPolicy===true;
+    this.relatedActivityCheckpoints=options.relatedActivityCheckpoints;
+    this.activityWriteGuard=options.activityWriteGuard;
+    this.requireSharedActivityGuard=options.requireSharedActivityGuard===true;
+    this.skipUnchangedPeople=options.skipUnchangedPeople===true;
     this.now = options.now ?? (() => new Date());
     this.isInterruptionRequested = options.isInterruptionRequested ?? (() => false);
     const includeCoOwners = options.includeCoOwners ?? true;
@@ -462,28 +482,106 @@ export class ImportV2Engine {
           throw new ImportV2Error("La rilettura dell'immobile non coincide con indirizzo e catasto SISTER", "verification_failed", { retryable: true });
         }
         assertOwnerships(property, this.desiredOwnerships(this.ownersInScope(plan.source.owners), checkpoint.syncedPeople), !this.includeCoOwners());
-        return { ...checkpoint, stage: NEXT_STAGE.ownerships_synced };
+        return { ...checkpoint,
+          ...(plan.source.activity.enabled&&!checkpoint.activityWrite?{activityWrite:{operationId:checkpoint.itemId,preparedAt:this.now().toISOString(),submittedAt:null,baselineIds:[]}}:{}),
+          stage: NEXT_STAGE.ownerships_synced };
       }
       case "verified": {
-        if (plan.source.activity.enabled && !checkpoint.activityWrite) {
-          checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: this.now().toISOString(), submittedAt: null, baselineIds: [] };
-          await this.saveCheckpoint(checkpoint);
-        }
-        const activityEvidence = await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan, checkpoint.activityWrite ? {
-          state: structuredClone(checkpoint.activityWrite),
-          persist: async state => { checkpoint.activityWrite = structuredClone(state); await this.saveCheckpoint(checkpoint); },
-        } : undefined);
-        if (plan.source.activity.enabled && (activityEvidence.outcome === "disabled" || activityEvidence.descriptionVerified === false || activityEvidence.statusVerified === false)) {
-          throw new ImportV2Error("L'attività prevista dal piano non è stata verificata: immobile conservato, attività da completare", "verification_failed", { retryable: true });
-        }
-        return { ...checkpoint, activityEvidence: { ...activityEvidence, ...(checkpoint.activityWrite ? { operationId: checkpoint.activityWrite.operationId } : {}) }, stage: NEXT_STAGE.verified };
+        const client=this.primaryOwner(this.ownersInScope(plan.source.owners));
+        return withClientActivityLock(client.taxCode,async()=>{
+          this.throwIfInterruptionRequested();
+          const completed=await this.completeActivity(checkpoint);
+          if(completed.activityEvidence)rememberVerifiedActivity(completed.activityEvidence,this.now());
+          return completed;
+        });
       }
-      case "activity_synced":
-        if (plan.source.activity.enabled && (!checkpoint.activityEvidence || checkpoint.activityEvidence.outcome === "disabled" || checkpoint.activityEvidence.descriptionVerified === false || checkpoint.activityEvidence.statusVerified === false)) return { ...checkpoint, stage: "verified" };
+      case "activity_synced": {
+        const evidence=checkpoint.activityEvidence;
+        const satisfied=evidence&&(evidence.outcome==='covered'?validActivityCoverage(evidence,this.requirePropertyId(checkpoint))
+          :evidence.outcome!=='disabled'&&evidence.descriptionVerified!==false&&evidence.statusVerified!==false);
+        if (plan.source.activity.enabled && !satisfied) return { ...checkpoint, stage: "verified" };
         return { ...checkpoint, stage: NEXT_STAGE.activity_synced };
+      }
       case "completed":
         return checkpoint;
     }
+  }
+
+  private async completeActivity(checkpoint:ImportV2Checkpoint):Promise<ImportV2Checkpoint>{
+    const plan=checkpoint.plan!;
+    if (plan.source.activity.enabled && !checkpoint.activityWrite) {
+      checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: this.now().toISOString(), submittedAt: null, baselineIds: [] };
+      await this.saveCheckpoint(checkpoint);
+    }
+    const propertyId=this.requirePropertyId(checkpoint);
+    const primary=this.primaryOwner(this.ownersInScope(plan.source.owners));
+    const clientId=this.primaryPersonId(this.ownersInScope(plan.source.owners),checkpoint.syncedPeople);
+    let claim:ActivityClaim|undefined;
+    let checkedHistory:import('./ports.js').ActivityWriteRequest['history'];
+    if(plan.source.activity.enabled&&this.calendarActivityPolicy&&checkpoint.activityWrite?.submittedAt&&checkpoint.activityWrite.savedActivityId){
+      // A known saved Task is a read-only recovery. It must not be held up by
+      // an unrelated incomplete customer list, nor create a new activity.
+      try{
+        const recovered=await this.crm.ensureActivity(propertyId,plan,{client:{id:clientId,name:primary.fullName,taxCode:primary.taxCode,phones:primary.contacts.phones},
+          state:structuredClone(checkpoint.activityWrite),persist:async state=>{checkpoint.activityWrite=structuredClone(state);await this.saveCheckpoint(checkpoint);}});
+        if(recovered.activityId&&sameCrmRecordId(recovered.activityId,checkpoint.activityWrite.savedActivityId)&&recovered.descriptionVerified===true&&recovered.statusVerified===true
+          &&sameCrmRecordId(recovered.clientId,clientId)&&sameCrmRecordId(recovered.propertyId,propertyId)&&recovered.activityDay){
+          return {...checkpoint,activityEvidence:{...recovered,outcome:'existing',operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
+        }
+      }catch(error){const failure=failureFromError(error,'verified',this.now());if(failure.global)throw error;}
+    }
+    if(plan.source.activity.enabled&&this.calendarActivityPolicy){
+      if(!this.crm.readActivityHistory)throw new ImportV2Error('Lettura dello storico attività non disponibile: attività da verificare','verification_failed');
+      const current=this.now(),day=romeDay(current);
+      checkpoint.activityWrite={...checkpoint.activityWrite!,clientId,clientTaxCode:primary.taxCode,activityDay:checkpoint.activityWrite?.submittedAt?checkpoint.activityWrite.activityDay??day:day};
+      await this.saveCheckpoint(checkpoint);
+      const related=this.relatedActivityCheckpoints?.()??[];
+      const proven=activityCoverage({records:[...verifiedClientActivities(clientId,current),...verifiedActivityFacts(related)],propertyComplete:false,clientComplete:false,checkedAt:current.toISOString()},propertyId,clientId,current);
+      if(proven)return {...checkpoint,activityEvidence:{...proven,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
+      const history=await this.crm.readActivityHistory(propertyId,clientId);
+      const coverage=activityCoverage(history,propertyId,clientId,current);
+      if(coverage){
+        return {...checkpoint,activityEvidence:{...coverage,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
+      }
+      if(!history.propertyComplete||!history.clientComplete)throw new ImportV2Error('Storico attività incompleto: non posso escludere attività già presenti nel mese o per il cliente oggi. Dati conservati, nessun nuovo inserimento.','verification_failed');
+      checkedHistory={propertyId,clientId,baselineIds:history.records.filter(row=>sameCrmRecordId(row.propertyId,propertyId)).map(row=>row.id.slice(0,15)),checkedAt:history.checkedAt};
+      const pending=related.find(other=>other.itemId!==checkpoint.itemId&&other.activityWrite?.submittedAt&&!verifiedActivityFacts([other]).length
+        &&(sameCrmRecordId(other.activityWrite.clientId,clientId)||(other.activityWrite.clientTaxCode??(other.plan?.source.owners.length?activityPrimaryOwner(other.plan.source.owners).taxCode:null))===primary.taxCode)
+        &&(other.activityWrite.activityDay??romeDay(new Date(other.activityWrite.submittedAt)))===day);
+      if(pending)throw new ImportV2Error('Un’attività di questo cliente inviata oggi è ancora da verificare. Nessun secondo inserimento.','verification_failed',{details:{pendingActivityItem:pending.itemId}});
+      if(!this.activityWriteGuard&&this.requireSharedActivityGuard)throw new ImportV2Error('Controllo attività tra postazioni non disponibile. Ricollega la memoria condivisa prima di inserire nuove attività.','verification_failed');
+      if(this.activityWriteGuard){
+        claim={clientTaxCode:primary.taxCode,day,operationId:checkpoint.itemId};
+        const reservation=await this.activityWriteGuard.reserve(claim);
+        if(reservation.proof){
+          const covered=activityCoverage({records:[reservation.proof],propertyComplete:false,clientComplete:false,checkedAt:current.toISOString()},propertyId,clientId,current);
+          if(covered)return {...checkpoint,activityEvidence:{...covered,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
+        }
+        if(!reservation.granted)throw new ImportV2Error('Questo cliente ha un’attività in lavorazione su un’altra postazione. Nessun secondo inserimento.','verification_failed');
+        if(reservation.submitted&&!checkpoint.activityWrite?.submittedAt)throw new ImportV2Error('Il controllo condiviso segnala un’attività già inviata: serve verificarne l’esito prima di un nuovo inserimento.','verification_failed');
+        checkpoint.activityWrite={...checkpoint.activityWrite!,sharedClaim:true};await this.saveCheckpoint(checkpoint);
+      }
+    }
+    try{
+    const activityEvidence = await this.crm.ensureActivity(this.requirePropertyId(checkpoint), plan, checkpoint.activityWrite ? {
+      ...(this.calendarActivityPolicy?{client:{id:clientId,name:primary.fullName,taxCode:primary.taxCode,phones:primary.contacts.phones}}:{}),
+      ...(checkedHistory?{history:checkedHistory}:{}),
+      state: structuredClone(checkpoint.activityWrite),
+      persist: async state => {
+        const submitted=Boolean(checkpoint.activityWrite?.submittedAt);
+        checkpoint.activityWrite = structuredClone(state); await this.saveCheckpoint(checkpoint);
+        if(claim&&state.submittedAt&&!submitted)await this.activityWriteGuard!.submitted(claim);
+      },
+    } : undefined);
+    if (plan.source.activity.enabled && (activityEvidence.outcome === "disabled" || activityEvidence.descriptionVerified === false || activityEvidence.statusVerified === false
+      ||this.calendarActivityPolicy&&(!activityEvidence.activityId||activityEvidence.descriptionVerified!==true||activityEvidence.statusVerified!==true
+        ||!sameCrmRecordId(activityEvidence.clientId,clientId)||!sameCrmRecordId(activityEvidence.propertyId,propertyId)||activityEvidence.activityDay!==romeDay(this.now())))) {
+      throw new ImportV2Error("L'attività prevista dal piano non è stata verificata: immobile conservato, attività da completare", "verification_failed", { retryable: true });
+    }
+    if(claim&&activityEvidence.activityId)await this.activityWriteGuard!.confirm(claim,{id:activityEvidence.activityId,propertyId,clientId,
+      status:plan.source.activity.status,activityDate:null,createdAt:activityEvidence.activityDay!,description:''});
+    return { ...checkpoint, activityEvidence: { ...activityEvidence, ...(checkpoint.activityWrite ? { operationId: checkpoint.activityWrite.operationId } : {}) }, stage: NEXT_STAGE.verified };
+    }finally{if(claim&&!checkpoint.activityWrite?.submittedAt)await this.activityWriteGuard!.release(claim).catch(()=>undefined);}
   }
 
   private async resolvePeople(owners: SourceOwner[]): Promise<PersonResolution[]> {
@@ -515,7 +613,8 @@ export class ImportV2Engine {
       if (!existing) {
         saved = await this.crm.createPerson(desired);
       } else if (liveMatches.length === 1) {
-        saved = await this.crm.overwritePerson(existing.id, desired);
+        saved = this.skipUnchangedPeople&&!personNeedsWrite(existing,desired)
+          ?await this.crm.readPerson(existing.id,owner.taxCode):await this.crm.overwritePerson(existing.id, desired);
       } else {
         saved = await this.crm.mergePeople({
           taxCode: owner.taxCode,
@@ -589,14 +688,7 @@ export class ImportV2Engine {
   }
 
   private primaryOwner(owners: SourceOwner[]): SourceOwner {
-    const indexed = owners.map((owner, index) => ({ owner, index }));
-    indexed.sort((left, right) => {
-      const share = (right.owner.sharePercentage ?? -1) - (left.owner.sharePercentage ?? -1);
-      return share || left.index - right.index;
-    });
-    const primary = indexed[0]?.owner;
-    if (!primary) throw new ImportV2Error("Immobile senza proprietario principale", "invalid_source");
-    return primary;
+    return activityPrimaryOwner(owners);
   }
 
   private primaryPersonId(owners: SourceOwner[], synced: SyncedPerson[]): string {

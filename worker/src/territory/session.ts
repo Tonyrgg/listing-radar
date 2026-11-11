@@ -20,9 +20,9 @@ import { runSettingsSchema, runSettings } from "./run-options.js";
 import { pendingUnitImport } from "./import-queue.js";
 import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
+import {assertSynchronized,type TerritoryOperationLease} from "./operation-lease.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
 import { resolveSyncConflict } from "./sync-records.js";
-import { canEnableQueuedActivity } from "./activity-plan.js";
 
 const id = z.string().min(1).max(200);
 const sourceOwner = z.object({ sourcePersonId: id, taxCode: z.string().max(30), fullName: z.string().max(200), birthDate: z.string().nullable(), birthPlace: z.string().nullable(), birthProvince: z.string().nullable(), rightType: z.string().max(100), sharePercentage: z.number().min(0).max(100).nullable(), ownershipParts: z.array(z.object({ rightType: z.string().max(200), shareOriginal: z.string().max(100) })).max(100).optional(), contacts: z.object({ phones: z.array(z.string().max(50)), emails: z.array(z.string().max(200)) }) });
@@ -44,7 +44,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   let syncing = false;
   let closing = false;
   let memoryError: string | null = null;
+  let checkedAt: string | null = null;
+  let unsubscribeCommits: (() => void) | undefined;
   let sync: TerritorySync | null = null;
+  let operationLease:TerritoryOperationLease|null=null;
   let credentialDigest = "";
   const publish = () => { if (!options.contents.isDestroyed()) options.contents.send("territory:changed"); options.changed?.(); };
   const flushOnline = async () => {
@@ -57,8 +60,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         sync = await openOnlineMemory(store, options.profileDirectory, credentials);
         credentialDigest = nextDigest;
       }
-      await sync.reconcile(); memoryError = null;
-    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Sincronizzazione.`; }
+      await sync.reconcile(); memoryError = null; checkedAt = new Date().toISOString();
+    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Memoria online.`; if(application?.hasActiveRun)application.pause(); }
     finally {
       syncing = false; publish();
     }
@@ -105,6 +108,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
 
     const inventory = JSON.parse(await readFile(path.join(options.assetDirectory, "renderer/inventory.json"), "utf8")) as { streets: Street[] };
     store = await TerritoryStore.open(options.profileDirectory, inventory.streets);
+    unsubscribeCommits = store.onCommit(scheduleSync);
     let provider;
     let liveConfig: LiveConfig | null = null;
     if (options.live) {
@@ -120,7 +124,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store);
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard());
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify);
     if (options.onlineCredentials && options.live) {
@@ -158,7 +162,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         return { selected: config.allowedCadastralKeys.length, allowCreate: config.allowCreate };
       } finally { syncing = false; }
     });
-    handle("sync-status", async () => sync ? { ...await sync.status(), syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", syncing, error: memoryError });
+    handle("sync-status", async () => sync ? { ...await sync.status(), checkedAt, syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", checkedAt, syncing, error: memoryError });
     handle("sync-review", async () => {
       if (application.hasActiveRun) throw new Error("Attendi la fine del lavoro prima di scegliere tra modifiche concorrenti");
       for (const issue of Object.values(store.read().syncConflicts ?? {}).filter(c => !c.resolvedAt)) {
@@ -173,11 +177,21 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         await store.change(s => resolveSyncConflict(s, issue.id, result.response - 1)); notify();
       }
     });
+    const ensureSynchronized=async()=>{
+      await syncLoop.flush();
+      if(!sync)throw new Error("Memoria online non disponibile: impossibile avviare una lavorazione.");
+      const status=await sync.status();assertSynchronized(status,memoryError);return status;
+    };
+    const finishSharedSession=async()=>{
+      if(!operationLease?.held)return;
+      const status=await ensureSynchronized();await operationLease.release(status.revision);
+    };
     handle("sync", async value => {
       const direction = z.enum(["push", "pull"]).parse(value);
       if (options.onlineCredentials && options.live) {
         const before = sync ? await sync.status() : null;
         await syncLoop.flush(); if (memoryError) throw new Error(memoryError);
+        if(!application.hasActiveRun)await finishSharedSession();
         const after = await sync!.status(); return { ...after, changed: after.revision !== before?.revision };
       }
       if (syncing || application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione in corso");
@@ -191,6 +205,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     });
     handle("detail", value => application.detail(id.parse(value)));
     handle("queue", () => application.importQueue());
+    handle('queue-preview',value=>{const v=z.object({keys:z.array(id).max(10000),settings:z.unknown().optional()}).strict().parse(value);return application.previewQueueActivities(v.keys,v.settings);});
     handle("queue-add", value => { const v = z.object({ keys: z.array(id).min(1).max(10000), streetId: id.optional() }).strict().parse(value); return application.enqueue(v.keys, v.streetId); });
     handle("queue-remove", value => { const v = z.object({ keys: z.array(id).min(1).max(10000) }).strict().parse(value); return application.dequeue(v.keys); });
     handle("queue-clear", value => { const v = z.object({ revision: z.number().int().nonnegative() }).strict().parse(value); return application.clearQueue(v.revision); });
@@ -207,7 +222,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("sister-street-settings", async value => { const v = z.object({ streetId: id, settings: sisterStreetSettingsSchema }).strict().parse(value); await application.configureSisterStreet(v.streetId, v.settings); });
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
-      if (options.onlineCredentials && options.live) await syncLoop.flush();
+      if (options.onlineCredentials && options.live) await ensureSynchronized();
       const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
       if (v.operation === "apply" && v.resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
@@ -217,29 +232,33 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const state = store.read();
         const settings = runSettings(v.settings);
         const recoveries = v.selected.map(key => pendingUnitImport(state, key)).filter(r => r !== null);
-        const activityCount = v.selected.filter(key => {
-          const recovery = pendingUnitImport(state, key);
-          if (recovery) return recovery.source.activity.enabled || settings.activityMode !== "none" && canEnableQueuedActivity(recovery.checkpoint);
-          if (settings.activityMode === "none") return false;
-          return Boolean(state.units[key]);
-        }).length;
-        const activityText = activityCount
-          ? `Il piano prevede ${activityCount} attività. Opzione scelta: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. La scelta vale anche per gli immobili dello storico e dei portafogli selezionati. I piani senza attività possono attivarla; un'attività già inviata da verificare conserva le opzioni originali.`
+        const activityPlan = application.previewQueueActivities(v.selected, settings);
+        const activityText = activityPlan.enabled
+          ? `Al massimo ${activityPlan.candidateActivities} nuove attività per ${activityPlan.enabled} immobili: gli immobili dello stesso cliente sono raggruppati. Le attività già inserite nel mese sull'immobile o oggi sul cliente possono ridurre ancora il totale. Si controlla la data di inserimento, non la scadenza. Opzione scelta: ${{ plain: "Telefonata da eseguire", direct_contact: "Contatto diretto automatico: senza recapiti, Eseguito; con recapiti, Telefonata da eseguire", killer: "Killer: contatto Eseguito, Telefonata con recapiti oppure Contatto diretto senza recapiti", none: "nessuna nuova attività" }[settings.activityMode]}. I piani senza attività possono attivarla; un'attività già inviata da verificare conserva le opzioni originali.`
           : "Nessuna nuova attività.";
         const result = await dialog.showMessageBox(options.parent, {
-          type: "warning", title: operational ? "Conferma import nel gestionale" : "Schede di prova concordate",
+          type: "warning", title: operational ? "Conferma lavorazione nel gestionale" : "Schede di prova concordate",
           message: `Applicare le modifiche a ${v.selected.length} immobili selezionati nel gestionale reale?`,
-          detail: `Per i nuovi lavori saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.replaceUnlistedPrimary ? "Un principale Cloud verificato ma assente dagli intestatari SISTER verrà sostituito con quello con quota maggiore; a parità di quota, il primo SISTER." : "Il principale Cloud viene conservato."} ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${recoveries.length ? `${recoveries.length} immobili hanno scritture da verificare: conservano dati e opzioni originali, indicati nel riepilogo della coda.` : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Ogni successo viene conservato subito. Gli immobili non conclusi restano in coda, senza una run da riprendere.`,
+          detail: `Per i nuovi lavori saranno scritte anagrafiche, recapiti, dati catastali e collegamenti ${settings.includeCoOwners ? "di tutti gli intestatari" : "del solo intestatario principale, conservando i collegamenti già presenti"}. ${settings.replaceUnlistedPrimary ? "Un principale Cloud verificato ma assente dagli intestatari SISTER verrà sostituito con quello con quota maggiore; a parità di quota, il primo SISTER." : "Il principale Cloud viene conservato."} ${settings.importPolicy === "existing_only" ? "Solo schede esistenti." : "Il worker confronta ogni immobile e poi crea o aggiorna; i casi ambigui vanno in quarantena."} ${activityText} ${recoveries.length ? `${recoveries.length} immobili hanno scritture da verificare: conservano dati e opzioni originali, indicati nel riepilogo della coda.` : ""} ${operational ? "" : "Sono ammessi solo gli immobili nella lista di prova. "}Una lavorazione con attività termina solo dopo aver verificato l'attività inserita o quella già presente che la copre. I lavori senza attività restano distinti. Gli esiti sono conservati subito; gli immobili non conclusi restano in coda.`,
           buttons: ["Torna al piano", operational ? "Applica agli immobili selezionati" : "Applica alle schede di prova"], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return null;
       }
+      if(options.onlineCredentials && options.live){
+        if(application.hasActiveRun)throw new Error("C’è già una lavorazione attiva su questo PC.");
+        operationLease??=sync!.operationLease();
+        await operationLease.acquire(message=>{memoryError=message;application.pause();publish();});
+        try{await ensureSynchronized();}catch(error){try{await finishSharedSession();}catch{/* Keep reservation until this device reconciles. */}throw error;}
+      }
       options.beforeStart?.();
       try {
         const run = v.queue ? await application.startQueue(v.selected, v.settings, v.resumeId) : v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
-        void application.waitForIdle().finally(() => { options.afterIdle?.(); notify(); });
+        void application.waitForIdle().finally(async () => {
+          options.afterIdle?.();notify();
+          try{await finishSharedSession();}catch(error){memoryError=error instanceof Error?error.message:"Sessione da sincronizzare";publish();}
+        });
         return run;
-      } catch (error) { options.afterIdle?.(); throw error; }
+      } catch (error) { options.afterIdle?.();try{await finishSharedSession();}catch{/* Preserve pending local work. */}throw error; }
     });
     handle("pause", () => application.pause());
 
@@ -255,11 +274,13 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         closing = true;
         application.pause(); await application.waitForIdle();
         await syncLoop.close();
+        if(operationLease?.held){try{await finishSharedSession();}catch{/* Reservation retained for recovery. */}operationLease.stop();}
+        unsubscribeCommits?.();
         channels.forEach(channel => ipcMain.removeHandler(channel));
         releaseProfile?.(); releaseProfile = undefined;
       },
     };
   } catch (error) {
-    syncLoop.stop(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
+    (operationLease as TerritoryOperationLease|null)?.stop();syncLoop.stop(); unsubscribeCommits?.(); channels.forEach(channel => ipcMain.removeHandler(channel)); releaseProfile?.(); throw error;
   }
 }

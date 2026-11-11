@@ -714,7 +714,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (["synced", "unchanged"].includes(u.assessment?.kind))
         counts.aligned++;
     }
-    const actions = `<ol class="workflow-steps" aria-label="Flusso degli immobili"><li data-done="true"><span>1</span>Dati SISTER acquisiti</li><li aria-current="step"><span>2</span>Scegli gli immobili</li><li><span>3</span>Aggiungi alla coda</li></ol>`;
+    const actions = `<div class="register-instruction"><strong>Seleziona gli immobili da lavorare</strong><span>Filtra l’elenco, controlla le schede e aggiungi la selezione alla coda.</span></div>`;
     {
       if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
@@ -899,7 +899,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .reverse()
             .map(
               (run) =>
-                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " import riusciti su " + run.total : run.handled + " immobili"}</p>${run.operation === 'scan' && (run.reusedKeys?.length || run.portfolioKeys?.length) ? `<p class="meta">${run.reusedKeys?.length || 0} riutilizzati dalla memoria · ${run.portfolioKeys?.length || 0} trovati nei portafogli</p>` : ''}<p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
+                `<li class="run-item"><strong>${escape(operations[run.operation])}</strong><p>${escape(runStates[run.state])} · ${run.operation === "apply" ? Object.keys(run.imports || {}).length + " lavorazioni verificate su " + run.total : run.handled + " immobili"}</p>${run.operation === 'scan' && (run.reusedKeys?.length || run.portfolioKeys?.length) ? `<p class="meta">${run.reusedKeys?.length || 0} riutilizzati dalla memoria · ${run.portfolioKeys?.length || 0} trovati nei portafogli</p>` : ''}<p class="meta">${date(run.startedAt)}${run.endedAt ? ` → ${date(run.endedAt)}` : ""}</p><p class="meta">${escape(optionsSummary(run))}</p>${run.error ? `<p class="explanation">${escape(run.error)}</p>` : ""}</li>`,
             )
             .join("") ||
           '<li class="explanation">Nessuna operazione su questa via.</li>'
@@ -1062,6 +1062,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("notice").hidden = Boolean(snapshot.operational);
     document.body.classList.toggle("operational", Boolean(snapshot.operational));
     $("cloud-memory").hidden = !memory.configured;
+    $("sync-now").hidden = !memory.configured;
     const online = memory.environment === "online";
     const conflictCount = memory.conflicts?.length || 0;
     $("memory-review").hidden = !conflictCount;
@@ -1075,12 +1076,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           ? "Salvataggio…"
           : memory.pending
             ? "Modifiche in attesa"
-            : "Archivio sincronizzato"
+            : memory.checkedAt ? "Questa postazione è sincronizzata" : "Verifica sincronizzazione…"
       : "Sincronizzazione";
     $("cloud-memory").title =
       memory.error ||
       (online
-        ? "Vie, immobili, note e storico sincronizzati su Supabase"
+        ? "Le modifiche di questa postazione sono confermate online. Un PC spento o senza rete invia le proprie modifiche quando il Worker torna aperto e connesso."
         : "Memoria condivisa locale");
     if (memory.error) feedback(memory.error, true, { deduplicate: true });
     $("memory-pull").textContent = online
@@ -1092,7 +1093,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       ? "Memoria online"
       : "Memoria condivisa di prova";
     $("memory-description").textContent = online
-      ? "Un unico archivio per tutte le postazioni. Le modifiche vengono inviate dopo le azioni e durante le lavorazioni; ogni 15 secondi ricevi gli aggiornamenti degli altri PC. Senza rete il lavoro resta sul PC e viene inviato al ritorno della connessione. Se lo stesso dato è stato modificato in due modi, entrambe le proposte sono conservate per il confronto."
+      ? "Un unico archivio per tutte le postazioni. Le modifiche vengono inviate dopo le azioni e durante le lavorazioni; ogni 15 secondi ricevi gli aggiornamenti degli altri PC. Le nuove lavorazioni richiedono una sincronizzazione riuscita e una sola postazione alla volta. Se la rete manca durante il lavoro, la lavorazione si mette in pausa e i dati locali restano conservati. Se lo stesso dato è stato modificato in due modi, entrambe le proposte sono conservate per il confronto."
       : "Archivio nell'ambiente locale separato. Un conflitto conserva le tue modifiche e richiede un confronto.";
     if (memory.configured)
       $("memory-date").textContent =
@@ -1101,8 +1102,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
           ? "Salvataggio in corso…"
           : memory.pending
             ? "Modifiche locali in attesa di sincronizzazione."
-            : memory.syncedAt
-              ? `Ultima sincronizzazione: ${date(memory.syncedAt)}`
+            : memory.checkedAt
+              ? `Revisione condivisa: ${memory.revision ?? "—"} · Ultimo controllo online: ${date(memory.checkedAt)}${memory.syncedAt ? ` · Ultimo aggiornamento condiviso: ${date(memory.syncedAt)}` : ""}`
               : "Non ancora sincronizzata");
     $("quarantine-open").textContent = `Quarantena (${snapshot.quarantineCount || 0})`;
     $("history-review").hidden = !snapshot.historyIssues;
@@ -1270,6 +1271,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         };
       });
   }
+  $("sync-now").onclick = safe(async () => {
+    if(dirty)throw new Error("Salva o annulla le modifiche prima di sincronizzare.");
+    if(syncBusy || snapshot.activeRun)throw new Error("Attendi la fine della lavorazione: durante il lavoro la sincronizzazione è automatica.");
+    syncBusy=true;$("sync-now").disabled=true;
+    try{feedback("Sincronizzazione in corso…");const result=await api.sync("push");await refresh();feedback(`Archivio sincronizzato · revisione ${result.revision}`);}
+    finally{syncBusy=false;$("sync-now").disabled=false;}
+  });
   $("cloud-memory").onclick = () => {
     if (dirty)
       return feedback(

@@ -12,10 +12,11 @@
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="fonts.css" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="register.css" />
     <script defer src="vendor/leaflet.js"></script>
     <script type="module" src="app.js"></script>
   </head>
-  <body>
+  <body class="worker-register">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">⌖</span>
@@ -27,6 +28,7 @@
         ><button id="cloud-memory" class="quiet" hidden>
           Sincronizzazione
         </button>
+        <button id="sync-now" class="quiet" hidden>Sincronizza ora</button>
         <details class="tools" id="tools">
           <summary>Strumenti</summary>
           <div class="tools-menu">
@@ -90,7 +92,7 @@
         <h2 id="dialog-title" tabindex="-1">Scheda della via</h2>
         <div class="actions">
           <button id="detail-refresh" class="quiet">Aggiorna scheda</button
-          ><button id="detail-close">Chiudi</button>
+          ><button id="detail-close">Torna alla mappa</button>
         </div>
       </header>
       <p id="draft-status" class="draft-status" role="status" hidden>

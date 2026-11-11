@@ -3,6 +3,7 @@ import type { Run, TerritoryState } from "./model.js";
 import { unitKey } from "./model.js";
 import { sameCrmRecordId } from "../core/crm-record-id.js";
 import { isDeepStrictEqual } from "node:util";
+import {validActivityCoverage} from '../import-v2/activity-policy.js';
 
 /** Called inside the completion transaction, before any journal/queue success. */
 export function freezeRunImport(run: Run, checkpoint: ImportV2Checkpoint) {
@@ -31,7 +32,7 @@ export function canEnableQueuedActivity(checkpoint: ImportV2Checkpoint): boolean
 }
 
 export function runActivitySummary(_state: TerritoryState, run: Run) {
-  const summary = { created: 0, recovered: 0, disabled: 0, unconfirmed: 0 };
+  const summary = { created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 0 };
   for (const [key, imported] of Object.entries(run.imports ?? {})) {
     const source = run.applySources?.[key];
     const proof = imported.proof, evidence = proof?.evidence;
@@ -39,6 +40,12 @@ export function runActivitySummary(_state: TerritoryState, run: Run) {
       || !sameCrmRecordId(proof.crmId, imported.crmId) || proof.at !== imported.at || !Number.isFinite(Date.parse(proof.at))
       || !isDeepStrictEqual(proof.activity, source.activity)) { summary.unconfirmed++; continue; }
     if (!proof.activity.enabled && evidence?.outcome === "disabled") { summary.disabled++; continue; }
+    if(proof.activity.enabled&&evidence?.outcome==='covered'){
+      if(evidence.operationId!==proof.itemId||!validActivityCoverage(evidence,imported.crmId))summary.unconfirmed++;
+      else if(evidence.coverage!.kind==='property_month')summary.coveredProperty++;
+      else summary.coveredClient++;
+      continue;
+    }
     if (!proof.activity.enabled || !evidence || !["created", "existing"].includes(evidence.outcome)
       || !evidence.activityId || evidence.operationId !== proof.itemId
       || evidence.descriptionVerified !== true || evidence.statusVerified !== true

@@ -35,7 +35,8 @@ export class LiveProvider implements TerritoryProvider {
   private config: LiveConfig;
   private memory: CloudIdentityMemory | null = null;
   private readonly submittedActivities = new Set<string>();
-  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test", private readonly store?: TerritoryStore) {
+  constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test", private readonly store?: TerritoryStore,
+    readonly activityWriteGuard?:()=>import('../import-v2/activity-write-guard.js').ActivityWriteGuard|undefined) {
     if (writeAccess === "operational" && !workBrowser) throw new Error("La modalità operativa richiede il Chrome di lavoro affidato dal desktop");
     this.config = validateLiveConfig(config, workBrowser);
   }
@@ -77,7 +78,7 @@ export class LiveProvider implements TerritoryProvider {
     if (this.writeAccess === "test" && kind === "create" && !this.config.allowCreate) throw new Error("Il collaudo concordato ammette solo aggiornamenti di schede esistenti");
   }
   async port(): Promise<TecnocloudV2Port> {
-    const base = new TecnocloudUiV2Port((await this.crmTabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true, submittedActivities: this.submittedActivities });
+    const base = new TecnocloudUiV2Port((await this.crmTabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true,maxReadRecoveries:1,submittedActivities: this.submittedActivities });
     this.memory ??= this.store ? new CloudIdentityMemory(this.store.read()) : null;
     return this.memory?.port(base) ?? base;
   }

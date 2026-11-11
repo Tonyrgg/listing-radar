@@ -6,6 +6,8 @@ import type { TerritoryState } from "./model.js";
 import type { TerritoryStore } from "./store.js";
 import { validateCloudMemory } from "./cloud-memory.js";
 import { diffRecords, mergeTerritory, recordsState, syncRecords, type SyncRecord } from "./sync-records.js";
+import {TerritoryOperationLease} from "./operation-lease.js";
+import {SharedActivityWriteGuard} from './activity-write-guard.js';
 
 export type TerritorySyncConfig = { url: string; key: string; workspaceId: string; ownerId: string; profileKind: "live" | "simulation"; environment?: "online" };
 export type SyncBinding = { revision: number; localHash: string; syncedAt: string | null; workspaceId?: string; ownerId?: string; profileKind?: string; url?: string; baseline?: TerritoryState };
@@ -38,6 +40,8 @@ function validateState(state: TerritoryState, kind: TerritorySyncConfig["profile
   }
 }
 export class TerritorySync {
+  operationLease(){return new TerritoryOperationLease(this.client,this.config.workspaceId,this.config.ownerId,this.store.deviceId);}
+  activityWriteGuard(){return new SharedActivityWriteGuard(this.client,this.config);}
   private readonly client: SupabaseClient;
   private digestCache: { revision: number; hash: string; conflicts: NonNullable<TerritoryState["syncConflicts"]>[string][] } | null = null;
   private bindingCache: { stamp: string; value: SyncBinding } | null = null;
@@ -102,7 +106,7 @@ export class TerritorySync {
       if (binding.baseline) validateState(binding.baseline, this.config.profileKind);
       const args = { p_workspace_id: this.config.workspaceId, p_owner_id: this.config.ownerId, p_profile_kind: this.config.profileKind };
       const result = await this.client.rpc("read_territory_workspace_changes", { ...args, p_since: binding.baseline ? binding.revision : 0 });
-      if (result.error) throw new Error("Sincronizzazione online non raggiungibile o schema da aggiornare. I dati locali restano conservati.");
+      if (result.error) throw new Error(`Sincronizzazione online non raggiungibile o schema da aggiornare (${result.error.code || "rete"}). I dati locali restano conservati.`);
       const { revision, changes } = result.data as { revision: number; changes: SyncRecord[] };
       if (!Number.isSafeInteger(revision) || revision < binding.revision || !Array.isArray(changes)) throw new Error("Revisione online non valida: archivio locale conservato");
       if (binding.baseline && revision === binding.revision && !changes.length && this.cleanStoreRevision === this.store.revision) return { revision, changed: false };
@@ -126,7 +130,7 @@ export class TerritorySync {
           ...args, p_expected_revision: revision, ...(revision ? { p_changes: patch } : { p_state: merged }),
         });
         if (save.error?.code === "40001") continue;
-        if (save.error) throw new Error("Salvataggio online non confermato: riprovo senza perdere i dati locali.");
+        if (save.error) throw new Error(`Salvataggio online non confermato (${save.error.code || "rete"}): riprovo senza perdere i dati locali.`);
         nextRevision = Number(save.data);
         if (nextRevision !== revision + 1) throw new Error("Risposta online non confermata: archivio locale conservato");
       }

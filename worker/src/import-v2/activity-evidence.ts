@@ -22,7 +22,7 @@ function parse(value: string): unknown {
  * evidence must belong to the same persisted Task and its property relation.
  * UI API fields and serialized Aura return values are supported.
  */
-export function cloudActivityEvidence(body: string, propertyId: string, description: string, status: string, excludedIds: ReadonlySet<string> = new Set()): { found: boolean; unresolved: boolean; activityId: string | null; knownIds: string[] } {
+export function cloudActivityEvidence(body: string, propertyId: string, description: string, status: string, excludedIds: ReadonlySet<string> = new Set(), requiredActivityId?:string): { found: boolean; unresolved: boolean; activityId: string | null; knownIds: string[] } {
   const nodes: unknown[] = [parse(body)];
   let unresolved = false;
   let activityId: string | null = null;
@@ -45,6 +45,7 @@ export function cloudActivityEvidence(body: string, propertyId: string, descript
       const related = values(field(node, "WhatId"))[0];
       if (related && related.slice(0, 15) === propertyId.slice(0, 15)) knownIds.add(id.slice(0, 15));
       if (excludedIds.has(id.slice(0, 15))) continue;
+      if(requiredActivityId&&id.slice(0,15)!==requiredActivityId.slice(0,15))continue;
       if (values(field(node, "Description")).some(value => normalize(value) === expected)) {
         const relatedField = field(node, "WhatId");
         const related = values(relatedField)[0];

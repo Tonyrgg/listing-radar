@@ -151,6 +151,33 @@ it("polling inattivo, azioni continue e chiusura non accavallano gli scambi", as
   await vi.advanceTimersByTimeAsync(30000); expect(exchange).toHaveBeenCalledTimes(4);
 });
 
+it("invia prontamente il commit fatto mentre lo scambio precedente era in volo", async () => {
+  vi.useFakeTimers();
+  let release!: () => void;
+  const exchange = vi.fn().mockImplementationOnce(() => new Promise<void>(r => { release = r; })).mockResolvedValue(undefined);
+  const loop = new TerritorySyncLoop(exchange);
+  const pending = loop.flush();
+  await vi.advanceTimersByTimeAsync(0);
+  loop.changed();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(exchange).toHaveBeenCalledTimes(1);
+  release(); await pending;
+  await vi.advanceTimersByTimeAsync(1499); expect(exchange).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1); expect(exchange).toHaveBeenCalledTimes(2);
+  loop.stop();
+});
+
+it("i commit persistiti attivano la sincronizzazione anche senza notifiche della schermata", async () => {
+  const remote = server(), a = await pc(remote);
+  const committed = vi.fn(); const unsubscribe = a.store.onCommit(committed);
+  await a.store.change(s => { s.memories[street.id]!.note = 'Import ufficio'; });
+  expect(committed).toHaveBeenCalledTimes(1);
+  await expect(a.store.change(() => { throw Error('not committed'); })).rejects.toThrow();
+  expect(committed).toHaveBeenCalledTimes(1);
+  unsubscribe(); await a.store.change(s => { s.memories[street.id]!.note = 'Successivo'; });
+  expect(committed).toHaveBeenCalledTimes(1);
+});
+
 it("unisce aggiunte e rimozioni indipendenti ai gruppi di vie senza resuscitare la vecchia selezione", async () => {
   const remote = server(), a = await pc(remote);
   const base = a.store.read(); base.zones = { z: { id: "z", name: "Centro", streetIds: ["one", "two"], updatedAt: "2026-10-01" } };

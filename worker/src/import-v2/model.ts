@@ -129,9 +129,19 @@ export type ImportV2Plan = {
   source: SourceProperty;
 };
 
+export type CrmActivitySnapshot={id:string;propertyId:string|null;clientId:string|null;description:string;status:string;activityDate:string|null;createdAt:string|null};
+export type CrmActivityHistory={records:CrmActivitySnapshot[];propertyComplete:boolean;clientComplete:boolean;checkedAt:string};
+export type ActivityEvidence={
+  operationId?:string;activityId:string|null;outcome:'created'|'existing'|'covered'|'disabled';
+  descriptionVerified?:boolean;statusVerified?:boolean;expectedStatus?:'Da eseguire'|'Eseguito';
+  propertyId?:string;clientId?:string;activityDay?:string;checkedAt?:string;
+  coverage?:{kind:'property_month'|'client_day';propertyId:string;clientId:string|null;activityDay:string;status:'Da eseguire'|'Eseguito';targetPropertyId:string;targetClientId:string;checkedAt:string};
+};
+
 export type ImportV2Checkpoint = {
   /** Durable activity boundary: historical Tasks are not proof of this import. */
-  activityWrite?: { operationId: string; preparedAt: string; submittedAt: string | null; baselineIds: string[]; legacyUncertain?: boolean };
+  activityWrite?: { operationId: string; preparedAt: string; submittedAt: string | null; baselineIds: string[]; legacyUncertain?: boolean;
+    clientId?:string;clientTaxCode?:string;activityDay?:string;savedActivityId?:string;saveAcknowledgedAt?:string;sharedClaim?:boolean };
   ownershipReplacement?: { before: CrmOwnershipSnapshot; afterPersonId: string };
   itemId: string;
   jobId: string;
@@ -145,14 +155,7 @@ export type ImportV2Checkpoint = {
   propertyResolution: PropertyResolution | null;
   crmPropertyId: string | null;
   /** Evidence returned only after the Cloud activity write/read cycle. */
-  activityEvidence?: {
-    operationId?: string;
-    activityId: string | null;
-    outcome: "created" | "existing" | "disabled";
-    descriptionVerified?: boolean;
-    statusVerified?: boolean;
-    expectedStatus?: "Da eseguire" | "Eseguito";
-  } | null;
+  activityEvidence?: ActivityEvidence | null;
   attempts: number;
   nextAttemptAt: string | null;
   lastError: ImportV2Failure | null;

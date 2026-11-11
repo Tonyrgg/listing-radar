@@ -29,7 +29,7 @@ function fact(id = "first") {
   freezeRunImport(run, checkpoint);
   return { run, checkpoint, key, source };
 }
-const created = { created: 1, recovered: 0, disabled: 0, unconfirmed: 0 };
+const created = { created: 1, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 0 };
 
 describe("W02: prova immutabile del singolo import", () => {
   it("due run con attivita diverse, checkpoint sostituito e riavvio conservano i conteggi", async () => {
@@ -64,10 +64,10 @@ describe("W02: prova immutabile del singolo import", () => {
       (r: Run, key: string) => { r.imports![key]!.proof!.activity.description = "different"; },
     ]) {
       const { run, key } = fact(); mutate(run, key);
-      expect(runActivitySummary(state, run)).toEqual({ created: 0, recovered: 0, disabled: 0, unconfirmed: 1 });
+      expect(runActivitySummary(state, run)).toEqual({ created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 1 });
     }
     const { run, key } = fact(); run.imports![key]!.proof!.evidence!.outcome = "existing";
-    expect(runActivitySummary(state, run)).toEqual({ created: 0, recovered: 1, disabled: 0, unconfirmed: 0 });
+    expect(runActivitySummary(state, run)).toEqual({ created: 0, recovered: 1, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 0 });
   });
 
   it("commit, replay e riavvio mantengono la stessa prova senza duplicare eventi", async () => {
@@ -115,7 +115,7 @@ describe("W02: prova immutabile del singolo import", () => {
     const { store, app } = await setup(), { run, checkpoint, key } = fact();
     delete run.imports![key]!.proof;
     await store.change(s => { s.runs.push(run); s.checkpoints[checkpoint.propertyId] = checkpoint; });
-    expect(app.importQueue().runs[0]!.activitySummary).toEqual({ created: 0, recovered: 0, disabled: 0, unconfirmed: 1 });
+    expect(app.importQueue().runs[0]!.activitySummary).toEqual({ created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 1 });
     freezeRunImport(run, checkpoint);
     expect(run.imports![key]!.proof).toBeUndefined();
     delete run.imports;
@@ -123,6 +123,6 @@ describe("W02: prova immutabile del singolo import", () => {
     run.applySources![key]!.activity.enabled = false;
     checkpoint.activityEvidence = { activityId: null, outcome: "disabled" };
     freezeRunImport(run, checkpoint);
-    expect(runActivitySummary(store.read(), run)).toEqual({ created: 0, recovered: 0, disabled: 1, unconfirmed: 0 });
+    expect(runActivitySummary(store.read(), run)).toEqual({ created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 1, unconfirmed: 0 });
   });
 });

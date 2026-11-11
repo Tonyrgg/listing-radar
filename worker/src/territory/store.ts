@@ -18,6 +18,16 @@ type MutableData<T> = T extends object ? { -readonly [P in keyof T]: MutableData
 export class TerritoryStore {
   private queue: Promise<unknown> = Promise.resolve();
   private committedRevision = 0;
+  private readonly commitListeners = new Set<() => void>();
+  onCommit(listener: () => void) {
+    this.commitListeners.add(listener);
+    return () => { this.commitListeners.delete(listener); };
+  }
+  private committed() {
+    this.committedRevision++;
+    // A presentation/scheduling failure must never invalidate a durable commit.
+    for (const listener of this.commitListeners) { try { listener(); } catch { /* Retry via the regular sync poll. */ } }
+  }
   /** Advances only after the atomic file replacement succeeds. */
   get revision() { return this.committedRevision; }
   get diagnosticsDirectory() { return path.dirname(this.filename); }
@@ -89,7 +99,7 @@ export class TerritoryStore {
       hydrateImportQueue(next, true);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, this.filename); this.state = next; this.committedRevision++;
+      await rename(temporary, this.filename); this.state = next; this.committed();
     });
     this.queue = operation.catch(() => undefined);
     await operation;
@@ -106,7 +116,7 @@ export class TerritoryStore {
         throw new ImportV2Error("Memoria locale non salvata: nessuna ulteriore scrittura CRM finché il salvataggio non riesce.", "cloud_unavailable", { global: true, retryable: true, details: { localPersistence: true, code: (error as NodeJS.ErrnoException).code } });
       }
       this.state = next;
-      this.committedRevision++;
+      this.committed();
       return result;
     });
     this.queue = operation.catch(() => undefined);
