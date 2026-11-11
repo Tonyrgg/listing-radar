@@ -311,6 +311,10 @@ export async function runLifecycleWorkerOnce(
     return true;
   } catch (error) {
     await queue.fail(job, workerId, error);
+    if (error instanceof Error && error.message.includes("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED")) {
+      console.info(JSON.stringify({action:"waiting-for-source-evidence",jobId:job.id,agencyId:job.agency_id}));
+      return true;
+    }
     throw error;
   } finally {
     clearInterval(heartbeat);

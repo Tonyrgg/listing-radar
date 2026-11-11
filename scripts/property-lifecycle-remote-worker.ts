@@ -1,3 +1,4 @@
+import { closeSoldTextWorker } from "../src/lib/property-lifecycle/assets/sold-text";
 import { randomUUID } from "node:crypto";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -157,7 +158,7 @@ async function main(): Promise<void> {
   if (wantsDrain) await drain(db);
 }
 
-main().catch((error) => {
+main().finally(closeSoldTextWorker).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });

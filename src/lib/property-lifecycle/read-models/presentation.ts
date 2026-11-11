@@ -139,6 +139,10 @@ export function agencyListingStateLabel(value: string): string {
 }
 
 export function opportunityReasonLabel(value: string): string {
+  if(value === "identifiable_civic") return "Indirizzo con civico: immobile più facilmente individuabile";
+  if(value === "identifiable_street") return "Via conosciuta";
+  if(value === "identifiable_coordinates") return "Posizione precisa disponibile";
+  if(value === "identifiable_details") return "Tipologia e caratteristiche disponibili";
   if (value.startsWith("observed_market_age:")) return `Almeno ${value.split(":")[1]} giorni osservati sul mercato`;
   if (value.startsWith("price_reduction_percent:")) return `Prezzo ridotto del ${value.split(":")[1]}%`;
   if (value.startsWith("price_drops:")) {

@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { inspectSoldText } from "./sold-text";
 
 import { inspectImage } from "@/lib/image/inspection";
 import { isDedicatedSoldGraphicUrl } from "@/lib/property-lifecycle/lifecycle/status-evidence";
@@ -158,7 +159,12 @@ export async function processListingAssets(
         timeoutMs,
       });
       const inspection = await inspectImage(bytes);
-      const classification = classifyAsset(asset);
+      let classification = classifyAsset(asset);
+      // Inspect the cover only: bounded CPU cost, no paid external service.
+      if(classification === "IMAGE" && position===0 && process.env.LIFECYCLE_SOLD_OCR === "true"){
+        try { if(await inspectSoldText(bytes)) classification="SOLD_GRAPHIC"; }
+        catch(error){warnings.push(`sold_text_inspection_failed:${asset.canonicalUrl}:${error instanceof Error?error.message:String(error)}`);}
+      }
       const retainRepresentative =
         classification === "IMAGE" && representativeImages < representativeImageCount;
       const representativeThumbnail = retainRepresentative

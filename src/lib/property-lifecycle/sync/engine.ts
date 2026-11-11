@@ -132,8 +132,9 @@ export async function runAgencySync(input: {
 
         counts.inScopeCount += 1;
         const fallback=situato.provenance.accessFallback===true;
-        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)||fallback
-          ? await (input.assetProcessor ?? processListingAssets)(fallback?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,2)}:situato)
+        const inspectCover = mode === "SYNC" && process.env.LIFECYCLE_SOLD_OCR === "true";
+        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)||fallback||inspectCover
+          ? await (input.assetProcessor ?? processListingAssets)(inspectCover?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,1)}:fallback?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,2)}:situato)
           : { assets: [], warnings: [] };
         assetWarnings.push(...assetResult.warnings);
         input.assertOwnership?.();

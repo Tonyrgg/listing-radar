@@ -17,6 +17,7 @@ export interface IntelligenceRow {
   first_seen_at: string; last_seen_at: string; exit_classification: string; exit_confidence: number | null;
   first_asking_price: number | null; latest_asking_price: number | null; reduction_percent: number | null;
   drop_count: number; price_source_url: string | null; opportunity_score: number | null;
+  base_opportunity_score?:number|null; identifiability_bonus?:number;
   reasons: string[]; evidence_summary: Record<string, unknown>;
   sold_observed_at?: string | null; classified_at?: string | null; classifier_version?: number | null;
   exit_evidence_ids?: string[]; exit_reasons?: string[]; exit_provenance?: Record<string, unknown>;
@@ -62,7 +63,7 @@ function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,field
   if(filters.publicRecords==='street_recent')request=request.gt('recent_street_count',0);
   if (filters.view === "venduti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE"]);
   if (filters.view === "usciti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE", "WITHDRAWN", "RELISTED", "AGENCY_CHANGED", "UNKNOWN_EXIT", "MISSING_UNCONFIRMED"]);
-  if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).neq("exit_classification", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");
+  if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).not("exit_classification", "in", "(SOLD_CONFIRMED,SOLD_PROBABLE)").neq("sale_status", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");
   if (filters.classification && EXIT_LABELS[filters.classification]) request=request.eq("exit_classification", filters.classification);
   if (filters.query?.trim()) {
     const term=filters.query.trim().replace(/[%_\\,()]/g, "").slice(0,120);
