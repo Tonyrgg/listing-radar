@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   });
   const workerId = `local-${process.pid}-${randomUUID().slice(0, 8)}`;
   const didWork = await runLifecycleWorkerOnce(workerId, { db });
-  console.info(didWork ? "Lifecycle worker completed one job." : "No lifecycle job was ready.");
+  console.info(didWork === "DEFERRED" ? "Lifecycle job deferred: waiting for fresh source evidence." : didWork ? "Lifecycle worker completed one job." : "No lifecycle job was ready.");
 }
 
 main().catch((error) => {

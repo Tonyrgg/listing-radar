@@ -120,8 +120,9 @@ async function drain(db: SupabaseClient): Promise<void> {
 
   let executed = 0;
   let failed = 0;
-  while (executed+failed < maxJobs && Date.now() < deadline) {
-    let didWork: boolean;
+  let deferred = 0;
+  while (executed+failed+deferred < maxJobs && Date.now() < deadline) {
+    let didWork: boolean | "DEFERRED";
     try {
       didWork = await runLifecycleWorkerOnce(workerId, { db });
     } catch (error) {
@@ -131,11 +132,12 @@ async function drain(db: SupabaseClient): Promise<void> {
       continue;
     }
     if (!didWork) break;
+    if(didWork === "DEFERRED"){deferred+=1;continue;}
     executed += 1;
     console.error(`[drain] job ${executed} completato`);
   }
   console.info(
-    JSON.stringify({ action: "drain", workerId, executed, failed, exhausted: executed+failed >= maxJobs }),
+    JSON.stringify({ action: "drain", workerId, executed, failed, deferred, exhausted: executed+failed+deferred >= maxJobs }),
   );
   if(failed>0)process.exitCode=1;
 }

@@ -5,7 +5,7 @@ describe('deferred source evidence',()=>{
  const error=new Error('POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED');
  const queue={claim:vi.fn().mockResolvedValue({id:'j',job_type:'POST_EXIT_CHECK',agency_id:'a',payload:{agencyListingId:'al'}}),fail:vi.fn().mockResolvedValue(undefined),complete:vi.fn(),renew:vi.fn()};
  const db={rpc:vi.fn().mockResolvedValue({data:null,error:{message:error.message}})};
- await expect(runLifecycleWorkerOnce('w',{db:db as never,queue:queue as never})).resolves.toBe(true);
+ await expect(runLifecycleWorkerOnce('w',{db:db as never,queue:queue as never})).resolves.toBe("DEFERRED");
  expect(queue.fail).toHaveBeenCalled();expect(queue.complete).not.toHaveBeenCalled();
  });
 });

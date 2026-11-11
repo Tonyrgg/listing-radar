@@ -258,7 +258,7 @@ async function executeBuildingDataSync(
 export async function runLifecycleWorkerOnce(
   workerId: string,
   dependencies: WorkerDependencies,
-): Promise<boolean> {
+): Promise<boolean | "DEFERRED"> {
   const queue = dependencies.queue ?? new LifecycleJobQueue(dependencies.db);
   const adapterFactory = dependencies.adapterFactory ?? createPropertyLifecycleAdapter;
   const job = await queue.claim(workerId);
@@ -313,7 +313,7 @@ export async function runLifecycleWorkerOnce(
     await queue.fail(job, workerId, error);
     if (error instanceof Error && error.message.includes("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED")) {
       console.info(JSON.stringify({action:"waiting-for-source-evidence",jobId:job.id,agencyId:job.agency_id}));
-      return true;
+      return "DEFERRED";
     }
     throw error;
   } finally {
