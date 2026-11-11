@@ -714,7 +714,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       if (["synced", "unchanged"].includes(u.assessment?.kind))
         counts.aligned++;
     }
-    const actions = `<ol class="workflow-steps" aria-label="Flusso degli immobili"><li data-done="true"><span>1</span>Dati SISTER acquisiti</li><li aria-current="step"><span>2</span>Scegli gli immobili</li><li><span>3</span>Aggiungi alla coda</li></ol>`;
+    const actions = `<div class="register-instruction"><strong>Seleziona gli immobili da lavorare</strong><span>Filtra l’elenco, controlla le schede e aggiungi la selezione alla coda.</span></div>`;
     {
       if (view.hasInventory) $("street-actionbar").innerHTML = `${resume}<div class="street-actions">${actions}</div>`;
       $("street-tools").innerHTML =
