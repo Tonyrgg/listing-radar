@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
 
       # Not npm ci: the committed lock file was generated on Windows and omits
@@ -96,3 +96,4 @@ jobs:
             --drain \
             --max-seconds=18000 \
             --max-jobs="$MAX_JOBS"
+
