@@ -1,0 +1,9 @@
+# Misure di lettura, 11 novembre 2026
+
+Letture REST dirette da questo PC, non tempi completi browser/Vercel: lista graph 41 righe 8-12 secondi e statement timeout intermittente. La precedente vista graph senza bonus/OCR ha restituito 41 righe in 6.528 ms. La proiezione property senza graph: 987 ms per 41 righe, 1.075-2.193 ms per 64. Contesto graph mappa 708 righe: 2.325-5.718 ms. Documenti mappa 8 righe 314-522 ms. Campione sotto carico di crawler, non benchmark controllato.
+
+La migrazione 0080 elimina la correlazione per immobile del controllo venduti; non sufficiente. La 0081 usa gli esiti già classificati in agency_listings anziché rileggere evidenze/snapshot nella consultazione. Anche dopo questa riduzione restano timeout nel sort indice: il problema principale è la vista graph e i suoi aggregati, non i byte trasmessi. Non dichiarato risolto.
+
+Intelligence rilegge la vista e aspetta agenzie/metriche poi paths foto/firme. Mappa pagina 64 proprietà sequenziali (708 record = almeno12 richieste) più grafi e documenti in parallelo, cache60sec; aspetta anche documenti pubblici e zone prima di rendere tutto. Dossier aspetta proprietà/idratazione, dettagli, contesto, poi readFactNews carica fatti e mercato globale e filtra in memoria per edificio. react.cache con client appena creato e now variabile non è una cache condivisa persistente.
+
+Soluzione proposta: proiezione consultativa precomputata e indicizzata aggiornata dopo sync/override, mantenendo prove storiche separate; endpoint mappa compatto con campi essenziali e caricamento livelli a richiesta; query documentali limitate a edificio; rendering Suspense progressivo e cache invalidata su modifiche (incluse quelle del worker GitHub). Evitare aumenti di timeout e parallelizzazione indiscriminata su Free. Nessun acquisto richiesto.
