@@ -19,7 +19,7 @@ async function capture(page,{path:filename}){
  const preview=await browser.newPage({viewport:page.viewportSize()});
  await preview.route('https://**/*',route=>route.abort());
  await preview.goto(`http://127.0.0.1:${server.address().port}/__capture__.html`);
- await preview.evaluate(async()=>{for(const d of document.querySelectorAll('dialog[open]')){d.removeAttribute('open');d.showModal();}await document.fonts.ready;});
+ await preview.evaluate(async()=>{for(const d of document.querySelectorAll('dialog[open]')){d.removeAttribute('open');d.show();}await document.fonts.ready;});
  await preview.screenshot({path:filename,animations:'disabled'});await preview.close();
 }
 try{
@@ -33,6 +33,13 @@ try{
  await page.evaluate(id=>window.territory.start({streetId:id,operation:'scan'}),street.id);
  await page.waitForFunction(async()=>!(await window.territory.snapshot()).activeRun,{},{timeout:20000});
  await openStreet(page,street);await page.locator('.unit-register').first().waitFor();
+ const mapBefore = await page.locator('#map').boundingBox();
+ assert.equal(await page.locator('#detail-dialog').evaluate(d=>d.matches(':modal')),false);
+ assert.equal(await page.locator('.unit-key-facts').first().locator('dt').allTextContents().then(labels=>['Civico','Piano','Tipologia catastale','Foglio','Particella','Sub'].every(label=>labels.includes(label))),true);
+ await page.locator('#detail-close').click();
+ const mapAfter = await page.locator('#map').boundingBox();
+ assert.equal(mapBefore.width,mapAfter.width,'Sidebar must not shrink the map');
+ await openStreet(page,street);
  assert.ok(await page.locator('.unit-register').count()>=3);
  await writeFile(path.join(output,'street.html'),await page.content());
  await capture(page,{animations:'disabled',timeout:30000,path:path.join(output,'02-via-immobili.png')});

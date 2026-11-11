@@ -11,6 +11,12 @@ export function unitHeadingHtml(unit, escape, compact = false) {
   const floors=position?.floors??[];
   const floorLabel=floors.length?floors.map(f=>f===0?'Terra':f<0?`S${Math.abs(f)}`:String(f)).join(' / '):'non rilevato';
   const cadastral=[['Foglio',source.cadastral.sheet],['Particella',source.cadastral.parcel],['Sub',source.cadastral.subaltern],...(source.cadastral.urbanSection?[['Sezione',source.cadastral.urbanSection]]:[])];
+  if (compact) {
+    const category=(source.category||'').trim().toUpperCase();
+    const type = /^A\/(?:[1-9]|11)$/.test(category)?'Abitazione':({'A/10':'Ufficio','C/1':'Negozio','C/2':'Deposito','C/6':'Autorimessa'}[category]||'Non rilevata');
+    const facts=[['Civico',position?.civic === '.'?'Senza numero':position?.civic||'Non rilevato'],['Piano',floorLabel],['Tipologia catastale',type],...cadastral];
+    return `<h3>${escape(source.fullAddress)}</h3><dl class="unit-key-facts">${facts.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value||'Non rilevato')}</dd></div>`).join('')}</dl><p class="unit-register-cadastre">Categoria ${escape(source.category||'non rilevata')}</p>`;
+  }
   return `<h3>${escape(source.fullAddress)}</h3><div class="unit-location"><span>${escape(civic)}</span><span class="unit-floor">Piano ${escape(floorLabel)}</span><span>${escape(source.category||'Categoria N/D')}</span></div>${compact?`<p class="unit-register-cadastre">${cadastral.map(([label,value])=>`${label} <b>${escape(value||'N/D')}</b>`).join(' · ')}</p>`:`<dl class="unit-cadastral">${cadastral.map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value||'N/D')}</dd></div>`).join('')}</dl>`}`;
 }
 export function comparisonHtml(unit, escape) {

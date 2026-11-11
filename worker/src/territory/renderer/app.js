@@ -427,6 +427,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   const streetSearch = createStreetSearch({
     root: $("street-search"), getStreets: () => snapshot?.streets ?? [], escape,
     onSelect: street => {
+      if ($("detail-dialog").open) { void choose(street.id); return; }
       hidePreview(); selectedStreet = street.id;
       const layer = layers.get(street.id);
       if (layer) {
@@ -489,10 +490,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("hover").hidden = true;
   }
   function showPreview(street, point, activate = true) {
-    if (!street || $("detail-dialog").open) return;
+    if (!street) return;
     if (activate) {
-      selectedStreet = street.id;
-      streetSearch.setValue(street.name);
+      // A map preview must not change the street whose units are selected in the open inspector.
+      if (!$("detail-dialog").open) {
+        selectedStreet = street.id;
+        streetSearch.setValue(street.name);
+      }
       highlight(street.id, true);
     }
     hoverId = street.id;
@@ -564,7 +568,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       dialogOpener = document.activeElement;
       hidePreview();
       $("detail-dialog").append($("feedback"));
-      $("detail-dialog").showModal();
+      // Modeless overlay: keep the full-width Leaflet canvas interactive.
+      $("detail-dialog").show();
       $("dialog-title").focus({ preventScroll: true });
     }
   }
@@ -579,6 +584,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("detail-dialog").close();
   }
   $("detail-close").onclick = closeDialog;
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !event.defaultPrevented && $("detail-dialog").open) {
+      event.preventDefault();
+      closeDialog();
+    }
+  });
   $("detail-dialog").addEventListener("cancel", (event) => {
     event.preventDefault();
     closeDialog();
@@ -1151,11 +1162,11 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         });
         layer.geometryKey = geometryKey;
         layer.on("mouseover", () => {
-          if (!$("detail-dialog").open) highlight(street.id, true);
+          highlight(street.id, true);
         });
         layer.on("mousemove", () => {
           if (highlightedId !== street.id)
-            if (!$("detail-dialog").open) highlight(street.id, true);
+            highlight(street.id, true);
         });
         layer.on("mouseout", () => {
           highlight(street.id, false);
