@@ -19,6 +19,7 @@ async function setup() {
   await db.exec(await readFile(path.resolve("supabase/migrations/0013_territory_lab_sync.sql"), "utf8"));
   await db.query("select public.save_territory_lab_workspace($1::uuid,$2::uuid,'live',0,$3::jsonb)", [workspace, owner, JSON.stringify(initial)]);
   await db.exec(await readFile(path.resolve("supabase/migrations/0027_territory_incremental_sync.sql"), "utf8"));
+  await db.exec(await readFile(path.resolve("supabase/migrations/0088_territory_index_single_projection.sql"), "utf8"));
   const client = { rpc: async (name: string, args: Record<string, unknown>) => {
     const entries = Object.entries(args), casts: Record<string,string> = { p_workspace_id: "uuid", p_owner_id: "uuid", p_profile_kind: "text", p_since: "bigint", p_expected_revision: "bigint", p_changes: "jsonb", p_state: "jsonb" };
     if (!/^(read_territory_workspace_changes|save_territory_workspace_changes|save_territory_lab_workspace)$/.test(name)) throw new Error("Unexpected RPC");
@@ -76,3 +77,20 @@ it("two independent worker profiles converge through the real delta SQL, includi
     await b.sync.reconcile(); expect(b.store.read().memories.tatulli!.note).toBe("Legacy");
   } finally { await db.close(); await Promise.all(directories.map(dir => rm(dir, { recursive: true, force: true }))); }
 }, 30000);
+
+
+it("indexes a large snapshot once and only sends changed records and tombstones",async()=>{
+ const {db,client,read}=await setup();
+ try{
+  const state={...initial,virtualPeople:Object.fromEntries(Array.from({length:6500},(_,n)=>[String(n),{id:String(n),note:'synthetic fixture '.repeat(20)}]))};
+  const base={p_workspace_id:workspace,p_owner_id:owner,p_profile_kind:'live'};
+  const saved=await client.rpc('save_territory_lab_workspace',{...base,p_expected_revision:1,p_state:state});
+  expect(saved.error).toBeNull();expect(saved.data).toBe(2);
+  expect((await read(1)).changes).toHaveLength(6500);
+  const changed=await client.rpc('save_territory_workspace_changes',{...base,p_expected_revision:2,p_changes:[{collection:'virtualPeople',key:'0',value:{id:'0',note:'changed'}},{collection:'virtualPeople',key:'1',deleted:true,value:null}]});
+  expect(changed.error).toBeNull();expect(changed.data).toBe(3);
+  const delta=await read(2);expect(delta.changes).toHaveLength(2);
+  expect(delta.changes).toContainEqual({collection:'virtualPeople',key:'1',value:null,deleted:true});
+  expect((await db.query<{n:number}>("select count(*)::int n from territory_workspace_records where collection='virtualPeople' and not deleted")).rows[0].n).toBe(6499);
+ }finally{await db.close();}
+},30000);
