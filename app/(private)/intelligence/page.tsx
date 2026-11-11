@@ -15,7 +15,8 @@ import { RadarFilterPanel } from "@/components/radar-filter-panel";
 import {readPropertyThumbnails} from '@/lib/lifecycle-photos';
 
 export const metadata:Metadata={title:"Intelligence"};
-const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti"];
+const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti","civico","via","coordinate","precisione"];
+const precisionOptions={EXACT_ADDRESS:"Indirizzo esatto",EXACT_COORDINATES:"Coordinate esatte",STREET_ONLY:"Solo via",APPROXIMATE_AREA:"Zona approssimativa",UNKNOWN:"Posizione da verificare"};
 const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA"];
 export default async function IntelligencePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
   await connection();
@@ -28,7 +29,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const now=await readNow(),db=getSupabaseServiceClient();
   const sort=intelligenceSort(value("ordine"),value("direzione"),view);
   const [result,agencies,metrics]=await Promise.all([
-    readIntelligence(db,{view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti")}).catch(()=>null),
+    readIntelligence(db,{view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
@@ -40,6 +41,10 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
     const raw=value(key);
     if(key==='agenzia')return (agencies.data??[]).find(a=>a.id===raw)?.name??'Agenzia selezionata';
     if(key==='esito')return EXIT_LABELS[raw]??'Esito selezionato';
+    if(key==='civico')return raw==='yes'?'Presente':'Assente';
+    if(key==='via')return raw==='yes'?'Conosciuta':'Non conosciuta';
+    if(key==='coordinate')return raw==='yes'?'Disponibili':'Non disponibili';
+    if(key==='precisione')return precisionOptions[raw as keyof typeof precisionOptions]??raw;
     if(key==='stato')return propertyStateLabel(raw);
     if(key==='prezzo_min'||key==='prezzo_max')return formatCurrency(Number(raw));
     if(key==='ribassato')return raw==='yes'?'Con ribassi':'Senza ribassi osservati';
@@ -49,7 +54,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
 
   const resetUrl="?"+new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});
   const activeKeys=filterKeys.filter(k=>value(k));
-  const filterLabels:Record<string,string>={q:"Ricerca",agenzia:"Agenzia",localita:"Località",zona:"Zona",stato:"Stato",giorni:"Giorni minimi",punteggio:"Indice minimo",ribasso:"Ribasso minimo",tipo:"Tipo",prezzo_min:"Prezzo da",prezzo_max:"Prezzo fino a",mq_min:"m² da",mq_max:"m² fino a",ribassato:"Ribassi",fonte:"Fonte",atti:"Documenti",esito:"Esito"};
+  const filterLabels:Record<string,string>={q:"Ricerca",agenzia:"Agenzia",localita:"Località",zona:"Zona",stato:"Stato",giorni:"Giorni minimi",punteggio:"Indice minimo",ribasso:"Ribasso minimo",tipo:"Tipo",prezzo_min:"Prezzo da",prezzo_max:"Prezzo fino a",mq_min:"m² da",mq_max:"m² fino a",ribassato:"Ribassi",fonte:"Fonte",atti:"Documenti",esito:"Esito",civico:"Civico",via:"Via",coordinate:"Coordinate",precisione:"Precisione posizione"};
   const withoutFilter=(removed:string)=>{const q=new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(key!==removed&&value(key))q.set(key,value(key));return "?"+q;};
 
   return <div className="lr-radar-desk">
@@ -60,6 +65,13 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
             <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>
             <fieldset><legend>Cerca un immobile</legend>{field("q","Indirizzo o civico","search","Via, civico…")}{select("agenzia","Agenzia",Object.fromEntries((agencies.data??[]).map(a=>[a.id,a.name])))}</fieldset>
             <fieldset><legend>Territorio</legend>{select("localita","Località",{Bitonto:"Bitonto",Palombaio:"Palombaio",Mariotto:"Mariotto"})}{field("zona","Zona")}</fieldset>
+            <fieldset><legend>Informazioni geografiche</legend>
+              {select("civico","Numero civico",{yes:"Presente",no:"Assente"})}
+              {select("via","Via",{yes:"Conosciuta",no:"Non conosciuta"})}
+              {select("coordinate","Coordinate sulla mappa",{yes:"Disponibili",no:"Non disponibili"})}
+              {select("precisione","Precisione della posizione",precisionOptions)}
+              <Meta>Le coordinate disponibili possono essere approssimative. Usa la precisione per distinguere i punti esatti.</Meta>
+            </fieldset>
             <fieldset><legend>Prezzo richiesto</legend><div className="lr-filter-pair">{field("prezzo_min","Da €","number")}{field("prezzo_max","A €","number")}</div>{select("ribassato","Ribassi",{yes:"Con ribassi",no:"Senza ribassi osservati"})}</fieldset>
             <fieldset><legend>Caratteristiche</legend>{field("tipo","Tipologia","text","Appartamento, villa…")}<div className="lr-filter-pair">{field("mq_min","Da m²","number")}{field("mq_max","A m²","number")}</div></fieldset>
             <fieldset><legend>Presenza e segnali</legend>{field("giorni","Giorni minimi osservati","number")}{view==="opportunita"?field("punteggio","Indice minimo","number"):null}{field("ribasso","Riduzione minima %","number")}</fieldset>

@@ -43,6 +43,7 @@ export interface IntelligenceFilters {
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
   propertyType?: string; minimumPrice?: number; maximumPrice?: number; minimumSqm?: number; maximumSqm?: number;
   reduced?: string; source?: string; publicRecords?:string;
+  civic?: string; street?: string; coordinates?: string; locationPrecision?: string;
 }
 export function marketAgeLabel(firstSeen: string, earliest: string | null, end: string | number): string {
   const publicDate = earliest && Date.parse(earliest) < Date.parse(firstSeen);
@@ -54,6 +55,14 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
 }
 function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
   let request=db.from("market_observer_graph_property_archive").select(fields);
+  for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
+    if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
+    if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);
+  }
+  if(filters.coordinates === "yes")request=request.not("latitude","is",null).not("longitude","is",null);
+  if(filters.coordinates === "no")request=request.or("latitude.is.null,longitude.is.null");
+  if(filters.locationPrecision === "UNKNOWN")request=request.or("location_precision.is.null,location_precision.eq.UNKNOWN");
+  else if(filters.locationPrecision && ["EXACT_ADDRESS","EXACT_COORDINATES","STREET_ONLY","APPROXIMATE_AREA"].includes(filters.locationPrecision))request=request.eq("location_precision",filters.locationPrecision);
   if(filters.publicRecords==="documents")request=request.gt("public_record_count",0);
   if(filters.publicRecords==="recent")request=request.gt("recent_public_record_count",0);
   if(filters.publicRecords==="signals")request=request.gt("new_territorial_signal_count",0);
