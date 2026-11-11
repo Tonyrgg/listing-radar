@@ -1,3 +1,6 @@
+import {Suspense} from "react";
+import {ArchiveLoading} from "@/components/archive-loading";
+import {ArchiveFreshness} from "@/components/archive-freshness";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -13,12 +16,30 @@ import {TerritorialContext} from '@/components/territorial-context';
 import {readTerritoryProperties} from "@/lib/property-lifecycle/read-models/territory-server";
 import {readTerritoryWorkAreas} from '@/lib/map/work-areas';
 export const metadata:Metadata={title:"Territorio"};
-export default async function MapPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
-  await connection();
-  const params=await searchParams,value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
+type MapParams=Record<string,string|string[]|undefined>;
+export default async function MapPage({searchParams}:{searchParams:Promise<MapParams>}){
+ await connection();
+ const params=await searchParams;
+ return <div className="space-y-6">
+    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato." actions={<Link href="/map/zone" className={buttonClass('secondary')}>Gestisci zone di lavoro</Link>}/>
+ <Suspense fallback={<ArchiveLoading label="Caricamento della mappa"/>}><MapContent/></Suspense>
+ <Suspense fallback={<ArchiveLoading label="Caricamento dei documenti"/>}><DocumentsContent params={params}/></Suspense>
+ </div>;
+}
+async function MapContent(){
+ const db=getSupabaseServiceClient();
+ const [rows,workAreas,zones]=await Promise.all([
+  readTerritoryProperties().catch(()=>null),readTerritoryWorkAreas(db).catch(()=>null),
+  db.from("internal_zones").select("*").eq("is_active",true).not("geometry","is",null).order("zone_number"),
+ ]);
+ const zoneRows=zones.data;
+ return <><Suspense fallback={null}><ArchiveFreshness/></Suspense>
+    {!rows?<EmptyState title="Mappa dell’archivio non disponibile" description="La lettura dei dati non è completa. Riprova tra poco; nessun punto è stato cancellato."/>:<TerritoryArchive rows={rows} now={await readNow()} zones={(zoneRows??[]) as import("@/lib/matching/types").InternalZone[]} workAreas={workAreas}/>}
+ </>;
+}
+async function DocumentsContent({params}:{params:MapParams}){
+  const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
   const db=getSupabaseServiceClient();
-  const propertyRead=readTerritoryProperties().catch(()=>null);
-  const workAreaRead=readTerritoryWorkAreas(db).catch(()=>null);
   const page=Math.max(1,Math.floor(Number(value("pagina"))||1));
   const uuid=(s:string)=>/^[0-9a-f-]{36}$/i.test(s)?s:undefined;
   const streetId=uuid(value("via_id")),recordId=uuid(value("atto")),buildingId=uuid(value('edificio'));
@@ -29,12 +50,8 @@ export default async function MapPage({searchParams}:{searchParams:Promise<Recor
     streetId?readGraphContext(db,'STREET',streetId,territorialPage).catch(()=>null):Promise.resolve(null),
     buildingId?readGraphContext(db,'BUILDING',buildingId,territorialPage).catch(()=>null):Promise.resolve(null),
   ]);
-  const {data:zoneRows}=await db.from("internal_zones").select("*").eq("is_active",true).not("geometry","is",null).order("zone_number");
-  const [rows,workAreas]=await Promise.all([propertyRead,workAreaRead]);
   const nextUrl=(n:number)=>{const q=new URLSearchParams({pagina:String(n)});for(const key of ["documento","civico","anno","tipo_atto","fonte_atto","area","via_id"])if(value(key))q.set(key,value(key));return `?${q}#documenti-pubblici`;};
-  return <div className="space-y-6">
-    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato."/>
-    {!rows?<EmptyState title="Mappa dell’archivio non disponibile" description="La lettura dei dati non è completa. Riprova tra poco; nessun punto è stato cancellato."/>:<TerritoryArchive rows={rows} now={await readNow()} zones={(zoneRows??[]) as import("@/lib/matching/types").InternalZone[]} workAreas={workAreas}/>}
+ return <>
     {recordId?<section id="atto" className="scroll-mt-24 space-y-3 border-t border-[var(--lr-line)] pt-5"><h2 className="text-[length:var(--lr-text-section)] font-[650]">Atto e contesto territoriale</h2>{context?.record?<><PublicRecords records={[context.record]}/>
       {context.buildings.map(b=><div key={b.building_id} className="py-2"><h3 className="font-[650]"><Link className="underline" href={`/map?edificio=${b.building_id}#edificio`}>Edificio: {b.display_name}</Link></h3><Meta>{b.known_properties} immobili conosciuti · {b.active_properties} attivi · {b.publications} pubblicazioni storiche · {b.observed_agencies} agenzie osservate · {b.public_record_count} documenti pubblici</Meta><Meta>Collegamento di edificio; singola unità da verificare.</Meta></div>)}
       {context.properties.length?<div><h3 className="font-[650]">Immobili conosciuti nell’edificio</h3><ul className="space-y-2">{context.properties.map(p=><li key={p.property_id}><Link href={`/casa/${p.property_id}#documenti`} className="underline">{p.address}</Link><Meta>Contesto edificio, non prova sulla singola unità.</Meta></li>)}</ul></div>:<Meta>Nessuna property associata con precisione sufficiente. Il record resta nell’archivio territoriale.</Meta>}</>:<p>Atto non disponibile o lettura temporaneamente fallita. Cerca nel registro sottostante.</p>}</section>:null}
@@ -55,5 +72,5 @@ export default async function MapPage({searchParams}:{searchParams:Promise<Recor
       {records?<PublicRecords records={records.records}/>:<EmptyState title="Documenti temporaneamente non disponibili" description="La lettura del registro pubblico non è riuscita. Riprova tra poco."/>}
       <nav aria-label="Pagine documenti" className="flex items-center justify-between gap-3">{page>1?<Link href={nextUrl(page-1)} className={buttonClass("secondary")}>Documenti precedenti</Link>:<span/>}<Meta>Pagina {page}</Meta>{records?.hasNext?<Link href={nextUrl(page+1)} className={buttonClass("secondary")}>Altri documenti</Link>:<span/>}</nav>
     </section>
-  </div>;
+ </>;
 }

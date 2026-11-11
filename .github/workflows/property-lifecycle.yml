@@ -18,7 +18,18 @@ on:
         required: true
         default: SYNC_ALL
         type: choice
-        options: [SYNC_ALL, DEEP_SYNC_ALL, DEEP_SYNC_AGENCY, BUILDING_DATA_SYNC, SYNC_PRIVATE_RADAR]
+        options: [SYNC_ALL, SYNC_AGENCY, DEEP_SYNC_ALL, DEEP_SYNC_AGENCY, BUILDING_DATA_SYNC, SYNC_PRIVATE_RADAR]
+      agency_slug:
+        description: "Solo per SYNC_AGENCY/DEEP_SYNC_AGENCY: slug agenzia"
+        required: false
+        default: ""
+        type: string
+      max_jobs:
+        description: "Limite lavori: 1 per verificare una singola agenzia"
+        required: false
+        default: "200"
+        type: choice
+        options: ["1", "20", "200"]
 
 concurrency:
   # Never let two workers drain the same queue concurrently.
@@ -34,12 +45,13 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       LIFECYCLE_DEEP_MAX_ASSETS: "6"
+      LIFECYCLE_SOLD_OCR: "true"
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
 
       # Not npm ci: the committed lock file was generated on Windows and omits
@@ -67,12 +79,21 @@ jobs:
           fi
 
       - name: Enqueue and drain
+        env:
+          REQUESTED_AGENCY: ${{ inputs.agency_slug }}
+          MAX_JOBS: ${{ inputs.max_jobs || '200' }}
         run: |
+          extra=()
+          if [ -z "$REQUESTED_AGENCY" ]; then
+            extra+=(--enqueue-known-verifiers)
+          fi
           npx tsx scripts/property-lifecycle-remote-worker.ts \
             --confirm-project="$SUPABASE_PROJECT_REF" \
-            --enqueue-known-verifiers \
+            "${extra[@]}" \
             --enqueue="${{ steps.decide.outputs.job_type }}" \
+            --agency="$REQUESTED_AGENCY" \
             ${{ steps.decide.outputs.rotate }} \
             --drain \
             --max-seconds=18000 \
-            --max-jobs=200
+            --max-jobs="$MAX_JOBS"
+

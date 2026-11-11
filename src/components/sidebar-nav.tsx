@@ -1,128 +1,25 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { clsx } from "clsx";
-import { Building2, Cog, MapPinned, Radar, ClipboardList } from "lucide-react";
-
-/** The archive, its territory and the reliability of its sources. */
-const primaryItems = [
-  { href: "/richieste", label: "Richieste", hint: "Telefonate e verifiche", icon: ClipboardList, owns: ["/richieste"] },
-  {
-    href: "/intelligence",
-    label: "Intelligence",
-    hint: "Immobili, storia e prove",
-    icon: Radar,
-    /* Le fonti stanno qui: dicono di chi ti puoi fidare, che è la prima
-     * domanda dei segnali. */
-    owns: ["/intelligence", "/lifecycle", "/casa"],
-  },
-  {
-    href: "/map",
-    label: "Territorio",
-    hint: "Mappa e documenti pubblici",
-    icon: MapPinned,
-    owns: ["/map"],
-  },
-  { href: "/fonti", label: "Fonti", hint: "Letture e affidabilità", icon: Building2, owns: ["/fonti"] },
+import { Building2, Cog, MapPinned, Radar, ClipboardList, ScanSearch, ArrowUpRight } from "lucide-react";
+export const workspaceDestinations = [
+ { href: "/intelligence", label: "Intelligence", hint: "Mercato, opportunità e notizie", icon: Radar, owns: ["/intelligence","/lifecycle","/casa","/listings","/dashboard"] },
+ { href: "/map", label: "Territorio", hint: "Luoghi, edifici e documenti", icon: MapPinned, owns: ["/map"] },
+ { href: "/fonti", label: "Fonti e documenti", hint: "Copertura e prove disponibili", icon: Building2, owns: ["/fonti"] },
+ { href: "/richieste", label: "Richieste e verifiche", hint: "Contatti ricevuti e segnali", icon: ClipboardList, owns: ["/richieste","/acquisition","/contacts","/logbook"] },
+ { href: "/matching/overview", label: "Abbinamenti", hint: "Clienti e immobili disponibili", icon: ScanSearch, owns: ["/matching","/requests","/portfolio","/zones","/matching-settings","/incoming","/reports","/cerca"] },
 ] as const;
-
-const settingsItem = {
-  href: "/settings",
-  label: "Impostazioni",
-  hint: "Fonti e automazioni",
-  icon: Cog,
-  owns: ["/settings"],
-} as const;
-
-function isActive(pathname: string, owns: readonly string[]) {
-  return owns.some((base) => pathname === base || pathname.startsWith(`${base}/`));
+export function workspaceArea(path: string) {
+ if(path.startsWith("/lifecycle/review")||path.startsWith("/lifecycle/agencies"))return {label:"Fonti e documenti",area:"fonti"};
+ if(path.startsWith("/settings")) return {label:"Impostazioni",area:"settings"};
+ const item=workspaceDestinations.find(d=>d.owns.some(base=>path===base||path.startsWith(base+"/")));
+ return {label:item?.label??"Listing Radar",area:item?.href.split("/")[1]??"intelligence"};
 }
-
-function itemClass(active: boolean, collapsed: boolean) {
-  return clsx(
-    "group inline-flex min-h-[var(--lr-control-height)] shrink-0 items-center gap-2.5 rounded-[var(--lr-radius-control)] px-3",
-    "text-[length:var(--lr-text-body)] font-medium transition-colors",
-    "lg:w-full lg:justify-start",
-    collapsed && "lg:min-h-[58px] lg:flex-col lg:justify-center lg:gap-1 lg:px-1 lg:py-1.5",
-    active
-      ? "bg-[var(--lr-raised)] text-[var(--lr-ink)] shadow-[inset_0_0_0_1px_var(--lr-line)]"
-      : "text-[var(--lr-ink-2)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
-  );
-}
-
-export function SidebarNav({ collapsed = false }: Readonly<{ collapsed?: boolean }>) {
-  const pathname = usePathname();
-
-  return (
-    <nav
-      className="flex w-full min-w-0 flex-col gap-1 overflow-x-auto lg:overflow-visible"
-      aria-label="Navigazione principale"
-    >
-      <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
-        {primaryItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(pathname, item.owns);
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? `${item.label} — ${item.hint}` : item.label}
-              aria-current={active ? "page" : undefined}
-              className={itemClass(active, collapsed)}
-            >
-              <Icon
-                aria-hidden="true"
-                className={clsx(
-                  "size-5 shrink-0",
-                  active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]",
-                )}
-              />
-              <span className={clsx("min-w-0", collapsed && "lg:text-center lg:text-[length:var(--lr-text-label)]")}>
-                <span className="block truncate leading-tight">{item.label}</span>
-                <span className={clsx(
-                  "hidden truncate text-[length:var(--lr-text-label)] font-normal lg:block",
-                  collapsed && "lg:hidden",
-                  active ? "text-[var(--lr-ink-2)]" : "text-[var(--lr-ink-3)]",
-                )}>
-                  {item.hint}
-                </span>
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-
-      <div className="hidden lg:mt-2 lg:block lg:border-t lg:border-[var(--lr-line-quiet)] lg:pt-2">
-        <SettingsLink collapsed={collapsed} pathname={pathname} />
-      </div>
-      <div className="lg:hidden">
-        <SettingsLink collapsed={false} pathname={pathname} />
-      </div>
-    </nav>
-  );
-}
-
-function SettingsLink({
-  collapsed,
-  pathname,
-}: Readonly<{ collapsed: boolean; pathname: string }>) {
-  const Icon = settingsItem.icon;
-  const active = isActive(pathname, settingsItem.owns);
-
-  return (
-    <Link
-      href={settingsItem.href}
-      title={settingsItem.label}
-      aria-current={active ? "page" : undefined}
-      className={itemClass(active, collapsed)}
-    >
-      <Icon
-        aria-hidden="true"
-        className={clsx("size-5 shrink-0", active ? "text-[var(--lr-ink)]" : "text-[var(--lr-ink-3)]")}
-      />
-      <span className={clsx(collapsed && "lg:text-center lg:text-[length:var(--lr-text-label)]")}>{settingsItem.label}</span>
-    </Link>
-  );
+export function SidebarNav({collapsed=false,onNavigate}:Readonly<{collapsed?:boolean;onNavigate?:()=>void}>) {
+ const path=usePathname();
+ return <nav className={"lr-navigation"+(collapsed?" is-collapsed":"")} aria-label="Navigazione principale">
+ <p className="lr-nav-label">ARCHIVIO IMMOBILIARE</p>
+ {workspaceDestinations.map((item,index)=>{const active=workspaceArea(path).area===workspaceArea(item.href).area;const Icon=item.icon;return <div key={item.href}>{index===3&&<p className="lr-nav-label lr-nav-divider">LAVORO E VERIFICHE</p>}<Link onClick={onNavigate} href={item.href} aria-current={active?"page":undefined} className={"lr-nav-item"+(active?" is-active":"")} title={collapsed?item.label:undefined}><Icon aria-hidden="true" size={20}/><span><strong>{item.label}</strong><small>{item.hint}</small></span></Link></div>})}
+ <div className="lr-nav-shortcuts"><p className="lr-nav-label">ACCESSO DIRETTO</p><Link onClick={onNavigate} href="/fonti/pratiche">Pratiche e documenti <ArrowUpRight size={14} aria-hidden="true"/></Link><Link onClick={onNavigate} href="/richieste/segnali">Segnali TonyBook <ArrowUpRight size={14} aria-hidden="true"/></Link></div>
+ <Link onClick={onNavigate} href="/settings" aria-current={path.startsWith("/settings")?"page":undefined} className={"lr-nav-item lr-nav-settings"+(path.startsWith("/settings")?" is-active":"")}><Cog aria-hidden="true" size={20}/><span><strong>Impostazioni</strong><small>Preferenze e automazioni</small></span></Link></nav>;
 }

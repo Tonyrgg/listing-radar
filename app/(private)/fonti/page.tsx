@@ -97,10 +97,6 @@ export default async function FontiPage() {
       return (right.latestSyncCounts?.inScope ?? 0) - (left.latestSyncCounts?.inScope ?? 0);
     });
 
-  const massimo = Math.max(
-    1,
-    ...agenzie.map((agency) => agency.latestSyncCounts?.inScope ?? 0),
-  );
   const lette = agenzie.filter((agency) => agency.salute === "healthy").length;
   const latest=new Map<string,{diagnostics:Record<string,unknown>;absence_evaluation_allowed:boolean;inventory_complete:boolean}>();
   for(const run of recentRuns.data??[])if(!latest.has(run.agency_id))latest.set(run.agency_id,run);
@@ -113,16 +109,15 @@ export default async function FontiPage() {
         title="Fonti"
         description="Ultima sincronizzazione, copertura e problemi delle fonti. Le letture fallite non autorizzano scomparse."
         actions={
-          <Chip tone={lette === agenzie.length ? "action" : "warn"} dot>
+          <Chip tone={lette === agenzie.length ? "ok" : "warn"} dot>
             {lette} su {agenzie.length} lette per intero
           </Chip>
         }
         nav={<LifecycleSectionNav />}
       />
 
-      <Card className="p-4"><h2 className="font-[650]">Albo: storico pubblico</h2><Meta>Archivio disponibile osservato dal 2021 al 2026. Batch per anno di registro o atto, con possibili sovrapposizioni deduplicate per ID ufficiale. Health separata dal live; importato oggi non significa recente.</Meta><div className="mt-3 space-y-2">{(historyRuns.data??[]).map(r=><div key={r.history_year}><strong>{r.history_year}</strong> · {r.status==="SUCCEEDED"?"Completato":r.status==="FAILED"?"Fermato, da verificare":"In corso"}<p>{r.input_rows} righe lette · {r.eligible_rows} candidati · {r.grouped_records} verificati · {r.inserted_records} nuovi · {r.updated_records} modificati · {r.pages} pagine</p>{Array.isArray(r.errors)&&r.errors.length?<Meta>{r.status==="SUCCEEDED"?"Problema precedente, batch poi completato: ":"Problema aperto: "}{String(r.errors[0])}</Meta>:null}</div>)}</div>{!historyRuns.data?.length?<p>Backfill non ancora avviato.</p>:null}<Link className={buttonClass("quiet")} href="/fonti/corrispondenze">Corrispondenze territoriali da verificare</Link></Card>
+
       {/* La regola non negoziabile del progetto, scritta dove serve. */}
-      {external ? <Card className="p-4"><h2 className="font-[650]">Prove dalle fonti esterne</h2><Meta>In questa fase i portali non autorizzano assenze. Una verifica puntuale non dimostra un inventario completo.</Meta><div className="mt-3 divide-y divide-[var(--lr-line-quiet)]">{external.map(source=><div key={source.key} className="flex flex-wrap justify-between gap-2 py-3"><strong>{({WIKICASA:"Wikicasa",IMMOBILIARE:"Immobiliare.it",CASA:"Casa.it",IDEALISTA:"Idealista",SEARCH_INDEX:"Indice storico"} as Record<string,string>)[source.key] ?? source.key}</strong><div className="text-[length:var(--lr-text-meta)]"><p>{!source.enabled ? "Disattivata" : source.state==="FAILED" ? "Non letta" : source.state==="DEGRADED" ? "Lettura parziale" : source.state==="RUNNING" ? "Lettura in corso" : source.inventoryComplete ? "Inventario completo nello scope configurato" : source.state ? "Verifica puntuale" : "In attesa del primo run"} · {source.projectionsEnabled ? "Prove usate nell’intelligence" : "Prove in valutazione"}</p><Meta>{source.finishedAt ? `Ultimo run ${formatDateTime(source.finishedAt)} · ` : ""}{source.discovered} annunci · {source.details} dettagli richiesti{source.key==="WIKICASA" ? ` · ${source.baselineReady ? "baseline pronta" : "baseline da verificare"}` : ""}</Meta></div></div>)}</div></Card> : null}
       {agenzie.some(a=>a.salute==="broken") ? (
         <Card className="p-4">
           <div className="flex gap-3">
@@ -175,38 +170,11 @@ export default async function FontiPage() {
                     {nota ?? "stato non noto"}
                     {esclusi ? ` · ${formatNumber(esclusi)} fuori perimetro` : ""}
                   </Meta>
-                  {problems?<p className="mt-1 break-words text-[length:var(--lr-text-meta)] text-[var(--lr-danger)]">Ultimo problema: {problems}</p>:null}
+                  {problems?<p className="mt-1 break-words text-[length:var(--lr-text-meta)] text-[var(--lr-danger)]">{problems.includes("403")?"Il sito rifiuta la lettura automatica (HTTP 403). La fonte resta nel giro; gli annunci precedenti non vengono considerati assenti per questo errore.":`Ultimo problema: ${problems}`}</p>:null}
                   {run?<Meta>{run.inventory_complete?"Inventario completo":"Inventario incompleto"} · {run.absence_evaluation_allowed?"Controllo assenze autorizzato dalla baseline":"Nessuna nuova assenza autorizzata"}</Meta>:null}
                 </div>
 
-                {/* Una barra per fonte: piena se letta tutta, vuota se rotta. */}
-                <div className="w-40 shrink-0">
-                  <div
-                    className="h-1.5 overflow-hidden rounded-full bg-[var(--lr-raised)]"
-                    role="img"
-                    aria-label={`${formatNumber(letti)} immobili letti`}
-                  >
-                    <div
-                      className={
-                        agency.salute === "broken"
-                          ? "h-full rounded-full bg-[var(--lr-danger)] opacity-40"
-                          : agency.salute === "partial"
-                            ? "h-full rounded-full bg-[var(--lr-warn)]"
-                            : "h-full rounded-full bg-[var(--lr-ok)]"
-                      }
-                      style={{
-                        width: `${agency.salute === "broken" ? 100 : Math.max(4, Math.round((letti / massimo) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                  <Meta className="mt-1">
-                    {agency.salute === "broken"
-                      ? letti
-                        ? `${formatNumber(letti)} non riletti oggi`
-                        : "non riletta oggi"
-                      : `${formatNumber(letti)} immobili`}
-                  </Meta>
-                </div>
+                <div className="w-40 shrink-0"><Meta>Letti nell’ultimo giro</Meta><p className="mt-1 font-[650]">{agency.salute==='broken'?'Non riletti':!agency.latestSyncAt?'Nessuna lettura':formatNumber(letti)}</p></div>
 
                 {/* Cosa tiene, non solo se l'abbiamo letta: prima queste tre
                   * cifre stavano in una seconda pagina con le stesse dieci righe. */}
@@ -262,7 +230,7 @@ export default async function FontiPage() {
         <h2 className="text-[length:var(--lr-text-section)] font-[650]">Fonti territoriali pubbliche</h2>
         <Link className={buttonClass("secondary",{compact:true})} href="/fonti/pratiche">Pratiche e documenti da approfondire</Link>
         <div className="mt-2 divide-y divide-[var(--lr-line-quiet)]">{[...municipal.values()].map(run=><div key={run.source_key} className="flex flex-wrap justify-between gap-3 py-3"><strong>{({"comune-bitonto-protocolli-territorio":"Comune · protocolli Territorio / SUAP","comune-bitonto-prg-catalog":"Comune · SIT / PRG","comune-bitonto-albo":"Comune · Albo Pretorio","comune-bitonto-elenco-pratiche-2025":"Comune · registro edilizio 2025, senza indirizzi"} as Record<string,string>)[run.source_key]??"Comune · registro edilizio 2024"}</strong><div><p>{run.status==="SUCCEEDED"?"Letta":run.status==="FAILED"?"Lettura fallita":run.status==="RUNNING"?"Lettura in corso":"Lettura parziale"} · {run.grouped_records} record{run.pages?` · ${run.pages} pagine`:""}</p><Meta>Ultimo completamento {run.finished_at?formatDateTime(run.finished_at):"non disponibile"}</Meta>{run.source_key==="comune-bitonto-albo"?<Meta>{run.inventory_complete?"LIVE · inventory completa delle pubblicazioni esposte":"LIVE · inventory non completata"} · {run.input_rows} pubblicazioni esposte · PDF non scaricati automaticamente</Meta>:null}{Array.isArray(run.errors)&&run.errors.length?<Meta>Ultimo problema: {JSON.stringify(run.errors)}</Meta>:null}</div></div>)}</div>
-        <div className="mt-3 space-y-2">
+        <details className="mt-4"><summary>Copertura e limiti delle fonti territoriali</summary>        <div className="mt-3 space-y-2">
           {[...municipal.values()].filter(run=>run.source_key.startsWith("comune-bitonto-elenco-pratiche")||isPracticeIndexSource(run.source_key)).map(run=>{
             const quality=(run.diagnostics??{}) as Record<string,unknown>;
             const date=(key:string)=>typeof quality[key]==="string"?String(quality[key]):"n.d.";
@@ -274,9 +242,11 @@ export default async function FontiPage() {
         </div>
         <Meta>Albo giornaliero; registri statici e catalogo a cadenza settimanale nello stesso scheduler. Nessuna rimozione dedotta da fetch falliti. Dataset 2023/2022/2021 non reperiti; non equivale a zero pratiche.</Meta>
         <Meta>SUE/SUAP: inventario pubblico non dimostrato. SIT: progetto QGIS pubblico verificato con 86 riferimenti a layer; servizio WMS non operativo nel controllo, nessuna geometria normativa assegnata. <a className="underline" href="https://sit.egov.ba.it/custom_static/html/wms-qgis/bitonto.qgs" target="_blank" rel="noreferrer">Progetto ufficiale</a></Meta>
-        <Meta>OMI: fonte di contesto per fasce di zona, non valore del singolo immobile. La consultazione pubblica è disponibile <a className="underline" href="https://www1.agenziaentrate.gov.it/servizi/geopoi_omi/index.htm" target="_blank" rel="noreferrer">sulla mappa dell’Agenzia delle Entrate</a>; il download strutturato richiede accesso all’area riservata, quindi non viene acquisito automaticamente.</Meta>
+        <Meta>OMI: fonte di contesto per fasce di zona, non valore del singolo immobile. La consultazione pubblica è disponibile <a className="underline" href="https://www1.agenziaentrate.gov.it/servizi/geopoi_omi/index.htm" target="_blank" rel="noreferrer">sulla mappa dell’Agenzia delle Entrate</a>; il download strutturato richiede accesso all’area riservata, quindi non viene acquisito automaticamente.</Meta></details>
       </section>
 
+      {external ? <Card className="p-4"><h2 className="font-[650]">Prove dalle fonti esterne</h2><Meta>In questa fase i portali non autorizzano assenze. Una verifica puntuale non dimostra un inventario completo.</Meta><div className="mt-3 divide-y divide-[var(--lr-line-quiet)]">{external.map(source=><div key={source.key} className="flex flex-wrap justify-between gap-2 py-3"><strong>{({WIKICASA:"Wikicasa",IMMOBILIARE:"Immobiliare.it",CASA:"Casa.it",IDEALISTA:"Idealista",SEARCH_INDEX:"Indice storico"} as Record<string,string>)[source.key] ?? source.key}</strong><div className="text-[length:var(--lr-text-meta)]"><p>{!source.enabled ? "Disattivata" : source.state==="FAILED" ? "Non letta" : source.state==="DEGRADED" ? "Lettura parziale" : source.state==="RUNNING" ? "Lettura in corso" : source.inventoryComplete ? "Inventario completo nello scope configurato" : source.state ? "Verifica puntuale" : "In attesa del primo run"} · {source.projectionsEnabled ? "Prove usate nell’intelligence" : "Prove in valutazione"}</p><Meta>{source.finishedAt ? `Ultimo run ${formatDateTime(source.finishedAt)} · ` : ""}{source.discovered} annunci · {source.details} dettagli richiesti{source.key==="WIKICASA" ? ` · ${source.baselineReady ? "baseline pronta" : "baseline da verificare"}` : ""}</Meta></div></div>)}</div></Card> : null}
+      <details className="lr-source-history"><summary>Copertura dello storico pubblico</summary><div className="space-y-3 py-4"><Meta>Archivio disponibile osservato dal 2021 al 2026. Batch per anno di registro o atto, con possibili sovrapposizioni deduplicate per ID ufficiale. Health separata dal live; importato oggi non significa recente.</Meta><div className="mt-3 space-y-2">{(historyRuns.data??[]).map(r=><div key={r.history_year}><strong>{r.history_year}</strong> · {r.status==="SUCCEEDED"?"Completato":r.status==="FAILED"?"Fermato, da verificare":"In corso"}<p>{r.input_rows} righe lette · {r.eligible_rows} candidati · {r.grouped_records} verificati · {r.inserted_records} nuovi · {r.updated_records} modificati · {r.pages} pagine</p>{Array.isArray(r.errors)&&r.errors.length?<Meta>{r.status==="SUCCEEDED"?"Problema precedente, batch poi completato: ":"Problema aperto: "}{String(r.errors[0])}</Meta>:null}</div>)}</div>{!historyRuns.data?.length?<p>Backfill non ancora avviato.</p>:null}<Link className={buttonClass("quiet")} href="/fonti/corrispondenze">Corrispondenze territoriali da verificare</Link></div></details>
       <Meta className="px-1">
         Le fonti con limiti noti restano utili: quello che dichiarano è valido, ma la data
         d&apos;inizio o la posizione possono essere meno precise. Dove succede, il dato compare

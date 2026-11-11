@@ -3,6 +3,8 @@ import { IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 import "./globals.css";
+import "../src/styles/workspace.css";
+import "../src/styles/radar-workspace.css";
 
 import { themeBootstrapScript } from "@/components/ui/theme-toggle";
 

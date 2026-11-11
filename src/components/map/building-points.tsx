@@ -6,7 +6,8 @@ import {useRouter} from 'next/navigation';
 import L from 'leaflet';
 import {listingClusters} from '@/lib/map/listing-clusters';
 import {MAP_DATA_COLORS,MAP_INK} from '@/lib/design/map-palette';
-import {activityLabel,type BuildingMapPoint} from '@/lib/property-lifecycle/buildings/graph-read-model';
+import {activityLabel} from '@/lib/property-lifecycle/buildings/graph-presentation';
+import type {BuildingMapPoint} from '@/lib/property-lifecycle/buildings/graph-read-model';
 import {formatDate} from '@/lib/formatting';
 import styles from './territory-archive.module.css';
 export function BuildingPoints({points}:{points:BuildingMapPoint[]}){

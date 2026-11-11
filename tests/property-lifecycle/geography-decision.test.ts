@@ -190,6 +190,39 @@ function repository(decision: "IN_SCOPE" | "OUT_OF_SCOPE" | null) {
 }
 
 describe("geography reviews across syncs", () => {
+  it('keeps a failed requested sold-image inspection visible as an incomplete verification', async () => {
+    const {repository:repo}=repository(null);
+    repo.recordAdapterHealth=async input=>({effectiveState:input.state,inventoryComplete:true,absenceEvaluationAllowed:true} as never);
+    const result=await runAgencySync({adapter:new FixtureAdapter([listing('IN_SCOPE')]),repository:repo,mode:'DEEP_SYNC',
+      assetProcessor:async()=>({assets:[],warnings:['sold_text_inspection_failed:https://photo.example:OCR unavailable']})});
+    expect(result.healthState).toBe('DEGRADED');
+    expect(result.absenceEvaluationAllowed).toBe(false);
+  });
+  it('does not certify a scan or evaluate absences when even one detail fails', async () => {
+    const {repository:repo}=repository(null);
+    const adapter=new FixtureAdapter([listing('IN_SCOPE')]);
+    adapter.fetchDetail=async()=>{throw new Error('detail unavailable');};
+    let saved: Record<string,unknown> = {};
+    repo.recordAdapterHealth=async input=>({effectiveState:input.state,inventoryComplete:true,absenceEvaluationAllowed:true} as never);
+    repo.finalizeSyncRun=async input=>{saved=input;};
+    repo.applyMissingObservations=async()=>{throw new Error('must not evaluate absences');};
+    const result=await runAgencySync({adapter,repository:repo});
+    expect(result.healthState).toBe('DEGRADED');
+    expect(result.absenceEvaluationAllowed).toBe(false);
+    expect(saved.status).toBe('PARTIAL');
+    expect(saved.diagnostics).toMatchObject({persistedCount:0,successPercentage:0});
+  });
+  it('does not count parsed but uncommitted details as saved', async () => {
+    const {repository:repo}=repository(null);
+    let diagnostics: unknown;
+    repo.persistObservation=async()=>{throw new Error('transaction failed');};
+    repo.recordAdapterHealth=async input=>({effectiveState:input.state,inventoryComplete:true,absenceEvaluationAllowed:true} as never);
+    repo.finalizeSyncRun=async input=>{diagnostics=input.diagnostics;};
+    const result=await runAgencySync({adapter:new FixtureAdapter([listing('IN_SCOPE')]),repository:repo});
+    expect(result.counts.normalizedCount).toBe(1);
+    expect(result.absenceEvaluationAllowed).toBe(false);
+    expect(diagnostics).toMatchObject({persistedCount:0,successPercentage:0});
+  });
   it("persists a completed inventory and health before committing missing observations",async()=>{
     const {repository:repo}=repository(null);const order:string[]=[];
     repo.recordAdapterHealth=async()=>({effectiveState:"HEALTHY",inventoryComplete:true,absenceEvaluationAllowed:true,next:{} } as never);

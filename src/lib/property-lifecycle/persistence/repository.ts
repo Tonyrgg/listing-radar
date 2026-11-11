@@ -91,6 +91,11 @@ export interface PersistedObservation {
   createdProperty: boolean;
   createdPublication: boolean;
 }
+export interface DeferredFallbackObservation {
+  deferred:true;
+  propertyId:null;agencyListingId:null;publicationId:null;snapshotId:null;
+  identityDecision:IdentityDecision;createdProperty:false;createdPublication:false;
+}
 
 export type ObservationFailurePoint =
   | "AFTER_PUBLICATION"
@@ -276,7 +281,8 @@ function mediaMarketStartEvidence(
 export class PropertyLifecycleRepository {
   private readonly identityCatalog = new Map<string, Promise<IdentityCandidate[]>>();
   private readonly primarySourceHosts = new Map<string,string>();
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(private readonly db: SupabaseClient,
+    private readonly externalIdentity?: (ids:string[])=>Promise<import('../archive/hybrid-identity').IdentityValues>) {}
 
   async getAgencyBySlug(slug: string): Promise<AgencyRow> {
     const { data, error } = await this.db
@@ -606,6 +612,11 @@ export class PropertyLifecycleRepository {
   }
 
   private async identityFingerprints(propertyIds: string[]) {
+    if(this.externalIdentity){
+      const images:import('../archive/hybrid-identity').IdentityValue[]=[],plans:import('../archive/hybrid-identity').IdentityValue[]=[];
+      for(const ids of batchesOf(propertyIds)){const result=await this.externalIdentity(ids);images.push(...result.images);plans.push(...result.plans);}
+      return {images,plans};
+    }
     type Value = { algorithm: string; fingerprint: string };
     type Row = Value & { property_id: string };
     const images: Row[] = [], plans: Row[] = [];
@@ -740,7 +751,7 @@ export class PropertyLifecycleRepository {
     listing: NormalizedListingV2,
     processedAssets: ProcessedAsset[] = [],
     options: { failurePoint?: ObservationFailurePoint } = {},
-  ): Promise<PersistedObservation> {
+  ): Promise<PersistedObservation|DeferredFallbackObservation> {
     let primaryHost=this.primarySourceHosts.get(agencyId);
     if (!primaryHost) {
       const source=await this.db.from("agencies").select("inventory_url").eq("id",agencyId).single();
@@ -775,6 +786,11 @@ export class PropertyLifecycleRepository {
       );
     }
 
+    if(listing.provenance.accessFallback===true&&(identityDecision.outcome!=="AUTO_MATCH"||!identityDecision.propertyId)){
+      const {error}=await this.db.from('review_queue').upsert({review_type:'IDENTITY',agency_id:agencyId,sync_run_id:syncRunId,title:'Annuncio da fonte alternativa: collegamento da verificare',details:{reason:'SECONDARY_PUBLISHER_IDENTITY_UNCONFIRMED',sourceKey:listing.source.sourceKey,canonicalUrl:listing.source.canonicalUrl,listing,identityDecision},dedupe_key:`fallback-identity:${agencyId}:${listing.source.sourceKey}`},{onConflict:'dedupe_key'});
+      throwIfError(error);
+      return{deferred:true,propertyId:null,agencyListingId:null,publicationId:null,snapshotId:null,identityDecision,createdProperty:false,createdPublication:false};
+    }
     const processedPayload = processedAssets.map(
       ({ representativeThumbnail, ...asset }) => {
         void representativeThumbnail;
@@ -831,6 +847,10 @@ export class PropertyLifecycleRepository {
       });
     }
     if (result.changed !== false) await this.uploadRepresentativeThumbnails(result.propertyId, processedAssets);
+    if(listing.provenance.accessFallback===true){
+      const closed=await this.db.from('review_queue').update({status:'RESOLVED',property_id:result.propertyId,publication_id:result.publicationId,resolved_at:listing.observedAt,resolution:{method:'VERIFIED_AUTO_MATCH',propertyId:result.propertyId}}).eq('dedupe_key',`fallback-identity:${agencyId}:${listing.source.sourceKey}`).in('status',['OPEN','IN_REVIEW']);
+      throwIfError(closed.error);
+    }
     return {
       propertyId: result.propertyId,
       agencyListingId: result.agencyListingId,

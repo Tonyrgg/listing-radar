@@ -6,6 +6,21 @@
 
 :root {
   --lr-font-sans: "Instrument Sans", "Segoe UI", sans-serif;
+  --lr-web-canvas: #f4f4ef;
+  --lr-web-surface: #fffefb;
+  --lr-web-raised: #e9ece5;
+  --lr-web-hover: #f6f7f2;
+  --lr-web-ink: #253c35;
+  --lr-web-muted: #58685f;
+  --lr-web-line: #7e8a80;
+  --lr-web-divider: #dce1d8;
+  --lr-web-accent: #2f6653;
+  --lr-web-on-accent: #fffefb;
+  --lr-web-selected: #e2ede4;
+  --lr-web-sidebar: #223c33;
+  --lr-web-sidebar-selected: #365447;
+  --lr-web-sidebar-ink: #f3f5ef;
+  --lr-web-sidebar-muted: #b6c9bd;
   --lr-font-mono: "IBM Plex Mono", "Cascadia Mono", monospace;
   /* Daylight workspace: neutral, calm and precise on office monitors. */
   --lr-canvas: #e3eae6;
@@ -192,4 +207,20 @@
   --lr-data-muted: #a9bbb9;
   --lr-floating: 0 18px 46px rgb(0 0 0 / 0.34), 0 3px 10px rgb(0 0 0 / 0.22);
   color-scheme: dark;
+}
+
+/* Web-only dark workspace: data and controls retain the same hierarchy. */
+@media (prefers-color-scheme: dark) {
+ :root:not([data-theme="light"]) {
+  --lr-web-canvas:#111412; --lr-web-surface:#191d1a; --lr-web-raised:#232923; --lr-web-hover:#202720;
+  --lr-web-ink:#f2f0e8; --lr-web-muted:#b8beb5; --lr-web-line:#626b62; --lr-web-divider:#303831;
+  --lr-web-accent:#a8cc78; --lr-web-on-accent:#172016; --lr-web-selected:#29362a;
+  --lr-web-sidebar:#0c100e; --lr-web-sidebar-selected:#202a22; --lr-web-sidebar-ink:#f2f0e8; --lr-web-sidebar-muted:#aab3a9;
+ }
+}
+:root[data-theme="dark"] {
+ --lr-web-canvas:#111412; --lr-web-surface:#191d1a; --lr-web-raised:#232923; --lr-web-hover:#202720;
+ --lr-web-ink:#f2f0e8; --lr-web-muted:#b8beb5; --lr-web-line:#626b62; --lr-web-divider:#303831;
+ --lr-web-accent:#a8cc78; --lr-web-on-accent:#172016; --lr-web-selected:#29362a;
+ --lr-web-sidebar:#0c100e; --lr-web-sidebar-selected:#202a22; --lr-web-sidebar-ink:#f2f0e8; --lr-web-sidebar-muted:#aab3a9;
 }

@@ -1,3 +1,4 @@
+import {intelligenceSort} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "usciti", "venduti"] as const;
@@ -16,6 +17,7 @@ export interface IntelligenceRow {
   first_seen_at: string; last_seen_at: string; exit_classification: string; exit_confidence: number | null;
   first_asking_price: number | null; latest_asking_price: number | null; reduction_percent: number | null;
   drop_count: number; price_source_url: string | null; opportunity_score: number | null;
+  base_opportunity_score?:number|null; identifiability_bonus?:number;
   reasons: string[]; evidence_summary: Record<string, unknown>;
   sold_observed_at?: string | null; classified_at?: string | null; classifier_version?: number | null;
   exit_evidence_ids?: string[]; exit_reasons?: string[]; exit_provenance?: Record<string, unknown>;
@@ -36,11 +38,12 @@ export interface IntelligenceRow {
   context_building_ids?:string[];context_street_id?:string|null;
 }
 export interface IntelligenceFilters {
-  view: IntelligenceView; page: number; query?: string; classification?: string;
+  view: IntelligenceView; page: number; sort?:string; direction?:string; query?: string; classification?: string;
   agency?: string; locality?: string; zone?: string; state?: string;
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
   propertyType?: string; minimumPrice?: number; maximumPrice?: number; minimumSqm?: number; maximumSqm?: number;
   reduced?: string; source?: string; publicRecords?:string;
+  civic?: string; street?: string; coordinates?: string; locationPrecision?: string;
 }
 export function marketAgeLabel(firstSeen: string, earliest: string | null, end: string | number): string {
   const publicDate = earliest && Date.parse(earliest) < Date.parse(firstSeen);
@@ -50,9 +53,16 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
   if (days == null) return "Anzianità da verificare";
   return publicDate ? `Sul mercato da almeno ${days} giorni` : `Monitorato da ${days} giorni`;
 }
-export async function readIntelligence(db: SupabaseClient, filters: IntelligenceFilters) {
-  const size=40;
-  let request=db.from("market_observer_graph_property_archive").select("*");
+function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
+  let request=db.from("radar_property_live_archive").select(fields);
+  for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
+    if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
+    if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);
+  }
+  if(filters.coordinates === "yes")request=request.not("latitude","is",null).not("longitude","is",null);
+  if(filters.coordinates === "no")request=request.or("latitude.is.null,longitude.is.null");
+  if(filters.locationPrecision === "UNKNOWN")request=request.or("location_precision.is.null,location_precision.eq.UNKNOWN");
+  else if(filters.locationPrecision && ["EXACT_ADDRESS","EXACT_COORDINATES","STREET_ONLY","APPROXIMATE_AREA"].includes(filters.locationPrecision))request=request.eq("location_precision",filters.locationPrecision);
   if(filters.publicRecords==="documents")request=request.gt("public_record_count",0);
   if(filters.publicRecords==="recent")request=request.gt("recent_public_record_count",0);
   if(filters.publicRecords==="signals")request=request.gt("new_territorial_signal_count",0);
@@ -62,7 +72,7 @@ export async function readIntelligence(db: SupabaseClient, filters: Intelligence
   if(filters.publicRecords==='street_recent')request=request.gt('recent_street_count',0);
   if (filters.view === "venduti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE"]);
   if (filters.view === "usciti") request=request.in("exit_classification", ["SOLD_CONFIRMED", "SOLD_PROBABLE", "WITHDRAWN", "RELISTED", "AGENCY_CHANGED", "UNKNOWN_EXIT", "MISSING_UNCONFIRMED"]);
-  if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).neq("exit_classification", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");
+  if (filters.view === "opportunita") request=request.gt("opportunity_score", 0).not("exit_classification", "in", "(SOLD_CONFIRMED,SOLD_PROBABLE)").neq("sale_status", "SOLD_CONFIRMED").neq("agency_role", "OUR_AGENCY");
   if (filters.classification && EXIT_LABELS[filters.classification]) request=request.eq("exit_classification", filters.classification);
   if (filters.query?.trim()) {
     const term=filters.query.trim().replace(/[%_\\,()]/g, "").slice(0,120);
@@ -83,11 +93,14 @@ export async function readIntelligence(db: SupabaseClient, filters: Intelligence
   for (const [key,value,maximum] of [["known_market_age",filters.minimumAge,36500],["opportunity_score",filters.minimumScore,100],["reduction_percent",filters.minimumReduction,100]] as const) {
     if (value != null && Number.isFinite(value) && value >= 0) request=request.gte(key,Math.min(maximum,value));
   }
-  request=filters.view === "opportunita" ? request.order("opportunity_score", { ascending:false, nullsFirst:false }) : request.order("last_seen_at",{ascending:false});
-  const { data,error }=await request.order("row_id").range((filters.page-1)*size,filters.page*size);
-  if(error) throw new Error(error.message);
-  const rows=(data ?? []) as IntelligenceRow[];
-  return { rows:rows.slice(0,size), hasNext:rows.length>size };
+  return request;
+}
+export async function readIntelligence(db:SupabaseClient,filters:IntelligenceFilters){
+ const size=40,sort=intelligenceSort(filters.sort,filters.direction,filters.view),offset=(filters.page-1)*size;
+ const {data,error}=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
+ if(error)throw new Error(error.message);
+ const rows=(data??[]) as unknown as IntelligenceRow[];
+ return {rows:rows.slice(0,size),hasNext:rows.length>size};
 }
 
 export interface AgencyMarketIntelligence { agency_id: string; name: string; market_role: string; active_listings: number;

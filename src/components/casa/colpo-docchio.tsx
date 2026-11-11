@@ -4,6 +4,7 @@ import { clsx } from "clsx";
 import { DatoAssente, Periodo, Stato, type StatoForma } from "@/components/ui/atoms";
 import { Label } from "@/components/ui/primitives";
 import { formatCurrency, formatDays, formatNumber } from "@/lib/formatting";
+import { ListingPhotoGallery } from "@/components/listing-photo-gallery";
 
 /**
  * Una casa, guardata la prima volta.
@@ -103,8 +104,8 @@ export function ColpoDocchio({
   children?: ReactNode;
 }>) {
   return (
-    <section className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(22rem,2fr)]">
-      <FotoDellaCasa urls={casa.foto} alt={casa.indirizzo} />
+    <section className="lr-owned-summary">
+      <div className="lr-dossier-gallery"><ListingPhotoGallery title={casa.indirizzo} imageUrls={casa.foto}/></div>
 
       <div className="space-y-5 rounded-[var(--lr-radius-card)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--lr-line-quiet)] pb-5">

@@ -1,3 +1,4 @@
+import { closeSoldTextWorker } from "../src/lib/property-lifecycle/assets/sold-text";
 import { randomUUID } from "node:crypto";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -84,11 +85,16 @@ async function rotatedAgency(db: SupabaseClient): Promise<{ id: string; slug: st
 async function enqueue(db: SupabaseClient, jobType: LifecycleJobType): Promise<void> {
   const queue = new LifecycleJobQueue(db);
   const rotate = process.argv.includes("--agency-rotation");
-  const agency = rotate ? await rotatedAgency(db) : null;
+  const specific=flag('agency');
+  if(specific&&rotate)throw Error('Choose an agency or rotation');
+  if(specific&&!['SYNC_AGENCY','DEEP_SYNC_AGENCY'].includes(jobType))throw Error('Named agency requires an agency sync job');
+  if(['SYNC_AGENCY','DEEP_SYNC_AGENCY'].includes(jobType)&&!specific&&!rotate)throw Error('Agency sync requires --agency=<slug> or --agency-rotation');
+  let agency=rotate?await rotatedAgency(db):null;
+  if(specific){const selected=await db.from('agencies').select('id,slug').eq('slug',specific).eq('enabled',true).single();if(selected.error||!selected.data)throw Error('Agency unavailable or retired');agency=selected.data;}
   const job = await queue.enqueue({
     jobType,
     agencyId: agency?.id ?? null,
-    priority: jobType === "SYNC_ALL" ? 10 : 5,
+    priority: specific?100:jobType === "SYNC_ALL" ? 10 : 5,
     dedupeKey: agency ? `${slotKey(jobType)}:${agency.slug}` : slotKey(jobType),
     // run_after comes from this client's clock while the queue compares it to the
     // database clock. Enqueueing at "now" leaves the job unclaimable for the
@@ -114,8 +120,9 @@ async function drain(db: SupabaseClient): Promise<void> {
 
   let executed = 0;
   let failed = 0;
-  while (executed < maxJobs && Date.now() < deadline) {
-    let didWork: boolean;
+  let deferred = 0;
+  while (executed+failed+deferred < maxJobs && Date.now() < deadline) {
+    let didWork: boolean | "DEFERRED";
     try {
       didWork = await runLifecycleWorkerOnce(workerId, { db });
     } catch (error) {
@@ -125,12 +132,14 @@ async function drain(db: SupabaseClient): Promise<void> {
       continue;
     }
     if (!didWork) break;
+    if(didWork === "DEFERRED"){deferred+=1;continue;}
     executed += 1;
     console.error(`[drain] job ${executed} completato`);
   }
   console.info(
-    JSON.stringify({ action: "drain", workerId, executed, failed, exhausted: executed >= maxJobs }),
+    JSON.stringify({ action: "drain", workerId, executed, failed, deferred, exhausted: executed+failed+deferred >= maxJobs }),
   );
+  if(failed>0)process.exitCode=1;
 }
 
 async function main(): Promise<void> {
@@ -151,7 +160,7 @@ async function main(): Promise<void> {
   if (wantsDrain) await drain(db);
 }
 
-main().catch((error) => {
+main().finally(closeSoldTextWorker).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });

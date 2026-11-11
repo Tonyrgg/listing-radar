@@ -15,6 +15,15 @@ import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-mod
 const BUCKET = "property-lifecycle-visuals";
 const DURATA_SECONDI = 60 * 30;
 
+export async function readPropertyThumbnails(ids: string[]): Promise<Record<string,string>> {
+  if (!ids.length) return {};
+  const db = getSupabaseServiceClient();
+  const {data,error} = await db.from("properties").select("id,representative_image_paths").in("id",ids);
+  if (error) return {};
+  const signed = await signPropertyPhotos((data??[]).map(p=>({id:p.id,representativeImagePaths:p.representative_image_paths??[]})));
+  return Object.fromEntries(signed);
+}
+
 export async function signPropertyPhotos(
   properties: Array<Pick<LifecyclePropertySummary, "id" | "representativeImagePaths">>,
 ): Promise<Map<string, string>> {

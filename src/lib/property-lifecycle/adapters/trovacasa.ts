@@ -29,6 +29,8 @@ import {
 export const TROVACASA_BASE_URL = "https://www.trovacasa.it";
 
 export interface TrovaCasaAgencyProfile {
+  /** Count read from this publisher's category navigation, not an estimate. */
+  publisherReportedTotal?:number;
   adapterKey: string;
   agencySlug: string;
   agencyDisplayName: string;
@@ -62,7 +64,7 @@ function galleryImageIds(
   agencyId: string,
 ): string[] {
   const ids: string[] = [];
-  const pattern = new RegExp(`^X_${agencyId}_(\\d+)_(\\d+)$`);
+  const pattern = new RegExp(`^[AX]_${agencyId}_(\\d+)_(\\d+)$`);
   for (const token of value?.split("|") ?? []) {
     const match = token.match(pattern);
     if (match?.[1] === listingId && match[2]) {
@@ -126,8 +128,9 @@ export function parseTrovaCasaInventoryHtml(
 
   const deduplicated = deduplicateInventoryItems(extracted);
   const reportedTotal = parseInteger(
-    cleanText($("title").text())?.match(/:\s*(\d+)\s+case\s+in\s+vendita/i)?.[1] ??
-      cleanText($("h2").first().text())?.match(/(\d+)\s+case\s+in\s+vendita/i)?.[1],
+    cleanText($("title").text())?.match(/:\s*(\d+)\s+(?:case|casa|immobil[ei] commercial[ei]|box e posti auto|box e posto auto|box|posti auto|posto auto|terren[oi])\s+in\s+vendita/i)?.[1] ??
+      cleanText($("h2").first().text())?.match(/(\d+)\s+case\s+in\s+vendita/i)?.[1] ??
+      (profile.publisherReportedTotal==null?null:String(profile.publisherReportedTotal)),
   );
   const nextHref =
     $("link[rel='next']").attr("href") ??
@@ -145,7 +148,7 @@ export function parseTrovaCasaInventoryHtml(
     agencyIdentity:
       agencyLinks > 0 &&
       html.toLocaleLowerCase("it").includes(profile.agencyDisplayName.toLocaleLowerCase("it")),
-    dedicatedSalePage: /case-in-vendita/i.test(response?.url ?? profile.inventoryUrl),
+    dedicatedSalePage: /\/(?:case|immobili-commerciali|box-e-posti-auto|terreni)-in-vendita(?:\?|$)/i.test(response?.url ?? profile.inventoryUrl),
     reportedTotal: reportedTotal != null && reportedTotal > 0,
     listingCards: cards.length > 0 && deduplicated.items.length > 0,
     recordContract: extracted.length + parseErrorCount === cards.length,
@@ -427,6 +430,8 @@ export class TrovaCasaPortalAdapter implements PropertyLifecycleAdapter {
     let totalsConsistent = true;
 
     while (nextUrl && visitedUrls.size < 100) {
+      const nextLocation=new URL(nextUrl),expectedLocation=new URL(this.inventoryUrl);
+      if(nextLocation.origin!==expectedLocation.origin||nextLocation.pathname!==expectedLocation.pathname){reasons.push('pagination_outside_publisher_scope');allPagesStructured=false;break;}
       if (visitedUrls.has(nextUrl)) {
         reasons.push(`pagination_loop:${nextUrl}`);
         allPagesStructured = false;
@@ -467,7 +472,7 @@ export class TrovaCasaPortalAdapter implements PropertyLifecycleAdapter {
         firstPage.reportedTotal != null && rawRecordCount === firstPage.reportedTotal,
     };
     const diagnostics = {
-      expectedCount: firstPage.reportedTotal,
+      expectedCount: firstPage.reportedTotal==null?null:firstPage.reportedTotal-perPageDuplicateCount-deduplicated.duplicateCount,
       observedCount: deduplicated.items.length,
       duplicateCount: perPageDuplicateCount + deduplicated.duplicateCount,
       parseErrorCount,

@@ -39,9 +39,9 @@ function subscribe(listener: () => void) {
 function readTheme(): Theme {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored === "light" || stored === "dark" ? stored : "system";
+    return stored === "light" || stored === "system" ? stored : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
@@ -134,6 +134,6 @@ export function ThemeToggle({ compact = false }: Readonly<{ compact?: boolean }>
 export const themeBootstrapScript = `
 try {
   var t = localStorage.getItem(${JSON.stringify(STORAGE_KEY)});
-  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  document.documentElement.setAttribute("data-theme", t === "light" || t === "system" ? t : "dark");
 } catch (e) {}
 `;

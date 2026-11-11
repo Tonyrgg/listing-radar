@@ -1,72 +1,95 @@
+import {Suspense} from "react";
+import {ArchiveFreshness} from "@/components/archive-freshness";
+import {readCachedIntelligence} from "@/lib/property-lifecycle/read-models/intelligence-server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/page-header";
-import { Chip, EmptyState, Meta, buttonClass, controlClass } from "@/components/ui/primitives";
-import { formatCurrency, formatDate, formatNumber, formatShouty } from "@/lib/formatting";
+import { EmptyState, Meta, buttonClass, controlClass } from "@/components/ui/primitives";
+import { formatCurrency, formatNumber } from "@/lib/formatting";
 import { readNow } from "@/lib/clock";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
-import { EXIT_LABELS, INTELLIGENCE_VIEWS, marketAgeLabel, readIntelligence, readAgencyMarketIntelligence, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
-import { opportunityReasonLabel, evidenceSourceLabel, propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import { EXIT_LABELS, INTELLIGENCE_VIEWS, readAgencyMarketIntelligence, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
+import { propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import {IntelligenceNavigation, IntelligenceRegister, INTELLIGENCE_VIEW_COPY} from "@/components/intelligence-register";
 import {PropertyNews} from '@/components/property-news';
+import { intelligenceSort } from "@/lib/property-lifecycle/read-models/intelligence-sorting";
+import { RadarFilterPanel } from "@/components/radar-filter-panel";
+import {readPropertyThumbnails} from '@/lib/lifecycle-photos';
 
 export const metadata:Metadata={title:"Intelligence"};
-const tabs={mercato:"Mercato",opportunita:"Opportunità",usciti:"Usciti",venduti:"Venduti"};
-const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti"];
-const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","trio","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA"];
+const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti","civico","via","coordinate","precisione"];
+const precisionOptions={EXACT_ADDRESS:"Indirizzo esatto",EXACT_COORDINATES:"Coordinate esatte",STREET_ONLY:"Solo via",APPROXIMATE_AREA:"Zona approssimativa",UNKNOWN:"Posizione da verificare"};
+const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA"];
 export default async function IntelligencePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
   await connection();
   const params=await searchParams;
   const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
-  if(value('vista')==='notizie')return <div className="space-y-5"><PageHeader title="Intelligence" description="Immobili, pubblicazioni e storia del mercato di Bitonto, Palombaio e Mariotto."/><nav aria-label="Viste Intelligence" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">{Object.entries({...tabs,notizie:'Notizie'}).map(([t,label])=><Link key={t} href={`?vista=${t}`} aria-current={t==='notizie'?'page':undefined} className={buttonClass(t==='notizie'?'secondary':'quiet')}>{label}</Link>)}</nav><PropertyNews params={params} now={await readNow()}/></div>;
+  if(value('vista')==='notizie')return <div className="lr-radar-desk lr-news-desk"><PageHeader title="Situazioni dal territorio" description="Fatti, luoghi e documenti da verificare."/><IntelligenceNavigation view="notizie"/><PropertyNews params={params} now={await readNow()}/></div>;
   const requested=value("vista"),view:IntelligenceView=INTELLIGENCE_VIEWS.includes(requested as IntelligenceView)?requested as IntelligenceView:"mercato";
   const page=Math.max(1,Math.min(10000,Math.floor(Number(value("pagina"))||1)));
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
   const now=await readNow(),db=getSupabaseServiceClient();
+  const sort=intelligenceSort(value("ordine"),value("direzione"),view);
   const [result,agencies,metrics]=await Promise.all([
-    readIntelligence(db,{view,page,query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti")}).catch(()=>null),
+    readCachedIntelligence({view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
-  const pageUrl=(next:number)=>{const q=new URLSearchParams({vista:view,pagina:String(next)});for(const key of filterKeys)if(value(key))q.set(key,value(key));return `?${q}`;};
+  const pageUrl=(next:number)=>{const q=new URLSearchParams({vista:view,pagina:String(next),ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(value(key))q.set(key,value(key));return `?${q}`;};
+  const photos=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
   const field=(name:string,label:string,type="text",placeholder?:string)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><input className={controlClass()} name={name} defaultValue={value(name)} type={type} min={type==="number"?0:undefined} placeholder={placeholder}/></label>;
   const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
-  return <div className="space-y-5">
-    <PageHeader title="Intelligence" description="Immobili, pubblicazioni e storia del mercato di Bitonto, Palombaio e Mariotto."/>
-    <nav aria-label="Viste Intelligence" className="flex flex-wrap gap-2 border-b border-[var(--lr-line-quiet)] pb-3">{INTELLIGENCE_VIEWS.map(t=><Link key={t} href={`?vista=${t}`} aria-current={t===view?"page":undefined} className={buttonClass(t===view?"secondary":"quiet")}>{tabs[t]}</Link>)}<Link href="?vista=notizie" className={buttonClass('quiet')}>Notizie</Link></nav>
-    <form method="get" className="space-y-3">
-      <input type="hidden" name="vista" value={view}/>
-      <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto]">{field("q","Indirizzo o civico","search","Cerca nell’archivio…")}{select("agenzia","Agenzia",Object.fromEntries((agencies.data??[]).map(a=>[a.id,a.name])))}<button className={buttonClass("secondary")}>Cerca</button></div>
-      <details open={filterKeys.slice(3).some(k=>value(k))||undefined} className="border-b border-[var(--lr-line-quiet)] pb-3"><summary className="cursor-pointer py-2 text-[length:var(--lr-text-meta)] font-medium">Filtra per territorio, caratteristiche e fonti</summary>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {select("localita","Località",{Bitonto:"Bitonto",Palombaio:"Palombaio",Mariotto:"Mariotto"})}{field("zona","Zona dichiarata")}
-          {select("stato","Stato",{ACTIVE:"Attivo",EXIT_PENDING:"Presenza da verificare",CLOSED_SOLD:"Concluso con segnale di vendita",OFF_MARKET_NO_SALE_EVIDENCE:"Uscita senza prova di vendita",CLOSED_SWITCHED:"Cambio agenzia",CLOSED_WITHDRAWN:"Ritirato",CLOSED_TO_PRIVATE:"Passato a privato"})}
-          {field("tipo","Tipo immobile","text","Appartamento, villa, terreno?")}
-          {field("prezzo_min","Prezzo minimo €","number")}{field("prezzo_max","Prezzo massimo €","number")}{field("mq_min","Superficie minima m²","number")}{field("mq_max","Superficie massima m²","number")}
-          {field("giorni","Età mercato minima, giorni","number")}{select("ribassato","Ribassi confermati",{yes:"Con ribassi",no:"Senza ribassi osservati"})}{select("fonte","Fonte pubblicazione",Object.fromEntries(sourceOptions.map(s=>[s,s==="REMAX"?"RE/MAX":s==="IMMOBILIARE"?"Immobiliare.it":humanize(s)])))}
-          {view==="opportunita"?field("punteggio","Punteggio minimo","number"):null}{field("ribasso","Riduzione minima %","number")}
-          {view==="venduti"||view==="usciti"?select("esito","Classificazione uscita",EXIT_LABELS):null}
-          {select("atti","Contesto territoriale",{specific:"Con documenti specifici dell’unità",building:"Con documenti dell’edificio",building_recent:"Con attività edificio, 90 giorni",street_recent:"In via con attività, 90 giorni",documents:"Con documenti pubblici, filtro precedente",recent:"Con atto recente, filtro precedente",signals:"Con nuovo segnale territoriale"})}
-        </div><div className="mt-3 flex gap-2"><button className={buttonClass("secondary")}>Applica filtri</button><Link href={`?vista=${view}`} className={buttonClass("quiet")}>Azzera</Link></div>
-      </details>
-    </form>
-    <Meta>{view==="mercato"?"Tutti gli immobili conosciuti, anche storici e non più rilevati. Una riga per immobile; tutte le commercializzazioni restano nel dossier.":view==="venduti"?"Segnali di vendita confermati e probabili. Ultimo asking e prezzo di vendita sono dati distinti: non conosciamo il prezzo di compravendita.":view==="opportunita"?"Interpretazione da verificare, con score e ragioni. Nessuna scadenza di incarico è dedotta dall’età. La nostra filiale è esclusa dalle opportunità competitor.":"Un’assenza non prova una vendita. La classificazione indica cosa sappiamo e quali prove restano da verificare."}</Meta>
-    {!result?<EmptyState title="Archivio temporaneamente non disponibile" description="Impossibile leggere i dati aggiornati. Riprova tra poco; nessuna informazione è stata rimossa."/>:!result.rows.length?<EmptyState title="Nessun immobile con questi filtri" description="Amplia la ricerca o torna all’archivio completo." action={<Link href="/intelligence" className={buttonClass("secondary")}>Tutti gli immobili</Link>}/>:<div className="divide-y divide-[var(--lr-line-quiet)] border-y border-[var(--lr-line-quiet)]">
-      {result.rows.map(row=>{
-        const age=marketAgeLabel(row.first_seen_at,row.earliest_market_evidence_at,row.sold_at??row.sold_observed_at??now);
-        const prov=row.market_evidence_provenance;
-        const source=prov?.url?`${evidenceSourceLabel(prov.url)}, ${formatDate(prov.claimedAt??row.earliest_market_evidence_at)}`:`nostra osservazione, ${formatDate(row.first_seen_at)}`;
-        return <article key={row.property_id} className="grid gap-3 py-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <div className="min-w-0"><Link href={`/casa/${row.property_id}`} className="text-[length:var(--lr-text-record)] font-[650] hover:underline">{formatShouty(row.address)}</Link><p className="mt-1 text-[var(--lr-ink-2)]">{row.agency_name}{row.agency_role==="OUR_AGENCY"?" · Nostra filiale":""}</p><Meta>{[row.locality,row.zone_name,row.property_type?humanize(row.property_type):null,row.surface_sqm!=null?`${formatNumber(row.surface_sqm)} m²`:null,row.rooms!=null?`${formatNumber(row.rooms)} locali`:null].filter(Boolean).join(" · ")}</Meta><div className="mt-2"><Chip tone={row.exit_classification==="SOLD_CONFIRMED"?"ok":row.exit_classification==="MISSING_UNCONFIRMED"?"warn":"neutral"}>{EXIT_LABELS[row.exit_classification]??propertyStateLabel(row.property_state)}</Chip></div></div>
-          <div><Meta>{view==="venduti"?"Ultimo prezzo richiesto":"Prezzo richiesto"}</Meta><p className="font-[650] [font-family:var(--lr-font-mono)]">{formatCurrency(row.latest_asking_price)}{row.reduction_percent!=null&&row.reduction_percent>0?<span className="ml-2 text-[var(--lr-ok)]">−{formatNumber(row.reduction_percent)}%</span>:null}</p>{row.first_asking_price!=null?<Meta>Primo osservato {formatCurrency(row.first_asking_price)}</Meta>:null}<Meta>{row.drop_count} ribassi confermati{row.source_price_conflict?" · prezzi diversi tra fonti":""}</Meta>{row.sold_at?<Meta>Vendita dichiarata {formatDate(row.sold_at)}</Meta>:row.sold_observed_at?<Meta>Segnale vendita osservato {formatDate(row.sold_observed_at)}</Meta>:null}{row.exit_confidence!=null&&view!=="mercato"?<Meta>Certezza classificazione {Math.round(row.exit_confidence*100)}%</Meta>:null}</div>
-          <div><p title={`Prima evidenza: ${source}`} className="font-medium">{age}</p><Meta>Monitorato dal {formatDate(row.first_seen_at)}</Meta><Meta>Ultima presenza {formatDate(row.last_seen_at)}</Meta><Meta>{row.publication_count??0} pubblicazioni · {row.evidence_count??0} prove{row.document_count?` · ${row.document_count} pratiche edificio`:""}</Meta>{row.agent_name?<Meta>Agente: {row.agent_name}</Meta>:null}{row.publication_date_disagreement?<Meta>Date dichiarate discordanti: consulta le prove.</Meta>:null}</div>
-          <div className="flex items-start lg:justify-end"><Link href={`/casa/${row.property_id}`} className={buttonClass("secondary",{compact:true})}>Apri dossier</Link></div>
-          {view==="opportunita"?<details className="lg:col-span-4"><summary className="cursor-pointer py-1 font-medium">{formatNumber(row.opportunity_score??0)}/100 · Perché compare qui</summary><p className="text-[length:var(--lr-text-meta)]">{(row.reasons??[]).map(opportunityReasonLabel).join(" · ")}</p><Meta>Versione {String(row.evidence_summary?.scoreVersion??"non dichiarata")}. Il punteggio ordina gli indizi e non misura una probabilità verificata.</Meta></details>:null}
-          <details className="lg:col-span-4"><summary className="cursor-pointer py-1 text-[length:var(--lr-text-meta)]">Fonti e date</summary><Meta>Prima evidenza pubblica: {formatDate(row.earliest_market_evidence_at)} · {source}</Meta><Meta>Ultima revisione scheda {formatDate(row.updated_at??row.last_seen_at)} · Fonti: {(row.publication_sources??[]).join(", ")||"da verificare"}</Meta>{row.price_source_url?<a href={row.price_source_url} target="_blank" rel="noreferrer" className="text-[length:var(--lr-text-meta)] underline">Provenienza del prezzo richiesto</a>:null}</details>
-        </article>;
-      })}
-    </div>}
-    <nav aria-label="Pagine dell’archivio" className="flex items-center justify-between gap-3">{page>1?<Link className={buttonClass("secondary")} href={pageUrl(page-1)}>Precedenti</Link>:<span/>}<Meta>Pagina {page}</Meta>{result?.hasNext?<Link className={buttonClass("secondary")} href={pageUrl(page+1)}>Successivi</Link>:<span/>}</nav>
-    {metrics.length?<details className="border-t border-[var(--lr-line-quiet)] pt-3"><summary className="cursor-pointer py-2 font-medium">Agenzie · portafoglio osservato</summary><Meta>Campione monitorato, non statistiche definitive sul mercato.</Meta><div className="divide-y divide-[var(--lr-line-quiet)]">{metrics.map(a=><div key={a.agency_id} className="grid gap-1 py-3 sm:grid-cols-2"><strong>{a.name}</strong><p>{a.active_listings} attivi · {a.sold_observed} segnali vendita · {a.median_known_age==null?"età non ricostruita":`${formatNumber(a.median_known_age)} gg, età mediana`} · {a.unknown_exit_count} uscite senza esito</p></div>)}</div></details>:null}
+  const filterDisplay=(key:string)=>{
+    const raw=value(key);
+    if(key==='agenzia')return (agencies.data??[]).find(a=>a.id===raw)?.name??'Agenzia selezionata';
+    if(key==='esito')return EXIT_LABELS[raw]??'Esito selezionato';
+    if(key==='civico')return raw==='yes'?'Presente':'Assente';
+    if(key==='via')return raw==='yes'?'Conosciuta':'Non conosciuta';
+    if(key==='coordinate')return raw==='yes'?'Disponibili':'Non disponibili';
+    if(key==='precisione')return precisionOptions[raw as keyof typeof precisionOptions]??raw;
+    if(key==='stato')return propertyStateLabel(raw);
+    if(key==='prezzo_min'||key==='prezzo_max')return formatCurrency(Number(raw));
+    if(key==='ribassato')return raw==='yes'?'Con ribassi':'Senza ribassi osservati';
+    if(key==='atti')return ({specific:'Documenti della singola unità',building:'Documenti edificio',building_recent:'Edificio: ultimi 90 giorni',street_recent:'Via: ultimi 90 giorni',documents:'Documenti pubblici',recent:'Atti recenti',signals:'Segnali territoriali'} as Record<string,string>)[raw]??'Contesto selezionato';
+    return key==='fonte'?humanize(raw):raw;
+  };
+
+  const resetUrl="?"+new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});
+  const activeKeys=filterKeys.filter(k=>value(k));
+  const filterLabels:Record<string,string>={q:"Ricerca",agenzia:"Agenzia",localita:"Località",zona:"Zona",stato:"Stato",giorni:"Giorni minimi",punteggio:"Indice minimo",ribasso:"Ribasso minimo",tipo:"Tipo",prezzo_min:"Prezzo da",prezzo_max:"Prezzo fino a",mq_min:"m² da",mq_max:"m² fino a",ribassato:"Ribassi",fonte:"Fonte",atti:"Documenti",esito:"Esito",civico:"Civico",via:"Via",coordinate:"Coordinate",precisione:"Precisione posizione"};
+  const withoutFilter=(removed:string)=>{const q=new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(key!==removed&&value(key))q.set(key,value(key));return "?"+q;};
+
+  return <div className="lr-radar-desk">
+    <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description}/>
+    <IntelligenceNavigation view={view}/><Suspense fallback={null}><ArchiveFreshness/></Suspense>
+    <RadarFilterPanel count={activeKeys.length} filters={<form method="get" className="lr-radar-filter-form">
+            <input type="hidden" name="vista" value={view}/><input type="hidden" name="ordine" value={sort.key}/><input type="hidden" name="direzione" value={sort.ascending?"asc":"desc"}/>
+            <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>
+            <fieldset><legend>Cerca un immobile</legend>{field("q","Indirizzo o civico","search","Via, civico…")}{select("agenzia","Agenzia",Object.fromEntries((agencies.data??[]).map(a=>[a.id,a.name])))}</fieldset>
+            <fieldset><legend>Territorio</legend>{select("localita","Località",{Bitonto:"Bitonto",Palombaio:"Palombaio",Mariotto:"Mariotto"})}{field("zona","Zona")}</fieldset>
+            <fieldset><legend>Informazioni geografiche</legend>
+              {select("civico","Numero civico",{yes:"Presente",no:"Assente"})}
+              {select("via","Via",{yes:"Conosciuta",no:"Non conosciuta"})}
+              {select("coordinate","Coordinate sulla mappa",{yes:"Disponibili",no:"Non disponibili"})}
+              {select("precisione","Precisione della posizione",precisionOptions)}
+              <Meta>Le coordinate disponibili possono essere approssimative. Usa la precisione per distinguere i punti esatti.</Meta>
+            </fieldset>
+            <fieldset><legend>Prezzo richiesto</legend><div className="lr-filter-pair">{field("prezzo_min","Da €","number")}{field("prezzo_max","A €","number")}</div>{select("ribassato","Ribassi",{yes:"Con ribassi",no:"Senza ribassi osservati"})}</fieldset>
+            <fieldset><legend>Caratteristiche</legend>{field("tipo","Tipologia","text","Appartamento, villa…")}<div className="lr-filter-pair">{field("mq_min","Da m²","number")}{field("mq_max","A m²","number")}</div></fieldset>
+            <fieldset><legend>Presenza e segnali</legend>{field("giorni","Giorni minimi osservati","number")}{view==="opportunita"?field("punteggio","Indice minimo","number"):null}{field("ribasso","Riduzione minima %","number")}</fieldset>
+            <details className="lr-extra-filters"><summary>Stato, fonti e documenti</summary><div>
+              {select("stato","Stato",{ACTIVE:"Attivo",EXIT_PENDING:"Presenza da verificare",CLOSED_SOLD:"Segnale di vendita",OFF_MARKET_NO_SALE_EVIDENCE:"Uscita senza prova di vendita",CLOSED_SWITCHED:"Cambio agenzia",CLOSED_WITHDRAWN:"Ritirato",CLOSED_TO_PRIVATE:"Passato a privato"})}
+              {select("fonte","Fonte",Object.fromEntries(sourceOptions.map(s=>[s,s==="REMAX"?"RE/MAX":s==="IMMOBILIARE"?"Immobiliare.it":humanize(s)])))}
+              {view==="venduti"||view==="usciti"?select("esito","Esito",EXIT_LABELS):null}
+              {select("atti","Documenti collegati",{specific:"Specifici dell’unità",building:"Dell’edificio",building_recent:"Edificio: ultimi 90 giorni",street_recent:"Via: ultimi 90 giorni",documents:"Documenti pubblici",recent:"Atti recenti",signals:"Segnali territoriali"})}
+            </div></details>
+          </form>}>
+        <div className="lr-radar-results-bar"><span>{result?result.rows.length+" immobili in questa pagina":"Lettura non riuscita"}{result?.hasNext?" · continua nella pagina successiva":""}</span><span>{sort.label+" · "+(sort.ascending?"crescente":"decrescente")}</span></div>
+        {activeKeys.length?<div className="lr-active-filters"><span className="sr-only">Filtri attivi</span>{activeKeys.map(key=><Link key={key} className="lr-applied-filter" href={withoutFilter(key)} aria-label={"Rimuovi filtro "+(filterLabels[key]??key)}>{filterLabels[key]??key}: {filterDisplay(key)} <span aria-hidden="true">×</span></Link>)}<Link href={resetUrl}>Azzera tutto</Link></div>:null}
+        {!result?<EmptyState title="Archivio temporaneamente non disponibile" description="Impossibile leggere i dati aggiornati. Riprova tra poco; nessuna informazione è stata rimossa."/>:!result.rows.length?<EmptyState title="Nessun immobile con questi filtri" description="Amplia la ricerca o torna all’archivio completo." action={<Link href="/intelligence" className={buttonClass("secondary")}>Tutti gli immobili</Link>}/>:<IntelligenceRegister rows={result.rows} view={view} now={now} photos={photos} query={Object.fromEntries(Object.entries(params).filter((entry):entry is [string,string]=>typeof entry[1]==="string"))}/>}
+        <nav aria-label="Pagine dell’archivio" className="lr-radar-pagination">{page>1?<Link className={buttonClass("secondary",{compact:true})} href={pageUrl(page-1)}>Precedenti</Link>:<span/>}<Meta>Pagina {page}</Meta>{result?.hasNext?<Link className={buttonClass("secondary",{compact:true})} href={pageUrl(page+1)}>Successivi</Link>:<span/>}</nav>
+        {metrics.length?<details className="lr-market-agencies"><summary>Agenzie · portafoglio osservato</summary><Meta>Campione monitorato, non statistiche definitive sul mercato.</Meta><div className="divide-y divide-[var(--lr-line-quiet)]">{metrics.map(a=><div key={a.agency_id} className="grid gap-1 py-3 sm:grid-cols-2"><strong>{a.name}</strong><p>{a.active_listings} attivi · {a.sold_observed} segnali vendita · {a.median_known_age==null?"età non ricostruita":formatNumber(a.median_known_age)+" gg, età mediana"} · {a.unknown_exit_count} uscite senza esito</p></div>)}</div></details>:null}
+    </RadarFilterPanel>
   </div>;
 }

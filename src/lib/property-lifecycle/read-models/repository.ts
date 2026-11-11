@@ -270,7 +270,7 @@ export class PropertyLifecycleReadRepository {
           numberValue(attributes.surfaceSqm),
         rooms: (current ? numberValue(current.rooms) : null) ?? numberValue(attributes.rooms),
         currentPrice: current ? numberValue(current.price_amount) : null,
-        propertyState: property.property_state,
+        propertyState: property.sale_status==="SOLD_CONFIRMED"?"SOLD":property.property_state,
         saleStatus: property.sale_status,
         identityStatus: property.identity_status,
         trueMarketStartLowerBound: property.true_market_start_lower_bound,
@@ -306,7 +306,7 @@ export class PropertyLifecycleReadRepository {
     const byId = new Map(properties.map((property) => [property.id, property]));
     return rows.flatMap((row) => {
       const property = byId.get(row.property_id);
-      return property
+      return property && property.saleStatus!=="SOLD_CONFIRMED"
         ? [
             {
               id: row.id,
@@ -389,7 +389,7 @@ export class PropertyLifecycleReadRepository {
     );
     const recentEvents: LifecycleEventItem[] = eventRows.flatMap((row) => {
       const property = propertyById.get(row.property_id);
-      return property
+      return property && property.saleStatus!=="SOLD_CONFIRMED"
         ? [
             {
               id: row.id,
@@ -799,7 +799,7 @@ export class PropertyLifecycleReadRepository {
     const propertyById = new Map(properties.map((property) => [property.id, property]));
     return rows.flatMap((row) => {
       const property = propertyById.get(row.property_id);
-      return property
+      return property && property.saleStatus!=="SOLD_CONFIRMED"
         ? [
             {
               id: row.id,
@@ -872,9 +872,9 @@ export class PropertyLifecycleReadRepository {
         agencyListingIds.length ? this.db.from("market_observer_publication_metrics")
           .select("publication_id,first_asking_price,latest_asking_price,reduction_percent,drop_count,canonical_url,first_price_observed_at,latest_price_observed_at,drop_dates")
           .in("agency_listing_id", agencyListingIds) : Promise.resolve({data:[],error:null}),
-        agencyListingIds.length ? this.db.from("market_observer_agency_listing_intelligence")
+        this.db.from("radar_property_live_archive")
           .select("agency_listing_id,state,latest_asking_price,price_source_url,sold_at,sold_observed_at,source_price_conflict,exit_classification,exit_confidence,classified_at,agent_name")
-          .in("agency_listing_id",agencyListingIds).order("last_seen_at",{ascending:false}) : Promise.resolve({data:[],error:null}),
+          .eq("property_id",id).order("last_seen_at",{ascending:false}),
       ]);
     [
       publicationResult,

@@ -5,7 +5,7 @@ import { buttonClass } from "@/components/ui/primitives";
 
 export default function NotFound() {
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--lr-canvas)] px-4 py-10">
+    <main className="lr-workspace lr-status-page">
       <div className="w-full max-w-lg rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)] p-6">
         <div className="flex items-start gap-3">
           <span

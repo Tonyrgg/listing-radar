@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     ".vercel/**",
     ".runtime/**",
+    ".backups/**",
     "out/**",
     "build/**",
     "worker/**",

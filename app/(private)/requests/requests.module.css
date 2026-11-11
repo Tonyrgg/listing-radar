@@ -15,7 +15,7 @@
 .metaLabel,
 .fieldLabel {
   color: var(--lr-ink-3);
-  font-size: .68rem;
+  font-size: .75rem;
   font-weight: 650;
   letter-spacing: .1em;
   text-transform: uppercase;
@@ -211,7 +211,7 @@
 
 .recordReference {
   color: var(--lr-accent);
-  font-size: .67rem;
+  font-size: .75rem;
   font-weight: 650;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -249,7 +249,7 @@
   border-radius: 999px;
   padding: 0 .52rem;
   color: var(--lr-ink-2);
-  font-size: .66rem;
+  font-size: .75rem;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -278,7 +278,7 @@
 .columnTitle {
   margin-bottom: .65rem;
   color: var(--lr-ink);
-  font-size: .73rem;
+  font-size: .75rem;
   font-weight: 650;
 }
 
@@ -296,7 +296,7 @@
 
 .fieldLabel {
   overflow-wrap: anywhere;
-  font-size: .61rem;
+  font-size: .75rem;
   letter-spacing: .065em;
 }
 
@@ -329,7 +329,7 @@
   align-items: center;
   gap: .35rem;
   color: var(--lr-ink-3);
-  font-size: .69rem;
+  font-size: .75rem;
 }
 
 .footerFact svg { width: .85rem; height: .85rem; }
@@ -338,7 +338,7 @@
   min-height: 2rem;
   margin-left: auto;
   color: var(--lr-accent);
-  font-size: .73rem;
+  font-size: .75rem;
 }
 
 .cardAction:hover { color: var(--lr-accent-hover); }
@@ -422,7 +422,7 @@
   gap: .5rem 1.1rem;
   margin-top: 1rem;
   color: var(--lr-ink-3);
-  font-size: .69rem;
+  font-size: .75rem;
 }
 
 .contextLine span { display: inline-flex; align-items: center; gap: .35rem; }
@@ -478,7 +478,7 @@
   align-items: center;
   gap: .5rem;
   color: var(--lr-ink-3);
-  font-size: .72rem;
+  font-size: .75rem;
   font-weight: 650;
 }
 
@@ -500,7 +500,7 @@
   border: 1px solid var(--lr-line);
   border-radius: 50%;
   background: var(--lr-canvas);
-  font-size: .63rem;
+  font-size: .75rem;
 }
 
 .workflowComplete,
@@ -564,10 +564,10 @@
 
 .prioritySignal > svg { flex: none; color: var(--lr-accent); }
 .prioritySignal span { display: grid; min-width: 0; gap: .1rem; }
-.prioritySignal small { color: var(--lr-ink-3); font-size: .61rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.prioritySignal small { color: var(--lr-ink-3); font-size: .75rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .prioritySignal strong { color: var(--lr-ink); font-size: .9rem; font-weight: 650; overflow-wrap: anywhere; }
 
-.exclusionNote { margin-top: 1rem; color: var(--lr-warn); font-size: .72rem; line-height: 1.5; }
+.exclusionNote { margin-top: 1rem; color: var(--lr-warn); font-size: .75rem; line-height: 1.5; }
 .exclusionNote strong { color: var(--lr-ink); }
 
 .clientFocus {
@@ -587,7 +587,7 @@
 .contactActions a, .contactUnavailable { display: flex; min-height: 2.75rem; align-items: center; gap: .65rem; border: 1px solid var(--lr-line-quiet); border-radius: .45rem; padding: .5rem .7rem; color: var(--lr-ink); font-size: .76rem; text-decoration: none; }
 .contactActions a:hover { border-color: var(--lr-accent); }
 .contactActions svg { flex: none; color: var(--lr-accent); }
-.contactActions span > small { display: block; margin-bottom: .05rem; color: var(--lr-ink-3); font-size: .6rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.contactActions span > small { display: block; margin-bottom: .05rem; color: var(--lr-ink-3); font-size: .75rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
 .contactUnavailable { color: var(--lr-ink-3); }
 .clientContext { display: grid; gap: .5rem; margin-top: auto; border-top: 1px solid var(--lr-line-quiet); padding-top: .9rem; }
 
@@ -657,10 +657,10 @@
 }
 
 .zoneEvidence { margin: .75rem .35rem .2rem; border-top: 1px solid var(--lr-line-quiet); padding-top: .7rem; }
-.zoneEvidence summary { cursor: pointer; color: var(--lr-ink-2); font-size: .72rem; font-weight: 650; }
+.zoneEvidence summary { cursor: pointer; color: var(--lr-ink-2); font-size: .75rem; font-weight: 650; }
 .zoneMapBody { padding: .65rem; }
 .zoneEvidence ul { display: grid; gap: .45rem; margin-top: .5rem; }
-.zoneEvidence li { display: grid; gap: .25rem .8rem; align-items: baseline; color: var(--lr-ink-2); font-size: .7rem; }
+.zoneEvidence li { display: grid; gap: .25rem .8rem; align-items: baseline; color: var(--lr-ink-2); font-size: .75rem; }
 .zoneEvidence li strong { color: var(--lr-ink); }
 .zoneEvidence li span { color: var(--lr-warn); font-weight: 650; }
 .zoneEvidence q { color: var(--lr-ink-3); font-style: normal; line-height: 1.45; }
@@ -683,9 +683,9 @@
   font-weight: 650;
 }
 
-.activityMeta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .65rem; color: var(--lr-ink-3); font-size: .65rem; }
+.activityMeta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .65rem; color: var(--lr-ink-3); font-size: .75rem; }
 .activityMeta span { border: 1px solid var(--lr-line-quiet); border-radius: 999px; padding: .16rem .42rem; color: var(--lr-ink-2); }
-.activityOwner { color: var(--lr-ink-3); font-size: .68rem; }
+.activityOwner { color: var(--lr-ink-3); font-size: .75rem; }
 
 .activityText {
   color: var(--lr-ink-2);
@@ -710,7 +710,7 @@
   border-radius: .42rem;
   padding: .5rem .65rem;
   color: var(--lr-ink-2);
-  font-size: .72rem;
+  font-size: .75rem;
   font-weight: 500;
 }
 

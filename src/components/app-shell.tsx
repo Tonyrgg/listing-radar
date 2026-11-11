@@ -22,7 +22,7 @@ export async function AppShell({
   /* La barra laterale sapeva com'era solo dopo il primo disegno, perché la sua
    * preferenza viveva in `localStorage`: a ogni apertura la pagina nasceva
    * stretta e poi saltava larga. Adesso la preferenza arriva col disegno. */
-  const barraAperta = biscotti.get("listing-radar-sidebar")?.value === "expanded";
+  const barraAperta = biscotti.get("listing-radar-sidebar")?.value !== "collapsed";
 
   return (
     <AppShellFrame

@@ -1,177 +1,27 @@
 "use client";
-
-import { clsx } from "clsx";
-import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { Suspense, useState } from "react";
-
+import { LogOut, PanelLeftClose, PanelLeftOpen, Menu, X, ChevronRight, Radar } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { PendingSubmitButton } from "@/components/loading-controls";
 import { CercaGlobale } from "@/components/global-search";
-import { SidebarNav } from "@/components/sidebar-nav";
+import { SidebarNav, workspaceArea } from "@/components/sidebar-nav";
 import { FlashToast } from "@/components/ui/feedback";
 import { GlobalActionLoader } from "@/components/ui/global-action-loader";
 import { buttonClass } from "@/components/ui/primitives";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { MONITORED_ZONE } from "@/lib/constants";
 import type { Flash } from "@/lib/flash-shared";
-
-function Brand() {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex size-9 shrink-0 items-center justify-center">
-        <span
-          aria-hidden="true"
-          className="block size-9 bg-contain bg-center bg-no-repeat"
-          style={{ backgroundImage: 'url("/brand/listing-radar-icon.png")' }}
-        />
-      </span>
-      <div className="min-w-0">
-        <p className="font-display text-[length:var(--lr-text-section)] leading-tight text-[var(--lr-ink)]">
-          Listing Radar
-        </p>
-        <p className="truncate text-[length:var(--lr-text-label)] font-medium uppercase tracking-[var(--lr-tracking-label)] text-[var(--lr-ink-3)]">
-          {MONITORED_ZONE}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function AppShellFrame({
-  children,
-  showLogout,
-  flash,
-  segnoDiDisegno,
-  barraAperta,
-}: Readonly<{
-  children: React.ReactNode;
-  showLogout: boolean;
-  flash: Flash | null;
-  segnoDiDisegno: number;
-  barraAperta: boolean;
-}>) {
-  const [collapsed, setCollapsed] = useState(!barraAperta);
-
-  function toggleCollapsed() {
-    setCollapsed((current) => {
-      const next = !current;
-      /* Un anno: la preferenza deve valere anche alla prossima apertura, e
-       * deve arrivare al server per il primo disegno. */
-      document.cookie = `listing-radar-sidebar=${next ? "collapsed" : "expanded"}; path=/; max-age=31536000; samesite=lax`;
-      return next;
-    });
-  }
-
-  return (
-    <div
-      className={clsx(
-        "min-h-screen lg:grid",
-        collapsed ? "lg:grid-cols-[84px_minmax(0,1fr)]" : "lg:grid-cols-[252px_minmax(0,1fr)]",
-      )}
-    >
-      <Suspense fallback={null}>
-        <GlobalActionLoader segnoDiDisegno={segnoDiDisegno} />
-      </Suspense>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[220] focus:rounded-[var(--lr-radius-control)] focus:border focus:border-[var(--lr-line)] focus:bg-[var(--lr-surface)] focus:px-3 focus:py-2 focus:text-[var(--lr-ink)]"
-      >
-        Vai al contenuto
-      </a>
-
-      <aside
-        className={clsx(
-          "sticky top-0 hidden h-screen border-r border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] px-3 py-4 lg:flex lg:flex-col",
-        )}
-      >
-        <div className={clsx("flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
-          {collapsed ? null : <Brand />}
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? "Apri la barra laterale" : "Chiudi la barra laterale"}
-            title={collapsed ? "Apri la barra laterale" : "Chiudi la barra laterale"}
-            className={clsx(
-              "inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--lr-radius-control)] transition-colors",
-              collapsed
-                ? "bg-[var(--lr-accent)] text-[var(--lr-accent-ink)] hover:brightness-95"
-                : "text-[var(--lr-ink-3)] hover:bg-[var(--lr-raised)] hover:text-[var(--lr-ink)]",
-            )}
-          >
-            {collapsed ? (
-              <PanelLeftOpen aria-hidden="true" className="size-4" />
-            ) : (
-              <PanelLeftClose aria-hidden="true" className="size-4" />
-            )}
-          </button>
-        </div>
-
-        {/* La rail porta solo le destinazioni e il gesto che apre una richiesta.
-          * Ricerca, tema e uscita vivono nella testata: a 84 px non ci stanno,
-          * e lì stanno anche nel riferimento. */}
-        <div className="mt-6 min-h-0 flex-1">
-          <SidebarNav collapsed={collapsed} />
-        </div>
-      </aside>
-
-      <div className="min-w-0">
-        {/* La testata del tool: si cerca prima di scegliere dove guardare. */}
-        <header className="sticky top-0 z-40 hidden h-16 items-center gap-3 border-b border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] px-5 lg:flex lg:px-8">
-          <CercaGlobale className="min-w-0 max-w-[26rem] flex-1" />
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <ThemeToggle />
-            {showLogout ? (
-              <form action={logout}>
-                <PendingSubmitButton
-                  type="submit"
-                  pendingLabel=""
-                  icon={<LogOut aria-hidden="true" className="size-4" />}
-                  aria-label="Esci"
-                  title="Esci"
-                  className={buttonClass("quiet", { compact: true })}
-                >
-                  Esci
-                </PendingSubmitButton>
-              </form>
-            ) : null}
-          </div>
-        </header>
-
-        <header className="sticky top-0 z-40 border-b border-[var(--lr-line-quiet)] bg-[var(--lr-surface)] lg:hidden">
-          <div className="flex min-h-14 w-full items-center justify-between gap-3 px-4">
-            <Brand />
-            <div className="flex shrink-0 items-center gap-2">
-              <ThemeToggle compact />
-              {showLogout ? (
-                <form action={logout}>
-                  <PendingSubmitButton
-                    type="submit"
-                    pendingLabel=""
-                    icon={<LogOut aria-hidden="true" className="size-4" />}
-                    aria-label="Esci"
-                    className={buttonClass("quiet", { compact: true, icon: true })}
-                  >
-                    <span className="sr-only">Esci</span>
-                  </PendingSubmitButton>
-                </form>
-              ) : null}
-            </div>
-          </div>
-          {/* Su telefono le sezioni scorrono in orizzontale: senza `min-w-0`
-            * il contenitore prende la larghezza della fila e a scorrere è
-            * l'intera pagina. */}
-          <div className="min-w-0 space-y-2 border-t border-[var(--lr-line-quiet)] px-2 py-2">
-            <CercaGlobale />
-            <SidebarNav />
-          </div>
-        </header>
-
-        <main id="main-content" className="min-w-0 w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-          <div className="w-full">{children}</div>
-        </main>
-      </div>
-
-      <FlashToast flash={flash} />
-    </div>
-  );
+function Brand(){return <Link href="/intelligence" className="lr-brand" aria-label="Listing Radar, apri Intelligence"><span className="lr-brand-symbol"><Radar size={24} aria-hidden="true"/></span><span><strong>Listing Radar</strong><small>COREIMMOBILIARE</small></span></Link>}
+export function AppShellFrame({children,showLogout,flash,segnoDiDisegno,barraAperta}:Readonly<{children:React.ReactNode;showLogout:boolean;flash:Flash|null;segnoDiDisegno:number;barraAperta:boolean}>) {
+ const [collapsed,setCollapsed]=useState(!barraAperta),[mobileOpen,setMobileOpen]=useState(false);
+ const path=usePathname(),current=workspaceArea(path);
+ useEffect(()=>{const close=(e:KeyboardEvent)=>{if(e.key==="Escape")setMobileOpen(false)};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close)},[]);
+ function toggleCollapsed(){setCollapsed(value=>{document.cookie="listing-radar-sidebar="+(value?"expanded":"collapsed")+"; path=/; max-age=31536000; samesite=lax";return !value})}
+ return <div className={"lr-workspace"+(collapsed?" lr-sidebar-collapsed":"")} data-area={current.area}>
+ <Suspense fallback={null}><GlobalActionLoader segnoDiDisegno={segnoDiDisegno}/></Suspense><a href="#main-content" className="lr-skip">Vai al contenuto</a>
+ <aside className="lr-sidebar"><div className="lr-sidebar-brand"><Brand/><button onClick={toggleCollapsed} className="lr-icon-button" aria-label={collapsed?"Apri la barra laterale":"Chiudi la barra laterale"}>{collapsed?<PanelLeftOpen size={18}/>:<PanelLeftClose size={18}/>}</button></div><SidebarNav collapsed={collapsed}/><div className="lr-sidebar-territory"><span className="lr-territory-dot"/><span>Bitonto · Palombaio · Mariotto<small>Archivio privato di intelligence</small></span></div></aside>
+ <div className="lr-workspace-body"><header className="lr-topbar"><button className="lr-icon-button lr-mobile-menu" aria-label={mobileOpen?"Chiudi navigazione":"Apri navigazione"} aria-expanded={mobileOpen} aria-controls="mobile-navigation" onClick={()=>setMobileOpen(!mobileOpen)}>{mobileOpen?<X size={22}/>:<Menu size={22}/>}</button><div className="lr-breadcrumb"><Link href="/intelligence">Listing Radar</Link><ChevronRight size={14} aria-hidden="true"/><span>{current.label}</span></div><CercaGlobale className="lr-global-search"/><div className="lr-topbar-actions"><span className="lr-theme-desktop"><ThemeToggle/></span><span className="lr-theme-mobile"><ThemeToggle compact/></span>{showLogout&&<form action={logout}><PendingSubmitButton type="submit" pendingLabel="" icon={<LogOut size={16} aria-hidden="true"/>} aria-label="Esci" title="Esci" className={buttonClass("quiet",{compact:true,icon:true})}><span className="sr-only">Esci</span></PendingSubmitButton></form>}</div></header>
+ {mobileOpen&&<div id="mobile-navigation" className="lr-mobile-navigation"><Brand/><SidebarNav onNavigate={()=>setMobileOpen(false)}/></div>}
+ <main id="main-content" className="lr-page" tabIndex={-1}>{children}</main></div><FlashToast flash={flash}/></div>;
 }

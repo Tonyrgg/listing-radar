@@ -57,7 +57,8 @@ export function Chip({
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+        "lr-chip inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+        `lr-chip-${tone}`,
         "text-[length:var(--lr-text-label)] font-medium leading-5 tracking-[0.03em] whitespace-nowrap",
         chipTone[tone],
         className,
@@ -103,7 +104,7 @@ export function Card({
     <Tag
       id={id}
       className={clsx(
-        "rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
+        "lr-panel rounded-[var(--lr-radius-container)] border border-[var(--lr-line)] bg-[var(--lr-surface)]",
         floating && "shadow-[var(--lr-floating)]",
         className,
       )}
@@ -192,7 +193,7 @@ export function CardHeader({
   return (
     <div
       className={clsx(
-        "flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2",
+        "lr-panel-heading flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2",
         "border-b border-[var(--lr-line-quiet)] px-4 py-3",
         className,
       )}
@@ -212,7 +213,7 @@ export function CardBody({
   children,
   className,
 }: Readonly<{ children: ReactNode; className?: string }>) {
-  return <div className={clsx("p-4", className)}>{children}</div>;
+  return <div className={clsx("lr-panel-body p-4", className)}>{children}</div>;
 }
 
 /** Occhiello: 11 px, maiuscoletto, tracking positivo. Mai colorato d'accento. */
@@ -318,7 +319,7 @@ export function ScheletroRiga() {
 
 export function controlClass(className?: string, options: { conIcona?: boolean } = {}) {
   return clsx(
-    "min-h-[var(--lr-control-height)] w-full rounded-[var(--lr-radius-control)]",
+    "lr-control min-h-[var(--lr-control-height)] w-full rounded-[var(--lr-radius-control)]",
     "border border-[var(--lr-line)] bg-[var(--lr-canvas)]",
     /* La lente occupa il posto del margine sinistro: le due spaziature non
      * possono convivere nello stesso attributo. */
@@ -436,7 +437,8 @@ export function buttonClass(
   options: { compact?: boolean; block?: boolean; icon?: boolean } = {},
 ) {
   return clsx(
-    "inline-flex items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border",
+    "lr-button inline-flex items-center justify-center gap-2 rounded-[var(--lr-radius-control)] border",
+    `lr-button-${variant}`,
     "text-[length:var(--lr-text-body)] font-medium whitespace-nowrap",
     "transition-colors disabled:cursor-not-allowed disabled:opacity-50",
     options.compact

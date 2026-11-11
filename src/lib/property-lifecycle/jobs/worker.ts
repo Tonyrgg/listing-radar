@@ -22,6 +22,7 @@ import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/nor
 import { runAgencySync, type SyncMode } from "@/lib/property-lifecycle/sync/engine";
 import { runExternalSourceJob } from "@/lib/property-lifecycle/external/runtime";
 import { syncPublicRecordSources } from "@/lib/property-lifecycle/buildings/sync";
+import { writeAgencyRunReport } from './run-report';
 
 export type LifecycleAssetProcessor = (
   listing: NormalizedListingV2,
@@ -143,14 +144,15 @@ async function executeAgencySync(
   }
   const { data, error } = await db
     .from("agencies")
-    .select("adapter_key")
+    .select("adapter_key,enabled")
     .eq("id", job.agency_id)
     .single();
   if (error) {
     throw new Error(error.message);
   }
-  const agency = data as { adapter_key: string };
-  await runAgencySync({
+  const agency = data as { adapter_key: string;enabled?:boolean };
+  if(agency.enabled===false)return;
+  const outcome=await runAgencySync({
     adapter: adapterFactory(agency.adapter_key),
     repository: new PropertyLifecycleRepository(db),
     mode: syncMode(job.job_type),
@@ -158,6 +160,15 @@ async function executeAgencySync(
     assetProcessor: (listing) => assetProcessor(listing, job.job_type),
     assertOwnership,
   });
+  console.info(JSON.stringify({action:'agency-sync',agencyId:job.agency_id,...outcome}));
+  writeAgencyRunReport(agency.adapter_key, outcome);
+  if(outcome.healthState==='FAILED') {
+    const error = new Error(`Agency ${agency.adapter_key} source sync failed (${outcome.sourceReasons?.join(', ') || 'unavailable'}); previous observations preserved`);
+    // An access denial is not helped by hammering the same host again in this drain.
+    // Keep the failure visible and retry later; never reinterpret it as an empty inventory.
+    Object.assign(error, {retryAfterMs: [401,403].includes(outcome.responseStatus ?? 0) ? 3_600_000 : 300_000});
+    throw error;
+  }
 }
 
 async function executePostExitCheck(
@@ -255,7 +266,7 @@ async function executeBuildingDataSync(
 export async function runLifecycleWorkerOnce(
   workerId: string,
   dependencies: WorkerDependencies,
-): Promise<boolean> {
+): Promise<boolean | "DEFERRED"> {
   const queue = dependencies.queue ?? new LifecycleJobQueue(dependencies.db);
   const adapterFactory = dependencies.adapterFactory ?? createPropertyLifecycleAdapter;
   const job = await queue.claim(workerId);
@@ -308,6 +319,10 @@ export async function runLifecycleWorkerOnce(
     return true;
   } catch (error) {
     await queue.fail(job, workerId, error);
+    if (error instanceof Error && error.message.includes("POST_EXIT_FRESH_HEALTHY_SCAN_REQUIRED")) {
+      console.info(JSON.stringify({action:"waiting-for-source-evidence",jobId:job.id,agencyId:job.agency_id}));
+      return "DEFERRED";
+    }
     throw error;
   } finally {
     clearInterval(heartbeat);

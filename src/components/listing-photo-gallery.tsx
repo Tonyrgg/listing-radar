@@ -41,10 +41,11 @@ export function ListingPhotoGallery({
 
   if (!activeUrl) {
     return (
-      <section className="flex h-56 items-center justify-center rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]">
+      <section className="lr-photo-empty flex h-56 items-center justify-center rounded-[var(--lr-radius-control)] border border-dashed border-[var(--lr-line)] bg-[var(--lr-raised)] sm:h-72 xl:h-[360px]">
         <div className="text-center text-[var(--lr-ink-3)]">
           <ImageOff aria-hidden="true" className="mx-auto size-7" />
-          <p className="mt-3 text-[length:var(--lr-text-body)] font-medium">Nessuna foto acquisita</p>
+          <p className="mt-3 text-[length:var(--lr-text-body)] font-medium">{imageUrls.length ? 'Foto non disponibile' : 'Nessuna foto acquisita'}</p>
+          {imageUrls.length > 0 && <p className="mt-1 text-[length:var(--lr-text-meta)]">L’immagine non è stata caricata.</p>}
         </div>
       </section>
     );

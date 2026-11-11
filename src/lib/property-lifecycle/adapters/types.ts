@@ -23,6 +23,8 @@ export interface InventoryDiagnostics {
 }
 
 export interface InventoryResult {
+  /** A secondary publisher catalog can confirm presence, never primary absence. */
+  absenceAuthoritative?: boolean;
   items: InventoryItem[];
   healthState: AdapterHealthState;
   complete: boolean;

@@ -18,6 +18,8 @@ export interface SyncResult {
   inventoryComplete: boolean;
   absenceEvaluationAllowed: boolean;
   counts: SyncRunCounts;
+  sourceReasons?: string[];
+  responseStatus?: number;
 }
 
 function numericSetting(
@@ -64,6 +66,8 @@ export async function runAgencySync(input: {
   };
   const detailErrors: Array<{ sourceKey: string; message: string }> = [];
   const assetWarnings: string[] = [];
+  let deferredIdentityCount=0;
+  let persistedCount = 0;
 
   try {
     const inventory = await input.adapter.fetchInventory();
@@ -130,8 +134,10 @@ export async function runAgencySync(input: {
         }
 
         counts.inScopeCount += 1;
-        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)
-          ? await (input.assetProcessor ?? processListingAssets)(situato)
+        const fallback=situato.provenance.accessFallback===true;
+        const inspectCover = mode === "SYNC" && process.env.LIFECYCLE_SOLD_OCR === "true";
+        const assetResult = ["DEEP_SYNC", "BOOTSTRAP"].includes(mode)||fallback||inspectCover
+          ? await (input.assetProcessor ?? processListingAssets)(inspectCover?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,1)}:fallback?{...situato,assets:situato.assets.filter(a=>a.kind==='IMAGE').slice(0,2)}:situato)
           : { assets: [], warnings: [] };
         assetWarnings.push(...assetResult.warnings);
         input.assertOwnership?.();
@@ -141,6 +147,8 @@ export async function runAgencySync(input: {
           situato,
           assetResult.assets,
         );
+        if('deferred'in persisted&&persisted.deferred){deferredIdentityCount+=1;continue;}
+        persistedCount += 1;
         if (persisted.createdPublication) {
           counts.transitionedCount += 1;
         }
@@ -155,8 +163,9 @@ export async function runAgencySync(input: {
 
     const detailErrorRatio =
       counts.discoveredCount === 0 ? 0 : counts.errorCount / counts.discoveredCount;
+    const soldTextUnverified = assetWarnings.some(warning => warning.startsWith('sold_text_inspection_failed:'));
     const sourceHealthState: AdapterHealthState =
-      inventory.healthState === "HEALTHY" && detailErrorRatio > 0.1
+      inventory.healthState === "HEALTHY" && (counts.errorCount > 0 || soldTextUnverified)
         ? "DEGRADED"
         : inventory.healthState;
     const observedAt = input.observedAt ?? new Date().toISOString();
@@ -171,14 +180,15 @@ export async function runAgencySync(input: {
       expectedCount: inventory.diagnostics.expectedCount,
       parseErrorCount: counts.errorCount,
       structureFingerprint: inventory.structureFingerprint,
-      reasons: inventory.diagnostics.reasons,
+      reasons: [...inventory.diagnostics.reasons, ...(soldTextUnverified ? ['sold_text_verification_unavailable'] : [])],
       diagnostics: { ...inventory.diagnostics },
       responseStatus: inventory.response?.status,
     });
     const healthState = healthEvaluation.effectiveState;
     const inventoryComplete = healthEvaluation.inventoryComplete;
     const absenceEvaluationAllowed =
-      healthEvaluation.absenceEvaluationAllowed && mode !== "BOOTSTRAP";
+      healthEvaluation.absenceEvaluationAllowed && counts.errorCount === 0 && !soldTextUnverified &&
+      inventory.complete && mode !== "BOOTSTRAP" && inventory.absenceAuthoritative!==false;
 
 
     const status: "SUCCEEDED" | "FAILED" | "PARTIAL" = healthState === "FAILED" ? "FAILED" : healthState === "HEALTHY" ? "SUCCEEDED" : "PARTIAL";
@@ -195,13 +205,16 @@ export async function runAgencySync(input: {
       structureFingerprint: inventory.structureFingerprint,
       diagnostics: {
         inventory: inventory.diagnostics,
+        deferredIdentityCount,
+        absenceAuthoritative:inventory.absenceAuthoritative!==false,
         detailErrorRatio,
         detailErrors,
         assetWarnings,
         durationMs: Date.now() - startedAt,
         processedCount: counts.normalizedCount,
+        persistedCount,
         successPercentage: counts.discoveredCount > 0
-          ? Math.round(100 * counts.normalizedCount / counts.discoveredCount) : 0,
+          ? Math.round(100 * persistedCount / counts.discoveredCount) : 0,
         timeoutCount: detailErrors.filter((issue) => /timeout|timed out|abort/i.test(issue.message)).length,
       },
     };
@@ -233,6 +246,8 @@ export async function runAgencySync(input: {
       inventoryComplete,
       absenceEvaluationAllowed,
       counts,
+      sourceReasons: inventory.diagnostics.reasons,
+      responseStatus: inventory.response?.status,
     };
   } catch (error) {
     await input.repository.recordAdapterHealth({

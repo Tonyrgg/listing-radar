@@ -65,6 +65,11 @@ export class LifecycleJobQueue {
     runAfter?: string;
     dedupeKey?: string | null;
   }): Promise<LifecycleJob> {
+    // UI, cron rotation and fan-out must share the same active agency scan.
+    // Completed jobs are outside the database's partial unique index, so the
+    // next scheduled observation can still enqueue a fresh scan.
+    const dedupeKey = input.agencyId && ['SYNC_AGENCY','DEEP_SYNC_AGENCY'].includes(input.jobType)
+      ? `${input.jobType}:agency:${input.agencyId}` : input.dedupeKey ?? null;
     const { data, error } = await this.db
       .from("lifecycle_jobs")
       .insert({
@@ -74,20 +79,20 @@ export class LifecycleJobQueue {
         priority: input.priority ?? 0,
         max_attempts: input.maxAttempts ?? 5,
         run_after: input.runAfter ?? new Date().toISOString(),
-        dedupe_key: input.dedupeKey ?? null,
+        dedupe_key: dedupeKey,
       })
       .select(
         "id,job_type,agency_id,payload,status,priority,attempts,max_attempts,dedupe_key,worker_id",
       )
       .single();
 
-    if (error?.code === "23505" && input.dedupeKey) {
+    if (error?.code === "23505" && dedupeKey) {
       const existing = await this.db
         .from("lifecycle_jobs")
         .select(
           "id,job_type,agency_id,payload,status,priority,attempts,max_attempts,dedupe_key,worker_id",
         )
-        .eq("dedupe_key", input.dedupeKey)
+        .eq("dedupe_key", dedupeKey)
         .in("status", ["QUEUED", "RUNNING", "RETRY"])
         .single();
       throwQueueError(existing.error);

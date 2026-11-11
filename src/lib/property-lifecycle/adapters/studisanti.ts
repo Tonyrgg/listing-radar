@@ -1,3 +1,4 @@
+import {publisherFallback}from'./publisher-fallback';
 import { load, type CheerioAPI } from "cheerio";
 
 import { HttpClient, type HttpResponse } from "@/lib/http/client";
@@ -428,6 +429,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
 
   async fetchInventory(): Promise<InventoryResult> {
     const response = await this.http.get(this.inventoryUrl);
+    if(response.status===403)return publisherFallback('studisanti',this.http).fetchInventory(response);
     if (!response.ok) {
       const requiredMarkers = { successfulResponse: false };
       const diagnostics = {
@@ -467,6 +469,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
   }
 
   async fetchDetail(item: InventoryItem): Promise<SourceDocument> {
+    if(item.summary.accessFallback===true)return publisherFallback('studisanti',this.http).fetchDetail(item);
     const response = await this.http.get(item.url);
     if (!response.ok) {
       throw new Error(`Studi Santi detail ${item.url} returned HTTP ${response.status}.`);
@@ -475,6 +478,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
   }
 
   async normalize(document: SourceDocument): Promise<NormalizedListingV2> {
+    if(document.item.summary.accessFallback===true)return publisherFallback('studisanti',this.http).normalize(document);
     return normalizeStudiSantiDetail(document);
   }
 }

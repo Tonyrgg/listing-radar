@@ -56,7 +56,7 @@ export function SectionNav({
   return (
     <nav
       aria-label={ariaLabel}
-      className="flex gap-1.5 overflow-x-auto pb-1"
+      className="lr-section-nav flex gap-1.5 overflow-x-auto pb-1"
     >
       {items.map((item) => {
         const Icon = icons[item.icon];
