@@ -1,4 +1,4 @@
-import {intelligenceSort,compareUnitPrices} from "./intelligence-sorting";
+import {intelligenceSort} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "usciti", "venduti"] as const;
@@ -54,7 +54,7 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
   return publicDate ? `Sul mercato da almeno ${days} giorni` : `Monitorato da ${days} giorni`;
 }
 function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
-  let request=db.from("market_observer_graph_property_archive").select(fields);
+  let request=db.from("radar_property_read_model").select(fields);
   for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
     if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
     if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);
@@ -97,23 +97,6 @@ function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,field
 }
 export async function readIntelligence(db:SupabaseClient,filters:IntelligenceFilters){
  const size=40,sort=intelligenceSort(filters.sort,filters.direction,filters.view),offset=(filters.page-1)*size;
- if(sort.key==="metro"){
-  const light:Pick<IntelligenceRow,"row_id"|"latest_asking_price"|"surface_sqm">[]=[];
-  for(let from=0;;from+=500){
-   const r=await intelligenceRequest(db,filters,"row_id,latest_asking_price,surface_sqm").order("row_id").range(from,from+499);
-   if(r.error)throw new Error(r.error.message);
-   const batch=(r.data??[]) as unknown as typeof light;
-   light.push(...batch);if(batch.length<500)break;
-  }
-  light.sort((a,b)=>compareUnitPrices(a,b,sort.ascending));
-  const ids=light.slice(offset,offset+size).map(r=>r.row_id);
-  if(!ids.length)return {rows:[] as IntelligenceRow[],hasNext:false};
-  const r=await db.from("market_observer_graph_property_archive").select("*").in("row_id",ids);
-  if(r.error)throw new Error(r.error.message);
-  const byId=new Map((r.data as IntelligenceRow[]??[]).map(row=>[row.row_id,row]));
-  if(ids.some(id=>!byId.has(id)))throw new Error("Archivio cambiato durante l’ordinamento, riprova.");
-  return {rows:ids.map(id=>byId.get(id)!),hasNext:light.length>offset+size};
- }
  const {data,error}=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
  if(error)throw new Error(error.message);
  const rows=(data??[]) as unknown as IntelligenceRow[];

@@ -2,7 +2,7 @@ export const INTELLIGENCE_SORTS={
  immobile:{field:"address",label:"Immobile"},
  zona:{field:"zone_name",label:"Zona"},
  prezzo:{field:"latest_asking_price",label:"Prezzo richiesto"},
- metro:{field:null,label:"Prezzo al m²"},
+ metro:{field:"unit_asking_price",label:"Prezzo al m²"},
  giorni:{field:"known_market_age",label:"Giorni osservati"},
  ribassi:{field:"drop_count",label:"Ribassi"},
  fonte:{field:"agency_name",label:"Fonte"},

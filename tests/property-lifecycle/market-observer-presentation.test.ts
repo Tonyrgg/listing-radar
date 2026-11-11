@@ -18,7 +18,7 @@ describe("Market Observer dates and filters",()=>{
   });
   it("applies the operational filters in the database and bounds numeric inputs",async()=>{
     const calls:Array<[string,...unknown[]]>=[];const builder:Record<string,unknown>={};
-    for(const name of ["select","eq","in","gt","gte","neq","ilike","order","range"]){builder[name]=(...args:unknown[])=>{calls.push([name,...args]);return builder;};}
+    for(const name of ["select","eq","in","gt","gte","neq","not","ilike","order","range"]){builder[name]=(...args:unknown[])=>{calls.push([name,...args]);return builder;};}
     builder.then=(resolve:(result:unknown)=>unknown)=>resolve({data:[],error:null});
     const db={from:()=>builder} as unknown as SupabaseClient;
     await readIntelligence(db,{view:"opportunita",page:2,agency:"11111111-1111-4111-8111-111111111111",zone:"Centro%_",locality:"Bitonto",state:"ACTIVE",minimumAge:150,minimumScore:300,minimumReduction:10});
@@ -29,5 +29,6 @@ describe("Market Observer dates and filters",()=>{
     expect(calls).toContainEqual(["gte","opportunity_score",100]);
     expect(calls).toContainEqual(["gte","reduction_percent",10]);
     expect(calls).toContainEqual(["range",40,80]);
+    expect(calls).toContainEqual(["not","exit_classification","in","(SOLD_CONFIRMED,SOLD_PROBABLE)"]);
   });
 });

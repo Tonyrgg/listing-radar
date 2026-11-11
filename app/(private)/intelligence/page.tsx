@@ -1,3 +1,6 @@
+import {Suspense} from "react";
+import {ArchiveFreshness} from "@/components/archive-freshness";
+import {readCachedIntelligence} from "@/lib/property-lifecycle/read-models/intelligence-server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -6,7 +9,7 @@ import { EmptyState, Meta, buttonClass, controlClass } from "@/components/ui/pri
 import { formatCurrency, formatNumber } from "@/lib/formatting";
 import { readNow } from "@/lib/clock";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
-import { EXIT_LABELS, INTELLIGENCE_VIEWS, readIntelligence, readAgencyMarketIntelligence, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
+import { EXIT_LABELS, INTELLIGENCE_VIEWS, readAgencyMarketIntelligence, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
 import { propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
 import {IntelligenceNavigation, IntelligenceRegister, INTELLIGENCE_VIEW_COPY} from "@/components/intelligence-register";
 import {PropertyNews} from '@/components/property-news';
@@ -29,7 +32,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const now=await readNow(),db=getSupabaseServiceClient();
   const sort=intelligenceSort(value("ordine"),value("direzione"),view);
   const [result,agencies,metrics]=await Promise.all([
-    readIntelligence(db,{view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
+    readCachedIntelligence({view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
@@ -59,7 +62,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
 
   return <div className="lr-radar-desk">
     <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description}/>
-    <IntelligenceNavigation view={view}/>
+    <IntelligenceNavigation view={view}/><Suspense fallback={null}><ArchiveFreshness/></Suspense>
     <RadarFilterPanel count={activeKeys.length} filters={<form method="get" className="lr-radar-filter-form">
             <input type="hidden" name="vista" value={view}/><input type="hidden" name="ordine" value={sort.key}/><input type="hidden" name="direzione" value={sort.ascending?"asc":"desc"}/>
             <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>
@@ -82,7 +85,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
               {select("atti","Documenti collegati",{specific:"Specifici dell’unità",building:"Dell’edificio",building_recent:"Edificio: ultimi 90 giorni",street_recent:"Via: ultimi 90 giorni",documents:"Documenti pubblici",recent:"Atti recenti",signals:"Segnali territoriali"})}
             </div></details>
           </form>}>
-        <div className="lr-radar-results-bar"><span>{result?result.rows.length+" immobili in questa pagina":"Lettura in corso"}{result?.hasNext?" · continua nella pagina successiva":""}</span><span>{sort.label+" · "+(sort.ascending?"crescente":"decrescente")}</span></div>
+        <div className="lr-radar-results-bar"><span>{result?result.rows.length+" immobili in questa pagina":"Lettura non riuscita"}{result?.hasNext?" · continua nella pagina successiva":""}</span><span>{sort.label+" · "+(sort.ascending?"crescente":"decrescente")}</span></div>
         {activeKeys.length?<div className="lr-active-filters"><span className="sr-only">Filtri attivi</span>{activeKeys.map(key=><Link key={key} className="lr-applied-filter" href={withoutFilter(key)} aria-label={"Rimuovi filtro "+(filterLabels[key]??key)}>{filterLabels[key]??key}: {filterDisplay(key)} <span aria-hidden="true">×</span></Link>)}<Link href={resetUrl}>Azzera tutto</Link></div>:null}
         {!result?<EmptyState title="Archivio temporaneamente non disponibile" description="Impossibile leggere i dati aggiornati. Riprova tra poco; nessuna informazione è stata rimossa."/>:!result.rows.length?<EmptyState title="Nessun immobile con questi filtri" description="Amplia la ricerca o torna all’archivio completo." action={<Link href="/intelligence" className={buttonClass("secondary")}>Tutti gli immobili</Link>}/>:<IntelligenceRegister rows={result.rows} view={view} now={now} photos={photos} query={Object.fromEntries(Object.entries(params).filter((entry):entry is [string,string]=>typeof entry[1]==="string"))}/>}
         <nav aria-label="Pagine dell’archivio" className="lr-radar-pagination">{page>1?<Link className={buttonClass("secondary",{compact:true})} href={pageUrl(page-1)}>Precedenti</Link>:<span/>}<Meta>Pagina {page}</Meta>{result?.hasNext?<Link className={buttonClass("secondary",{compact:true})} href={pageUrl(page+1)}>Successivi</Link>:<span/>}</nav>
