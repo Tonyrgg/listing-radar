@@ -1,5 +1,6 @@
 import type { SourceHealth } from "@/components/ui/atoms";
 import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
+import { classifySourceReading } from './source-reading-quality';
 
 /**
  * Di quali fonti ci si può fidare stamattina.
@@ -28,16 +29,6 @@ export type SourcesSummary = {
   unreadListings: number;
 };
 
-function classify(health: string | null, syncStatus: string | null): SourceHealth {
-  const value = String(health ?? "").toUpperCase();
-
-  if (value === "FAILED" || value === "STRUCTURE_CHANGED") return "broken";
-  if (value === "DEGRADED") return "partial";
-  if (value === "HEALTHY") return "healthy";
-
-  return syncStatus ? "partial" : "unknown";
-}
-
 function noteFor(health: SourceHealth, raw: string | null): string | null {
   const value = String(raw ?? "").toUpperCase();
 
@@ -51,6 +42,7 @@ function noteFor(health: SourceHealth, raw: string | null): string | null {
 
 export async function getSourcesSummary(): Promise<SourcesSummary> {
   const view = await vistaAgenzie();
+  const now = Date.now();
 
   if (!view.available || !view.data) {
     return {
@@ -66,18 +58,18 @@ export async function getSourcesSummary(): Promise<SourcesSummary> {
   const readings: SourceReading[] = view.data
     .filter((agency) => agency.enabled)
     .map((agency) => {
-      const health = classify(agency.latestHealth, agency.latestSyncStatus);
+      const health = classifySourceReading(agency.latestHealth, agency.latestSyncStatus, agency.latestHealthAt, now);
 
       return {
         name: agency.name,
         health,
-        read: agency.latestSyncCounts?.inScope ?? 0,
-        note: noteFor(health, agency.latestHealth),
+        read: agency.activeCount,
+        note: noteFor(health, agency.latestHealth) ?? (health === 'partial' ? 'lettura non recente o aggiornamento incompleto' : null),
       };
     });
 
   const broken = readings.filter((reading) => reading.health === "broken");
-  const partial = readings.filter((reading) => reading.health === "partial");
+  const partial = readings.filter((reading) => reading.health === "partial" || reading.health === 'unknown');
 
   return {
     available: true,

@@ -20,6 +20,10 @@ il workflow corrente usa già Node24 e l'ultima run non presenta quel crash.
   Restano fallimenti visibili; non si cambiano in successi per eliminare le mail.
 - Resoconto GitHub per agenzia con conteggi, stato, completezza e permesso di
   valutare assenze. Errori non gestiti nel fetch restano nei log di errore.
+- Intelligence e mappa distinguono il momento di elaborazione della vista dalla
+  lettura dei portali. Mostrano un avviso espandibile per fonti fallite, parziali,
+  mai lette o con ultima lettura più vecchia di 24 ore. Un precedente stato
+  HEALTHY non basta a dichiararle attuali; una run PARTIAL prevale su quello stato.
 - Il lettore OCR gestisce i rifiuti del motore senza il throw asincrono della
   libreria e termina il worker fallito prima di ricrearlo per la foto successiva.
 
@@ -44,11 +48,11 @@ restituiranno sempre risposte valide. Nessun proxy o aggiramento di challenge.
 Resta da qualificare un canale automatico alternativo per le fonti non accessibili
 dal runner, oppure ottenere accesso stabile dal fornitore. Non è stato installato
 un secondo scheduler: prima occorre evitare esecuzioni simultanee per agenzia.
-Gli otto/nove dettagli campionati non certificano l'intero archivio: la provenienza,
+I nove dettagli campionati non certificano l'intero archivio: la provenienza,
 la data e l'incertezza della fonte restano necessarie.
 
 ## Prove locali
 
 467 test Property Lifecycle riusciti, 24 integrazioni saltate perché il relativo
-database isolato non è attivo; test aggiuntivo di recupero OCR riuscito. TypeScript,
+database isolato non è attivo; test aggiuntivi di recupero OCR e anzianità fonti riusciti. TypeScript,
 ESLint sui file modificati e build Next.js riusciti.
