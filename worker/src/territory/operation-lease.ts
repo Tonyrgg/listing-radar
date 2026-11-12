@@ -2,7 +2,7 @@ import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 export function assertSynchronized(status:{pending?:boolean;conflicts?:unknown[]},error:string|null){
  if(error)throw new Error(error);
- if(status.pending)throw new Error("Modifiche locali ancora da inviare: premi Sincronizza ora prima di avviare.");
+ if(status.pending)throw new Error("Modifiche locali ancora da inviare: attendi la conferma automatica prima di avviare.");
  if(status.conflicts?.length)throw new Error("Ci sono modifiche delle postazioni da confrontare: risolvile da Memoria online prima di avviare.");
 }
 /** Exclusive execution, kept reserved after a lost acknowledgement until this device reconciles. */
@@ -29,7 +29,7 @@ export class TerritoryOperationLease {
  async release(revision:number){
   if(!this.token)return;
   const r=await this.db.rpc("release_territory_operation",{...this.args(),p_synced_revision:revision});
-  if(r.error||r.data!==true)throw new Error("Salvataggio finale della sessione non confermato: sincronizza prima di usare un altro PC.");
+  if(r.error||r.data!==true)throw new Error("Salvataggio finale della sessione non confermato: il Worker riprova automaticamente prima di liberare la postazione.");
   this.stop();this.token=null;
  }
 }

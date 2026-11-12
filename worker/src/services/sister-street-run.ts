@@ -1,3 +1,4 @@
+import { openSisterAddressSearch } from "./sister-navigation.js";
 import type { Locator, Page } from "playwright";
 
 import { PlaywrightSisterAdapter } from "../adapters/sister/index.js";
@@ -812,7 +813,7 @@ export class SisterStreetRun {
       }
       await this.adapter.ensureResultsPage().catch(() => undefined);
       if (await this.page.locator(RESULTS_ROWS).count() > 0) continue;
-      break;
+      await openSisterAddressSearch(this.page);
     }
     throw new WorkerError(
       "Impossibile tornare al form di ricerca per indirizzo SISTER",

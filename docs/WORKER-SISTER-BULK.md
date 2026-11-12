@@ -1,5 +1,24 @@
 # Coda acquisizioni Sister — Worker 0.34.38
 
+## Correzioni 0.34.39
+
+L'acquisizione usa `connectToSisterChrome`: non richiede più Tecnocloud aperto.
+La ricerca per indirizzo viene raggiunta anche da un'altra pagina autenticata:
+voce di menu IND conservando l'ufficio, ingresso Visure nella stessa scheda,
+menu consultazioni catastali o recupero della cronologia. Scadenza login e
+blocchi di sessione del portale restano casi da risolvere autenticandosi.
+
+Gli invii delle modifiche sono schedulati dopo 100 ms e le letture remote ogni
+3 secondi. Le modifiche arrivate durante un invio generano un invio successivo.
+La prenotazione rimasta dopo una run viene finalizzata prima di riavviare;
+una chiusura non confermata viene ritentata dal giro automatico, senza richiedere
+il pulsante di sincronizzazione. Nessun rilascio prima della conferma dei dati.
+L'avvio drena le modifiche pendenti anche se trova uno scambio già in corso.
+
+Verifiche: compilazione desktop, 43 test in sette suite (navigazione, connessione
+senza CRM, retry automatico, coda, checkpoint e prenotazioni), prova Electron
+del giro multiplo simulato. Nessuna acquisizione aggiuntiva nel portale reale.
+
 In Worker V2, il pulsante «Acquisizioni Sister» apre la coda delle vie sopra
 la mappa. Ogni riga contiene via identificata, parola chiave e voce esatta
 Sister. L'operatore conferma questi testi aggiungendo la riga; il portale

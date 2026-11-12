@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chromium } from "playwright";
 
-import { connectToChrome, connectToCrmChrome, createParallelCrmPage, CRM_WORKER_HOME_URL } from "../src/services/chrome.js";
+import { connectToChrome, connectToSisterChrome, connectToCrmChrome, createParallelCrmPage, CRM_WORKER_HOME_URL } from "../src/services/chrome.js";
 
 vi.mock("playwright", () => ({ chromium: { connectOverCDP: vi.fn() } }));
 
@@ -45,6 +45,15 @@ const healthyCrm = {
   playwrightUrl: CRM_URL,
   target: { targetId: "crm-target", frameId: "crm-target", title: "Immobile Elenco", url: CRM_URL },
 };
+
+it('connects to Sister with no Tecnocloud tab open',async()=>{
+  const browser=browserWith([{playwrightUrl:SISTER_URL,target:{targetId:'sister',frameId:'sister',title:'SISTER',url:SISTER_URL}}]);
+  vi.mocked(chromium.connectOverCDP).mockResolvedValue(browser as never);
+  const tabs=await connectToSisterChrome('ws://127.0.0.1:9222/devtools/browser/fake','sister');
+  expect(tabs.sisterPage.url()).toBe(SISTER_URL);
+  expect(tabs.pages).toHaveLength(1);
+  expect(browser.close).not.toHaveBeenCalled();
+});
 
 function crmRecoveryFixture() {
   const browser = browserWith([

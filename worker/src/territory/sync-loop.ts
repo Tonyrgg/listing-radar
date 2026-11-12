@@ -6,7 +6,7 @@ export class TerritorySyncLoop {
   private due = Infinity;
   private stopped = false;
   private generation = 0;
-  constructor(private readonly exchange: () => Promise<void>, private readonly pollMs = 15000, private readonly actionMs = 1500) {}
+  constructor(private readonly exchange: () => Promise<void>, private readonly pollMs = 3000, private readonly actionMs = 100) {}
   changed() { this.generation++; this.schedule(this.actionMs); }
   private schedule(delay: number) {
     if (this.stopped || this.due <= Date.now() + delay) return;

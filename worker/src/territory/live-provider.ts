@@ -2,7 +2,7 @@ import { CloudIdentityMemory } from "./cloud-memory.js";
 import { ImportV2Error } from "../import-v2/errors.js";
 import type { TerritoryStore } from "./store.js";
 import type { TecnocloudV2Port } from "../import-v2/ports.js";
-import { connectToChrome, connectToCrmChrome, type ChromeTabs, type CrmChromeTab } from "../services/chrome.js";
+import { connectToSisterChrome, connectToCrmChrome, type SisterChromeTab, type CrmChromeTab } from "../services/chrome.js";
 import { SisterStreetRun, hasRetryableAcquisitionRecords, isCompleteStreetAcquisition, prepareStreetAcquisitionRetry, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { TecnocloudUiV2Port } from "../import-v2/tecnocloud-ui-port.js";
 import { buildPlan } from "../import-v2/identity.js";
@@ -30,7 +30,7 @@ export function validateLiveConfig(value: LiveConfig, workBrowser?: LiveBrowserC
 /** Opt-in bridge to existing adapters. No stable config, Supabase client or job queue. */
 export class LiveProvider implements TerritoryProvider {
   readonly origin = "live" as const;
-  private tabsPromise: Promise<ChromeTabs> | null = null;
+  private tabsPromise: Promise<SisterChromeTab> | null = null;
   private crmPromise: Promise<CrmChromeTab> | null = null;
   private config: LiveConfig;
   private memory: CloudIdentityMemory | null = null;
@@ -56,7 +56,7 @@ export class LiveProvider implements TerritoryProvider {
     await connection?.then(tabs => tabs.browser.close()).catch(() => undefined);
     await crm?.then(tabs => tabs.browser.close()).catch(() => undefined);
   }
-  private tabs() { return this.tabsPromise ??= connectToChrome(this.config.cdpUrl, this.config.sisterTabMatch, this.config.crmTabMatch).catch(error => {
+  private tabs() { return this.tabsPromise ??= connectToSisterChrome(this.config.cdpUrl, this.config.sisterTabMatch).catch(error => {
     this.tabsPromise = null;
     throw new ImportV2Error(error instanceof Error ? error.message : "Chrome non raggiungibile", "global_portal", { global: true, retryable: true });
   }); }

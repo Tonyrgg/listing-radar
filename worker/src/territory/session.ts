@@ -50,6 +50,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
   let sync: TerritorySync | null = null;
   let operationLease:TerritoryOperationLease|null=null;
   let credentialDigest = "";
+  let releasePending = false;
+  let finishing: Promise<void> | null = null;
   const publish = () => { if (!options.contents.isDestroyed()) options.contents.send("territory:changed"); options.changed?.(); };
   const flushOnline = async () => {
     if (!options.onlineCredentials || !options.live || syncing) return;
@@ -61,8 +63,13 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         sync = await openOnlineMemory(store, options.profileDirectory, credentials);
         credentialDigest = nextDigest;
       }
-      await sync.reconcile(); memoryError = null; checkedAt = new Date().toISOString();
-    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Riprova da Memoria online.`; if(application?.hasActiveRun)application.pause(); }
+      await sync.reconcile();
+      if (releasePending && !application?.hasActiveRun && operationLease?.held) {
+        const status=await sync.status(); assertSynchronized(status,null);
+        await operationLease.release(status.revision); releasePending=false;
+      }
+      memoryError = null; checkedAt = new Date().toISOString();
+    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Il Worker riprova automaticamente.`; if(application?.hasActiveRun)application.pause(); }
     finally {
       syncing = false; publish();
     }
@@ -185,13 +192,23 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
     });
     const ensureSynchronized=async()=>{
-      await syncLoop.flush();
-      if(!sync)throw new Error("Memoria online non disponibile: impossibile avviare una lavorazione.");
-      const status=await sync.status();assertSynchronized(status,memoryError);return status;
+      for (let attempt=0;attempt<8;attempt++) {
+        await syncLoop.flush();
+        if(!sync)throw new Error("Memoria online non disponibile: il Worker riprova automaticamente.");
+        const status=await sync.status();
+        if (!status.pending || memoryError) { assertSynchronized(status,memoryError);return status; }
+      }
+      throw new Error("Salvataggio online in corso. Il Worker continua a sincronizzare automaticamente.");
     };
     const finishSharedSession=async()=>{
+      if (finishing) return finishing;
       if(!operationLease?.held)return;
-      const status=await ensureSynchronized();await operationLease.release(status.revision);
+      releasePending=true;
+      finishing=(async()=>{
+        const status=await ensureSynchronized();
+        await operationLease!.release(status.revision); releasePending=false;
+      })().finally(()=>{finishing=null;});
+      return finishing;
     };
     handle("sync", async value => {
       const direction = z.enum(["push", "pull"]).parse(value);
@@ -218,6 +235,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       if (application.hasActiveRun) throw Error("Esiste già una lavorazione attiva");
       if (options.onlineCredentials && options.live) {
         await ensureSynchronized();
+        if(operationLease?.held)await finishSharedSession();
         operationLease ??= sync!.operationLease();
         await operationLease.acquire(message => { memoryError=message; sisterBulk.pause(); publish(); });
       }
@@ -277,6 +295,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       if(options.onlineCredentials && options.live){
         if(application.hasActiveRun)throw new Error("C’è già una lavorazione attiva su questo PC.");
+        if(operationLease?.held)await finishSharedSession();
         operationLease??=sync!.operationLease();
         await operationLease.acquire(message=>{memoryError=message;application.pause();publish();});
         try{await ensureSynchronized();}catch(error){try{await finishSharedSession();}catch{/* Keep reservation until this device reconciles. */}throw error;}
