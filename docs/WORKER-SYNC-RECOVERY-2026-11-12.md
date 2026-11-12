@@ -1,5 +1,44 @@
 # Worker 0.34.37 — recupero e barriera di sincronizzazione
 
+## Chiusura del recupero: 12 novembre, revisione 270
+
+La 0.34.37 era installata in ufficio ma il salvataggio continuava a fallire.
+I log PostgreSQL hanno individuato il timeout nell'elaborazione del pacchetto
+`p_changes`, prima della conferma. La 0091 ha tentato il raggruppamento in una
+sola passata, ma il pacchetto reale dell'ufficio ha continuato a superare il
+limite di esecuzione. Non è stata considerata una soluzione conclusiva.
+
+La **0092**, applicata e registrata, rende `territory_workspace_records` la
+fonte operativa autorevole. La RPC aggiorna solo quei record, le tombstone,
+la revisione e l'evento di sincronizzazione, nella medesima transazione.
+Non ricostruisce più il grande JSON dello snapshot a ogni invio. La colonna
+`state` resta una copia storica di bootstrap con etichetta `snapshot_revision`;
+non va letta come archivio online corrente. Le API incrementali e paginate
+leggono già i record autorevoli, anche sul Worker 0.34.37 dell'ufficio.
+Un vecchio salvataggio completo viene rifiutato se la copia storica è più
+vecchia dei record operativi: non può sovrascrivere fatti più recenti.
+
+Subito dopo questo intervento il tentativo automatico dell'ufficio è riuscito:
+revisione **269 → 270**, **788 immobili ulteriori**, totale **2.226**.
+Via Gorizia: **88 immobili**. Via Giotto: **65 immobili** sulla scheda del
+tracciato di mappa `network:34097417`; le voci ufficiali omonime non sono state
+unite arbitrariamente. Nessuno stato CRM è stato inventato o forzato.
+
+Casa riconciliata con backup preventivo: revisione 270, pending=false,
+zero conflitti. Confronto completo con lo stato ricostruito dagli **7.908
+record online**: **hash del contenuto identico**. L'utente ha confermato
+entrambe le vie presenti e «sincronizzato» anche sul PC dell'ufficio.
+Il secondo PC dell'ufficio non è stato verificato direttamente.
+
+Collaudo SQL isolato: 6.000 immobili sintetici e pacchetto offline di 10.200
+record; verificati contenuti di ogni record, rollback completo, revisione
+errata o nulla, profilo nullo, tombstone, concorrenza, letture paginate e
+rifiuto della sovrascrittura da snapshot vecchio. Le tempistiche locali non
+sono una promessa di prestazioni del servizio online.
+
+Le sezioni seguenti descrivono le fasi precedenti del recupero. Il mancato
+arrivo di Via Giotto indicato più sotto è stato superato dalla revisione 270.
+
 ## Evidenze raccolte
 
 La schermata dell'ufficio mostra `57014` durante la scrittura online. Il codice

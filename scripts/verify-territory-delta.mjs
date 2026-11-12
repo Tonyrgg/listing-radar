@@ -26,8 +26,15 @@ try{
  await db.query('select public.save_territory_lab_workspace($1,$2,$3,0,$4::jsonb)',[...args,JSON.stringify(state)]);
  const patch=[{collection:'units',key:'unit-1',value:{...state.units['unit-1'],verified:true}}];
  let start=performance.now();await save(db,1,patch);const beforeMs=performance.now()-start;
+ const bulk=Object.entries(state.units).map(([key,value])=>({collection:'units',key,value:{...value,offline:true}}));
+ for(let i=0;i<2000;i++)bulk.push({collection:'memories',key:'street-'+i,value:{note:'Offline '+i}});
+ for(let i=0;i<2000;i++)bulk.push({collection:'streets',key:'street-'+i,value:{id:'street-'+i,name:'Via test '+i}});
+ for(let i=0;i<200;i++)bulk.push({collection:'events',key:'event-'+i,value:{id:'event-'+i,at:'2026-11-12'}});
+ await db.query('begin');start=performance.now();await save(db,2,bulk);const bulkBeforeMs=performance.now()-start;await db.query('rollback');
  await db.query(await readFile(new URL('../supabase/migrations/0089_territory_atomic_delta_index.sql',import.meta.url),'utf8'));
+ await db.query(await readFile(new URL('../supabase/migrations/0091_territory_single_pass_upload.sql',import.meta.url),'utf8'));
  start=performance.now();await save(db,2,[{...patch[0],value:{...patch[0].value,verified:false}}]);const afterMs=performance.now()-start;
+ await db.query('begin');start=performance.now();await save(db,3,bulk);const bulkAfterMs=performance.now()-start;await db.query('rollback');
  await consistent();
  assert.equal((await save(db,3,[])).rows[0].revision,'3');
  await save(db,3,[{collection:'units',key:'unit-2',deleted:true,value:null},{collection:'events',key:'new-event',value:{id:'new-event',at:'2026-11-12'}},{collection:'cloud:people',key:'person-1',value:{id:'person-1'}}]);
@@ -54,6 +61,20 @@ try{
  const first=(await db.query('select public.read_territory_workspace_changes($1,$2,$3,0,null,null) result',args)).rows[0].result;
  await save(db,6,[{collection:'meta',key:'version',value:1}]);
  await assert.rejects(db.query('select public.read_territory_workspace_changes($1,$2,$3,0,$4::jsonb,6)',[...args,JSON.stringify(first.next)]),e=>e.code==='40001');
- console.log(JSON.stringify({ok:true,syntheticUnits:6000,beforeMs,afterMs,atomicRollback:true,revisionConflict:true,tombstones:true,fullSnapshotCompatibility:true,concurrentWriters:true,pages,total,pagedRevisionGuard:true}));
+ await db.query(await readFile(new URL('../supabase/migrations/0092_territory_records_authority.sql',import.meta.url),'utf8'));
+ const frozen=(await snapshot()).rows[0].state;
+ start=performance.now();await save(db,7,bulk);const canonicalBulkMs=performance.now()-start;
+ const label=(await db.query('select revision,snapshot_revision,state from public.territory_lab_workspaces where id=$1',[workspace])).rows[0];
+ assert.equal(label.revision,'8');assert.equal(label.snapshot_revision,'7');assert.deepEqual(label.state,frozen);
+ const indexed=(await db.query("select collection,record_key,value from public.territory_workspace_records where workspace_id=$1 and not deleted",[workspace])).rows;
+ const index=new Map(indexed.map(r=>[JSON.stringify([r.collection,r.record_key]),r.value]));
+ for(const record of bulk)assert.deepEqual(index.get(JSON.stringify([record.collection,record.key])),record.value);
+ await assert.rejects(db.query('select public.save_territory_lab_workspace($1,$2,$3,8,$4::jsonb)',[...args,JSON.stringify(frozen)]),e=>e.code==='40001');
+ await assert.rejects(save(db,8,[{collection:'units',key:'force-rollback',value:{id:'force-rollback'}}]),/test rollback/);
+ assert.equal((await snapshot()).rows[0].revision,'8');
+ await assert.rejects(save(db,7,patch),e=>e.code==='40001');
+ await assert.rejects(save(db,null,patch),e=>e.code==='40001');
+ await assert.rejects(db.query('select public.save_territory_workspace_changes($1,$2,null,8,$3::jsonb)',[workspace,owner,JSON.stringify(patch)]),e=>e.code==='40001');
+ console.log(JSON.stringify({ok:true,syntheticUnits:6000,beforeMs,afterMs,bulkRecords:bulk.length,bulkBeforeMs,bulkAfterMs,canonicalBulkMs,atomicRollback:true,revisionConflict:true,tombstones:true,fullSnapshotCompatibility:true,concurrentWriters:true,pages,total,pagedRevisionGuard:true,canonicalRecords:true,staleSnapshotProtected:true}));
 }finally{await db.end();await admin.query(`drop database ${name}`);await admin.end();}
 
