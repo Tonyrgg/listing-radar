@@ -35,7 +35,7 @@ try{
  await openStreet(page,street);await page.locator('.unit-register').first().waitFor();
  const mapBefore = await page.locator('#map').boundingBox();
  assert.equal(await page.locator('#detail-dialog').evaluate(d=>d.matches(':modal')),false);
- assert.equal(await page.locator('.unit-table thead th').allTextContents().then(labels=>['Civico','Piano','Tipologia','Foglio','Particella','Sub'].every(label=>labels.includes(label))),true);
+ assert.equal(await page.locator('.unit-table thead th').evaluateAll(cells=>cells.map(c=>c.querySelector('button')?.firstChild?.textContent||c.textContent)).then(labels=>['Civico','Piano','Tipologia','Foglio','Particella','Sub'].every(label=>labels.includes(label))),true);
  await page.locator('#detail-close').click();
  const mapAfter = await page.locator('#map').boundingBox();
  assert.equal(mapBefore.width,mapAfter.width,'Sidebar must not shrink the map');

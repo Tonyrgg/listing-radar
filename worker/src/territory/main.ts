@@ -21,7 +21,7 @@ let window: BrowserWindow | null = null;
 let session: Awaited<ReturnType<typeof openTerritorySession>> | undefined;
 app.whenReady().then(async () => {
   if (!ownsLock) return;
-  window = new BrowserWindow({ width: 1560, height: 960, minWidth: 780, minHeight: 580, show: !(override && process.env.TERRITORY_LAB_VISUAL_CHECK === "1"), title: live ? "Territorio | prove reali concordate" : "Territorio | laboratorio locale", backgroundColor: "#102c30", webPreferences: { preload: path.join(directory, "preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  window = new BrowserWindow({ width: 1560, height: 960, minWidth: 780, minHeight: 580, show: !(override && process.env.TERRITORY_LAB_VISUAL_CHECK === "1"), title: live ? "Territorio | prove reali concordate" : "Territorio | laboratorio locale", backgroundColor: "#151a17", webPreferences: { preload: path.join(directory, "preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false } });
   window.removeMenu();
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", event => event.preventDefault());

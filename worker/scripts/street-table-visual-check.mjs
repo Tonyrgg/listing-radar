@@ -69,7 +69,25 @@ try{
   assert.equal(await page.locator('.unit-table').isVisible(),true);
   await capture(page,{path:path.join(output,`03-tabella-${width}.png`)});
  }
+ await page.setViewportSize({width:1440,height:860});await page.locator('#detail-close').click();
+ await page.locator('#queue-manager').click();await page.locator('#queue-content .unit-table-row').first().waitFor();
+ const queue=await page.evaluate(()=>window.territory.queue());
+ assert.equal(await page.locator('#queue-content .unit-table-row').count(),Math.min(queue.entries.length,100));
+ assert.equal(await page.locator('.unit-expanded').count(),0);
+ assert.ok((await page.locator('#queue-content .unit-table-row').first().boundingBox()).y<300);
+ await capture(page,{path:path.join(output,'04-coda-tabella.png')});
+ const beforeSelection=await page.locator('.queue-selection strong').textContent();
+ await page.locator('[data-unit-sort=address]').click();
+ assert.equal(await page.locator('th:has([data-unit-sort=address])').getAttribute('aria-sort'),'descending');
+ assert.equal(await page.locator('.queue-selection strong').textContent(),beforeSelection,'Sorting preserves selected keys');
+ await page.locator('#queue-clear').click();await page.locator('#queue-content [data-unit-select]:not(:disabled)').first().check();
+ await page.locator('#queue-continue').click();await page.locator('#queue-policy').waitFor();
+ assert.equal(await page.locator('.queue-review .unit-table-row').count(),1);
+ await capture(page,{path:path.join(output,'05-coda-riepilogo.png')});
+ await page.locator('#queue-back').click();await page.locator('[data-unit-open]').first().click();
+ assert.equal(await page.locator('.unit-expanded').count(),1);
+ await capture(page,{path:path.join(output,'06-coda-dettaglio.png')});
  assert.deepEqual(errors,[]);
- const result={ok:true,readOnlyLedgerCopy:true,realStreet:street.name,properties:detail.units.length,firstRowY:firstY,visibleRows:visible,mapFullWidth:true,toolsOverlay:true,filtersOverlay:true,oneExpandedRecord:true,scrollPreserved:true,responsive:[1440,1024,390],errors};
+ const result={ok:true,readOnlyLedgerCopy:true,realStreet:street.name,properties:detail.units.length,firstRowY:firstY,visibleRows:visible,queueTable:true,queueSortPreservesSelection:true,queueReview:true,mapFullWidth:true,toolsOverlay:true,filtersOverlay:true,oneExpandedRecord:true,scrollPreserved:true,responsive:[1440,1024,390],errors};
  await writeFile(path.join(output,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }finally{if(app)await app.close();if(browser)await browser.close();server.close();}

@@ -3735,7 +3735,7 @@ async function createWindow() {
     height: 920,
     minWidth: 1080,
     minHeight: 720,
-    backgroundColor: "#f2efe4",
+    backgroundColor: "#151a17",
     title: "Property Data Worker",
     icon: iconPath,
     show: false,

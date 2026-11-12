@@ -5,7 +5,7 @@ import { streetViewState } from "./street-state.js";
 import { icon, labelIcons } from "./icons.js";
 import { createToast, isBrowserWarning } from "./toast.js";
 import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitRecordHtml, unitImportTone } from "./unit-card.js";
-import { unitTableHtml } from "./unit-table.js";
+import { unitTableHtml, sortUnits, nextUnitSort } from "./unit-table.js";
 import { wireUnitEditors } from "./unit-editor.js";
 import { createQueuePanel } from "./queue-panel.js";
 import { createFilterPicker } from "./filter-picker.js";
@@ -143,7 +143,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     historyLimit = 50;
   let unitSearch = "",
     unitFilter = "",
-    renderedContext = null, expandedUnitKey = null;
+    renderedContext = null, expandedUnitKey = null, unitSort={key:"civic",direction:"asc"};
   // Restore reading and keyboard context across data refreshes, by record identity.
   function remember(root) {
     const active = document.activeElement;
@@ -208,7 +208,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     u.canWrite && !snapshot.queueKeys.includes(u.key);
   function unitRows() {
     const needle = unitSearch.trim().toLocaleLowerCase("it");
-    return detail.units.filter(
+    return sortUnits(detail.units.filter(
       (u) => matchesUnitFilters(u, unitFilters) &&
         (!needle ||
           `${u.source.fullAddress} ${u.source.cadastral.sheet} ${u.source.cadastral.parcel} ${u.source.cadastral.subaltern} ${u.source.owners.map((o) => `${o.fullName} ${o.taxCode}`).join(" ")}`
@@ -226,7 +226,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
               : unitFilter === "aligned"
                 ? ["synced", "unchanged"].includes(u.assessment?.kind)
                 : (u.assessment?.kind || "unknown") === unitFilter)),
-    );
+    ), unitSort);
   }
   function unitFiltersHtml() {
     const active=[unitFilters.floors.length,unitFilters.categories.length,unitFilters.owners.length,unitFilters.imports!=='any',unitFilters.age!==null,unitFilters.minCivic!==null||unitFilters.maxCivic!==null].filter(Boolean).length;
@@ -572,6 +572,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   map.on("click", hidePreview);
   window.addEventListener("blur", hidePreview);
   function openDialog(title) {
+    if(title!=='Coda immobili')delete $("detail-dialog").dataset.panel;
     if (title !== "Scheda della via") delete $("detail-dialog").dataset.streetPhase;
     $("dialog-title").textContent = title;
     if (!$("detail-dialog").open) {
@@ -597,7 +598,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !event.defaultPrevented && $("detail-dialog").open) {
       event.preventDefault();
-      const popup=$("inspector").querySelector('.street-settings[open],.unit-filter-panel[open]');
+      const popup=$("inspector").querySelector('.street-settings[open],.unit-filter-panel[open],.queue-tools[open]');
       if(popup){popup.open=false;popup.querySelector(':scope > summary')?.focus();return;}
       closeDialog();
     }
@@ -826,7 +827,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label class="unit-search-control" for="unit-search"><span class="sr-only">Cerca negli immobili</span>${icon("search")}<input id="unit-search" type="search" placeholder="Cerca civico, catasto o intestatario" value="${escape(unitSearch)}"></label><label class="unit-state-control" for="unit-filter"><span class="sr-only">Mostra immobili</span><select id="unit-filter" aria-label="Mostra immobili"><option value="">Tutti</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai importati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label>${detail.units.length ? unitFiltersHtml() : ""}</div>${rows.length ? unitTableHtml(rows,{escape,selected,disabled:Boolean(snapshot.activeRun),queued:new Set(snapshot.queueKeys),expandedKey:expandedUnitKey,renderDetails:unitHtml}) : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o azzera i filtri." : "Aggiorna la lettura da SISTER."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}<footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p hidden id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label class="unit-search-control" for="unit-search"><span class="sr-only">Cerca negli immobili</span>${icon("search")}<input id="unit-search" type="search" placeholder="Cerca civico, catasto o intestatario" value="${escape(unitSearch)}"></label><label class="unit-state-control" for="unit-filter"><span class="sr-only">Mostra immobili</span><select id="unit-filter" aria-label="Mostra immobili"><option value="">Tutti</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai importati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label>${detail.units.length ? unitFiltersHtml() : ""}</div>${rows.length ? unitTableHtml(rows,{escape,selected,disabled:Boolean(snapshot.activeRun),queued:new Set(snapshot.queueKeys),expandedKey:expandedUnitKey,renderDetails:unitHtml,sort:unitSort}) : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o azzera i filtri." : "Aggiorna la lettura da SISTER."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}<footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p hidden id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -878,6 +879,12 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         const count = await api.enqueue({ keys: [...selected], streetId: selectedStreet });
         selected.clear(); await refresh(); feedback(`${count} immobili aggiunti alla coda.`);
       });
+      $("detail-body").querySelectorAll('[data-unit-sort]').forEach(button=>{button.onclick=()=>{
+        if(dirty)return feedback('Salva o annulla le correzioni prima di ordinare.',true);
+        const key=button.dataset.unitSort;unitSort=nextUnitSort(unitSort,key);renderDetail();
+        $("detail-body").querySelector('.unit-table-scroll').scrollTop=0;
+        $("detail-body").querySelector(`[data-unit-sort="${key}"]`)?.focus({preventScroll:true});
+      };});
       $("detail-body").querySelectorAll('[data-unit-open]').forEach(button => {
         button.onclick = () => {
           if(dirty)return feedback("Salva o annulla le correzioni prima di aprire un altro immobile.",true);
@@ -1633,7 +1640,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   });
   document.addEventListener("click", (event) => {
     if (!$("tools").contains(event.target)) $("tools").open = false;
-    $("inspector").querySelectorAll('.street-settings[open],.unit-filter-panel[open]').forEach(popup=>{
+    $("inspector").querySelectorAll('.street-settings[open],.unit-filter-panel[open],.queue-tools[open]').forEach(popup=>{
       if(!popup.contains(event.target))popup.open=false;
     });
   });

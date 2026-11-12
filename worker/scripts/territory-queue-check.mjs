@@ -65,11 +65,12 @@ try {
   await app.close(); app = null; await launch();
   await page.locator('#queue-manager').click(); await page.locator('#queue-content').waitFor();
   assert.equal((await page.evaluate(() => window.territory.queue())).entries[0].id, entryId, 'Coda conservata dopo riavvio');
+  await page.locator('[data-unit="'+first.key+'"] [data-unit-open]').click();
   const form = page.locator('[data-edit="' + first.key + '"]');
   await form.evaluate(el => el.closest('details').open = true);
   await form.locator('[name=address]').fill(streets[0].name + ' N. 14 Piano 2');
   await form.locator('[name=note]').fill('Nota permanente dalla coda');
-  await page.locator('#queue-empty').click(); assert.equal(await page.locator('#queue-empty-confirm').count(), 0, 'Non svuota con correzioni non salvate');
+  await page.locator('.queue-tools').evaluate(el=>el.open=true); await page.locator('#queue-empty').click(); assert.equal(await page.locator('#queue-empty-confirm').count(), 0, 'Non svuota con correzioni non salvate');
   await page.locator('#queue-clear').click(); assert.equal(await form.locator('[name=note]').inputValue(), 'Nota permanente dalla coda', 'Selezione non perde modifiche');
   await form.getByRole('button', { name: 'Salva correzioni', exact: true }).click();
   await until(async key => (await window.territory.unitDetail(key)).note === 'Nota permanente dalla coda', first.key);
@@ -96,7 +97,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('#queue-content [data-unit]').length === 1);
   assert.equal(await page.locator('[data-unit]').count(), 1, 'Ricerca catastale nella coda');
   assert.ok((await page.locator('.queue-selection strong').textContent()).includes('1 fuori dalla ricerca'));
-  await page.locator('#queue-empty').click();
+  await page.locator('.queue-tools').evaluate(el=>el.open=true); await page.locator('#queue-empty').click();
   assert.ok((await page.locator('.queue-clear-confirmation').textContent()).includes('tutti i 2 immobili'), 'La conferma comprende anche risultati nascosti');
   await page.screenshot({ path: path.join(output, 'queue-clear-1600.png') });
   await page.setViewportSize({ width: 390, height: 860 });
@@ -105,7 +106,7 @@ try {
   await page.locator('#queue-empty-cancel').click();
   assert.equal((await page.evaluate(() => window.territory.queue())).entries.length, 2);
   const beforeClear = JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8'));
-  await page.locator('#queue-empty').click(); await page.locator('#queue-empty-confirm').click();
+  await page.locator('.queue-tools').evaluate(el=>el.open=true); await page.locator('#queue-empty').click(); await page.locator('#queue-empty-confirm').click();
   await page.locator('.queue-empty').waitFor();
   const afterClear = JSON.parse(await readFile(path.join(profile, 'territory-ledger.json'), 'utf8'));
   assert.deepEqual(afterClear.checkpoints, beforeClear.checkpoints);
@@ -118,8 +119,8 @@ try {
   await page.locator('#queue-manager').click();
   await page.setViewportSize({ width: 1600, height: 960 });
   await page.locator('#queue-continue').click();
-  assert.equal(await page.locator('[data-unit]').count(), 0, 'Il riepilogo separa le opzioni dalle card');
-  assert.equal(await page.locator('.queue-review-list li').count(), 2);
+  assert.equal(await page.locator('.unit-expanded').count(), 0, 'Il riepilogo non apre moduli senza richiesta');
+  assert.equal(await page.locator('.queue-review .unit-table-row').count(), 2);
   assert.equal(await page.locator('#queue-activity option').count(), 4);
   await page.locator('#queue-activity').selectOption('killer');
   assert.ok((await page.locator('#queue-activity-hint').textContent()).includes('Eseguito'));

@@ -196,7 +196,7 @@ const SECTION_LABELS = {
   settings: ["Sistema", "Impostazioni"],
 };
 const storedTheme = localStorage.getItem("property-worker-theme");
-document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
+document.documentElement.dataset.theme = storedTheme === "light" ? "light" : "dark";
 
 function renderThemeToggle() {
   const button = $("themeToggle");

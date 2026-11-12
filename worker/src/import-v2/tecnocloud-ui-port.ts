@@ -218,11 +218,13 @@ export function chooseLookupRecordCandidate(
 }
 
 /** A submitted relationship is not real until the property card exposes it. */
-export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[]): boolean {
+export function ownershipSyncConfirmed(actual: CrmOwnershipSnapshot[], desired: OwnershipWrite[], keepUnlisted = false): boolean {
   const managed = actual.filter(isManagedCrmOwnership);
-  if (managed.length !== desired.length) return false;
+  if (!keepUnlisted && managed.length !== desired.length) return false;
   return desired.every((expected) => {
-    const found = managed.find((candidate) => sameCrmRecordId(candidate.personId, expected.personId));
+    const matches = managed.filter((candidate) => sameCrmRecordId(candidate.personId, expected.personId));
+    if (matches.length !== 1) return false;
+    const found = matches[0];
     if (!found || normalized(found.role) !== normalized(expected.role)) return false;
     return found.sharePercentage == null || expected.sharePercentage == null
       ? found.sharePercentage == null && expected.sharePercentage == null
@@ -2389,7 +2391,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const close = modal.getByRole("button", { name: /Chiudi|Close/i }).filter({ visible: true });
       if (await close.count()) await close.last().click({ force: true });
     }
-    return [...new Map(result.filter((row) => row.personId).map((row) => [row.personId, row])).values()];
+    // Never hide duplicate relationships: a partial/ambiguous list must not
+    // become permission to create or delete another relationship.
+    const seen = new Set<string>();
+    for (const row of result) {
+      const id = row.personId.slice(0, 15);
+      if (!id || seen.has(id)) throw new ImportV2Error("Soggetti collegati non univoci: verifica richiesta prima di modificare", "verification_failed");
+      seen.add(id);
+    }
+    return result;
   }
 
   private roleFromText(text: string): string | null {
@@ -2641,7 +2651,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     const saveRequests = this.watchSearchRequests();
     try {
       await save.click();
-      const duplicate = dialog.getByText(/già.*proprietario|proprietario pri(?:n)?cipale/i).filter({ visible: true });
+      // Match an actual rejection, not a role option/label in the form.
+      const duplicate = dialog.getByText(/(?:già|gia').*(?:proprietario|collegato|presente)|(?:proprietario pri(?:n)?cipale).*(?:già|gia'|non può)/i).filter({ visible: true });
       const outcome = await Promise.race([
         dialog.waitFor({ state: "hidden", timeout: 4_000 }).then(() => "saved" as const),
         duplicate.first().waitFor({ state: "visible", timeout: 4_000 }).then(() => "existing" as const),
@@ -2681,8 +2692,39 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     return left == null || right == null ? left == null && right == null : Math.abs(left - right) < 0.01;
   }
 
+  /** Never replay a relationship save. Reconcile uncertain responses using
+   * bounded fresh reads, and stop before touching the next owner if unproven. */
+  private async syncLinkedOwnership(propertyId: string, desired: OwnershipWrite, existing: CrmOwnershipSnapshot | undefined): Promise<CrmOwnershipSnapshot[]> {
+    let saveError: unknown;
+    try {
+      if (existing) await this.updateOwnership(propertyId, desired);
+      else await this.addOwnership(propertyId, desired);
+    } catch (error) {
+      if (error instanceof ImportV2Error && error.options.global) throw error;
+      this.throwIfInterruptionRequested();
+      saveError = error;
+    }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      this.throwIfInterruptionRequested();
+      if (attempt > 0 || saveError) {
+        await this.pauseAwareWait(attempt > 1 ? 600 : 250);
+        await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      }
+      const owners = await this.readOwnerships(propertyId);
+      if (ownershipSyncConfirmed(owners, [desired], true)) return owners;
+    }
+    throw new ImportV2Error("Soggetto correlato non confermato: salvataggio non ripetuto per evitare duplicati", "verification_failed", {
+      retryable: true,
+      details: { propertyId, personId: desired.personId, role: desired.role, sharePercentage: desired.sharePercentage, uncertainSave: Boolean(saveError) },
+    });
+  }
+
   async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}): Promise<CrmOwnershipSnapshotResult> {
     return this.action("Sincronizzazione soggetti collegati", async () => {
+      const desiredIds = desired.map(owner => owner.personId.slice(0, 15));
+      if (desiredIds.some(id => !id) || new Set(desiredIds).size !== desiredIds.length) {
+        throw new ImportV2Error("Intestatari richiesti duplicati o senza identità CRM", "invalid_source");
+      }
       if (this.dryRun) {
         const property = await this.readProperty(propertyId);
         const protectedOwners = property.owners.filter((owner) => !isManagedCrmOwnership(owner));
@@ -2733,7 +2775,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const primaryChanged = await this.syncPrimaryOwnership(propertyId, desiredPrimary[0]!, currentPrimary);
       const afterPrimary = primaryChanged ? await this.readOwnerships(propertyId) : before;
       const desiredLinked = desired.filter((owner) => owner.role !== "Proprietario Principale");
-      const managed = editableLinkedOwnerships(afterPrimary, desired);
+      let managed = editableLinkedOwnerships(afterPrimary, desired);
       const removedPersonIds: string[] = [];
       /* Escludere i comproprietari da questo import significa non aggiungerli,
        * non toglierli: chi e' gia' collegato resta collegato. */
@@ -2748,19 +2790,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       for (const owner of desiredLinked) {
         const existing = managed.find((candidate) => sameCrmRecordId(candidate.personId, owner.personId));
         if (existing && (!this.sameShare(existing.sharePercentage, owner.sharePercentage) || normalized(existing.role) !== normalized(owner.role))) {
-          await this.updateOwnership(propertyId, owner);
+          managed = editableLinkedOwnerships(await this.syncLinkedOwnership(propertyId, owner, existing), desired);
         } else if (!existing) {
-          await this.addOwnership(propertyId, owner);
+          managed = editableLinkedOwnerships(await this.syncLinkedOwnership(propertyId, owner, undefined), desired);
         }
       }
       let owners = await this.readOwnerships(propertyId);
-      if (!ownershipSyncConfirmed(owners, desired)) {
+      if (!ownershipSyncConfirmed(owners, desired, options.keepUnlistedManagedOwners)) {
         await this.pauseAwareWait(1_200);
         // Save already waited for the Cloud requests. Let Lightning publish
         // the component state and reread it in place, without a full reload.
         owners = await this.readOwnerships(propertyId);
       }
-      if (!ownershipSyncConfirmed(owners, desired)) {
+      if (!ownershipSyncConfirmed(owners, desired, options.keepUnlistedManagedOwners)) {
         const managedAfter = owners.filter(isManagedCrmOwnership);
         throw new ImportV2Error("Tecnocloud non espone ancora tutti i comproprietari e le quote salvati", "transient_portal", {
           retryable: true,

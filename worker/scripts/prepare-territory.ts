@@ -29,6 +29,7 @@ const streets = [...official, ...network.streets];
 await cp(path.join(root, "worker/src/territory/renderer"), output, { recursive: true });
 await cp(path.join(root, "node_modules/leaflet/dist"), path.join(output, "vendor"), { recursive: true });
 await cp(path.join(root, "worker/src/desktop/renderer/tokens.css"), path.join(output, "tokens.css"));
+await cp(path.join(root, "worker/src/desktop/renderer/worker-theme.css"), path.join(output, "worker-theme.css"));
 await cp(path.join(root, "worker/src/territory/preload.cjs"), path.join(root, `worker/${distribution}/territory/preload.cjs`));
 await writeFile(path.join(output, "inventory.json"), JSON.stringify({ source: BITONTO_OFFICIAL_STREETS_URL, license: "CC BY 4.0", geometrySource: "OpenStreetMap ODbL 1.0: rete propria e associazioni al Codvia conservate nel repository", streets }));
 console.log(`Catalogo Territorio: ${streets.length} vie, ${streets.filter(s => s.geometry).length} geometrie. Nessun accesso a Supabase o ai portali di lavoro.`);

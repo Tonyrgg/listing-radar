@@ -264,8 +264,9 @@ await page.setViewportSize({ width: 1440, height: 1000 });
 const sideNavigationVisible = await page.locator(".side-nav-shell").isVisible();
 const initialTheme = await page.locator("html").getAttribute("data-theme");
 await page.locator("#themeToggle").click();
-const darkThemeApplied = await page.locator("html").getAttribute("data-theme") === "dark";
+const lightThemeApplied = await page.locator("html").getAttribute("data-theme") === "light";
 await page.locator("#themeToggle").click();
+const darkThemeApplied = lightThemeApplied && await page.locator("html").getAttribute("data-theme") === "dark";
 await page.setViewportSize({ width: 1600, height: 1000 });
 await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
 const inspectorSelectionVisible = await page.locator("#inspectorTitle").getByText("BITONTO · Via Test", { exact: true }).count();
@@ -487,7 +488,7 @@ console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNav
 await browser.close();
 const failures = [
   ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
-  ...(!sideNavigationVisible || initialTheme !== "light" || !darkThemeApplied || inspectorSelectionVisible !== 1 || !inspectorCloseWorks || !inspectorReopens || mergedRunSetup !== 1 ? ["Guscio, tema, ispettore o configurazione unificata non funzionanti"] : []),
+  ...(!sideNavigationVisible || initialTheme !== "dark" || !darkThemeApplied || inspectorSelectionVisible !== 1 || !inspectorCloseWorks || !inspectorReopens || mergedRunSetup !== 1 ? ["Guscio, tema, ispettore o configurazione unificata non funzionanti"] : []),
   ...([readyOverflow, readyMobileOverflow, refinementOverflow, historyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
     ? ["Overflow orizzontale rilevato"] : []),
   ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
