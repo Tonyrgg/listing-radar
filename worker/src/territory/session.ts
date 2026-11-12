@@ -22,6 +22,7 @@ import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import {assertSynchronized,type TerritoryOperationLease} from "./operation-lease.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
+import { SisterBulk } from "./sister-bulk.js";
 import { resolveSyncConflict } from "./sync-records.js";
 
 const id = z.string().min(1).max(200);
@@ -209,6 +210,29 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       finally { syncing = false; notify(); }
     });
+    const sisterBulk = new SisterBulk(application, store, notify);
+    handle("sister-queue", () => sisterBulk.list());
+    handle("sister-queue-put", value => sisterBulk.put(value));
+    handle("sister-queue-remove", value => sisterBulk.remove(id.parse(value)));
+    handle("sister-queue-start", async () => {
+      if (application.hasActiveRun) throw Error("Esiste già una lavorazione attiva");
+      if (options.onlineCredentials && options.live) {
+        await ensureSynchronized();
+        operationLease ??= sync!.operationLease();
+        await operationLease.acquire(message => { memoryError=message; sisterBulk.pause(); publish(); });
+      }
+      try {
+        if (options.onlineCredentials && options.live) await ensureSynchronized();
+        options.beforeStart?.();
+        sisterBulk.start(async () => {
+          if (options.onlineCredentials && options.live) { await ensureSynchronized(); await operationLease!.renew(); }
+        });
+        void sisterBulk.waitForIdle().finally(async () => {
+          options.afterIdle?.(); notify();
+          try { await finishSharedSession(); } catch(error) { memoryError=error instanceof Error ? error.message : "Sessione da sincronizzare"; publish(); }
+        });
+      } catch(error) { options.afterIdle?.(); await finishSharedSession(); throw error; }
+    });
     handle("detail", value => application.detail(id.parse(value)));
     handle("queue", () => application.importQueue());
     handle('queue-preview',value=>{const v=z.object({keys:z.array(id).max(10000),settings:z.unknown().optional()}).strict().parse(value);return application.previewQueueActivities(v.keys,v.settings);});
@@ -228,6 +252,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("sister-street-settings", async value => { const v = z.object({ streetId: id, settings: sisterStreetSettingsSchema }).strict().parse(value); await application.configureSisterStreet(v.streetId, v.settings); });
     handle("correct", async value => { const v = z.object({ key: id, note: z.string().max(5000), correction: z.object({ address: z.string().min(1).max(500).optional(), category: z.string().min(1).max(20).optional(), owners: z.array(sourceOwner).max(100).optional() }) }).parse(value); await application.correct(v.key, v.correction, v.note); });
     handle("start", async value => {
+      if(application.hasActiveRun) throw Error("Esiste già una lavorazione attiva");
       if (options.onlineCredentials && options.live) await ensureSynchronized();
       const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
       if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");

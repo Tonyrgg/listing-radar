@@ -68,7 +68,7 @@
           </div>
           <button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
           >
-          <button id="queue-manager">Coda <span id="queue-count" class="queue-count">0</span></button>
+          <button id="sister-bulk-open">Acquisizioni Sister</button><button id="queue-manager">Coda <span id="queue-count" class="queue-count">0</span></button>
         </div>
         <div id="hover" class="hover-panel" hidden></div>
         <div
@@ -88,6 +88,21 @@
         </div>
       </section>
     </main>
+    <dialog id="sister-bulk-dialog" aria-labelledby="sister-bulk-title">
+      <header class="dialog-bar"><h2 id="sister-bulk-title">Acquisizioni Sister</h2><button id="sister-bulk-close">Chiudi</button></header>
+      <section class="sister-bulk-body">
+        <p>Prepara le vie nell’ordine di acquisizione. La voce esatta viene verificata durante la ricerca Sister. In caso di errore il giro si ferma e conserva il checkpoint.</p>
+        <form id="sister-bulk-form" class="sister-bulk-form">
+          <label>Via<input id="sister-bulk-street" list="sister-bulk-streets" required placeholder="Cerca nome o codice della via"><datalist id="sister-bulk-streets"></datalist></label>
+          <label>Parola chiave<input id="sister-bulk-keyword" maxlength="200" required placeholder="Es. GORIZIA"></label>
+          <label>Voce esatta Sister<input id="sister-bulk-name" maxlength="200" required placeholder="Es. VIA GORIZIA"></label>
+          <button>Aggiungi / aggiorna</button>
+        </form>
+        <p id="sister-bulk-feedback" role="status" aria-live="polite"></p>
+        <div class="sister-bulk-table"><table><thead><tr><th>Via</th><th>Parola chiave</th><th>Voce Sister</th><th>Stato / immobili letti</th><th>Azioni</th></tr></thead><tbody id="sister-bulk-rows"></tbody></table></div>
+        <footer class="form-actions"><button id="sister-bulk-start">Avvia / riprendi il giro</button><button id="sister-bulk-pause">Metti in pausa</button><span id="sister-bulk-summary" role="status"></span></footer>
+      </section>
+    </dialog>
     <dialog id="detail-dialog" aria-labelledby="dialog-title">
       <header class="dialog-bar">
         <h2 id="dialog-title" tabindex="-1">Scheda della via</h2>

@@ -306,3 +306,15 @@
  .worker-register #queue-content .queue-review > fieldset { max-height:30dvh;overflow:auto; }
  .worker-register #queue-content .selection-bar { padding:10px 14px; }
 }
+
+.worker-register #sister-bulk-dialog { position:fixed; inset:0 0 0 auto; margin:0; width:min(1120px,94vw); max-width:100vw; height:100dvh; max-height:100dvh; border:0; border-left:1px solid var(--register-rule); border-radius:0; background:var(--lr-canvas); color:var(--lr-ink); }
+#sister-bulk-dialog::backdrop { background:#09100dc2; }
+.sister-bulk-body { padding:24px; }
+.sister-bulk-form { display:grid; grid-template-columns:1.4fr 1fr 1.4fr auto; gap:12px; align-items:end; margin:24px 0; }
+.sister-bulk-form label { display:grid; gap:6px; font-size:13px; }
+.sister-bulk-table { overflow:auto; margin:20px 0; }
+.sister-bulk-table table { width:100%; border-collapse:collapse; font-size:13px; }
+.sister-bulk-table th,.sister-bulk-table td { padding:12px; border-bottom:1px solid var(--register-rule); text-align:left; vertical-align:top; }
+.sister-bulk-table th { color:var(--lr-ink-3); font-weight:500; }
+.sister-bulk-table small { display:block; max-width:35ch; margin-top:6px; }
+@media(max-width:760px) { .sister-bulk-form { grid-template-columns:1fr; } .sister-bulk-body { padding:16px; } }

@@ -1,3 +1,4 @@
+import { createSisterBulk } from "./sister-bulk.js";
 import { activityLabel } from "./activity-modes.js";
 import { quarantineHtml } from "./quarantine.js";
 import { createStreetSearch } from "./street-search.js";
@@ -1659,6 +1660,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     cancel: form => { dirtyForms.delete(form); dirty = Boolean(dirtyForms.size); draftStatus(); },
     open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire la coda.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); $("inspector").innerHTML = ""; $("detail-dialog").scrollTop = 0; openDialog("Coda immobili"); return true; }
   });
+  createSisterBulk({api, escape, snapshot: () => snapshot});
   $("queue-manager").onclick = safe(() => queuePanel.open());
   $("query-manager").onclick = safe(() => queryPanel.open());
   refresh().catch(archiveFailure);

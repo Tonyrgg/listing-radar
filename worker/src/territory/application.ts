@@ -37,8 +37,10 @@ export class TerritoryApplication {
   private presentationRevision = 0;
   private mapCache: { key: string; snapshot: ReturnType<TerritoryApplication["buildSnapshot"]> } | null = null;
   constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000, private readonly beforeNextItem?: () => Promise<void>) {}
+  bulkExecution: Promise<void> | null = null;
+  onBulkPause?: () => void;
   get origin() { return this.provider.origin; }
-  get hasActiveRun() { return this.active !== null; }
+  get hasActiveRun() { return this.active !== null || this.bulkExecution !== null; }
   previewQueueActivities(keys:string[],value?:unknown){
     const settings=runSettings(value),state=this.store.read();
     const sources=[...new Set(keys)].map((key,index)=>{
@@ -204,8 +206,8 @@ export class TerritoryApplication {
     });
     this.changed();
   }
-  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown, batch?: { scope: string[]; routes: Record<string, string>; query: import("./query.js").UnitQuery; queueEntryIds?: Record<string, string> }): Promise<string> {
-    if (this.active) throw new Error("Una via è già in lavorazione. Mettila in pausa prima di avviarne un'altra.");
+  async start(streetId: string, operation: Run["operation"], selected: string[] = [], resumeId?: string, settings?: unknown, batch?: { scope: string[]; routes: Record<string, string>; query: import("./query.js").UnitQuery; queueEntryIds?: Record<string, string> }, sisterBulk = false): Promise<string> {
+    if (this.active || this.bulkExecution && !sisterBulk) throw new Error("Una via è già in lavorazione. Mettila in pausa prima di avviarne un'altra.");
     if (operation === "apply" && resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
     const state = this.store.read(); const street = state.streets.find(s => s.id === streetId);
     if (!street) throw new Error("Via non trovata");
@@ -273,6 +275,11 @@ export class TerritoryApplication {
         const planned = run.applySources![key]!;
         if (planned.activity.enabled && planned.activity.contactMode === "Contatto diretto") directContactOrdinal++;
       }
+      if (sisterBulk) {
+        const entry=s.memories[streetId]?.sisterQueue;
+        if (!entry) throw Error("La via non è più in coda Sister");
+        Object.assign(entry,{runId:run.id,status:"running",updatedAt:now(),error:undefined});
+      }
       const i = s.runs.findIndex(r => r.id === run.id); if (i >= 0) s.runs[i] = run; else s.runs.push(run);
     }); }
     catch (error) { this.active = null; throw error; }
@@ -281,8 +288,9 @@ export class TerritoryApplication {
     this.execution = this.execute(run).catch(error => { this.fatalError = sanitizeSensitiveText(error instanceof Error ? error.message : "Archivio locale non raggiungibile"); }).finally(() => { this.active = null; this.changed(); });
     return run.id;
   }
-  pause() { if (this.active) this.active.pause = true; this.changed(); }
-  async waitForIdle() { await this.execution; }
+  pause() { this.onBulkPause?.(); if (this.active) this.active.pause = true; this.changed(); }
+  async waitForCurrent() { await this.execution; }
+  async waitForIdle() { await this.bulkExecution; await this.execution; }
   unitDetail(key: string) { const state = this.store.read(), unit = state.units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit, state); }
   private presentUnit(unit: Unit, state: TerritoryState) {
     const source = effectiveSource(unit);
