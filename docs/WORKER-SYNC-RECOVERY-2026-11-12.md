@@ -1,4 +1,4 @@
-# Worker 0.34.36 — recupero e barriera di sincronizzazione
+# Worker 0.34.37 — recupero e barriera di sincronizzazione
 
 ## Evidenze raccolte
 
@@ -59,10 +59,27 @@ Nessuna sostituzione forzata di un archivio con l'altro.
 
 ## Recupero ancora necessario
 
+### Secondo problema isolato durante il recupero
+
+Una nuova lettura completa via RPC a quattro parametri è fallita HTTP 500 sotto
+carico. Correggere soltanto la scrittura non basta. Migrazione **0090**, applicata
+e registrata: overload a sei parametri con pagine da massimo 100 record,
+cursore e revisione fissa. Il server rifiuta una pagina se la revisione cambia;
+il client scarta tutto il recupero parziale e riparte. Le pagine non modificano
+il profilo locale fino al completamento della lettura. La vecchia API resta
+compatibile, ma per usufruire delle pagine occorre aggiornare il Worker.
+
+Prova online reale: **6.486 record in 65 pagine, circa 10,64 secondi**, revisione
+269 costante. Nuova riconciliazione effettiva di casa via client aggiornato:
+pending=false, zero conflitti. Quattro ulteriori test verificano composizione
+delle pagine, revisione cambiata, errore nell'ultima pagina senza mutazione
+locale e cursore ripetuto. Totale mirato **70 test passati**, più prova SQL
+isolata su 6.000 immobili, 61 pagine e controllo del cambio revisione.
+
 La copia dell'ufficio deve essere aperta e collegata alla memoria online, con
 coda ferma, per inviare Via Giotto e ricevere Via Gorizia. Il database non può
 ricostruire un archivio rimasto solo su un PC non raggiungibile. Aggiornare tutte
-le postazioni alla 0.34.36 per usare la barriera prima di ogni immobile.
+le postazioni alla 0.34.37 per usare lettura paginata e barriera prima di ogni immobile.
 
 Non è dimostrata la convergenza di tutti e tre i PC finché non riceviamo e
 confrontiamo anche i loro dati. La protezione attuata impedisce di proseguire

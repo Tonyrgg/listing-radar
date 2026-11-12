@@ -47,5 +47,13 @@ try{
  const other=new pg.Client({...options,database:name});await other.connect();await other.query("set request.jwt.claim.role='service_role'");
  try{const outcomes=await Promise.allSettled([save(db,5,[{collection:'memories',key:'one',value:{note:'A'}}]),save(other,5,[{collection:'memories',key:'two',value:{note:'B'}}])]);assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);assert.equal(outcomes.filter(x=>x.status==='rejected'&&x.reason.code==='40001').length,1);}finally{await other.end();}
  await consistent();
- console.log(JSON.stringify({ok:true,syntheticUnits:6000,beforeMs,afterMs,atomicRollback:true,revisionConflict:true,tombstones:true,fullSnapshotCompatibility:true,concurrentWriters:true}));
+ await db.query(await readFile(new URL('../supabase/migrations/0090_territory_paged_recovery.sql',import.meta.url),'utf8'));
+ let cursor=null,total=0,pages=0;
+ do{const r=await db.query('select public.read_territory_workspace_changes($1,$2,$3,0,$4::jsonb,6) result',[...args,cursor?JSON.stringify(cursor):null]);const page=r.rows[0].result;assert.equal(page.revision,6);assert.ok(page.changes.length<=100);total+=page.changes.length;cursor=page.next;pages++;}while(cursor);
+ assert.ok(total>=6000);assert.ok(pages>60);
+ const first=(await db.query('select public.read_territory_workspace_changes($1,$2,$3,0,null,null) result',args)).rows[0].result;
+ await save(db,6,[{collection:'meta',key:'version',value:1}]);
+ await assert.rejects(db.query('select public.read_territory_workspace_changes($1,$2,$3,0,$4::jsonb,6)',[...args,JSON.stringify(first.next)]),e=>e.code==='40001');
+ console.log(JSON.stringify({ok:true,syntheticUnits:6000,beforeMs,afterMs,atomicRollback:true,revisionConflict:true,tombstones:true,fullSnapshotCompatibility:true,concurrentWriters:true,pages,total,pagedRevisionGuard:true}));
 }finally{await db.end();await admin.query(`drop database ${name}`);await admin.end();}
+

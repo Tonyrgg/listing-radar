@@ -105,9 +105,9 @@ export class TerritorySync {
       const binding = await this.binding();
       if (binding.baseline) validateState(binding.baseline, this.config.profileKind);
       const args = { p_workspace_id: this.config.workspaceId, p_owner_id: this.config.ownerId, p_profile_kind: this.config.profileKind };
-      const result = await this.client.rpc("read_territory_workspace_changes", { ...args, p_since: binding.baseline ? binding.revision : 0 });
-      if (result.error) throw new Error(`Sincronizzazione online non raggiungibile o schema da aggiornare (${result.error.code || "rete"}). I dati locali restano conservati.`);
-      const { revision, changes } = result.data as { revision: number; changes: SyncRecord[] };
+      const incoming = await this.readChanges(args, binding.baseline ? binding.revision : 0);
+      if (!incoming) continue; // Another writer committed between recovery pages.
+      const { revision, changes } = incoming;
       if (!Number.isSafeInteger(revision) || revision < binding.revision || !Array.isArray(changes)) throw new Error("Revisione online non valida: archivio locale conservato");
       if (binding.baseline && revision === binding.revision && !changes.length && this.cleanStoreRevision === this.store.revision) return { revision, changed: false };
       const local = this.store.read();
@@ -146,6 +146,26 @@ export class TerritorySync {
       return { revision: nextRevision, changed: patch.length > 0 || territoryDigest(local) !== territoryDigest(merged) || !revision };
     }
     throw new Error("Altra postazione in aggiornamento: riprovo automaticamente. Dati locali conservati.");
+  }
+  private async readChanges(args: Record<string, string>, since: number): Promise<{revision:number;changes:SyncRecord[]}|null> {
+    const changes: SyncRecord[] = [];
+    let cursor: {collection:string;key:string}|null = null;
+    let revision: number|null = null;
+    const cursors = new Set<string>();
+    for (let page=0;page<1000;page++) {
+      let result = await this.client.rpc("read_territory_workspace_changes", {...args,p_since:since,p_after:cursor,p_until:revision});
+      // Compatibility while the server migration is being deployed.
+      if (page===0 && result.error?.code==='PGRST202') result=await this.client.rpc("read_territory_workspace_changes", {...args,p_since:since});
+      if (result.error?.code==='40001') return null;
+      if (result.error) throw new Error(`Sincronizzazione online non raggiungibile o schema da aggiornare (${result.error.code || 'rete'}). I dati locali restano conservati.`);
+      const data=result.data as {revision:number;changes:SyncRecord[];next?:{collection:string;key:string}|null};
+      if (!data || !Number.isSafeInteger(data.revision) || data.revision<since || revision!==null && revision!==data.revision || !Array.isArray(data.changes)) throw new Error('Lettura online incompleta: archivio locale conservato');
+      revision=data.revision;changes.push(...data.changes);
+      if (!data.next) return {revision,changes};
+      if (typeof data.next.collection!=='string' || typeof data.next.key!=='string' || !data.changes.length || cursors.has(JSON.stringify(data.next))) throw new Error('Cursore online non valido: archivio locale conservato');
+      cursor=data.next;cursors.add(JSON.stringify(cursor));
+    }
+    throw new Error('Recupero online troppo esteso: archivio locale conservato');
   }
   async push() {
     const local = this.store.read(); validateState(local, this.config.profileKind);
