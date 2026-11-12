@@ -126,7 +126,13 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard());
     } else provider = new SimulationProvider(store);
-    application = new TerritoryApplication(store, provider, notify);
+    application = new TerritoryApplication(store, provider, notify, 5000, options.onlineCredentials && options.live ? async () => {
+      await syncLoop.flush();
+      if (!sync) throw new Error("Memoria online non disponibile: nessun nuovo immobile verrà lavorato.");
+      assertSynchronized(await sync.status(), memoryError);
+      if (!operationLease?.held) throw new Error("Sessione condivisa non confermata: lavorazione fermata prima del prossimo immobile.");
+      await operationLease.renew();
+    } : undefined);
     if (options.onlineCredentials && options.live) {
       await syncLoop.flush();
     } else try {

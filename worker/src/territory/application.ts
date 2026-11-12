@@ -36,7 +36,7 @@ export class TerritoryApplication {
   private fatalError: string | null = null;
   private presentationRevision = 0;
   private mapCache: { key: string; snapshot: ReturnType<TerritoryApplication["buildSnapshot"]> } | null = null;
-  constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000) {}
+  constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000, private readonly beforeNextItem?: () => Promise<void>) {}
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null; }
   previewQueueActivities(keys:string[],value?:unknown){
@@ -387,6 +387,9 @@ export class TerritoryApplication {
         await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
+          // Do not begin another CRM item until the previous durable outcome
+          // is acknowledged online. Failure stops outside the per-item retry.
+          await this.beforeNextItem?.();
           if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null }); return; }
           const key = run.itemKeys[index]!;
           if (run.operation === "apply" && this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.imports?.[key]?.crmId))) {
