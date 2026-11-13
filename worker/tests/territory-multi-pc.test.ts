@@ -49,6 +49,32 @@ async function pc(remote: ReturnType<typeof server>) {
   return { directory, store, sync };
 }
 const source = (index: number) => simulationSource(street, index, `source-${index}`);
+it('three workstations converge automatically after concurrent edits and repeated event clocks',async()=>{
+ const remote=server(),a=await pc(remote),b=await pc(remote),c=await pc(remote);
+ const key=await acquire(a.store,1);await a.sync.reconcile();await b.sync.reconcile();await c.sync.reconcile();
+ const add=async(p:Awaited<ReturnType<typeof pc>>,at:string)=>p.store.change(s=>{
+  appendUnitEvent(s.units[key]!,['shared-event'],{at,runId:'shared',kind:'queued',origin:'live',message:'Queued'});
+  s.memories[street.id]!.note=at;
+ });
+ await add(a,'2026-11-13T10:00:00Z');await add(b,'2026-11-13T10:00:01Z');await add(c,'2026-11-13T10:00:02Z');
+ await a.sync.reconcile();await b.sync.reconcile();await c.sync.reconcile();
+ for(const p of [a,b,c])await p.sync.reconcile();
+ for(const p of [a,b,c]){
+  expect((await p.sync.status()).pending).toBe(false);expect((await p.sync.status()).conflicts).toHaveLength(0);
+  expect(p.store.read().units[key]!.journal!.filter(e=>e.runId==='shared')).toHaveLength(1);
+  expect(territoryDigest(p.store.read())).toBe(territoryDigest(remote.state()));
+ }
+});
+it('resolves legacy array paths by event id and archives old server conflicts automatically',async()=>{
+ const remote=server(),a=await pc(remote),key=await acquire(a.store,1);
+ const local=a.store.read();appendUnitEvent(local.units[key]!,['event'],{at:'2026-11-13T10:00:00Z',runId:'r',kind:'queued',origin:'live',message:'Queued'});
+ const event=local.units[key]!.journal![0]!;
+ local.syncConflicts={test:{id:'test',path:['units',key,'journal',event.id,'at'],values:[event.at,'2026-11-13T10:00:01Z'],detectedAt:event.at,resolvedAt:null}};
+ resolveSyncConflict(local,'test',1);expect(local.units[key]!.journal![0]!.at).toBe('2026-11-13T10:00:01Z');
+ local.syncConflicts.test!.resolvedAt=null;
+ const merged=mergeTerritory(local,local,local,'server');
+ expect(Object.values(merged.syncConflicts!).every(c=>c.resolvedAt)).toBe(true);
+});
 async function acquire(store: TerritoryStore, index: number) {
   const item = source(index);
   await store.change(s => { const u = ensureMemoryUnit(s, item, "2026-10-15T12:00:00Z", `scan-${index}`); u.observations[0]!.origin = "sister"; u.streetIds = [street.id]; });
@@ -119,12 +145,13 @@ it("conserva entrambe le note concorrenti, sincronizza gli altri dati e condivid
   const key = await acquire(b.store, 1);
   await a.sync.reconcile(); await b.sync.reconcile(); await a.sync.reconcile();
   expect(a.store.read().units[key]).toBeDefined();
-  const conflicts = (await a.sync.status()).conflicts; expect(conflicts).toHaveLength(1);
-  expect(new Set(conflicts[0]!.values)).toEqual(new Set(["Ufficio 1", "Ufficio 2"]));
-  await a.store.change(s => resolveSyncConflict(s, conflicts[0]!.id, 0));
-  await a.sync.reconcile(); await b.sync.reconcile();
-  expect((await b.sync.status()).conflicts).toHaveLength(0);
-  expect(b.store.read().memories[street.id]!.note).toBe(conflicts[0]!.values[0]);
+  expect((await a.sync.status()).conflicts).toHaveLength(0);
+  const audit=Object.values(a.store.read().syncConflicts ?? {});
+  expect(audit).toHaveLength(1);
+  expect(new Set(audit[0]!.values)).toEqual(new Set(["Ufficio 1", "Ufficio 2"]));
+  expect(audit[0]!.resolvedAt).toBeTruthy();
+  expect(b.store.read().memories[street.id]!.note).toBe("Ufficio 1");
+  expect(a.store.read().memories[street.id]!.note).toBe("Ufficio 1");
 });
 
 it("l'unione conserva cronologia, verifica più recente e non resuscita un'iscrizione rimossa offline", async () => {
@@ -141,7 +168,7 @@ it("l'unione conserva cronologia, verifica più recente e non resuscita un'iscri
 it("polling inattivo, azioni continue e chiusura non accavallano gli scambi", async () => {
   vi.useFakeTimers(); let resolve: (() => void) | undefined;
   const exchange = vi.fn(async () => { if (exchange.mock.calls.length === 2) await new Promise<void>(r => { resolve = r; }); });
-  const loop = new TerritorySyncLoop(exchange);
+  const loop = new TerritorySyncLoop(exchange,15000,1500);
   await loop.flush(); expect(exchange).toHaveBeenCalledTimes(1);
   for (let i = 0; i < 15; i++) { loop.changed(); await vi.advanceTimersByTimeAsync(100); }
   expect(exchange).toHaveBeenCalledTimes(2);
@@ -155,7 +182,7 @@ it("invia prontamente il commit fatto mentre lo scambio precedente era in volo",
   vi.useFakeTimers();
   let release!: () => void;
   const exchange = vi.fn().mockImplementationOnce(() => new Promise<void>(r => { release = r; })).mockResolvedValue(undefined);
-  const loop = new TerritorySyncLoop(exchange);
+  const loop = new TerritorySyncLoop(exchange,15000,1500);
   const pending = loop.flush();
   await vi.advanceTimersByTimeAsync(0);
   loop.changed();

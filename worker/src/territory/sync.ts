@@ -120,7 +120,7 @@ export class TerritorySync {
       }
       const remote = recordsState(records);
       if (revision) validateState(remote, this.config.profileKind);
-      const merged = revision ? mergeTerritory(binding.baseline, local, remote) : local;
+      const merged = revision ? mergeTerritory(binding.baseline, local, remote, 'server') : local;
       validateState(merged, this.config.profileKind);
       if (!binding.baseline && revision) await this.store.backupBeforeSharedRecovery();
       const patch = revision ? diffRecords(remote, merged) : [];
@@ -137,7 +137,7 @@ export class TerritorySync {
       if (territoryDigest(local) !== territoryDigest(merged)) await this.store.change(current => {
         // Runs keep committing while the network is in flight. Rebase again inside
         // the same serial disk transaction so a new success can never be replaced.
-        const next = mergeTerritory(local, current, merged);
+        const next = mergeTerritory(local, current, merged, 'server');
         Object.assign(current, next);
       });
       // Exactly what was acknowledged, never a newer local checkpoint not sent yet.

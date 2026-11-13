@@ -178,6 +178,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     });
     handle("sync-status", async () => sync ? { ...await sync.status(), checkedAt, syncing, error: memoryError } : { configured: Boolean(options.onlineCredentials && options.live), environment: options.onlineCredentials ? "online" : "locale", checkedAt, syncing, error: memoryError });
     handle("sync-review", async () => {
+      if (options.onlineCredentials && options.live) { await syncLoop.flush(); return; }
       if (application.hasActiveRun) throw new Error("Attendi la fine del lavoro prima di scegliere tra modifiche concorrenti");
       for (const issue of Object.values(store.read().syncConflicts ?? {}).filter(c => !c.resolvedAt)) {
         const state = store.read(), key = issue.path[1];

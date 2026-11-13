@@ -50,13 +50,14 @@ export function diffRecords(before: TerritoryState, after: TerritoryState): Sync
 
 /** Three-way field merge. Facts accumulate; conflicting manual edits are retained
  * as shared review records instead of blocking unrelated work or discarding a value. */
-export function mergeTerritory(base: TerritoryState | undefined, local: TerritoryState, remote: TerritoryState): TerritoryState {
+export function mergeTerritory(base: TerritoryState | undefined, local: TerritoryState, remote: TerritoryState, policy: 'review'|'server' = 'review'): TerritoryState {
   const conflicts: Record<string, SyncConflict> = { ...remote.syncConflicts };
   for (const [id, row] of Object.entries(local.syncConflicts ?? {})) if (!conflicts[id] || (row.resolvedAt ?? "") > (conflicts[id]!.resolvedAt ?? "")) conflicts[id] = structuredClone(row);
   const conflict = (path: string[], a: unknown, b: unknown) => {
     const values = [a ?? null, b ?? null];
     const id = createHash("sha256").update(stableJson([path, [...values].sort((x, y) => compareText(stableJson(x), stableJson(y)))])).digest("hex");
-    conflicts[id] ??= { id, path, values, detectedAt: new Date().toISOString(), resolvedAt: null };
+    const at = new Date().toISOString();
+    conflicts[id] ??= { id, path, values, detectedAt: at, resolvedAt: policy === 'server' ? at : null };
     return b; // The shared value remains in place; both proposals remain reviewable.
   };
   const merge = (prior: unknown, a: unknown, b: unknown, path: string[]): unknown => {
@@ -64,6 +65,9 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
     if (!runCopies && (equal(a, b) || equal(prior, b))) return structuredClone(a);
     if (!runCopies && equal(prior, a)) return structuredClone(b);
     const field = path.at(-1)!;
+    // Replaying one immutable event on another device must not create a human
+    // decision about its clock. Retain its first recorded time deterministically.
+    if (field === 'at' && path[0] === 'units' && ['journal','observations'].includes(path[2]!)) return [a,b].filter(Boolean).sort()[0];
     if ((field === "geometry" || field === "geometryEvidence") && path[0] !== "networkBindings") return structuredClone(b ?? a);
     if (field === "geometry" && path[0] === "networkBindings") return conflict(path, a, b);
     if (["registeredAt", "recordedAt"].includes(field)) return [a, b].filter(Boolean).sort()[0];
@@ -100,7 +104,10 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
         const verified = String(a.lastVerifiedAt ?? "") > String(b.lastVerifiedAt ?? "") ? a : b;
         return { ...structuredClone(latest), ...(verified.lastVerifiedAt ? { crmIds: structuredClone(verified.crmIds), lastVerifiedAt: verified.lastVerifiedAt } : {}) };
       }
+      if (path[0] === 'importQueue' && path.length === 2 && policy === 'server') return conflict(path,a,b);
       if (path[0] === "importQueue" && path.length === 2 || field === "assessment") return structuredClone(order(a, b) > 0 ? a : b);
+      // A queue cursor and its run reference are one server-coordinated record.
+      if (field === 'sisterQueue' && policy === 'server') return conflict(path,a,b);
       if (path[0] === "runs" && path.length === 2) {
         const score = (v: Record<string, unknown>) => `${v.endedAt ? "2" : "1"}:${String(v.handled ?? 0).padStart(10, "0")}:${stamp(v)}`;
         const selected = structuredClone(score(a) > score(b) ? a : b);
@@ -154,6 +161,7 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
     if (value !== undefined) next.set(id, { ...row, value });
   }
   const merged = recordsState(next);
+  if (policy === 'server') for (const issue of Object.values(conflicts)) issue.resolvedAt ??= issue.detectedAt;
   if (Object.keys(conflicts).length) merged.syncConflicts = conflicts;
   // An old offline enrollment cannot resurrect a confirmed removal or a success.
   for (const [key, entry] of Object.entries(merged.importQueue ?? {})) {
@@ -177,7 +185,7 @@ export function resolveSyncConflict(state: TerritoryState, id: string, choice: n
     const next = recordsState(records); Object.assign(state, next);
     state.syncConflicts![id]!.resolvedAt = new Date().toISOString(); return;
   }
-  for (const field of fields.slice(0, -1)) { if (["__proto__", "prototype", "constructor"].includes(field)) throw new Error("Percorso non valido"); target = target?.[field]; }
+  for (const field of fields.slice(0, -1)) { if (["__proto__", "prototype", "constructor"].includes(field)) throw new Error("Percorso non valido"); target = Array.isArray(target) ? target.find(row=>row?.id===field) : target?.[field]; }
   const field = fields.at(-1)!;
   if (!target || ["__proto__", "prototype", "constructor"].includes(field) || !conflict.values.some(v => equal(v, target[field]))) throw new Error("Il dato è cambiato dopo il confronto: aggiorna prima di scegliere");
   target[field] = structuredClone(conflict.values[choice]);

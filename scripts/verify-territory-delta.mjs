@@ -75,6 +75,18 @@ try{
  await assert.rejects(save(db,7,patch),e=>e.code==='40001');
  await assert.rejects(save(db,null,patch),e=>e.code==='40001');
  await assert.rejects(db.query('select public.save_territory_workspace_changes($1,$2,null,8,$3::jsonb)',[workspace,owner,JSON.stringify(patch)]),e=>e.code==='40001');
+
+ const conflict={id:'clock-conflict',path:['units','unit-1','journal','event-1','at'],values:['A','B'],detectedAt:'2026-11-13',resolvedAt:null};
+ await save(db,8,[{collection:'syncConflicts',key:conflict.id,value:conflict}]);
+ const priorUnits=(await db.query("select record_key,value from public.territory_workspace_records where workspace_id=$1 and collection='units' order by record_key",[workspace])).rows;
+ await db.query(await readFile(new URL('../supabase/migrations/0093_territory_server_arbitration.sql',import.meta.url),'utf8'));
+ assert.equal((await snapshot()).rows[0].revision,'10');
+ const archived=(await db.query("select value from public.territory_workspace_records where workspace_id=$1 and collection='syncConflicts'",[workspace])).rows[0].value;
+ assert.equal(archived.resolution,'server_authority');assert.ok(archived.resolvedAt);assert.deepEqual(archived.values,conflict.values);
+ await save(db,10,[{collection:'syncConflicts',key:'old-client',value:{...conflict,id:'old-client'}}]);
+ const replayed=(await db.query("select value from public.territory_workspace_records where workspace_id=$1 and record_key='old-client'",[workspace])).rows[0].value;
+ assert.ok(replayed.resolvedAt);assert.equal(replayed.resolution,'server_authority');
+ assert.deepEqual((await db.query("select record_key,value from public.territory_workspace_records where workspace_id=$1 and collection='units' order by record_key",[workspace])).rows,priorUnits);
  console.log(JSON.stringify({ok:true,syntheticUnits:6000,beforeMs,afterMs,bulkRecords:bulk.length,bulkBeforeMs,bulkAfterMs,canonicalBulkMs,atomicRollback:true,revisionConflict:true,tombstones:true,fullSnapshotCompatibility:true,concurrentWriters:true,pages,total,pagedRevisionGuard:true,canonicalRecords:true,staleSnapshotProtected:true}));
 }finally{await db.end();await admin.query(`drop database ${name}`);await admin.end();}
 
