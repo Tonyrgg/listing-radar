@@ -1,4 +1,5 @@
 import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
+import {agencyTenureLabel,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ArrowLeft, CheckCircle2, FileCheck2, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -109,12 +110,13 @@ function MuroDiFoto({
 
 function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
   const { property, publications, privatePublications } = detail;
+  const assignment=currentAgencyAssignment(detail.manualOverrides);
   const niente =
     !property.agencies.length &&
     !publications.length &&
     !privatePublications.length;
 
-  if (niente) {
+  if (niente&&!assignment) {
     return (
       <EmptyState
         title="Nessuno la sta vendendo, per quanto vediamo"
@@ -125,6 +127,7 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
 
   return (
     <div className="space-y-3">
+      {assignment?<div><strong>Attualmente nella nostra agenzia</strong><p>{assignment.agencyName}</p><Meta>{assignment.startedAt?`Ingresso confermato: ${formatDate(assignment.startedAt)}`:'Data effettiva di ingresso non ancora nota'}</Meta></div>:null}
       {property.agencies.map((agency) => (
         <div
           key={agency.listingId}
@@ -142,6 +145,7 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
             </Stato>
           </div>
           <Meta>
+            {agencyTenureLabel(agency.firstSeenAt,agency.state==='ACTIVE'?Date.now():agency.lastSeenAt,agency.state==='ACTIVE')}.{' '}
             Osservata dal {formatDate(agency.firstSeenAt)}, vista l&apos;ultima volta il{" "}
             {formatDate(agency.lastSeenAt)}
             {agency.reference ? ` · rif. ${agency.reference}` : ""}
@@ -211,11 +215,13 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
  const forma=formaPosizione(detail.location);
  const source=detail.marketObservation?.sourceUrl??detail.publications[0]?.canonicalUrl??detail.privatePublications[0]?.canonicalUrl;
  const recentEvents=[...detail.events].filter(e=>isMarketMove(e.eventType)).sort((a,b)=>b.occurredAt.localeCompare(a.occurredAt));
- const indizi=detail.opportunity&&!hasNoRealSignal(detail.opportunity.reasons)?detail.opportunity.reasons:[];
+ const owned=currentAgencyAssignment(detail.manualOverrides);
+ const currentObservedAgency=property.agencies.find(agency=>agency.state==='ACTIVE');
+ const indizi=!owned&&detail.opportunity&&!hasNoRealSignal(detail.opportunity.reasons)?detail.opportunity.reasons:[];
  const drops=detail.priceHistory.filter(e=>e.eventType==="PRICE_DROP").length;
  const sourcePrice=detail.publicationPrices?.find(p=>p.publicationId===(detail.marketObservation?.publicationId??detail.publications[0]?.id));
  const sourceCount=detail.publications.length+detail.privatePublications.length;
- const context=dossierContext(origin,detail.marketObservation?.classification,property.saleStatus);
+ const context=dossierContext(owned?'mercato':origin,owned?'ACTIVE':detail.marketObservation?.classification,property.saleStatus);
  const returnHref=dossierReturn(returnTo,context.view);
  const historyUrl=(page:number)=>"?"+new URLSearchParams({origine:context.view,ritorno:returnHref,storia:String(page)})+"#storico";
  const historyFirst=context.view==="usciti"||context.view==="venduti";
@@ -240,6 +246,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
       <MuroDiFoto urls={detail.imageUrls} alt={indirizzo} didascalia={dataDallaFoto(property.trueMarketStartMethod)&&property.trueMarketStartLowerBound?"Foto datata "+formatDate(property.trueMarketStartLowerBound):undefined}/>
       <div><h3 className="lr-case-label">In sintesi</h3><dl className="lr-case-summary">
        <div><dt>{context.view==="venduti"?"Osservazione della vendita":"Presenza osservata"}</dt><dd>{context.view==="venduti"&&saleDate&&Date.parse(saleDate)<=Date.parse(property.firstSeenAt)?"Segnale già presente al primo riscontro":marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</dd><p>Prima osservazione: {formatDate(property.firstSeenAt)}</p></div>
+       <div><dt>Presenza nell’agenzia attuale</dt><dd>{owned?(owned.startedAt?`Dal ${formatDate(owned.startedAt)} · data confermata`:'Data di ingresso non nota'):currentObservedAgency?agencyTenureLabel(currentObservedAgency.firstSeenAt):'Agenzia attuale da confermare'}</dd><p>{owned?.agencyName??currentObservedAgency?.name??'Il periodo sul mercato può includere più agenzie'}</p></div>
        <div><dt>Prezzo</dt><dd>{formatNumber(sourcePrice?.dropCount??drops)} ribassi registrati</dd><p>{detail.marketObservation?.priceConflict?"Prezzi discordanti tra le fonti":sourcePrice?.firstPrice!=null?"Primo prezzo: "+formatCurrency(sourcePrice.firstPrice):"Storico iniziale non disponibile"}</p></div>
        <div><dt>Pubblicazioni</dt><dd>{formatNumber(sourceCount)} {sourceCount===1?"pubblicazione":"pubblicazioni"}</dd><p>{property.relaunchCount?formatNumber(property.relaunchCount)+" ripubblicazioni osservate":"Nessuna ripubblicazione registrata"}</p></div>
        <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><p>{saleDate?(manualSale?"Conferma manuale: ":"Segnale di vendita: ")+formatDate(saleDate):property.saleStatus==="SOLD_CONFIRMED"?"Vendita confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"Non venduto, confermato manualmente":"Vendita non confermata"}</p></div>
@@ -277,6 +284,8 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
                     label={`Com'è finita con ${formatShouty(property.agencies[0].name)}?`}
                   >
                     <Scelta name="agencyState" defaultValue="CLOSED_WITHDRAWN">
+                      <option value="CURRENT_OUR_AGENCY">Ora è nella nostra agenzia</option>
+                      <option value="CURRENT_NOT_OUR_AGENCY">Non è più nella nostra agenzia</option>
                       <option value="CLOSED_WITHDRAWN">
                         Il proprietario ha ritirato
                       </option>
@@ -289,6 +298,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
                       </option>
                     </Scelta>
                   </Campo>
+                  <Campo label="Data ingresso nella nostra agenzia, se nota"><Testo type="date" name="agencyStartedAt" max={new Date().toISOString().slice(0,10)}/></Campo>
                   <Campo label="Come lo sai?">
                     <Testo
                       name="reason"

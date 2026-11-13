@@ -1553,6 +1553,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
   }
 
   private async readPropertySummary(propertyId: string, displayName = ""): Promise<CrmPropertySummary> {
+    // The search result may expose the actual IM/NT/IN code outside h1/h2.
+    // Capture only links to this exact record, never related records on the page.
+    const labels=await this.page.locator('a[href]').evaluateAll((nodes,id)=>nodes.filter(node=>(node.getAttribute('href')??'').includes(id)).map(node=>node.textContent??''),propertyId.slice(0,15));
     await this.openProperty(propertyId);
     // The header mounts before the cadastral detail block. Reading it at that
     // point used to turn a matching record into a snapshot with empty fields.
@@ -1578,7 +1581,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       else importedFromRegistry = /^(?:si|sì|true|vero|yes)$/i.test((await this.detailValue("Importato da visura")).trim());
     } else importedFromRegistry = await this.page.getByText("Importato da visura", { exact: true }).filter({ visible: true }).count() > 0;
     return {
-      recordKind: crmRecordKind(heading, await this.detailValue("Tipo record"), await this.page.locator(".slds-page-header:visible").allInnerTexts().then(rows=>rows.join(" "))),
+      recordKind: crmRecordKind(heading, ...labels, await this.detailValue("Tipo record"), await this.detailValue('Tipo di record'),await this.detailValue('Record Type'),
+        await this.page.title(), await this.detailValue('Codice Immobile'),await this.detailValue('Nome Immobile'),
+        await this.page.locator('.slds-page-header:visible,.slds-page-header__title:visible,[data-record-name]:visible').allInnerTexts().then(rows=>rows.join(' '))),
       id: propertyId,
       displayName: heading.replace(/\s+/g, " ").trim(),
       fullAddress: fullAddress || null,
@@ -2278,6 +2283,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   async assertPropertyWritable(propertyId:string):Promise<void> {
     const summary=await this.readPropertySummary(propertyId);
+    if(summary.recordKind==='unknown')throw new ImportV2Error('Tipo della scheda non verificato: lavorazione in attesa, nessuna scrittura autorizzata.','global_portal',{global:true,retryable:true,details:{recordKind:'unknown',propertyId,recordHeading:summary.displayName}});
     assertOrdinaryProperty(summary.recordKind ?? 'unknown');
   }
 

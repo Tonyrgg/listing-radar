@@ -120,6 +120,13 @@ export async function recordAgencyOutcomeOverride(formData: FormData) {
   const propertyId = requiredText(formData, "propertyId");
   const nextState = requiredText(formData, "agencyState");
   const reason = requiredText(formData, "reason");
+  if(nextState==='CURRENT_OUR_AGENCY'||nextState==='CURRENT_NOT_OUR_AGENCY'){
+    const startedAt=optionalText(formData,'agencyStartedAt');
+    if(startedAt&&!/^\d{4}-\d{2}-\d{2}$/.test(startedAt))throw Error('Data ingresso agenzia non valida');
+    const {error}=await getSupabaseServiceClient().rpc('record_radar_own_agency',{p_property_id:propertyId,p_started_at:startedAt,p_reason:reason,p_created_by:createdBy,p_is_ours:nextState==='CURRENT_OUR_AGENCY'});
+    if(error)throw Error(error.message);
+    revalidateLifecycle(propertyId);return;
+  }
   if (!AGENCY_STATES.has(nextState)) {
     throw new Error("Esito agenzia non supportato.");
   }
