@@ -17,3 +17,13 @@ La policy nell'osservazione produce una nuova versione anche per gli annunci gi�
 Il giro non valuta assenze e non altera lo stato degli annunci il cui dettaglio non è leggibile. Il report locale è `.runtime/vistocasa-map-audit.json`. Le posizioni aggiornate sono usate dalla scheda immobile e dal read model del territorio tramite `primary_location_id`.
 
 Verifiche: 62 test adapter, compresi separazione degli annunci con uguale indirizzo e ripiego per coordinate nulle/non numeriche/fuori intervallo; typecheck web.
+
+## Esito live del 13 novembre 2026
+
+- 113 schede nel catalogo corrente: tutte espongono un pin valido nel dettaglio.
+- 112 annunci nel territorio monitorato aggiornati; uno escluso perché esplicitamente a Palo del Colle.
+- Controllati anche gli URL storici: 30 rimandano a pagine 404 o alla ricerca. Nessuna vendita, scomparsa o nuova coordinata viene inferita da questi redirect.
+- Rilettura dopo il salvataggio: 112/112 coordinate corrispondenti negli attributi, nella posizione primaria e nel read model della mappa; 112 posizioni primarie distinte, zero discrepanze.
+- Le prime sei osservazioni di una run ripresa avevano già una ricevuta: il replay idempotente non le riscrive. Sono state verificate nuovamente in una nuova run, senza alterare la regola di idempotenza.
+- Il salvataggio dell'annuncio 9370 aveva un timeout nell'archivio FDW. Recuperato tramite la stessa funzione atomica con una finestra di esecuzione dedicata più lunga, senza modificare i timeout globali. Il successivo aggiornamento ordinario tramite repository è riuscito. Questo controllo non attesta l'assenza di ogni futura lentezza del percorso archivistico.
+- Migrazione 0098 applicata, codice pubblicato su main e deploy Vercel riuscito.
