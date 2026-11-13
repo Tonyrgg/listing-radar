@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import {listingLocationKey} from '@/lib/property-lifecycle/persistence/location-identity';
 
 import type { HttpResponse } from "@/lib/http/client";
 import {
@@ -180,6 +181,13 @@ describe("Live validation redirect regressions",()=>{
 });
 
 describe("Vistocasa V2 adapter", () => {
+  it.each(['0','not-a-coordinate','999'])('rejects invalid detail latitude %s and keeps the inventory fallback',latitude=>{
+    const doc=sourceDocument('vistocasa-active-detail.html','https://www.vistocasa.com/it/immobile.aspx?articoliid=10002','10002',undefined,{latitude:41.1,longitude:16.7});
+    doc.response.body+=`<input id="ctl00_cph_hLat" value="${latitude}"><input id="ctl00_cph_hLng" value="16,692606">`;
+    const result=normalizeVistocasaDetail(doc);
+    expect(result.location).toMatchObject({latitude:41.1,longitude:16.7});
+    expect(result.provenance.publishedMapPin).toBeNull();
+  });
   it('reads the detail map pin without inventing an entrance civic from an overlooking reference',()=>{
     const url='https://www.vistocasa.com/it/immobile.aspx?articoliid=10002';
     const doc=sourceDocument('vistocasa-active-detail.html',url,'10002');
@@ -188,6 +196,12 @@ describe("Vistocasa V2 adapter", () => {
     expect(result.location).toMatchObject({latitude:41.107434,longitude:16.692606,streetNumber:null,streetName:null,precision:'APPROXIMATE_AREA'});
     expect(result.location.rawText).toContain('Piazza Marconi');
     expect(result.provenance.locationReference).toMatchObject({relation:'OVERLOOKS',entranceAddressConfirmed:false});
+    const second=structuredClone(result);second.source.sourceKey='different-house';
+    expect(listingLocationKey(second)).not.toBe(listingLocationKey(result));
+    second.source.sourceKey=result.source.sourceKey;second.location.latitude=41.11;
+    expect(listingLocationKey(second)).toBe(listingLocationKey(result));
+    result.provenance.publishedMapPin=null;second.provenance.publishedMapPin=null;
+    expect(listingLocationKey(second)).toBe(listingLocationKey(result));
   });
   it("uses the complete embedded map inventory and excludes rentals", () => {
     const result = parseVistocasaInventoryHtml(fixture("vistocasa-inventory.html"));

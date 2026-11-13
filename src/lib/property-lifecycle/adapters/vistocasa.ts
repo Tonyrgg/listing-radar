@@ -386,6 +386,7 @@ export function normalizeVistocasaDetail(document: SourceDocument): NormalizedLi
       inventorySummary: document.item.summary,
       reportedSource: "public_html_embedded_map_inventory",
       publishedMapPin:validDetail?{latitude,longitude,sourceUrl:canonical,method:'VISTOCASA_DETAIL_MAP_PIN',independentlyVerified:false}:null,
+      mapLocationPolicy:validDetail?'INDIVIDUAL_PUBLISHER_PIN_V1':null,
       locationReference:reference?{text:reference.name,relation:'OVERLOOKS',sourceUrl:canonical,entranceAddressConfirmed:false}:null,
       mediaDatePolicy: "original_gallery_last_modified_processed_only_in_deep_sync",
       ignoredDetailHttpLastModifiedForMarketStart: true,

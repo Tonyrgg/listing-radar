@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {listingLocationKey} from './location-identity';
 
 import type { ProcessedAsset } from "@/lib/property-lifecycle/assets/pipeline";
 import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/dry-run";
@@ -797,14 +798,7 @@ export class PropertyLifecycleRepository {
         return asset;
       },
     );
-    const locationNormalizedKey = hashValue({
-      municipality: listing.location.municipality,
-      locality: listing.location.locality,
-      postalCode: listing.location.postalCode,
-      streetName: listing.location.streetName,
-      streetNumber: listing.location.streetNumber,
-      rawText: listing.location.rawText,
-    });
+    const locationNormalizedKey = listingLocationKey(listing);
     const building = canonicalBuildingAddress(listing.location);
 
     const { data, error } = await this.db.rpc(
