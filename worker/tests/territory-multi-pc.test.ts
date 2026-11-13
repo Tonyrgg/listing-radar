@@ -79,9 +79,9 @@ it('resolves legacy array paths by event id and archives old server conflicts au
  const remote=server(),a=await pc(remote),key=await acquire(a.store,1);
  const local=a.store.read();appendUnitEvent(local.units[key]!,['event'],{at:'2026-11-13T10:00:00Z',runId:'r',kind:'queued',origin:'live',message:'Queued'});
  const event=local.units[key]!.journal![0]!;
- local.syncConflicts={test:{id:'test',path:['units',key,'journal',event.id,'at'],values:[event.at,'2026-11-13T10:00:01Z'],detectedAt:event.at,resolvedAt:null}};
+ local.syncConflicts={test:{id:'test',path:['units',key,'journal',event.id!,'at'],values:[event.at,'2026-11-13T10:00:01Z'],detectedAt:event.at!,resolvedAt:null}};
  resolveSyncConflict(local,'test',1);expect(local.units[key]!.journal![0]!.at).toBe('2026-11-13T10:00:01Z');
- local.syncConflicts.test!.resolvedAt=null;
+ local.syncConflicts!.test!.resolvedAt=null;
  const merged=mergeTerritory(local,local,local,'server');
  expect(Object.values(merged.syncConflicts!).every(c=>c.resolvedAt)).toBe(true);
 });

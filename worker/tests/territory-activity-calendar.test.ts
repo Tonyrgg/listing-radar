@@ -20,6 +20,15 @@ async function setup(){
  return{store,app,provider,keys};
 }
 describe('activity-driven queue results',()=>{
+ it('keeps an uncertain secondary relationship open while recording exactly one verified activity',async()=>{
+  const{store,keys}=await setup();
+  class UncertainOwner extends SimulationProvider{override async port(){const port=await super.port(),replace=port.replaceManagedOwnerships.bind(port);port.replaceManagedOwnerships=async(...args)=>{await replace(...args);throw new ImportV2Error('Soggetto correlato non confermato','verification_failed',{retryable:true});};return port;}}
+  const app=new TerritoryApplication(store,new UncertainOwner(store,0));
+  await app.enqueue([keys[0]!]);await app.startQueue([keys[0]!],{activityMode:'plain'});await app.waitForIdle();
+  expect(Object.values(store.read().virtualActivities??{})).toHaveLength(1);
+  const checkpoint=Object.values(store.read().checkpoints).find(cp=>cp.lastError?.details.activityHandled===true);
+  expect(checkpoint?.activityEvidence?.activityId).toBeTruthy();expect(checkpoint?.stage).toBe('property_synced');
+ });
  it('skips an unchanged person save while keeping every property and activity verification',async()=>{
   const{store,keys}=await setup();let saves=0;
   class CountWrites extends SimulationProvider{override async port(){const port=await super.port(),overwrite=port.overwritePerson.bind(port);port.overwritePerson=async(...args)=>{saves++;return overwrite(...args);};return port;}}
@@ -90,7 +99,7 @@ describe('activity-driven queue results',()=>{
   const{store,keys}=await setup();let reads=0;
   class PartialHistory extends SimulationProvider{override async port(){const port=await super.port();port.readActivityHistory=async()=>{reads++;return{records:[],propertyComplete:false,clientComplete:true,checkedAt:new Date().toISOString()};};return port;}}
   const app=new TerritoryApplication(store,new PartialHistory(store,0));await app.enqueue([keys[0]!]);await app.startQueue([keys[0]!],{activityMode:'plain'});await app.waitForIdle();
-  expect(reads).toBe(1);expect(Object.keys(store.read().runs.at(-1)!.imports??{})).toHaveLength(0);
+  expect(reads).toBe(2);expect(Object.keys(store.read().runs.at(-1)!.imports??{})).toHaveLength(0);
   expect(Object.values(store.read().virtualActivities??{})).toHaveLength(0);expect(Object.keys(store.read().importQueue??{})).toHaveLength(1);
  });
  it('blocks another property of the client after an uncertain save, even when CRM temporarily hides it',async()=>{

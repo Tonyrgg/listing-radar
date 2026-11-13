@@ -481,10 +481,27 @@ export class ImportV2Engine {
           await this.saveCheckpoint(checkpoint);
         }
         this.throwIfInterruptionRequested();
-        const ownerships = await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
+        let ownerships;
+        try { ownerships = await this.crm.replaceManagedOwnerships(propertyId, this.desiredOwnerships(owners, checkpoint.syncedPeople), {
           keepUnlistedManagedOwners: !this.includeCoOwners(),
           ...(this.replaceUnlistedPrimary ? { replaceUnlistedPrimary: true, sourceOwnerTaxCodes: plan.source.owners.map(owner => owner.taxCode) } : {}),
-        });
+        }); } catch(error) {
+          const failure=failureFromError(error,'property_synced',this.now());
+          if(failure.global||failure.details.protectedRecord||!['verification_failed','transient_portal'].includes(failure.kind)||!plan.source.activity.enabled||!this.calendarActivityPolicy)throw error;
+          // An uncertain secondary relationship must stay unresolved, but it
+          // need not suppress a task on an independently verified property and
+          // primary client. The ordinary history and shared write guard apply.
+          const property=await this.crm.readProperty(propertyId);
+          if(!sameCrmPropertyAddress(plan.source.fullAddress,property)||!sameCadastralIdentity(plan.source.cadastral,property.cadastral))throw error;
+          const primary=this.primaryOwner(owners);
+          assertOwnerships(property,this.desiredOwnerships([primary],checkpoint.syncedPeople),true);
+          const handled=await withClientActivityLock(primary.taxCode,()=>this.completeActivity(checkpoint));
+          checkpoint.activityEvidence=handled.activityEvidence;
+          checkpoint.activityWrite=handled.activityWrite;
+          checkpoint.stage='property_synced';
+          await this.saveCheckpoint(checkpoint);
+          throw new ImportV2Error('Attività gestita; soggetti correlati da completare: '+failure.message,'verification_failed',{retryable:true,details:{...failure.details,activityHandled:true,activityId:handled.activityEvidence?.activityId??null}});
+        }
         return { ...checkpoint, ownershipReplacement: ownerships.ownershipReplacement ?? checkpoint.ownershipReplacement, stage: NEXT_STAGE.property_synced };
       }
       case "ownerships_synced": {

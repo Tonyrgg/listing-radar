@@ -9,7 +9,7 @@ import {activityResponseText} from './activity-response.js';
 
 const taskIds=(text:string)=>[...new Set([...text.matchAll(/\b00T[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?\b/g)].map(m=>m[0]))];
 const emptyList=/nessun[aeo]?\s+(?:attivit[aà]|element[oi]|record)|non (?:sono presenti|ci sono) attivit[aà]/i;
-const headerCount=/Attivit[aà](?: e appuntamenti)?\s*\((\d+)\)/i;
+const headerCount=/Attivit[aà](?: e appuntamenti)?\s*\((\d+)(\+)?\)/i;
 type Options={propertyId:string;clientId:string;propertyUrl:string;clientUrl:string;assertSession:()=>Promise<void>;stopOnPropertyCoverage?:boolean};
 
 /** No guessed API endpoint and no writes. Read the actual related list and,
@@ -41,22 +41,25 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
   async function list(url:string,parentId:string,kind:'property'|'client'){
     failed=false;
     await page.goto(url,{waitUntil:'commit',timeout:20_000});
-    const cards=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});
+    const cards=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});
     let card=cards.filter({hasNot:cards});
     await card.waitFor({state:'visible',timeout:10_000});
     await settled();
     let text=await card.innerText();
     let declared=headerCount.exec(text)?.[1];
-    const showAll=card.getByRole('link',{name:/^Visualizza tutt[oi]$/i}).or(card.getByRole('button',{name:/^Visualizza tutt[oi]$/i}));
-    if(await showAll.count()===1&&declared!==undefined&&Number(declared)>taskIds(await card.innerHTML()).length){
+    let truncated=Boolean(headerCount.exec(text)?.[2]);
+    const showAll=card.getByRole('link',{name:/^Visualizza tutt[oi]$/i}).or(card.getByRole('button',{name:/^Visualizza tutt[oi]$/i})).or(card.locator('a').filter({hasText:/^Visualizza tutt[oi]$/i}));
+    if(await showAll.count()===1&&(truncated||declared===undefined||Number(declared)>taskIds(await card.innerHTML()).length)){
       await showAll.click();await settled();
       const modal=page.locator('[role="dialog"]:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});
+      await modal.first().waitFor({state:'visible',timeout:5000}).catch(()=>undefined);
+      await settled();
       if(await modal.count()===1)card=modal;
       else {
-        const fresh=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});card=fresh.filter({hasNot:fresh});
+        const fresh=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});card=fresh.filter({hasNot:fresh});
       }
       if(await card.count()!==1)return false;
-      text=await card.innerText();declared=headerCount.exec(text)?.[1]??declared;
+      text=await card.innerText();declared=headerCount.exec(text)?.[1]??declared;truncated=Boolean(headerCount.exec(text)?.[2]);
     }
     const listed=new Set<string>(),events=new Set<string>(),links=new Map<string,string>();let exhausted=false;
     for(let pageIndex=0;pageIndex<50;pageIndex++){
@@ -76,7 +79,7 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     // Tasks supplied by the scoped response also count, but never records
     // belonging to another property/client seen elsewhere on the page.
     for(const [id,row]of fragments)if(kind==='property'?row.propertyId&&sameCrmRecordId(row.propertyId,parentId):row.clientId&&sameCrmRecordId(row.clientId,parentId))listed.add(id);
-    const completeList=exhausted&&(declared!==undefined?listed.size+events.size===Number(declared):listed.size===0&&events.size===0&&emptyList.test(text));
+    const completeList=!truncated&&exhausted&&(declared!==undefined?listed.size+events.size===Number(declared):listed.size===0&&events.size===0&&emptyList.test(text));
     for(const id of listed){
       if(taskSnapshot(fragments.get(id)??{id},kind==='property'))continue;
       const href=links.get(id);if(!href)continue;
@@ -84,12 +87,14 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
       await page.goto(href,{waitUntil:'commit',timeout:20_000});await settled();
       const detail=await readActivityDetailDom(page,id);if(detail)mergeTaskFragment(fragments,detail);
     }
-    return !failed&&completeList&&[...listed].every(id=>Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property')));
+    const completeRecords=[...listed].every(id=>Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property')));
+    console.info(JSON.stringify({action:'activity-history',kind,declared,truncated,listed:listed.size,events:events.size,exhausted,failed,completeList,completeRecords}));
+    return !failed&&completeList&&completeRecords;
   }
   const rows=()=>[...fragments.values()].map(row=>taskSnapshot(row,true)).filter((r):r is NonNullable<typeof r>=>Boolean(r));
   async function safeList(url:string,parentId:string,kind:'property'|'client'){
     try{return await list(url,parentId,kind);}
-    catch(error){await options.assertSession();if(error instanceof ImportV2Error&&error.options.global)throw error;return false;}
+    catch(error){await options.assertSession();if(error instanceof ImportV2Error&&error.options.global)throw error;console.info(JSON.stringify({action:'activity-history',kind,error:error instanceof Error?error.message:String(error)}));return false;}
   }
   try{
     const propertyComplete=await safeList(options.propertyUrl,options.propertyId,'property');

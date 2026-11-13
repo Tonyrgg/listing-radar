@@ -6,6 +6,12 @@ let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({channel:'chrome',headless:true});});afterAll(async()=>{await browser?.close();});
 const options={propertyId:property,clientId:client,propertyUrl:origin+'/property',clientUrl:origin+'/client',assertSession:async()=>{}};
 describe('complete CRM activity history',{timeout:15000},()=>{
+ it('opens the live zero-plus preview and verifies the exact empty list',async()=>{
+  const page=await browser.newPage();try{
+   await page.route(origin+'/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:`<article>Numero attività di ricerca</article><article id="preview"><h2>Attività e appuntamenti (0+)</h2><a onclick="document.getElementById('preview').remove();setTimeout(()=>document.querySelector('[role=dialog]').style.display='block',400)">Visualizza tutto</a></article><div role="dialog" style="display:none"><h2>Attività e appuntamenti (0)</h2></div>`}));
+   expect(await readCrmActivityHistory(page,options)).toMatchObject({records:[],propertyComplete:true,clientComplete:true});
+  }finally{await page.close();}
+ });
  it('reads Show All when it opens a dialog rather than an article',async()=>{
   const page=await browser.newPage();try{
    await page.route(origin+'/**',route=>new URL(route.request().url()).pathname==='/task-data'
