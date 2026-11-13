@@ -7,6 +7,7 @@ import { TerritoryStore } from "../src/territory/store.js";
 import { TerritorySync, territoryDigest, type TerritorySyncConfig } from "../src/territory/sync.js";
 import { diffRecords, mergeTerritory, recordsState, resolveSyncConflict, syncRecords, type SyncRecord } from "../src/territory/sync-records.js";
 import { TerritorySyncLoop } from "../src/territory/sync-loop.js";
+import { synchronizeUntilAcknowledged } from '../src/territory/sync-barrier.js';
 import { simulationSource } from "../src/territory/providers.js";
 import { ensureMemoryUnit, appendUnitEvent } from "../src/territory/unit-memory.js";
 import { unitKey, type Street, type TerritoryState } from "../src/territory/model.js";
@@ -49,6 +50,15 @@ async function pc(remote: ReturnType<typeof server>) {
   return { directory, store, sync };
 }
 const source = (index: number) => simulationSource(street, index, `source-${index}`);
+it('drains a checkpoint committed during upload before allowing the next operation',async()=>{
+ const remote=server(),a=await pc(remote);await a.sync.reconcile();
+ await a.store.change(s=>{s.memories[street.id]!.note='First action';});
+ remote.duringSave(async()=>{await a.store.change(s=>{s.memories[street.id]!.attention=true;});});
+ const confirmed=await synchronizeUntilAcknowledged(async()=>{await a.sync.reconcile();},()=>a.sync.status(),()=>null,{delay:async()=>{}});
+ expect(confirmed.pending).toBe(false);
+ expect(remote.state().memories[street.id]).toMatchObject({note:'First action',attention:true});
+ expect(territoryDigest(a.store.read())).toBe(territoryDigest(remote.state()));
+});
 it('three workstations converge automatically after concurrent edits and repeated event clocks',async()=>{
  const remote=server(),a=await pc(remote),b=await pc(remote),c=await pc(remote);
  const key=await acquire(a.store,1);await a.sync.reconcile();await b.sync.reconcile();await c.sync.reconcile();

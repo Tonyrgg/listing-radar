@@ -22,6 +22,7 @@ import { unitQuerySchema } from "./query.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import {assertSynchronized,type TerritoryOperationLease} from "./operation-lease.js";
 import { TerritorySyncLoop } from "./sync-loop.js";
+import { synchronizeUntilAcknowledged } from './sync-barrier.js';
 import { SisterBulk } from "./sister-bulk.js";
 import { resolveSyncConflict } from "./sync-records.js";
 
@@ -65,8 +66,11 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       await sync.reconcile();
       if (releasePending && !application?.hasActiveRun && operationLease?.held) {
-        const status=await sync.status(); assertSynchronized(status,null);
-        await operationLease.release(status.revision); releasePending=false;
+        const status=await sync.status();
+        if (!status.pending) {
+          assertSynchronized(status,null);
+          await operationLease.release(status.revision); releasePending=false;
+        }
       }
       memoryError = null; checkedAt = new Date().toISOString();
     } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Il Worker riprova automaticamente.`; if(application?.hasActiveRun)application.pause(); }
@@ -135,9 +139,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard());
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify, 5000, options.onlineCredentials && options.live ? async () => {
-      await syncLoop.flush();
-      if (!sync) throw new Error("Memoria online non disponibile: nessun nuovo immobile verrà lavorato.");
-      assertSynchronized(await sync.status(), memoryError);
+      await ensureSynchronized();
       if (!operationLease?.held) throw new Error("Sessione condivisa non confermata: lavorazione fermata prima del prossimo immobile.");
       await operationLease.renew();
     } : undefined);
@@ -193,13 +195,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
     });
     const ensureSynchronized=async()=>{
-      for (let attempt=0;attempt<8;attempt++) {
-        await syncLoop.flush();
-        if(!sync)throw new Error("Memoria online non disponibile: il Worker riprova automaticamente.");
-        const status=await sync.status();
-        if (!status.pending || memoryError) { assertSynchronized(status,memoryError);return status; }
-      }
-      throw new Error("Salvataggio online in corso. Il Worker continua a sincronizzare automaticamente.");
+      return synchronizeUntilAcknowledged(()=>syncLoop.flush(),async()=>{
+        if(!sync)throw Error('Memoria online non disponibile: il Worker riprova automaticamente.');
+        return sync.status();
+      },()=>memoryError);
     };
     const finishSharedSession=async()=>{
       if (finishing) return finishing;
