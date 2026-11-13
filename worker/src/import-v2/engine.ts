@@ -1,3 +1,4 @@
+import {crmRecordKind,assertOrdinaryProperty} from "./record-protection.js";
 import { performance } from "node:perf_hooks";
 import { mergePrivateNotes, personWriteModel,personNeedsWrite } from "./contacts.js";
 import {sameCrmRecordId} from '../core/crm-record-id.js';
@@ -294,6 +295,17 @@ export class ImportV2Engine {
           sessionPreflightDone = true;
         }
         operationStartedAt = performance.now();
+        {
+          const id=checkpoint.crmPropertyId ?? checkpoint.propertyResolution?.propertyId;
+          if(id)await this.crm.assertPropertyWritable?.(id);
+          else if(this.propertyCandidates){
+            for(const candidate of await this.propertyCandidates(checkpoint.plan!)) {
+              const kind=candidate.recordKind ?? crmRecordKind(candidate.displayName);
+              if(kind==='news'||kind==='mandate')assertOrdinaryProperty(kind);
+              await this.crm.assertPropertyWritable?.(candidate.id);
+            }
+          }
+        }
         checkpoint = await this.executeStage(checkpoint);
         operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
         operationFinished = true;
@@ -538,7 +550,11 @@ export class ImportV2Engine {
       const related=this.relatedActivityCheckpoints?.()??[];
       const proven=activityCoverage({records:[...verifiedClientActivities(clientId,current),...verifiedActivityFacts(related)],propertyComplete:false,clientComplete:false,checkedAt:current.toISOString()},propertyId,clientId,current);
       if(proven)return {...checkpoint,activityEvidence:{...proven,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
-      const history=await this.crm.readActivityHistory(propertyId,clientId);
+      let history=await this.crm.readActivityHistory(propertyId,clientId);
+      if(!history.propertyComplete||!history.clientComplete){
+        this.throwIfInterruptionRequested();
+        history=await this.crm.readActivityHistory(propertyId,clientId);
+      }
       const coverage=activityCoverage(history,propertyId,clientId,current);
       if(coverage){
         return {...checkpoint,activityEvidence:{...coverage,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};

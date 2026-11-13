@@ -10,6 +10,9 @@ const saved: CrmOwnershipSnapshot = { ...desired, linkId: "link-2", rightType: "
 function fixture() {
   const page = { goto: vi.fn().mockResolvedValue(undefined), url: () => "https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/", waitForTimeout: vi.fn().mockResolvedValue(undefined) };
   const port = new TecnocloudUiV2Port(page as unknown as Page);
+  // The isolated ownership fixture is an ordinary IM record. Exercise the real
+  // protection method with explicit identity evidence instead of a DOM page.
+  vi.spyOn(port as any,'readPropertySummary').mockResolvedValue({id:'property',displayName:'IM-001',recordKind:'property'});
   const internal = port as unknown as {
     readOwnerships: () => Promise<CrmOwnershipSnapshot[]>;
     syncPrimaryOwnership: () => Promise<boolean>;

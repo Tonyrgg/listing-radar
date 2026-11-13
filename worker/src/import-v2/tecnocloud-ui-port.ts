@@ -1,3 +1,4 @@
+import {crmRecordKind,assertOrdinaryProperty} from "./record-protection.js";
 import type { Locator, Page, Request, Response } from "playwright";
 import { cloudActivityEvidence } from "./activity-evidence.js";
 import {readCrmActivityHistory} from './activity-history-reader.js';
@@ -1577,6 +1578,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       else importedFromRegistry = /^(?:si|sì|true|vero|yes)$/i.test((await this.detailValue("Importato da visura")).trim());
     } else importedFromRegistry = await this.page.getByText("Importato da visura", { exact: true }).filter({ visible: true }).count() > 0;
     return {
+      recordKind: crmRecordKind(heading, await this.detailValue("Tipo record"), await this.page.locator(".slds-page-header:visible").allInnerTexts().then(rows=>rows.join(" "))),
       id: propertyId,
       displayName: heading.replace(/\s+/g, " ").trim(),
       fullAddress: fullAddress || null,
@@ -2274,8 +2276,14 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     });
   }
 
+  async assertPropertyWritable(propertyId:string):Promise<void> {
+    const summary=await this.readPropertySummary(propertyId);
+    assertOrdinaryProperty(summary.recordKind ?? 'unknown');
+  }
+
   async updateProperty(propertyId: string, plan: ImportV2Plan): Promise<CrmPropertySnapshot> {
     return this.action("Aggiornamento immobile", async () => {
+      await this.assertPropertyWritable(propertyId);
       if (this.dryRun) {
         const previous = await this.readProperty(propertyId);
         const property = { ...previous, fullAddress: plan.source.fullAddress, cadastral: structuredClone(plan.source.cadastral) };
@@ -2721,6 +2729,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   async replaceManagedOwnerships(propertyId: string, desired: OwnershipWrite[], options: OwnershipSyncOptions = {}): Promise<CrmOwnershipSnapshotResult> {
     return this.action("Sincronizzazione soggetti collegati", async () => {
+      await this.assertPropertyWritable(propertyId);
       const desiredIds = desired.map(owner => owner.personId.slice(0, 15));
       if (desiredIds.some(id => !id) || new Set(desiredIds).size !== desiredIds.length) {
         throw new ImportV2Error("Intestatari richiesti duplicati o senza identità CRM", "invalid_source");
@@ -2988,6 +2997,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (this.dryRun) return { activityId: null, outcome: "existing", expectedStatus: plan.source.activity.status };
     if (request?.state.legacyUncertain) throw new ImportV2Error("Attività di un vecchio lavoro dall'esito incerto: manca il riferimento del salvataggio. Immobile conservato; attività da verificare senza creare duplicati", "verification_failed");
     return this.action("Attività immobile", async () => {
+      await this.assertPropertyWritable(propertyId);
       await this.page.bringToFront();
       const description = plan.source.activity.description?.trim() || "Inserire attività";
       const submissionKey = request ? `${propertyId}|${request.state.operationId}` : propertyId;

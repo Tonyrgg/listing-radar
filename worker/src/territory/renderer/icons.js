@@ -32,7 +32,7 @@ export function icon(name) {
   return `<svg class="ui-icon" data-icon="${name}" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.info}</svg>`;
 }
 const labels = [
-  [/^(Coda|Apri coda|Aggiungi alla coda)/, "layers"], [/^(Importa in Tecnocloud|Prova import)/, "play"], [/^Rimuovi/, "close"], [/^Filtra immobili$/, "filter"], [/^Opzioni dell’import$/, "settings"],
+  [/^(Coda|Apri coda|Aggiungi alla coda)/, "layers"], [/^(Lavora in Tecnocloud|Prova import)/, "play"], [/^Rimuovi/, "close"], [/^Filtra immobili$/, "filter"], [/^Opzioni dell’import$/, "settings"],
   [/^Consulta corrispondenze CRM$/, "search"], [/^(Continua|Avvia import|Prova import)/, "play"], [/^Interrompi lavoro$/, "pause"], [/^Apri coda/, "layers"],
   [/^Aggiorna da SISTER$/, "refresh"], [/^Impostazioni della via$/, "settings"], [/^Associa via ufficiale$/, "link"],
   [/^Acquisisci via$/, "download"], [/^Confronta (gestionale|selezionati)/, "search"],
@@ -48,7 +48,7 @@ const labels = [
   [/^(Aggiorna (scheda|vista)|Archivio sincronizzato|Sincronizzazione)/, "refresh"],
   [/^Apri Chrome/, "browser"], [/^Query immobili$/, "filter"], [/^Centra Bitonto$/, "pin"],
   [/^Mostra immobili$/, "search"], [/^Gestisci zone di vie/, "street"],
-  [/^Territorio$/, "street"], [/^Proprietari e immobili$/, "users"], [/^Importazione$/, "download"],
+  [/^Territorio$/, "street"], [/^Proprietari e immobili$/, "users"], [/^Lavorazione$/, "download"],
 ];
 export function labelIcons(root) {
   for (const element of root.querySelectorAll("button, summary, legend")) {

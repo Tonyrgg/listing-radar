@@ -14,13 +14,21 @@ const plan: ImportV2Plan = { version: 2, fingerprint: "operation-test", source: 
 const request = (operationId = "operation"): ActivityWriteRequest => {
   const result: ActivityWriteRequest = { state: { operationId, preparedAt: new Date().toISOString(), baselineIds: [], submittedAt: null }, persist: async state => { result.state = structuredClone(state); } }; return result;
 };
-async function fixture(page: Page,formClientId=clientId,savedClientId=clientId) {
+it.each(['IN-0001','NT-0001'])('never opens an activity editor or saves on protected %s',async label=>{
+ const page=await browser.newPage();try{
+  const state=await fixture(page,clientId,clientId,label);
+  const port=new TecnocloudUiV2Port(page,false);
+  await expect(port.ensureActivity(propertyId,plan,request())).rejects.toThrow(/protetta/);
+  expect(state.saves()).toBe(0);expect(await page.locator('#form:visible').count()).toBe(0);
+ }finally{await page.close();}
+});
+async function fixture(page: Page,formClientId=clientId,savedClientId=clientId,recordLabel='IM-0001') {
   const records = [task(1)]; let saves = 0, broken = false;
   await page.route("https://tecnocasa-group.my.site.com/**", async route => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === "/tasks") return broken ? route.fulfill({ status: 503, body: "Unavailable" }) : route.fulfill({ contentType: "application/json", body: JSON.stringify(records) });
     if (pathname === "/save") { saves++; records.push({...task(records.length + 1),AccountId:savedClientId}); return route.fulfill({ contentType: "application/json", body: JSON.stringify({actions:[{state:'SUCCESS',returnValue:records.at(-1)}]}) }); }
-    return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<p>Indirizzo Completo Immobile</p><article><h2>Attività e appuntamenti</h2><button id="new" onclick="document.querySelector('#form').hidden=false">Nuovo</button></article>
+    return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<h1>${recordLabel}</h1><label>Catasto Foglio</label><p>Indirizzo Completo Immobile</p><article><h2>Attività e appuntamenti</h2><button id="new" onclick="document.querySelector('#form').hidden=false">Nuovo</button></article>
       <section role="dialog" id="form" hidden><h2>Attività</h2>
       <c-input-field>Cliente<input value="Mario Rossi"><span data-recordid="${formClientId}"></span></c-input-field><c-input-field>Correlato a<input value="IM - Via Test 1"></c-input-field>
       <c-input-field>Modalità Contatto<input role="textbox" data-kind="contact" value="Telefonata" readonly></c-input-field><c-input-field>Stato<input role="textbox" data-kind="status" value="Da eseguire" readonly></c-input-field>

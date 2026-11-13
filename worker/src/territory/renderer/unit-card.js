@@ -37,7 +37,7 @@ export function unitImportHtml(unit, escape, date) {
   const tone = unitImportTone(unit);
   const age = tone !== 'never' && at ? Math.floor((Date.now() - Date.parse(at)) / 86400000) : null;
   const recency = age === null ? '' : age === 0 ? ' · oggi' : age === 1 ? ' · ieri' : ` · ${age} giorni fa`;
-  return `<div class="unit-import-fact" data-import-tone="${tone}"><strong class="icon-label">${icon(stats?.verifiedImports ? 'check' : 'download')}${stats?.verifiedImports ? 'Import riuscito' + recency : 'Mai importato in Cloud'}</strong><span>${stats?.verifiedImports ? at ? date(at) : 'Data non disponibile' : 'Dati SISTER conservati'}</span></div>`;
+  return `<div class="unit-import-fact" data-import-tone="${tone}"><strong class="icon-label">${icon(stats?.verifiedImports ? 'check' : 'download')}${stats?.verifiedImports ? 'Import riuscito' + recency : 'Mai lavorato in Cloud'}</strong><span>${stats?.verifiedImports ? at ? date(at) : 'Data non disponibile' : 'Dati SISTER conservati'}</span></div>`;
 }
 export function cloudPresenceHtml(unit, escape, date) {
   const cloud = unit.cloud;

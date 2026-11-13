@@ -45,6 +45,7 @@ export type OwnershipWrite = {
 };
 
 export interface TecnocloudV2Port {
+  assertPropertyWritable?(propertyId:string):Promise<void>;
   assertSession(): Promise<void>;
   searchPeopleByExactTaxCode(taxCode: string): Promise<CrmPersonSnapshot[]>;
   readPerson(personId: string, expectedTaxCode?: string | null): Promise<CrmPersonSnapshot>;

@@ -6,6 +6,14 @@ let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({channel:'chrome',headless:true});});afterAll(async()=>{await browser?.close();});
 const options={propertyId:property,clientId:client,propertyUrl:origin+'/property',clientUrl:origin+'/client',assertSession:async()=>{}};
 describe('complete CRM activity history',{timeout:15000},()=>{
+ it('reads Show All when it opens a dialog rather than an article',async()=>{
+  const page=await browser.newPage();try{
+   await page.route(origin+'/**',route=>new URL(route.request().url()).pathname==='/task-data'
+    ?route.fulfill({contentType:'application/json',body:JSON.stringify({Id:id,WhatId:property,AccountId:client,Status:'Completed',Description:'Test',CreatedDate:'2026-11-10T09:00:00Z'})})
+    :route.fulfill({contentType:'text/html; charset=utf-8',body:`<article><h2>Attività e appuntamenti (1)</h2><button onclick="document.querySelector('article').remove();document.querySelector('[role=dialog]').style.display='block'">Visualizza tutto</button></article><div role="dialog" style="display:none"><h2>Attività e appuntamenti (1)</h2><a href="/task/${id}">Task</a></div><script>fetch('/task-data')</script>`}));
+   expect(await readCrmActivityHistory(page,options)).toMatchObject({propertyComplete:true,clientComplete:true});
+  }finally{await page.close();}
+ });
  it('reads an explicit empty list without inventing activities',async()=>{
   const page=await browser.newPage();try{
    await page.route(origin+'/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:'<article><h2>Attività e appuntamenti (0)</h2><p>Nessuna attività</p></article>'}));

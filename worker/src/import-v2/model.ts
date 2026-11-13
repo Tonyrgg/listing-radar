@@ -83,6 +83,7 @@ export type CrmPersonSnapshot = {
 };
 
 export type CrmPropertySummary = {
+  recordKind?: import('./record-protection.js').CrmRecordKind;
   id: string;
   displayName: string;
   fullAddress: string | null;

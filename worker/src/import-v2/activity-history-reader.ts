@@ -50,7 +50,11 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     const showAll=card.getByRole('link',{name:/^Visualizza tutt[oi]$/i}).or(card.getByRole('button',{name:/^Visualizza tutt[oi]$/i}));
     if(await showAll.count()===1&&declared!==undefined&&Number(declared)>taskIds(await card.innerHTML()).length){
       await showAll.click();await settled();
-      const fresh=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});card=fresh.filter({hasNot:fresh});
+      const modal=page.locator('[role="dialog"]:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});
+      if(await modal.count()===1)card=modal;
+      else {
+        const fresh=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});card=fresh.filter({hasNot:fresh});
+      }
       if(await card.count()!==1)return false;
       text=await card.innerText();declared=headerCount.exec(text)?.[1]??declared;
     }

@@ -1,3 +1,4 @@
+import {crmRecordKind} from "../import-v2/record-protection.js";
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
@@ -432,6 +433,8 @@ export class TerritoryApplication {
                 }
               }
               if (this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.waiting))) await this.updateRun(run.id, { waiting: null });
+              const protectedRow=fresh.rows.find(row=>['news','mandate'].includes(row.recordKind ?? crmRecordKind(row.displayName)));
+              if(protectedRow){await this.deferUnit(run,key,index,source,'Notizia o incarico protetto: escluso senza modifiche');continue;}
               const assessment = assess(source, fresh.rows, fresh.complete);
               if (assessment.kind === "unknown") {
                 await this.store.change(s => { s.units[key]!.assessment = assessment; });

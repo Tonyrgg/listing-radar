@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 
 import { ImportV2Engine } from "../src/import-v2/engine.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
+import {assertOrdinaryProperty} from '../src/import-v2/record-protection.js';
 import type {
   CrmPersonSnapshot,
   CrmPropertySnapshot,
@@ -878,4 +879,13 @@ describe("Import V2 engine", () => {
     });
     expect(crm.properties).toHaveLength(1);
   });
+});
+
+it.each(['mandate','news','unknown'] as const)('blocks %s before any CRM write',async kind=>{
+ class ProtectedCrm extends FakeCrm {async assertPropertyWritable(){assertOrdinaryProperty(kind);}}
+ const crm=new ProtectedCrm(), store=new MemoryStore();
+ const writes=[vi.spyOn(crm,'createPerson'),vi.spyOn(crm,'overwritePerson'),vi.spyOn(crm,'mergePeople'),vi.spyOn(crm,'createProperty'),vi.spyOn(crm,'updateProperty'),vi.spyOn(crm,'replaceManagedOwnerships'),vi.spyOn(crm,'ensureActivity')];
+ const result=await new ImportV2Engine(crm,store,{propertyCandidates:async()=>[{id:'protected',displayName:'Existing',fullAddress:null,cadastral:null}]}).run(property());
+ expect(result.state).toBe('quarantined');expect(result.failure?.details.protectedRecord).toBe(true);
+ for(const write of writes)expect(write).not.toHaveBeenCalled();
 });
