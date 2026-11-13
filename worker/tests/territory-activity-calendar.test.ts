@@ -1,3 +1,4 @@
+import {hydrateImportQueue} from '../src/territory/import-queue.js';
 import {afterEach,describe,expect,it,vi}from'vitest';
 import {mkdtemp,rm}from'node:fs/promises';
 import os from'node:os';import path from'node:path';
@@ -28,6 +29,13 @@ describe('activity-driven queue results',()=>{
   expect(Object.values(store.read().virtualActivities??{})).toHaveLength(1);
   const checkpoint=Object.values(store.read().checkpoints).find(cp=>cp.lastError?.details.activityHandled===true);
   expect(checkpoint?.activityEvidence?.activityId).toBeTruthy();expect(checkpoint?.stage).toBe('property_synced');
+  const run=store.read().runs.at(-1)!;
+  expect(Object.keys(run.imports??{})).toHaveLength(1);expect(Object.keys(run.skipped??{})).toHaveLength(0);expect(Object.keys(run.followUps??{})).toHaveLength(1);expect(Object.keys(store.read().importQueue??{})).toHaveLength(0);
+  const historical=store.read(),oldRun=historical.runs.at(-1)!,key=keys[0]!;
+  oldRun.imports={};oldRun.followUps={};oldRun.skipped={[key]:{at:checkpoint!.updatedAt,reason:checkpoint!.lastError!.message}};
+  hydrateImportQueue(historical);
+  expect(Object.keys(oldRun.imports??{})).toHaveLength(1);expect(Object.keys(oldRun.skipped??{})).toHaveLength(0);expect(Object.keys(oldRun.followUps??{})).toHaveLength(1);
+  expect(Object.values(historical.virtualActivities??{})).toHaveLength(1);
  });
  it('skips an unchanged person save while keeping every property and activity verification',async()=>{
   const{store,keys}=await setup();let saves=0;
@@ -100,7 +108,8 @@ describe('activity-driven queue results',()=>{
   class PartialHistory extends SimulationProvider{override async port(){const port=await super.port();port.readActivityHistory=async()=>{reads++;return{records:[],propertyComplete:false,clientComplete:true,checkedAt:new Date().toISOString()};};return port;}}
   const app=new TerritoryApplication(store,new PartialHistory(store,0));await app.enqueue([keys[0]!]);await app.startQueue([keys[0]!],{activityMode:'plain'});await app.waitForIdle();
   expect(reads).toBe(2);expect(Object.keys(store.read().runs.at(-1)!.imports??{})).toHaveLength(0);
-  expect(Object.values(store.read().virtualActivities??{})).toHaveLength(0);expect(Object.keys(store.read().importQueue??{})).toHaveLength(1);
+  expect(Object.values(store.read().virtualActivities??{})).toHaveLength(0);expect(Object.keys(store.read().importQueue??{})).toHaveLength(0);
+  expect(Object.keys(store.read().runs.at(-1)!.skipped??{})).toHaveLength(1);
  });
  it('blocks another property of the client after an uncertain save, even when CRM temporarily hides it',async()=>{
   const{store,keys}=await setup();

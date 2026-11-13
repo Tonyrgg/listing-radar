@@ -3,7 +3,7 @@ import { importProgress } from "./progress.js";
 import type { RunSettings } from "./run-options.js";
 
 export type Geometry = { type: "LineString" | "MultiLineString"; coordinates: number[][] | number[][][] };
-export type Street = { id: string; name: string; sisterName: string; locality: string; geometry: Geometry | null; geometryEvidence: string | null; needsReview: boolean; catalogKind?: "official" | "network"; osmWayIds?: number[]; linkedOfficialId?: string };
+export type Street = { outsideUrbanArea?:boolean; id: string; name: string; sisterName: string; locality: string; geometry: Geometry | null; geometryEvidence: string | null; needsReview: boolean; catalogKind?: "official" | "network"; osmWayIds?: number[]; linkedOfficialId?: string };
 export type Decision = "unknown" | "create" | "update" | "unchanged" | "review" | "synced";
 export type Assessment = { candidateIds?: string[]; kind: Decision; reason: string; candidateId: string | null; checkedAt: string; sourceId: string };
 export type Observation = { portfoliosExpanded?: boolean; ownersComplete?: boolean; portfolio?: boolean; at: string; runId: string; source: SourceProperty; origin: "simulation" | "sister"; activityEligible?: boolean; historyPropertyId?: string; historyRevision?: string; streetId?: string; importedAt?: string | null; crmId?: string | null; importVerified?: boolean };
@@ -24,7 +24,7 @@ export type RunImport = { at: string; crmId: string; proof?: {
   version: 1; itemId: string; sourcePropertyId: string; crmId: string; at: string;
   activity: SourceProperty["activity"]; evidence: ImportV2Checkpoint["activityEvidence"];
 } };
-export type Run = { deviceId?: string; reusedKeys?: string[]; portfolioKeys?: string[]; waiting?: string | null; skipped?: Record<string, { at: string; reason: string; address?: string }>; unitSettings?: Record<string, RunSettings>; queueEntryIds?: Record<string, string>; unitStreetIds?: Record<string, string>; selectionScope?: string[]; query?: import("./query.js").UnitQuery; id: string; streetId: string; operation: "scan" | "compare" | "apply"; origin: "simulation" | "live"; state: "running" | "paused" | "failed" | "completed" | "stopped"; startedAt: string; endedAt: string | null; handled: number; total: number | null; error: string | null; itemKeys: string[]; checkpoint?: unknown; acquisitionRunId?: string | null; imports?: Record<string, RunImport>; settings?: RunSettings; applySources?: Record<string, SourceProperty> };
+export type Run = { followUps?:Record<string,{at:string;reason:string;address?:string}>; deviceId?: string; reusedKeys?: string[]; portfolioKeys?: string[]; waiting?: string | null; skipped?: Record<string, { at: string; reason: string; address?: string }>; unitSettings?: Record<string, RunSettings>; queueEntryIds?: Record<string, string>; unitStreetIds?: Record<string, string>; selectionScope?: string[]; query?: import("./query.js").UnitQuery; id: string; streetId: string; operation: "scan" | "compare" | "apply"; origin: "simulation" | "live"; state: "running" | "paused" | "failed" | "completed" | "stopped"; startedAt: string; endedAt: string | null; handled: number; total: number | null; error: string | null; itemKeys: string[]; checkpoint?: unknown; acquisitionRunId?: string | null; imports?: Record<string, RunImport>; settings?: RunSettings; applySources?: Record<string, SourceProperty> };
 export type Event = { id: string; streetId: string; at: string; text: string; unitKey?: string };
 export type StreetMemory = { sisterQueue?: import("./sister-bulk.js").SisterQueueEntry; note: string; attention: boolean; updatedAt: string; registeredAt?: string; sisterSearch?: import("./sister-street-settings.js").SisterStreetSettings };
 export type SyncConflict = { id: string; path: string[]; values: unknown[]; detectedAt: string; resolvedAt: string | null };
@@ -82,5 +82,5 @@ export function streetSummaries(state: TerritoryState) {
     if (!group) members.set(canonical, group = {});
     group[unit.key] = unit;
   }
-  return state.streets.filter(s => !s.linkedOfficialId).map(street => streetSummary({ ...state, units: members.get(street.id) ?? {} }, street));
+  return state.streets.filter(s => !s.linkedOfficialId&&!s.outsideUrbanArea).map(street => streetSummary({ ...state, units: members.get(street.id) ?? {} }, street));
 }

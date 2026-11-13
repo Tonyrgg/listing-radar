@@ -1,4 +1,5 @@
 import { createSisterBulk } from "./sister-bulk.js";
+import urbanPerimeters from './urban-perimeters.js';
 import { activityLabel } from "./activity-modes.js";
 import { quarantineHtml } from "./quarantine.js";
 import { createStreetSearch } from "./street-search.js";
@@ -304,6 +305,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     preferCanvas: true,
     renderer: importGradientRenderer(L, { tolerance: 5 }),
   }).setView([41.11, 16.69], 15);
+    L.geoJSON(urbanPerimeters,{style:{color:'#95aaa0',weight:1.5,dashArray:'5 5',fill:false},onEachFeature:(feature,layer)=>layer.bindTooltip(`${feature.properties.name} · centro abitato ISTAT 2021`)}).addTo(map);
   L.control.zoom({ position: "bottomright" }).addTo(map);
   const tiles = L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -572,7 +574,9 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   map.on("dragstart zoomstart", hidePreview);
   map.on("click", hidePreview);
   window.addEventListener("blur", hidePreview);
+  let dialogCloseTimer;
   function openDialog(title) {
+    clearTimeout(dialogCloseTimer);$("detail-dialog").classList.remove('is-closing');
     if(title!=='Coda immobili')delete $("detail-dialog").dataset.panel;
     if (title !== "Scheda della via") delete $("detail-dialog").dataset.streetPhase;
     $("dialog-title").textContent = title;
@@ -593,8 +597,20 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       );
       return;
     }
-    $("detail-dialog").close();
+    const dialog=$("detail-dialog");
+    if(!dialog.open)return;
+    dialog.classList.add('is-closing');
+    clearTimeout(dialogCloseTimer);
+    dialogCloseTimer=setTimeout(()=>{dialog.close();dialog.classList.remove('is-closing');},matchMedia('(prefers-reduced-motion: reduce)').matches?0:160);
   }
+  document.addEventListener('pointerdown',event=>{
+    const dialogs=[...document.querySelectorAll('dialog[open]')];
+    const dialog=dialogs.at(-1);if(!dialog)return;
+    const bounds=dialog.getBoundingClientRect();
+    if(event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom)return;
+    if(dialog===$("detail-dialog"))closeDialog();
+    else {dialog.classList.add('is-closing');setTimeout(()=>{dialog.close();dialog.classList.remove('is-closing');},matchMedia('(prefers-reduced-motion: reduce)').matches?0:160);}
+  });
   $("detail-close").onclick = closeDialog;
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !event.defaultPrevented && $("detail-dialog").open) {

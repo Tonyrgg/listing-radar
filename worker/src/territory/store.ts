@@ -10,6 +10,7 @@ import { hydrateImportQueue } from "./import-queue.js";
 import { hydrateCloudMemory } from "./cloud-memory.js";
 import { hydrateQuarantine } from "./quarantine.js";
 import { ImportV2Error } from "../import-v2/errors.js";
+import {applyUrbanScope} from './urban-scope.js';
 
 type ReadonlyData<T> = T extends object ? { readonly [P in keyof T]: ReadonlyData<T[P]> } : T;
 type MutableData<T> = T extends object ? { -readonly [P in keyof T]: MutableData<T[P]> } : T;
@@ -63,6 +64,7 @@ export class TerritoryStore {
       const registeredAt = new Date().toISOString();
       for (const street of next.streets) { next.memories[street.id] ??= { note: "", attention: false, updatedAt: registeredAt, registeredAt }; next.memories[street.id]!.registeredAt ??= registeredAt; }
       applyNetworkBindings(next);
+      applyUrbanScope(next);
       resolveRecognizedHistory(next);
       hydrateUnitMemory(next);
       hydrateCloudMemory(next);
@@ -93,6 +95,7 @@ export class TerritoryStore {
       const registeredAt = new Date().toISOString();
       for (const street of next.streets) next.memories[street.id] ??= structuredClone(this.state.memories[street.id] ?? { note: "", attention: false, updatedAt: registeredAt, registeredAt });
       applyNetworkBindings(next);
+      applyUrbanScope(next);
       hydrateUnitMemory(next);
       hydrateCloudMemory(next);
       hydrateQuarantine(next);
@@ -108,6 +111,7 @@ export class TerritoryStore {
     const operation = this.queue.then(async () => {
       const next = structuredClone(this.state);
       const result = mutation(next);
+      applyUrbanScope(next);
       const temporary = `${this.filename}.${randomUUID()}.tmp`;
       try {
         await writeFile(temporary, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });

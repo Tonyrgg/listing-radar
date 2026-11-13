@@ -3,12 +3,18 @@ import type { Run, TerritoryState } from "./model.js";
 import { unitKey } from "./model.js";
 import { sameCrmRecordId } from "../core/crm-record-id.js";
 import { isDeepStrictEqual } from "node:util";
-import {validActivityCoverage} from '../import-v2/activity-policy.js';
+import {validActivityCoverage,verifiedActivityFacts} from '../import-v2/activity-policy.js';
+
+export function confirmedActivityWork(checkpoint:ImportV2Checkpoint):boolean{
+ const e=checkpoint.activityEvidence,source=checkpoint.plan?.source;
+ return Boolean(source?.activity.enabled&&checkpoint.crmPropertyId&&e?.operationId===checkpoint.itemId&&verifiedActivityFacts([checkpoint]).length
+  &&(e.outcome==='covered'?validActivityCoverage(e,checkpoint.crmPropertyId):e.expectedStatus===source.activity.status&&sameCrmRecordId(e.propertyId,checkpoint.crmPropertyId)));
+}
 
 /** Called inside the completion transaction, before any journal/queue success. */
-export function freezeRunImport(run: Run, checkpoint: ImportV2Checkpoint) {
+export function freezeRunImport(run: Run, checkpoint: ImportV2Checkpoint,activityOnly=false) {
   const source = checkpoint.plan?.source;
-  if (!source || checkpoint.stage !== "completed" || checkpoint.lastError || !checkpoint.crmPropertyId
+  if (!source || (activityOnly?!confirmedActivityWork(checkpoint):checkpoint.stage !== "completed" || Boolean(checkpoint.lastError)) || !checkpoint.crmPropertyId
     || !checkpoint.itemId || checkpoint.propertyId !== source.sourcePropertyId
     || !Number.isFinite(Date.parse(checkpoint.updatedAt))) throw new Error("Prova di completamento V2 incoerente");
   const key = unitKey(source), frozen = run.applySources?.[key];

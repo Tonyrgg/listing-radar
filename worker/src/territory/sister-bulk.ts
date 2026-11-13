@@ -18,7 +18,7 @@ export class SisterBulk {
     const state = this.store.read();
     return { active: this.active, entries: state.streets.flatMap(street => {
       const entry = state.memories[street.id]?.sisterQueue;
-      if (!entry) return [];
+      if (!entry || street.outsideUrbanArea) return [];
       const run = state.runs.find(r => r.id === entry.runId);
       return [{ ...entry, streetId: street.id, name: street.name, municipality: street.locality,
         status: run?.state === 'completed' ? 'completed' : entry.status === 'running' && !this.active ? 'paused' : entry.status,
@@ -30,7 +30,7 @@ export class SisterBulk {
     const {streetId, search} = sisterQueueInput.parse(value);
     if (!search.searchText || !search.resultName) throw Error('Inserisci parola chiave e voce esatta Sister');
     const street = this.store.read().streets.find(s => s.id === streetId);
-    if (!street || street.linkedOfficialId || street.needsReview) throw Error('Scegli una via identificata');
+    if (!street || street.linkedOfficialId || street.needsReview || street.outsideUrbanArea) throw Error('Scegli una via identificata');
     const existing = this.store.read().memories[streetId]?.sisterQueue;
     if (existing?.runId) throw Error('Rimuovi la riga prima di preparare una nuova acquisizione; lo storico rimane conservato');
     await this.app.configureSisterStreet(streetId, search);

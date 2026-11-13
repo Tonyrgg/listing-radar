@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { unitKey, type TerritoryState, type Unit, type Run } from "./model.js";
 import { runSettings } from "./run-options.js";
+import {confirmedActivityWork,freezeRunImport} from './activity-plan.js';
 
 export type ImportQueueEntry = { id: string; key: string; streetId: string; addedAt: string };
 export function queueStreet(state: TerritoryState, unit: Unit, preferred?: string) {
   const canonical = (id: string) => {
     const street = state.streets.find(s => s.id === id);
     const target = street?.linkedOfficialId ? state.streets.find(s => s.id === street.linkedOfficialId) : street;
-    return target?.needsReview ? undefined : target;
+    return target?.needsReview||target?.outsideUrbanArea ? undefined : target;
   };
   const streets = [...new Map(unit.streetIds.map(canonical).filter(s => s).map(s => [s!.id, s!])).values()];
   if (preferred) return streets.find(s => s.id === canonical(preferred)?.id);
@@ -38,6 +39,14 @@ export function hydrateImportQueue(state: TerritoryState, closeInterrupted = fal
   state.importQueue ??= {};
   for (const run of state.runs) {
     if (run.operation !== "apply") continue;
+    for(const [key,source]of Object.entries(run.applySources??{})){
+      const cp=state.checkpoints[source.sourcePropertyId];
+      if(!cp||!confirmedActivityWork(cp)||!cp.lastError?.details.activityHandled||Date.parse(cp.updatedAt)<Date.parse(run.startedAt)||(run.endedAt&&Date.parse(cp.updatedAt)>Date.parse(run.endedAt)))continue;
+      try{freezeRunImport(run,cp,true);}catch{continue;}
+      (run.followUps??={})[key]=run.skipped?.[key]??{at:cp.updatedAt,reason:cp.lastError.message,address:source.fullAddress};
+      if(run.skipped)delete run.skipped[key];
+      for(const issue of Object.values(state.quarantine??{}))if(issue.origin==='apply'&&issue.runId===run.id&&issue.unitKey===key&&!issue.resolvedAt)issue.resolvedAt=cp.updatedAt;
+    }
     if (!run.queueEntryIds && ["running", "paused", "failed", "stopped"].includes(run.state)) {
       run.queueEntryIds = {};
       for (const key of run.itemKeys.slice(run.handled)) {
@@ -49,6 +58,7 @@ export function hydrateImportQueue(state: TerritoryState, closeInterrupted = fal
       }
     }
     for (const key of Object.keys(run.queueEntryIds ?? {})) settleQueueImport(state, run, key);
+    if(run.state==='completed')for(const [key,enrollment]of Object.entries(run.queueEntryIds??{}))if(state.importQueue[key]?.id===enrollment)delete state.importQueue[key];
     if (["paused", "failed"].includes(run.state) || closeInterrupted && run.state === "running") {
       run.state = "stopped";
       run.waiting = null;

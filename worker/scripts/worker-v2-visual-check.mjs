@@ -48,7 +48,7 @@ try {
   assert.equal(await shell.evaluate(() => typeof window.territory), 'undefined', 'La shell non riceve i comandi del dossier');
   const snapshot = await page.evaluate(() => window.territory.snapshot());
   assert.equal(snapshot.integrated, true); assert.equal(snapshot.origin, 'simulation');
-  assert.equal(snapshot.streets.length, 2043);
+  assert.equal(snapshot.streets.length, 1596);
   const street = snapshot.streets.find(s => s.geometry && s.name.includes('CASTELLUCCI'));
   await openStreet(page, street);
   await openStreetSettings(page); await page.locator('[data-disclosure="notes"]').evaluate(el => { el.open = true; });
@@ -71,7 +71,7 @@ try {
   assert.equal(await page.locator('#street-note').inputValue(), 'Nota aperta durante cambio sezione');
   await page.getByRole('button', { name: 'Salva note', exact: true }).click();
   await page.locator('#detail-close').click();
-  await shell.locator('#themeToggle').click();
+  if (await page.evaluate(() => document.documentElement.dataset.theme !== 'dark')) await shell.locator('#themeToggle').click();
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   await page.screenshot({ path: path.join(output, '01-integrated-map.png') });
   await shell.screenshot({ path: path.join(output, '00-worker-navigation.png') });
@@ -106,6 +106,8 @@ try {
   const original = path.join(process.env.APPDATA, 'ListingRadarTerritoryLab-live');
   await copyFile(path.join(original, 'territory-ledger.json'), path.join(historical, 'territory-ledger.json'));
   const expectedLedger = JSON.parse(await readFile(path.join(historical, 'territory-ledger.json'), 'utf8'));
+  for (const run of expectedLedger.runs) if (run.state === 'running') { run.state = 'stopped'; run.endedAt = new Date().toISOString(); } // Isolate the offline-memory fixture from real workstation leases.
+  await writeFile(path.join(historical, 'territory-ledger.json'), JSON.stringify(expectedLedger));
   const priorUnitKeys = Object.keys(expectedLedger.units);
   resolveRecognizedHistory(expectedLedger); hydrateUnitMemory(expectedLedger);
   const expectedUnitKeys = Object.keys(expectedLedger.units).sort();
@@ -129,8 +131,16 @@ try {
   await page.locator('#open-browser').waitFor({ state: 'visible' });
   await page.locator('#open-browser').click();
   await page.getByText('Chrome di lavoro è già aperto. Verifica l’accesso a SISTER e Tecnocloud.', { exact: true }).waitFor();
+  await page.locator('#queue-manager').click();
+  await page.locator('#queue-open-browser').click();
+  await page.getByText('Chrome di lavoro aperto.', { exact: true }).waitFor();
+  const mapWidth = await page.locator('#map').evaluate(el => el.getBoundingClientRect().width);
+  assert.equal(mapWidth, await page.evaluate(() => innerWidth), 'La coda sovrapposta conserva la mappa a piena larghezza');
+  const panelBounds = await page.locator('#detail-dialog').boundingBox();
+  await page.mouse.click(Math.max(1, panelBounds.x - 10), panelBounds.y + 20);
+  await page.waitForFunction(() => !document.querySelector('#detail-dialog').open);
   await shell.evaluate(() => window.propertyWorker.openChrome());
-  assert.equal(await application.evaluate(() => global.__testWorkBrowserChecks.length), 2, 'V2 e Lavorazioni usano lo stesso avvio Chrome, riutilizzando il browser aperto');
+  assert.equal(await application.evaluate(() => global.__testWorkBrowserChecks.length), 3, 'V2 e Lavorazioni usano lo stesso avvio Chrome, riutilizzando il browser aperto');
   // Real missing-browser failure, confined to the cloned profile and closed fixture port.
   const unavailableStreet = recovered.streets.find(s => s.geometry && s.catalogKind !== 'network' && !s.needsReview);
   await openStreet(page, unavailableStreet);
@@ -149,6 +159,7 @@ try {
   await page.locator('#detail-refresh').click();
   assert.equal(await page.locator('#feedback').isVisible(), false, 'L’avviso chiuso non ricompare a ogni aggiornamento');
   await page.locator('#detail-close').click();
+  await page.evaluate(() => window.territory.pause()); // Only the cloned profile: recovered runs must be paused before testing memory.
   await page.locator('#cloud-memory').click();
   await page.locator('#memory-push').click();
   await page.waitForFunction(() => document.querySelector('#memory-result').textContent.includes('non raggiungibile'));

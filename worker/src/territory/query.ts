@@ -46,6 +46,7 @@ export function queryUnitKeys(state: TerritoryState, input: unknown, now = Date.
     const source = effectiveSource(unit);
     if (source.municipality.trim().toUpperCase() !== "BITONTO") return false;
     const streetIds = unit.streetIds.map(id => streets.get(id)?.linkedOfficialId ?? id);
+    if(streetIds.length&&streetIds.every(id=>streets.get(id)?.outsideUrbanArea))return false;
     if (query.zoneIds.length && !streetIds.some(id => zoneStreets.has(id))) return false;
     if (query.streetIds.length && !streetIds.some(id => query.streetIds.includes(id))) return false;
     if (query.localities.length && !streetIds.some(id => query.localities.includes(streets.get(id)?.locality as typeof query.localities[number]))) return false;

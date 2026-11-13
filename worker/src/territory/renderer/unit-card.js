@@ -33,6 +33,7 @@ export function unitImportTone(unit, now = Date.now()) {
   return age === null || !Number.isFinite(age) || age < 0 ? 'never' : age <= 30 ? 'recent' : age <= 90 ? 'aging' : 'stale';
 }
 export function unitImportHtml(unit, escape, date) {
+  if(unit.activityVerified)return `<div class="unit-import-fact" data-import-tone="recent"><strong>Attività verificata</strong><span>${unit.activityVerifiedAt?date(unit.activityVerifiedAt):''}${unit.writePending?' · Altri dati da verificare':''}</span></div>`;
   const stats = unit.memory?.statistics, at = stats?.lastImportedAt;
   const tone = unitImportTone(unit);
   const age = tone !== 'never' && at ? Math.floor((Date.now() - Date.parse(at)) / 86400000) : null;

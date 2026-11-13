@@ -1,4 +1,5 @@
 import {crmRecordKind} from "../import-v2/record-protection.js";
+import {confirmedActivityWork,freezeRunImport} from './activity-plan.js';
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
@@ -149,6 +150,7 @@ export class TerritoryApplication {
     const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);
     const street = requested?.linkedOfficialId ? state.streets.find(s => s.id === requested.linkedOfficialId) : requested;
     if (!street) throw new Error("Via non trovata");
+    if(street.outsideUrbanArea)throw new Error('Via esterna ai centri abitati: conservata nello storico, esclusa dalle nuove lavorazioni');
     streetId = street.id;
     const ids = relatedStreetIds(state, streetId);
     const summary = streetSummary(state, street);
@@ -295,10 +297,12 @@ export class TerritoryApplication {
   unitDetail(key: string) { const state = this.store.read(), unit = state.units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit, state); }
   private presentUnit(unit: Unit, state: TerritoryState) {
     const source = effectiveSource(unit);
+    const activityCheckpoint=state.checkpoints[source.sourcePropertyId];
+    const activityVerified=Boolean(activityCheckpoint&&confirmedActivityWork(activityCheckpoint));
     let writePending = false, writeIssue: string | null = null;
     try { writePending = Boolean(pendingUnitImport(state, unit.key)); }
     catch (error) { writePending = true; writeIssue = (error as Error).message; }
-    return { ...unit, cloud: { property: state.cloudMemory?.properties[unit.key] ?? null, people: source.owners.map(o => ({ taxCode: o.taxCode, fullName: o.fullName, evidence: state.cloudMemory?.people[canonicalTaxCode(o.taxCode)] ?? null })) }, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit), writePending, writeIssue };
+    return { ...unit,activityVerified,activityVerifiedAt:activityVerified?activityCheckpoint!.updatedAt:null, cloud: { property: state.cloudMemory?.properties[unit.key] ?? null, people: source.owners.map(o => ({ taxCode: o.taxCode, fullName: o.fullName, evidence: state.cloudMemory?.people[canonicalTaxCode(o.taxCode)] ?? null })) }, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit), writePending, writeIssue };
   }
   queryCatalog() { return queryCatalog(this.store.read()); }
   query(input: unknown, limit = 100) { const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query); return { query, keys, queueKeys: keys.filter(key => queueStreet(state, state.units[key]!)), total: keys.length, readyKeys: keys.filter(key => { const u = state.units[key]!; return this.provider.canWrite(key, effectiveSource(u)) && !isQuarantined(state, u); }), createKeys: keys.filter(key => state.units[key]!.assessment?.kind === "create"), units: keys.slice(0, limit).map(key => this.presentUnit(state.units[key]!, state)), runs: state.runs.filter(r => r.query).slice(-20).map(publicRun) }; }
@@ -477,6 +481,18 @@ export class TerritoryApplication {
                 }
               });
               if (outcome.state !== "completed") {
+                const activityDone=this.store.readSelected(s=>s.checkpoints[source.sourcePropertyId]);
+                if(activityDone&&confirmedActivityWork(activityDone)){
+                  await this.store.change(s=>{
+                    const current=s.runs.find(r=>r.id===run.id)!;
+                    freezeRunImport(current,activityDone,true);
+                    (current.followUps??={})[key]={at:now(),reason:outcome.failure?.message??'Soggetti correlati da verificare',address:source.fullAddress};
+                    if(current.skipped)delete current.skipped[key];
+                    for(const issue of Object.values(s.quarantine??{}))if(issue.origin==='apply'&&issue.runId===run.id&&issue.unitKey===key&&!issue.resolvedAt)issue.resolvedAt=now();
+                    settleQueueImport(s,current,key);current.handled=index+1;
+                  });
+                  continue;
+                }
                 if (this.isPaused() || outcome.failure?.kind === "operator_pause") {
                   await this.updateRun(run.id, { state: "stopped", waiting: null, endedAt: now(), error: "Lavoro interrotto dall'operatore; dati e checkpoint conservati." }); return;
                 }
@@ -499,6 +515,10 @@ export class TerritoryApplication {
           }
         }
         await this.updateRun(run.id, { state: "completed", waiting: null, error: null, endedAt: now() });
+        if(run.operation==='apply')await this.store.change(s=>{
+          const current=s.runs.find(r=>r.id===run.id)!;
+          for(const [key,enrollment]of Object.entries(current.queueEntryIds??{}))if(s.importQueue?.[key]?.id===enrollment)delete s.importQueue[key];
+        });
       }
       await this.store.change(s => { s.events.push({ id: randomUUID(), streetId: street.id, at: now(), text: `${({ scan: "Acquisizione", compare: "Confronto", apply: "Applicazione" })[run.operation]} ${s.runs.find(r => r.id === run.id)?.state === "completed" ? "conclusa" : "conservata per la ripresa"}` }); });
     } catch (error) {

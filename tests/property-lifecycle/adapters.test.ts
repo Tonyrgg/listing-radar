@@ -180,6 +180,15 @@ describe("Live validation redirect regressions",()=>{
 });
 
 describe("Vistocasa V2 adapter", () => {
+  it('reads the detail map pin without inventing an entrance civic from an overlooking reference',()=>{
+    const url='https://www.vistocasa.com/it/immobile.aspx?articoliid=10002';
+    const doc=sourceDocument('vistocasa-active-detail.html',url,'10002');
+    doc.response.body=doc.response.body.replace('Bitonto B.go San Francesco - Appartamento 3 vani in Vendita','Bitonto Centro - Appartamento in Vendita')+'<input id="ctl00_cph_hLat" value="41,107434"><input id="ctl00_cph_hLng" value="16,692606"><p>affacciato su <strong>Piazza Marconi</strong></p>';
+    const result=normalizeVistocasaDetail(doc);
+    expect(result.location).toMatchObject({latitude:41.107434,longitude:16.692606,streetNumber:null,streetName:null,precision:'APPROXIMATE_AREA'});
+    expect(result.location.rawText).toContain('Piazza Marconi');
+    expect(result.provenance.locationReference).toMatchObject({relation:'OVERLOOKS',entranceAddressConfirmed:false});
+  });
   it("uses the complete embedded map inventory and excludes rentals", () => {
     const result = parseVistocasaInventoryHtml(fixture("vistocasa-inventory.html"));
     expect(result.healthState).toBe("HEALTHY");

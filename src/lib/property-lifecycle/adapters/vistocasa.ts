@@ -315,8 +315,15 @@ export function normalizeVistocasaDetail(document: SourceDocument): NormalizedLi
     observedAt: document.observedAt,
     sourceRecordedAt: null,
   });
-  const latitude = numericSummaryValue(document.item, "latitude");
-  const longitude = numericSummaryValue(document.item, "longitude");
+  const detailLatitude=parseCoordinate($('input[id$="_hLat"]').attr('value'));
+  const detailLongitude=parseCoordinate($('input[id$="_hLng"]').attr('value'));
+  const validDetail=detailLatitude!==null&&detailLongitude!==null&&Math.abs(detailLatitude)<=90&&Math.abs(detailLongitude)<=180&&detailLatitude!==0&&detailLongitude!==0;
+  const latitude = validDetail?detailLatitude:numericSummaryValue(document.item, "latitude");
+  const longitude = validDetail?detailLongitude:numericSummaryValue(document.item, "longitude");
+  const reference=$('strong').toArray().map(node=>({name:cleanText($(node).text()),context:$(node).parent().text()})).find(row=>row.name&&/^(?:via|piazza|corso|viale|largo)\s+[\p{L}\s'.-]{2,70}$/iu.test(row.name)&&/affacciat[oa].{0,35}\bsu\b/i.test(row.context));
+  const location=resolveMonitoredGeography({rawText:locationFromTitle(title)+(reference?' · Affaccio su '+reference.name+' (da descrizione)':''),latitude,longitude,coordinatesExact:false});
+  if(reference&&!resolveMonitoredGeography({rawText:locationFromTitle(title)}).streetName){location.streetName=null;location.streetNumber=null;location.precision='APPROXIMATE_AREA';}
+  if(validDetail)location.reasons.push('publisher_detail_map_pin:not_independently_verified');
 
   return finalizeNormalizedListing({
     contractVersion: CONTRACT_VERSION,
@@ -352,12 +359,7 @@ export function normalizeVistocasaDetail(document: SourceDocument): NormalizedLi
         energyClass: detailValue($, "certificazioneenergetica"),
       },
     },
-    location: resolveMonitoredGeography({
-      rawText: locationFromTitle(title),
-      latitude,
-      longitude,
-      coordinatesExact: false,
-    }),
+    location,
     status: {
       value: status.value,
       sourceLabel: status.label,
@@ -383,6 +385,8 @@ export function normalizeVistocasaDetail(document: SourceDocument): NormalizedLi
     provenance: {
       inventorySummary: document.item.summary,
       reportedSource: "public_html_embedded_map_inventory",
+      publishedMapPin:validDetail?{latitude,longitude,sourceUrl:canonical,method:'VISTOCASA_DETAIL_MAP_PIN',independentlyVerified:false}:null,
+      locationReference:reference?{text:reference.name,relation:'OVERLOOKS',sourceUrl:canonical,entranceAddressConfirmed:false}:null,
       mediaDatePolicy: "original_gallery_last_modified_processed_only_in_deep_sync",
       ignoredDetailHttpLastModifiedForMarketStart: true,
     },
