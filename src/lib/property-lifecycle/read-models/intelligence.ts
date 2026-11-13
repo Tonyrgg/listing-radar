@@ -14,6 +14,7 @@ export interface IntelligenceRow {
   address: string; locality: string | null; state: string; sale_status: string; property_state: string;
   earliest_market_evidence_at: string; sold_at: string | null; delisted_at: string | null;
   estimated_acquisition_at: string | null; acquisition_confidence: number | null;
+  agency_started_at?:string|null; days_with_agency?:number|null;agency_start_source?:string|null;agency_start_url?:string|null;agency_start_exact?:boolean;
   first_seen_at: string; last_seen_at: string; exit_classification: string; exit_confidence: number | null;
   first_asking_price: number | null; latest_asking_price: number | null; reduction_percent: number | null;
   drop_count: number; price_source_url: string | null; opportunity_score: number | null;

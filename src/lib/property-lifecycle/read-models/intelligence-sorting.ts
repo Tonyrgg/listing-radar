@@ -4,6 +4,7 @@ export const INTELLIGENCE_SORTS={
  prezzo:{field:"latest_asking_price",label:"Prezzo richiesto"},
  metro:{field:"unit_asking_price",label:"Prezzo al m²"},
  giorni:{field:"known_market_age",label:"Giorni osservati"},
+ giorni_agenzia:{field:'days_with_agency',label:'Giorni con agenzia'},
  ribassi:{field:"drop_count",label:"Ribassi"},
  fonte:{field:"agency_name",label:"Fonte"},
  stato:{field:"exit_classification",label:"Stato"},

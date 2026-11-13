@@ -1,4 +1,8 @@
 export interface LifecycleAgencyRef {
+  startedAt?:string|null;
+  startSource?:string|null;
+  startUrl?:string|null;
+  startExact?:boolean;
   id: string;
   slug: string;
   name: string;

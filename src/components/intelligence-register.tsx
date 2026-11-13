@@ -1,4 +1,5 @@
 import Link from "next/link";
+import {agencyDateSource} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ChevronRight, TrendingDown, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { PropertyThumbnail } from "@/components/property-thumbnail";
 import {intelligenceSort,type IntelligenceSort} from "@/lib/property-lifecycle/read-models/intelligence-sorting";
@@ -39,7 +40,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
  return <div className="lr-radar-register" role="region" aria-label="Registro immobili" tabIndex={0}>
   <table className="lr-radar-table">
    <caption className="sr-only">{INTELLIGENCE_VIEW_COPY[view].title}. Il prezzo è quello richiesto, non il prezzo di vendita. L’indice ordina gli indizi, non misura la probabilità di vendita.</caption>
-   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Giorni",true)}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}<th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
+   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Giorni",true)}{signals?heading("giorni_agenzia","Giorni con agenzia",true):null}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}<th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
    <tbody>{rows.map(row=>{
     const age=marketAgeLabel(row.first_seen_at,row.earliest_market_evidence_at,row.sold_at??row.sold_observed_at??now);
     const end=row.sold_at??row.sold_observed_at;
@@ -54,6 +55,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
      <td className="lr-numeric lr-table-price"><strong>{formatCurrency(row.latest_asking_price)}</strong>{row.source_price_conflict?<p className="lr-table-warning">Fonti discordanti</p>:row.reduction_percent!=null&&row.reduction_percent>0?<p className="lr-table-reduction"><TrendingDown size={12} aria-hidden="true"/> −{formatNumber(row.reduction_percent)}%</p>:null}</td>
      <td className="lr-numeric">{unitPrice==null?"—":formatNumber(unitPrice)}</td>
      <td className="lr-numeric" title={age}><span>{days==null?"—":formatNumber(days)}</span><span className="sr-only"> · {age}</span></td>
+     {signals?<td className="lr-numeric" title={agencyDateSource(row.agency_started_at?row.agency_start_source:null)+(row.agency_started_at?' · '+formatDate(row.agency_started_at):'')}><span>{row.days_with_agency==null?'—':`${row.agency_start_exact?'':'≥ '}${formatNumber(row.days_with_agency)}`}</span><p className="lr-table-secondary">{row.agency_started_at?formatDate(row.agency_started_at):'Data non ricostruita'}</p></td>:null}
      <td className="lr-numeric">{formatNumber(row.drop_count??0)}</td>
      <td className="lr-table-source"><span>{row.agency_name||"Da verificare"}</span><p className="lr-table-secondary" title="Ultima presenza rilevata">{formatDate(row.last_seen_at)}</p></td>
      <td className="lr-table-state"><Chip tone={statusTone(row)} dot>{EXIT_LABELS[row.exit_classification]??propertyStateLabel(row.property_state)}</Chip></td>

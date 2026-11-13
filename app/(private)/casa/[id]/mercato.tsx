@@ -1,5 +1,5 @@
 import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
-import {agencyTenureLabel,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
+import {agencyTenureLabel,agencyDateSource,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ArrowLeft, CheckCircle2, FileCheck2, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -145,9 +145,8 @@ function ChiLaTiene({ detail }: Readonly<{ detail: LifecyclePropertyDetail }>) {
             </Stato>
           </div>
           <Meta>
-            {agencyTenureLabel(agency.firstSeenAt,agency.state==='ACTIVE'?Date.now():agency.lastSeenAt,agency.state==='ACTIVE')}.{' '}
-            Osservata dal {formatDate(agency.firstSeenAt)}, vista l&apos;ultima volta il{" "}
-            {formatDate(agency.lastSeenAt)}
+            {agencyTenureLabel(agency.startedAt,agency.state==='ACTIVE'?Date.now():agency.lastSeenAt,agency.state==='ACTIVE',agency.startExact)}.{' '}
+            {agencyDateSource(agency.startSource)}{agency.startedAt?' · '+formatDate(agency.startedAt):''}{agency.startUrl?<>{' · '}<a href={agency.startUrl} target="_blank" rel="noreferrer">Fonte</a></>:null}
             {agency.reference ? ` · rif. ${agency.reference}` : ""}
           </Meta>
         </div>
@@ -246,7 +245,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
       <MuroDiFoto urls={detail.imageUrls} alt={indirizzo} didascalia={dataDallaFoto(property.trueMarketStartMethod)&&property.trueMarketStartLowerBound?"Foto datata "+formatDate(property.trueMarketStartLowerBound):undefined}/>
       <div><h3 className="lr-case-label">In sintesi</h3><dl className="lr-case-summary">
        <div><dt>{context.view==="venduti"?"Osservazione della vendita":"Presenza osservata"}</dt><dd>{context.view==="venduti"&&saleDate&&Date.parse(saleDate)<=Date.parse(property.firstSeenAt)?"Segnale già presente al primo riscontro":marketAgeLabel(property.firstSeenAt,marketAnchor,marketEnd)}</dd><p>Prima osservazione: {formatDate(property.firstSeenAt)}</p></div>
-       <div><dt>Presenza nell’agenzia attuale</dt><dd>{owned?(owned.startedAt?`Dal ${formatDate(owned.startedAt)} · data confermata`:'Data di ingresso non nota'):currentObservedAgency?agencyTenureLabel(currentObservedAgency.firstSeenAt):'Agenzia attuale da confermare'}</dd><p>{owned?.agencyName??currentObservedAgency?.name??'Il periodo sul mercato può includere più agenzie'}</p></div>
+       <div><dt>Presenza nell’agenzia attuale</dt><dd>{owned?(owned.startedAt?agencyTenureLabel(owned.startedAt,Date.now(),true,true):'Data di ingresso non nota'):currentObservedAgency?agencyTenureLabel(currentObservedAgency.startedAt,Date.now(),true,currentObservedAgency.startExact):'Agenzia attuale da confermare'}</dd><p>{owned?(owned.startedAt?agencyDateSource('MANUAL_CONFIRMATION'):'Nessuna data di ingresso comunicata'):agencyDateSource(currentObservedAgency?.startSource)}{currentObservedAgency?.startedAt?' · '+formatDate(currentObservedAgency.startedAt):''}{currentObservedAgency?.startUrl?<>{' · '}<a href={currentObservedAgency.startUrl} target="_blank" rel="noreferrer">Fonte</a></>:null}</p><p>{owned?.agencyName??currentObservedAgency?.name??'Il periodo sul mercato può includere più agenzie'}</p></div>
        <div><dt>Prezzo</dt><dd>{formatNumber(sourcePrice?.dropCount??drops)} ribassi registrati</dd><p>{detail.marketObservation?.priceConflict?"Prezzi discordanti tra le fonti":sourcePrice?.firstPrice!=null?"Primo prezzo: "+formatCurrency(sourcePrice.firstPrice):"Storico iniziale non disponibile"}</p></div>
        <div><dt>Pubblicazioni</dt><dd>{formatNumber(sourceCount)} {sourceCount===1?"pubblicazione":"pubblicazioni"}</dd><p>{property.relaunchCount?formatNumber(property.relaunchCount)+" ripubblicazioni osservate":"Nessuna ripubblicazione registrata"}</p></div>
        <div><dt>Ultima presenza rilevata</dt><dd>{formatDate(property.lastSeenAt)}</dd><p>{saleDate?(manualSale?"Conferma manuale: ":"Segnale di vendita: ")+formatDate(saleDate):property.saleStatus==="SOLD_CONFIRMED"?"Vendita confermata":property.saleStatus==="NOT_SOLD_CONFIRMED"?"Non venduto, confermato manualmente":"Vendita non confermata"}</p></div>

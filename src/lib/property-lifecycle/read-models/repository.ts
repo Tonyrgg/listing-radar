@@ -830,6 +830,14 @@ export class PropertyLifecycleReadRepository {
     const property = (await this.hydrateProperties(properties))[0];
     const historyOffset = (Math.max(1,Math.min(10000,historyPage))-1);
     const agencyListingIds = property.agencies.map((agency) => agency.listingId);
+    if(agencyListingIds.length){
+      const tenure=await this.db.from('radar_agency_tenure').select('*').in('agency_listing_id',agencyListingIds);
+      throwIfError(tenure.error);
+      property.agencies=property.agencies.map(agency=>{
+        const row=(tenure.data??[]).find(r=>r.agency_listing_id===agency.listingId);
+        return {...agency,startedAt:row?.agency_started_at??null,startSource:row?.agency_start_source??null,startUrl:row?.agency_start_url??null,startExact:row?.agency_start_exact===true};
+      });
+    }
     const [publicationResult, privateResult, eventResult, evidenceResult, opportunityResult, priceResult, intelligenceResult] =
       await Promise.all([
         agencyListingIds.length

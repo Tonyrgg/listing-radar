@@ -19,6 +19,7 @@ describe("archive sorting and dossier context",()=>{
   expect([...rows].sort((a,b)=>compareUnitPrices(a,b,false)).map(r=>r.row_id)).toEqual(["priced","zero","unknown"]);
  });
  it("only accepts known sort keys",()=>{
+  expect(intelligenceSort('giorni_agenzia','desc','opportunita')).toMatchObject({field:'days_with_agency',ascending:false});
   expect(intelligenceSort("anything","asc","mercato")).toMatchObject({key:"riscontro",field:"last_seen_at",ascending:true});
   expect(intelligenceSort(undefined,undefined,"opportunita")).toMatchObject({key:"indice",ascending:false});
  });
