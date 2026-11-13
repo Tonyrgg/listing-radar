@@ -41,7 +41,8 @@ export async function enrichHistoricalPresence(adapter:PropertyLifecycleAdapter,
   const [stamp,url]=rows[1] as unknown[];
   if(typeof stamp!=='string'||!/^\d{14}$/.test(stamp)||typeof url!=='string')return current;
   const requested=new URL(original),found=new URL(url);
-  if(requested.hostname!==found.hostname||requested.pathname!==found.pathname||requested.search!==found.search)return current;
+  const path=(value:URL)=>value.pathname.replace(/\/$/,'');
+  if(requested.hostname!==found.hostname||path(requested)!==path(found)||requested.search!==found.search)return current;
   const date=`${stamp.slice(0,4)}-${stamp.slice(4,6)}-${stamp.slice(6,8)}T${stamp.slice(8,10)}:${stamp.slice(10,12)}:${stamp.slice(12,14)}Z`;
   if(!Number.isFinite(Date.parse(date))||Date.parse(date)>=Date.parse(current.observedAt))return current;
   const snapshotUrl=`https://web.archive.org/web/${stamp}id_/${url}`;

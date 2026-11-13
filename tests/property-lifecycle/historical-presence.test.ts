@@ -19,7 +19,7 @@ it('bounds lookups and changes candidate selection over time',()=>{
  expect([...historicalCandidates(items,'2026-11-13')]).not.toEqual([...historicalCandidates(items,'2026-11-14')]);
 });
 it('adds a distinct dated presence claim only after matching the archived body',async()=>{
- const get=vi.spyOn(HttpClient.prototype,'get').mockImplementation(async u=>u.includes('/cdx/')?{body:JSON.stringify([['timestamp','original'],['20260102120000',url]]),url:u,status:200,ok:true,headers:new Headers()}:{body:'archived html',url:u,status:200,ok:true,headers:new Headers({'content-type':'text/html'})});
+ const get=vi.spyOn(HttpClient.prototype,'get').mockImplementation(async u=>u.includes('/cdx/')?{body:JSON.stringify([['timestamp','original'],['20260102120000',url+'/']]),url:u,status:200,ok:true,headers:new Headers()}:{body:'archived html',url:u,status:200,ok:true,headers:new Headers({'content-type':'text/html'})});
  try{
  const adapter={normalize:async()=>current} as unknown as PropertyLifecycleAdapter;
  const result=await enrichHistoricalPresence(adapter,document,current);

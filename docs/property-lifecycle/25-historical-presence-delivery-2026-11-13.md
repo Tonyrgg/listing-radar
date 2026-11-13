@@ -34,3 +34,8 @@ Limiti: CDX può essere indisponibile e la prima cattura può non avere corrispo
 sufficiente. In quel caso la data resta sconosciuta. Il processo non cerca ancora
 snapshot successivi o Common Crawl e non ricostruisce intervalli di assenza.
 Il recupero storico documenta una presenza entro una data, mai una firma contrattuale.
+
+Prova pubblica senza scritture DB su PuntoCasa Via Mazzini: indice CDX e corpo
+HTML della cattura 2024 recuperati; identità non sufficientemente confermata dal
+validatore, quindi nessuna data promossa. Corretta e coperta da regressione la
+normalizzazione dello slash finale tra URL canonica e URL archivistica.
