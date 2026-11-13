@@ -23,5 +23,10 @@ it('uses a March publication despite September monitoring, scopes evidence to it
  expect((await db.query<{d:string|null}>('select agency_started_at::date::text d from radar_agency_tenure where agency_listing_id=$1',[b])).rows[0].d).toBeNull();
  await db.exec(await readFile('supabase/migrations/0096_index_documented_agency_dates.sql','utf8'));
  expect((await db.query<{d:string}>('select agency_started_at::date::text d from radar_agency_tenure where agency_listing_id=$1',[a])).rows[0].d).toBe('2026-02-01');
+ await db.exec(`insert into evidence values(gen_random_uuid(),'${pub}','https://web.archive.org/web/20250101/https://agency-a.test/ad','publication.archivedPresence','WAYBACK_VERIFIED_PRESENCE','{"lowerBound":"2025-01-01T12:00:00Z"}');`);
+ await db.exec('create table radar_read_model_state(singleton boolean,source_revision bigint);insert into radar_read_model_state values(true,1);');
+ await db.exec(await readFile('supabase/migrations/0097_archived_agency_presence.sql','utf8'));
+ expect((await db.query<{d:string;source:string}>('select agency_started_at::date::text d,agency_start_source source from radar_agency_tenure where agency_listing_id=$1',[a])).rows[0]).toEqual({d:'2025-01-01',source:'WAYBACK_VERIFIED_PRESENCE'});
+ expect((await db.query<{d:string|null}>('select agency_started_at::date::text d from radar_agency_tenure where agency_listing_id=$1',[b])).rows[0].d).toBeNull();
  }finally{await db.close();}
 },30000);

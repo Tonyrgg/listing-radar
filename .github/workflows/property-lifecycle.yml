@@ -46,6 +46,7 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       LIFECYCLE_DEEP_MAX_ASSETS: "6"
       LIFECYCLE_SOLD_OCR: "true"
+      LIFECYCLE_HISTORICAL_DATES: "true"
     steps:
       - uses: actions/checkout@v4
 

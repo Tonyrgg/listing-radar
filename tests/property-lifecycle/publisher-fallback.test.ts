@@ -21,6 +21,19 @@ it('accepts the observed A gallery family while continuing to reject other publi
  const raw=fixture('momento-inventory.html').replaceAll('X_96100_','A_96100_');expect(parseMomentoInventoryHtml(raw).complete).toBe(true);
  expect(parseMomentoInventoryHtml(raw.replace('A_96100_70534497_1877995969','A_99999_70534497_1877995969')).complete).toBe(false);
 });
+it('keeps an identified partial catalog degraded and an empty catalog failed',async()=>{
+ const http=new HttpClient({retries:0});
+ const get=vi.spyOn(http,'get').mockImplementation(async url=>{
+  if(url===STUDIO_CASA_INVENTORY_URL)return response('Denied',url,403);
+  if(url.endsWith('/annunci'))return response(`<h1>Studio Casa Bitonto</h1><div class="agenziaAnnunci__card"><a href="${path}">publisher</a></div><a href="${path}/case-in-vendita">Case in Vendita (5)</a>`,url);
+  return response(remap(fixture('momento-inventory.html')),url);
+ });
+ const partial=await new StudioCasaAdapter(http).fetchInventory();
+ expect(partial).toMatchObject({healthState:'DEGRADED',complete:false,absenceAuthoritative:false});
+ expect(partial.items).toHaveLength(4);
+ get.mockImplementation(async url=>response('Unavailable',url,403));
+ expect(await new StudioCasaAdapter(http).fetchInventory()).toMatchObject({healthState:'FAILED',complete:false,items:[]});
+});
 it('defers an unconfirmed secondary identity without creating a property or reopening a resolved review',async()=>{
  const upsert=vi.fn().mockResolvedValue({error:null}),rpc=vi.fn();
  const db={from:(table:string)=>table==='agencies'?{select:()=>({eq:()=>({single:async()=>({data:{inventory_url:'https://primary.example/list'},error:null})})})}:{upsert},rpc}as unknown as SupabaseClient;

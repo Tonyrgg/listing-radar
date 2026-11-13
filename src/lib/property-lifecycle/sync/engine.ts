@@ -5,6 +5,7 @@ import {
 } from "@/lib/property-lifecycle/assets/pipeline";
 import type { NormalizedListingV2 } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
+import {enrichHistoricalPresence,historicalCandidates} from '../adapters/historical-presence';
 import {
   PropertyLifecycleRepository,
   type SyncRunCounts,
@@ -74,12 +75,15 @@ export async function runAgencySync(input: {
     counts.discoveredCount = inventory.items.length;
     counts.errorCount = inventory.diagnostics.parseErrorCount;
     const observedSourceKeys = new Set(inventory.items.map((item) => item.sourceKey));
+    const historical=mode==='DEEP_SYNC'&&process.env.LIFECYCLE_HISTORICAL_DATES==='true'
+      ?historicalCandidates(inventory.items,new Date().toISOString().slice(0,10)):new Set<string>();
 
     for (const item of inventory.items) {
       input.assertOwnership?.();
       try {
         const document = await input.adapter.fetchDetail(item);
-        const listing = await input.adapter.normalize(document);
+        let listing = await input.adapter.normalize(document);
+        if(historical.has(item.sourceKey)&&listing.location.scope==='IN_SCOPE')listing=await enrichHistoricalPresence(input.adapter,document,listing);
         counts.normalizedCount += 1;
 
         /* Un dubbio già sciolto da una persona non si ripropone: quando

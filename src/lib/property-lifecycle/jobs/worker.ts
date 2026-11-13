@@ -166,7 +166,9 @@ async function executeAgencySync(
     const error = new Error(`Agency ${agency.adapter_key} source sync failed (${outcome.sourceReasons?.join(', ') || 'unavailable'}); previous observations preserved`);
     // An access denial is not helped by hammering the same host again in this drain.
     // Keep the failure visible and retry later; never reinterpret it as an empty inventory.
-    Object.assign(error, {retryAfterMs: [401,403].includes(outcome.responseStatus ?? 0) ? 3_600_000 : 300_000});
+    const primaryStatus=outcome.sourceReasons?.map(reason=>reason.match(/^primary_http_status:(\d{3})$/)?.[1]).find(Boolean);
+    const status=Number(primaryStatus??outcome.responseStatus??0);
+    Object.assign(error, {retryAfterMs: [401,403].includes(status) ? 3_600_000 : 300_000});
     throw error;
   }
 }
