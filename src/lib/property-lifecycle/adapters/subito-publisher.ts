@@ -88,16 +88,26 @@ export function subitoRecords(html: string): ObjectValue[] {
  return [...records.values()];
 }
 
+export function subitoPropertyType(row:ObjectValue):string|null {
+ const title=(string(row.subject)??"").toLowerCase(),label=string(object(row.category).label)??string(object(row.category).value)??"";
+ for(const [pattern,type] of [[/attico/,"Attico"],[/mansarda/,"Mansarda"],[/loft/,"Loft"],[/terreno|suolo/,"Terreno"],[/tenuta/,"Tenuta"],[/rustico|casale/,"Rustico"],[/villa|villino/,"Villa"],[/appartamento|bilocale|trilocale|quadrilocale|monolocale/,"Appartamento"],[/ufficio/,"Ufficio"],[/locale commerciale|negozio/,"Negozio"],[/deposito|magazzino/,"Deposito"],[/garage|box auto/,"Box"]] as const){ if(pattern.test(title))return type; }
+ if(label === "Appartamenti")return "Appartamento";
+ if(label === "Ville singole e a schiera")return "Villa";
+ // Mixed portal categories are not precise property types.
+ return null;
+}
+
 export function subitoCapture(row: ObjectValue): Record<string, unknown> {
  const geo = object(row.geo), town = string(object(geo.town).value), map = object(geo.map), features = object(row.features), advertiser = object(row.advertiser);
  const values = (key: string) => { const all = object(features[key]).values; return Array.isArray(all) ? all.map(object) : []; };
  const numeric = (key: string) => { const raw = values(key)[0]?.key; const n = raw == null ? NaN : Number(raw); return Number.isFinite(n) && n >= 0 ? n : null; };
  const images = Array.isArray(row.images) ? row.images.map(object).map(i => string(i.cdnBaseUrl)).filter((v): v is string => !!v && v.startsWith("https://images.sbito.it/")) : [];
+ const transformedImages=images.map(url=>{const image=new URL(url);image.searchParams.set("rule","gallery-mobile-1x-auto");return image.href;});
  return { canonicalUrl: object(row.urls).default, title: string(row.subject), description: string(row.body),
   price: numeric("/price"), sqm: numeric("/size"), rooms: numeric("/room"), bathrooms: numeric("/bathrooms"), floor: string(values("/floor")[0]?.value),
   zone: town, addressRaw: town, latitude: map.latitude == null ? null : Number(map.latitude), longitude: map.longitude == null ? null : Number(map.longitude),
-  sellerType: advertiser.company === true ? "agency" : advertiser.company === false ? "private" : "unknown", sellerName: string(advertiser.name), imageUrls: images,
-  propertyType: string(object(row.category).value) ?? string(object(row.category).name) ?? string(object(row.category).label), transaction: string(object(row.type).key),
+  sellerType: advertiser.company === true ? "agency" : advertiser.company === false ? "private" : "unknown", sellerName: string(advertiser.name), imageUrls: transformedImages,
+  propertyType: subitoPropertyType(row), transaction: string(object(row.type).key),
   // The source date can be bumped/republication time, not contractual start.
   portalSortDate: string(row.date),
  };
@@ -146,7 +156,7 @@ export class StudiSantiSubitoPublisher {
    marketStart: { lowerBound: null, upperBound: document.observedAt, method: "CRAWLER_FIRST_SEEN", confidence: 0.25, evidence: [evidence] }, observedAt: document.observedAt,
    response: { url: document.response.url, status: document.response.status, etag: null, lastModified: null },
    extractionWarnings: ["secondary_publisher_catalog", "source_publication_date_unavailable", "subito_sort_date_not_mandate_start"],
-   provenance: { accessFallback: true, absenceAuthoritative: false, primarySourceUrl: document.item.summary.primaryUrl, reportedSource: "subito_public_publisher", verifiedPublisherShopId: "60083", agencyReferenceExtraction: agencyReference ? "SUBITO_DESCRIPTION_REFERENCE_LABEL" : null, portalSortDate: capture.portalSortDate, publisherContactDataExcluded: true },
+   provenance: { accessFallback: true, absenceAuthoritative: false, primarySourceUrl: document.item.summary.primaryUrl, reportedSource: "subito_public_publisher", verifiedPublisherShopId: "60083", publisherIdentityVerified:true, agencyReferenceOrigin:agencyReference ? "EXPLICIT_PUBLISHER_REFERENCE_LABEL" : null, agencyReferenceExtraction: agencyReference ? "SUBITO_DESCRIPTION_REFERENCE_LABEL" : null, portalSortDate: capture.portalSortDate, publisherContactDataExcluded: true },
   });
  }
 }

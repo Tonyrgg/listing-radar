@@ -13,6 +13,9 @@ it("supports direct V2 ingestion, an exclusive renewable lease, private opportun
   const original=await readFile("supabase/migrations/0010_acquisition_os.sql","utf8");
   await db.exec(original.slice(original.indexOf("create function public.acquisition_private_publication_change()"),original.indexOf("do $$ declare t text;",original.indexOf("create function public.acquisition_private_publication_change()"))));
   await db.exec(await readFile("supabase/migrations/0101_private_radar_direct_intake.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/0102_private_radar_pending_clock.sql","utf8"));
+  const pending=await db.query<{due:boolean}>("insert into private_radar_inbox(source,source_listing_id,canonical_url) values('idealista','999','https://www.idealista.it/immobile/999/') returning next_check_at<now()-interval '1 year' as due");
+  expect(pending.rows[0].due).toBe(true);
   const first = "11111111-1111-4111-8111-111111111111", second = "22222222-2222-4222-8222-222222222222";
   expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[first])).rows[0].ok).toBe(true);
   expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[second])).rows[0].ok).toBe(false);
@@ -24,6 +27,9 @@ it("supports direct V2 ingestion, an exclusive renewable lease, private opportun
   await db.query(`insert into archive values($1,'UNKNOWN','ACTIVE','COMPETITOR',null,'Privato',0,'[]')`,[first]);
   const rows = (await db.query<{opportunity_score:string;private_seller_type:string}>("select * from radar_private_live_archive")).rows;
   expect(rows).toHaveLength(1); expect(Number(rows[0].opportunity_score)).toBe(20); expect(rows[0].private_seller_type).toBe("unknown");
+  await db.exec("update private_publications set source='subito',metadata=jsonb_set(metadata,'{imageUrls}','[\"https://images.sbito.it/api/v1/sbt-ads-images-pro/images/example\"]')");
+  await db.exec(await readFile("supabase/migrations/0103_private_subito_public_images.sql","utf8"));
+  expect((await db.query<{url:string}>("select metadata->'imageUrls'->>0 url from private_publications")).rows[0].url).toContain("?rule=");
   await db.exec("update private_publications set price_amount=100000");
   expect((await db.query("select * from events where event_type='PRIVATE_PRICE_DROP'")).rows).toHaveLength(1);
   await db.exec("update private_publications set price_amount=100000");

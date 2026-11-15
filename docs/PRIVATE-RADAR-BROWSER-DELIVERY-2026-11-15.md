@@ -27,7 +27,7 @@ Idealista, Immobiliare.it e Casa.it hanno risposto 403 anche nella prova browser
 
 ## Controlli
 
-- 498 test su 56 suite, incluse migrazione PostgreSQL isolata, lease, prezzi, esclusione venduti/nostra agenzia e regressioni di identità.
+- 500 test su 56 suite, incluse migrazione PostgreSQL isolata, lease, prezzi, esclusione venduti/nostra agenzia e regressioni di identità.
 - TypeScript e lint sui file modificati.
 - Build Next.js con Webpack riuscita. Il comando Turbopack locale incontra la junction node_modules esterna alla root; non è stato cambiato il bundler del progetto per nasconderlo.
 - Token/contrasto verificati. Controllo della tabella con dati dimostrativi a 1600, 1024 e 390 px, senza overflow della pagina.
@@ -39,3 +39,13 @@ Migrazione 0101 applicata sul progetto configurato eqqmglsxwbsihrlecnun, dopo ba
 La raccolta automatica usa il workflow Private Listing Radar, ogni ora al minuto 17, subordinato alla variabile repository LIFECYCLE_PRIVATE_RADAR=true. Le riletture di URL già verificati avvengono dopo 6 ore; nuovi URL sono prioritari. Un PC acceso non è necessario per i job GitHub. Non si promette intercettazione istantanea: tempi dipendono dalla scansione e dalla disponibilità del portale.
 
 La cartella .runtime contiene le prove di sola lettura; .backups contiene il backup precedente. Non sono pubblicate nel repository.
+
+## Rilettura operativa e completamento
+
+- Primo caricamento completo: 119 URL candidati verificati, 82 accettati (59 Subito, 23 CasaDaPrivato), 37 esclusi, nessun URL pendente o fallito. Tutte le 82 pubblicazioni risultano sia nel Radar privati sia nelle Opportunità. Database circa 393 MB.
+- Vercel ha concluso il deploy production d8cb977; la raccolta privata è attiva. Il workflow Private Listing Radar è stato eseguito anche da GitHub con esito positivo.
+- Migrazione 0102: URL nuovi subito eleggibili indipendentemente dallo scarto fra orologio del collettore e Postgres.
+- Il primo sync GitHub di Studi Santi ha letto 101 schede senza errori, ma ha esposto un blocco di identità: tutte le 82 osservazioni rimanevano in revisione. Confronto delle tassonomie corretto per plurali e vecchie etichette che contenevano solo il numero di locali. Le categorie miste del portale non diventano tipologie precise inventate.
+- I riferimenti nuovi di un publisher verificato possono creare soltanto una scheda provvisoria, quando non esiste lo stesso riferimento in agenzia e il resolver non segnala ambiguità. Un riferimento esistente con dati incompatibili rimane in revisione. Nessun accorpamento forzato e nessuna sovrascrittura di decisioni manuali.
+
+- Migrazione 0103: corrette anche le foto Subito già acquisite. L’API pubblica richiede la regola di trasformazione presente negli elementi immagine della fonte; l’URL senza regola risponde 400. Verificato HTTP 200 e image/jpeg sulla variante esposta dalla pagina.

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   decidePropertyIdentity,
+  identityCandidateIncompatibilities,
+  scoreIdentityCandidate,
   type IdentityCandidate,
   type IdentityObservation,
 } from "@/lib/property-lifecycle/identity/scoring";
@@ -379,4 +381,14 @@ describe("Property Identity v1", () => {
     expect(decision.outcome).toBe("REVIEW_REQUIRED");
     expect(decision.propertyId).toBeNull();
   });
+});
+
+it("normalizes plural taxonomy labels and never treats a room count as a conflicting property type",()=>{
+ const plural={...observation,propertyType:"Appartamenti"};
+ expect(identityCandidateIncompatibilities(plural,candidate())).not.toContain("property_type_hard_conflict");
+ expect(scoreIdentityCandidate(plural,candidate()).features.propertyType.value).toBe(1);
+ const historical=candidate({propertyType:"3 locali"});
+ expect(identityCandidateIncompatibilities(observation,historical)).not.toContain("property_type_hard_conflict");
+ expect(scoreIdentityCandidate(observation,historical).features.propertyType.available).toBe(false);
+ expect(identityCandidateIncompatibilities(observation,candidate({propertyType:"Negozio"}))).toContain("property_type_hard_conflict");
 });

@@ -769,6 +769,7 @@ export class PropertyLifecycleRepository {
       listing.source.sourceKey,
     );
     let identityDecision: IdentityDecision;
+    let knownReference=false;
     if (existingPublication) {
       const propertyId = (
         await this.agencyListing(existingPublication.agency_listing_id)
@@ -781,13 +782,17 @@ export class PropertyLifecycleRepository {
         candidates: [],
       };
     } else {
-      identityDecision = decidePropertyIdentity(
-        identityObservationFromListing(listing, processedAssets),
-        await this.identityCandidates(agencyId),
-      );
+      const candidates=await this.identityCandidates(agencyId);
+      knownReference=Boolean(listing.source.agencyReference&&candidates.some(c=>c.knownAgencyReferences.some(ref=>ref.localeCompare(listing.source.agencyReference!,"it",{sensitivity:"base"})===0)));
+      identityDecision = decidePropertyIdentity(identityObservationFromListing(listing, processedAssets),candidates);
     }
 
-    if(listing.provenance.accessFallback===true&&(identityDecision.outcome!=="AUTO_MATCH"||!identityDecision.propertyId)){
+    // A verified publisher with a new explicit agency reference can introduce
+    // a provisional property. Existing references and ambiguous matches still
+    // require the normal identity decision; never create a duplicate to skip it.
+    const verifiedNewPublisher=identityDecision.outcome==="NEW_PROPERTY"&&!knownReference&&Boolean(listing.source.agencyReference)
+      &&listing.provenance.publisherIdentityVerified===true&&listing.provenance.agencyReferenceOrigin==="EXPLICIT_PUBLISHER_REFERENCE_LABEL";
+    if(listing.provenance.accessFallback===true&&!verifiedNewPublisher&&(identityDecision.outcome!=="AUTO_MATCH"||!identityDecision.propertyId)){
       const {error}=await this.db.from('review_queue').upsert({review_type:'IDENTITY',agency_id:agencyId,sync_run_id:syncRunId,title:'Annuncio da fonte alternativa: collegamento da verificare',details:{reason:'SECONDARY_PUBLISHER_IDENTITY_UNCONFIRMED',sourceKey:listing.source.sourceKey,canonicalUrl:listing.source.canonicalUrl,listing,identityDecision},dedupe_key:`fallback-identity:${agencyId}:${listing.source.sourceKey}`},{onConflict:'dedupe_key'});
       throwIfError(error);
       return{deferred:true,propertyId:null,agencyListingId:null,publicationId:null,snapshotId:null,identityDecision,createdProperty:false,createdPublication:false};
@@ -842,7 +847,7 @@ export class PropertyLifecycleRepository {
     }
     if (result.changed !== false) await this.uploadRepresentativeThumbnails(result.propertyId, processedAssets);
     if(listing.provenance.accessFallback===true){
-      const closed=await this.db.from('review_queue').update({status:'RESOLVED',property_id:result.propertyId,publication_id:result.publicationId,resolved_at:listing.observedAt,resolution:{method:'VERIFIED_AUTO_MATCH',propertyId:result.propertyId}}).eq('dedupe_key',`fallback-identity:${agencyId}:${listing.source.sourceKey}`).in('status',['OPEN','IN_REVIEW']);
+      const closed=await this.db.from('review_queue').update({status:'RESOLVED',property_id:result.propertyId,publication_id:result.publicationId,resolved_at:listing.observedAt,resolution:{method:identityDecision.outcome==='AUTO_MATCH'?'VERIFIED_AUTO_MATCH':'VERIFIED_PUBLISHER_NEW_PROVISIONAL',propertyId:result.propertyId}}).eq('dedupe_key',`fallback-identity:${agencyId}:${listing.source.sourceKey}`).in('status',['OPEN','IN_REVIEW']);
       throwIfError(closed.error);
     }
     return {

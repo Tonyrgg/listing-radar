@@ -49,3 +49,18 @@ it('never applies missing observations for a healthy secondary catalog and recor
  const result=await runAgencySync({repository:repo,mode:'SYNC',assetProcessor:assets,adapter:{key:'momento',agencySlug:'momento-casa-bitonto',inventoryUrl:'https://secondary.example',fetchInventory:async()=>({items:[item],healthState:'HEALTHY',complete:true,absenceAuthoritative:false,structureFingerprint:'f',diagnostics:{expectedCount:1,observedCount:1,duplicateCount:0,parseErrorCount:0,pagesVisited:1,expectedPages:1,requiredMarkers:{valid:true},reasons:[]},response:null}),fetchDetail:async()=>({item,response:response('',item.url),observedAt:value.observedAt}),normalize:async()=>value,healthCheck:vi.fn()}});
  expect(result.absenceEvaluationAllowed).toBe(false);expect(missing).not.toHaveBeenCalled();expect(assets).toHaveBeenCalled();expect(finalize.mock.calls[0][0].diagnostics.deferredIdentityCount).toBe(1);
 });
+
+it('accepts a verified new publisher reference as provisional and does not bypass a conflicting existing reference',async()=>{
+ const value=rehashNormalizedListing(listing(),l=>({...l,source:{...l.source,agencyReference:'V000999'},provenance:{...l.provenance,publisherIdentityVerified:true,agencyReferenceOrigin:'EXPLICIT_PUBLISHER_REFERENCE_LABEL'}}));
+ const upsert=vi.fn().mockResolvedValue({error:null}),closed={eq:()=>({in:async()=>({error:null})})};
+ const rpc=vi.fn().mockResolvedValue({data:{propertyId:'new',agencyListingId:'agency-listing',publicationId:'publication',snapshotId:'snapshot',createdProperty:true,createdPublication:true,changed:false},error:null});
+ const db={from:(table:string)=>table==='agencies'?{select:()=>({eq:()=>({single:async()=>({data:{inventory_url:'https://primary.example/list'},error:null})})})}:{upsert,update:()=>closed},rpc}as unknown as SupabaseClient;
+ const repo=new PropertyLifecycleRepository(db);
+ vi.spyOn(repo as unknown as{publicationBySource:()=>Promise<null>},'publicationBySource').mockResolvedValue(null);
+ const candidates=vi.spyOn(repo as unknown as{identityCandidates:()=>Promise<unknown[]>},'identityCandidates').mockResolvedValue([]);
+ expect(await repo.persistObservation('agency','run',value)).toMatchObject({createdProperty:true,propertyId:'new'});
+ expect(rpc).toHaveBeenCalledOnce();
+ candidates.mockResolvedValue([{propertyId:'other',agencyReference:null,knownAgencyReferences:['V000999'],address:'Via Roma 99',locality:'Bari',propertyType:'Terreno',surfaceSqm:9999,rooms:0,imageFingerprints:[],floorplanFingerprints:[]}]);
+ expect(await repo.persistObservation('agency','run',value)).toMatchObject({deferred:true,createdProperty:false});
+ expect(rpc).toHaveBeenCalledOnce();
+});

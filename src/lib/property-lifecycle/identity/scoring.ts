@@ -279,8 +279,19 @@ export function identityHardConflicts(
   return conflicts;
 }
 
+function comparablePropertyType(value:string|null):string|null {
+  if(/^\s*\d+(?:\s+o\s+pi[uù])?\s+(?:locali?|vani)\s*$/i.test(value??""))return null;
+  const normalized=[...normalizedTokens(value)].join(" ");
+  // Historical source labels sometimes contain only the room count. It is not
+  // a property taxonomy and must not contradict a newly explicit type.
+  if(!normalized || /^\d+\s+(?:locali?|vani)$/.test(normalized))return null;
+  if(normalized === "appartamenti")return "appartamento";
+  if(normalized === "ville")return "villa";
+  return normalized;
+}
+
 function propertyTypeFamily(value: string | null): string | null {
-  const normalized = [...normalizedTokens(value)].join(" ");
+  const normalized = comparablePropertyType(value);
   if (!normalized) return null;
   if (/garage|box|posto auto|autorimessa/.test(normalized)) return "GARAGE";
   if (/terreno|agricol|suolo/.test(normalized)) return "LAND";
@@ -491,9 +502,9 @@ export function scoreIdentityCandidate(
       observation.rooms != null && candidate.rooms != null,
     ),
     propertyType: feature(
-      exactText(observation.propertyType, candidate.propertyType),
+      exactText(comparablePropertyType(observation.propertyType), comparablePropertyType(candidate.propertyType)),
       FEATURE_WEIGHTS.propertyType,
-      comparableText(observation.propertyType, candidate.propertyType),
+      comparableText(comparablePropertyType(observation.propertyType), comparablePropertyType(candidate.propertyType)),
     ),
     floor: feature(
       exactText(normalizedFloor(observation.floor), normalizedFloor(candidate.floor)),
@@ -535,7 +546,7 @@ export function scoreIdentityCandidate(
     contradictions.push("surface_conflict");
   }
   if (
-    comparableText(observation.propertyType, candidate.propertyType) &&
+    features.propertyType.available &&
     features.propertyType.value === 0
   ) {
     contradictions.push("property_type_conflict");
