@@ -1,4 +1,10 @@
-worker/
+# The only desktop module needed by the web is the pure zone geometry matcher.
+worker/*
+!worker/src/
+worker/src/*
+!worker/src/territory/
+worker/src/territory/*
+!worker/src/territory/zone-streets.ts
 .git/
 .next/
 node_modules/
