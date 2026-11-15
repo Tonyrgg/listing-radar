@@ -1,3 +1,4 @@
+import { closeSourceBrowser } from "../src/lib/http/browser-fallback";
 import { closeSoldTextWorker } from "../src/lib/property-lifecycle/assets/sold-text";
 import { randomUUID } from "node:crypto";
 
@@ -160,7 +161,7 @@ async function main(): Promise<void> {
   if (wantsDrain) await drain(db);
 }
 
-main().finally(closeSoldTextWorker).catch((error) => {
+main().finally(async () => { await closeSoldTextWorker(); await closeSourceBrowser(); }).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });

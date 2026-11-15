@@ -20,7 +20,10 @@ interface DatabaseError {
   message: string;
 }
 
-interface LegacyPrivateListing {
+export interface PrivateRadarObservation {
+  direct?: boolean;
+  seller_type?: "private" | "unknown";
+  image_urls?: string[];
   id: string;
   source: string;
   source_listing_id: string | null;
@@ -122,7 +125,7 @@ function propertyType(title: string): string | null {
   return rules.find(([pattern]) => pattern.test(title))?.[1] ?? null;
 }
 
-function marketStart(listing: LegacyPrivateListing): {
+function marketStart(listing: PrivateRadarObservation): {
   lowerBound: string | null;
   upperBound: string;
   method: string;
@@ -163,7 +166,7 @@ function identityAddress(input: {
 }
 
 function observation(
-  listing: LegacyPrivateListing,
+  listing: PrivateRadarObservation,
   location: ReturnType<typeof resolveMonitoredGeography>,
 ): IdentityObservation {
   return {
@@ -193,7 +196,7 @@ function asIdentityCandidate(candidate: PrivateCandidate): IdentityCandidate {
   };
 }
 
-function locationForListing(listing: LegacyPrivateListing) {
+function locationForListing(listing: PrivateRadarObservation) {
   const sanitizedTitle = sanitizeText(listing.title, listing.seller_name);
   const addressText = [listing.address_raw, listing.zone]
     .filter(Boolean)
@@ -213,7 +216,7 @@ function locationForListing(listing: LegacyPrivateListing) {
 }
 
 function privateState(
-  listing: LegacyPrivateListing,
+  listing: PrivateRadarObservation,
   lastAvailability: boolean | null,
 ): "ACTIVE" | "REMOVED" {
   return listing.status.toLocaleLowerCase("it") === "archived" ||
@@ -228,13 +231,14 @@ function sameInstant(left: string, right: string): boolean {
 
 export class PrivateRadarBridge {
   private readonly repository: PropertyLifecycleRepository;
+  private directCandidates: PrivateCandidate[] | undefined;
 
   constructor(private readonly db: SupabaseClient) {
     this.repository = new PropertyLifecycleRepository(db);
   }
 
-  private async legacyListings(): Promise<LegacyPrivateListing[]> {
-    const rows: LegacyPrivateListing[] = [];
+  private async legacyListings(): Promise<PrivateRadarObservation[]> {
+    const rows: PrivateRadarObservation[] = [];
     const pageSize = 1_000;
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await this.db
@@ -246,7 +250,7 @@ export class PrivateRadarBridge {
         .order("id")
         .range(from, from + pageSize - 1);
       throwIfError(error);
-      const page = (data ?? []) as LegacyPrivateListing[];
+      const page = (data ?? []) as PrivateRadarObservation[];
       rows.push(...page);
       if (page.length < pageSize) {
         return rows;
@@ -279,7 +283,7 @@ export class PrivateRadarBridge {
   }
 
   private async upsertLocation(
-    listing: LegacyPrivateListing,
+    listing: PrivateRadarObservation,
     location: ReturnType<typeof resolveMonitoredGeography>,
   ): Promise<{ locationId: string; buildingId: string | null }> {
     const normalizedKey = hashValue({
@@ -382,16 +386,22 @@ export class PrivateRadarBridge {
   }
 
   private async createProperty(input: {
-    listing: LegacyPrivateListing;
+    listing: PrivateRadarObservation;
     location: ReturnType<typeof resolveMonitoredGeography>;
     locationId: string;
     buildingId: string | null;
     identityStatus: "PROVISIONAL" | "REVIEW";
   }): Promise<string> {
     const start = marketStart(input.listing);
+    if (input.listing.direct) {
+      const previous = await this.db.from("properties").select("id").eq("id", input.listing.id).maybeSingle();
+      throwIfError(previous.error);
+      if (previous.data) return previous.data.id as string;
+    }
     const { data, error } = await this.db
       .from("properties")
       .insert({
+        ...(input.listing.direct ? { id: input.listing.id } : {}),
         building_id: input.buildingId,
         primary_location_id: input.locationId,
         property_type: propertyType(input.listing.title),
@@ -423,7 +433,7 @@ export class PrivateRadarBridge {
 
   private async updateProperty(input: {
     propertyId: string;
-    listing: LegacyPrivateListing;
+    listing: PrivateRadarObservation;
     location: ReturnType<typeof resolveMonitoredGeography>;
     locationId: string;
     buildingId: string | null;
@@ -572,7 +582,7 @@ export class PrivateRadarBridge {
     privatePublicationId: string,
     decision: IdentityDecision,
     provisionalPropertyId: string,
-    listing: LegacyPrivateListing,
+    listing: PrivateRadarObservation,
   ): Promise<void> {
     if (decision.candidates.length > 0) {
       const { error } = await this.db
@@ -627,7 +637,7 @@ export class PrivateRadarBridge {
   }
 
   private async recordGeographyReview(
-    listing: LegacyPrivateListing,
+    listing: PrivateRadarObservation,
     scope: GeographyScope,
     reasons: string[],
   ): Promise<void> {
@@ -655,7 +665,7 @@ export class PrivateRadarBridge {
   private async classifyActivePrivate(input: {
     privatePublicationId: string;
     propertyId: string;
-    listing: LegacyPrivateListing;
+    listing: PrivateRadarObservation;
     identityScore: number;
   }): Promise<"AGENCY_TO_PRIVATE" | "PRIVATE_RELIST" | "CONFLICT" | null> {
     const [{ data: propertyData, error: propertyError }, agencyResult] =
@@ -823,13 +833,16 @@ export class PrivateRadarBridge {
     return created ? "AGENCY_TO_PRIVATE" : null;
   }
 
-  async sync(): Promise<PrivateRadarSyncResult> {
-    const listings = await this.legacyListings();
-    const availability = await this.latestAvailability(
+  async sync(observations?: PrivateRadarObservation[]): Promise<PrivateRadarSyncResult> {
+    const listings = observations ?? await this.legacyListings();
+    const availability = observations ? new Map<string, boolean>() : await this.latestAvailability(
       listings.map((listing) => listing.id),
     );
+    let candidates: PrivateCandidate[];
+    if(observations && this.directCandidates) candidates=this.directCandidates;
+    else {
     const bootstrapState = await this.repository.loadBootstrapState();
-    const candidates: PrivateCandidate[] = bootstrapState.properties.map(
+    candidates = bootstrapState.properties.map(
       (candidate) => ({
         propertyId: candidate.propertyId,
         agencySlugs: [...candidate.agencySlugs],
@@ -842,6 +855,8 @@ export class PrivateRadarBridge {
         floorplanFingerprints: [...candidate.floorplanFingerprints],
       }),
     );
+      if(observations)this.directCandidates=candidates;
+    }
     const result: PrivateRadarSyncResult = {
       scannedListings: listings.length,
       inScopeListings: 0,
@@ -877,11 +892,12 @@ export class PrivateRadarBridge {
         listing,
         location,
       );
-      const existingResult = await this.db
-        .from("private_publications")
-        .select("id,property_id,state,identity_score,content_hash,last_seen_at")
-        .eq("legacy_listing_id", listing.id)
-        .maybeSingle();
+      let existingQuery = this.db.from("private_publications")
+        .select("id,property_id,state,identity_score,content_hash,last_seen_at");
+      existingQuery = listing.direct
+        ? existingQuery.eq("source", listing.source).eq("source_listing_id", listing.source_listing_id!).is("legacy_listing_id", null)
+        : existingQuery.eq("legacy_listing_id", listing.id);
+      const existingResult = await existingQuery.maybeSingle();
       throwIfError(existingResult.error);
       const existing = existingResult.data as {
         id: string;
@@ -951,6 +967,8 @@ export class PrivateRadarBridge {
                 sellerClassificationConfidence:
                   listing.seller_classification_confidence,
                 contactDataExcluded: true,
+                sellerType: listing.seller_type ?? "private",
+                imageUrls: listing.image_urls ?? [],
                 observedState,
                 manualStateApplied: state !== observedState,
               },
@@ -988,7 +1006,7 @@ export class PrivateRadarBridge {
           ) {
             result.removedEvents += 1;
           }
-        } else if (state === "ACTIVE") {
+        } else if (state === "ACTIVE" && listing.seller_type !== "unknown") {
           if (existing.state === "REMOVED") {
             await this.recordEvent({
               propertyId: existing.property_id,
@@ -1069,7 +1087,7 @@ export class PrivateRadarBridge {
       const publication = await this.db
         .from("private_publications")
         .insert({
-          legacy_listing_id: listing.id,
+          legacy_listing_id: listing.direct ? null : listing.id,
           property_id: propertyId,
           location_id: locationId,
           source: listing.source,
@@ -1094,6 +1112,8 @@ export class PrivateRadarBridge {
             sellerClassificationConfidence:
               listing.seller_classification_confidence,
             contactDataExcluded: true,
+            sellerType: listing.seller_type ?? "private",
+            imageUrls: listing.image_urls ?? [],
             observedState,
             manualStateApplied: false,
           },
@@ -1114,7 +1134,7 @@ export class PrivateRadarBridge {
         propertyId,
         listing,
       );
-      if (state === "ACTIVE") {
+      if (state === "ACTIVE" && listing.seller_type !== "unknown") {
         const classification = await this.classifyActivePrivate({
           privatePublicationId,
           propertyId,

@@ -1,3 +1,4 @@
+import {PrivateRadarStatus} from "@/components/private-radar-status";
 import {Suspense} from "react";
 import {ArchiveFreshness} from "@/components/archive-freshness";
 import {readCachedIntelligence} from "@/lib/property-lifecycle/read-models/intelligence-server";
@@ -20,7 +21,7 @@ import {readPropertyThumbnails} from '@/lib/lifecycle-photos';
 export const metadata:Metadata={title:"Intelligence"};
 const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti","civico","via","coordinate","precisione"];
 const precisionOptions={EXACT_ADDRESS:"Indirizzo esatto",EXACT_COORDINATES:"Coordinate esatte",STREET_ONLY:"Solo via",APPROXIMATE_AREA:"Zona approssimativa",UNKNOWN:"Posizione da verificare"};
-const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA"];
+const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA","idealista","immobiliare","casa","subito","casadaprivato"];
 export default async function IntelligencePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
   await connection();
   const params=await searchParams;
@@ -37,7 +38,8 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
   const pageUrl=(next:number)=>{const q=new URLSearchParams({vista:view,pagina:String(next),ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(value(key))q.set(key,value(key));return `?${q}`;};
-  const photos=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
+  const photos:Record<string,string>=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
+  for(const row of result?.rows??[])if(!photos[row.property_id]&&row.private_image_url?.startsWith("https://"))photos[row.property_id]=row.private_image_url;
   const field=(name:string,label:string,type="text",placeholder?:string)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><input className={controlClass()} name={name} defaultValue={value(name)} type={type} min={type==="number"?0:undefined} placeholder={placeholder}/></label>;
   const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
   const filterDisplay=(key:string)=>{
@@ -62,7 +64,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
 
   return <div className="lr-radar-desk">
     <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description}/>
-    <IntelligenceNavigation view={view}/><Suspense fallback={null}><ArchiveFreshness/></Suspense>
+    <IntelligenceNavigation view={view}/>{view==="privati"?<PrivateRadarStatus/>:null}<Suspense fallback={null}><ArchiveFreshness/></Suspense>
     <RadarFilterPanel count={activeKeys.length} filters={<form method="get" className="lr-radar-filter-form">
             <input type="hidden" name="vista" value={view}/><input type="hidden" name="ordine" value={sort.key}/><input type="hidden" name="direzione" value={sort.ascending?"asc":"desc"}/>
             <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>

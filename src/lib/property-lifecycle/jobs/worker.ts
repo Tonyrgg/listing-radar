@@ -1,3 +1,4 @@
+import { collectPrivateRadar } from "@/lib/property-lifecycle/private-radar/collector";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createPropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/registry";
@@ -310,6 +311,7 @@ export async function runLifecycleWorkerOnce(
         dependencies.fetcher ?? fetch,
       );
     } else if (job.job_type === "SYNC_PRIVATE_RADAR") {
+      if (process.env.LIFECYCLE_PRIVATE_RADAR === "true") await collectPrivateRadar(dependencies.db, assertOwnership);
       await new PrivateRadarBridge(dependencies.db).sync();
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);

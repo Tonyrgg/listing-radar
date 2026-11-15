@@ -1,3 +1,5 @@
+import { StudiSantiSubitoPublisher } from "./subito-publisher";
+import { BrowserFallbackHttpClient } from "@/lib/http/browser-fallback";
 import {publisherFallback}from'./publisher-fallback';
 import { load, type CheerioAPI } from "cheerio";
 
@@ -418,7 +420,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
   readonly inventoryUrl = STUDI_SANTI_INVENTORY_URL;
 
   constructor(
-    private readonly http = new HttpClient({
+    private readonly http: HttpClient = new BrowserFallbackHttpClient({
       timeoutMs: 15_000,
       retries: 2,
       retryDelayMs: 400,
@@ -429,7 +431,10 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
 
   async fetchInventory(): Promise<InventoryResult> {
     const response = await this.http.get(this.inventoryUrl);
-    if(response.status===403)return publisherFallback('studisanti',this.http).fetchInventory(response);
+    if(response.status===403){
+      const secondary=await publisherFallback('studisanti',this.http).fetchInventory(response);
+      return secondary.items.length ? secondary : new StudiSantiSubitoPublisher(this.http).fetchInventory(response);
+    }
     if (!response.ok) {
       const requiredMarkers = { successfulResponse: false };
       const diagnostics = {
@@ -469,6 +474,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
   }
 
   async fetchDetail(item: InventoryItem): Promise<SourceDocument> {
+    if(item.summary.fallbackPublisher === "subito") return new StudiSantiSubitoPublisher(this.http).fetchDetail(item);
     if(item.summary.accessFallback===true)return publisherFallback('studisanti',this.http).fetchDetail(item);
     const response = await this.http.get(item.url);
     if (!response.ok) {
@@ -478,6 +484,7 @@ export class StudiSantiAdapter implements PropertyLifecycleAdapter {
   }
 
   async normalize(document: SourceDocument): Promise<NormalizedListingV2> {
+    if(document.item.summary.fallbackPublisher === "subito") return new StudiSantiSubitoPublisher(this.http).normalize(document);
     if(document.item.summary.accessFallback===true)return publisherFallback('studisanti',this.http).normalize(document);
     return normalizeStudiSantiDetail(document);
   }

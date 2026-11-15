@@ -1,7 +1,7 @@
 import {intelligenceSort} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "usciti", "venduti"] as const;
+export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "privati", "usciti", "venduti"] as const;
 export type IntelligenceView = typeof INTELLIGENCE_VIEWS[number];
 export const EXIT_LABELS: Record<string, string> = {
   ACTIVE: "Online", MISSING_UNCONFIRMED: "Assenza da confermare", SOLD_CONFIRMED: "Vendita confermata",
@@ -10,6 +10,7 @@ export const EXIT_LABELS: Record<string, string> = {
   AGENCY_CHANGED: "Cambio agenzia", UNKNOWN_EXIT: "Uscita senza esito noto",
 };
 export interface IntelligenceRow {
+  private_seller_type?: string | null; private_source?: string | null; private_image_url?: string | null;
   row_id: string; agency_listing_id: string | null; property_id: string; agency_id: string | null; agency_name: string;
   address: string; locality: string | null; state: string; sale_status: string; property_state: string;
   earliest_market_evidence_at: string; sold_at: string | null; delisted_at: string | null;
@@ -55,7 +56,7 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
   return publicDate ? `Sul mercato da almeno ${days} giorni` : `Monitorato da ${days} giorni`;
 }
 function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
-  let request=db.from("radar_property_live_archive").select(fields);
+  let request=db.from(filters.view === "privati" ? "radar_private_live_archive" : "radar_property_live_archive").select(fields);
   for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
     if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
     if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);

@@ -81,7 +81,7 @@ async function main(): Promise<void> {
           inspected += 1;
           try {
             const listing = await adapter.normalize(await adapter.fetchDetail(item));
-            if (listing.location.scope === "OUT_OF_SCOPE") {
+            if (listing.location.scope === "OUT_OF_SCOPE" || listing.source.transactionType === "RENT") {
               excluded += 1;
               continue;
             }

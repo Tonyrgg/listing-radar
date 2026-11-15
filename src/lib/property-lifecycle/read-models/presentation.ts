@@ -139,6 +139,8 @@ export function agencyListingStateLabel(value: string): string {
 }
 
 export function opportunityReasonLabel(value: string): string {
+  if(value === "private_seller_declared") return "Annuncio da privato";
+  if(value === "private_seller_unverified") return "Venditore da verificare";
   if(value === "manual_sale_confirmed") return "Vendita confermata manualmente";
   if(value === "identifiable_civic") return "Indirizzo con civico: immobile più facilmente individuabile";
   if(value === "identifiable_street") return "Via conosciuta";

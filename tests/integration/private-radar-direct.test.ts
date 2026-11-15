@@ -1,0 +1,37 @@
+import { expect, it } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
+import { readFile } from "node:fs/promises";
+it("supports direct V2 ingestion, an exclusive renewable lease, private opportunity visibility and atomic price evidence", async () => {
+ const db = new PGlite();
+ try {
+  await db.exec(`create role anon;create role authenticated;create role service_role;
+   create table private_publications(id uuid primary key,legacy_listing_id uuid not null,property_id uuid,source text,source_listing_id text,state text,metadata jsonb,last_seen_at timestamptz,price_amount integer,canonical_url text,first_seen_at timestamptz default now());
+   create table events(property_id uuid,event_type text,occurred_at timestamptz,confidence numeric,actor_type text,dedupe_key text unique,payload jsonb);
+   create table market_observer_config(weights jsonb,updated_at timestamptz);insert into market_observer_config values('{}',now());
+   create table archive(property_id uuid,sale_status text,exit_classification text,agency_role text,agency_id uuid,agency_name text,opportunity_score numeric,reasons jsonb);
+   create view radar_property_live_archive as select * from archive;`);
+  const original=await readFile("supabase/migrations/0010_acquisition_os.sql","utf8");
+  await db.exec(original.slice(original.indexOf("create function public.acquisition_private_publication_change()"),original.indexOf("do $$ declare t text;",original.indexOf("create function public.acquisition_private_publication_change()"))));
+  await db.exec(await readFile("supabase/migrations/0101_private_radar_direct_intake.sql", "utf8"));
+  const first = "11111111-1111-4111-8111-111111111111", second = "22222222-2222-4222-8222-222222222222";
+  expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[first])).rows[0].ok).toBe(true);
+  expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[second])).rows[0].ok).toBe(false);
+  await db.query("select release_private_radar($1)",[second]);
+  expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[first])).rows[0].ok).toBe(true);
+  await db.query("select release_private_radar($1)",[first]);
+  expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[second])).rows[0].ok).toBe(true);
+  await db.query(`insert into private_publications values($1,null,$1,'idealista','123','ACTIVE','{"sellerType":"unknown"}',now(),120000,'https://www.idealista.it/immobile/123/')`,[first]);
+  await db.query(`insert into archive values($1,'UNKNOWN','ACTIVE','COMPETITOR',null,'Privato',0,'[]')`,[first]);
+  const rows = (await db.query<{opportunity_score:string;private_seller_type:string}>("select * from radar_private_live_archive")).rows;
+  expect(rows).toHaveLength(1); expect(Number(rows[0].opportunity_score)).toBe(20); expect(rows[0].private_seller_type).toBe("unknown");
+  await db.exec("update private_publications set price_amount=100000");
+  expect((await db.query("select * from events where event_type='PRIVATE_PRICE_DROP'")).rows).toHaveLength(1);
+  await db.exec("update private_publications set price_amount=100000");
+  expect((await db.query("select * from events where event_type='PRIVATE_PRICE_DROP'")).rows).toHaveLength(1);
+  await db.exec("update archive set sale_status='SOLD_CONFIRMED'");
+  expect((await db.query("select * from radar_private_live_archive")).rows).toHaveLength(0);
+  expect(Number((await db.query<{score:string}>("select opportunity_score score from radar_property_live_archive")).rows[0].score)).toBe(0);
+  await db.exec("update archive set sale_status='UNKNOWN',agency_role='OUR_AGENCY'");
+  expect((await db.query("select * from radar_private_live_archive")).rows).toHaveLength(0);
+ } finally { await db.close(); }
+},30000);

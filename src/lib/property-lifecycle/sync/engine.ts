@@ -85,6 +85,7 @@ export async function runAgencySync(input: {
         let listing = await input.adapter.normalize(document);
         if(historical.has(item.sourceKey)&&listing.location.scope==='IN_SCOPE')listing=await enrichHistoricalPresence(input.adapter,document,listing);
         counts.normalizedCount += 1;
+        if(listing.source.transactionType === "RENT"){ counts.excludedCount += 1; continue; }
 
         /* Un dubbio già sciolto da una persona non si ripropone: quando
          * qualcuno ha detto dove sta questo annuncio, la sua risposta vale più

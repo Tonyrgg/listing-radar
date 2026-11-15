@@ -142,7 +142,9 @@ export interface LifecycleReviewItem {
 
 export interface LifecyclePrivatePublication {
   id: string;
-  legacyListingId: string;
+  sellerType?: string;
+  imageUrls?: string[];
+  legacyListingId: string | null;
   source: string;
   canonicalUrl: string;
   state: string;

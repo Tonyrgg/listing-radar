@@ -1,3 +1,4 @@
+import { BrowserFallbackHttpClient } from "@/lib/http/browser-fallback";
 import { HttpClient, type HttpResponse } from "@/lib/http/client";
 import {publisherFallback}from'./publisher-fallback';
 import {
@@ -654,7 +655,7 @@ export class StudioCasaAdapter implements PropertyLifecycleAdapter {
   readonly inventoryUrl = STUDIO_CASA_INVENTORY_URL;
 
   constructor(
-    private readonly http = new HttpClient({
+    private readonly http: HttpClient = new BrowserFallbackHttpClient({
       timeoutMs: 15_000,
       retries: 2,
       retryDelayMs: 500,

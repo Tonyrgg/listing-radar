@@ -58,7 +58,8 @@ interface AgencyRow {
 
 interface PrivatePublicationRow {
   id: string;
-  legacy_listing_id: string;
+  metadata?: Record<string,unknown>;
+  legacy_listing_id: string | null;
   property_id: string;
   source: string;
   canonical_url: string;
@@ -787,7 +788,7 @@ export class PropertyLifecycleReadRepository {
     const { data, error } = await this.db
       .from("private_publications")
       .select(
-        "id,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
+        "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
       )
       .order("last_seen_at", { ascending: false })
       .limit(300);
@@ -804,6 +805,8 @@ export class PropertyLifecycleReadRepository {
             {
               id: row.id,
               legacyListingId: row.legacy_listing_id,
+              sellerType: stringValue(row.metadata?.sellerType) ?? "private",
+              imageUrls: Array.isArray(row.metadata?.imageUrls) ? row.metadata.imageUrls.filter((u):u is string=>typeof u === "string"&&u.startsWith("https://")) : [],
               source: row.source,
               canonicalUrl: row.canonical_url,
               state: row.state,
@@ -852,7 +855,7 @@ export class PropertyLifecycleReadRepository {
         this.db
           .from("private_publications")
           .select(
-            "id,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
+            "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
           )
           .eq("property_id", id)
           .order("last_seen_at", { ascending: false }),
@@ -950,6 +953,8 @@ export class PropertyLifecycleReadRepository {
       (row) => ({
         id: row.id,
         legacyListingId: row.legacy_listing_id,
+              sellerType: stringValue(row.metadata?.sellerType) ?? "private",
+              imageUrls: Array.isArray(row.metadata?.imageUrls) ? row.metadata.imageUrls.filter((u):u is string=>typeof u === "string"&&u.startsWith("https://")) : [],
         source: row.source,
         canonicalUrl: row.canonical_url,
         state: row.state,
@@ -965,6 +970,20 @@ export class PropertyLifecycleReadRepository {
         property,
       }),
     );
+    let displayedOpportunity=opportunityRows[0] ?? null;
+    if(privateRows.length){
+      const overlay=await this.db.from("radar_property_live_archive").select("opportunity_score,reasons").eq("property_id",property.id).maybeSingle();
+      if(!overlay.error && overlay.data){
+        const score=numberValue(overlay.data.opportunity_score)??0;
+        if(score>0 && score>(displayedOpportunity?.score??0)) displayedOpportunity={
+          id:displayedOpportunity?.id??"radar:"+property.id,propertyId:property.id,property,
+          level:score>=80?"HOT":score>=40?"WARM":"COLD",status:"OPEN",score,
+          detectedAt:displayedOpportunity?.detectedAt??property.firstSeenAt,
+          reasons:Array.isArray(overlay.data.reasons)?overlay.data.reasons.map(String):[],
+          evidenceSummary:{components:{private_publication_priority:score}},
+        };
+      }
+    }
     const location = locationResult.data as Record<string, unknown> | null;
     const building = buildingResult.data as { id: string; display_name: string | null } | null;
     const marketRows=(intelligenceResult.data??[]) as Array<Record<string,unknown>>;
@@ -1044,7 +1063,7 @@ export class PropertyLifecycleReadRepository {
           oldPrice: numberValue(record(row.payload).oldPrice),
           newPrice: numberValue(record(row.payload).newPrice),
         })),
-      opportunity: opportunityRows[0] ?? null,
+      opportunity: displayedOpportunity,
       publicationPrices: ((priceResult.data ?? []) as Array<Record<string,unknown>>).map(row=>({
         publicationId:String(row.publication_id),firstPrice:numberValue(row.first_asking_price),
         latestPrice:numberValue(row.latest_asking_price),reductionPercent:numberValue(row.reduction_percent),
@@ -1065,9 +1084,7 @@ export class PropertyLifecycleReadRepository {
         source: String(row.source),
         effectiveAt: String(row.effective_at),
       })),
-      imageUrls: (signedImages.data ?? []).flatMap((item) =>
-        item.signedUrl ? [item.signedUrl] : [],
-      ),
+      imageUrls: (signedImages.data ?? []).length ? (signedImages.data ?? []).flatMap((item) => item.signedUrl ? [item.signedUrl] : []) : privatePublications.flatMap(p=>p.imageUrls??[]).slice(0,8),
     };
   }
 }

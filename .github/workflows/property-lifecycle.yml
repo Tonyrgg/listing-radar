@@ -47,6 +47,8 @@ jobs:
       LIFECYCLE_DEEP_MAX_ASSETS: "6"
       LIFECYCLE_SOLD_OCR: "true"
       LIFECYCLE_HISTORICAL_DATES: "true"
+      LIFECYCLE_BROWSER_SOURCES: "true"
+      LIFECYCLE_PRIVATE_RADAR: ${{ vars.LIFECYCLE_PRIVATE_RADAR || 'false' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +63,14 @@ jobs:
       # lock file to fix that drifts 155 package versions, which this workflow
       # has no business doing.
       - run: npm install --no-audit --no-fund
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install source browser
+        run: npx playwright install --with-deps chromium
 
       - name: Decide job
         id: decide

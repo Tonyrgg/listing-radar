@@ -1,3 +1,4 @@
+import {getSourceLabel} from "@/lib/labels";
 import Link from "next/link";
 import {agencyDateSource} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ChevronRight, TrendingDown, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
@@ -9,6 +10,7 @@ import { EXIT_LABELS, marketAgeLabel, type IntelligenceRow, type IntelligenceVie
 import { opportunityReasonLabel, propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
 
 export const INTELLIGENCE_VIEW_COPY = {
+ privati:{title:"Radar privati",description:"Annunci da privati e venditori da verificare, con fonti e ultima lettura."},
  mercato:{title:"Mercato",description:"Immobili osservati a Bitonto, Palombaio e Mariotto."},
  opportunita:{title:"Opportunità",description:"Segnali ordinati per rilevanza. Le motivazioni restano da verificare."},
  usciti:{title:"Usciti dal mercato",description:"Assenze, ritiri e cambi di agenzia. Un annuncio assente non dimostra una vendita."},
@@ -16,7 +18,7 @@ export const INTELLIGENCE_VIEW_COPY = {
  notizie:{title:"Notizie",description:"Trasformazioni immobiliari sostenute da documenti pubblici."},
 };
 export function IntelligenceNavigation({view}:{view:string}) {
- const items=[["mercato","Mercato"],["opportunita","Opportunità"],["notizie","Notizie"],["usciti","Usciti"],["venduti","Venduti"]];
+ const items=[["mercato","Mercato"],["opportunita","Opportunità"],["privati","Radar privati"],["notizie","Notizie"],["usciti","Usciti"],["venduti","Venduti"]];
  return <nav aria-label="Viste Intelligence" className="lr-tabs">{items.map(([key,label])=><Link key={key} href={"?vista="+key} aria-current={view===key?"page":undefined}>{label}</Link>)}</nav>;
 }
 function statusTone(row:IntelligenceRow):Tone {
@@ -57,7 +59,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
      <td className="lr-numeric" title={age}><span>{days==null?"—":formatNumber(days)}</span><span className="sr-only"> · {age}</span></td>
      {signals?<td className="lr-numeric" title={agencyDateSource(row.agency_started_at?row.agency_start_source:null)+(row.agency_started_at?' · '+formatDate(row.agency_started_at):'')}><span>{row.days_with_agency==null?'—':`${row.agency_start_exact?'':'≥ '}${formatNumber(row.days_with_agency)}`}</span><p className="lr-table-secondary">{row.agency_started_at?formatDate(row.agency_started_at):'Data non ricostruita'}</p></td>:null}
      <td className="lr-numeric">{formatNumber(row.drop_count??0)}</td>
-     <td className="lr-table-source"><span>{row.agency_name||"Da verificare"}</span><p className="lr-table-secondary" title="Ultima presenza rilevata">{formatDate(row.last_seen_at)}</p></td>
+     <td className="lr-table-source"><span title={row.agency_name}>{row.private_source&&row.agency_id==null?getSourceLabel(row.private_source):row.agency_name||"Da verificare"}</span><p className="lr-table-secondary" title="Ultima presenza rilevata">{row.private_seller_type&&row.agency_id==null?(row.private_seller_type==="private"?"Privato · ":"Da verificare · "):""}{formatDate(row.last_seen_at)}</p></td>
      <td className="lr-table-state"><Chip tone={statusTone(row)} dot>{EXIT_LABELS[row.exit_classification]??propertyStateLabel(row.property_state)}</Chip></td>
      <td><Link href={detailUrl(row.property_id)} className="lr-table-open" aria-label={"Apri dossier: "+formatShouty(row.address)}><ChevronRight size={16} aria-hidden="true"/></Link></td>
     </tr>;

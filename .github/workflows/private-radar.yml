@@ -1,0 +1,34 @@
+name: Private Listing Radar
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: private-listing-radar
+  cancel-in-progress: false
+jobs:
+  collect:
+    # Enable only after deploying migration 0101 and validating live coverage.
+    if: vars.LIFECYCLE_PRIVATE_RADAR == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      LIFECYCLE_PRIVATE_RADAR: "true"
+      LIFECYCLE_BROWSER_SOURCES: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-chromium-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - name: Collect private publications
+        run: npx tsx scripts/private-radar-collect.ts --apply --confirm-project="$SUPABASE_PROJECT_REF"
