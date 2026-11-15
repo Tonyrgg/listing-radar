@@ -1,3 +1,5 @@
+import {isRentalOnlyOffer} from "@/lib/property-lifecycle/private-radar/transaction";
+import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import { dossierContext } from "@/lib/property-lifecycle/read-models/dossier-context";
 import { expect, it } from "vitest";
 import { discoverPrivateUrls, privateObservationFromCapture } from "@/lib/property-lifecycle/private-radar/collector";
@@ -22,3 +24,14 @@ it("rejects a detail redirect to another listing and strips contacts before pers
 });
 
 it("keeps the private radar context when opening a dossier",()=>{expect(dossierContext("privati","ACTIVE","UNKNOWN").label).toBe("Radar privati");});
+
+it("drops a portal's no-photo illustration while retaining usable gallery images",()=>{
+ expect(privateGalleryImages(["https://www.casadaprivato.it/no_photo.svg","https://example.test/home.jpg","https://example.test/home.jpg","javascript:alert(1)"])).toEqual(["https://example.test/home.jpg"]);
+});
+
+it("rejects an explicit rental offer even when miscategorized as a sale, without rejecting a leased investment for sale",()=>{
+ expect(isRentalOnlyOffer({title:"Tre posti letto",description:"Affitto open-space 40 mq. Canone 350 euro."})).toBe(true);
+ expect(privateObservationFromCapture("idealista",url,id,{...capture,description:"Affitto open-space 40 mq",transaction:"s"},now,now)).toBeNull();
+ expect(isRentalOnlyOffer({title:"Appartamento in vendita",description:"Vendesi immobile attualmente in affitto."})).toBe(false);
+ expect(isRentalOnlyOffer({title:"Ampio locale",description:"Locale disponibile, prezzo 550 euro"})).toBe(false);
+});

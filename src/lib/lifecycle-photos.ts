@@ -1,3 +1,4 @@
+import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
@@ -21,6 +22,14 @@ export async function readPropertyThumbnails(ids: string[]): Promise<Record<stri
   const {data,error} = await db.from("properties").select("id,representative_image_paths").in("id",ids);
   if (error) return {};
   const signed = await signPropertyPhotos((data??[]).map(p=>({id:p.id,representativeImagePaths:p.representative_image_paths??[]})));
+  const missing=ids.filter(id=>!signed.has(id));
+  if(missing.length){
+    const publications=await db.from("private_publications").select("property_id,metadata").in("property_id",missing).eq("state","ACTIVE").order("last_seen_at",{ascending:false});
+    if(!publications.error)for(const row of publications.data??[]){
+      const image=privateGalleryImages(row.metadata?.imageUrls)[0];
+      if(image&&!signed.has(row.property_id))signed.set(row.property_id,image);
+    }
+  }
   return Object.fromEntries(signed);
 }
 

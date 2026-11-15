@@ -8,6 +8,10 @@ it("supports direct V2 ingestion, an exclusive renewable lease, private opportun
    create table private_publications(id uuid primary key,legacy_listing_id uuid not null,property_id uuid,source text,source_listing_id text,state text,metadata jsonb,last_seen_at timestamptz,price_amount integer,canonical_url text,first_seen_at timestamptz default now());
    create table events(property_id uuid,event_type text,occurred_at timestamptz,confidence numeric,actor_type text,dedupe_key text unique,payload jsonb);
    create table market_observer_config(weights jsonb,updated_at timestamptz);insert into market_observer_config values('{}',now());
+   create table properties(id uuid primary key,canonical_attributes jsonb,primary_location_id uuid);
+   create table locations(id uuid,manually_verified boolean);
+   create table manual_overrides(target_type text,target_id uuid);
+   create table agency_listings(id uuid,property_id uuid);
    create table archive(property_id uuid,sale_status text,exit_classification text,agency_role text,agency_id uuid,agency_name text,opportunity_score numeric,reasons jsonb);
    create view radar_property_live_archive as select * from archive;`);
   const original=await readFile("supabase/migrations/0010_acquisition_os.sql","utf8");
@@ -25,6 +29,13 @@ it("supports direct V2 ingestion, an exclusive renewable lease, private opportun
   expect((await db.query<{ok:boolean}>("select claim_private_radar($1) ok",[second])).rows[0].ok).toBe(true);
   await db.query(`insert into private_publications values($1,null,$1,'idealista','123','ACTIVE','{"sellerType":"unknown"}',now(),120000,'https://www.idealista.it/immobile/123/')`,[first]);
   await db.query(`insert into archive values($1,'UNKNOWN','ACTIVE','COMPETITOR',null,'Privato',0,'[]')`,[first]);
+  await db.query("insert into properties values($1,'{\"address\":\"Bitonto, Bitonto\"}',null)",[first]);
+  await db.query("insert into private_radar_inbox(id,source,source_listing_id,canonical_url) values($1,'subito','123','https://www.subito.it/test-123.htm')",[first]);
+  await db.exec(await readFile("supabase/migrations/0104_private_radar_display_address.sql","utf8"));
+  expect((await db.query<{address:string|null}>("select canonical_attributes->>'address' address from properties")).rows[0].address).toBeNull();
+  await db.exec("update private_publications set metadata=metadata||'{\"saleRadarExclusion\":\"rental\"}'");
+  expect((await db.query("select * from radar_property_live_archive")).rows).toHaveLength(0);
+  await db.exec("update private_publications set metadata=metadata-'saleRadarExclusion'");
   const rows = (await db.query<{opportunity_score:string;private_seller_type:string}>("select * from radar_private_live_archive")).rows;
   expect(rows).toHaveLength(1); expect(Number(rows[0].opportunity_score)).toBe(20); expect(rows[0].private_seller_type).toBe("unknown");
   await db.exec("update private_publications set source='subito',metadata=jsonb_set(metadata,'{imageUrls}','[\"https://images.sbito.it/api/v1/sbt-ads-images-pro/images/example\"]')");

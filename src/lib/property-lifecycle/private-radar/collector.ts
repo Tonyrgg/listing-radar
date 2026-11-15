@@ -1,3 +1,5 @@
+import {isRentalOnlyOffer} from "./transaction";
+import {privateGalleryImages} from "../read-models/private-images";
 import { PropertyLifecycleRepository } from "../persistence/repository";
 import { BrowserFallbackHttpClient } from "@/lib/http/browser-fallback";
 import { subitoRecords, subitoCapture, subitoId } from "../adapters/subito-publisher";
@@ -71,7 +73,7 @@ export function privateObservationFromCapture(source: PrivatePortal, url: string
   }
   const seller = classifySeller({ source, declaredType: capture.sellerType === "agency" ? "agency" : capture.sellerType === "private" ? "private" : "unknown", sellerName: text(capture.sellerName), title: text(capture.title), description: text(capture.description) });
   if (capture.transaction && capture.transaction !== "s") return null;
-  if (seller.sellerType === "agency" || /\b(?:affitt\w*|locazione|asta)\b/i.test(String(capture.title))) return null;
+  if (seller.sellerType === "agency" || isRentalOnlyOffer(capture) || /\basta\b/i.test(String(capture.title))) return null;
   const geography = resolveMonitoredGeography({ rawText: [text(capture.addressRaw), text(capture.zone), text(capture.title)].filter(Boolean).join(", "), latitude: number(capture.latitude), longitude: number(capture.longitude), coordinatesExact: false });
   if (geography.scope !== "IN_SCOPE") return null;
   const published = text(capture.portalDeclaredDate) ?? text(capture.metadataDatePublished);
@@ -80,7 +82,7 @@ export function privateObservationFromCapture(source: PrivatePortal, url: string
     title: scrub(text(capture.title))!, description: scrub(text(capture.description))?.slice(0, 12000) ?? null,
     price: number(capture.price), sqm: number(capture.sqm), rooms: number(capture.rooms), floor: text(capture.floor), zone: text(capture.zone), address_raw: text(capture.addressRaw), latitude: number(capture.latitude), longitude: number(capture.longitude),
     portal_declared_date: date, metadata_date_published: null, first_seen_at: firstSeen, last_seen_at: observedAt, status: "active", seller_name: null, seller_type: seller.sellerType === "private" ? "private" : "unknown", seller_classification_confidence: seller.confidence,
-    image_urls: Array.isArray(capture.imageUrls) ? capture.imageUrls.filter((v): v is string => typeof v === "string" && /^https:\/\//.test(v)).slice(0, 8) : [],
+    image_urls: privateGalleryImages(capture.imageUrls),
   };
 }
 
@@ -108,7 +110,7 @@ export async function capturePrivateDetail(url: string, source: PrivatePortal): 
           const description = heading.parentElement?.querySelector(".text-justify");
           if(description?.textContent?.trim()) capture.description=description.textContent.trim();
           const gallery=[...document.querySelectorAll("#property-detail-large img")].map(img=>img.getAttribute("data-src")||img.getAttribute("src")).filter((v):v is string=>!!v).map(v=>new URL(v,location.href).href);
-          if(gallery.length)capture.imageUrls=gallery;
+          capture.imageUrls=gallery;
         }
       }
       return capture;
@@ -119,13 +121,14 @@ export async function capturePrivateDetail(url: string, source: PrivatePortal): 
 }
 
 function check(error: { message: string } | null): void { if (error) throw new Error(error.message); }
-async function removeReclassifiedAgency(db: SupabaseClient, source: PrivatePortal, url: string, at: string): Promise<void> {
+async function excludePublication(db: SupabaseClient, source: PrivatePortal, url: string, at: string, reason:"agency"|"rental"): Promise<void> {
   const sourceId=PRIVATE_PORTALS[source].id.exec(new URL(url).pathname)?.[1];
   const current=await db.from("private_publications").select("id,property_id,metadata,state").eq("source",source).eq("source_listing_id",sourceId).is("legacy_listing_id",null).maybeSingle();
   check(current.error); if(!current.data)return;
   const repository=new PropertyLifecycleRepository(db);
   const state=await repository.authoritativePrivatePublicationState(current.data.id,"REMOVED");
-  const saved=await db.from("private_publications").update({ state,removed_at:state==="REMOVED"?at:null,metadata:{...current.data.metadata,sellerType:"agency",sellerReclassifiedAt:at} }).eq("id",current.data.id);
+  if(state!=="REMOVED")return;
+  const saved=await db.from("private_publications").update({ state,removed_at:state==="REMOVED"?at:null,metadata:{...current.data.metadata,sellerType:reason==="agency"?"agency":current.data.metadata?.sellerType??"unknown",saleRadarExclusion:reason,sellerReclassifiedAt:at} }).eq("id",current.data.id);
   check(saved.error); await repository.refreshPropertyIntelligence(current.data.property_id);
 }
 
@@ -165,7 +168,8 @@ async function collect(db: SupabaseClient, assertOwnership: () => void): Promise
         if (observation) {
           const result=await bridge.sync([observation]);
           if(result.inScopeListings!==1)throw new Error("Osservazione fuori dal perimetro verificato");
-        } else if(captured.sellerType === "agency") await removeReclassifiedAgency(db,source,row.canonical_url,now);
+        } else if(captured.sellerType === "agency") await excludePublication(db,source,row.canonical_url,now,"agency");
+        else if(isRentalOnlyOffer(captured))await excludePublication(db,source,row.canonical_url,now,"rental");
         const saved = await db.from("private_radar_inbox").update({ last_checked_at: now, next_check_at: new Date(Date.now() + (observation ? 6 : 24) * 3600_000).toISOString(), status: observation ? "ACCEPTED" : "EXCLUDED", last_error: null }).eq("id", row.id);
         check(saved.error);
       } catch { // No scraped response, name, phone or credentials in diagnostics.

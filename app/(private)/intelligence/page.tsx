@@ -1,3 +1,4 @@
+import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import {PrivateRadarStatus} from "@/components/private-radar-status";
 import {Suspense} from "react";
 import {ArchiveFreshness} from "@/components/archive-freshness";
@@ -39,7 +40,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   ]);
   const pageUrl=(next:number)=>{const q=new URLSearchParams({vista:view,pagina:String(next),ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(value(key))q.set(key,value(key));return `?${q}`;};
   const photos:Record<string,string>=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
-  for(const row of result?.rows??[])if(!photos[row.property_id]&&row.private_image_url?.startsWith("https://"))photos[row.property_id]=row.private_image_url;
+  for(const row of result?.rows??[])if(!photos[row.property_id]&&privateGalleryImages([row.private_image_url]).length)photos[row.property_id]=row.private_image_url!;
   const field=(name:string,label:string,type="text",placeholder?:string)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><input className={controlClass()} name={name} defaultValue={value(name)} type={type} min={type==="number"?0:undefined} placeholder={placeholder}/></label>;
   const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
   const filterDisplay=(key:string)=>{

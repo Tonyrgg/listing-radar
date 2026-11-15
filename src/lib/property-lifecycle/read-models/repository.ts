@@ -1,3 +1,4 @@
+import {privateGalleryImages} from "./private-images";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
@@ -806,7 +807,7 @@ export class PropertyLifecycleReadRepository {
               id: row.id,
               legacyListingId: row.legacy_listing_id,
               sellerType: stringValue(row.metadata?.sellerType) ?? "private",
-              imageUrls: Array.isArray(row.metadata?.imageUrls) ? row.metadata.imageUrls.filter((u):u is string=>typeof u === "string"&&u.startsWith("https://")) : [],
+              imageUrls: privateGalleryImages(row.metadata?.imageUrls),
               source: row.source,
               canonicalUrl: row.canonical_url,
               state: row.state,
@@ -954,7 +955,7 @@ export class PropertyLifecycleReadRepository {
         id: row.id,
         legacyListingId: row.legacy_listing_id,
               sellerType: stringValue(row.metadata?.sellerType) ?? "private",
-              imageUrls: Array.isArray(row.metadata?.imageUrls) ? row.metadata.imageUrls.filter((u):u is string=>typeof u === "string"&&u.startsWith("https://")) : [],
+              imageUrls: privateGalleryImages(row.metadata?.imageUrls),
         source: row.source,
         canonicalUrl: row.canonical_url,
         state: row.state,

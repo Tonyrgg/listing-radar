@@ -162,7 +162,7 @@ function identityAddress(input: {
 }): string | null {
   return input.streetName
     ? [input.streetName, input.streetNumber].filter(Boolean).join(" ")
-    : input.rawText;
+    : null;
 }
 
 function observation(

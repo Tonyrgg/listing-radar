@@ -27,7 +27,7 @@ Idealista, Immobiliare.it e Casa.it hanno risposto 403 anche nella prova browser
 
 ## Controlli
 
-- 500 test su 56 suite, incluse migrazione PostgreSQL isolata, lease, prezzi, esclusione venduti/nostra agenzia e regressioni di identitÃ .
+- 502 test su 56 suite, incluse migrazione PostgreSQL isolata, lease, prezzi, esclusione venduti/nostra agenzia e regressioni di identitÃ .
 - TypeScript e lint sui file modificati.
 - Build Next.js con Webpack riuscita. Il comando Turbopack locale incontra la junction node_modules esterna alla root; non Ã¨ stato cambiato il bundler del progetto per nasconderlo.
 - Token/contrasto verificati. Controllo della tabella con dati dimostrativi a 1600, 1024 e 390 px, senza overflow della pagina.
@@ -49,3 +49,13 @@ La cartella .runtime contiene le prove di sola lettura; .backups contiene il bac
 - I riferimenti nuovi di un publisher verificato possono creare soltanto una scheda provvisoria, quando non esiste lo stesso riferimento in agenzia e il resolver non segnala ambiguitÃ . Un riferimento esistente con dati incompatibili rimane in revisione. Nessun accorpamento forzato e nessuna sovrascrittura di decisioni manuali.
 
 - Migrazione 0103: corrette anche le foto Subito giÃ  acquisite. Lâ€™API pubblica richiede la regola di trasformazione presente negli elementi immagine della fonte; lâ€™URL senza regola risponde 400. Verificato HTTP 200 e image/jpeg sulla variante esposta dalla pagina.
+
+## Verifica finale del rilascio
+
+- Migrazione 0104 applicata: i comuni senza via non sono indirizzi; il titolo dell’annuncio resta leggibile. Correzione circoscritta alle nuove schede automatiche, senza modificare indirizzi verificati o override manuali.
+- Rilettura esplicita di cinque offerte di affitto erroneamente classificate come vendita dai portali: 77 annunci visibili e presenti anche nelle Opportunità (55 Subito, 22 CasaDaPrivato), 42 esclusi; zero pendenti o falliti. Le 82 pubblicazioni originali restano conservate per audit: quelle escluse non vengono presentate come immobili usciti dal mercato.
+- Immagini segnaposto escluse; le foto reali disponibili alimentano elenco e dossier. Un importo basso da solo non viene utilizzato per inventare un affitto o correggere un prezzo.
+- Deep sync Studi Santi su GitHub, run 43731472240: concluso con successo; 101 dettagli letti, 82 vendite nel perimetro, zero errori di dettaglio. 51 osservazioni persistite, 31 identità rimaste in revisione. La fonte primaria resta 403 e le assenze non vengono valutate sul catalogo alternativo.
+- Workflow Private Listing Radar, run 43730279506: concluso con successo. La coda è persistente e la raccolta non dipende da un PC acceso.
+- Collaudo UI autenticata con dati reali a 1600, 1024 e 390 px: nessun overflow di pagina, nessun errore JavaScript, navigazione elenco/dossier e foto verificate.
+- Dimensione database dopo il giro approfondito: 398.240.915 byte, sotto la soglia di 500 MB. Le nuove acquisizioni possono far crescere l’archivio: non si garantisce spazio illimitato.
