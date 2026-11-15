@@ -10,14 +10,14 @@ import { assess } from "../src/territory/reconcile.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
 import type { SourceProperty } from "../src/import-v2/model.js";
 import { LiveProvider } from "../src/territory/live-provider.js";
-import { SisterStreetRun, type SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
+import { SisterStreetRun, isCompleteStreetAcquisition, type SisterStreetRunCheckpoint } from "../src/services/sister-street-run.js";
 const street: Street = { id: "q", name: "Via Mameli", sisterName: "VIA MAMELI", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
 const dirs: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 async function setup() { const dir = await mkdtemp(path.join(os.tmpdir(), "quarantine-")); dirs.push(dir); return { dir, store: await TerritoryStore.open(dir, [street]) }; }
 async function execute(app: TerritoryApplication, operation: "scan" | "apply", keys: string[] = []) { await app.start(street.id, operation, keys); await app.waitForIdle(); }
 describe("acquisizioni concluse e quarantena indipendente", () => {
-  it("il provider reale conclude con esclusioni intenzionali e conserva da riprendere anomalie o risultati mancanti", async () => {
+  it("il provider conclude il percorso con anomalie separate, ma ferma i risultati mancanti", async () => {
     const provider = new LiveProvider({ cdpUrl: "http://127.0.0.1:9223", sisterTabMatch: "sister", crmTabMatch: "crm", allowedCadastralKeys: [], allowedTaxCodes: [], allowCreate: false }, () => false);
     vi.spyOn(provider as unknown as { tabs(): Promise<unknown> }, "tabs").mockResolvedValue({ sisterPage: {} });
     const result = { status: "completed", totalSkippedPropertyRows: 2, lastError: null, results: [{ outcome: "found", recordLedger: [{ status: "skipped" }] }] } as SisterStreetRunCheckpoint;
@@ -25,7 +25,8 @@ describe("acquisizioni concluse e quarantena indipendente", () => {
     const args = [street, "run", undefined, async () => {}, async () => {}, () => false] as const;
     expect(await provider.scan(...args)).toBe(true);
     run.mockResolvedValue({ ...result, results: [{ outcome: "found", recordLedger: [{ status: "completed_with_anomalies" }] }] } as SisterStreetRunCheckpoint);
-    expect(await provider.scan(...args)).toBe(false);
+    expect(await provider.scan(...args)).toBe(true);
+    expect(isCompleteStreetAcquisition(await run.mock.results.at(-1)!.value)).toBe(false);
     run.mockResolvedValue({ ...result, results: undefined as never }); expect(await provider.scan(...args)).toBe(false);
     run.mockResolvedValue({ ...result, status: "paused" }); expect(await provider.scan(...args)).toBe(false);
     run.mockResolvedValue({ ...result, lastError: "Sessione scaduta" }); expect(await provider.scan(...args)).toBe(false);

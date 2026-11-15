@@ -17,7 +17,7 @@ import { applyNetworkBindings } from "./network.js";
 import { relatedStreetIds, streetSummaries } from "./model.js";
 import { importProgress } from "./progress.js";
 import { runSettings, sourceForApply } from "./run-options.js";
-import { isCompleteStreetAcquisition, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { hasFinishedStreetTraversal, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { appendUnitEvent, rememberAcquisition, unitMemory } from "./unit-memory.js";
 import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
 import { collectScanQuarantine, isQuarantined, canRetryQuarantinedUnit, quarantine, resolveUnitQuarantine, sourceProblem } from "./quarantine.js";
@@ -301,8 +301,9 @@ export class TerritoryApplication {
     const run = this.store.readSelected(s => s.runs.find(r => r.id === runId));
     if (!run || run.operation !== "scan" || run.origin !== this.origin || run.streetId !== streetId || entry?.runId !== runId)
       throw new Error("Checkpoint non associato a questa acquisizione Sister");
-    if (run.state !== "running") return;
-    const complete = run.checkpoint && isCompleteStreetAcquisition(run.checkpoint as SisterStreetRunCheckpoint);
+    const complete = hasFinishedStreetTraversal(run.checkpoint as SisterStreetRunCheckpoint | undefined);
+    if (run.state !== "running" && !complete) return;
+    await this.store.change(state => collectScanQuarantine(state, state.runs.find(r => r.id === runId)!));
     await this.updateRun(runId, { state: complete ? "completed" : "paused", waiting: null,
       endedAt: complete ? now() : null, error: complete ? null : "Acquisizione interrotta: checkpoint recuperato per la ripresa." });
   }
@@ -413,8 +414,9 @@ export class TerritoryApplication {
         await this.store.change(state => collectScanQuarantine(state, state.runs.find(r => r.id === run.id)!));
         const checkpoint = this.store.readSelected(s => s.runs.find(r => r.id === run.id)?.checkpoint) as SisterStreetRunCheckpoint | undefined;
         const scanError = checkpoint?.lastError || checkpoint?.results?.find(result => result.outcome === "failed")?.warnings?.at(-1);
-        await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null,
-          error: complete ? null : scanError || "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
+        const finished = complete || hasFinishedStreetTraversal(checkpoint);
+        await this.updateRun(run.id, { state: finished ? "completed" : "paused", endedAt: finished ? now() : null,
+          error: finished ? null : scanError || "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           // Do not begin another CRM item until the previous durable outcome

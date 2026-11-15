@@ -137,3 +137,19 @@ it('preserves the navigation failure reported inside a paused scan checkpoint',a
  const bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();
  expect(calls).toBe(3);expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);
 });
+
+function finishedWithAnomalies(){return {status:'completed',lastError:null,updatedAt:'2026-11-15T16:38:41Z',currentVariantIndex:1,results:[{outcome:'found',recordLedger:Array.from({length:6},(_,i)=>({index:i+1,key:`BITONTO|1|2|${i+1}`,label:`Riga ${i+1}`,status:'completed_with_anomalies',anomaly:'Intestatario non interpretabile',completedAt:'2026-11-15T16:38:41Z',ownerNames:[]}))}]};}
+it('finishes a traversed street with row anomalies and continues to the next street',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),original=provider.scan.bind(provider);let calls=0;
+ provider.scan=async(...args)=>{if(++calls===1){await args[4](finishedWithAnomalies());return false;}return original(...args);};
+ const bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();
+ expect(calls).toBe(2);expect(bulk.list().entries.map(e=>e.status)).toEqual(['completed','completed']);expect(bulk.list().entries[0]!.anomalies).toBe(6);
+ expect(Object.values(store.read().quarantine!).filter(q=>!q.resolvedAt&&q.runId===store.read().runs.find(r=>r.streetId==='1')!.id)).toHaveLength(6);
+});
+it('recovers the observed false paused state with 401 saved properties and six anomalies without rescanning',async()=>{
+ const{store}=await fixture();await store.change(s=>{s.runs.push({id:'saved-run',streetId:'1',operation:'scan',origin:'simulation',state:'paused',handled:401,total:null,itemKeys:[],startedAt:'2026-11-15T12:00:00Z',endedAt:null,error:'Lettura SISTER interrotta',checkpoint:finishedWithAnomalies()});Object.assign(s.memories['1']!.sisterQueue!,{runId:'saved-run',status:'paused'});});
+ const provider=new SimulationProvider(store,0),scan=vi.spyOn(provider,'scan'),bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);
+ bulk.start(async()=>{});await bulk.waitForIdle();expect(scan).toHaveBeenCalledOnce();expect(scan.mock.calls[0]![0].id).toBe('2');
+ expect(store.read().runs[0]).toMatchObject({id:'saved-run',handled:401,state:'completed'});expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);
+ expect(Object.values(store.read().quarantine!).filter(q=>!q.resolvedAt&&q.runId===store.read().runs.find(r=>r.streetId==='1')!.id)).toHaveLength(6);
+});

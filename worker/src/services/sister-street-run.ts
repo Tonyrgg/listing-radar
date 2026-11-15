@@ -153,13 +153,21 @@ export function hasRetryableAcquisitionRecords(checkpoint: SisterStreetRunCheckp
   );
 }
 
-/** A street is complete only when no owner row still needs another acquisition attempt. */
-export function isCompleteStreetAcquisition(checkpoint: SisterStreetRunCheckpoint): boolean {
-  return checkpoint.status === "completed"
+/** The portal traversal finished; individual row anomalies remain reviewable. */
+export function hasFinishedStreetTraversal(checkpoint: SisterStreetRunCheckpoint | null | undefined): boolean {
+  return checkpoint?.status === "completed"
     && !checkpoint.lastError
     && Array.isArray(checkpoint.results) && checkpoint.results.length > 0
-    && checkpoint.results.every(result => result && ["found", "empty"].includes(result.outcome))
-    && !hasRetryableAcquisitionRecords(checkpoint);
+    && checkpoint.results.every(result => result && ["found", "empty"].includes(result.outcome));
+}
+
+export function streetAcquisitionAnomalyCount(checkpoint: SisterStreetRunCheckpoint | null | undefined): number {
+  return checkpoint?.results?.reduce((count,result) => count + (result.recordLedger?.filter(row => row.status === "completed_with_anomalies").length ?? 0),0) ?? 0;
+}
+
+/** Strict evidence remains available for callers requiring every owner row. */
+export function isCompleteStreetAcquisition(checkpoint: SisterStreetRunCheckpoint): boolean {
+  return hasFinishedStreetTraversal(checkpoint) && !hasRetryableAcquisitionRecords(checkpoint);
 }
 
 /**

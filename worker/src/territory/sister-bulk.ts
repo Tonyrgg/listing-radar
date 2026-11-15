@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {streetAcquisitionAnomalyCount, type SisterStreetRunCheckpoint} from '../services/sister-street-run.js';
 import type { TerritoryApplication } from './application.js';
 import type { TerritoryStore } from './store.js';
 import { sisterStreetSettingsSchema } from './sister-street-settings.js';
@@ -26,7 +27,7 @@ export class SisterBulk {
       const run = state.runs.find(r => r.id === entry.runId);
       return [{ ...entry, streetId: street.id, name: street.name, municipality: street.locality,
         status: run?.state === 'completed' ? 'completed' : entry.status === 'running' && !this.active ? 'paused' : entry.status,
-        handled: run?.handled ?? 0, total: run?.total ?? null, error: entry.error ?? run?.error }];
+        anomalies: streetAcquisitionAnomalyCount(run?.checkpoint as SisterStreetRunCheckpoint | undefined), handled: run?.handled ?? 0, total: run?.total ?? null, error: entry.error ?? run?.error }];
     }).sort((a,b) => a.addedAt.localeCompare(b.addedAt) || a.streetId.localeCompare(b.streetId)) };
   }
   async put(value: unknown) {
@@ -94,7 +95,7 @@ export class SisterBulk {
           if (!entry) break;
           let prior = this.store.readSelected(s => s.runs.find(r => r.id === entry.runId));
           if (entry.runId && !prior) throw Error('Checkpoint della coda non trovato: dati conservati, verifica la memoria online');
-          if (prior?.state === 'running') {
+          if (prior && ['running','paused','failed'].includes(prior.state)) {
             await this.app.recoverInterruptedSisterRun(id, prior.id);
             prior = this.store.readSelected(s => s.runs.find(r => r.id === entry.runId));
           }

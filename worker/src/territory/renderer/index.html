@@ -91,7 +91,7 @@
     <dialog id="sister-bulk-dialog" aria-labelledby="sister-bulk-title">
       <header class="dialog-bar"><h2 id="sister-bulk-title">Acquisizioni Sister</h2><button id="sister-bulk-close">Chiudi</button></header>
       <section class="sister-bulk-body">
-        <p>Prepara le vie nell’ordine di acquisizione. La voce esatta viene verificata durante la ricerca Sister. In caso di errore il giro si ferma e conserva il checkpoint.</p>
+        <p>Prepara le vie nell’ordine di acquisizione. La voce esatta viene verificata durante la ricerca Sister. Le righe da verificare restano separate e il giro prosegue. Gli errori di connessione conservano il checkpoint per la ripresa.</p>
         <form id="sister-bulk-form" class="sister-bulk-form">
           <label>Via<input id="sister-bulk-street" list="sister-bulk-streets" required placeholder="Cerca nome o codice della via"><datalist id="sister-bulk-streets"></datalist></label>
           <label>Parola chiave<input id="sister-bulk-keyword" maxlength="200" required placeholder="Es. GORIZIA"></label>

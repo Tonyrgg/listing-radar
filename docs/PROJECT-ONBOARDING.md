@@ -1,5 +1,10 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Worker 0.34.48, falso stop della coda SISTER — 15 novembre:** il percorso
+> concluso con righe anomale passa alla via successiva; le righe restano da
+> verificare. Recupera anche il checkpoint storico senza rileggere la via.
+> [Causa reale e verifiche](WORKER-SISTER-BULK-ANOMALIES-2026-11-15.md).
+
 > **Worker 0.34.47, coda massiva SISTER — 15 novembre:** corretto il merge
 > dei checkpoint a contatore invariato e il recupero delle run rimaste running,
 > dopo conferma della sessione esclusiva. Due retry per errori temporanei;
