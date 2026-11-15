@@ -17,6 +17,25 @@ async function fixture(){
   for(const s of streets)await bulk.put({streetId:s.id,search:{searchText:s.name,resultName:s.sisterName}});
   return {dir,streets,store,app,bulk};
 }
+it('adds a whole selection once, preserves existing searches and does not start a run',async()=>{
+ const{bulk,store,app}=await fixture();
+ await bulk.remove('2');
+ await store.change(s=>{s.memories['2']!.sisterSearch={searchText:'GIOTT',resultName:'VIA GIOTTO'};s.streets.push({...s.streets[0]!,id:'outside',outsideUrbanArea:true});s.memories.outside={note:'',attention:false,updatedAt:new Date().toISOString()};});
+ const before=bulk.list().entries[0];
+ expect(await bulk.putMany(['1','2','2','outside'])).toEqual({added:1,alreadyQueued:1,excluded:['outside']});
+ expect(bulk.list().entries.find(e=>e.streetId==='1')).toEqual(before);
+ expect(bulk.list().entries.find(e=>e.streetId==='2')).toMatchObject({searchText:'GIOTT',resultName:'VIA GIOTTO',status:'ready'});
+ expect(app.hasActiveRun).toBe(false);expect(store.read().runs).toHaveLength(0);
+});
+it('derives a visible provisional search from the official street name when none is saved',async()=>{
+ const{bulk,store}=await fixture();await bulk.remove('2');await store.change(s=>{delete s.memories['2']!.sisterSearch;});
+ await bulk.putMany(['2']);expect(bulk.list().entries.find(e=>e.streetId==='2')).toMatchObject({searchText:'GIOTTO',resultName:'VIA GIOTTO'});
+});
+it('can prepare a completed zone again while retaining all earlier acquisition runs',async()=>{
+ const{bulk,store}=await fixture();bulk.start(async()=>{});await bulk.waitForIdle();const runs=store.read().runs;
+ expect(await bulk.putMany(['1','2'])).toMatchObject({added:2,alreadyQueued:0});
+ expect(store.read().runs).toEqual(runs);expect(bulk.list().entries.every(e=>e.status==='ready'&&!e.runId)).toBe(true);
+});
 it('executes streets sequentially, preserves acknowledged completions and syncs the queue',async()=>{
   const {bulk,store,app}=await fixture();
   const barrier=vi.fn(async()=>{});

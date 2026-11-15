@@ -3,6 +3,13 @@ import {requireUser} from "@/lib/auth";
 import {getSupabaseServiceClient} from "@/lib/supabase/service";
 import {readPublicRecordMap} from "@/lib/property-lifecycle/buildings/read-model";
 import {readBuildingMap} from "@/lib/property-lifecycle/buildings/graph-read-model";
+import {readWorkerStreetDirectory} from '@/lib/map/worker-street-directory';
+
+export async function loadWorkerStreetDirectory(){
+ const user=await requireUser();
+ if(!user)throw Error('Accedi per leggere le vie del Worker.');
+ return readWorkerStreetDirectory(getSupabaseServiceClient(),user.id);
+}
 
 /** Only requested when the user enables territorial context layers. */
 export async function loadTerritoryLayers(){

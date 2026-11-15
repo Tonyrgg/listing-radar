@@ -39,6 +39,28 @@ export class SisterBulk {
       memory.sisterQueue = {...search, addedAt: existing?.addedAt ?? new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'ready'};
     }); this.notify();
   }
+  /** One durable mutation, no browser work and no automatic acquisition start. */
+  async putMany(streetIds:string[]){
+    if(this.active||this.app.hasActiveRun)throw Error('Metti in pausa prima di modificare la coda Sister');
+    const result=await this.store.change(state=>{
+      if(this.active||this.app.hasActiveRun)throw Error('Una lavorazione è già in corso');
+      let added=0,alreadyQueued=0;const excluded:string[]=[];
+      for(const id of new Set(streetIds)){
+        const street=state.streets.find(s=>s.id===id);
+        if(!street||street.linkedOfficialId||street.needsReview||street.outsideUrbanArea){excluded.push(id);continue;}
+        const memory=state.memories[id];if(!memory){excluded.push(id);continue;}
+        const previous=memory.sisterQueue,previousRun=previous?.runId?state.runs.find(r=>r.id===previous.runId):null;
+        if(previous&&previousRun?.state!=='completed'&&!(previous.status==='completed'&&!previousRun)){alreadyQueued++;continue;}
+        const saved=memory.sisterSearch;
+        const resultName=saved?.resultName?.trim()||street.sisterName?.trim();
+        const searchText=saved?.searchText?.trim()||resultName?.split(/\s+/).filter(word=>/[A-ZÀ-Ü]{3}/i.test(word)&&!(/^[IVXLCDM]+$/i.test(word))&&!['VIA','PIAZZA','CORSO','VIALE','LARGO','VICO','STRADA','TRAVERSA','CONTRADA','PIAZZALE'].includes(word.toUpperCase())).at(-1)||'';
+        if(!resultName||!searchText){excluded.push(id);continue;}
+        const search=sisterStreetSettingsSchema.parse({searchText,resultName}),at=new Date().toISOString();
+        memory.sisterSearch=search;memory.sisterQueue={...search,addedAt:at,updatedAt:at,status:'ready'};added++;
+      }
+      return{added,alreadyQueued,excluded};
+    });this.notify();return result;
+  }
   async remove(streetId: string) {
     if (this.active || this.app.hasActiveRun) throw Error('Metti in pausa prima di modificare la coda Sister');
     await this.store.change(s => { if(s.memories[streetId]) delete s.memories[streetId]!.sisterQueue; }); this.notify();

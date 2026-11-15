@@ -24,6 +24,8 @@ import {assertSynchronized,type TerritoryOperationLease} from "./operation-lease
 import { TerritorySyncLoop } from "./sync-loop.js";
 import { synchronizeUntilAcknowledged } from './sync-barrier.js';
 import { SisterBulk } from "./sister-bulk.js";
+import {WorkerWorkAreas} from './work-areas.js';
+import {buildZoneStreetDirectory} from './zone-streets.js';
 import { resolveSyncConflict } from "./sync-records.js";
 
 const id = z.string().min(1).max(200);
@@ -228,7 +230,15 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       finally { syncing = false; notify(); }
     });
     const sisterBulk = new SisterBulk(application, store, notify);
+    const workAreas=new WorkerWorkAreas(options.profileDirectory,options.live?options.onlineCredentials:undefined);
+    handle('zone-directory',async()=>{
+      const areas=await workAreas.read(),state=store.read(),streets=application.snapshot().streets;
+      const canonical=new Map(state.streets.map(s=>[s.id,s.linkedOfficialId??s.id])),counts=new Map<string,number>();
+      for(const unit of Object.values(state.units))for(const id of new Set(unit.streetIds.map(id=>canonical.get(id)??id)))counts.set(id,(counts.get(id)??0)+1);
+      return{...buildZoneStreetDirectory(streets.map(s=>({...s,count:counts.get(s.id)??0,...state.memories[s.id]?.sisterSearch})),areas.areas),fetchedAt:areas.fetchedAt,stale:areas.stale};
+    });
     handle("sister-queue", () => sisterBulk.list());
+    handle('sister-queue-put-many',value=>sisterBulk.putMany(z.array(id).min(1).max(3000).parse(value)));
     handle("sister-queue-put", value => sisterBulk.put(value));
     handle("sister-queue-remove", value => sisterBulk.remove(id.parse(value)));
     handle("sister-queue-start", async () => {

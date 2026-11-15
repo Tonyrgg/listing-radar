@@ -15,13 +15,14 @@ import {readGraphContext} from '@/lib/property-lifecycle/buildings/graph-read-mo
 import {TerritorialContext} from '@/components/territorial-context';
 import {readTerritoryProperties} from "@/lib/property-lifecycle/read-models/territory-server";
 import {readTerritoryWorkAreas} from '@/lib/map/work-areas';
+import {WorkerStreetDirectory} from '@/components/map/worker-street-directory';
 export const metadata:Metadata={title:"Territorio"};
 type MapParams=Record<string,string|string[]|undefined>;
 export default async function MapPage({searchParams}:{searchParams:Promise<MapParams>}){
  await connection();
  const params=await searchParams;
  return <div className="space-y-6">
-    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato." actions={<Link href="/map/zone" className={buttonClass('secondary')}>Gestisci zone di lavoro</Link>}/>
+    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato." actions={<><WorkerStreetDirectory/><Link href="/map/zone" className={buttonClass('secondary')}>Gestisci zone di lavoro</Link></>}/>
  <Suspense fallback={<ArchiveLoading label="Caricamento della mappa"/>}><MapContent/></Suspense>
  <Suspense fallback={<ArchiveLoading label="Caricamento dei documenti"/>}><DocumentsContent params={params}/></Suspense>
  </div>;

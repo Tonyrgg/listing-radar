@@ -66,7 +66,7 @@
               <button id="more-streets" class="load-more quiet" hidden>Mostra altre vie</button>
             </div>
           </div>
-          <button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
+          <button id="zone-streets-open">Vie per zona</button><button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
           >
           <button id="sister-bulk-open">Acquisizioni Sister</button><button id="queue-manager">Coda <span id="queue-count" class="queue-count">0</span></button>
         </div>
@@ -139,6 +139,15 @@
         ><button id="memory-close">Chiudi</button>
       </div>
       <p id="memory-result" role="status"></p>
+    </dialog>
+    <dialog id="zone-streets-dialog" aria-labelledby="zone-streets-title">
+      <header class="dialog-bar"><h2 id="zone-streets-title">Vie per zona</h2><button id="zone-streets-close">Chiudi</button></header>
+      <div class="zone-streets-layout"><aside id="zone-streets-filters"></aside><section class="zone-streets-content">
+        <div class="zone-streets-toolbar"><input id="zone-streets-search" type="search" aria-label="Cerca nelle vie" placeholder="Nome della via o codice"><label><input id="zone-streets-acquired" type="checkbox">Solo vie acquisite</label></div>
+        <div class="zone-streets-status"><span id="zone-streets-count" role="status"></span><button id="zone-streets-expand" class="quiet">Apri liste</button><button id="zone-streets-refresh" class="quiet">Aggiorna</button></div>
+        <p id="zone-streets-feedback" role="status"></p><div id="zone-streets-groups"></div>
+      </section></div>
+      <footer class="zone-streets-footer"><span id="zone-streets-selection">0 vie selezionate</span><button id="zone-streets-clear" class="quiet">Deseleziona</button><button id="zone-streets-add" class="primary" disabled>Aggiungi alla coda SISTER</button><button id="zone-streets-queue">Apri coda SISTER</button></footer>
     </dialog>
   </body>
 </html>
