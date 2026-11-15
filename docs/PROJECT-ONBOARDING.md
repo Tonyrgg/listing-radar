@@ -1,5 +1,10 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Worker 0.34.47, coda massiva SISTER — 15 novembre:** corretto il merge
+> dei checkpoint a contatore invariato e il recupero delle run rimaste running,
+> dopo conferma della sessione esclusiva. Due retry per errori temporanei;
+> pausa operatore e login rispettati. [Prove, limiti e distribuzione](WORKER-SISTER-BULK-RECOVERY-2026-11-15.md).
+
 > **Radar, Supabase e coda documenti del 26 ottobre:** migrazioni **0052–0055 online**,
 > collaudo Supabase isolato e UI autenticata operativi con `core:radar:check -- --ui`.
 > Registro 2025 APE/APG e nuovi protocolli territoriali tramite API regionale;

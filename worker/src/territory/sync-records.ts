@@ -109,8 +109,12 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
       // A queue cursor and its run reference are one server-coordinated record.
       if (field === 'sisterQueue' && policy === 'server') return conflict(path,a,b);
       if (path[0] === "runs" && path.length === 2) {
-        const score = (v: Record<string, unknown>) => `${v.endedAt ? "2" : "1"}:${String(v.handled ?? 0).padStart(10, "0")}:${stamp(v)}`;
-        const selected = structuredClone(score(a) > score(b) ? a : b);
+        // A three-way rebase must retain a new checkpoint/pause even when the
+        // item counter did not advance. Both copies still contribute immutable
+        // import facts below, so do not return early for unchanged records.
+        const score = (v: Record<string, unknown>) => `${v.endedAt ? "2" : "1"}:${String(v.progressRevision ?? 0).padStart(12, "0")}:${String(v.updatedAt ?? (object(v.checkpoint) ? v.checkpoint.updatedAt : "") ?? "")}:${String(v.handled ?? 0).padStart(10, "0")}:${stamp(v)}`;
+        const terminal = (a.state === "completed") !== (b.state === "completed") ? (a.state === "completed" ? a : b) : null;
+        const selected = structuredClone(terminal ?? (equal(a,b) || equal(prior,b) ? a : equal(prior,a) ? b : score(a) > score(b) ? a : b));
         // Completion facts are atomic and append-only, independently of the run cursor.
         const old = object(prior) && object(prior.imports) ? prior.imports : {};
         const left = object(a.imports) ? a.imports : {}, right = object(b.imports) ? b.imports : {};

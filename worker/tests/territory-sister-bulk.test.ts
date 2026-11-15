@@ -13,7 +13,7 @@ async function fixture(){
   const dir=await mkdtemp(path.join(os.tmpdir(),'sister-bulk-'));dirs.push(dir);
   const streets=['Gorizia','Giotto'].map((name,i)=>({id:String(i+1),name:`Via ${name}`,sisterName:`VIA ${name.toUpperCase()}`,locality:'Bitonto',geometry:null,geometryEvidence:null,needsReview:false}));
   const store=await TerritoryStore.open(dir,streets), app=new TerritoryApplication(store,new SimulationProvider(store,0));
-  const bulk=new SisterBulk(app,store,()=>{});
+  const bulk=new SisterBulk(app,store,()=>{},0);
   for(const s of streets)await bulk.put({streetId:s.id,search:{searchText:s.name,resultName:s.sisterName}});
   return {dir,streets,store,app,bulk};
 }
@@ -91,4 +91,49 @@ it('resumes the same checkpoint after a partial scan and rejects parallel manual
   await queue.waitForIdle();
   expect(store.read().runs.filter(r=>r.streetId==='1').map(r=>r.id)).toEqual([runId]);
   expect(queue.list().entries.every(e=>e.status==='completed')).toBe(true);
+});
+
+it('recovers a stale running acquisition from another workstation with the same checkpoint',async()=>{
+ const {bulk,store,app}=await fixture();
+ await store.change(s=>{s.runs.push({id:'interrupted',streetId:'1',operation:'scan',origin:'simulation',state:'running',startedAt:new Date().toISOString(),endedAt:null,handled:0,total:null,itemKeys:[],error:null,checkpoint:{next:0},deviceId:'other-device'});s.memories['1']!.sisterQueue!.runId='interrupted';s.memories['1']!.sisterQueue!.status='paused';});
+ const barrier=vi.fn(async()=>{});bulk.start(barrier);await bulk.waitForIdle();
+ expect(barrier).toHaveBeenCalledTimes(4);expect(store.read().runs.filter(r=>r.streetId==='1').map(r=>r.id)).toEqual(['interrupted']);
+ expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);expect(app.hasActiveRun).toBe(false);
+});
+it('does not recover another workstation run until the online barrier succeeds',async()=>{
+ const{bulk,store}=await fixture();await store.change(s=>{s.runs.push({id:'stale',streetId:'1',operation:'scan',origin:'simulation',state:'running',startedAt:'2026-11-15',endedAt:null,handled:0,total:null,itemKeys:[],error:null});s.memories['1']!.sisterQueue!.runId='stale';});
+ bulk.start(async()=>{throw Error('Un altro PC sta lavorando');});await bulk.waitForIdle();expect(store.read().runs[0]!.state).toBe('running');expect(store.read().runs).toHaveLength(1);
+});
+it('retries a transient navigation failure automatically on the same run and checkpoint',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),original=provider.scan.bind(provider);let calls=0;
+ provider.scan=async(...args)=>{if(++calls===1){await args[4]({next:2});throw Error('Timeout while navigating');}if(calls===2)expect(args[2]).toEqual({next:2});return original(...args);};
+ const app=new TerritoryApplication(store,provider),bulk=new SisterBulk(app,store,()=>{},0);
+ bulk.start(async()=>{});await bulk.waitForIdle();expect(calls).toBe(3);expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);
+});
+it('recovers a temporary sync interruption without requiring a manual restart',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),original=provider.scan.bind(provider);let calls=0;
+ const app=new TerritoryApplication(store,provider),bulk=new SisterBulk(app,store,()=>{},0);
+ provider.scan=async(...args)=>{if(++calls===1){await args[4]({next:2});app.pause('Salvataggio online non confermato (rete)');return false;}return original(...args);};
+ bulk.start(async()=>{});await bulk.waitForIdle();expect(calls).toBe(3);expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);
+});
+it('limits retries and exposes the actual failure while preserving the queue',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),scan=vi.fn(async()=>{throw Error('Timeout connessione Sister');});provider.scan=scan;
+ const bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();
+ expect(scan).toHaveBeenCalledTimes(3);expect(store.read().runs).toHaveLength(1);expect(bulk.list().entries.map(e=>e.status)).toEqual(['paused','ready']);expect(bulk.list().entries[0]!.error).toContain('Timeout');
+});
+it('does not retry a login failure or an explicit operator pause',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),scan=vi.fn(async():Promise<boolean>=>{throw Error('Sessione SISTER scaduta: accedi nuovamente');});provider.scan=scan;
+ const app=new TerritoryApplication(store,provider),bulk=new SisterBulk(app,store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();expect(scan).toHaveBeenCalledOnce();
+ scan.mockImplementation(async()=>{app.pause();return false;});bulk.start(async()=>{});await bulk.waitForIdle();expect(scan).toHaveBeenCalledTimes(2);expect(bulk.list().entries[1]!.status).toBe('ready');
+});
+it('keeps a completed street completed when its final online acknowledgement is retried',async()=>{
+ const{bulk,store}=await fixture();let barriers=0;bulk.start(async()=>{if(++barriers===2)throw Error('Salvataggio online non confermato');});await bulk.waitForIdle();
+ expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed'&&!e.error)).toBe(true);
+});
+
+it('preserves the navigation failure reported inside a paused scan checkpoint',async()=>{
+ const{store}=await fixture();const provider=new SimulationProvider(store,0),original=provider.scan.bind(provider);let calls=0;
+ provider.scan=async(...args)=>{if(++calls===1){await args[4]({next:2,results:[{outcome:'failed',warnings:['Navigation timeout 20000ms']} ]});return false;}return original(...args);};
+ const bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();
+ expect(calls).toBe(3);expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed')).toBe(true);
 });

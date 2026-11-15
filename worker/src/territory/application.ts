@@ -17,7 +17,7 @@ import { applyNetworkBindings } from "./network.js";
 import { relatedStreetIds, streetSummaries } from "./model.js";
 import { importProgress } from "./progress.js";
 import { runSettings, sourceForApply } from "./run-options.js";
-import type { SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
+import { isCompleteStreetAcquisition, type SisterStreetRunCheckpoint } from "../services/sister-street-run.js";
 import { appendUnitEvent, rememberAcquisition, unitMemory } from "./unit-memory.js";
 import { queryCatalog, queryUnitKeys, unitQuerySchema } from "./query.js";
 import { collectScanQuarantine, isQuarantined, canRetryQuarantinedUnit, quarantine, resolveUnitQuarantine, sourceProblem } from "./quarantine.js";
@@ -40,7 +40,7 @@ export class TerritoryApplication {
   private mapCache: { key: string; snapshot: ReturnType<TerritoryApplication["buildSnapshot"]> } | null = null;
   constructor(readonly store: TerritoryStore, private readonly provider: TerritoryProvider, private readonly changed: () => void = () => {}, private readonly recoveryDelayMs = 5000, private readonly beforeNextItem?: () => Promise<void>) {}
   bulkExecution: Promise<void> | null = null;
-  onBulkPause?: () => void;
+  onBulkPause?: (reason?: string) => void;
   get origin() { return this.provider.origin; }
   get hasActiveRun() { return this.active !== null || this.bulkExecution !== null; }
   previewQueueActivities(keys:string[],value?:unknown){
@@ -248,6 +248,7 @@ export class TerritoryApplication {
       }
     }
     run.deviceId = this.store.deviceId;
+    run.updatedAt = now(); run.progressRevision = (run.progressRevision ?? 0) + 1;
     this.active = { runId: run.id, pause: false };
     try { await this.store.change(s => {
       let directContactOrdinal = 0;
@@ -291,7 +292,20 @@ export class TerritoryApplication {
     this.execution = this.execute(run).catch(error => { this.fatalError = sanitizeSensitiveText(error instanceof Error ? error.message : "Archivio locale non raggiungibile"); }).finally(() => { this.active = null; this.changed(); });
     return run.id;
   }
-  pause() { this.onBulkPause?.(); if (this.active) this.active.pause = true; this.changed(); }
+  pause(reason?: string) { this.onBulkPause?.(reason); if (this.active) this.active.pause = true; this.changed(); }
+  /** Called only by the bulk coordinator after its exclusive-session barrier.
+   * A persisted running flag is not a live process on this workstation. */
+  async recoverInterruptedSisterRun(streetId: string, runId: string) {
+    if (this.active) throw new Error("Una lavorazione è ancora attiva");
+    const entry = this.store.readSelected(s => s.memories[streetId]?.sisterQueue);
+    const run = this.store.readSelected(s => s.runs.find(r => r.id === runId));
+    if (!run || run.operation !== "scan" || run.origin !== this.origin || run.streetId !== streetId || entry?.runId !== runId)
+      throw new Error("Checkpoint non associato a questa acquisizione Sister");
+    if (run.state !== "running") return;
+    const complete = run.checkpoint && isCompleteStreetAcquisition(run.checkpoint as SisterStreetRunCheckpoint);
+    await this.updateRun(runId, { state: complete ? "completed" : "paused", waiting: null,
+      endedAt: complete ? now() : null, error: complete ? null : "Acquisizione interrotta: checkpoint recuperato per la ripresa." });
+  }
   async waitForCurrent() { await this.execution; }
   async waitForIdle() { await this.bulkExecution; await this.execution; }
   unitDetail(key: string) { const state = this.store.read(), unit = state.units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit, state); }
@@ -329,7 +343,7 @@ export class TerritoryApplication {
     const scope = [...new Set(routes.map(s => s!.linkedOfficialId ?? s!.id))];
     return this.start(scope[0]!, operation, keys, undefined, settings, { scope, query, routes: Object.fromEntries(keys.map((key, i) => [key, routes[i]!.id])) });
   }
-  private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { this.provider.rememberCloud?.(s); const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch); }); this.changed(); }
+  private async updateRun(id: string, patch: Partial<Run>) { await this.store.change(s => { this.provider.rememberCloud?.(s); const run = s.runs.find(r => r.id === id); if (!run) throw new Error("Operazione non trovata"); Object.assign(run, patch, {updatedAt: now(), progressRevision: (run.progressRevision ?? 0) + 1}); }); this.changed(); }
   private async waitForRecovery(run: Run, reason: string) {
     if (/Chrome|connectOverCDP|ECONNREFUSED/i.test(reason)) reason = "Chrome di lavoro non disponibile. Aprilo e verifica l'accesso a Tecnocloud.";
     await this.updateRun(run.id, { waiting: sanitizeSensitiveText(reason), error: null });
@@ -397,7 +411,10 @@ export class TerritoryApplication {
           }); this.changed();
         }, async checkpoint => this.updateRun(run.id, { checkpoint }), this.isPaused, run.settings!.filters, run.settings);
         await this.store.change(state => collectScanQuarantine(state, state.runs.find(r => r.id === run.id)!));
-        await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null, error: complete ? null : "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
+        const checkpoint = this.store.readSelected(s => s.runs.find(r => r.id === run.id)?.checkpoint) as SisterStreetRunCheckpoint | undefined;
+        const scanError = checkpoint?.lastError || checkpoint?.results?.find(result => result.outcome === "failed")?.warnings?.at(-1);
+        await this.updateRun(run.id, { state: complete ? "completed" : "paused", endedAt: complete ? now() : null,
+          error: complete ? null : scanError || "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           // Do not begin another CRM item until the previous durable outcome

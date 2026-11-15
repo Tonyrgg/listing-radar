@@ -75,7 +75,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         }
       }
       memoryError = null; checkedAt = new Date().toISOString();
-    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Il Worker riprova automaticamente.`; if(application?.hasActiveRun)application.pause(); }
+    } catch (error) { memoryError = `${error instanceof Error ? sanitizeSensitiveText(error.message) : "Memoria online non raggiungibile"} I dati locali sono conservati. Il Worker riprova automaticamente.`; if(application?.hasActiveRun)application.pause(memoryError); }
     finally {
       syncing = false; publish();
     }
@@ -247,7 +247,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         await ensureSynchronized();
         if(operationLease?.held)await finishSharedSession();
         operationLease ??= sync!.operationLease();
-        await operationLease.acquire(message => { memoryError=message; sisterBulk.pause(); publish(); });
+        await operationLease.acquire(message => { memoryError=message; sisterBulk.pause(message); publish(); });
       }
       try {
         if (options.onlineCredentials && options.live) await ensureSynchronized();
@@ -255,7 +255,9 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         sisterBulk.start(async () => {
           if (options.onlineCredentials && options.live) { await ensureSynchronized(); await operationLease!.renew(); }
         });
-        void sisterBulk.waitForIdle().finally(async () => {
+        void sisterBulk.waitForIdle().catch(error => {
+          memoryError=sanitizeSensitiveText(error instanceof Error ? error.message : "Coda Sister interrotta; checkpoint conservati"); publish();
+        }).finally(async () => {
           options.afterIdle?.(); notify();
           try { await finishSharedSession(); } catch(error) { memoryError=error instanceof Error ? error.message : "Sessione da sincronizzare"; publish(); }
         });

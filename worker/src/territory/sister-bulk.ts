@@ -12,7 +12,11 @@ export const sisterQueueInput = z.object({ streetId: z.string().min(1).max(200),
 export class SisterBulk {
   private execution: Promise<void> | null = null;
   private stopping = false;
-  constructor(private app: TerritoryApplication, private store: TerritoryStore, private notify: () => void) { this.app.onBulkPause = () => { this.stopping = true; }; }
+  private recoveryReason: string | null = null;
+  constructor(private app: TerritoryApplication, private store: TerritoryStore, private notify: () => void,
+    private readonly recoveryDelayMs = 5000) {
+    this.app.onBulkPause = reason => { if (reason) this.recoveryReason = reason; else this.stopping = true; };
+  }
   get active() { return this.execution !== null; }
   list() {
     const state = this.store.read();
@@ -22,7 +26,7 @@ export class SisterBulk {
       const run = state.runs.find(r => r.id === entry.runId);
       return [{ ...entry, streetId: street.id, name: street.name, municipality: street.locality,
         status: run?.state === 'completed' ? 'completed' : entry.status === 'running' && !this.active ? 'paused' : entry.status,
-        handled: run?.handled ?? 0, total: run?.total ?? null, error: run?.error ?? entry.error }];
+        handled: run?.handled ?? 0, total: run?.total ?? null, error: entry.error ?? run?.error }];
     }).sort((a,b) => a.addedAt.localeCompare(b.addedAt) || a.streetId.localeCompare(b.streetId)) };
   }
   async put(value: unknown) {
@@ -65,12 +69,12 @@ export class SisterBulk {
     if (this.active || this.app.hasActiveRun) throw Error('Metti in pausa prima di modificare la coda Sister');
     await this.store.change(s => { if(s.memories[streetId]) delete s.memories[streetId]!.sisterQueue; }); this.notify();
   }
-  pause() { this.stopping = true; this.app.pause(); }
+  pause(reason?: string) { this.app.pause(reason); }
   start(beforeStreet: () => Promise<void>) {
     if (this.active || this.app.hasActiveRun) throw Error('Esiste già una lavorazione attiva');
     const ids = this.list().entries.filter(e => e.status !== 'completed').map(e => e.streetId);
     if (!ids.length) throw Error('Aggiungi almeno una via da acquisire');
-    this.stopping = false;
+    this.stopping = false; this.recoveryReason = null;
     this.execution = this.execute(ids, beforeStreet).finally(() => { this.execution = null; this.app.bulkExecution = null; this.notify(); });
     this.app.bulkExecution = this.execution;
     this.notify();
@@ -78,31 +82,60 @@ export class SisterBulk {
   async waitForIdle() { await this.execution; }
   private async execute(ids: string[], beforeStreet: () => Promise<void>) {
     for (const id of ids) {
-      if (this.stopping) break;
-      try {
-        await beforeStreet();
-        if (this.stopping) break;
-        const entry = this.store.read().memories[id]?.sisterQueue;
-        if (!entry || entry.status === 'completed') continue;
-        const prior = this.store.read().runs.find(r => r.id === entry.runId);
-        if (prior?.state === 'completed') { await this.update(id, {status:'completed'}); continue; }
-        if (prior && !['paused','failed'].includes(prior.state)) throw Error('Acquisizione interrotta: verifica lo stato della via prima di riprendere');
-        await this.app.configureSisterStreet(id, {searchText:entry.searchText,resultName:entry.resultName});
-        const runId = await this.app.start(id, 'scan', [], prior?.id, prior ? undefined : runSettings(), undefined, true);
-        await this.update(id, {runId, status:'running', error:undefined});
-        await this.app.waitForCurrent();
-        const run = this.store.read().runs.find(r => r.id === runId);
-        if (run?.state !== 'completed') throw Error(run?.error || 'Acquisizione in pausa: riprendi dal checkpoint');
-        await this.update(id, {status:'completed', error:undefined});
-        await beforeStreet(); // Acknowledged online before advancing to another street.
-      } catch (error) {
-        this.app.pause(); await this.app.waitForCurrent();
-        await this.update(id, {status:'paused', error:sanitizeSensitiveText(error instanceof Error ? error.message : 'Acquisizione interrotta')});
-        break;
+      for (let attempt = 0; ; attempt++) {
+        if (this.stopping) return;
+        this.recoveryReason = null;
+        try {
+          // Production acknowledges the latest state and proves exclusive
+          // ownership of the execution lease before recovering a stale run.
+          await beforeStreet();
+          if (this.stopping) return;
+          const entry = this.store.readSelected(s => s.memories[id]?.sisterQueue);
+          if (!entry) break;
+          let prior = this.store.readSelected(s => s.runs.find(r => r.id === entry.runId));
+          if (entry.runId && !prior) throw Error('Checkpoint della coda non trovato: dati conservati, verifica la memoria online');
+          if (prior?.state === 'running') {
+            await this.app.recoverInterruptedSisterRun(id, prior.id);
+            prior = this.store.readSelected(s => s.runs.find(r => r.id === entry.runId));
+          }
+          if (prior?.state === 'completed' || entry.status === 'completed' && !prior) {
+            await this.update(id, {status:'completed', error:undefined});
+            break;
+          }
+          if (prior && !['paused','failed'].includes(prior.state)) throw Error('Questo checkpoint non è riprendibile: nessuna nuova acquisizione avviata');
+          await this.app.configureSisterStreet(id, {searchText:entry.searchText,resultName:entry.resultName});
+          this.recoveryReason = null;
+          const runId = await this.app.start(id, 'scan', [], prior?.id, prior ? undefined : runSettings(), undefined, true);
+          // start() already saves the run reference and queue state atomically.
+          await this.app.waitForCurrent();
+          const run = this.store.readSelected(s => s.runs.find(r => r.id === runId));
+          if (run?.state !== 'completed') throw Error(this.recoveryReason || run?.error || 'Acquisizione in pausa: riprendi dal checkpoint');
+          await this.update(id, {status:'completed', error:undefined});
+          await beforeStreet(); // Acknowledged online before advancing.
+          break;
+        } catch (error) {
+          const message = sanitizeSensitiveText(error instanceof Error ? error.message : 'Acquisizione interrotta');
+          const entry = this.store.readSelected(s => s.memories[id]?.sisterQueue);
+          const run = this.store.readSelected(s => s.runs.find(r => r.id === entry?.runId));
+          const completed = run?.state === 'completed';
+          const retry = !this.stopping && attempt < 2 && isTransientSisterInterruption(message);
+          await this.update(id, {status: completed ? 'completed' : retry ? 'running' : 'paused',
+            error: retry ? `Ripresa automatica ${attempt + 1}/2: ${message}` : message});
+          if (!retry) return;
+          const until = Date.now() + this.recoveryDelayMs;
+          while (!this.stopping && Date.now() < until)
+            await new Promise(resolve => setTimeout(resolve, Math.min(100, until - Date.now())));
+        }
       }
     }
   }
   private async update(id: string, patch: Partial<SisterQueueEntry>) {
     await this.store.change(s => { const entry=s.memories[id]?.sisterQueue; if(entry) Object.assign(entry, patch, {updatedAt:new Date().toISOString()}); }); this.notify();
   }
+}
+
+/** Retry transport/navigation failures, never an ambiguous identity or login. */
+export function isTransientSisterInterruption(message: string): boolean {
+  if (/session_expired|sessione.{0,20}scadut|autentic|login|accedi|password|captcha|via diversa|corrispondenza|non associato|checkpoint.{0,20}non trovato|altro PC/i.test(message)) return false;
+  return /timeout|timed out|ECONN|ENOTFOUND|ERR_(?:NETWORK|CONNECTION)|fetch failed|socket|connessione|connection|rete|online|sincronizz|sessione condivisa|Chrome.{0,30}(?:chius|raggiung)|(?:page|target|browser|context).{0,30}closed|interrupted/i.test(message);
 }
