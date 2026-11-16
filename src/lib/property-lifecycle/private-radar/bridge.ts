@@ -22,6 +22,7 @@ interface DatabaseError {
 
 export interface PrivateRadarObservation {
   direct?: boolean;
+  verification?: { method: "MANUAL_PUBLIC_PAGE"; sourceUrl: string; checkedAt: string; note: string };
   seller_type?: "private" | "unknown";
   image_urls?: string[];
   id: string;
@@ -893,7 +894,7 @@ export class PrivateRadarBridge {
         location,
       );
       let existingQuery = this.db.from("private_publications")
-        .select("id,property_id,state,identity_score,content_hash,last_seen_at");
+        .select("id,property_id,state,identity_score,content_hash,last_seen_at,metadata");
       existingQuery = listing.direct
         ? existingQuery.eq("source", listing.source).eq("source_listing_id", listing.source_listing_id!).is("legacy_listing_id", null)
         : existingQuery.eq("legacy_listing_id", listing.id);
@@ -904,6 +905,7 @@ export class PrivateRadarBridge {
         property_id: string;
         state: "ACTIVE" | "REMOVED";
         identity_score: number;
+        metadata?: Record<string, unknown>;
         content_hash: string;
         last_seen_at: string;
       } | null;
@@ -967,6 +969,7 @@ export class PrivateRadarBridge {
                 sellerClassificationConfidence:
                   listing.seller_classification_confidence,
                 contactDataExcluded: true,
+                ...(listing.verification || existing.metadata?.verification ? { verification: listing.verification ?? existing.metadata?.verification } : {}),
                 sellerType: listing.seller_type ?? "private",
                 imageUrls: listing.image_urls ?? [],
                 observedState,
@@ -1112,6 +1115,7 @@ export class PrivateRadarBridge {
             sellerClassificationConfidence:
               listing.seller_classification_confidence,
             contactDataExcluded: true,
+            ...(listing.verification ? { verification: listing.verification } : {}),
             sellerType: listing.seller_type ?? "private",
             imageUrls: listing.image_urls ?? [],
             observedState,

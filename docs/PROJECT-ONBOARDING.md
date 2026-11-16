@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Radar privati, 16 novembre:** due annunci aggiunti manualmente in V2; report di copertura per i cinque portali e intake URL idempotente. Tre fonti restano bloccate 403: copertura totale non raggiunta. [Verifiche e limiti](PRIVATE-RADAR-COVERAGE-2026-11-16.md).
+
 > **Worker 0.34.48, falso stop della coda SISTER — 15 novembre:** il percorso
 > concluso con righe anomale passa alla via successiva; le righe restano da
 > verificare. Recupera anche il checkpoint storico senza rileggere la via.

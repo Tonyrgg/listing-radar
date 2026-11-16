@@ -32,3 +32,6 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Collect private publications
         run: npx tsx scripts/private-radar-collect.ts --apply --confirm-project="$SUPABASE_PROJECT_REF"
+      - name: Report actual portal coverage
+        if: always()
+        run: npx tsx scripts/private-radar-coverage.ts

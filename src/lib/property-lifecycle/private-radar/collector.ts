@@ -152,7 +152,7 @@ async function collect(db: SupabaseClient, assertOwnership: () => void): Promise
           check(saved.error);
         } discovered += page.urls.length; pages++; next = page.next;
       }
-      if (next) diagnostics.push("Scansione limitata o paginazione ciclica; nessuna valutazione delle assenze");
+      if (next) { failures++; diagnostics.push("Scansione limitata o paginazione ciclica; nessuna valutazione delle assenze"); }
     } catch (error) { assertOwnership(); failures++; diagnostics.push(error instanceof Error ? error.message : "Lettura non riuscita"); }
     // The inbox is the checkpoint: even if discovery fails, known due URLs can
     // still be inspected. A restart does not discard the already acquired queue.
