@@ -141,6 +141,8 @@ export interface LifecycleReviewItem {
 }
 
 export interface LifecyclePrivatePublication {
+  firstPublicEvidenceAt?:string|null;
+  marketDateMethod?:string|null;
   id: string;
   sellerType?: string;
   imageUrls?: string[];

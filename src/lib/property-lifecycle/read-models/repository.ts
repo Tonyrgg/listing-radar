@@ -58,6 +58,7 @@ interface AgencyRow {
 }
 
 interface PrivatePublicationRow {
+  first_public_evidence_at?:string|null;
   id: string;
   metadata?: Record<string,unknown>;
   legacy_listing_id: string | null;
@@ -789,7 +790,7 @@ export class PropertyLifecycleReadRepository {
     const { data, error } = await this.db
       .from("private_publications")
       .select(
-        "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
+        "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_public_evidence_at,first_seen_at,last_seen_at,removed_at",
       )
       .order("last_seen_at", { ascending: false })
       .limit(300);
@@ -805,7 +806,9 @@ export class PropertyLifecycleReadRepository {
         ? [
             {
               id: row.id,
-              legacyListingId: row.legacy_listing_id,
+              firstPublicEvidenceAt:row.first_public_evidence_at??null,
+        marketDateMethod:stringValue((row.metadata?.marketAgeEvidence as Record<string,unknown>|undefined)?.method),
+        legacyListingId: row.legacy_listing_id,
               sellerType: stringValue(row.metadata?.sellerType) ?? "private",
               imageUrls: privateGalleryImages(row.metadata?.imageUrls),
               source: row.source,
@@ -856,7 +859,7 @@ export class PropertyLifecycleReadRepository {
         this.db
           .from("private_publications")
           .select(
-            "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_seen_at,last_seen_at,removed_at",
+            "id,metadata,legacy_listing_id,property_id,source,canonical_url,state,identity_outcome,identity_score,title,price_amount,surface_sqm,rooms,first_public_evidence_at,first_seen_at,last_seen_at,removed_at",
           )
           .eq("property_id", id)
           .order("last_seen_at", { ascending: false }),
@@ -953,6 +956,8 @@ export class PropertyLifecycleReadRepository {
     const privatePublications: LifecyclePrivatePublication[] = privateRows.map(
       (row) => ({
         id: row.id,
+        firstPublicEvidenceAt:row.first_public_evidence_at??null,
+        marketDateMethod:stringValue((row.metadata?.marketAgeEvidence as Record<string,unknown>|undefined)?.method),
         legacyListingId: row.legacy_listing_id,
               sellerType: stringValue(row.metadata?.sellerType) ?? "private",
               imageUrls: privateGalleryImages(row.metadata?.imageUrls),

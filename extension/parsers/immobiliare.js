@@ -198,22 +198,7 @@
   }
 
   function extractDeclaredDate(pageText) {
-    return (
-      utils.dateText([
-        "[data-testid='listing-date']",
-        ".in-statistics",
-        ".in-date",
-      ]) ||
-      utils.firstLineMatch([
-        /Annuncio aggiornato il\s+(.+)$/i,
-        /Pubblicato il\s+(.+)$/i,
-        /Inserito il\s+(.+)$/i,
-      ]) ||
-      utils.firstMatch(pageText, [
-        /Annuncio aggiornato il\s+([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i,
-        /Pubblicato il\s+([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i,
-      ])
-    );
+    return utils.firstLineMatch([/Pubblicato il\s+(.+)$/i,/Inserito il\s+(.+)$/i]) || utils.firstMatch(pageText,[/(?:Pubblicato|Inserito) il\s+([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i]);
   }
 
   globalThis.ListingRadarPortalAdapters.immobiliare = {
@@ -254,6 +239,7 @@
         imageUrl: imageUrls[0] || null,
         imageUrls,
         portalDeclaredDate: extractDeclaredDate(pageText),
+        metadataDateModified: utils.firstLineMatch([/Annuncio aggiornato il\s+(.+)$/i]) || null,
       };
 
       return {

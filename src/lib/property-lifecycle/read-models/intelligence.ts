@@ -1,7 +1,7 @@
 import {intelligenceSort} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "privati", "usciti", "venduti"] as const;
+export const INTELLIGENCE_VIEWS = ["mercato", "opportunita", "privati", "usciti", "venduti", "preferiti"] as const;
 export type IntelligenceView = typeof INTELLIGENCE_VIEWS[number];
 export const EXIT_LABELS: Record<string, string> = {
   ACTIVE: "Online", MISSING_UNCONFIRMED: "Assenza da confermare", SOLD_CONFIRMED: "Vendita confermata",
@@ -10,6 +10,8 @@ export const EXIT_LABELS: Record<string, string> = {
   AGENCY_CHANGED: "Cambio agenzia", UNKNOWN_EXIT: "Uscita senza esito noto",
 };
 export interface IntelligenceRow {
+  public_market_date?: string|null;
+  public_date_unavailable?:boolean;
   private_seller_type?: string | null; private_source?: string | null; private_image_url?: string | null;
   row_id: string; agency_listing_id: string | null; property_id: string; agency_id: string | null; agency_name: string;
   address: string; locality: string | null; state: string; sale_status: string; property_state: string;
@@ -40,6 +42,7 @@ export interface IntelligenceRow {
   context_building_ids?:string[];context_street_id?:string|null;
 }
 export interface IntelligenceFilters {
+  favoriteIds?:string[];
   view: IntelligenceView; page: number; sort?:string; direction?:string; query?: string; classification?: string;
   agency?: string; locality?: string; zone?: string; state?: string;
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
@@ -57,6 +60,7 @@ export function marketAgeLabel(firstSeen: string, earliest: string | null, end: 
 }
 function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,fields="*") {
   let request=db.from(filters.view === "privati" ? "radar_private_live_archive" : "radar_property_live_archive").select(fields);
+  if(filters.view==="preferiti")request=request.in("property_id",filters.favoriteIds?.length?filters.favoriteIds:["00000000-0000-0000-0000-000000000000"]);
   for(const [column,choice] of [["street_number",filters.civic],["street_name",filters.street]] as const){
     if(choice === "yes")request=request.not(column,"is",null).neq(column,"");
     if(choice === "no")request=request.or(`${column}.is.null,${column}.eq.`);
@@ -102,6 +106,12 @@ export async function readIntelligence(db:SupabaseClient,filters:IntelligenceFil
  const {data,error}=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
  if(error)throw new Error(error.message);
  const rows=(data??[]) as unknown as IntelligenceRow[];
+ const privateRows=rows.filter(r=>r.private_source);
+ if(privateRows.length){
+  const dates=await db.from("private_publications").select("property_id,first_public_evidence_at,first_seen_at").in("property_id",privateRows.map(r=>r.property_id)).eq("state","ACTIVE");
+  for(const row of privateRows){row.public_date_unavailable=!!dates.error;const base=row.earliest_market_evidence_at&&Date.parse(row.earliest_market_evidence_at)<Date.parse(row.first_seen_at)?[row.earliest_market_evidence_at]:[];const known=[...base,...(dates.data??[]).filter(d=>d.property_id===row.property_id&&d.first_public_evidence_at&&Date.parse(d.first_public_evidence_at)<Date.parse(d.first_seen_at)).map(d=>d.first_public_evidence_at as string)].sort();row.public_market_date=known[0]??null;if(known[0]&&Date.parse(known[0])<Date.parse(row.earliest_market_evidence_at))row.earliest_market_evidence_at=known[0];}
+ }
+
  return {rows:rows.slice(0,size),hasNext:rows.length>size};
 }
 

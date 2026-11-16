@@ -42,6 +42,8 @@ export interface PrivateRadarObservation {
   longitude: number | null;
   portal_declared_date: string | null;
   metadata_date_published: string | null;
+  metadata_date_modified?: string | null;
+  portal_sort_date?: string|null;
   first_seen_at: string;
   last_seen_at: string;
   status: string;
@@ -148,6 +150,8 @@ function marketStart(listing: PrivateRadarObservation): {
       confidence: 0.65,
     };
   }
+  if(listing.portal_sort_date&&!listing.metadata_date_modified){return {lowerBound:null,upperBound:listing.portal_sort_date,method:"PRIVATE_SORT_DATE_PRESENCE_BOUND",confidence:0.55};}
+  if(listing.metadata_date_modified){return {lowerBound:null,upperBound:listing.metadata_date_modified,method:"PRIVATE_UPDATE_DATE_PRESENCE_BOUND",confidence:0.6};}
   return {
     lowerBound: null,
     upperBound: listing.first_seen_at,
@@ -894,7 +898,7 @@ export class PrivateRadarBridge {
         location,
       );
       let existingQuery = this.db.from("private_publications")
-        .select("id,property_id,state,identity_score,content_hash,last_seen_at,metadata");
+        .select("id,property_id,state,identity_score,content_hash,last_seen_at,metadata,first_public_evidence_at");
       existingQuery = listing.direct
         ? existingQuery.eq("source", listing.source).eq("source_listing_id", listing.source_listing_id!).is("legacy_listing_id", null)
         : existingQuery.eq("legacy_listing_id", listing.id);
@@ -906,6 +910,7 @@ export class PrivateRadarBridge {
         state: "ACTIVE" | "REMOVED";
         identity_score: number;
         metadata?: Record<string, unknown>;
+        first_public_evidence_at?: string|null;
         content_hash: string;
         last_seen_at: string;
       } | null;
@@ -938,6 +943,7 @@ export class PrivateRadarBridge {
         rooms: listing.rooms,
         floor: listing.floor,
         location,
+        marketAgeEvidence:marketStart(listing),
         sellerClassificationConfidence:
           listing.seller_classification_confidence,
       });
@@ -962,6 +968,7 @@ export class PrivateRadarBridge {
               surface_sqm: listing.sqm,
               rooms: listing.rooms,
               floor: listing.floor,
+              first_public_evidence_at:existing.first_public_evidence_at&&Date.parse(existing.first_public_evidence_at)<Date.parse(marketStart(listing).upperBound)?existing.first_public_evidence_at:marketStart(listing).upperBound,
               last_seen_at: listing.last_seen_at,
               removed_at: state === "REMOVED" ? listing.last_seen_at : null,
               content_hash: contentHash,
@@ -969,6 +976,7 @@ export class PrivateRadarBridge {
                 sellerClassificationConfidence:
                   listing.seller_classification_confidence,
                 contactDataExcluded: true,
+                marketAgeEvidence: {date:marketStart(listing).upperBound,method:marketStart(listing).method},
                 ...(listing.verification || existing.metadata?.verification ? { verification: listing.verification ?? existing.metadata?.verification } : {}),
                 sellerType: listing.seller_type ?? "private",
                 imageUrls: listing.image_urls ?? [],
@@ -1115,6 +1123,7 @@ export class PrivateRadarBridge {
             sellerClassificationConfidence:
               listing.seller_classification_confidence,
             contactDataExcluded: true,
+            marketAgeEvidence: {date:marketStart(listing).upperBound,method:marketStart(listing).method},
             ...(listing.verification ? { verification: listing.verification } : {}),
             sellerType: listing.seller_type ?? "private",
             imageUrls: listing.image_urls ?? [],

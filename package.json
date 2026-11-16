@@ -69,6 +69,7 @@
     "react-leaflet": "^5.0.0",
     "tesseract.js": "^7.0.0",
     "unpdf": "1.9.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.4.3"
   },
   "devDependencies": {

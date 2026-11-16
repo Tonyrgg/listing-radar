@@ -2,7 +2,7 @@ import {isRentalOnlyOffer} from "@/lib/property-lifecycle/private-radar/transact
 import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import { dossierContext } from "@/lib/property-lifecycle/read-models/dossier-context";
 import { expect, it } from "vitest";
-import { discoverPrivateUrls, privateObservationFromCapture } from "@/lib/property-lifecycle/private-radar/collector";
+import { privateEvidenceDate, discoverPrivateUrls, privateObservationFromCapture } from "@/lib/property-lifecycle/private-radar/collector";
 const now = "2026-11-15T12:00:00Z", id = "11111111-1111-4111-8111-111111111111", url = "https://www.idealista.it/immobile/123/";
 const capture = { title: "Appartamento Bitonto via Gorizia 3", addressRaw: "Via Gorizia 3, Bitonto", price: 120000, sqm: 80, sellerType: "unknown", description: "Casa in vendita", metadataDateModified: "2026-11-01" };
 it("deduplicates inventory IDs, strips tracking and restricts pagination to the source search", () => {
@@ -34,4 +34,17 @@ it("rejects an explicit rental offer even when miscategorized as a sale, without
  expect(privateObservationFromCapture("idealista",url,id,{...capture,description:"Affitto open-space 40 mq",transaction:"s"},now,now)).toBeNull();
  expect(isRentalOnlyOffer({title:"Appartamento in vendita",description:"Vendesi immobile attualmente in affitto."})).toBe(false);
  expect(isRentalOnlyOffer({title:"Ampio locale",description:"Locale disponibile, prezzo 550 euro"})).toBe(false);
+});
+
+it('parses Italian dates without US month/day reversal and rejects rollover or future dates',()=>{
+ expect(privateEvidenceDate('10/08/2026',now)).toBe('2026-08-10T00:00:00.000Z');
+ expect(privateEvidenceDate('17/10/2026',now)).toBe('2026-10-17T00:00:00.000Z');
+ expect(privateEvidenceDate('2026-11-08 21:07:01',now)).toBe('2026-11-08T00:00:00.000Z');
+ expect(privateEvidenceDate('al 18 mag 2026',now)).toBe('2026-05-18T00:00:00.000Z');
+ expect(privateEvidenceDate('8 nov 2026',now)).toBe('2026-11-08T00:00:00.000Z');
+ expect(privateEvidenceDate('2026-02-31',now)).toBeNull();
+ expect(privateEvidenceDate('31/02/2026',now)).toBeNull();
+ expect(privateEvidenceDate('2027-01-01',now)).toBeNull();
+ const row=privateObservationFromCapture('idealista',url,id,{...capture,portalDeclaredDate:'10/08/2026',metadataDateModified:'17/10/2026'},now,now)!;
+ expect(row.portal_declared_date).toBe('2026-08-10T00:00:00.000Z');expect(row.metadata_date_modified).toBe('2026-10-17T00:00:00.000Z');
 });

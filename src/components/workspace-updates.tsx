@@ -1,0 +1,19 @@
+"use client";
+import {createContext,useContext,useEffect,useState,useCallback,type ReactNode} from 'react';
+import {useRouter} from "next/navigation";
+import Link from 'next/link';
+import {Bell,Star} from 'lucide-react';
+type State={notices:Record<string,Record<string,string>>;favorites:string[]};
+const Context=createContext<{state:State;save:(body:unknown)=>Promise<void>;error:string}|null>(null);
+export function WorkspaceUpdates({children}:{children:ReactNode}){
+ const router=useRouter();
+ const [state,setState]=useState<State>({notices:{},favorites:[]}),[error,setError]=useState('');
+ const refresh=useCallback(async()=>{try{const r=await fetch('/api/workspace-state',{cache:'no-store'});if(!r.ok)throw Error();setState(await r.json());setError('');}catch{setError('Avvisi non aggiornati; riprova tra poco');}},[]);
+ useEffect(()=>{const initial=setTimeout(()=>void refresh(),0);const timer=setInterval(()=>{if(!document.hidden)void refresh()},60000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{clearTimeout(initial);clearInterval(timer);window.removeEventListener('focus',focus)}},[refresh]);
+ async function save(body:unknown){const r=await fetch('/api/workspace-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){setError('Modifica non salvata. Riprova.');return;}await refresh();if((body as {action:string}).action==="favorite")router.refresh();}
+ return <Context.Provider value={{state,save,error}}>{children}</Context.Provider>;
+}
+export function TabNotice({tab}:{tab:string}){const c=useContext(Context),n=Object.keys(c?.state.notices[tab]??{}).length;return n?<span className="lr-notice-count" title={`${n} record nuovi o aggiornati da leggere`}>{n}</span>:null;}
+export function NotificationBell(){const c=useContext(Context);if(!c)return null;const labels:Record<string,string>={mercato:'Mercato',opportunita:'Opportunità',privati:'Privati',usciti:'Usciti e venduti',notizie:'Notizie'};const total=new Set(Object.entries(c.state.notices).flatMap(([tab,records])=>Object.keys(records).map(id=>(tab==='notizie'?'news:':'property:')+id))).size;return <details className="lr-notification-menu"><summary aria-label={`${total} record da leggere`}><Bell size={18}/>{total?<span className="lr-notice-count">{total}</span>:null}</summary><div role="region" aria-label="Notifiche interne"><strong>Aggiornamenti dell’archivio</strong><p>Nuovi per te o cambiati dall’ultima lettura.</p>{Object.entries(labels).map(([tab,label])=><div key={tab}><Link href={`/intelligence?vista=${tab}`}>{label} <TabNotice tab={tab}/></Link><button onClick={()=>void c.save({action:'read',tab})}>Segna letti</button></div>)}{!total?<p>Nessun aggiornamento da leggere.</p>:null}{c.error?<p role="status">{c.error}</p>:null}</div></details>}
+export function RecordTools({id,tab}:{id:string;tab:string}){const c=useContext(Context),[busy,setBusy]=useState(false);if(!c)return null;const active=c.state.favorites.includes(id),notice=c.state.notices[tab]?.[id];return <span className="lr-record-tools"><button disabled={busy} aria-label={active?'Rimuovi dai preferiti':'Aggiungi ai preferiti'} aria-pressed={active} onClick={async()=>{setBusy(true);try{await c.save({action:'favorite',id,active:!active})}finally{setBusy(false)}}}><Star size={15} fill={active?'currentColor':'none'}/></button>{notice?<button className="lr-unread" title="Segna questo record come letto" onClick={()=>void c.save({action:'read',tab,id})}>{notice==='updated'?'Aggiornato':'Nuovo'}</button>:null}</span>}
+export function NewsNotice({id}:{id:string}){const c=useContext(Context),notice=c?.state.notices.notizie?.[id];return notice?<button className="lr-unread" onClick={()=>void c?.save({action:'read',tab:'notizie',id})}>{notice==='updated'?'Aggiornata':'Nuova'} · Segna letta</button>:null;}

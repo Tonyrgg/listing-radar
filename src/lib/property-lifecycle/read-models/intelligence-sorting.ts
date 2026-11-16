@@ -3,7 +3,7 @@ export const INTELLIGENCE_SORTS={
  zona:{field:"zone_name",label:"Zona"},
  prezzo:{field:"latest_asking_price",label:"Prezzo richiesto"},
  metro:{field:"unit_asking_price",label:"Prezzo al m²"},
- giorni:{field:"known_market_age",label:"Giorni osservati"},
+ giorni:{field:"known_market_age",label:"Anzianità sul mercato"},
  giorni_agenzia:{field:'days_with_agency',label:'Giorni con agenzia'},
  ribassi:{field:"drop_count",label:"Ribassi"},
  fonte:{field:"agency_name",label:"Fonte"},
@@ -13,7 +13,7 @@ export const INTELLIGENCE_SORTS={
 } as const;
 export type IntelligenceSort=keyof typeof INTELLIGENCE_SORTS;
 export function intelligenceSort(key:string|undefined,direction:string|undefined,view:string){
- const fallback=view==="opportunita"?"indice":"riscontro";
+ const fallback=view==="opportunita"?"indice":view==="privati"?"giorni":"riscontro";
  const sort: IntelligenceSort=key&&Object.hasOwn(INTELLIGENCE_SORTS,key)?key as IntelligenceSort:fallback;
  return {key:sort,field:INTELLIGENCE_SORTS[sort].field,label:INTELLIGENCE_SORTS[sort].label,ascending:direction==="asc"};
 }

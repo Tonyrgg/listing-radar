@@ -1,3 +1,4 @@
+import {RecordTools} from "@/components/workspace-updates";
 import {Suspense} from "react";
 import {ArchiveLoading} from "@/components/archive-loading";
 import type {LifecyclePropertyDetail} from "@/lib/property-lifecycle/read-models/types";
@@ -51,7 +52,7 @@ export default async function CasaPage({
   ]);
 
   if (vistaMercato.available && vistaMercato.data) {
-    return <div className="lr-dossier"><SchedaMercato detail={vistaMercato.data} user={user} now={now} origin={typeof query.origine==="string"?query.origine:undefined} returnTo={typeof query.ritorno==="string"?query.ritorno:undefined}>
+    return <div className="lr-dossier"><RecordTools id={id} tab="mercato"/><SchedaMercato detail={vistaMercato.data} user={user} now={now} origin={typeof query.origine==="string"?query.origine:undefined} returnTo={typeof query.ritorno==="string"?query.ritorno:undefined}>
 <Suspense fallback={<ArchiveLoading label="Caricamento dei documenti dell’immobile"/>}><PropertyDocuments detail={vistaMercato.data} now={now}/></Suspense></SchedaMercato></div>;
   }
 

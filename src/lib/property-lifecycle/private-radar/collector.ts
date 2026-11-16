@@ -61,6 +61,22 @@ const text = (v: unknown): string | null => typeof v === "string" && v.trim() ? 
 const number = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 const scrub = (v: string | null) => v?.replace(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi, "[contatto rimosso]").replace(/\b(?:\+39\s*)?(?:0\d{1,3}|3\d{2})(?:[\s.-]*\d){6,9}\b/g, "[contatto rimosso]") ?? null;
 
+/** Source dates are often Italian, not JavaScript/US month-first dates. */
+export function privateEvidenceDate(value:unknown,observedAt:string):string|null {
+ if(typeof value!=="string")return null;
+ const raw=value.trim().replace(/^(?:al|il)\s+/i,''),italian=/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/.exec(raw),iso=/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/.exec(raw);
+ const named=/^(\d{1,2})\s+([a-zà]+)\.?\s+(\d{4})$/i.exec(raw);
+ const months=['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+ const month=named&&named[2]!.length>=3?months.findIndex(m=>m.startsWith(named[2]!.toLowerCase()))+1:0;
+ const day=Number(italian?.[1]??iso?.[3]??named?.[1]),m=Number(italian?.[2]??iso?.[2]??month),year=Number(italian?.[3]??iso?.[1]??named?.[3]);
+ if(!day||!m||!year)return null;
+ const date=new Date(Date.UTC(year,m-1,day));
+ if(date.getUTCDate()!==day||date.getUTCMonth()!==m-1||date.getUTCFullYear()!==year)return null;
+ // Timestamps without a documented timezone only support calendar-day precision.
+ const timestamp=iso&&/T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)?Date.parse(raw):date.getTime();
+ return Number.isFinite(timestamp)&&timestamp<=Date.parse(observedAt)?new Date(timestamp).toISOString():null;
+}
+
 export function privateObservationFromCapture(source: PrivatePortal, url: string, id: string, capture: Record<string, unknown>, firstSeen: string, observedAt: string): PrivateRadarObservation | null {
   const requested = new URL(url);
   if(requested.origin !== new URL(PRIVATE_PORTALS[source].url).origin)throw new Error("Portale della scheda non verificato");
@@ -76,12 +92,12 @@ export function privateObservationFromCapture(source: PrivatePortal, url: string
   if (seller.sellerType === "agency" || isRentalOnlyOffer(capture) || /\basta\b/i.test(String(capture.title))) return null;
   const geography = resolveMonitoredGeography({ rawText: [text(capture.addressRaw), text(capture.zone), text(capture.title)].filter(Boolean).join(", "), latitude: number(capture.latitude), longitude: number(capture.longitude), coordinatesExact: false });
   if (geography.scope !== "IN_SCOPE") return null;
-  const published = text(capture.portalDeclaredDate) ?? text(capture.metadataDatePublished);
-  const date = published && Number.isFinite(Date.parse(published)) && Date.parse(published) <= Date.parse(observedAt) ? new Date(published).toISOString() : null;
+  const date=privateEvidenceDate(capture.portalDeclaredDate,observedAt)??privateEvidenceDate(capture.metadataDatePublished,observedAt);
+  const modified=privateEvidenceDate(capture.metadataDateModified,observedAt);
   return { direct: true, id, source, source_listing_id: sourceId, url, canonical_url: url,
     title: scrub(text(capture.title))!, description: scrub(text(capture.description))?.slice(0, 12000) ?? null,
     price: number(capture.price), sqm: number(capture.sqm), rooms: number(capture.rooms), floor: text(capture.floor), zone: text(capture.zone), address_raw: text(capture.addressRaw), latitude: number(capture.latitude), longitude: number(capture.longitude),
-    portal_declared_date: date, metadata_date_published: null, first_seen_at: firstSeen, last_seen_at: observedAt, status: "active", seller_name: null, seller_type: seller.sellerType === "private" ? "private" : "unknown", seller_classification_confidence: seller.confidence,
+    portal_declared_date: date, metadata_date_published: null, metadata_date_modified: modified, portal_sort_date:privateEvidenceDate(capture.portalSortDate,observedAt), first_seen_at: firstSeen, last_seen_at: observedAt, status: "active", seller_name: null, seller_type: seller.sellerType === "private" ? "private" : "unknown", seller_classification_confidence: seller.confidence,
     image_urls: privateGalleryImages(capture.imageUrls),
   };
 }

@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Sito, 16 novembre:** anzianità pubblica distinta dal monitoraggio, notifiche interne e preferiti persistenti per account, Usciti/Venduti unificati, Notizie senza triage, export XLSX anche web. [Consegna, verifiche e limiti](WORKSPACE-UPDATES-2026-11-16.md).
+
 > **Worker 0.34.50, 16 novembre:** completata la selezione zone con ritaglio visivo dei tracciati ai perimetri selezionati. [Dettagli](WORKER-ZONE-CLIPPING-2026-11-16.md).
 
 > **Worker 0.34.49, 16 novembre:** selezione zone persistente sulla mappa, export XLSX vie, filtro tratti senza nome e colore SISTER conservato con totale incerto. [Dettagli e limiti](WORKER-ZONES-EXPORT-2026-11-16.md).

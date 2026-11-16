@@ -1,3 +1,4 @@
+import {readFavoriteIds} from "@/lib/workspace-state";
 import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import {PrivateRadarStatus} from "@/components/private-radar-status";
 import {Suspense} from "react";
@@ -29,12 +30,13 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
   if(value('vista')==='notizie')return <div className="lr-radar-desk lr-news-desk"><PageHeader title="Situazioni dal territorio" description="Fatti, luoghi e documenti da verificare."/><IntelligenceNavigation view="notizie"/><PropertyNews params={params} now={await readNow()}/></div>;
   const requested=value("vista"),view:IntelligenceView=INTELLIGENCE_VIEWS.includes(requested as IntelligenceView)?requested as IntelligenceView:"mercato";
+  const favoriteIds=view==="preferiti"?await readFavoriteIds():undefined;
   const page=Math.max(1,Math.min(10000,Math.floor(Number(value("pagina"))||1)));
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
   const now=await readNow(),db=getSupabaseServiceClient();
   const sort=intelligenceSort(value("ordine"),value("direzione"),view);
   const [result,agencies,metrics]=await Promise.all([
-    readCachedIntelligence({view,page,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
+    readCachedIntelligence({view,page,favoriteIds,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
   ]);
