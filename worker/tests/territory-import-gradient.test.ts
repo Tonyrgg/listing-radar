@@ -17,7 +17,7 @@ describe("Gradiente proporzionale lungo le vie", () => {
     expect(stops.at(-1)).toEqual({ at: 1, color: "gray" });
   });
   it("non inventa colori per inventari assenti, parziali o vuoti", () => {
-    for (const d of [undefined, { total: null, recent: 1 }, { total: null, acquired: 2, imported: 1 }]) expect(gradientStops(d, palette)).toEqual([{ at: 0, color: "gray" }, { at: 1, color: "gray" }]);
+    for (const d of [undefined, { total: null, recent: 1 }]) expect(gradientStops(d, palette)).toEqual([{ at: 0, color: "gray" }, { at: 1, color: "gray" }]);
   });
   it("separa 20% acquisiti da SISTER e 30% non letti, preservando 33% verde e 17% rosso", () => {
     const stops = gradientStops({ total: 100, recent: 33, stale: 17, acquired: 20, unacquired: 30, never: 50, undated: 0 }, palette);
@@ -33,3 +33,5 @@ describe("Gradiente proporzionale lungo le vie", () => {
     expect(metrics.edges.map(e => [e.start, e.length])).toEqual([[0, 5], [5, 5], [10, 10]]);
   });
 });
+
+it("preserves SISTER blue when an uncertain inventory also contains a verified CRM action",()=>{expect(gradientStops({total:null,acquired:406,imported:1},palette)).toEqual([{at:0,color:'blue'},{at:1,color:'blue'}]);});

@@ -25,6 +25,7 @@ import { TerritorySyncLoop } from "./sync-loop.js";
 import { synchronizeUntilAcknowledged } from './sync-barrier.js';
 import { SisterBulk } from "./sister-bulk.js";
 import {WorkerWorkAreas} from './work-areas.js';
+import * as XLSX from 'xlsx';
 import {buildZoneStreetDirectory} from './zone-streets.js';
 import { resolveSyncConflict } from "./sync-records.js";
 
@@ -231,11 +232,22 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     });
     const sisterBulk = new SisterBulk(application, store, notify);
     const workAreas=new WorkerWorkAreas(options.profileDirectory,options.live?options.onlineCredentials:undefined);
-    handle('zone-directory',async()=>{
+    const zoneDirectory=async()=>{
       const areas=await workAreas.read(),state=store.read(),streets=application.snapshot().streets;
       const canonical=new Map(state.streets.map(s=>[s.id,s.linkedOfficialId??s.id])),counts=new Map<string,number>();
       for(const unit of Object.values(state.units))for(const id of new Set(unit.streetIds.map(id=>canonical.get(id)??id)))counts.set(id,(counts.get(id)??0)+1);
       return{...buildZoneStreetDirectory(streets.map(s=>({...s,count:counts.get(s.id)??0,...state.memories[s.id]?.sisterSearch})),areas.areas),fetchedAt:areas.fetchedAt,stale:areas.stale};
+    };
+    handle('zone-directory',zoneDirectory);
+    handle('zone-directory-export',async value=>{
+      const ids=z.array(id).max(10000).parse(value),directory=await zoneDirectory();
+      const rows=directory.streets.filter(s=>ids.includes(s.id)).map(s=>({'Via':s.name,'Località':s.locality,'Codice':s.id,'Zone':directory.areas.filter(a=>s.areaIds.includes(a.id)).map(a=>a.name).join(', '),'Immobili':s.count??0,'Ultima acquisizione':s.lastScanAt??'','Ricerca SISTER':s.searchText??'','Voce SISTER':s.resultName??s.sisterName}));
+      if(!rows.length)throw new Error('Nessuna via da esportare');
+      const target=await dialog.showSaveDialog({defaultPath:'vie-per-zona.xlsx',filters:[{name:'Excel',extensions:['xlsx']}]});
+      if(target.canceled||!target.filePath)return {saved:false};
+      const sheet=XLSX.utils.json_to_sheet(rows);sheet['!cols']=[{wch:38},{wch:18},{wch:14},{wch:35},{wch:12},{wch:26},{wch:30},{wch:38}];
+      const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Vie');
+      await writeFile(target.filePath,XLSX.write(book,{type:'buffer',bookType:'xlsx'}));return{saved:true,count:rows.length};
     });
     handle("sister-queue", () => sisterBulk.list());
     handle('sister-queue-put-many',value=>sisterBulk.putMany(z.array(id).min(1).max(3000).parse(value)));

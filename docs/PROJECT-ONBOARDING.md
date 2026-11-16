@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Worker 0.34.49, 16 novembre:** selezione zone persistente sulla mappa, export XLSX vie, filtro tratti senza nome e colore SISTER conservato con totale incerto. [Dettagli e limiti](WORKER-ZONES-EXPORT-2026-11-16.md).
+
 > **Radar privati, 16 novembre:** due annunci aggiunti manualmente in V2; report di copertura per i cinque portali e intake URL idempotente. Tre fonti restano bloccate 403: copertura totale non raggiunta. [Verifiche e limiti](PRIVATE-RADAR-COVERAGE-2026-11-16.md).
 
 > **Worker 0.34.48, falso stop della coda SISTER — 15 novembre:** il percorso

@@ -1,4 +1,4 @@
-export function createZoneDirectory({api,escape,canOpen,openStreet,showAreas,fitArea}){
+export function createZoneDirectory({api,escape,canOpen,openStreet,showAreas,fitArea,filterStreets}){
  const $=id=>document.getElementById(id),dialog=$('zone-streets-dialog');
  let data=null,selectedAreas=new Set(),selectedStreets=new Set(),openGroups=new Set(),search='',acquired=false,expanded=false,loading=false,timer;
  const belongs=(s,id)=>id==='unlocated'?s.unlocated:id==='unassigned'?!s.unlocated&&!s.areaIds.length:s.areaIds.includes(id);
@@ -22,11 +22,13 @@ export function createZoneDirectory({api,escape,canOpen,openStreet,showAreas,fit
   dialog.querySelectorAll('[data-zone-select]').forEach(el=>{const candidates=visible.filter(s=>belongs(s,el.dataset.zoneSelect)&&eligible(s));const count=candidates.filter(s=>selectedStreets.has(s.id)).length;el.indeterminate=count>0&&count<candidates.length;el.onchange=()=>{visible.filter(s=>belongs(s,el.dataset.zoneSelect)&&eligible(s)).forEach(s=>el.checked?selectedStreets.add(s.id):selectedStreets.delete(s.id));render();};});
   dialog.querySelectorAll('[data-zone-open]').forEach(el=>el.onclick=()=>{dialog.close();openStreet(el.dataset.zoneOpen);});
   dialog.querySelectorAll('[data-zone-fit]').forEach(el=>el.onclick=()=>fitArea(data.areas.find(a=>a.id===el.dataset.zoneFit)));
-  showAreas(data.areas.filter(a=>!selectedAreas.size||selectedAreas.has(a.id)));
+  showAreas(data.areas.filter(a=>selectedAreas.has(a.id)));
+  filterStreets(selectedAreas.size?data.streets.filter(s=>[...selectedAreas].some(id=>belongs(s,id))).map(s=>s.id):null);
  }
  async function refresh(){if(loading||!dialog.open)return;loading=true;try{data=await api.zoneDirectory();if(!dialog.open)return;selectedStreets=new Set([...selectedStreets].filter(id=>data.streets.some(s=>s.id===id)));render();}catch(e){$('zone-streets-feedback').textContent=e.message;}finally{loading=false;if(data&&dialog.open)$('zone-streets-add').disabled=!selectedStreets.size;}}
  $('zone-streets-open').onclick=async()=>{if(!canOpen())return;dialog.showModal();$('zone-streets-feedback').textContent='';if(!data)$('zone-streets-count').textContent='Caricamento delle zone e delle vie…';await refresh();clearInterval(timer);if(dialog.open)timer=setInterval(refresh,30000);};
- $('zone-streets-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{clearInterval(timer);showAreas([]);});
+ $('zone-streets-export').onclick=async()=>{try{const rows=filtered().filter(s=>!selectedAreas.size||[...selectedAreas].some(id=>belongs(s,id)));const result=await api.exportZoneDirectory(rows.map(s=>s.id));if(result.saved)$('zone-streets-feedback').textContent=`Esportate ${result.count} vie in Excel`;}catch(e){$('zone-streets-feedback').textContent=e.message;}};
+ $('zone-streets-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{clearInterval(timer);});
  $('zone-streets-search').oninput=e=>{search=e.target.value;if(data)render();};
  $('zone-streets-acquired').onchange=e=>{acquired=e.target.checked;if(data)render();};
  $('zone-streets-expand').onclick=()=>{expanded=!expanded;if(!expanded){openGroups.clear();dialog.querySelectorAll('[data-zone-group][open]').forEach(el=>el.open=false);}$('zone-streets-expand').textContent=expanded?'Richiudi liste':'Apri liste';if(data)render();};

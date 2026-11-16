@@ -18,3 +18,5 @@ describe('zone di lavoro e vie condivise',()=>{
   expect(data.streets).toHaveLength(2);expect(data.streets.find(s=>s.id==='shared')?.areaIds).toEqual(['a','b']);expect(data.streets.find(s=>s.id==='unknown')?.unlocated).toBe(true);
  });
 });
+
+it('excludes nameless traces without excluding named streets',()=>{expect(buildZoneStreetDirectory([{...street('unnamed',[[0,1],[1,1]]),name:'Tratto senza nome 123'},street('real',[[0,1],[1,1]])],[area]).streets.map(s=>s.id)).toEqual(['real']);});

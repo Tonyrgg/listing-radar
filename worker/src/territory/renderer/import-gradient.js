@@ -4,7 +4,7 @@ export function gradientStops(distribution, palette) {
   if (!distribution?.total) {
     // An empty completed inventory or preserved source data proves acquisition,
     // but an interrupted inventory cannot support proportional coverage.
-    const acquired = distribution?.total === 0 || (distribution?.acquired > 0 && !(distribution.imported > 0));
+    const acquired = distribution?.total === 0 || (distribution?.acquired > 0);
     return acquired ? [{ at: 0, color: palette.acquired }, { at: 1, color: palette.acquired }] : neutral;
   }
   const bands = ["recent", "aging", "stale", "acquired", "never"].map(tone => ({

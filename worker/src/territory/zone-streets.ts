@@ -36,9 +36,10 @@ function segmentInside(a:Point,b:Point,poly:Point[][]){
  }return length;
 }
 function bounds(points:Point[]){return [Math.min(...points.map(p=>p[0])),Math.min(...points.map(p=>p[1])),Math.max(...points.map(p=>p[0])),Math.max(...points.map(p=>p[1]))];}
+export function namedStreet(name:string){return Boolean(name.trim())&&!/^(?:tratto senza nome|senza nome|unnamed|strada senza nome)(?:\s|$)/i.test(name.trim());}
 export function buildZoneStreetDirectory(streets:DirectoryStreet[],areas:StreetArea[]){
  const shapes=areas.map(area=>{const parts=polygons(area.geometry);return{area,parts,bounds:bounds(parts.flat(2))};});
- const rows=streets.filter(s=>!s.linkedOfficialId&&!s.outsideUrbanArea).map(street=>{
+ const rows=streets.filter(s=>!s.linkedOfficialId&&!s.outsideUrbanArea&&namedStreet(s.name)).map(street=>{
   const paths=lines(street.geometry),box=bounds(paths.flat()),areaIds:string[]=[];
   for(const shape of shapes){
    const b=shape.bounds;if(box[0]!>b[2]!||box[2]!<b[0]!||box[1]!>b[3]!||box[3]!<b[1]!)continue;

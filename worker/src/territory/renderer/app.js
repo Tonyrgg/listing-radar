@@ -453,11 +453,14 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   });
   L.DomEvent.disableClickPropagation($("street-search"));
   L.DomEvent.disableScrollPropagation($("street-search"));
+  let zoneStreetFilter=null;
   function paint() {
     const c = colors();
     for (const street of snapshot.streets) {
       const layer = layers.get(street.id);
       if (!layer) continue;
+      if(zoneStreetFilter&&!zoneStreetFilter.has(street.id)){layer.remove();continue;}
+      if(!map.hasLayer(layer))layer.addTo(map);
       const stops = gradientStops(street.progress.distribution, c);
       layer.setStyle({
         color: stops[0].color,
@@ -1678,11 +1681,13 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     open: async () => { if (dirty) { feedback("Salva o annulla le modifiche prima di aprire la coda.", true); return false; } selectedStreet = null; detail = null; renderedContext = null; quarantineView = networkView = historyView = testsView = false; $("inspector").classList.remove("street-inspector"); $("inspector").innerHTML = ""; $("detail-dialog").scrollTop = 0; openDialog("Coda immobili"); return true; }
   });
   createSisterBulk({api, escape, snapshot: () => snapshot});
+  map.createPane('work-areas');map.getPane('work-areas').style.zIndex='350';map.getPane('work-areas').style.pointerEvents='none';
   const workAreaLayer=L.layerGroup().addTo(map);
   createZoneDirectory({api,escape,
     canOpen:()=>{if(dirty){feedback('Salva o annulla le modifiche prima di aprire le zone.',true);return false;}return true;},
     openStreet:id=>choose(id).catch(error=>feedback(error.message,true)),
-    showAreas:areas=>{workAreaLayer.clearLayers();for(const area of areas)L.geoJSON(area.geometry,{style:{color:area.color,weight:2,fillOpacity:.06},onEachFeature:(_feature,layer)=>layer.bindTooltip(escape(area.name))}).addTo(workAreaLayer);},
+    filterStreets:ids=>{zoneStreetFilter=ids?new Set(ids):null;if(snapshot)paint();},
+    showAreas:areas=>{workAreaLayer.clearLayers();for(const area of areas)L.geoJSON(area.geometry,{pane:'work-areas',interactive:false,style:{color:area.color,weight:2,fillOpacity:.06},onEachFeature:(_feature,layer)=>layer.bindTooltip(escape(area.name))}).addTo(workAreaLayer);},
     fitArea:area=>{if(!area)return;const bounds=L.geoJSON(area.geometry).getBounds(),width=map.getSize().x,panel=$('zone-streets-dialog').getBoundingClientRect().width;if(bounds.isValid())map.fitBounds(bounds,{paddingTopLeft:[30,30],paddingBottomRight:[Math.min(panel+30,Math.max(30,width-300)),30],maxZoom:16});}
   });
   $("queue-manager").onclick = safe(() => queuePanel.open());

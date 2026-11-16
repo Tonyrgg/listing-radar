@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   sisterQueue: () => ipcRenderer.invoke('territory:sister-queue'),
   sisterQueuePut: value => ipcRenderer.invoke('territory:sister-queue-put', value),
   sisterQueuePutMany: value => ipcRenderer.invoke('territory:sister-queue-put-many', value),
+  exportZoneDirectory: ids => ipcRenderer.invoke('territory:zone-directory-export',ids),
   zoneDirectory: () => ipcRenderer.invoke('territory:zone-directory'),
   sisterQueueRemove: value => ipcRenderer.invoke('territory:sister-queue-remove', value),
   sisterQueueStart: () => ipcRenderer.invoke('territory:sister-queue-start'),
