@@ -19,7 +19,7 @@ import { RadarFilterPanel } from "@/components/radar-filter-panel";
 import {readPropertyThumbnails} from '@/lib/lifecycle-photos';
 
 export const metadata:Metadata={title:"Intelligence"};
-const filterKeys=["q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti","civico","via","coordinate","precisione"];
+const filterKeys=["zona_lavoro","q","esito","agenzia","localita","zona","stato","giorni","punteggio","ribasso","tipo","prezzo_min","prezzo_max","mq_min","mq_max","ribassato","fonte","atti","civico","via","coordinate","precisione"];
 const precisionOptions={EXACT_ADDRESS:"Indirizzo esatto",EXACT_COORDINATES:"Coordinate esatte",STREET_ONLY:"Solo via",APPROXIMATE_AREA:"Zona approssimativa",UNKNOWN:"Posizione da verificare"};
 const sourceOptions=["admaiora","futura","garofalo","iconacasa","momento","puntocasa","studisanti","studiocasa","vistocasa","REMAX","WIKICASA","IMMOBILIARE","CASA","IDEALISTA","idealista","immobiliare","casa","subito","casadaprivato"];
 export default async function IntelligencePage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
@@ -33,18 +33,20 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
   const now=await readNow(),db=getSupabaseServiceClient();
   const sort=intelligenceSort(value("ordine"),value("direzione"),view);
-  const [result,agencies,metrics]=await Promise.all([
-    readCachedIntelligence({view,page,favoriteIds,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
+  const [result,agencies,metrics,workAreas]=await Promise.all([
+    readCachedIntelligence({view,page,favoriteIds,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),workArea:value("zona_lavoro"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
+    db.from("map_areas").select("id,name").order("name"),
   ]);
   const pageUrl=(next:number)=>{const q=new URLSearchParams({vista:view,pagina:String(next),ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(value(key))q.set(key,value(key));return `?${q}`;};
   const photos:Record<string,string>=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
   for(const row of result?.rows??[])if(!photos[row.property_id]&&privateGalleryImages([row.private_image_url]).length)photos[row.property_id]=row.private_image_url!;
   const field=(name:string,label:string,type="text",placeholder?:string)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><input className={controlClass()} name={name} defaultValue={value(name)} type={type} min={type==="number"?0:undefined} placeholder={placeholder}/></label>;
-  const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
+  const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select aria-label={label} className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
   const filterDisplay=(key:string)=>{
     const raw=value(key);
+    if(key==='zona_lavoro')return (workAreas.data??[]).find(a=>a.id===raw)?.name??'Zona selezionata';
     if(key==='agenzia')return (agencies.data??[]).find(a=>a.id===raw)?.name??'Agenzia selezionata';
     if(key==='esito')return EXIT_LABELS[raw]??'Esito selezionato';
     if(key==='civico')return raw==='yes'?'Presente':'Assente';
@@ -60,17 +62,17 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
 
   const resetUrl="?"+new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});
   const activeKeys=filterKeys.filter(k=>value(k));
-  const filterLabels:Record<string,string>={q:"Ricerca",agenzia:"Agenzia",localita:"Località",zona:"Zona",stato:"Stato",giorni:"Giorni minimi",punteggio:"Indice minimo",ribasso:"Ribasso minimo",tipo:"Tipo",prezzo_min:"Prezzo da",prezzo_max:"Prezzo fino a",mq_min:"m² da",mq_max:"m² fino a",ribassato:"Ribassi",fonte:"Fonte",atti:"Documenti",esito:"Esito",civico:"Civico",via:"Via",coordinate:"Coordinate",precisione:"Precisione posizione"};
+  const filterLabels:Record<string,string>={zona_lavoro:"Zona disegnata",q:"Ricerca",agenzia:"Agenzia",localita:"Località",zona:"Zona",stato:"Stato",giorni:"Giorni minimi",punteggio:"Indice minimo",ribasso:"Ribasso minimo",tipo:"Tipo",prezzo_min:"Prezzo da",prezzo_max:"Prezzo fino a",mq_min:"m² da",mq_max:"m² fino a",ribassato:"Ribassi",fonte:"Fonte",atti:"Documenti",esito:"Esito",civico:"Civico",via:"Via",coordinate:"Coordinate",precisione:"Precisione posizione"};
   const withoutFilter=(removed:string)=>{const q=new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(key!==removed&&value(key))q.set(key,value(key));return "?"+q;};
 
   return <div className="lr-radar-desk">
     <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description} actions={<SourceStatusDialog/>}/>
-    <IntelligenceNavigation view={view}/>
+    <IntelligenceNavigation view={view} workArea={value("zona_lavoro")}/>
     <RadarFilterPanel count={activeKeys.length} filters={<form method="get" className="lr-radar-filter-form">
             <input type="hidden" name="vista" value={view}/><input type="hidden" name="ordine" value={sort.key}/><input type="hidden" name="direzione" value={sort.ascending?"asc":"desc"}/>
             <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>
             <fieldset><legend>Cerca un immobile</legend>{field("q","Indirizzo o civico","search","Via, civico…")}{select("agenzia","Agenzia",Object.fromEntries((agencies.data??[]).map(a=>[a.id,a.name])))}</fieldset>
-            <fieldset><legend>Territorio</legend>{select("localita","Località",{Bitonto:"Bitonto",Palombaio:"Palombaio",Mariotto:"Mariotto"})}{field("zona","Zona")}</fieldset>
+            <fieldset><legend>Territorio</legend>{select("localita","Località",{Bitonto:"Bitonto",Palombaio:"Palombaio",Mariotto:"Mariotto"})}{select("zona_lavoro","Zona disegnata",Object.fromEntries((workAreas.data??[]).map(a=>[a.id,a.name])))}<Meta>{workAreas.error?"Elenco zone temporaneamente non disponibile.":"Usa i confini salvati in Territorio. Gli immobili senza posizione non compaiono; quelli con posizione approssimativa restano da verificare."}</Meta></fieldset>
             <fieldset><legend>Informazioni geografiche</legend>
               {select("civico","Numero civico",{yes:"Presente",no:"Assente"})}
               {select("via","Via",{yes:"Conosciuta",no:"Non conosciuta"})}

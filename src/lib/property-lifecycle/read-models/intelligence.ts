@@ -1,3 +1,5 @@
+import {areaBounds,inSavedArea} from "./area-filter";
+import type {GeoJsonGeometry} from "@/lib/map/types";
 import {intelligenceSort} from "./intelligence-sorting";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -43,6 +45,7 @@ export interface IntelligenceRow {
 }
 export interface IntelligenceFilters {
   favoriteIds?:string[];
+  workArea?:string;
   view: IntelligenceView; page: number; sort?:string; direction?:string; query?: string; classification?: string;
   agency?: string; locality?: string; zone?: string; state?: string;
   minimumAge?: number; minimumScore?: number; minimumReduction?: number;
@@ -103,9 +106,30 @@ function intelligenceRequest(db:SupabaseClient,filters:IntelligenceFilters,field
 }
 export async function readIntelligence(db:SupabaseClient,filters:IntelligenceFilters){
  const size=40,sort=intelligenceSort(filters.sort,filters.direction,filters.view),offset=(filters.page-1)*size;
- const {data,error}=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
- if(error)throw new Error(error.message);
- const rows=(data??[]) as unknown as IntelligenceRow[];
+ let rows:IntelligenceRow[]=[];
+ if(filters.workArea){
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(filters.workArea))return{rows:[],hasNext:false};
+  const area=await db.from("map_areas").select("id,geometry").eq("id",filters.workArea).maybeSingle();
+  if(area.error)throw new Error(area.error.message);
+  const geometry=area.data?.geometry as GeoJsonGeometry|undefined,bounds=geometry&&areaBounds(geometry);
+  if(!geometry||!bounds)return{rows:[],hasNext:false};
+  // Filter the entire ordered candidate stream before pagination. Bounding-box
+  // predicates keep the read small; polygon holes/corners are checked exactly.
+  const batch=500,target=offset+size+1;
+  for(let start=0;start<20000;start+=batch){
+   const result=await intelligenceRequest(db,filters).gte("latitude",bounds.south).lte("latitude",bounds.north).gte("longitude",bounds.west).lte("longitude",bounds.east).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(start,start+batch-1);
+   if(result.error)throw new Error(result.error.message);
+   const candidates=(result.data??[]) as unknown as IntelligenceRow[];
+   rows.push(...candidates.filter(row=>inSavedArea(row,geometry)));
+   if(rows.length>=target||candidates.length<batch)break;
+   if(start+batch>=20000)throw new Error("Filtro zona oltre il limite di lettura: restringi gli altri filtri");
+  }
+  rows=rows.slice(offset,offset+size+1);
+ }else{
+  const result=await intelligenceRequest(db,filters).order(sort.field!,{ascending:sort.ascending,nullsFirst:false}).order("row_id").range(offset,offset+size);
+  if(result.error)throw new Error(result.error.message);
+  rows=(result.data??[]) as unknown as IntelligenceRow[];
+ }
  const privateRows=rows.filter(r=>r.private_source);
  if(privateRows.length){
   const dates=await db.from("private_publications").select("property_id,first_public_evidence_at,first_seen_at").in("property_id",privateRows.map(r=>r.property_id)).eq("state","ACTIVE");

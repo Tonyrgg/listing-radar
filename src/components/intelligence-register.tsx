@@ -19,9 +19,9 @@ export const INTELLIGENCE_VIEW_COPY = {
  venduti:{title:"Segnali di vendita",description:"Vendite confermate e probabili, mantenute distinte."},
  notizie:{title:"Notizie",description:"Trasformazioni immobiliari sostenute da documenti pubblici."},
 };
-export function IntelligenceNavigation({view}:{view:string}) {
+export function IntelligenceNavigation({view,workArea}:{view:string;workArea?:string}) {
  const items=[["mercato","Mercato"],["opportunita","Opportunità"],["privati","Radar privati"],["notizie","Notizie"],["usciti","Usciti e venduti"],["preferiti","Preferiti"]];
- return <nav aria-label="Viste Intelligence" className="lr-tabs">{items.map(([key,label])=><Link key={key} href={"?vista="+key} aria-current={(view===key||(view==="venduti"&&key==="usciti"))?"page":undefined}>{label} <TabNotice tab={key}/></Link>)}</nav>;
+ return <nav aria-label="Viste Intelligence" className="lr-tabs">{items.map(([key,label])=><Link key={key} href={"?"+new URLSearchParams({vista:key,...(workArea&&key!=="notizie"?{zona_lavoro:workArea}:{})})} aria-current={(view===key||(view==="venduti"&&key==="usciti"))?"page":undefined}>{label} <TabNotice tab={key}/></Link>)}</nav>;
 }
 function statusTone(row:IntelligenceRow):Tone {
  if(row.exit_classification==="SOLD_CONFIRMED")return "ok";
