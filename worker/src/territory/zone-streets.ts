@@ -52,3 +52,22 @@ export function buildZoneStreetDirectory(streets:DirectoryStreet[],areas:StreetA
  return{areas:areas.map(area=>({...area,streetCount:rows.filter(s=>s.areaIds.includes(area.id)).length})),streets:rows};
 }
 export type ZoneStreetDirectory=ReturnType<typeof buildZoneStreetDirectory>;
+/** Rendering-only clipping. Original street geometry and SISTER scope stay intact. */
+export function clipStreetToAreas(geometry:ZoneGeometry|null,areas:StreetArea[]):ZoneGeometry|null{
+ const shapes=areas.flatMap(a=>polygons(a.geometry)),pieces:Point[][]=[];
+ for(const line of lines(geometry))for(let i=1;i<line.length;i++){
+  const a=line[i-1]!,b=line[i]!,d=subtract(b,a),cuts=[0,1];
+  for(const poly of shapes)for(const ring of poly)for(let j=0;j<ring.length;j++){
+   const c=ring[j]!,e=subtract(ring[(j+1)%ring.length]!,c),den=cross(d,e);if(Math.abs(den)<1e-16)continue;
+   const t=cross(subtract(c,a),e)/den,u=cross(subtract(c,a),d)/den;if(t>0&&t<1&&u>=0&&u<=1)cuts.push(t);
+  }
+  const sorted=[...new Set(cuts)].sort((x,y)=>x-y);
+  for(let j=1;j<sorted.length;j++){
+   const start=sorted[j-1]!,end=sorted[j]!,mid=(start+end)/2;
+   if(end-start<1e-12||!shapes.some(poly=>contains([a[0]+d[0]*mid,a[1]+d[1]*mid],poly)))continue;
+   const p:Point=[a[0]+d[0]*start,a[1]+d[1]*start],q:Point=[a[0]+d[0]*end,a[1]+d[1]*end];
+   pieces.push([p,q]);
+  }
+ }
+ return pieces.length?{type:'MultiLineString',coordinates:pieces}:null;
+}

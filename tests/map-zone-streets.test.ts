@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {buildZoneStreetDirectory,type DirectoryStreet,type StreetArea} from '../worker/src/territory/zone-streets';
+import {buildZoneStreetDirectory,clipStreetToAreas,type DirectoryStreet,type StreetArea} from '../worker/src/territory/zone-streets';
 const ring=[[0,0],[2,0],[2,2],[0,2],[0,0]];
 const area:StreetArea={id:'a',name:'Zona A',color:'#aabbcc',agentName:'Tony',geometry:{type:'Polygon',coordinates:[ring]}};
 const street=(id:string,coordinates:unknown):DirectoryStreet=>({id,name:`Via ${id}`,sisterName:`VIA ${id}`,locality:'Bitonto',geometry:{type:'LineString',coordinates}});
@@ -20,3 +20,5 @@ describe('zone di lavoro e vie condivise',()=>{
 });
 
 it('excludes nameless traces without excluding named streets',()=>{expect(buildZoneStreetDirectory([{...street('unnamed',[[0,1],[1,1]]),name:'Tratto senza nome 123'},street('real',[[0,1],[1,1]])],[area]).streets.map(s=>s.id)).toEqual(['real']);});
+
+it('clips painted roads exactly to selected zones without changing stored geometry',()=>{const g={type:'LineString',coordinates:[[-1,1],[3,1]]};expect(clipStreetToAreas(g,[area])).toEqual({type:'MultiLineString',coordinates:[[[0,1],[2,1]]]});expect(g.coordinates).toEqual([[-1,1],[3,1]]);expect(clipStreetToAreas({type:'LineString',coordinates:[[4,4],[5,5]]},[area])).toBeNull();});
