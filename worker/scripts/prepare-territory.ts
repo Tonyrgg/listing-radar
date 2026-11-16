@@ -27,6 +27,9 @@ const network = JSON.parse(await readFile(path.join(root, "data/street-registry/
 if (network.version !== 1 || network.municipality !== "BITONTO" || !Array.isArray(network.streets) || network.streets.some((s: { id: string; catalogKind: string }) => !s.id.startsWith("network:") || s.catalogKind !== "network")) throw new Error("Rete del laboratorio non riconosciuta");
 const streets = [...official, ...network.streets];
 await cp(path.join(root, "worker/src/territory/renderer"), output, { recursive: true });
+// Renderer resources are outside app.asar in an installed build. Every browser
+// import must live in this resource tree, not beside the compiled main process.
+await cp(path.join(root, `worker/${distribution}/territory/zone-streets.js`), path.join(output, "zone-geometry.js"));
 await cp(path.join(root, "node_modules/leaflet/dist"), path.join(output, "vendor"), { recursive: true });
 await cp(path.join(root, "worker/src/desktop/renderer/tokens.css"), path.join(output, "tokens.css"));
 await cp(path.join(root, "worker/src/desktop/renderer/worker-theme.css"), path.join(output, "worker-theme.css"));

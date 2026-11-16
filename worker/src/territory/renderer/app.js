@@ -1,4 +1,4 @@
-import {clipStreetToAreas} from '../zone-streets.js';
+import {clipStreetToAreas} from './zone-geometry.js';
 import { createSisterBulk } from "./sister-bulk.js";
 import {createZoneDirectory} from './zone-directory.js';
 import urbanPerimeters from './urban-perimeters.js';
