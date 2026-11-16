@@ -1,0 +1,11 @@
+import {beforeEach,it,expect,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({required:vi.fn(),owner:vi.fn(),summary:vi.fn(),archive:vi.fn(),privates:vi.fn(),client:vi.fn()}));
+vi.mock('@/lib/auth',()=>({isAuthRequired:mocks.required}));
+vi.mock('@/lib/workspace-state',()=>({workspaceOwner:mocks.owner}));
+vi.mock('@/lib/sources-health',()=>({getSourcesSummary:mocks.summary}));
+vi.mock('@/lib/supabase/service',()=>({getSupabaseServiceClient:mocks.client}));
+import {GET} from '../app/api/source-status/route';
+beforeEach(()=>{vi.clearAllMocks();mocks.required.mockReturnValue(true);mocks.owner.mockResolvedValue('owner');mocks.summary.mockResolvedValue({available:true,total:2,healthy:1,broken:[],partial:[{name:'Fonte',health:'partial',read:3,note:'incompleta'}],unreadListings:0});mocks.archive.mockResolvedValue({data:{source_revision:3,refreshed_revision:2,refreshed_at:'2026-11-16T12:00:00Z',last_error:null},error:null});mocks.privates.mockResolvedValue({data:[{source:'subito',state:'OBSERVED',checked_at:'2026-11-16T12:00:00Z',discovered_count:95,failed_count:0}],error:null});mocks.client.mockReturnValue({from:(table:string)=>({select:()=>({single:mocks.archive,order:mocks.privates})})});});
+it('requires authentication before reading the archive',async()=>{mocks.owner.mockResolvedValue(null);expect((await GET()).status).toBe(401);expect(mocks.client).not.toHaveBeenCalled();});
+it('returns ordered sections and a pending archive without exposing internal error messages',async()=>{const r=await GET(),data=await r.json();expect(r.status).toBe(200);expect(data.archive).toMatchObject({status:'pending',refreshedAt:'2026-11-16T12:00:00Z'});expect(data.agencies.partial).toHaveLength(1);expect(data.privates.rows[0].source).toBe('subito');expect(r.headers.get('Cache-Control')).toContain('no-store');});
+it('preserves readable sections when one source fails and redacts database details',async()=>{mocks.archive.mockResolvedValue({data:null,error:{message:'private database diagnostic'}});mocks.summary.mockRejectedValue(Error('agency transport failure'));const r=await GET(),data=await r.json();expect(r.status).toBe(200);expect(data.archive.status).toBe('unavailable');expect(data.agencies.available).toBe(false);expect(data.privates.available).toBe(true);expect(JSON.stringify(data)).not.toContain('private database diagnostic');});

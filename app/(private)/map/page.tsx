@@ -1,6 +1,6 @@
 import {Suspense} from "react";
 import {ArchiveLoading} from "@/components/archive-loading";
-import {ArchiveFreshness} from "@/components/archive-freshness";
+import {SourceStatusDialog} from "@/components/source-status-dialog";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
@@ -22,7 +22,7 @@ export default async function MapPage({searchParams}:{searchParams:Promise<MapPa
  await connection();
  const params=await searchParams;
  return <div className="space-y-6">
-    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato." actions={<><WorkerStreetDirectory/><Link href="/map/zone" className={buttonClass('secondary')}>Gestisci zone di lavoro</Link></>}/>
+    <PageHeader title="Territorio" description="Tutti gli immobili conosciuti e le evidenze pubbliche sul territorio, anche quando non sono più sul mercato." actions={<><SourceStatusDialog/><WorkerStreetDirectory/><Link href="/map/zone" className={buttonClass('secondary')}>Gestisci zone di lavoro</Link></>}/>
  <Suspense fallback={<ArchiveLoading label="Caricamento della mappa"/>}><MapContent/></Suspense>
  <Suspense fallback={<ArchiveLoading label="Caricamento dei documenti"/>}><DocumentsContent params={params}/></Suspense>
  </div>;
@@ -34,7 +34,7 @@ async function MapContent(){
   db.from("internal_zones").select("*").eq("is_active",true).not("geometry","is",null).order("zone_number"),
  ]);
  const zoneRows=zones.data;
- return <><Suspense fallback={null}><ArchiveFreshness/></Suspense>
+ return <>
     {!rows?<EmptyState title="Mappa dell’archivio non disponibile" description="La lettura dei dati non è completa. Riprova tra poco; nessun punto è stato cancellato."/>:<TerritoryArchive rows={rows} now={await readNow()} zones={(zoneRows??[]) as import("@/lib/matching/types").InternalZone[]} workAreas={workAreas}/>}
  </>;
 }

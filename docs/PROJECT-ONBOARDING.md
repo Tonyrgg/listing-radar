@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Stato letture, 16 novembre:** riepiloghi inline spostati in una modale aperta dal pulsante a destra del titolo, in Intelligence e Territorio. Dati caricati solo su richiesta. [Dettagli e verifiche](SOURCE-STATUS-DIALOG-2026-11-16.md).
+
 > **Worker 0.34.51, ripristino avvio V2:** corretto un import geometrico assente nelle risorse installate della 0.34.50. Nuova prova Electron obbligatoria sugli asset distribuiti. [Causa e verifiche](WORKER-V2-STARTUP-0.34.51.md).
 
 > **Sito, 16 novembre:** anzianità pubblica distinta dal monitoraggio, notifiche interne e preferiti persistenti per account, Usciti/Venduti unificati, Notizie senza triage, export XLSX anche web. [Consegna, verifiche e limiti](WORKSPACE-UPDATES-2026-11-16.md).

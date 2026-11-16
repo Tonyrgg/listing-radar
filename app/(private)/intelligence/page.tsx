@@ -1,8 +1,6 @@
 import {readFavoriteIds} from "@/lib/workspace-state";
 import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
-import {PrivateRadarStatus} from "@/components/private-radar-status";
-import {Suspense} from "react";
-import {ArchiveFreshness} from "@/components/archive-freshness";
+import {SourceStatusDialog} from "@/components/source-status-dialog";
 import {readCachedIntelligence} from "@/lib/property-lifecycle/read-models/intelligence-server";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -28,7 +26,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   await connection();
   const params=await searchParams;
   const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
-  if(value('vista')==='notizie')return <div className="lr-radar-desk lr-news-desk"><PageHeader title="Situazioni dal territorio" description="Fatti, luoghi e documenti da verificare."/><IntelligenceNavigation view="notizie"/><PropertyNews params={params} now={await readNow()}/></div>;
+  if(value('vista')==='notizie')return <div className="lr-radar-desk lr-news-desk"><PageHeader title="Situazioni dal territorio" description="Fatti, luoghi e documenti da verificare." actions={<SourceStatusDialog/>}/><IntelligenceNavigation view="notizie"/><PropertyNews params={params} now={await readNow()}/></div>;
   const requested=value("vista"),view:IntelligenceView=INTELLIGENCE_VIEWS.includes(requested as IntelligenceView)?requested as IntelligenceView:"mercato";
   const favoriteIds=view==="preferiti"?await readFavoriteIds():undefined;
   const page=Math.max(1,Math.min(10000,Math.floor(Number(value("pagina"))||1)));
@@ -66,8 +64,8 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const withoutFilter=(removed:string)=>{const q=new URLSearchParams({vista:view,ordine:sort.key,direzione:sort.ascending?"asc":"desc"});for(const key of filterKeys)if(key!==removed&&value(key))q.set(key,value(key));return "?"+q;};
 
   return <div className="lr-radar-desk">
-    <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description}/>
-    <IntelligenceNavigation view={view}/>{view==="privati"?<PrivateRadarStatus/>:null}<Suspense fallback={null}><ArchiveFreshness/></Suspense>
+    <PageHeader title={INTELLIGENCE_VIEW_COPY[view].title} description={INTELLIGENCE_VIEW_COPY[view].description} actions={<SourceStatusDialog/>}/>
+    <IntelligenceNavigation view={view}/>
     <RadarFilterPanel count={activeKeys.length} filters={<form method="get" className="lr-radar-filter-form">
             <input type="hidden" name="vista" value={view}/><input type="hidden" name="ordine" value={sort.key}/><input type="hidden" name="direzione" value={sort.ascending?"asc":"desc"}/>
             <div className="lr-filter-submit"><button className={buttonClass("primary")}>Applica filtri</button><Link href={resetUrl} className={buttonClass("quiet")}>Azzera</Link></div>
