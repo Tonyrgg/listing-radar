@@ -8,7 +8,7 @@ const input=z.discriminatedUnion('action',[
  z.object({action:z.literal('read'),tab:z.enum(noticeTabs),id:z.string().min(1).max(200).optional()}),
 ]);
 export async function GET(){try{
- const owner=await workspaceOwner();if(!owner)return NextResponse.json({notices:{},favorites:[]});
+ const owner=await workspaceOwner();if(!owner)return NextResponse.json({error:'Accesso richiesto'},{status:401});
  const [snapshot,prefs]=await Promise.all([latestWorkspaceSnapshot(),readWorkspacePreferences(owner)]),stored=new Map(prefs.map(r=>[r.key,r.value]));
  const notices:Record<string,Record<string,string>>={};
  for(const tab of noticeTabs){const baseline=stored.get(`workspace:${owner}:read:${tab}`) as Record<string,string>|undefined;notices[tab]={};for(const [id,hash]of Object.entries(snapshot[tab]??{})){const individual=stored.get(`workspace:${owner}:record:${tab}:${id}`);if(baseline?.[id]!==hash&&individual!==hash)notices[tab]![id]=baseline?.[id]||individual?'updated':'new';}}

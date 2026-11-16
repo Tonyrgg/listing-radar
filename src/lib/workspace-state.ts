@@ -1,14 +1,14 @@
 import 'server-only';
 import {createHash} from 'node:crypto';
 import {unstable_cache} from 'next/cache';
-import {requireUser} from '@/lib/auth';
+import {getCurrentUser} from '@/lib/auth';
 import {getSupabaseServiceClient} from '@/lib/supabase/service';
 import {readNewsCandidates} from '@/lib/property-lifecycle/buildings/news-read-model';
 export const noticeTabs=['mercato','opportunita','privati','usciti','notizie'] as const;
 export type NoticeTab=typeof noticeTabs[number];
 export type NoticeSnapshot=Record<string,Record<string,string>>;
 export function recordFingerprint(value:unknown){return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,20);}
-export async function workspaceOwner(){const user=await requireUser();return user?.id??null;}
+export async function workspaceOwner(){const user=await getCurrentUser(),allowed=process.env.AUTH_ALLOWED_EMAIL?.trim().toLowerCase();return user&&(!allowed||user.email?.toLowerCase()===allowed)?user.id:null;}
 export async function readWorkspacePreferences(owner:string|null){
  if(!owner)return [];
  const result=await getSupabaseServiceClient().from('app_settings').select('key,value').like('key',`workspace:${owner}:%`).limit(10000);

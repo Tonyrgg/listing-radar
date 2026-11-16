@@ -8,7 +8,7 @@ const Context=createContext<{state:State;save:(body:unknown)=>Promise<void>;erro
 export function WorkspaceUpdates({children}:{children:ReactNode}){
  const router=useRouter();
  const [state,setState]=useState<State>({notices:{},favorites:[]}),[error,setError]=useState('');
- const refresh=useCallback(async()=>{try{const r=await fetch('/api/workspace-state',{cache:'no-store'});if(!r.ok)throw Error();setState(await r.json());setError('');}catch{setError('Avvisi non aggiornati; riprova tra poco');}},[]);
+ const refresh=useCallback(async()=>{try{const r=await fetch('/api/workspace-state',{cache:'no-store'});if(r.status===401){setError('Accedi nuovamente per aggiornare gli avvisi');return;}if(!r.ok)throw Error();setState(await r.json());setError('');}catch{setError('Avvisi non aggiornati; riprova tra poco');}},[]);
  useEffect(()=>{const initial=setTimeout(()=>void refresh(),0);const timer=setInterval(()=>{if(!document.hidden)void refresh()},60000);const focus=()=>void refresh();window.addEventListener('focus',focus);return()=>{clearTimeout(initial);clearInterval(timer);window.removeEventListener('focus',focus)}},[refresh]);
  async function save(body:unknown){const r=await fetch('/api/workspace-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){setError('Modifica non salvata. Riprova.');return;}await refresh();if((body as {action:string}).action==="favorite")router.refresh();}
  return <Context.Provider value={{state,save,error}}>{children}</Context.Provider>;

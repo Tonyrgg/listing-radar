@@ -23,3 +23,5 @@ it('acknowledges the actual current record version and rejects absent records',a
  expect((await POST(request({action:'read',tab:'mercato',id:property}))).status).toBe(200);expect(mocks.upsert).toHaveBeenCalledWith({key:`workspace:${owner}:record:mercato:${property}`,value:'version2'},{onConflict:'key'});
  expect((await POST(request({action:'read',tab:'mercato',id:'absent'}))).status).toBe(409);
 });
+
+it('returns authentication required rather than a false database outage for anonymous notification reads',async()=>{mocks.owner.mockResolvedValue(null);expect((await GET()).status).toBe(401);expect(mocks.snapshot).not.toHaveBeenCalled();});
