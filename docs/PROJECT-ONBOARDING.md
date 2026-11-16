@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Riepilogo aggiornamenti immobile:** in cima alla scheda, confronto prima/dopo e conferma lettura condivisa tra viste. Ricevute storiche senza valori dichiarate esplicitamente. [Dettagli e verifiche](PROPERTY-UPDATE-RECAP-2026-11-16.md).
+
 > **Intelligence, filtro zone disegnate:** menu delle aree di Territorio nelle liste immobiliari, associazione geografica e paginazione corretta. [Dettagli e verifiche](INTELLIGENCE-AREA-FILTER-2026-11-16.md).
 
 > **Stato letture, 16 novembre:** riepiloghi inline spostati in una modale aperta dal pulsante a destra del titolo, in Intelligence e Territorio. Dati caricati solo su richiesta. [Dettagli e verifiche](SOURCE-STATUS-DIALOG-2026-11-16.md).
