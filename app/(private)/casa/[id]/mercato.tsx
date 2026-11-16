@@ -1,3 +1,4 @@
+import {SavedListingSnapshots} from "@/components/saved-listing-snapshots";
 import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
 import {agencyTenureLabel,agencyDateSource,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ArrowLeft, CheckCircle2, FileCheck2, MapPin } from "lucide-react";
@@ -259,6 +260,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
     <section id="pubblicazioni" className="lr-case-section"><h2>Pubblicazioni e prezzi per fonte</h2><ChiLaTiene detail={detail} now={now}/>{detail.publicationPrices?.length?<div className="lr-case-price-sources">{detail.publicationPrices.map(price=><div key={price.publicationId}><a href={price.sourceUrl} target="_blank" rel="noreferrer">{new URL(price.sourceUrl).hostname.replace(/^www\./,"")}</a><span>{formatCurrency(price.firstPrice)} → {formatCurrency(price.latestPrice)}</span><span>{price.dropCount} ribassi</span></div>)}</div>:null}</section>
     {detail.location&&forma!=="niente"?<section id="territorio" className="lr-case-section"><h2>Posizione <span>{locationPrecisionLabel(detail.location.precision)}</span></h2><MappaDellaCasa posizione={detail.location} etichetta={indirizzo}/><p className="lr-case-footnote"><MapPin size={13} aria-hidden="true"/>{dove}{forma==="area"?" · area indicativa, non posizione esatta dell’immobile":""}</p></section>:null}
     {!historyFirst?historySection:null}
+    <SavedListingSnapshots propertyId={property.id}/>
     {children}
           <details id="correggi" open className="lr-property-corrections"><summary>Correzione dati · azioni rapide</summary><Card>
         <CardHeader

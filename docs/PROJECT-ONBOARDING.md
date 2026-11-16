@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Ad Maiora, doppio controllo e snapshot:** HTML + WordPress + media e riscontro prudente sul catalogo esterno; pin escluso, discordanti conservate, schede salvate scaricabili anche dopo rimozione. [Implementazione, prove e limiti](ADMAIORA-DOUBLE-CHECK-2026-11-16.md).
+
 > **Riepilogo aggiornamenti immobile:** in cima alla scheda, confronto prima/dopo e conferma lettura condivisa tra viste. Ricevute storiche senza valori dichiarate esplicitamente. [Dettagli e verifiche](PROPERTY-UPDATE-RECAP-2026-11-16.md).
 
 > **Intelligence, filtro zone disegnate:** menu delle aree di Territorio nelle liste immobiliari, associazione geografica e paginazione corretta. [Dettagli e verifiche](INTELLIGENCE-AREA-FILTER-2026-11-16.md).

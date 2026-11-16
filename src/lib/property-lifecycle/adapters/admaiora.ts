@@ -1,9 +1,11 @@
 import { load, type CheerioAPI } from "cheerio";
+import {AD_MAIORA_PORTAL_CATALOG,compactAdMaioraRest,objectData,parseAdMaioraPortalCatalog,enrichAdMaioraListing,type PortalCard} from './admaiora-enrichment';
 
 import { HttpClient, type HttpResponse } from "@/lib/http/client";
 import {
   CONTRACT_VERSION,
   finalizeNormalizedListing,
+  rehashNormalizedListing,
   type NormalizedAsset,
   type NormalizedListingV2,
 } from "@/lib/property-lifecycle/contracts/normalized-listing";
@@ -96,16 +98,6 @@ function realEstateListing(objects: JsonObject[]): JsonObject | null {
         (Array.isArray(type) && type.includes("RealEstateListing"));
     }) ?? null
   );
-}
-
-function nestedNumber(object: JsonObject | null, objectKey: string, valueKey: string): number | null {
-  const nested = object?.[objectKey];
-  if (!isObject(nested)) {
-    return null;
-  }
-  const value = nested[valueKey];
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function propertyMetaNumber($: CheerioAPI, className: string): number | null {
@@ -392,8 +384,6 @@ export function normalizeAdMaioraDetail(document: SourceDocument): NormalizedLis
     (isObject(schemaListing?.address) && typeof schemaListing.address.streetAddress === "string"
       ? schemaListing.address.streetAddress
       : null);
-  const latitude = nestedNumber(schemaListing, "geo", "latitude");
-  const longitude = nestedNumber(schemaListing, "geo", "longitude");
   const description =
     cleanText($("#property-content-section-content .rh_content").first().text()) ??
     (typeof schemaListing?.description === "string" ? cleanText(schemaListing.description) : null) ??
@@ -401,8 +391,10 @@ export function normalizeAdMaioraDetail(document: SourceDocument): NormalizedLis
   const agencyReference = cleanAgencyReference(
     cleanText($(".rh_property__id").first().text())?.replace(/^ID\s+Immobile\s*:\s*/i, ""),
   );
+  const additional=Array.isArray(schemaListing?.additionalProperty)?schemaListing.additionalProperty.filter(isObject):[];
+  const schemaValue=(name:string)=>additional.find(value=>String(value.name).toLowerCase()===name)?.value??null;
 
-  return finalizeNormalizedListing({
+  const normalized = finalizeNormalizedListing({
     contractVersion: CONTRACT_VERSION,
     adapterKey: "admaiora",
     source: {
@@ -441,6 +433,7 @@ export function normalizeAdMaioraDetail(document: SourceDocument): NormalizedLis
       )?.[1] ?? null,
       features: {
         wordpressPostId: Number(postId),
+        structuredFacts: schemaListing ? {bathrooms:schemaListing.numberOfBathroomsTotal??schemaListing.numberOfBathrooms??schemaValue('bathrooms'),rooms:schemaListing.numberOfRooms??schemaValue('bedrooms'),surface:schemaValue('area size')} : {},
         labels: $(".rh_property__features .rh_property__feature")
           .toArray()
           .map((element) => cleanText($(element).text()))
@@ -449,8 +442,6 @@ export function normalizeAdMaioraDetail(document: SourceDocument): NormalizedLis
     },
     location: resolveMonitoredGeography({
       rawText: [address, title].filter(Boolean).join(" | "),
-      latitude,
-      longitude,
       coordinatesExact: false,
     }),
     status: {
@@ -480,18 +471,36 @@ export function normalizeAdMaioraDetail(document: SourceDocument): NormalizedLis
     },
     extractionWarnings: ["missing_dedicated_source_status"],
     provenance: {
-      inventorySummary: document.item.summary,
+      inventorySummary: Object.fromEntries(Object.entries(document.item.summary).filter(([key])=>key!=="adMaioraSupplement")),
       reportedSource: "public_sale_archive_html_plus_public_wordpress_identity",
       wordpressDateModified: dateModified,
       backendPublishedInventoryExcludedFromAbsenceBaseline: true,
     },
   });
+  const supplement=objectData(document.item.summary.adMaioraSupplement);
+  enrichAdMaioraListing(normalized,Object.keys(objectData(supplement.wordpress)).length?objectData(supplement.wordpress):null,Object.keys(objectData(supplement.media)).length?objectData(supplement.media):null,Array.isArray(supplement.portalCards)?supplement.portalCards as PortalCard[]:[],objectData(supplement.checks));
+  return rehashNormalizedListing(normalized,input=>input);
 }
 
 export class AdMaioraAdapter implements PropertyLifecycleAdapter {
   readonly key = "admaiora";
   readonly agencySlug = "ad-maiora-bitonto";
   readonly inventoryUrl = AD_MAIORA_INVENTORY_URL;
+  private portalCatalog:Promise<{cards:PortalCard[];state:string}>|null=null;
+
+  private async readPortalCatalog():Promise<{cards:PortalCard[];state:string}>{
+    const cards:PortalCard[]=[],seen=new Set<string>();let next:string|null=AD_MAIORA_PORTAL_CATALOG;
+    try{while(next&&seen.size<10){
+      if(seen.has(next))return {cards,state:'read_partial_catalog'};seen.add(next);
+      const result=await this.http.get(next),page=result.ok?parseAdMaioraPortalCatalog(result.body,next):[];
+      if(!page.length)return {cards,state:cards.length?'read_partial_catalog':`unavailable_or_blocked_${result.status}`};
+      cards.push(...page);const $=load(result.body),href=$("a[rel='next'],.pagination .next a,a.icon-arrow-right-after").first().attr('href');
+      if(!href){next=null;break;}const target:URL=new URL(href,next);
+      if(target.origin!=='https://www.idealista.it'||!target.pathname.startsWith('/pro/ad-maiora-immobiliare-bitonto/'))return {cards,state:'read_partial_catalog'};
+      next=target.href;
+    }return {cards:[...new Map(cards.map(card=>[card.url,card])).values()],state:next?'read_partial_catalog':'read_catalog'};
+    }catch{return {cards,state:cards.length?'read_partial_catalog':'unavailable'};}
+  }
 
   constructor(
     private readonly http = new HttpClient({
@@ -504,6 +513,7 @@ export class AdMaioraAdapter implements PropertyLifecycleAdapter {
   ) {}
 
   async fetchInventory(): Promise<InventoryResult> {
+    this.portalCatalog=null;
     const response = await this.http.get(this.inventoryUrl);
     if (!response.ok) {
       const requiredMarkers = { successfulResponse: false };
@@ -624,7 +634,20 @@ export class AdMaioraAdapter implements PropertyLifecycleAdapter {
     if (!response.ok) {
       throw new Error(`Ad Maiora detail ${item.url} returned HTTP ${response.status}.`);
     }
-    return { item, response, observedAt: new Date().toISOString() };
+    const id=bodyPostId(load(response.body))??item.externalId;
+    const checks:Record<string,unknown>={wordpress:'unavailable',featuredMedia:'not_available'};
+    let wordpress:Record<string,unknown>|null=null,media:Record<string,unknown>|null=null;
+    if(/^\d+$/.test(id))try{
+      const rest=await this.http.get(`${AD_MAIORA_BASE_URL}/wp-json/wp/v2/immobile/${id}`);
+      if(rest.ok){wordpress=compactAdMaioraRest(JSON.parse(rest.body),id,item.url);checks.wordpress=wordpress?'verified_identity':'identity_mismatch';}else checks.wordpress=`http_${rest.status}`;
+      if(wordpress?.featuredMedia&&Number.isInteger(Number(wordpress.featuredMedia)))try{
+        const result=await this.http.get(`${AD_MAIORA_BASE_URL}/wp-json/wp/v2/media/${wordpress.featuredMedia}`);
+        if(result.ok){const raw=objectData(JSON.parse(result.body));if(Number(raw.id)===Number(wordpress.featuredMedia)){media={id:raw.id,title:objectData(raw.title).rendered??null,alt:raw.alt_text??null,caption:objectData(raw.caption).rendered??null,url:raw.source_url??null,dateGmt:raw.date_gmt??null};checks.featuredMedia='verified_identity';}}else checks.featuredMedia=`http_${result.status}`;
+      }catch{checks.featuredMedia='unavailable';}
+    }catch{checks.wordpress='unavailable';}
+    this.portalCatalog??=this.readPortalCatalog();
+    const portal=await this.portalCatalog;checks.portal=portal.state;
+    return { item:{...item,summary:{...item.summary,adMaioraSupplement:{wordpress,media,portalCards:portal.cards,checks}}}, response, observedAt: new Date().toISOString() };
   }
 
   async normalize(document: SourceDocument): Promise<NormalizedListingV2> {
