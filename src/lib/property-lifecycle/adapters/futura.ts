@@ -178,8 +178,9 @@ function dateOnlyRange(value: string | null, observedAt: string): {
 }
 
 function coordinate(value: string | null | undefined, maximum: number): number | null {
+  if(!value?.trim())return null;
   const parsed = Number(value?.trim().replace(",", "."));
-  return Number.isFinite(parsed) && Math.abs(parsed) <= maximum ? parsed : null;
+  return Number.isFinite(parsed) && parsed!==0 && Math.abs(parsed) <= maximum ? parsed : null;
 }
 
 function futuraAssets($: CheerioAPI, externalId: string): NormalizedAsset[] {
@@ -246,7 +247,8 @@ export function normalizeFuturaDetail(document: SourceDocument): NormalizedListi
   const municipality = detailValue($, "det_comune") ?? inputValue($, "des_comune");
   const district = detailValue($, "det_zona") ?? inputValue($, "des_zona_comune");
   const street = detailValue($, "det_indirizzo");
-  const map = $("[data-lat][data-lng]").first();
+  const detailMap=$("#map-annuncio[data-lat][data-lng],.map-annuncio[data-lat][data-lng]").first();
+  const map = detailMap.length?detailMap:$(".map[data-lat][data-lng]").first();
   const latitude = coordinate(map.attr("data-lat"), 90);
   const longitude = coordinate(map.attr("data-lng"), 180);
   const assets = futuraAssets($, externalId);
@@ -330,7 +332,7 @@ export function normalizeFuturaDetail(document: SourceDocument): NormalizedListi
       locality: district,
       latitude,
       longitude,
-      coordinatesExact: false,
+      coordinatesExact: latitude!==null&&longitude!==null&&latitude!==0&&longitude!==0,
     }),
     status: {
       value: "UNKNOWN",
@@ -359,6 +361,7 @@ export function normalizeFuturaDetail(document: SourceDocument): NormalizedListi
       ...(assets.length === 0 ? ["missing_scoped_gallery"] : []),
     ],
     provenance: {
+      publishedMapPin:latitude!==null&&longitude!==null&&latitude!==0&&longitude!==0?{latitude,longitude,sourceUrl:canonical,method:'FUTURA_DETAIL_MAP_PIN',independentlyVerified:false}:null,
       inventorySummary: document.item.summary,
       reportedSource: "public_agesta_html",
       agestaAgencyId: 10116,

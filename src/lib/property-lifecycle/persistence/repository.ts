@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {listingLocationKey} from './location-identity';
+import {enrichCachedPinAddress} from './pin-address';
 
 import type { ProcessedAsset } from "@/lib/property-lifecycle/assets/pipeline";
 import type { BootstrapExistingState } from "@/lib/property-lifecycle/bootstrap/dry-run";
@@ -753,6 +754,7 @@ export class PropertyLifecycleRepository {
     processedAssets: ProcessedAsset[] = [],
     options: { failurePoint?: ObservationFailurePoint } = {},
   ): Promise<PersistedObservation|DeferredFallbackObservation> {
+    listing=await enrichCachedPinAddress(this.db,listing);
     let primaryHost=this.primarySourceHosts.get(agencyId);
     if (!primaryHost) {
       const source=await this.db.from("agencies").select("inventory_url").eq("id",agencyId).single();

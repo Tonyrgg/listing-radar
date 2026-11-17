@@ -224,6 +224,7 @@ const IDENTITY_OUTCOME_LABELS: Record<string, string> = {
 /* I valori sono quelli che il database contiene davvero: `EXACT`, `STREET` e
  * `ZONE` non sono mai esistiti, e la scheda finiva per scrivere «Street only». */
 const PRECISION_LABELS: Record<string, string> = {
+  EXACT_COORDINATES: "pin pubblicato dalla fonte",
   EXACT_ADDRESS: "indirizzo esatto",
   STREET_ONLY: "solo la via, non il civico",
   APPROXIMATE_AREA: "zona approssimativa",

@@ -324,6 +324,7 @@ export function normalizeVistocasaDetail(document: SourceDocument): NormalizedLi
   const location=resolveMonitoredGeography({rawText:locationFromTitle(title)+(reference?' · Affaccio su '+reference.name+' (da descrizione)':''),latitude,longitude,coordinatesExact:false});
   if(reference&&!resolveMonitoredGeography({rawText:locationFromTitle(title)}).streetName){location.streetName=null;location.streetNumber=null;location.precision='APPROXIMATE_AREA';}
   if(validDetail)location.reasons.push('publisher_detail_map_pin:not_independently_verified');
+  if(validDetail){location.precision='EXACT_COORDINATES';location.resolutionMethod='PUBLISHER_DETAIL_MAP_PIN';}
 
   return finalizeNormalizedListing({
     contractVersion: CONTRACT_VERSION,

@@ -193,7 +193,7 @@ describe("Vistocasa V2 adapter", () => {
     const doc=sourceDocument('vistocasa-active-detail.html',url,'10002');
     doc.response.body=doc.response.body.replace('Bitonto B.go San Francesco - Appartamento 3 vani in Vendita','Bitonto Centro - Appartamento in Vendita')+'<input id="ctl00_cph_hLat" value="41,107434"><input id="ctl00_cph_hLng" value="16,692606"><p>affacciato su <strong>Piazza Marconi</strong></p>';
     const result=normalizeVistocasaDetail(doc);
-    expect(result.location).toMatchObject({latitude:41.107434,longitude:16.692606,streetNumber:null,streetName:null,precision:'APPROXIMATE_AREA'});
+    expect(result.location).toMatchObject({latitude:41.107434,longitude:16.692606,streetNumber:null,streetName:null,precision:'EXACT_COORDINATES'});
     expect(result.location.rawText).toContain('Piazza Marconi');
     expect(result.provenance.locationReference).toMatchObject({relation:'OVERLOOKS',entranceAddressConfirmed:false});
     const second=structuredClone(result);second.source.sourceKey='different-house';
@@ -608,7 +608,7 @@ describe("Futura Immobiliare V2 adapter", () => {
       municipality: "Bitonto",
       streetName: "Via Cavallotti",
       scope: "IN_SCOPE",
-      precision: "STREET_ONLY",
+      precision: "EXACT_COORDINATES",
     });
     expect(result.marketStart).toMatchObject({
       method: "AGESTA_ARTICLE_PUBLISHED_DATE",

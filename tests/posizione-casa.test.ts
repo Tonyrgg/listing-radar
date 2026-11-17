@@ -11,6 +11,7 @@ const punto = { latitude: 41.107, longitude: 16.69 };
 describe("dove si trova una casa", () => {
   it("mette lo spillo solo dove l'immobile lo conosciamo davvero", () => {
     expect(formaPosizione({ ...punto, precision: "EXACT_ADDRESS" })).toBe("spillo");
+    expect(formaPosizione({ ...punto, precision: "EXACT_COORDINATES" })).toBe("spillo");
     // Qualcuno l'ha guardata e ha detto «è qui»: vale quanto un indirizzo esatto.
     expect(
       formaPosizione({ ...punto, precision: "STREET_ONLY", manuallyVerified: true }),

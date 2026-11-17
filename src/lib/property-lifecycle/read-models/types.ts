@@ -175,6 +175,7 @@ export interface LifecyclePropertyDetail {
     precision: string;
     confidence: number | null;
     manuallyVerified: boolean;
+    resolutionMethod?: string | null;
   } | null;
   building: { id: string; displayName: string | null } | null;
   publications: Array<{

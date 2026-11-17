@@ -29,7 +29,7 @@ export function formaPosizione(posizione: PosizioneCasa | null): FormaPosizione 
 
   /* Una posizione confermata a mano vale quanto un indirizzo esatto: qualcuno
    * l'ha guardata e ha detto «è qui». */
-  if (posizione.manuallyVerified || posizione.precision === "EXACT_ADDRESS") {
+  if (posizione.manuallyVerified || posizione.precision === "EXACT_ADDRESS" || posizione.precision === "EXACT_COORDINATES") {
     return "spillo";
   }
 

@@ -912,7 +912,7 @@ export class PropertyLifecycleReadRepository {
         ? this.db
             .from("locations")
             .select(
-              "raw_text,municipality,locality,street_name,street_number,latitude,longitude,precision_level,resolution_confidence,manually_verified",
+                "raw_text,municipality,locality,street_name,street_number,latitude,longitude,precision_level,resolution_confidence,manually_verified,resolution_method",
             )
             .eq("id", propertyRow.primary_location_id)
             .maybeSingle()
@@ -1008,6 +1008,7 @@ export class PropertyLifecycleReadRepository {
             precision: String(location.precision_level),
             confidence: numberValue(location.resolution_confidence),
             manuallyVerified: Boolean(location.manually_verified),
+            resolutionMethod: stringValue(location.resolution_method),
           }
         : null,
       building: building
