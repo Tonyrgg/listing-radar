@@ -3,6 +3,8 @@ import {rehashNormalizedListing,type NormalizedListingV2} from '../contracts/nor
 export function pinAddressKey(lat:number,lon:number){return `${lat.toFixed(6)},${lon.toFixed(6)}`;}
 export function applyPinAddress(listing:NormalizedListingV2,proof:Record<string,unknown>):NormalizedListingV2{
  const a=proof.address&&typeof proof.address==='object'?proof.address as Record<string,unknown>:{};
+ const places=[a.city,a.town,a.village,a.municipality,a.hamlet].filter((v):v is string=>typeof v==='string').map(v=>v.toLocaleLowerCase('it').trim());
+ if(places.length&&!places.some(v=>['bitonto','palombaio','mariotto'].includes(v)))return listing;
  const road=typeof a.road==='string'?a.road:null,number=typeof a.house_number==='string'?a.house_number:null;
  if(!road)return listing;
  const latitude=Number(proof.lat),longitude=Number(proof.lon);

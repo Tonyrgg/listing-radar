@@ -13,3 +13,7 @@ Caso 10315: pin 41.105598,16.680485, riscontro Via Quinto Orazio Flacco; nessun 
 Migrazione 0107 applicata online. Aggiornamento positivo dei due cataloghi con scripts/refresh-publisher-pins.ts: non valuta scomparse e non modifica lo stato degli annunci assenti dall'inventario. Dati personali non inviati al geocoder; inviate soltanto le coordinate già pubbliche dei pin.
 
 Verifiche: regressioni adattatori, pin individuali, selezione spillo e riscontro cartografico, TypeScript, build Next.js. Non sono cambiate funzionalità desktop Worker.
+
+La migrazione 0108 impedisce inoltre di perdere via/civico già noti sullo stesso pin qualora una lettura successiva li ometta. Il confronto manuale resta prioritario. Per i timeout della manutenzione è disponibile --long-timeout: solo dopo annullamento PostgreSQL 57014, ripete la stessa RPC atomica con limite locale di 55 secondi; non cambia i timeout globali né esegue scritture ad hoc. Gli errori HTTP si riprovano tramite selezione esplicita degli ID.
+
+Prova browser del componente reale: coordinate del caso 10315, un marker, zero poligoni d'area, zero errori JavaScript. Esito locale ignorato .runtime/pin-fix/map-check.json e screenshot map-marker.png.
