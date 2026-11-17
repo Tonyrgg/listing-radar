@@ -19,7 +19,7 @@ function stringField(source:RecordValue,key:string):string|null|undefined{
 /** Read fields only from persisted Tasks. Custom customer fields require their
  * actual metadata label; unrelated OwnerId/CreatedById are never customer IDs. */
 export function activityTaskFragments(body:string,expectedClientId?:string):TaskFragment[]{
-  const nodes:unknown[]=[parse(body)],records:TaskFragment[]=[];const labelledClientFields=new Set<string>();
+  const nodes:unknown[]=[parse(body)],records:TaskFragment[]=[];const labelledClientFields=new Set<string>(),labelledPropertyFields=new Set<string>();
   const walked:RecordValue[]=[];
   for(let visited=0;nodes.length&&visited<100_000;visited++){
     const node=nodes.pop();if(typeof node==='string'){if(/^\s*[\[{]/.test(node))nodes.push(parse(node));continue;}
@@ -27,6 +27,7 @@ export function activityTaskFragments(body:string,expectedClientId?:string):Task
     if(!object(node))continue;
     walked.push(node);
     if(typeof node.apiName==='string'&&typeof node.label==='string'&&/^(Cliente|Soggetto)$/i.test(node.label))labelledClientFields.add(node.apiName);
+    if(typeof node.apiName==='string'&&typeof node.label==='string'&&/^(Correlato a|Immobile)$/i.test(node.label))labelledPropertyFields.add(node.apiName);
     const children=Object.values(node);if(nodes.length+children.length>100_000)break;nodes.push(...children);
   }
   for(const node of walked){
@@ -39,6 +40,10 @@ export function activityTaskFragments(body:string,expectedClientId?:string):Task
     for(const [field,key]of [['propertyId','WhatId'],['description','Description'],['status','Status'],['activityDate','ActivityDate'],['createdAt','CreatedDate']]as const){
       const v=stringField(node,key);if(v!==undefined){if(v!==null||!['description','status'].includes(field))(result as RecordValue)[field]=v;}
     }
+    const propertyFields=[...labelledPropertyFields,...Object.keys(recordFields).filter(key=>/^(?:(?:[a-z0-9]+__|[a-z0-9]+_))?(?:Immobile|Correlato_?A)__c$/i.test(key))];
+    const properties=[...new Set(propertyFields.map(key=>stringField(node,key)).filter((v):v is string=>Boolean(v)))];
+    if(properties.length===1){if(result.propertyId&& !sameCrmRecordId(result.propertyId,properties[0]))result.conflicted=true;else result.propertyId=properties[0];}
+    else if(properties.length>1)result.conflicted=true;
     const explicit=[...new Set([...labelledClientFields,...customClients])].map(key=>stringField(node,key)).filter((v):v is string|null=>v!==undefined);
     const account=stringField(node,'AccountId'),who=stringField(node,'WhoId');
     const native=[account,typeof who==='string'&&(!expectedClientId||sameCrmRecordId(who,expectedClientId)||expectedClientId.slice(0,3)!=='001')?who:undefined].filter((v):v is string=>typeof v==='string'&&Boolean(v));

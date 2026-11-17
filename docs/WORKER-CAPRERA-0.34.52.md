@@ -9,7 +9,7 @@ Non è stato disponibile il Chrome autenticato dell'ufficio. Nessuna scrittura, 
 ## Correzioni
 
 - La verifica del Task salvato apre Visualizza tutto: l'anteprima 0+ può escludere le attività completate. Cerca lo specifico ID salvato, anche se il primo frammento non comprende la descrizione.
-- I campi dello stesso Task provenienti da risposte diverse vengono confrontati dopo un merge per ID; mai unione di attività diverse. Sono riconosciuti i campi custom Cliente/Soggetto, senza confonderli con OwnerId/CreatedById; associazioni discordanti bloccano la conferma.
+- I campi dello stesso Task provenienti da risposte diverse vengono confrontati dopo un merge per ID; mai unione di attività diverse. Sono riconosciuti i campi custom Cliente/Soggetto e Immobile, senza confonderli con OwnerId/CreatedById; associazioni discordanti bloccano la conferma.
 - Fallback DOM per etichette Lightning e data di creazione. La scadenza ActivityDate non sostituisce CreatedDate. Le vecchie attività con data di creazione certa precedente alla finestra utile non richiedono l'apertura di ogni dettaglio.
 - Un salvataggio già inviato e con ID passa direttamente alla verifica; non rifà due storici completi per poi tornare sul medesimo salvataggio. La prova già confermata dello stesso piano non viene ricreata se restano problemi sui soggetti correlati.
 - Un preflight immobile per esecuzione al posto del ritorno alla scheda prima di ogni stadio di lettura. I controlli su notizie/incarichi rimangono nelle singole operazioni di scrittura. Ricerca nominativo riusata soltanto se appena fatta nella stessa esecuzione, con validità massima 60 secondi; le riprese da disco rileggono l'identità.
@@ -30,3 +30,5 @@ Worker: build TypeScript, 849 test CI in 117 suite passati; 121 test mirati di m
 Web: 736 test in 98 suite, TypeScript e lint mirati passati; prova Playwright desktop/mobile con ricevuta legacy, confronto reale nel pannello, chiusura con conferma, errore 503 recuperabile e nessun errore JavaScript. Fixture API per UI, nessun avviso utente segnato come letto durante la prova. Build e gate del pacchetto distribuito registrati nella consegna.
 
 Non viene dichiarata una nuova velocità misurata sul CRM reale: sono eliminate letture e navigazioni ridondanti, ma il tempo effettivo richiede la prova sulla postazione autenticata.
+
+Gate installer aggiunto: carica i moduli Supabase, Playwright, pino, dotenv, zod e XLSX dal vero app.asar usando Electron in modalità Node. Rifiuta dipendenze risolte dal checkout esterno: il primo artefatto di prova con node_modules in junction è stato scartato prima della pubblicazione per moduli transitivi mancanti. Il pacchetto viene ricostruito con npm ci nella copia isolata.

@@ -11,6 +11,8 @@ const history=(records:CrmActivitySnapshot[]):CrmActivityHistory=>({records,prop
 it('reads a public custom Cliente field on the exact Task, without mistaking OwnerId for its customer',()=>{
  const fragments=activityTaskFragments(JSON.stringify({Id:task.id,WhatId:property,AccountId:null,WhoId:null,Cliente__c:client,OwnerId:'005000000000001AAA',CreatedDate:'2026-11-10T09:00:00Z',Status:'Completed',Description:'Test'}),client);
  expect(taskSnapshot(fragments[0]!)).toMatchObject({clientId:client,propertyId:property});
+ const customProperty=activityTaskFragments(JSON.stringify({Id:task.id,WhatId:null,TC_Immobile__c:property,Cliente__c:client,CreatedDate:'2026-11-10T09:00:00Z',Status:'Completed'}),client);
+ expect(taskSnapshot(customProperty[0]!)).toMatchObject({clientId:client,propertyId:property});
  const ambiguous=activityTaskFragments(JSON.stringify({Id:task.id,WhatId:property,Cliente__c:client,Soggetto__c:'001000000000002AAA',CreatedDate:'2026-11-10T09:00:00Z',Status:'Completed'}),client);
  expect(taskSnapshot(ambiguous[0]!)).toBeNull();
 });
