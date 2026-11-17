@@ -131,7 +131,7 @@ export type ImportV2Plan = {
 };
 
 export type CrmActivitySnapshot={id:string;propertyId:string|null;clientId:string|null;description:string;status:string;activityDate:string|null;createdAt:string|null};
-export type CrmActivityHistory={records:CrmActivitySnapshot[];propertyComplete:boolean;clientComplete:boolean;checkedAt:string};
+export type CrmActivityHistory={records:CrmActivitySnapshot[];propertyComplete:boolean;clientComplete:boolean;checkedAt:string;issues?:{scope:'property'|'client';taskId?:string;missing:string[]}[]};
 export type ActivityEvidence={
   operationId?:string;activityId:string|null;outcome:'created'|'existing'|'covered'|'disabled';
   descriptionVerified?:boolean;statusVerified?:boolean;expectedStatus?:'Da eseguire'|'Eseguito';

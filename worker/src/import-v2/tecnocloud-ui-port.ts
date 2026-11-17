@@ -828,7 +828,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private filterButton(): Locator {
     return this.page.locator('button[title="Filters"], button[title="Filtri"], button[aria-label="Filters"], button[aria-label="Filtri"], button[title="Filtra"]')
-      .or(this.page.getByRole("button", { name: /^(?:Filtri|Filters|Filtra)$/i })).filter({ visible: true });
+      .or(this.page.getByRole("button", { name: /^(?:(?:Mostra|Apri|Nascondi)\s+)?(?:Filtri|Filters|Filtra)(?:\s+(?:immobili|di ricerca))?$/i }))
+      .or(this.page.locator('button').filter({has:this.page.locator('svg[data-key="filterList"],lightning-icon[icon-name="utility:filterList"]')})).filter({ visible: true });
   }
 
   private async assertSearchHealthy(requestFailed: boolean, writeOutcomeUncertain = false): Promise<void> {
@@ -2900,7 +2901,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       // Always reload the record: completed activities can be absent from the
       // visible card while still being present in Lightning's server payload.
       await this.page.goto(this.propertyUrl(propertyId), { waitUntil: "domcontentloaded", timeout: 30_000 });
-      const card = await this.activityCard(propertyId);
+      let card = await this.activityCard(propertyId);
       let stable = 0;
       for (let wait = 0; wait < 80 && stable < 4; wait += 1) {
         await this.assertSession();
@@ -2911,6 +2912,21 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       if (stable < 4) throw new ImportV2Error("Il caricamento delle attività CRM non è concluso: nessuna assenza confermata", "transient_portal", { retryable: true });
       await Promise.all(responseTasks);
+      // Completed Tasks are often absent from the preview (including 0+).
+      // Open the actual complete list before declaring a submitted Task unreadable.
+      if(scope?.submitted||scope?.activityId){
+        const all=card.getByRole('link',{name:/^Visualizza tutt[oi]$/i}).or(card.getByRole('button',{name:/^Visualizza tutt[oi]$/i})).or(card.locator('a').filter({hasText:/^Visualizza tutt[oi]$/i}));
+        if(await all.count()===1){
+          await all.click();
+          const modal=this.page.locator('[role="dialog"]:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});
+          await modal.first().waitFor({state:'visible',timeout:3000}).catch(()=>undefined);
+          if(await modal.count()===1)card=modal;
+          else {const cards=this.page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});card=cards.filter({hasNot:cards});}
+          if(await card.count()!==1)throw new ImportV2Error('Elenco completo delle attività non identificabile','verification_failed');
+          await this.waitForCloudStable(requests,'Elenco completo attività',40);
+          await Promise.all(responseTasks);
+        }
+      }
       // A description on one visible activity and a status on another do
       // not constitute a match. Prefer the individual related-list rows.
       const candidates = card.locator('tr, [role="row"], li, .slds-timeline__item, [data-record-id^="00T"], [data-recordid^="00T"]').filter({ visible: true });
@@ -2935,8 +2951,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       });
       // A related-list response can omit WhatId/Status. Follow the actual
       // persisted Task link once, instead of reloading the same list three times.
-      const suspects=[...fragments.values()].filter(row=>(!scope?.activityId||sameCrmRecordId(row.id,scope.activityId))
-        &&!scope?.excludedIds.has(row.id.slice(0,15))&&normalized(row.description)===expected);
+      if(scope?.activityId&&!fragments.has(scope.activityId.slice(0,15)))fragments.set(scope.activityId.slice(0,15),{id:scope.activityId});
+      const suspects=[...fragments.values()].filter(row=>(scope?.activityId?sameCrmRecordId(row.id,scope.activityId):normalized(row.description)===expected)
+        &&!scope?.excludedIds.has(row.id.slice(0,15)));
       for(const suspect of suspects.slice(0,10)){
         const needsDetail=!responseMatched||scope?.clientId&&!taskSnapshot(suspect);
         if(!needsDetail)break;
@@ -2959,12 +2976,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           if(evidence.found){responseMatched=true;responseActivityId=evidence.activityId;}
         }
       }
+      // UI API may split fields for one Task across multiple responses.
+      // Verify the merged record, never a description/status from different Tasks.
+      for(const row of fragments.values()){
+        const task=taskSnapshot(row,!scope?.clientId);
+        if(!task||scope?.excludedIds.has(task.id.slice(0,15))||scope?.activityId&&!sameCrmRecordId(task.id,scope.activityId))continue;
+        if(sameCrmRecordId(task.propertyId,propertyId)&&normalized(task.description)===expected&&normalized(task.status).replace('COMPLETED','ESEGUITO').replace('NOT STARTED','DA ESEGUIRE')===expectedStatus){responseMatched=true;responseActivityId=task.id;break;}
+      }
       const candidateId=(responseActivityId??visibleId) as string|null;
       const snapshot=candidateId?taskSnapshot(fragments.get(candidateId.slice(0,15))??{id:candidateId}):null;
       const found = (responseMatched || visibleMatched)&&(!scope?.clientId||Boolean(snapshot?.clientId&&sameCrmRecordId(snapshot.clientId,scope.clientId)&&activityDay(snapshot)));
       const descriptionVerified = found;
       const statusVerified = found;
-      if (!found && unresolvedResponse) throw new ImportV2Error("L’attività CRM non espone ancora immobile, cliente o stato verificabili. Conservo il checkpoint senza ripetere il salvataggio.", "verification_failed");
+      if (!found && (unresolvedResponse||scope?.activityId)) throw new ImportV2Error("Task salvato ancora da verificare: mancano campi correlati leggibili. Nessun nuovo salvataggio.", "verification_failed",{details:{savedActivityId:scope?.activityId??candidateId,propertyVerified:Boolean(snapshot?.propertyId&&sameCrmRecordId(snapshot.propertyId,propertyId)),clientVerified:Boolean(snapshot?.clientId&&(!scope?.clientId||sameCrmRecordId(snapshot.clientId,scope.clientId))),creationDateVerified:Boolean(snapshot&&activityDay(snapshot)),statusVerified:Boolean(snapshot?.status)}});
       return { card, activityId: candidateId, found, descriptionVerified, statusVerified, knownIds: [...knownIds],...(snapshot?{task:snapshot}:{}) };
     } finally {
       this.page.off("response", inspect);

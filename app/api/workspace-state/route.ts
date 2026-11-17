@@ -16,7 +16,12 @@ export async function GET(){try{
  const notices:Record<string,Record<string,string>>={},updates:Record<string,Record<string,UpdateRecap>>={};
  for(const tab of noticeTabs){notices[tab]={};updates[tab]={};for(const [id,version]of Object.entries(snapshot[tab]??{})){
   const previous=previousReceipt(receipts,`workspace:${owner}`,tab,id);
-  if(versionHash(previous)!==versionHash(version)){notices[tab]![id]=previous?'updated':'new';if(previous&&tab!=='notizie')updates[tab]![id]=updateRecap(previous,version);}
+  if(versionHash(previous)!==versionHash(version)){
+   const recap=previous&&tab!=='notizie'?updateRecap(previous,version):null;
+   // A technical hash or recovered agency name alone is not a user-facing change.
+   if(recap&&!recap.previousUnavailable&&!recap.changes.length)continue;
+   notices[tab]![id]=previous?'updated':'new';if(recap)updates[tab]![id]=recap;
+  }
  }}
  return NextResponse.json({notices,updates,favorites:prefs.filter(r=>r.key.startsWith(`workspace:${owner}:favorite:`)&&r.value===true).map(r=>r.key.split(':').at(-1))},{headers:{'Cache-Control':'private, no-store'}});
 }catch{return NextResponse.json({error:'Avvisi temporaneamente non disponibili'},{status:503});}}

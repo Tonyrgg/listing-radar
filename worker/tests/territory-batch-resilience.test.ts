@@ -79,6 +79,8 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(attempts).toBe(2);
     expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 3, error: null, skipped: { [keys[0]!]: { reason: "Ricerca immobili non confermata" } } });
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys.slice(1));
+    expect(app.importQueue().entries).toEqual([]);
+    await app.enqueue([keys[0]!]);
     expect(app.importQueue().entries.map(e => e.key)).toEqual([keys[0]]);
     expect(app.importQueue().entries[0]).toMatchObject({ retry: true, problem: null });
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(2);
@@ -100,7 +102,7 @@ describe("V2: duplicati e continuita del batch", () => {
     expect(store.read().runs.at(-1)).toMatchObject({ state: "completed", handled: 3 });
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys.slice(1));
     const cp = Object.values(store.read().checkpoints).find(c => c.stage !== "completed")!;
-    expect(cp.stage).toBe("property_resolved"); expect(app.importQueue().entries[0]!.editLocked).toBe(true);
+    expect(cp.stage).toBe("property_resolved"); expect(app.importQueue().entries).toEqual([]); await app.enqueue([keys[0]!]); expect(app.importQueue().entries[0]!.editLocked).toBe(true);
     expect(app.quarantineList()[0]!.checkpoint!.plan!.fingerprint).toBe(cp.plan!.fingerprint);
     expect(Object.keys(store.read().virtualCrm)).toHaveLength(3);
     const sourceAt = store.read().units[keys[0]!]!.observations[0]!.at;

@@ -3,6 +3,7 @@ import {createContext,useContext,useEffect,useState,useCallback,useRef,type Reac
 import {useRouter} from "next/navigation";
 import Link from 'next/link';
 import {Bell,Star,Check} from 'lucide-react';
+import type {HistoricalUpdate} from '@/lib/property-lifecycle/read-models/update-history';
 import type {UpdateRecap} from '@/lib/workspace-update-model';
 import {formatCurrency,formatDate,formatNumber} from '@/lib/formatting';
 import {EXIT_LABELS} from '@/lib/property-lifecycle/read-models/intelligence';
@@ -24,7 +25,7 @@ export function NewsNotice({id}:{id:string}){const c=useContext(Context),notice=
 function recapValue(field:string,value:string|number|null){
  if(value==null||value==='')return 'Non disponibile';
  if(field==='latest_asking_price'&&typeof value==='number')return formatCurrency(value);
- if(field==='earliest_market_evidence_at')return formatDate(String(value));
+ if(field==='earliest_market_evidence_at'||field==='site_publication')return formatDate(String(value));
  if(field==='surface_sqm'&&typeof value==='number')return formatNumber(value)+' m²';
  if(field==='latitude'||field==='longitude')return String(value);
  if(typeof value==='number')return formatNumber(value);
@@ -35,12 +36,18 @@ export function PropertyUpdateRecap({id,preferredTab='mercato'}:{id:string;prefe
  const c=useContext(Context),[busy,setBusy]=useState(false);
  const tabs=[...new Set([preferredTab,...['mercato','opportunita','privati','usciti']])].filter(tab=>tab!=='notizie'&&tab!=='preferiti');
  const tab=tabs.find(tab=>c?.state.notices[tab]?.[id]==='updated');
+ const recap=tab?c?.state.updates?.[tab]?.[id]:undefined;
+ const [historical,setHistorical]=useState<{key:string;changes:HistoricalUpdate[];error?:boolean}|null>(null);
+ const key=[id,tab,recap?.hash].join(':');
+ useEffect(()=>{if(!tab||!recap?.previousUnavailable)return;const controller=new AbortController();void fetch(`/api/properties/${id}/updates?tab=${tab}`,{cache:'no-store',signal:controller.signal}).then(async r=>{if(!r.ok)throw Error();const result=await r.json();if(!controller.signal.aborted)setHistorical({key,changes:result.changes});}).catch(()=>{if(!controller.signal.aborted)setHistorical({key,changes:[],error:true});});return()=>controller.abort();},[id,tab,recap?.hash,recap?.previousUnavailable,key]);
  if(!c||!tab)return null;
- const recap=c.state.updates?.[tab]?.[id];
- const fallback=recap?.current??{};
+ const archive=historical?.key===key?historical:null;
+ const changes=recap?.changes.length?recap.changes:archive?.changes??[];
+ if(recap?.previousUnavailable&&archive&&!archive.error&&!changes.length)return null;
+
  return <section className="lr-property-update" aria-label="Riepilogo aggiornamenti dell’immobile">
- <header><div><h2>Aggiornamenti dell’immobile</h2><p>Modifiche rispetto all’ultima versione che hai segnato come letta.</p></div><button type="button" className="lr-unread" disabled={busy} onClick={async()=>{setBusy(true);try{await c.save({action:'read-property',id,tab,expectedHash:recap?.hash})}finally{setBusy(false)}}}><Check size={14} aria-hidden="true"/>{busy?'Salvataggio…':'Segna come letto'}</button></header>
- {recap?.changes.length?<div className="lr-update-table"><table><caption className="sr-only">Confronto tra dati precedenti e attuali</caption><thead><tr><th>Dato cambiato</th><th>Prima</th><th>Adesso</th></tr></thead><tbody>{recap.changes.map(change=><tr key={change.field}><th scope="row">{change.label}</th><td>{recapValue(change.field,change.before)}</td><td>{recapValue(change.field,change.after)}</td></tr>)}</tbody></table></div>:recap?.previousUnavailable||!recap?<><p>Per questo avviso non erano conservati i valori precedenti: il confronto dettagliato non è disponibile.</p>{Object.keys(fallback).length?<dl className="lr-update-current">{[['latest_asking_price','Prezzo attuale'],['exit_classification','Esito attuale'],['agency_name','Agenzia attuale']].map(([field,label])=><div key={field}><dt>{label}</dt><dd>{recapValue(field!,fallback[field!]??null)}</dd></div>)}</dl>:null}</>:<p>Sono cambiati dati di riferimento dell’archivio; i campi riepilogati risultano invariati.</p>}
+ <header><div><h2>Aggiornamenti dell’immobile</h2><p>{recap?.previousUnavailable?'Cambiamenti documentati nelle letture conservate dopo la tua ultima conferma.':'Modifiche rispetto all’ultima versione che hai segnato come letta.'}</p></div><button type="button" className="lr-unread" disabled={busy} onClick={async()=>{setBusy(true);try{await c.save({action:'read-property',id,tab,expectedHash:recap?.hash})}finally{setBusy(false)}}}><Check size={14} aria-hidden="true"/>{busy?'Salvataggio…':'Segna come letto'}</button></header>
+ {changes.length?<div className="lr-update-table"><table><caption className="sr-only">Confronto tra dati precedenti e attuali</caption><thead><tr><th>Dato cambiato</th><th>Prima</th><th>Adesso</th></tr></thead><tbody>{changes.map((change,index)=><tr key={change.field+index}><th scope="row">{change.label}{'at' in change?<small className="block">{formatDate(String(change.at))}{'sourceUrl' in change&&change.sourceUrl?<a href={String(change.sourceUrl)} target="_blank" rel="noreferrer"> · Fonte</a>:null}</small>:null}</th><td>{recapValue(change.field,change.before)}</td><td>{recapValue(change.field,change.after)}</td></tr>)}</tbody></table></div>:recap?.previousUnavailable||!recap?<p role="status">{!archive?'Recupero il confronto dalle letture conservate…':archive.error?'Non riesco a leggere il confronto storico: riprova riaprendo la scheda.':'Per questo vecchio avviso non è disponibile un confronto documentato. Non risultano variazioni ricostruibili dalle letture conservate dopo la tua conferma.'}</p>:<p>Sono cambiati dati di riferimento dell’archivio; i campi riepilogati risultano invariati.</p>}
  {c.error?<p role="status">{c.error}</p>:null}
  </section>;
 }

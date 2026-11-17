@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Worker 0.34.52, Via Caprera e recap:** separati i 21 salvataggi CRM dalle verifiche finali; lettura completa dei Task, meno navigazioni ridondanti e recupero dei riepiloghi Intelligence dagli snapshot. [Diagnosi, protezioni e limiti](WORKER-CAPRERA-0.34.52.md).
+
 > **Ad Maiora, doppio controllo e snapshot:** HTML + WordPress + media e riscontro prudente sul catalogo esterno; pin escluso, discordanti conservate, schede salvate scaricabili anche dopo rimozione. [Implementazione, prove e limiti](ADMAIORA-DOUBLE-CHECK-2026-11-16.md).
 
 > **Riepilogo aggiornamenti immobile:** in cima alla scheda, confronto prima/dopo e conferma lettura condivisa tra viste. Ricevute storiche senza valori dichiarate esplicitamente. [Dettagli e verifiche](PROPERTY-UPDATE-RECAP-2026-11-16.md).

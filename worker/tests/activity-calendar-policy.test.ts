@@ -8,6 +8,12 @@ const property='a0V000000000001AAA',otherProperty='a0V000000000002AAA',client='0
 const task:CrmActivitySnapshot={id:'00T000000000001AAA',propertyId:property,clientId:client,status:'Eseguito',description:'Descrizione diversa dal nuovo lavoro',activityDate:'2026-11-03',createdAt:'2026-11-03T09:00:00Z'};
 const now=new Date('2026-11-10T12:00:00Z');
 const history=(records:CrmActivitySnapshot[]):CrmActivityHistory=>({records,propertyComplete:true,clientComplete:true,checkedAt:now.toISOString()});
+it('reads a public custom Cliente field on the exact Task, without mistaking OwnerId for its customer',()=>{
+ const fragments=activityTaskFragments(JSON.stringify({Id:task.id,WhatId:property,AccountId:null,WhoId:null,Cliente__c:client,OwnerId:'005000000000001AAA',CreatedDate:'2026-11-10T09:00:00Z',Status:'Completed',Description:'Test'}),client);
+ expect(taskSnapshot(fragments[0]!)).toMatchObject({clientId:client,propertyId:property});
+ const ambiguous=activityTaskFragments(JSON.stringify({Id:task.id,WhatId:property,Cliente__c:client,Soggetto__c:'001000000000002AAA',CreatedDate:'2026-11-10T09:00:00Z',Status:'Completed'}),client);
+ expect(taskSnapshot(ambiguous[0]!)).toBeNull();
+});
 describe('calendar rules for property and customer activities',()=>{
  it.each(['Eseguito','Da eseguire','Completed','Not Started'])('accepts any current-month activity with status %s on the exact property',status=>{
    const proof=activityCoverage(history([{...task,status}]),property,client,now);

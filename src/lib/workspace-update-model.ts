@@ -6,11 +6,14 @@ export const updateFieldLabels:Record<string,string>={address:'Indirizzo',latest
 export function versionHash(value:unknown):string|null{return typeof value==='string'?value:value&&typeof value==='object'&&'hash'in value&&typeof value.hash==='string'?value.hash:null;}
 export function versionFields(value:unknown):RecordFields|null{return value&&typeof value==='object'&&'fields'in value&&value.fields&&typeof value.fields==='object'&&!Array.isArray(value.fields)?Object.fromEntries(Object.entries(value.fields).filter(([,v])=>v===null||typeof v==='string'||typeof v==='number'&&Number.isFinite(v))) as RecordFields:null;}
 export function previousReceipt(prefs:WorkspacePreference[]|Map<string,WorkspacePreference>,prefix:string,tab:string,id:string):unknown{
+ return previousReceiptEntry(prefs,prefix,tab,id)?.value;
+}
+export function previousReceiptEntry(prefs:WorkspacePreference[]|Map<string,WorkspacePreference>,prefix:string,tab:string,id:string):WorkspacePreference|undefined{
  const get=(key:string)=>prefs instanceof Map?prefs.get(key):prefs.find(r=>r.key===key);
  const baseline=get(`${prefix}:read:${tab}`),individual=get(`${prefix}:record:${tab}:${id}`);
  const baseValue=baseline?.value&&typeof baseline.value==='object'?(baseline.value as Record<string,unknown>)[id]:undefined;
- if(individual&&(!baseValue||Date.parse(individual.updated_at??'')>=Date.parse(baseline?.updated_at??'')||!baseline?.updated_at))return individual.value;
- return baseValue;
+ if(individual&&(!baseValue||Date.parse(individual.updated_at??'')>=Date.parse(baseline?.updated_at??'')||!baseline?.updated_at))return individual;
+ return baseValue?{key:baseline!.key,value:baseValue,updated_at:baseline?.updated_at}:undefined;
 }
 export function updateRecap(previous:unknown,current:RecordVersion):UpdateRecap{
  const before=versionFields(previous),after=versionFields(current)??{};

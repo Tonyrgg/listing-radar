@@ -178,6 +178,7 @@ export class ImportV2Engine {
   private readonly activityWriteGuard?:ActivityWriteGuard;
   private readonly requireSharedActivityGuard:boolean;
   private readonly skipUnchangedPeople:boolean;
+  private readonly freshPeople=new Map<string,{at:number;matches:CrmPersonSnapshot[]}>();
 
   private async saveCheckpoint(checkpoint: ImportV2Checkpoint): Promise<void> {
     const startedAt = performance.now();
@@ -270,6 +271,7 @@ export class ImportV2Engine {
       }
     }
     let sessionPreflightDone = false;
+    let propertyPreflightDone = false;
     while (checkpoint.stage !== "completed") {
       const executedStage = checkpoint.stage;
       const stageAttempt = checkpoint.attempts + 1;
@@ -295,7 +297,7 @@ export class ImportV2Engine {
           sessionPreflightDone = true;
         }
         operationStartedAt = performance.now();
-        {
+        if(!propertyPreflightDone){
           const id=checkpoint.crmPropertyId ?? checkpoint.propertyResolution?.propertyId;
           if(id)await this.crm.assertPropertyWritable?.(id);
           else if(this.propertyCandidates){
@@ -305,6 +307,7 @@ export class ImportV2Engine {
               await this.crm.assertPropertyWritable?.(candidate.id);
             }
           }
+          propertyPreflightDone=true;
         }
         checkpoint = await this.executeStage(checkpoint);
         operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
@@ -538,6 +541,9 @@ export class ImportV2Engine {
 
   private async completeActivity(checkpoint:ImportV2Checkpoint):Promise<ImportV2Checkpoint>{
     const plan=checkpoint.plan!;
+    if(checkpoint.activityEvidence?.operationId===checkpoint.itemId&&verifiedActivityFacts([checkpoint]).length
+      &&(checkpoint.activityEvidence.outcome==='covered'?validActivityCoverage(checkpoint.activityEvidence,this.requirePropertyId(checkpoint))
+        :sameCrmRecordId(checkpoint.activityEvidence.propertyId,this.requirePropertyId(checkpoint))&&checkpoint.activityEvidence.expectedStatus===plan.source.activity.status))return {...checkpoint,stage:NEXT_STAGE.verified};
     if (plan.source.activity.enabled && !checkpoint.activityWrite) {
       checkpoint.activityWrite = { operationId: checkpoint.itemId, preparedAt: this.now().toISOString(), submittedAt: null, baselineIds: [] };
       await this.saveCheckpoint(checkpoint);
@@ -557,7 +563,8 @@ export class ImportV2Engine {
           &&sameCrmRecordId(recovered.clientId,clientId)&&sameCrmRecordId(recovered.propertyId,propertyId)&&recovered.activityDay){
           return {...checkpoint,activityEvidence:{...recovered,outcome:'existing',operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
         }
-      }catch(error){const failure=failureFromError(error,'verified',this.now());if(failure.global)throw error;}
+      }catch(error){const failure=failureFromError(error,'verified',this.now());if(failure.global)throw error;throw new ImportV2Error('Salvataggio attività confermato dal CRM; verifica del Task ancora incompleta. Nessun nuovo inserimento.','verification_failed',{details:{savedActivityId:checkpoint.activityWrite.savedActivityId,activitySubmitted:true,cause:failure.message}});}
+      throw new ImportV2Error('Il Task salvato non ha ancora tutti i campi verificabili. Nessun nuovo inserimento.','verification_failed',{details:{savedActivityId:checkpoint.activityWrite.savedActivityId,activitySubmitted:true}});
     }
     if(plan.source.activity.enabled&&this.calendarActivityPolicy){
       if(!this.crm.readActivityHistory)throw new ImportV2Error('Lettura dello storico attività non disponibile: attività da verificare','verification_failed');
@@ -576,7 +583,11 @@ export class ImportV2Engine {
       if(coverage){
         return {...checkpoint,activityEvidence:{...coverage,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
       }
-      if(!history.propertyComplete||!history.clientComplete)throw new ImportV2Error('Storico attività incompleto: non posso escludere attività già presenti nel mese o per il cliente oggi. Dati conservati, nessun nuovo inserimento.','verification_failed');
+      if(!history.propertyComplete||!history.clientComplete){
+        const labels:Record<string,string>={data_creazione:'data di creazione',immobile_collegato:'immobile collegato',cliente_collegato:'cliente collegato',stato:'stato',valori_discordanti:'valori discordanti',elenco_completo:'elenco completo'};
+        const missing=[...new Set((history.issues??[]).flatMap(i=>i.missing))].map(key=>labels[key]??key);
+        throw new ImportV2Error('Storico attività incompleto'+(missing.length?': non leggibile '+missing.join(', '):': lettura del mese o del cliente non conclusa')+'. Nessuna nuova attività inserita.','verification_failed',{details:{activityHistoryIssues:history.issues??[]}});
+      }
       checkedHistory={propertyId,clientId,baselineIds:history.records.filter(row=>sameCrmRecordId(row.propertyId,propertyId)).map(row=>row.id.slice(0,15)),checkedAt:history.checkedAt};
       const pending=related.find(other=>other.itemId!==checkpoint.itemId&&other.activityWrite?.submittedAt&&!verifiedActivityFacts([other]).length
         &&(sameCrmRecordId(other.activityWrite.clientId,clientId)||(other.activityWrite.clientTaxCode??(other.plan?.source.owners.length?activityPrimaryOwner(other.plan.source.owners).taxCode:null))===primary.taxCode)
@@ -623,6 +634,7 @@ export class ImportV2Engine {
       this.throwIfInterruptionRequested();
       const matches = (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
         .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode);
+      this.freshPeople.set(owner.taxCode,{at:Date.now(),matches:structuredClone(matches)});
       resolutions.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, matches });
     }
     return resolutions;
@@ -635,9 +647,10 @@ export class ImportV2Engine {
       if (synced.some((person) => person.sourcePersonId === owner.sourcePersonId && person.taxCode === owner.taxCode)) continue;
       const checkpointResolution = checkpoint.people.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId);
       if (!checkpointResolution) throw new ImportV2Error("Risoluzione nominativo mancante", "invalid_source");
-      // The stored resolution is evidence, not an instruction. A merge/create
-      // may have succeeded immediately before a crash, so identity is reread.
-      const liveMatches = (await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
+      // Disk checkpoints never replace a current identity read. Only the query
+      // just performed by this engine invocation can be reused for 60 seconds.
+      const justRead=this.freshPeople.get(owner.taxCode);this.freshPeople.delete(owner.taxCode);
+      const liveMatches = justRead&&Date.now()-justRead.at<60_000?justRead.matches:(await this.crm.searchPeopleByExactTaxCode(owner.taxCode))
         .filter((candidate) => canonicalTaxCode(candidate.taxCode) === owner.taxCode);
       const existing = combinedExisting(liveMatches);
       const desired = personWriteModel(owner, existing);

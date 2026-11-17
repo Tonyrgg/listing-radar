@@ -35,7 +35,7 @@ describe("Fatto d’import del singolo immobile", () => {
       expect(unitImportTone(unit([1], "12", new Date(now - days * 86400000).toISOString()), now)).toBe(expected);
     }
     expect(unitImportTone(unit([1], "12", null), now)).toBe("acquired");
-    expect(unitImportHtml(unit([1], "12", null), (s: string) => s, (s: string) => s)).toContain("Mai importato in Cloud");
+    expect(unitImportHtml(unit([1], "12", null), (s: string) => s, (s: string) => s)).toContain("Mai lavorato in Cloud");
     const undated = unit([1], "12", null); undated.memory.statistics.verifiedImports = 1;
     expect(unitImportTone(undated, now)).toBe("never");
     expect(unitImportHtml(undated, (s: string) => s, (s: string) => s)).toContain("Data non disponibile");

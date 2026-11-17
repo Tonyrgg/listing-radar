@@ -238,7 +238,7 @@ describe("Import V2 engine", () => {
       const store = new TimedStore();
       expect((await new ImportV2Engine(new TimedCrm(), store).run(property())).state).toBe("completed");
       expect(store.eventDetails.find(detail => detail.executedStage === "people_resolved")).toMatchObject({
-        operationDurationMs: 46, checkpointSaveDurationMs: 33, durationMs: 79,
+        operationDurationMs: 0, checkpointSaveDurationMs: 33, durationMs: 33,
       });
     } finally { now.mockRestore(); }
   });

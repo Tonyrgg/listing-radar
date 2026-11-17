@@ -50,7 +50,7 @@ describe('Recupero casi reali V2, senza perdita di recapiti o identità', () => 
     const browser = await chromium.launch({ channel: 'chrome', headless: true });
     try {
       const page = await browser.newPage(); await page.route('https://tecnocasa-group.my.site.com/**', r => r.fulfill({ body: '<body></body>' })); await page.goto('https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/');
-      const port = new TecnocloudUiV2Port(page);
+      const port = new TecnocloudUiV2Port(page); vi.spyOn(port,'assertPropertyWritable').mockResolvedValue();
       const old: CrmOwnershipSnapshot = { personId: 'old', taxCode: desired.taxCode, sharePercentage: 100, role: 'Proprietario Principale', rightType: 'Proprietà', linkId: 'p' };
       const internal = port as unknown as { readOwnerships(): Promise<CrmOwnershipSnapshot[]>; syncPrimaryOwnership(...args: unknown[]): Promise<boolean>; addOwnership(...args: unknown[]): Promise<void>; deleteOwnership(...args: unknown[]): Promise<void> };
       vi.spyOn(internal, 'readOwnerships').mockResolvedValueOnce([old]).mockResolvedValue([{ ...old, personId: 'canonical' }]);
@@ -63,7 +63,7 @@ describe('Recupero casi reali V2, senza perdita di recapiti o identità', () => 
     const browser = await chromium.launch({ channel: 'chrome', headless: true });
     try {
       const page = await browser.newPage(); await page.route('https://tecnocasa-group.my.site.com/**', r => r.fulfill({ body: '<body></body>' })); await page.goto('https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/');
-      const port = new TecnocloudUiV2Port(page);
+      const port = new TecnocloudUiV2Port(page); vi.spyOn(port,'assertPropertyWritable').mockResolvedValue();
       const before: CrmOwnershipSnapshot = { personId: 'old', taxCode: 'BNCNNA80B42A893X', sharePercentage: 100, role: 'Proprietario Principale', rightType: 'Proprietà', linkId: 'p' };
       const after: CrmOwnershipSnapshot[] = [{ ...before, personId: 'source-main', taxCode: desired.taxCode, sharePercentage: 70 }, { ...before, personId: 'source-other', taxCode: 'VRDLCU82B02A893X', sharePercentage: 30, role: 'Comproprietario' }];
       const internal = port as unknown as { readOwnerships(): Promise<CrmOwnershipSnapshot[]>; syncPrimaryOwnership(...args: unknown[]): Promise<boolean>; addOwnership(...args: unknown[]): Promise<void>; deleteOwnership(...args: unknown[]): Promise<void> };

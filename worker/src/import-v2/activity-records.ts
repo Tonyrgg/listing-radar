@@ -14,7 +14,7 @@ function value(source:RecordValue,key:string):unknown{
   return undefined;
 }
 function stringField(source:RecordValue,key:string):string|null|undefined{
-  const v=value(source,key);return v===null?null:typeof v==='string'?v:undefined;
+  const v=value(source,key);return v===null?null:typeof v==='string'?v:object(v)&&typeof v.id==='string'?v.id:undefined;
 }
 /** Read fields only from persisted Tasks. Custom customer fields require their
  * actual metadata label; unrelated OwnerId/CreatedById are never customer IDs. */
@@ -32,17 +32,22 @@ export function activityTaskFragments(body:string,expectedClientId?:string):Task
   for(const node of walked){
     const id=stringField(node,'Id');if(!id||!/^00T[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/.test(id))continue;
     const result:TaskFragment={id};
+    const recordFields=object(node.fields)?{...node,...node.fields}:node;
+    // Public custom Task relationship fields can carry the displayed Cliente
+    // even when AccountId/WhoId are null. Never use owner/author fields.
+    const customClients=Object.keys(recordFields).filter(key=>/^(?:(?:[a-z0-9]+__|[a-z0-9]+_))?(?:Cliente|Soggetto)__c$/i.test(key));
     for(const [field,key]of [['propertyId','WhatId'],['description','Description'],['status','Status'],['activityDate','ActivityDate'],['createdAt','CreatedDate']]as const){
       const v=stringField(node,key);if(v!==undefined){if(v!==null||!['description','status'].includes(field))(result as RecordValue)[field]=v;}
     }
-    const explicit=[...labelledClientFields].map(key=>stringField(node,key)).filter((v):v is string|null=>v!==undefined);
+    const explicit=[...new Set([...labelledClientFields,...customClients])].map(key=>stringField(node,key)).filter((v):v is string|null=>v!==undefined);
     const account=stringField(node,'AccountId'),who=stringField(node,'WhoId');
     const native=[account,typeof who==='string'&&(!expectedClientId||sameCrmRecordId(who,expectedClientId)||expectedClientId.slice(0,3)!=='001')?who:undefined].filter((v):v is string=>typeof v==='string'&&Boolean(v));
     // Null standard fields do not establish absence of a custom Cliente field.
-    const clients=labelledClientFields.size?explicit:native;
+    const clients=explicit.length?explicit:native;
     const exact=clients.find(v=>v&&expectedClientId&&sameCrmRecordId(v,expectedClientId));
     const known=[...new Set(clients.filter((v):v is string=>Boolean(v)))];
-    if(exact)result.clientId=exact;else if(known.length===1)result.clientId=known[0];else if(explicit.length&&known.length===0)result.clientId=null;
+    if(known.length>1)result.conflicted=true;
+    else if(exact)result.clientId=exact;else if(known.length===1)result.clientId=known[0];else if(explicit.length&&known.length===0)result.clientId=null;
     records.push(result);
   }
   return records;

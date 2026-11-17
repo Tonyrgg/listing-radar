@@ -24,7 +24,7 @@ import { collectScanQuarantine, isQuarantined, canRetryQuarantinedUnit, quaranti
 import { buildCadastralKey } from "../core/normalize.js";
 import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "./import-queue.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
-import { canEnableQueuedActivity, runActivitySummary } from "./activity-plan.js";
+import { canEnableQueuedActivity, runActivitySummary, pendingRunActivities } from "./activity-plan.js";
 import { recordCandidateLookupTiming } from "./import-timing.js";
 import {planActivityCandidates} from '../import-v2/activity-policy.js';
 
@@ -67,7 +67,7 @@ export class TerritoryApplication {
       const problem = recoveryProblem ?? (!unit || !source ? "Immobile non più disponibile" : recovery && recovery.origin !== this.origin ? "Piano di un altro profilo: nessuna scrittura" : !recovery && isQuarantined(state, unit) && !canRetryQuarantinedUnit(state, unit) ? "In quarantena: correggi i dati prima di importare" : sourceProblem(source) ? "Dati da completare: " + sourceProblem(source) : !this.provider.canWrite(unit.key, source) ? "Dati o autorizzazioni da completare" : !queueStreet(state, unit, recovery?.streetId ?? entry.streetId) ? "Associazione alla via da completare" : null);
       return { ...entry, retry: !recovery && Boolean(unit && canRetryQuarantinedUnit(state, unit)), unit: unit ? this.presentUnit(unit, state) : null, locked, problem, recovery: recovery ? { stage: recovery.checkpoint.stage, settings: recovery.settings, address: recovery.source.fullAddress, activityEnabled: recovery.source.activity.enabled, canEnableActivity: canEnableQueuedActivity(recovery.checkpoint) } : null, editLocked: locked || Boolean(recovery) || Boolean(recoveryProblem) };
     }).sort((a, b) => a.addedAt.localeCompare(b.addedAt));
-    return { revision: this.store.revision, entries, readyKeys: entries.filter(e => !e.problem && !e.locked).map(e => e.key), runs: state.runs.filter(r => r.operation === "apply" && (r.queueEntryIds || ["paused", "failed"].includes(r.state)) && r.origin === this.origin).slice(-30).map(r => ({ ...publicRun(r), activitySummary: runActivitySummary(state, r) })) };
+    return { revision: this.store.revision, entries, readyKeys: entries.filter(e => !e.problem && !e.locked).map(e => e.key), runs: state.runs.filter(r => r.operation === "apply" && (r.queueEntryIds || ["paused", "failed"].includes(r.state)) && r.origin === this.origin).slice(-30).map(r => ({ ...publicRun(r), activitySummary: runActivitySummary(state, r), pendingActivitySaves:pendingRunActivities(state,r) })) };
   }
   async enqueue(keys: string[], preferredStreet?: string) {
     if (!keys.length || keys.length > 10000) throw new Error("Seleziona gli immobili da aggiungere alla coda");
@@ -144,7 +144,7 @@ export class TerritoryApplication {
     const matching = observations.filter(o => o.source.jobId === currentSource?.jobId);
     const acquiredAt = observations.find(o => o.source.sourcePropertyId === currentSource?.sourcePropertyId)?.at ?? (matching.length === 1 ? matching[0]!.at : null);
     const currentItem = currentKey && currentSource ? { key: currentKey, source: currentSource, position: unitPosition(currentSource), note: state.units[currentKey]?.note ?? "", acquiredAt, crmId: state.checkpoints[currentSource.sourcePropertyId]?.crmPropertyId ?? null, stage: this.active?.stage ?? "queued", attempt: this.active?.attempt ?? 1 } : null;
-    return { currentItem, revision: this.store.revision, presentationRevision: this.presentationRevision, minute: Math.floor(Date.now() / 60000), queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: streetSummaries(state), activeRun: activeRun ? {...publicRun(activeRun),activitySummary:runActivitySummary(state,activeRun)} : null };
+    return { currentItem, revision: this.store.revision, presentationRevision: this.presentationRevision, minute: Math.floor(Date.now() / 60000), queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: streetSummaries(state), activeRun: activeRun ? {...publicRun(activeRun),activitySummary:runActivitySummary(state,activeRun),pendingActivitySaves:pendingRunActivities(state,activeRun)} : null };
   }
   detail(streetId: string) {
     const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);

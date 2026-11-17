@@ -4,7 +4,7 @@ import type {CrmActivityHistory} from './model.js';
 import {sameCrmRecordId} from '../core/crm-record-id.js';
 import {ImportV2Error} from './errors.js';
 import {readActivityDetailDom} from './activity-detail-reader.js';
-import {activityCoverage} from './activity-policy.js';
+import {activityCoverage,activityDay,romeDay} from './activity-policy.js';
 import {activityResponseText} from './activity-response.js';
 
 const taskIds=(text:string)=>[...new Set([...text.matchAll(/\b00T[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?\b/g)].map(m=>m[0]))];
@@ -15,14 +15,15 @@ type Options={propertyId:string;clientId:string;propertyUrl:string;clientUrl:str
 /** No guessed API endpoint and no writes. Read the actual related list and,
  * when its Task payload omits fields, follow the Task's own visible link. */
 export async function readCrmActivityHistory(page:Page,options:Options):Promise<CrmActivityHistory>{
+  const issues:NonNullable<CrmActivityHistory['issues']>=[];
   const fragments=new Map<string,TaskFragment>(),tasks=new Set<Promise<void>>(),pending=new Set<Request>();let failed=false;
   const origin=new URL(options.propertyUrl).origin;
   const relevant=(request:Request)=>['xhr','fetch'].includes(request.resourceType())&&new URL(request.url()).origin===origin;
   const started=(request:Request)=>{if(relevant(request))pending.add(request);};
   const finished=(request:Request)=>pending.delete(request);
-  const requestFailed=(request:Request)=>{if(relevant(request)){failed=true;pending.delete(request);}};
+  const requestFailed=(request:Request)=>{if(pending.delete(request))failed=true;};
   const inspect=(response:Response)=>{
-    if(!relevant(response.request()))return;
+    if(!relevant(response.request())||!pending.has(response.request()))return;
     if(!response.ok()){failed=true;return;}
     let job:Promise<void>;job=activityResponseText(response).then(body=>{for(const row of activityTaskFragments(body,options.clientId))mergeTaskFragment(fragments,row);})
       .catch(()=>{failed=true;}).finally(()=>tasks.delete(job));tasks.add(job);
@@ -39,6 +40,7 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     throw new ImportV2Error('Lo storico attività Cloud non ha terminato il caricamento. Nessun nuovo inserimento.','verification_failed');
   }
   async function list(url:string,parentId:string,kind:'property'|'client'){
+    pending.clear();
     failed=false;
     await page.goto(url,{waitUntil:'commit',timeout:20_000});
     const cards=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});
@@ -80,14 +82,19 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     // belonging to another property/client seen elsewhere on the page.
     for(const [id,row]of fragments)if(kind==='property'?row.propertyId&&sameCrmRecordId(row.propertyId,parentId):row.clientId&&sameCrmRecordId(row.clientId,parentId))listed.add(id);
     const completeList=!truncated&&exhausted&&(declared!==undefined?listed.size+events.size===Number(declared):listed.size===0&&events.size===0&&emptyList.test(text));
+    const cutoff=kind==='property'?romeDay(new Date()).slice(0,7)+'-01':romeDay(new Date());
+    const outsideWindow=(row:TaskFragment|undefined)=>{const day=row?.createdAt?activityDay({createdAt:row.createdAt,activityDate:null}):null;return Boolean(day&&day<cutoff);};
     for(const id of listed){
+      if(outsideWindow(fragments.get(id)))continue;
       if(taskSnapshot(fragments.get(id)??{id},kind==='property'))continue;
       const href=links.get(id);if(!href)continue;
       // No partial fields from a different Task can complete this one.
       await page.goto(href,{waitUntil:'commit',timeout:20_000});await settled();
       const detail=await readActivityDetailDom(page,id);if(detail)mergeTaskFragment(fragments,detail);
     }
-    const completeRecords=[...listed].every(id=>Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property')));
+    const completeRecords=[...listed].every(id=>outsideWindow(fragments.get(id))||Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property')));
+    if(!completeList)issues.push({scope:kind,missing:['elenco_completo']});
+    for(const id of listed){const r=fragments.get(id);if(outsideWindow(r)||taskSnapshot(r??{id},kind==='property'))continue;issues.push({scope:kind,taskId:id,missing:[...(!r?.createdAt?['data_creazione']:[]),...(r?.propertyId===undefined?['immobile_collegato']:[]),...(kind==='client'&&r?.clientId===undefined?['cliente_collegato']:[]),...(!r?.status?['stato']:[]),...(r?.conflicted?['valori_discordanti']:[])]});}
     console.info(JSON.stringify({action:'activity-history',kind,declared,truncated,listed:listed.size,events:events.size,exhausted,failed,completeList,completeRecords}));
     return !failed&&completeList&&completeRecords;
   }
@@ -99,10 +106,10 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
   try{
     const propertyComplete=await safeList(options.propertyUrl,options.propertyId,'property');
     if(options.stopOnPropertyCoverage&&activityCoverage({records:rows(),propertyComplete,clientComplete:false,checkedAt:new Date().toISOString()},options.propertyId,options.clientId,new Date())){
-      return{records:rows(),propertyComplete,clientComplete:false,checkedAt:new Date().toISOString()};
+      return{records:rows(),propertyComplete,clientComplete:false,checkedAt:new Date().toISOString(),issues};
     }
     const clientComplete=await safeList(options.clientUrl,options.clientId,'client');
-    return {records:rows(),propertyComplete,clientComplete,checkedAt:new Date().toISOString()};
+    return {records:rows(),propertyComplete,clientComplete,checkedAt:new Date().toISOString(),issues};
   }catch(error){
     await options.assertSession();
     if(error instanceof ImportV2Error)throw error;

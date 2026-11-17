@@ -61,3 +61,16 @@ export function runActivitySummary(_state: TerritoryState, run: Run) {
   }
   return summary;
 }
+
+/** A save receipt is not a failed import and not yet a verified activity.
+ * Keep it distinct without upgrading old runs to an unproven success. */
+export function pendingRunActivities(state:TerritoryState,run:Run){
+ return Object.entries(run.applySources??{}).flatMap(([key,source])=>{
+  if(run.imports?.[key]||!source.activity.enabled)return [];
+  const cp=state.checkpoints[source.sourcePropertyId],write=cp?.activityWrite;
+  if(!cp?.plan||!write?.submittedAt||!isDeepStrictEqual(cp.plan.source.activity,source.activity))return [];
+  const time=Date.parse(write.submittedAt),start=Date.parse(run.startedAt),end=run.endedAt?Date.parse(run.endedAt):Infinity;
+  if(!Number.isFinite(time)||time<start||time>end)return [];
+  return [{key,address:source.fullAddress,acknowledged:Boolean(write.saveAcknowledgedAt&&write.savedActivityId),savedActivityId:write.savedActivityId??null}];
+ });
+}
