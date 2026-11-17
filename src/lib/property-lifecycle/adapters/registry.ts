@@ -10,7 +10,7 @@ import { TrioAdapter } from "@/lib/property-lifecycle/adapters/trio";
 import { VistocasaAdapter } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 
-export function createPropertyLifecycleAdapter(
+function basePropertyLifecycleAdapter(
   adapterKey: string,
 ): PropertyLifecycleAdapter {
   switch (adapterKey) {
@@ -37,4 +37,10 @@ export function createPropertyLifecycleAdapter(
     default:
       throw new Error(`Unsupported Property Lifecycle adapter: ${adapterKey}`);
   }
+}
+import {enrichPublicLocationEvidence} from './public-location-evidence';
+
+export function createPropertyLifecycleAdapter(key:string):PropertyLifecycleAdapter {
+ const adapter=basePropertyLifecycleAdapter(key);const normalize=adapter.normalize.bind(adapter);
+ adapter.normalize=async document=>enrichPublicLocationEvidence(await normalize(document),document);return adapter;
 }

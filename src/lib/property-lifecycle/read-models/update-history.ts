@@ -10,6 +10,10 @@ const labels:Record<string,string>={address:'Indirizzo dichiarato',street_number
 /** Compare retained readings of the same publication. Never compare two agencies' ads. */
 export function compareSavedReadings(before:unknown,after:unknown,at:string,url:string):HistoricalUpdate[]{
  const a=snapshotUpdateFields(before),b=snapshotUpdateFields(after);
+ // A missing source field is not a deletion of previously collected evidence.
+ for(const field of ['latitude','longitude','street_number','address'] as const){
+  if(a[field]!==null&&b[field]===null)b[field]='Assente nell’ultima lettura; dato storico conservato';
+ }
  return Object.entries(a).flatMap(([field,value])=>(field==='address'&&typeof value==='string'&&typeof b.address==='string'?value.toLocaleLowerCase('it').replace(/\s+/g,' ').trim()!==b.address.toLocaleLowerCase('it').replace(/\s+/g,' ').trim():value!==b[field as keyof typeof b])?[{field,label:labels[field]!,before:value,after:b[field as keyof typeof b],at,sourceUrl:url,basis:'saved_readings'}]:[]);
 }
 export async function readPropertyUpdateHistory(db:SupabaseClient,id:string,since:string):Promise<HistoricalUpdate[]>{
