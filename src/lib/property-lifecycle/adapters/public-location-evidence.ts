@@ -4,7 +4,8 @@ import type {SourceDocument} from './types';
 /** Keep public clues separate from verified address data. No reverse-geocoded guess becomes a civic. */
 export function enrichPublicLocationEvidence(listing:NormalizedListingV2,document:SourceDocument):NormalizedListingV2{
  const $=load(document.response.body);const candidates:Record<string,unknown>[]=[];
- const add=(method:string,value:unknown)=>{if(value!=null)candidates.push({method,value,sourceUrl:listing.source.canonicalUrl,observedAt:document.observedAt,independentlyVerified:false});};
+ // Observation time belongs to the containing snapshot, avoiding a new content hash every crawl.
+ const add=(method:string,value:unknown)=>{if(value!=null)candidates.push({method,value,sourceUrl:listing.source.canonicalUrl,independentlyVerified:false});};
  for(const node of $('script[type="application/ld+json"]').toArray()){
   try{const root=JSON.parse($(node).text());const visit=(entry:unknown)=>{if(!entry||typeof entry!=='object')return;if(Array.isArray(entry)){entry.forEach(visit);return;}const obj=entry as Record<string,unknown>;const type=JSON.stringify(obj['@type']??'');
    if(/Apartment|House|Residence|RealEstateListing|SingleFamilyResidence|Accommodation/i.test(type)){add('PROPERTY_JSONLD_ADDRESS',obj.address);add('PROPERTY_JSONLD_GEO',obj.geo);add('PUBLICATION_DATE_NOT_MANDATE',obj.datePosted??obj.datePublished);}

@@ -11,3 +11,5 @@ Strategie successive: approfondire iframe e richieste pubbliche specifiche dove 
 Verifiche: test PostgreSQL embedded sulla conservazione e sull'aggiornamento valido della coppia, raccolta metadati senza promozione automatica, regressioni Ad Maiora e riepiloghi. Typecheck e build. Nessuna modifica al desktop Worker.
 
 Script ripetibile: `npx tsx scripts/audit-public-location-evidence.ts`. Output dettagliato locale ignorato `.runtime/location-audit/results.json`.
+
+Recupero online completato con migration 0106: 17 posizioni ripristinate da snapshot dello stesso immobile, escludendo righe condivise, indirizzi discordanti e pin Ad Maiora. La prima ricerca aveva individuato 44 casi con un vecchio pin disponibile; i filtri di sicurezza hanno ridotto quelli effettivamente recuperati a 17. Nessun civico inventato o sostituito. History delle migrazioni aggiornata e trigger riletti online.
