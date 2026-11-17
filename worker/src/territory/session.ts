@@ -139,7 +139,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const file = path.join(options.profileDirectory, "live-config.json");
         await writeFile(`${file}.tmp`, JSON.stringify(liveConfig, null, 2), { mode: 0o600 }); await rename(`${file}.tmp`, file);
       }
-      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard());
+      provider = new LiveProvider(liveConfig, () => application?.isPaused() ?? false, workBrowser, operational ? "operational" : "test", store,()=>sync?.activityWriteGuard(), options.onlineCredentials&&options.live?async()=>{
+        if(!operationLease?.held)throw Error('Sessione operativa non attiva: nessuna scrittura CRM consentita.');
+        await operationLease.renew();
+      }:undefined);
     } else provider = new SimulationProvider(store);
     application = new TerritoryApplication(store, provider, notify, 5000, options.onlineCredentials && options.live ? async () => {
       await ensureSynchronized();
@@ -205,7 +208,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     };
     const finishSharedSession=async()=>{
       if (finishing) return finishing;
-      if(!operationLease?.held)return;
+      if(!operationLease?.held){releasePending=false;return;}
       releasePending=true;
       finishing=(async()=>{
         const status=await ensureSynchronized();
@@ -259,7 +262,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         await ensureSynchronized();
         if(operationLease?.held)await finishSharedSession();
         operationLease ??= sync!.operationLease();
-        await operationLease.acquire(message => { memoryError=message; sisterBulk.pause(message); publish(); });
+        await operationLease.acquire(message => { releasePending=false; memoryError=message; sisterBulk.pause(message); publish(); });
+        releasePending=false;
       }
       try {
         if (options.onlineCredentials && options.live) await ensureSynchronized();
@@ -321,7 +325,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         if(application.hasActiveRun)throw new Error("C’è già una lavorazione attiva su questo PC.");
         if(operationLease?.held)await finishSharedSession();
         operationLease??=sync!.operationLease();
-        await operationLease.acquire(message=>{memoryError=message;application.pause();publish();});
+        await operationLease.acquire(message=>{releasePending=false;memoryError=message;application.pause();publish();});
+        releasePending=false;
         try{await ensureSynchronized();}catch(error){try{await finishSharedSession();}catch{/* Keep reservation until this device reconciles. */}throw error;}
       }
       options.beforeStart?.();

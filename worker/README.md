@@ -1,5 +1,7 @@
 # Property Data Worker
 
+La **0.34.53** recupera automaticamente le sessioni scadute tra PC e verifica il token prima delle scritture CRM. [Causa e prove](../docs/WORKER-SESSION-RECOVERY-0.34.53.md).
+
 La **0.34.52** corregge la verifica dei Task nascosti dall’anteprima, distingue salvataggi da verificare e attività confermate e riduce le letture ripetute. Protezioni e controlli sulle date invariati. [Diagnosi Via Caprera e verifiche](../docs/WORKER-CAPRERA-0.34.52.md).
 
 La **0.34.25** corregge altri salti delle attività nella coda V2: la modalità scelta vale anche per immobili storici e portafogli; può attivare l'attività di un piano precedentemente senza attività, conservandone i dati e le altre opzioni. Ogni import distingue la propria attività da quelle vecchie uguali, con riferimento persistente prima del salvataggio e recupero senza duplicazioni dopo una risposta persa. Il riepilogo mostra quante attività sono previste e gli esiti verificati. Aggiornare il PC che esegue la run. [Comportamento e limiti](../docs/PROPERTY-WORKER-TERRITORY.md).

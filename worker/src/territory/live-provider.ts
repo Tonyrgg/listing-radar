@@ -14,6 +14,7 @@ import type { StreetPropertyFilters } from "../core/network-exploration.js";
 import { runSettings } from "./run-options.js";
 import { sisterSource, reusableSisterSource } from "./sister-memory.js";
 import { sourceProblem } from "./quarantine.js";
+import {guardOperationalWrites} from './execution-write-guard.js';
 
 export type LiveConfig = { cdpUrl: string; sisterTabMatch: string; crmTabMatch: string; contactsExcelPath?: string; allowedCadastralKeys: string[]; allowedTaxCodes: string[]; allowCreate: boolean };
 export type LiveBrowserConfig = Pick<LiveConfig, "cdpUrl" | "sisterTabMatch" | "crmTabMatch">;
@@ -36,7 +37,8 @@ export class LiveProvider implements TerritoryProvider {
   private memory: CloudIdentityMemory | null = null;
   private readonly submittedActivities = new Set<string>();
   constructor(config: LiveConfig, private readonly paused: () => boolean, private readonly workBrowser?: LiveBrowserConfig, private readonly writeAccess: "test" | "operational" = "test", private readonly store?: TerritoryStore,
-    readonly activityWriteGuard?:()=>import('../import-v2/activity-write-guard.js').ActivityWriteGuard|undefined) {
+    readonly activityWriteGuard?:()=>import('../import-v2/activity-write-guard.js').ActivityWriteGuard|undefined,
+    private readonly assertExecution?:()=>Promise<void>) {
     if (writeAccess === "operational" && !workBrowser) throw new Error("La modalità operativa richiede il Chrome di lavoro affidato dal desktop");
     this.config = validateLiveConfig(config, workBrowser);
   }
@@ -80,7 +82,8 @@ export class LiveProvider implements TerritoryProvider {
   async port(): Promise<TecnocloudV2Port> {
     const base = new TecnocloudUiV2Port((await this.crmTabs()).crmPage, false, { isInterruptionRequested: this.paused, cadastralLookupOnly: true, recoverReadLoading: true,maxReadRecoveries:1,submittedActivities: this.submittedActivities });
     this.memory ??= this.store ? new CloudIdentityMemory(this.store.read()) : null;
-    return this.memory?.port(base) ?? base;
+    const port=this.memory?.port(base) ?? base;
+    return this.assertExecution?guardOperationalWrites(port,this.assertExecution):port;
   }
   async candidates(_street: Street, source: SourceProperty) {
     const port = await this.port(); await port.assertSession();

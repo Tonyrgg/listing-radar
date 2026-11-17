@@ -1,5 +1,7 @@
 # Manuale operativo e tecnico di Listing Radar
 
+> **Worker 0.34.53:** recupero automatico delle sessioni scadute tra postazioni, vecchio token invalidato e controllo prima delle scritture CRM. [Causa, prove e limiti](WORKER-SESSION-RECOVERY-0.34.53.md).
+
 > **Worker 0.34.52, Via Caprera e recap:** separati i 21 salvataggi CRM dalle verifiche finali; lettura completa dei Task, meno navigazioni ridondanti e recupero dei riepiloghi Intelligence dagli snapshot. [Diagnosi, protezioni e limiti](WORKER-CAPRERA-0.34.52.md).
 
 > **Ad Maiora, doppio controllo e snapshot:** HTML + WordPress + media e riscontro prudente sul catalogo esterno; pin escluso, discordanti conservate, schede salvate scaricabili anche dopo rimozione. [Implementazione, prove e limiti](ADMAIORA-DOUBLE-CHECK-2026-11-16.md).

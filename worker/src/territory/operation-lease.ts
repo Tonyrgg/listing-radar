@@ -5,7 +5,7 @@ export function assertSynchronized(status:{pending?:boolean;conflicts?:unknown[]
  if(status.pending)throw new Error("Modifiche locali ancora da inviare: attendi la conferma automatica prima di avviare.");
  if(status.conflicts?.length)throw new Error("Ci sono modifiche delle postazioni da confrontare: risolvile da Memoria online prima di avviare.");
 }
-/** Exclusive execution, kept reserved after a lost acknowledgement until this device reconciles. */
+/** Exclusive execution; expired reservations are recovered by the central server. */
 export class TerritoryOperationLease {
  private token:string|null=null;
  private timer:ReturnType<typeof setInterval>|undefined;
@@ -23,7 +23,12 @@ export class TerritoryOperationLease {
   this.timer=setInterval(()=>{if(this.renewing)return;this.renewing=true;void this.renew().catch(error=>{this.stop();onLost(error instanceof Error?error.message:"Sessione online non confermata");}).finally(()=>{this.renewing=false;});},20000);
   this.timer.unref?.();
  }
- async renew(){const r=await this.db.rpc("renew_territory_operation",this.args());if(r.error||r.data!==true)throw new Error("Sessione condivisa non più confermata: lavorazione messa in pausa, dati locali conservati.");}
+ async renew(){
+  if(!this.token)throw new Error('Sessione operativa non attiva: lavorazione in pausa.');
+  const r=await this.db.rpc("renew_territory_operation",this.args());
+  if(r.error)throw new Error('Sessione condivisa non raggiungibile: lavorazione in pausa, dati locali conservati.');
+  if(r.data!==true){this.stop();this.token=null;throw new Error('Sessione scaduta o passata a un altro PC: lavorazione in pausa, dati locali conservati.');}
+ }
  get held(){return this.token!==null;}
  stop(){clearInterval(this.timer);this.timer=undefined;}
  async release(revision:number){
