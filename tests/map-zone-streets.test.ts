@@ -4,6 +4,13 @@ const ring=[[0,0],[2,0],[2,2],[0,2],[0,0]];
 const area:StreetArea={id:'a',name:'Zona A',color:'#aabbcc',agentName:'Tony',geometry:{type:'Polygon',coordinates:[ring]}};
 const street=(id:string,coordinates:unknown):DirectoryStreet=>({id,name:`Via ${id}`,sisterName:`VIA ${id}`,locality:'Bitonto',geometry:{type:'LineString',coordinates}});
 describe('zone di lavoro e vie condivise',()=>{
+ it('excludes up to 15 percent and retains the predominant zone',()=>{
+  const left={...area,id:'left',geometry:{type:'Polygon',coordinates:[[[0,0],[1.5,0],[1.5,2],[0,2],[0,0]]]}};
+  const right={...area,id:'right',geometry:{type:'Polygon',coordinates:[[[1.5,0],[10,0],[10,2],[1.5,2],[1.5,0]]]}};
+  const rows=buildZoneStreetDirectory([street('boundary',[[0,1],[10,1]]),street('above',[[0,1],[9,1]])],[left,right]).streets;
+  expect(rows.find(s=>s.id==='boundary')?.areaIds).toEqual(['right']);
+  expect(rows.find(s=>s.id==='above')?.areaIds).toEqual(['left','right']);
+ });
  it('includes a crossing even when both endpoints are outside, but not a corner touch',()=>{
   const data=buildZoneStreetDirectory([street('cross',[[-1,1],[3,1]]),street('touch',[[-1,-1],[0,0]]),street('inside',[[.5,.5],[1,1]])],[area]);
   expect(data.streets.find(s=>s.id==='cross')?.areaIds).toEqual(['a']);expect(data.streets.find(s=>s.id==='touch')?.areaIds).toEqual([]);expect(data.areas[0]?.streetCount).toBe(2);

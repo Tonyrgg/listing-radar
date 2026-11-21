@@ -1,5 +1,4 @@
-/** Shared by the web archive and desktop. Membership uses positive line length,
- * including crossings with no vertex inside; touching a corner is not membership. */
+/** Shared by the web archive and desktop. Membership requires more than 15% of the street. */
 export type ZoneGeometry={type:string;coordinates:unknown};
 export type StreetArea={id:string;name:string;color:string;agentName:string|null;geometry:ZoneGeometry};
 export type DirectoryStreet={id:string;name:string;locality:string;sisterName:string;geometry:ZoneGeometry|null;outsideUrbanArea?:boolean;linkedOfficialId?:string;needsReview?:boolean;count?:number;lastScanAt?:string|null;searchText?:string;resultName?:string};
@@ -41,11 +40,12 @@ export function buildZoneStreetDirectory(streets:DirectoryStreet[],areas:StreetA
  const shapes=areas.map(area=>{const parts=polygons(area.geometry);return{area,parts,bounds:bounds(parts.flat(2))};});
  const rows=streets.filter(s=>!s.linkedOfficialId&&!s.outsideUrbanArea&&namedStreet(s.name)).map(street=>{
   const paths=lines(street.geometry),box=bounds(paths.flat()),areaIds:string[]=[];
+  const total=paths.reduce((sum,line)=>sum+line.slice(1).reduce((n,b,i)=>{const a=line[i]!;return n+Math.hypot((b[0]-a[0])*Math.cos(a[1]*Math.PI/180),b[1]-a[1])*111195;},0),0);
   for(const shape of shapes){
    const b=shape.bounds;if(box[0]!>b[2]!||box[2]!<b[0]!||box[1]!>b[3]!||box[3]!<b[1]!)continue;
    let length=0;
    for(const poly of shape.parts)for(const line of paths)for(let i=1;i<line.length;i++)length+=segmentInside(line[i-1]!,line[i]!,poly);
-   if(length>.5)areaIds.push(shape.area.id);
+   if(length>.5 && total>0 && length/total>0.15+1e-10)areaIds.push(shape.area.id);
   }
   return{...street,areaIds,unlocated:paths.length===0};
  }).sort((a,b)=>a.name.localeCompare(b.name,'it',{numeric:true})||a.id.localeCompare(b.id));
