@@ -25,7 +25,7 @@ import { buildCadastralKey } from "../core/normalize.js";
 import { queueStreet, queueLocked, settleQueueImport, pendingUnitImport } from "./import-queue.js";
 import { sisterStreetSettingsSchema } from "./sister-street-settings.js";
 import { canEnableQueuedActivity, runActivitySummary, pendingRunActivities } from "./activity-plan.js";
-import { recordCandidateLookupTiming } from "./import-timing.js";
+import { recordCandidateLookupTiming, recordItemTiming } from "./import-timing.js";
 import {planActivityCandidates} from '../import-v2/activity-policy.js';
 
 const now = () => new Date().toISOString();
@@ -421,7 +421,9 @@ export class TerritoryApplication {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
           // Do not begin another CRM item until the previous durable outcome
           // is acknowledged online. Failure stops outside the per-item retry.
+          const preflightStarted = performance.now();
           await this.beforeNextItem?.();
+          const preflightElapsed = performance.now() - preflightStarted;
           if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null }); return; }
           const key = run.itemKeys[index]!;
           if (run.operation === "apply" && this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.imports?.[key]?.crmId))) {
@@ -436,6 +438,9 @@ export class TerritoryApplication {
             return { unit, street };
           });
           const source = run.applySources?.[key] ?? effectiveSource(unit);
+          if (run.operation === "apply" && this.beforeNextItem) {
+            await recordItemTiming(this.store.diagnosticsDirectory, run.id, source.sourcePropertyId, "shared_preflight", preflightElapsed);
+          }
           const settings = run.unitSettings?.[key] ?? run.settings!;
           try {
             if (!street) throw new Error("Via non disponibile per questo immobile: nessuna scrittura");
@@ -482,12 +487,13 @@ export class TerritoryApplication {
               const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
                 this.provider.rememberCloud?.(state);
                 appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:()=>this.store.readSelected(state=>Object.values(state.checkpoints)),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
+              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,skipReplayableCheckpoints:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:()=>this.store.readSelected(state=>Object.values(state.checkpoints)),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
               const outcome = await engine.run(plan.source, (stage, retry) => {
                 if (this.active && (this.active.stage !== stage || this.active.attempt !== retry.attempt)) {
                   this.active.stage = stage; this.active.attempt = retry.attempt; this.changed();
                 }
               });
+              const finalizationStarted = performance.now();
               await this.store.change(s => {
                 const u = s.units[key]!;
                 u.assessment = { ...assessment, kind: outcome.state === "completed" ? "synced" : "review", reason: outcome.failure?.message ?? "Indirizzo, catasto e intestatari riletti e verificati.", candidateId: outcome.crmPropertyId };
@@ -499,6 +505,7 @@ export class TerritoryApplication {
                   s.runs.find(r => r.id === run.id)!.handled = index + 1;
                 }
               });
+              await recordItemTiming(this.store.diagnosticsDirectory, run.id, source.sourcePropertyId, "item_finalize", performance.now() - finalizationStarted);
               if (outcome.state !== "completed") {
                 const activityDone=this.store.readSelected(s=>s.checkpoints[source.sourcePropertyId]);
                 if(activityDone&&confirmedActivityWork(activityDone)){

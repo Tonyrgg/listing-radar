@@ -17,6 +17,15 @@ type Options={propertyId:string;clientId:string;propertyUrl:string;clientUrl:str
 export async function readCrmActivityHistory(page:Page,options:Options):Promise<CrmActivityHistory>{
   const issues:NonNullable<CrmActivityHistory['issues']>=[];
   const fragments=new Map<string,TaskFragment>(),tasks=new Set<Promise<void>>(),pending=new Set<Request>();let failed=false;
+  const rows=()=>[...fragments.values()].map(row=>taskSnapshot(row,true)).filter((r):r is NonNullable<typeof r>=>Boolean(r));
+  const hasCoverage = () => {
+    if (!options.stopOnPropertyCoverage) return false;
+    const current = new Date();
+    return Boolean(activityCoverage(
+      { records: rows(), propertyComplete: false, clientComplete: false, checkedAt: current.toISOString() },
+      options.propertyId, options.clientId, current,
+    ));
+  };
   const origin=new URL(options.propertyUrl).origin;
   const relevant=(request:Request)=>['xhr','fetch'].includes(request.resourceType())&&new URL(request.url()).origin===origin;
   const started=(request:Request)=>{if(relevant(request))pending.add(request);};
@@ -30,9 +39,10 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
   };
   page.on('response',inspect);
   page.on('request',started);page.on('requestfinished',finished);page.on('requestfailed',requestFailed);
-  async function settled(){
+  async function settled(allowCoverage = false){
     for(let count=0,stable=0;count<48;count++){
       await options.assertSession();
+      if (allowCoverage && hasCoverage()) return;
       const busy=await page.locator('lightning-spinner:visible,.slds-spinner:visible,[role="progressbar"]:visible').count();
       stable=!busy&&!tasks.size&&!pending.size?stable+1:0;if(stable>=3)return;
       await page.waitForTimeout(250);
@@ -46,7 +56,8 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     const cards=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});
     let card=cards.filter({hasNot:cards});
     await card.waitFor({state:'visible',timeout:10_000});
-    await settled();
+    await settled(true);
+    if (hasCoverage()) return false;
     let text=await card.innerText();
     let declared=headerCount.exec(text)?.[1];
     let truncated=Boolean(headerCount.exec(text)?.[2]);
@@ -98,14 +109,13 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     console.info(JSON.stringify({action:'activity-history',kind,declared,truncated,listed:listed.size,events:events.size,exhausted,failed,completeList,completeRecords}));
     return !failed&&completeList&&completeRecords;
   }
-  const rows=()=>[...fragments.values()].map(row=>taskSnapshot(row,true)).filter((r):r is NonNullable<typeof r>=>Boolean(r));
   async function safeList(url:string,parentId:string,kind:'property'|'client'){
     try{return await list(url,parentId,kind);}
     catch(error){await options.assertSession();if(error instanceof ImportV2Error&&error.options.global)throw error;console.info(JSON.stringify({action:'activity-history',kind,error:error instanceof Error?error.message:String(error)}));return false;}
   }
   try{
     const propertyComplete=await safeList(options.propertyUrl,options.propertyId,'property');
-    if(options.stopOnPropertyCoverage&&activityCoverage({records:rows(),propertyComplete,clientComplete:false,checkedAt:new Date().toISOString()},options.propertyId,options.clientId,new Date())){
+    if(hasCoverage()){
       return{records:rows(),propertyComplete,clientComplete:false,checkedAt:new Date().toISOString(),issues};
     }
     const clientComplete=await safeList(options.clientUrl,options.clientId,'client');

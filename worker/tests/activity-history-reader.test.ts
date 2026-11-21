@@ -6,6 +6,26 @@ let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({channel:'chrome',headless:true});});afterAll(async()=>{await browser?.close();});
 const options={propertyId:property,clientId:client,propertyUrl:origin+'/property',clientUrl:origin+'/client',assertSession:async()=>{}};
 describe('complete CRM activity history',{timeout:15000},()=>{
+ it('uses recent activity from the preview without opening Show All or visiting the client', async () => {
+  const page = await browser.newPage();
+  let clientVisits = 0;
+  try {
+   await page.route(origin + '/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/client') clientVisits++;
+    if (pathname === '/task-data') return route.fulfill({
+     contentType: 'application/json',
+     body: JSON.stringify({Id:id, WhatId:property, AccountId:client, Status:'Completed', CreatedDate:new Date().toISOString()}),
+    });
+    return route.fulfill({contentType:'text/html; charset=utf-8',body:
+     '<article><h2>Attività e appuntamenti (1+)</h2><button onclick="this.remove()">Visualizza tutto</button></article><script>fetch("/task-data")</script>'});
+   });
+   const result = await readCrmActivityHistory(page, {...options, stopOnPropertyCoverage:true});
+   expect(result.records).toMatchObject([{id, propertyId:property, status:'Completed'}]);
+   expect(await page.getByRole('button', {name:'Visualizza tutto'}).count()).toBe(1);
+   expect(clientVisits).toBe(0);
+  } finally { await page.close(); }
+ });
  it('does not open old Tasks just to retrieve fields that cannot affect this month or today',async()=>{
   const page=await browser.newPage();let opened=0;try{
    await page.route(origin+'/**',route=>{const p=new URL(route.request().url()).pathname;if(p==='/old')return route.fulfill({contentType:'application/json',body:JSON.stringify({Id:id,CreatedDate:'2020-01-01T10:00:00Z'})});if(p.includes(id))opened++;return route.fulfill({contentType:'text/html; charset=utf-8',body:`<article><h2>Attività e appuntamenti (1)</h2><a href="/task/${id}">Vecchia attività</a></article><script>fetch('/old')</script>`});});

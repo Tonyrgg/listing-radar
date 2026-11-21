@@ -1,4 +1,4 @@
-import { canonicalEmail, canonicalPhone, formatPersonName, splitSourcePersonName } from "./identity.js";
+import { canonicalBirthPlace, canonicalEmail, canonicalPhone, formatPersonName, splitSourcePersonName } from "./identity.js";
 import type { CrmPersonSnapshot, SourceOwner } from "./model.js";
 
 function unique<T>(values: T[]): T[] {
@@ -52,7 +52,7 @@ export function personNeedsWrite(existing:CrmPersonSnapshot,desired:PersonWriteM
   const values=(items:string[],normalize:(s:string)=>string)=>[...new Set(items.map(normalize).filter(Boolean))].sort().join('|');
   return existing.taxCode!==desired.taxCode||existing.firstName==null||existing.lastName==null
     ||text(existing.firstName)!==text(desired.firstName)||text(existing.lastName)!==text(desired.lastName)
-    ||text(existing.birthDate)!==text(desired.birthDate)||text(existing.birthPlace)!==text(desired.birthPlace)||text(existing.birthProvince)!==text(desired.birthProvince)
+    ||text(existing.birthDate)!==text(desired.birthDate)||canonicalBirthPlace(existing.birthPlace)!==canonicalBirthPlace(desired.birthPlace)||text(existing.birthProvince)!==text(desired.birthProvince)
     ||values(existing.phones,canonicalPhone)!==values(desired.phones,canonicalPhone)||values(existing.emails,canonicalEmail)!==values(desired.emails,canonicalEmail)
     ||(existing.privateNotes??'').trim()!==(desired.privateNotes??'').trim();
 }

@@ -42,7 +42,7 @@ describe("misure import nel percorso operativo V2 locale", () => {
   it("misura anche la ricerca preliminare fallita e il suo recupero nella stessa run", async () => {
     const { filename, store } = await setup(true);
     const report = await importTimingReport(filename);
-    expect(report).toMatchObject({ records: 11, observedItems: 1, parseClean: true });
+    expect(report).toMatchObject({ records: 12, observedItems: 1, parseClean: true });
     expect(report.phases.find(phase => phase.event === "lookup_failed")).toMatchObject({ stage: "candidate_lookup", samples: 1, failuresByKind: { transient_portal: 1 } });
     expect(report.phases.find(phase => phase.event === "lookup_completed")?.samples).toBe(1);
     expect(store.read().runs.at(-1)?.state).toBe("completed");
@@ -51,8 +51,10 @@ describe("misure import nel percorso operativo V2 locale", () => {
   it("conserva tutte le fasi del vero motore attraverso TerritoryImportStore senza altre riscritture del ledger", async () => {
     const { directory, store, key, runId, filename } = await setup();
     const report = await importTimingReport(filename, runId);
-    expect(report).toMatchObject({ records: 10, observedItems: 1, invalidLines: 0, parseClean: true, sampleAvailable: true });
-    expect(report.phases.map(p => p.stage).sort()).toEqual(["candidate_lookup", "queued", "planned", "people_resolved", "people_synced", "property_resolved", "property_synced", "ownerships_synced", "verified", "activity_synced"].sort());
+    expect(report).toMatchObject({ records: 11, observedItems: 1, invalidLines: 0, parseClean: true, sampleAvailable: true });
+    expect(report.phases.map(p => p.stage).sort()).toEqual(["candidate_lookup", "item_finalize", "queued", "planned", "people_resolved", "people_synced", "property_resolved", "property_synced", "ownerships_synced", "verified", "activity_synced"].sort());
+    expect(report.phases.find(p => p.stage === "queued")?.checkpointSaveMs).toBe(0);
+    expect(report.phases.find(p => p.stage === "people_synced")?.checkpointSaveMs).toBe(0);
     expect(store.read().runs.at(-1)?.state).toBe("completed");
     const checkpoint = Object.values(store.read().checkpoints)[0]!;
     const revision = store.revision, port = new TerritoryImportStore(store, street.id, runId);
@@ -69,7 +71,7 @@ describe("misure import nel percorso operativo V2 locale", () => {
     const conflict = { ...JSON.parse(first), durationMs: 999999 };
     await appendFile(filename, `${first}\n${JSON.stringify(conflict)}\n{"version":`);
     const report = await importTimingReport(filename);
-    expect(report).toMatchObject({ records: 10, duplicates: 1, conflicts: 1, invalidLines: 1, parseClean: false });
+    expect(report).toMatchObject({ records: 11, duplicates: 1, conflicts: 1, invalidLines: 1, parseClean: false });
   });
 
   it("un file diagnostico non scrivibile non invalida il checkpoint CRM gia conservato", async () => {

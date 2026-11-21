@@ -54,6 +54,7 @@ export type ImportV2EngineOptions = {
   activityWriteGuard?:ActivityWriteGuard;
   requireSharedActivityGuard?:boolean;
   skipUnchangedPeople?:boolean;
+  skipReplayableCheckpoints?: boolean;
   calendarActivityPolicy?:boolean;
   /** Shared durable facts, including uncertain saves on other properties. */
   relatedActivityCheckpoints?:()=>ImportV2Checkpoint[];
@@ -178,7 +179,9 @@ export class ImportV2Engine {
   private readonly activityWriteGuard?:ActivityWriteGuard;
   private readonly requireSharedActivityGuard:boolean;
   private readonly skipUnchangedPeople:boolean;
+  private readonly skipReplayableCheckpoints: boolean;
   private readonly freshPeople=new Map<string,{at:number;matches:CrmPersonSnapshot[]}>();
+  private readonly verifiedPeople = new Map<string, { at: number; id: string }>();
 
   private async saveCheckpoint(checkpoint: ImportV2Checkpoint): Promise<void> {
     const startedAt = performance.now();
@@ -197,6 +200,7 @@ export class ImportV2Engine {
     this.activityWriteGuard=options.activityWriteGuard;
     this.requireSharedActivityGuard=options.requireSharedActivityGuard===true;
     this.skipUnchangedPeople=options.skipUnchangedPeople===true;
+    this.skipReplayableCheckpoints = options.skipReplayableCheckpoints === true;
     this.now = options.now ?? (() => new Date());
     this.isInterruptionRequested = options.isInterruptionRequested ?? (() => false);
     const includeCoOwners = options.includeCoOwners ?? true;
@@ -229,6 +233,8 @@ export class ImportV2Engine {
     source: SourceProperty,
     onStage?: (stage: ImportV2Stage, retry: { attempt: number; maxAttempts: number; previousFailure: ImportV2Failure | null }) => void,
   ): Promise<ImportV2Outcome> {
+    this.freshPeople.clear();
+    this.verifiedPeople.clear();
     let plan;
     try {
       plan = buildPlan(source);
@@ -309,6 +315,10 @@ export class ImportV2Engine {
           }
           propertyPreflightDone=true;
         }
+        // These transitions have no effects to recover. After a restart the
+        // previous durable checkpoint can replay them before the next write.
+        const replayableTransition = this.skipReplayableCheckpoints && !checkpoint.lastError && checkpoint.attempts === 0
+          && (executedStage === "queued" || (executedStage === "people_synced" && !!checkpoint.propertyResolution));
         checkpoint = await this.executeStage(checkpoint);
         operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
         operationFinished = true;
@@ -316,7 +326,7 @@ export class ImportV2Engine {
         checkpoint.lastError = null;
         checkpoint.nextAttemptAt = null;
         checkpoint.updatedAt = this.now().toISOString();
-        await this.saveCheckpoint(checkpoint);
+        if (!replayableTransition) await this.saveCheckpoint(checkpoint);
         checkpointSaveDurationMs = timingMs(this.checkpointSaveElapsedMs);
         stageDurationMs = timingMs(performance.now() - stageStartedAt);
       } catch (error) {
@@ -575,11 +585,12 @@ export class ImportV2Engine {
       const proven=activityCoverage({records:[...verifiedClientActivities(clientId,current),...verifiedActivityFacts(related)],propertyComplete:false,clientComplete:false,checkedAt:current.toISOString()},propertyId,clientId,current);
       if(proven)return {...checkpoint,activityEvidence:{...proven,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
       let history=await this.crm.readActivityHistory(propertyId,clientId);
-      if(!history.propertyComplete||!history.clientComplete){
+      let coverage=activityCoverage(history,propertyId,clientId,current);
+      if(!coverage&&(!history.propertyComplete||!history.clientComplete)){
         this.throwIfInterruptionRequested();
         history=await this.crm.readActivityHistory(propertyId,clientId);
+        coverage=activityCoverage(history,propertyId,clientId,current);
       }
-      const coverage=activityCoverage(history,propertyId,clientId,current);
       if(coverage){
         return {...checkpoint,activityEvidence:{...coverage,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
       }
@@ -660,7 +671,7 @@ export class ImportV2Engine {
         saved = await this.crm.createPerson(desired);
       } else if (liveMatches.length === 1) {
         saved = this.skipUnchangedPeople&&!personNeedsWrite(existing,desired)
-          ?await this.crm.readPerson(existing.id,owner.taxCode):await this.crm.overwritePerson(existing.id, desired);
+          ?liveMatches[0]!:await this.crm.overwritePerson(existing.id, desired);
       } else {
         saved = await this.crm.mergePeople({
           taxCode: owner.taxCode,
@@ -690,6 +701,7 @@ export class ImportV2Engine {
        * più di un risultato resta invece un errore deterministico. */
       if (mergePerformed && after.length === 1) saved = after[0]!;
       assertPerson(owner, saved, desired.phones, desired.emails);
+      if (this.skipUnchangedPeople) this.verifiedPeople.set(owner.taxCode, { at: Date.now(), id: saved.id });
       synced.push({ sourcePersonId: owner.sourcePersonId, taxCode: owner.taxCode, crmPersonId: saved.id, mergePerformed });
       // Preserve each verified person before moving to the next. A later
       // owner's transient error must not replay successful writes/merges.
@@ -721,6 +733,8 @@ export class ImportV2Engine {
       this.throwIfInterruptionRequested();
       const person = synced.find((candidate) => candidate.sourcePersonId === owner.sourcePersonId && candidate.taxCode === owner.taxCode);
       if (!person) throw new ImportV2Error("Nominativo sincronizzato mancante", "invalid_source");
+      const verified = this.verifiedPeople.get(owner.taxCode);
+      if (verified && sameCrmRecordId(verified.id, person.crmPersonId) && Date.now() - verified.at < 60_000) continue;
       const snapshot = await this.crm.readPerson(person.crmPersonId, owner.taxCode);
       if (snapshot.id !== person.crmPersonId
         || canonicalTaxCode(snapshot.taxCode) !== owner.taxCode

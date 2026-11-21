@@ -2136,13 +2136,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     throw new ImportV2Error(`Modifica ${label} non disponibile`, "transient_portal", { retryable: true });
   }
 
-  private async syncCadastral(plan: ImportV2Plan): Promise<void> {
+  private async syncCadastral(plan: ImportV2Plan): Promise<boolean> {
     const expected = this.cadastralRows(plan).filter(([, value]) => value);
-    if (!expected.length) return;
-    const mismatch = await Promise.all(expected.map(async ([label, value]) => normalized(await this.detailValue(label)) !== normalized(value)));
-    if (!mismatch.some(Boolean)) return;
-    await this.openInlineGroup(expected[mismatch.findIndex(Boolean)]![0]);
-    for (const [label, value] of expected) await this.fillVisibleInput(label, value, true);
+    const mismatches = await Promise.all(expected.map(async ([label, value]) => {
+      const actual = await this.detailValue(label);
+      const equal = label === "Catasto Rendita"
+        ? decimalValue(actual) === decimalValue(value)
+        : normalized(actual) === normalized(value);
+      return equal ? null : [label, value] as const;
+    }));
+    const changed = mismatches.filter(row => row !== null);
+    if (!changed.length) return false;
+    await this.openInlineGroup(changed[0]![0]);
+    for (const [label, value] of changed) await this.fillVisibleInput(label, value, true);
     const save = await this.one(this.page.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva catasto");
     const saveRequests = this.watchSearchRequests();
     try {
@@ -2153,6 +2159,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       saveRequests.stop();
     }
     await this.assertSession();
+    return true;
   }
 
   private async finishPropertyPositioning(plan: ImportV2Plan): Promise<void> {
@@ -2283,15 +2290,43 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     });
   }
 
-  async assertPropertyWritable(propertyId:string):Promise<void> {
-    const summary=await this.readPropertySummary(propertyId);
+  private checkWritableProperty(summary: CrmPropertySummary): void {
+    const propertyId = summary.id;
     if(summary.recordKind==='unknown')throw new ImportV2Error('Tipo della scheda non verificato: lavorazione in attesa, nessuna scrittura autorizzata.','global_portal',{global:true,retryable:true,details:{recordKind:'unknown',propertyId,recordHeading:summary.displayName}});
     assertOrdinaryProperty(summary.recordKind ?? 'unknown');
   }
 
+  async assertPropertyWritable(propertyId:string):Promise<void> {
+    this.checkWritableProperty(await this.readPropertySummary(propertyId));
+  }
+
+  private async propertyCoreMatches(plan: ImportV2Plan, summary: CrmPropertySummary): Promise<boolean> {
+    if (!sameCrmPropertyAddress(plan.source.fullAddress, summary)) return false;
+    const draft = propertyDraft(plan);
+    const expected = [
+      ["Tipologia Immobile", draft.type],
+      ["Sottotipologia Immobile", draft.subtype],
+      ["Piano Immobile", draft.floor],
+      ["Numero Piano", draft.floorNumber],
+      ["Interno", draft.internal],
+      ["Lettera", draft.letter],
+    ] as const;
+    const address = normalized(summary.fullAddress);
+    const municipality = normalized(plan.source.municipality);
+    const postal = plan.source.fullAddress.match(/,\s*(\d{5})\b/)?.[1];
+    const province = plan.source.fullAddress.match(/\(([A-Z]{2})\)\s*$/i)?.[1];
+    if (municipality && !address.includes(municipality)) return false;
+    if (postal && !address.includes(postal)) return false;
+    if (province && !address.includes(`(${normalized(province)})`)) return false;
+    const matches = await Promise.all(expected.filter(([, value]) => value).map(async ([label, value]) =>
+      normalized(await this.detailValue(label)) === normalized(value)));
+    return matches.every(Boolean);
+  }
+
   async updateProperty(propertyId: string, plan: ImportV2Plan): Promise<CrmPropertySnapshot> {
     return this.action("Aggiornamento immobile", async () => {
-      await this.assertPropertyWritable(propertyId);
+      const summary = await this.readPropertySummary(propertyId);
+      this.checkWritableProperty(summary);
       if (this.dryRun) {
         const previous = await this.readProperty(propertyId);
         const property = { ...previous, fullAddress: plan.source.fullAddress, cadastral: structuredClone(plan.source.cadastral) };
@@ -2300,7 +2335,8 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       await this.openProperty(propertyId);
       const core = this.page.locator('div.flex:has(label span:text-is("Tipologia Immobile"))').filter({ visible: true });
-      if (await core.count() === 1) {
+      let coreChanged = false;
+      if (!(await this.propertyCoreMatches(plan, summary)) && await core.count() === 1) {
         const edit = core.locator("button.inline-edit-trigger").filter({ visible: true });
         if (await edit.count() === 1) {
           await edit.click();
@@ -2323,10 +2359,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
             saveRequests.stop();
           }
           await this.finishPropertyPositioning(plan);
+          coreChanged = true;
         }
       }
       await this.openProperty(propertyId);
-      await this.syncCadastral(plan);
+      const cadastralChanged = await this.syncCadastral(plan);
+      if (!coreChanged && !cadastralChanged) return { ...summary, owners: await this.readOwnerships(propertyId) };
       return this.readProperty(propertyId);
     });
   }
@@ -2785,6 +2823,9 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       const desiredPrimary = desired.filter((owner) => owner.role === "Proprietario Principale");
       if (desiredPrimary.length !== 1) {
         throw new ImportV2Error("La fonte deve identificare un solo proprietario principale", "invalid_source");
+      }
+      if (ownershipSyncConfirmed(before, desired, options.keepUnlistedManagedOwners)) {
+        return { propertyId, owners: before, removedPersonIds: [] };
       }
       /* Se il proprietario principale era gia' quello giusto la scheda non e'
        * stata toccata: rileggere i collegamenti darebbe la stessa risposta

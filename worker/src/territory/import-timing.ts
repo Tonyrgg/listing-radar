@@ -10,8 +10,8 @@ export const IMPORT_TIMING_FILE = "import-v2-timings.jsonl";
 type Timing = { durationMs: number; operationDurationMs: number; checkpointSaveDurationMs: number };
 export type ImportTiming = Timing & {
   version: 1; id: string; runId: string | null; itemId: string; propertyId: string; at: string;
-  event: "stage_completed" | "retry_scheduled" | "lookup_completed" | "lookup_failed";
-  stage: ImportV2Stage | null; executedStage: ImportV2Stage | "candidate_lookup"; attempt: number; failureKind?: string;
+  event: "stage_completed" | "retry_scheduled" | "lookup_completed" | "lookup_failed" | "item_timing";
+  stage: ImportV2Stage | null; executedStage: ImportV2Stage | "candidate_lookup" | "shared_preflight" | "item_finalize"; attempt: number; failureKind?: string;
 };
 const isStage = (value: unknown): value is ImportV2Stage => IMPORT_V2_STAGES.includes(value as ImportV2Stage);
 const isMs = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -53,6 +53,16 @@ async function appendTiming(directory: string, row: ImportTiming) {
   }
 }
 
+export async function recordItemTiming(directory: string, runId: string, propertyId: string, phase: "shared_preflight" | "item_finalize", elapsedMs: number) {
+  const at = new Date().toISOString();
+  const durationMs = Math.round(elapsedMs * 1000) / 1000;
+  await appendTiming(directory, {
+    version: 1, id: createHash("sha256").update(JSON.stringify([runId, propertyId, phase, at])).digest("hex"),
+    runId, itemId: propertyId, propertyId, at, event: "item_timing", stage: null, executedStage: phase,
+    attempt: 1, durationMs, operationDurationMs: 0, checkpointSaveDurationMs: 0,
+  });
+}
+
 function validRow(row: unknown): row is ImportTiming {
   if (!row || typeof row !== "object") return false;
   const r = row as ImportTiming;
@@ -60,8 +70,9 @@ function validRow(row: unknown): row is ImportTiming {
     && (r.runId === null || typeof r.runId === "string" && Boolean(r.runId.trim()))
     && typeof r.itemId === "string" && Boolean(r.itemId.trim()) && typeof r.propertyId === "string" && Boolean(r.propertyId.trim())
     && typeof r.at === "string" && Number.isFinite(Date.parse(r.at))
-    && ["stage_completed", "retry_scheduled", "lookup_completed", "lookup_failed"].includes(r.event)
-    && (["lookup_completed", "lookup_failed"].includes(r.event)
+    && ["stage_completed", "retry_scheduled", "lookup_completed", "lookup_failed", "item_timing"].includes(r.event)
+    && (r.event === "item_timing" ? r.stage === null && ["shared_preflight", "item_finalize"].includes(r.executedStage)
+      : ["lookup_completed", "lookup_failed"].includes(r.event)
       ? r.stage === null && r.executedStage === "candidate_lookup"
       : isStage(r.stage) && isStage(r.executedStage))
     && (r.failureKind === undefined || typeof r.failureKind === "string")

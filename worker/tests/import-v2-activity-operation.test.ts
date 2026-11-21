@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import type { ActivityWriteRequest } from "../src/import-v2/ports.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
@@ -14,6 +14,29 @@ const plan: ImportV2Plan = { version: 2, fingerprint: "operation-test", source: 
 const request = (operationId = "operation"): ActivityWriteRequest => {
   const result: ActivityWriteRequest = { state: { operationId, preparedAt: new Date().toISOString(), baselineIds: [], submittedAt: null }, persist: async state => { result.state = structuredClone(state); } }; return result;
 };
+it("leaves the property editor closed when the displayed details and cadastre match", async () => {
+  const page = await browser.newPage();
+  try {
+    const address = "VIA TEST n. 1, 70032 BITONTO (BA)";
+    const field = (label: string, value: string) => `<div><label><span>${label}</span></label><span class="slds-form-element__static">${value}</span></div>`;
+    await page.route("https://tecnocasa-group.my.site.com/**", route => route.fulfill({
+      contentType: "text/html",
+      body: `<h1>IM-0001</h1>
+        ${field("Indirizzo Completo Immobile", address)}
+        <div class="flex">${field("Tipologia Immobile", "Appartamenti")}
+          <button class="inline-edit-trigger" onclick="this.remove()">Modifica</button>
+        </div>
+        ${field("Sottotipologia Immobile", "Monolocale")}${field("Interno", ".")}
+        ${field("Catasto Foglio", "1")}${field("Catasto Particella", "1")}${field("Catasto Subalterno", "1")}`,
+    }));
+    await page.goto(`https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/immobile/${propertyId}`);
+    const port = new TecnocloudUiV2Port(page);
+    vi.spyOn(port as unknown as { readOwnerships(): Promise<[]> }, "readOwnerships").mockResolvedValue([]);
+    const result = await port.updateProperty(propertyId, { ...plan, source: { ...plan.source, fullAddress: address } });
+    expect(result).toMatchObject({ id: propertyId, fullAddress: address });
+    expect(await page.getByRole("button", { name: "Modifica" }).count()).toBe(1);
+  } finally { await page.close(); }
+});
 it('recupera un salvataggio confermato senza rileggere o reinserire il Task',async()=>{
  const page=await browser.newPage();try{
   const write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};

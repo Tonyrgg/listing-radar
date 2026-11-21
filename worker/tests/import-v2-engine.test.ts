@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { performance } from "node:perf_hooks";
 
 import { ImportV2Engine } from "../src/import-v2/engine.js";
+import { personWriteModel } from "../src/import-v2/contacts.js";
 import { ImportV2Error } from "../src/import-v2/errors.js";
 import {assertOrdinaryProperty} from '../src/import-v2/record-protection.js';
 import type {
@@ -225,6 +226,21 @@ class FakeCrm implements TecnocloudV2Port {
 }
 
 describe("Import V2 engine", () => {
+  it("reuses the exact current person read when the Excel contacts and registry fields match", async () => {
+    const crm = new FakeCrm();
+    const source = property();
+    source.owners[0]!.birthPlace = "CANTU'";
+    for (const [index, owner] of source.owners.entries()) {
+      const id = `existing-person-${index}`;
+      crm.people.set(id, { id, ...personWriteModel(owner, null), birthPlace: index === 0 ? "Cantù" : owner.birthPlace });
+    }
+    const overwrite = vi.spyOn(crm, "overwritePerson");
+    const read = vi.spyOn(crm, "readPerson");
+    const result = await new ImportV2Engine(crm, new MemoryStore(), { skipUnchangedPeople: true }).run(source);
+    expect(result.state).toBe("completed");
+    expect(overwrite).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
   it("conta nei tempi del checkpoint anche i salvataggi dei singoli nominativi", async () => {
     let clock = 0;
     const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
