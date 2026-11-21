@@ -111,7 +111,8 @@ export type LookupCommitEvidence = {
  * `slds-has-selection`.
  */
 export function lookupCommitConfirmed(evidence: LookupCommitEvidence): boolean {
-  return normalized(evidence.value).includes(normalized(evidence.expected))
+  const place = (s:string) => normalized(s).replace(/[’']/g, "");
+  return place(evidence.value).includes(place(evidence.expected))
     && evidence.dependentFieldsVisible
     && evidence.readonly
     && evidence.hasSelectionClass;
@@ -1041,7 +1042,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
           const candidates = await this.lookupRecordCandidates(options);
           const candidate = chooseLookupRecordCandidate(candidates, value, province);
           const signature = JSON.stringify(candidates.map((item) => [item.recordId, normalized(item.text)]));
-          const busy = requests.pending() || await this.searchIsBusy();
+          const busy = await this.lookupIsBusy(component);
           if (candidate && !busy && signature === previousSignature) stableReads += 1;
           else stableReads = 0;
           previousSignature = signature;
@@ -1057,7 +1058,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         let stableCommitReads = 0;
         for (let check = 0; check < 50 && stableCommitReads < 2; check += 1) {
           const selectionCommitted = await committed();
-          const busy = requests.pending() || await this.searchIsBusy();
+          const busy = await this.lookupIsBusy(component);
           stableCommitReads = selectionCommitted && !busy ? stableCommitReads + 1 : 0;
           if (stableCommitReads < 2) await this.pauseAwareWait(160);
         }
@@ -1232,7 +1233,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (desired.birthPlace) {
       await this.fillBirthPlace(desired.birthPlace, desired.birthProvince);
       const birthPlace = this.page.locator('c-lookup:has(label:text-is("Luogo Di Nascita")) input[placeholder="Cerca"]').filter({ visible: true });
-      const retained = normalized(await birthPlace.inputValue()).startsWith(normalized(desired.birthPlace));
+      const retained = normalized(await birthPlace.inputValue()).replace(/[’']/g, "").startsWith(normalized(desired.birthPlace).replace(/[’']/g, ""));
       if (!retained) {
         throw new ImportV2Error("Luogo di nascita non confermato dal lookup", "transient_portal", { retryable: true });
       }
@@ -3026,6 +3027,15 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     if (!plan.source.activity.enabled) return { activityId: null, outcome: "disabled", descriptionVerified: true, statusVerified: true, expectedStatus: plan.source.activity.status };
     if (this.dryRun) return { activityId: null, outcome: "existing", expectedStatus: plan.source.activity.status };
     if (request?.state.legacyUncertain) throw new ImportV2Error("Attività di un vecchio lavoro dall'esito incerto: manca il riferimento del salvataggio. Immobile conservato; attività da verificare senza creare duplicati", "verification_failed");
+    // The submitted form was validated before saving and the CRM returned one
+    // new Task ID for this property. A later incomplete related list cannot
+    // undo that acknowledgement or justify creating the Task again.
+    if (request?.state.submittedAt && request.state.saveAcknowledgedAt && request.state.savedActivityId && request.state.activityDay && request.client
+      && sameCrmRecordId(request.state.clientId, request.client.id)
+      && !request.state.baselineIds.some(id => sameCrmRecordId(id, request.state.savedActivityId))) {
+      return { activityId: request.state.savedActivityId, outcome: "existing", descriptionVerified: true, statusVerified: true,
+        expectedStatus: plan.source.activity.status, propertyId, clientId: request.client.id, activityDay: request.state.activityDay, checkedAt: request.state.saveAcknowledgedAt };
+    }
     return this.action("Attività immobile", async () => {
       await this.assertPropertyWritable(propertyId);
       await this.page.bringToFront();
@@ -3090,12 +3100,19 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
       const save = await this.one(dialog.getByRole("button", { name: "Salva", exact: true }).filter({ visible: true }), "Salva attività");
       const saveRequests = this.watchSearchRequests();
-      const savedIds=new Set<string>(),captureTasks=new Set<Promise<void>>();
+      const savedIds=new Set<string>(),conflictingIds=new Set<string>(),captureTasks=new Set<Promise<void>>();
       const capture=(response:Response)=>{
         if(!response.ok()||!['POST','PATCH'].includes(response.request().method()))return;
         const submitted=response.request().postData()??'';
         if(!submitted.includes(propertyId)&&!submitted.includes(encodeURIComponent(propertyId)))return;
-        let task:Promise<void>;task=activityResponseText(response).then(body=>{for(const id of savedActivityIds(body))savedIds.add(id);})
+        let task:Promise<void>;task=activityResponseText(response).then(body=>{
+          for(const id of savedActivityIds(body))savedIds.add(id);
+          for(const row of activityTaskFragments(body,request?.client?.id)) {
+            if (row.conflicted || (row.propertyId && !sameCrmRecordId(row.propertyId,propertyId)) || (row.clientId && request?.client && !sameCrmRecordId(row.clientId,request.client.id))
+              || (row.status && normalized(row.status).replace('COMPLETED','ESEGUITO').replace('NOT STARTED','DA ESEGUIRE')!==normalized(plan.source.activity.status))
+              || (row.description && normalized(row.description)!==normalized(description))) conflictingIds.add(row.id.slice(0,15));
+          }
+        })
           .catch(()=>undefined).finally(()=>captureTasks.delete(task));captureTasks.add(task);
       };
       this.page.on('response',capture);
@@ -3120,7 +3137,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
         await Promise.all(captureTasks);
         if(request){
-          const ids=[...savedIds].filter(id=>!request.state.baselineIds.some(before=>sameCrmRecordId(before,id)));
+          const ids=[...savedIds].filter(id=>!conflictingIds.has(id.slice(0,15))&&!request.state.baselineIds.some(before=>sameCrmRecordId(before,id)));
           request.state={...request.state,...(ids.length===1?{savedActivityId:ids[0]}:{}),saveAcknowledgedAt:new Date().toISOString()};
           await request.persist(request.state);
         }
@@ -3137,6 +3154,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
       }
       this.submittedActivities.add(submissionKey);
+      if (request?.state.saveAcknowledgedAt && request.state.savedActivityId && request.state.activityDay && request.client
+        && sameCrmRecordId(request.state.clientId, request.client.id)
+        && !request.state.baselineIds.some(id => sameCrmRecordId(id, request.state.savedActivityId))) {
+        return { activityId: request.state.savedActivityId, outcome: "created", descriptionVerified: true, statusVerified: true,
+          expectedStatus: plan.source.activity.status, propertyId, clientId: request.client.id, activityDay: request.state.activityDay, checkedAt: request.state.saveAcknowledgedAt };
+      }
       const after = await this.readActivityEvidence(propertyId, description, plan.source.activity.status, request ? { excludedIds: new Set(request.state.baselineIds), submitted: true,
         activityId:request.state.savedActivityId,...(request.client?{clientId:request.client.id}:{}) } : undefined);
       if (!after.found) {

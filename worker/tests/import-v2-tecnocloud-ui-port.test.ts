@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { chromium, type Locator } from "playwright";
 
 import { actionablePersonValidationMessages, chooseLookupRecordCandidate, choosePersonLookupCandidate, editableLinkedOwnerships, lookupCommitConfirmed, ownershipSyncConfirmed, personLookupTerms, propertyAddressFilterTerms, propertySubtype, protectedUnknownOwnerships, sameCrmRecordId } from "../src/import-v2/tecnocloud-ui-port.js";
+it('recognizes an already selected accented birthplace written with an apostrophe in the source',()=>{
+ expect(lookupCommitConfirmed({value:'CANTÙ (CO)',expected:"CANTU'",visibleOptionCount:0,optionMarkedSelected:false,readonly:true,hasSelectionClass:true,dependentFieldsVisible:true})).toBe(true);
+});
 import { TecnocloudUiV2Port } from "../src/import-v2/tecnocloud-ui-port.js";
 import type { ImportV2Plan } from "../src/import-v2/model.js";
 

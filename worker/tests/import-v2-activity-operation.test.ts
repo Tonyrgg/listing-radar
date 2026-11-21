@@ -14,6 +14,15 @@ const plan: ImportV2Plan = { version: 2, fingerprint: "operation-test", source: 
 const request = (operationId = "operation"): ActivityWriteRequest => {
   const result: ActivityWriteRequest = { state: { operationId, preparedAt: new Date().toISOString(), baselineIds: [], submittedAt: null }, persist: async state => { result.state = structuredClone(state); } }; return result;
 };
+it('recupera un salvataggio confermato senza rileggere o reinserire il Task',async()=>{
+ const page=await browser.newPage();try{
+  const write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};
+  write.state={...write.state,clientId,activityDay:'2026-11-17',submittedAt:'2026-11-17T10:00:00Z',saveAcknowledgedAt:'2026-11-17T10:00:01Z',savedActivityId:task(2).Id};
+  const result=await new TecnocloudUiV2Port(page).ensureActivity(propertyId,plan,write);
+  expect(result).toMatchObject({outcome:'existing',activityId:task(2).Id,propertyId,clientId,activityDay:'2026-11-17',statusVerified:true});
+  expect(page.url()).toBe('about:blank');
+ }finally{await page.close();}
+});
 it.each(['IN-0001','NT-0001'])('never opens an activity editor or saves on protected %s',async label=>{
  const page=await browser.newPage();try{
   const state=await fixture(page,clientId,clientId,label);
@@ -44,7 +53,7 @@ async function fixture(page: Page,formClientId=clientId,savedClientId=clientId,r
 
 it('conserva l’ID restituito da Salva e verifica cliente, immobile, stato e data di inserimento',async()=>{
  const page=await browser.newPage();try{
-  const state=await fixture(page),write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};
+  const state=await fixture(page),write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};write.state.clientId=clientId;write.state.activityDay=new Date().toISOString().slice(0,10);
   write.history={propertyId,clientId,baselineIds:[task(1).Id.slice(0,15)],checkedAt:new Date().toISOString()};
   const result=await new TecnocloudUiV2Port(page).ensureActivity(propertyId,plan,write);
   expect(result).toMatchObject({outcome:'created',activityId:task(2).Id,clientId,propertyId,descriptionVerified:true,statusVerified:true});
@@ -59,7 +68,7 @@ it('non salva se il campo Cliente non contiene l’identità CRM prevista',async
 },15000);
 it('non completa un’attività riletta su un altro cliente e non ripete il salvataggio',async()=>{
  const page=await browser.newPage();try{
-  const state=await fixture(page,clientId,'001000000000002AAA'),write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};
+  const state=await fixture(page,clientId,'001000000000002AAA'),write=request();write.client={id:clientId,name:'Rossi Mario',taxCode:'RSSMRA80A01A662A',phones:[]};write.state.clientId=clientId;write.state.activityDay=new Date().toISOString().slice(0,10);
   await expect(new TecnocloudUiV2Port(page).ensureActivity(propertyId,plan,write)).rejects.toThrow();
   await expect(new TecnocloudUiV2Port(page).ensureActivity(propertyId,plan,write)).rejects.toThrow();expect(state.saves()).toBe(1);
  }finally{await page.close();}
