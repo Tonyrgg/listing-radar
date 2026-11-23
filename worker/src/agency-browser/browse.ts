@@ -1,4 +1,5 @@
 import { chromium, type Page, type Response } from "playwright";
+import { setTimeout as delay } from "node:timers/promises";
 import { agencyHost, catalogLink, detailLink, localAgencyUrl, portalControlLink, type AgencySource } from "./sources.js";
 
 const MAX_CATALOG_PAGES = 150;
@@ -19,6 +20,13 @@ export type AgencyProgress = {
 };
 class CatalogBlocked extends Error {}
 class NoCatalog extends Error {}
+
+async function finishBrowserAction(action:Promise<unknown>) {
+  await Promise.race([
+    action.catch(()=>undefined),
+    delay(1500,undefined,{ref:false}),
+  ]);
+}
 
 async function navigate(page: Page,url:string,source:AgencySource,signal:AbortSignal) {
   signal.throwIfAborted();
@@ -388,7 +396,9 @@ export async function browseAgency(cdpUrl:string,source:AgencySource,signal:Abor
     if(signal.aborted)emit("stopped","Scansione interrotta.",page?.url());
     else emit(error instanceof CatalogBlocked?"blocked":"partial",error instanceof Error?error.message.split("\n")[0]:"Lettura non riuscita",page?.url());
   }finally{
-    if(page&&!page.isClosed()&&navigationGuard)await page.unroute("**/*",navigationGuard).catch(()=>undefined);
-    await browser.close().catch(()=>undefined);
+    // Chrome may still be handling a third-party frame when the scan ends.
+    // Free the Worker's scan slot even when CDP does not acknowledge cleanup.
+    if(page&&!page.isClosed()&&navigationGuard)await finishBrowserAction(page.unroute("**/*",navigationGuard));
+    await finishBrowserAction(browser.close());
   }
 }

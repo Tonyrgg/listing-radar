@@ -3480,8 +3480,8 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (target.id === "agencyStop") {
-    await window.propertyWorker.stopAgencyBrowse();
     $('agencyProgress').textContent = "Interruzione in corso…";
+    await window.propertyWorker.stopAgencyBrowse();
     return;
   }
   if (target.dataset.agencyBrowse) {
