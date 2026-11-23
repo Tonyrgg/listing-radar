@@ -89,6 +89,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     // A found CRM ID and a mutable unit timestamp alone never prove an import.
     Object.assign(state.units[keys[5]!]!, { crmId: "found", importedAt: ago(0) });
     expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 1, older: 1, stale: 1, never: 1, acquired: 1, unacquired: 0, undated: 1 });
+    expect(importProgress(state, [street.id], now).activities).toMatchObject({ imported: 0, recent: 0 });
   });
   it("conserva il blu per fonti in quarantena e distingue le righe dell'inventario ancora da leggere", () => {
     const { state, keys, scan } = fixture(100);

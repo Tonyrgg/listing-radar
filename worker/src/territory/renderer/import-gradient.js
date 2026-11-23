@@ -1,9 +1,9 @@
 /** Proportions describe the inventory, not the physical location of its houses. */
 export function gradientStops(distribution, palette) {
   const neutral = [{ at: 0, color: palette.never }, { at: 1, color: palette.never }];
-  if (!distribution?.total) {
-    const confirmed = distribution?.confirmedTone;
-    if (confirmed && confirmed !== "never" && palette[confirmed]) return [{ at: 0, color: palette[confirmed] }, { at: 1, color: palette[confirmed] }];
+  // An incomplete inventory can show a proportion among known units only
+  // when there are also known units without verified work.
+  if (!distribution?.total && !(distribution?.observed > (distribution?.imported ?? 0) && distribution?.imported > 0)) {
     // An empty completed inventory or preserved source data proves acquisition,
     // but an interrupted inventory cannot support proportional coverage.
     const acquired = distribution?.total === 0 || (distribution?.acquired > 0);

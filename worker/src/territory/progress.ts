@@ -10,6 +10,7 @@ import { sameCrmRecordId } from "../core/crm-record-id.js";
 const valid = (at: string | null | undefined): at is string => Boolean(at && Number.isFinite(Date.parse(at)));
 export type ImportDistribution = {
   total: number | null; imported: number; percent: number | null;
+  observed?: number;
   recent: number; aging: number; older: number; stale: number; acquired: number; unacquired: number; never: number; undated: number;
   lastImportedAt: string | null; ageDays: number | null; tone: ReturnType<typeof importAge>["tone"]; confirmedTone?: ReturnType<typeof importAge>["tone"];
 };
@@ -44,20 +45,20 @@ export function propertyWorkIndex(state: TerritoryState, now = Date.now()) {
 }
 
 /** Last verified import per cadastral unit, across acquisitions, within the newest inventory. */
-function importDistribution(state: TerritoryState, keys: string[], total: number | null, now: number, work: ReturnType<typeof propertyWorkIndex>): ImportDistribution {
+function importDistribution(state: TerritoryState, keys: string[], total: number | null, now: number, work: ReturnType<typeof propertyWorkIndex>, activitiesOnly = false): ImportDistribution {
   const inventory = new Set(keys), proofs = new Map<string, string | null>();
   const add = (key: string, at: string | null | undefined) => {
     if (!inventory.has(key)) return;
     const date = valid(at) && Date.parse(at) <= now ? at : null;
     if (!proofs.has(key) || (date && (!proofs.get(key) || Date.parse(date) > Date.parse(proofs.get(key)!)))) proofs.set(key, date);
   };
-  for (const key of inventory) for (const observation of state.units[key]?.observations ?? []) {
-    if (observation.importVerified && observation.crmId) add(key, observation.importedAt);
+  if (!activitiesOnly) for (const key of inventory) {
+    for (const observation of state.units[key]?.observations ?? []) if (observation.importVerified && observation.crmId) add(key, observation.importedAt);
+    for (const event of state.units[key]?.journal ?? []) if (event.kind === "import_completed" && event.crmId && !work.activityRuns.has(`${event.runId}:${key}`)) add(key, event.at);
+    if (work.imports.has(key)) add(key, work.imports.get(key));
   }
-  for (const key of inventory) for (const event of state.units[key]?.journal ?? []) if (event.kind === "import_completed" && event.crmId && !work.activityRuns.has(`${event.runId}:${key}`)) add(key, event.at);
   let latestActivity: string | null = null;
   for (const key of inventory) {
-    if (work.imports.has(key)) add(key, work.imports.get(key));
     const day = work.activity.get(key);
     if (day) {
       proofs.set(key, day);
@@ -69,7 +70,7 @@ function importDistribution(state: TerritoryState, keys: string[], total: number
   // Inventory-only rows, however, do not prove that their full data was read.
   const acquired = [...inventory].filter(key => !proofs.has(key) && state.units[key]?.observations.some(o => o.origin === "sister" || o.origin === "simulation")).length;
   const never = inventory.size - proofs.size;
-  const distribution: ImportDistribution = { total, imported: proofs.size, percent: total ? Math.round(proofs.size / total * 100) : null, recent: 0, aging: 0, older: 0, stale: 0, acquired, unacquired: never - acquired, never, undated: 0, lastImportedAt, ...importAge(lastImportedAt, now), confirmedTone: importAge(latestActivity, now).tone };
+  const distribution: ImportDistribution = { total, observed: inventory.size, imported: proofs.size, percent: total ? Math.round(proofs.size / total * 100) : null, recent: 0, aging: 0, older: 0, stale: 0, acquired, unacquired: never - acquired, never, undated: 0, lastImportedAt, ...importAge(lastImportedAt, now), confirmedTone: importAge(latestActivity, now).tone };
   for (const at of proofs.values()) {
     const tone = importAge(at, now).tone;
     if (tone === "never") distribution.undated++;
@@ -150,5 +151,8 @@ export function importProgress(state: TerritoryState, streetIds: string[], now =
   }
   const lastImportedAt = [...imported.values()].filter(valid).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
   const observed = cohort?.keys.length ?? 0, total = cohort?.complete ? observed : null;
-  return { acquisitionRunId: cohort?.id ?? null, acquiredAt: cohort?.at ?? null, complete: Boolean(cohort?.complete), observed, total, imported: imported.size, percent: total ? Math.round(imported.size / total * 100) : null, lastImportedAt, ...importAge(lastImportedAt, now), distribution: importDistribution(state, [...new Set([...(cohort?.keys ?? []), ...(!cohort?.complete ? units.map(unit => unit.key) : [])])], total, now, work) };
+  const inventory = [...new Set([...(cohort?.keys ?? []), ...(!cohort?.complete ? units.map(unit => unit.key) : [])])];
+  const sister = units.filter(unit => unit.observations.some(observation => observation.origin === "sister"));
+  const sisterAcquiredAt = sister.flatMap(unit => unit.observations.filter(observation => observation.origin === "sister").map(observation => observation.at)).filter(valid).sort().at(-1) ?? null;
+  return { acquisitionRunId: cohort?.id ?? null, acquiredAt: cohort?.at ?? null, complete: Boolean(cohort?.complete), observed, total, imported: imported.size, percent: total ? Math.round(imported.size / total * 100) : null, lastImportedAt, ...importAge(lastImportedAt, now), distribution: importDistribution(state, inventory, total, now, work), activities: importDistribution(state, inventory, total, now, work, true), sister: { acquired: sister.length, lastAcquiredAt: sisterAcquiredAt } };
 }

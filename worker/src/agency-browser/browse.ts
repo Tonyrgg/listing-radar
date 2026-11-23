@@ -18,8 +18,30 @@ export type AgencyProgress = {
   message?: string;
   url?: string;
 };
-class CatalogBlocked extends Error {}
+class CatalogBlocked extends Error {
+  constructor(message: string, readonly retryAt: number | null = null) { super(message); }
+}
 class NoCatalog extends Error {}
+const blockedHosts = new Map<string, CatalogBlocked>();
+
+export function portalBlock(status: number, heading: string, retryAfter?: string, now = Date.now()) {
+  const text = heading.replace(/\s+/g, " ").trim().toLowerCase();
+  const throttled = status === 429 || /troppe richieste|too many requests|rate limit(?:ed| exceeded)/i.test(text);
+  if (!throttled && ![401,403].includes(status) &&
+    !/accesso è temporaneamente limitato|accesso temporaneamente limitato|just a moment|attention required|access denied|request blocked|verifica di sicurezza/.test(text)) return null;
+  const seconds = retryAfter && /^\d+$/.test(retryAfter.trim()) ? Number(retryAfter) : null;
+  const deadline = seconds !== null ? now + seconds * 1000 : Date.parse(retryAfter ?? "");
+  const retryAt = throttled && Number.isFinite(deadline) && deadline > now && deadline <= 8.64e15 ? deadline : null;
+  return new CatalogBlocked(throttled ? "Troppe richieste al portale." : "Accesso limitato dal portale.", retryAt);
+}
+
+function blockMessage(block: CatalogBlocked) {
+  const retry = block.retryAt ? new Intl.DateTimeFormat("it-IT", {
+    timeZone:"Europe/Rome",dateStyle:"short",timeStyle:"short",
+  }).format(block.retryAt) : null;
+  return retry ? `${block.message} Scansione sospesa fino alle ${retry}, secondo l’indicazione del portale.`
+    : `${block.message} Scansione interrotta. Usa la ricerca salvata e gli avvisi del portale.`;
+}
 
 async function finishBrowserAction(action:Promise<unknown>) {
   await Promise.race([
@@ -32,10 +54,15 @@ async function navigate(page: Page,url:string,source:AgencySource,signal:AbortSi
   signal.throwIfAborted();
   const response=await page.goto(url,{waitUntil:"domcontentloaded",timeout:NAVIGATION_TIMEOUT});
   signal.throwIfAborted();
-  if(response && [401,403,429].includes(response.status()))throw new CatalogBlocked(`Accesso limitato dal sito (HTTP ${response.status()})`);
+  const httpBlock = response && portalBlock(response.status(),"",response.headers()["retry-after"]);
+  if(httpBlock)throw httpBlock;
   if(!response?.ok()||!localAgencyUrl(page.url(),url,source))throw new Error("Pagina non raggiungibile");
-  const blocked=await page.evaluate(()=>/^(?:just a moment|attention required|access denied|request blocked|verifica di sicurezza)/i.test(document.title.trim()));
-  if(blocked)throw new CatalogBlocked("Il sito richiede una verifica nel browser");
+  const heading=await page.evaluate(()=>{
+    const text=document.body?.innerText??"";
+    return [document.title,...Array.from(document.querySelectorAll("h1,h2"), node=>node.textContent??"").slice(0,4),text.length<1_600?text:""].join(" ");
+  });
+  const block=portalBlock(response.status(),heading,response.headers()["retry-after"]);
+  if(block)throw block;
 }
 
 function details(hrefs:string[],pageUrl:string,source:AgencySource) {
@@ -327,10 +354,16 @@ export async function browseAgency(cdpUrl:string,source:AgencySource,signal:Abor
   const endpoint=new URL(cdpUrl);
   if(endpoint.protocol!=="http:"||!["localhost","127.0.0.1"].includes(endpoint.hostname)||!endpoint.port||
     endpoint.pathname!=="/"||endpoint.search||endpoint.hash||endpoint.username||endpoint.password)throw new Error("Indirizzo del Chrome di lavoro non valido");
-  const browser=await chromium.connectOverCDP(endpoint.origin,{timeout:8000}).catch(()=>{throw new Error("Apri il Chrome di lavoro e riprova.")});
   const links=new Set<string>();
   const progress:AgencyProgress={source:source.id,phase:"catalog",pages:0,found:0,visited:0,failed:0};
   const emit=(phase:AgencyProgress["phase"],message?:string,url?:string)=>send({...progress,phase,message,url});
+  const host=agencyHost(new URL(source.catalog));
+  const previousBlock=blockedHosts.get(host);
+  if(previousBlock&&(!previousBlock.retryAt||Date.now()<previousBlock.retryAt)){
+    emit("blocked",blockMessage(previousBlock));return;
+  }
+  blockedHosts.delete(host);
+  const browser=await chromium.connectOverCDP(endpoint.origin,{timeout:8000}).catch(()=>{throw new Error("Apri il Chrome di lavoro e riprova.")});
   let page:Page|undefined;
   let navigationGuard:Parameters<Page["route"]>[1]|undefined;
   try {
@@ -393,8 +426,11 @@ export async function browseAgency(cdpUrl:string,source:AgencySource,signal:Abor
     }
     emit(catalogIssue||progress.failed?"partial":"done",summary,page.url());
   }catch(error){
-    if(signal.aborted)emit("stopped","Scansione interrotta.",page?.url());
-    else emit(error instanceof CatalogBlocked?"blocked":"partial",error instanceof Error?error.message.split("\n")[0]:"Lettura non riuscita",page?.url());
+    if(error instanceof CatalogBlocked){
+      blockedHosts.set(host,error);
+      emit("blocked",blockMessage(error),page?.url());
+    } else if(signal.aborted)emit("stopped","Scansione interrotta.",page?.url());
+    else emit("partial",error instanceof Error?error.message.split("\n")[0]:"Lettura non riuscita",page?.url());
   }finally{
     // Chrome may still be handling a third-party frame when the scan ends.
     // Free the Worker's scan slot even when CDP does not acknowledge cleanup.

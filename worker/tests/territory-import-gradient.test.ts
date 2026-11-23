@@ -19,6 +19,13 @@ describe("Gradiente proporzionale lungo le vie", () => {
   it("non inventa colori per inventari assenti, parziali o vuoti", () => {
     for (const d of [undefined, { total: null, recent: 1 }]) expect(gradientStops(d, palette)).toEqual([{ at: 0, color: "gray" }, { at: 1, color: "gray" }]);
   });
+  it("colora 8 immobili su 40 noti senza dipingere tutta la via", () => {
+    const stops = gradientStops({ total: null, observed: 40, imported: 8, recent: 8, acquired: 32, never: 32 }, palette);
+    expect(stops.map(stop => stop.color)).toEqual(["green", "green", "blue", "blue"]);
+    expect((stops[1]!.at + stops[2]!.at) / 2).toBeCloseTo(.2);
+    expect(gradientStops({ total: null, observed: 8, imported: 8, recent: 8, confirmedTone: "recent" }, palette))
+      .toEqual([{ at: 0, color: "gray" }, { at: 1, color: "gray" }]);
+  });
   it("separa 20% acquisiti da SISTER e 30% non letti, preservando 33% verde e 17% rosso", () => {
     const stops = gradientStops({ total: 100, recent: 33, stale: 17, acquired: 20, unacquired: 30, never: 50, undated: 0 }, palette);
     expect(stops.map(s => s.color)).toEqual(["green", "green", "red", "red", "blue", "blue", "gray", "gray"]);

@@ -418,27 +418,29 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   function statusHtml(street) { return `<span class="status icon-label">${icon(street.progress.complete ? "check" : "download")}${acquisitionLabel(street)}</span>`; }
   function progressHtml(street, compact = false) {
     if (!street.count && !street.progress.complete) return "";
-    const p = street.progress, d = p.distribution;
+    const p = street.progress, d = p.activities;
+    const denominator = d.total ?? (d.imported > 0 && d.observed > d.imported ? d.observed : null);
     const coverage =
       d.percent !== null
-        ? `${d.percent}% · ${d.imported}/${d.total} immobili già lavorati`
-        : !p.acquisitionRunId
+        ? `${d.percent}% · ${d.imported}/${d.total} con attività verificata`
+        : !p.acquisitionRunId && !d.observed
           ? "Da acquisire"
           : p.total === 0
             ? "Nessun immobile nell’ultima acquisizione"
-            : `${d.imported} già lavorati · ${p.observed} letti, totale da verificare`;
+            : `${d.imported} con attività verificata · ${d.observed} immobili noti`;
     const age =
       d.ageDays !== null
-        ? `Ultimo import: ${d.ageDays === 0 ? "oggi" : d.ageDays === 1 ? "1 giorno fa" : `${d.ageDays} giorni fa`}`
+        ? `Ultima attività: ${d.ageDays === 0 ? "oggi" : d.ageDays === 1 ? "1 giorno fa" : `${d.ageDays} giorni fa`}`
         : d.imported
-          ? "Data import non disponibile"
-          : "Nessun import verificato";
-    const buckets = [["recent", "Cloud · entro 30 giorni", d.recent], ["aging", "Cloud · da 31 a 60 giorni", d.aging], ["older", "Cloud · da 61 a 90 giorni", d.older], ["stale", "Cloud · oltre 90 giorni", d.stale], ["acquired", "Acquisiti da SISTER · mai lavorati in Cloud", d.acquired], ["never", "Non ancora acquisiti", d.unacquired], ["never", "Import Cloud senza data", d.undated]].filter(([, , count]) => count > 0);
-    const percentage = count => d.total ? `${Number((count / d.total * 100).toFixed(1)).toLocaleString("it-IT")}%` : "";
-    const distribution = d.total > 0 ? `<span class="import-distribution" role="img" aria-label="${escape(buckets.map(([, label, count]) => `${label}: ${percentage(count)}, ${count} immobili`).join("; "))}">${buckets.map(([tone, , count]) => `<span class="import-band ${tone}" style="flex-grow:${count}"></span>`).join("")}</span>` : "";
-    const breakdown = d.total > 0 ? `<span class="import-breakdown">${buckets.map(([tone, label, count]) => `<span><span class="dot ${tone}" aria-hidden="true"></span>${label}<strong>${percentage(count)} · ${count}</strong></span>`).join("")}</span>` : "";
-    const cohort = !compact && p.acquisitionRunId ? `<span class="meta">In questa acquisizione: ${p.imported}${p.total === null ? "" : `/${p.total}`} import verificati${p.percent === null ? "" : ` (${p.percent}%)`}. Gli import precedenti restano nel gradiente.</span>` : "";
-    return `<${compact ? "span" : "div"} class="import-summary ${compact ? "meta" : ""}" data-import-tone="${d.tone}"><strong>${coverage}</strong>${distribution}${p.acquisitionRunId || d.imported ? `<span>${age}</span>` : ""}${compact ? "" : `<details data-disclosure="import-evidence"><summary>Distribuzione e acquisizione</summary>${breakdown}${cohort}`}${compact || !p.acquiredAt ? "" : `<span class="meta">Inventario del ${date(p.acquiredAt)}${d.total === null ? " · incompleto, gradiente da determinare" : " · colori proporzionali, non posizioni degli immobili"}.</span>`}${compact ? "" : "</details>"}</${compact ? "span" : "div"}>`;
+          ? "Data attività non disponibile"
+          : "Nessuna attività verificata";
+    const buckets = [["recent", "Entro 30 giorni", d.recent], ["aging", "Da 31 a 60 giorni", d.aging], ["older", "Da 61 a 90 giorni", d.older], ["stale", "Oltre 90 giorni", d.stale], ["acquired", "SISTER acquisito · attività non verificata", d.acquired], ["never", "Attività e acquisizione non verificate", d.unacquired]].filter(([, , count]) => count > 0);
+    const percentage = count => `${Number((count / denominator * 100).toFixed(1)).toLocaleString("it-IT")}%`;
+    const distribution = denominator ? `<span class="import-distribution" role="img" aria-label="${escape(buckets.map(([, label, count]) => `${label}: ${count} immobili`).join(", "))}">${buckets.map(([tone, , count]) => `<span class="import-band ${tone}" style="flex-grow:${count}"></span>`).join("")}</span>` : "";
+    const breakdown = denominator ? `<span class="import-breakdown">${buckets.map(([tone, label, count]) => `<span><span class="dot ${tone}" aria-hidden="true"></span>${label}<strong>${percentage(count)} · ${count}</strong></span>`).join("")}</span>` : "";
+    const sister = `<span class="meta">SISTER · ${p.sister.acquired} acquisiti${p.sister.lastAcquiredAt ? ` · ultimo il ${date(p.sister.lastAcquiredAt)}` : ""}</span>`;
+    const details = compact ? "" : `<details data-disclosure="import-evidence"><summary>Distribuzione e acquisizione</summary>${breakdown}<span class="meta">${d.total === null ? "Inventario incompleto. Le quote si riferiscono ai soli immobili noti." : "Colori proporzionali sul totale dell’inventario."}</span></details>`;
+    return `<${compact ? "span" : "div"} class="import-summary ${compact ? "meta" : ""}" data-import-tone="${d.tone}"><strong>${coverage}</strong>${distribution}<span>${age}</span>${sister}${details}</${compact ? "span" : "div"}>`;
   }
   const streetSearch = createStreetSearch({
     root: $("street-search"), getStreets: () => snapshot?.streets ?? [], escape,
@@ -470,7 +472,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       }
       if(layer.zoneEmpty){layer.remove();continue;}
       if(!map.hasLayer(layer))layer.addTo(map);
-      const stops = gradientStops(street.progress.distribution, c);
+      const stops = gradientStops(street.progress.activities, c);
       layer.setStyle({
         color: stops[0].color,
         importGradient: stops,
@@ -479,8 +481,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       // Neutral network traces must not obscure preserved acquisition/import data.
       if (stops.some(stop => stop.color !== c.never)) layer.bringToFront();
       const label =
-        map.getZoom() >= 16 && street.progress.distribution.percent !== null
-          ? `${street.progress.distribution.percent}%`
+        map.getZoom() >= 16 && street.progress.activities.percent != null
+          ? `${street.progress.activities.percent}%`
           : null;
       if (layer.percentLabel !== label) {
         layer.unbindTooltip();
@@ -1222,7 +1224,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         }
         const layer = L.geoJSON(street.geometry, {
           style: {
-            color: colors()[street.progress.tone],
+            color: colors().never,
             ...stroke,
             lineCap: "round",
           },

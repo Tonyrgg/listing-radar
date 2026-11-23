@@ -2021,7 +2021,6 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   private async pick(component: Locator, expected: string, label: string): Promise<void> {
     if (!expected) return;
-    await this.page.bringToFront();
     const input = await this.one(component.locator('input[role="textbox"]').filter({ visible: true }), label);
     if (normalized(await input.inputValue()) === normalized(expected)) return;
     // LWC may portal the listbox outside the field component.
@@ -3077,7 +3076,6 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
     }
     return this.action("Attività immobile", async () => {
       await this.assertPropertyWritable(propertyId);
-      await this.page.bringToFront();
       const description = plan.source.activity.description?.trim() || "Inserire attività";
       const submissionKey = request ? `${propertyId}|${request.state.operationId}` : propertyId;
       const scope = request ? { excludedIds: new Set(request.state.baselineIds), submitted: Boolean(request.state.submittedAt),

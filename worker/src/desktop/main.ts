@@ -29,7 +29,7 @@ import { browserSources } from "../agency-browser/sources.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
-import { nextKeepAliveDelay, pingSisterSession, type SisterKeepAliveResult } from "../services/sister-keepalive.js";
+import type { SisterKeepAliveResult } from "../services/sister-keepalive.js";
 import { stepRequiresSister } from "../core/sister-requirement.js";
 import {
   hasRetryableAcquisitionRecords,
@@ -296,7 +296,6 @@ let networkRunCheckpoint: SisterNetworkRunCheckpoint | null = null;
 let networkRunError: string | null = null;
 let networkRunProgress: SisterNetworkRunProgress | null = null;
 let stopAfterNextImportRequested = false;
-let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 let healthCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let healthCheckPromise: Promise<ConnectionCheck[]> | null = null;
 let browserCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -307,14 +306,14 @@ let connectionChecksAt: string | null = null;
 let updateCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
 let stoppingAll = false;
-let sisterKeepAlive: KeepAliveState = {
+const sisterKeepAlive: KeepAliveState = {
   ok: false,
   sessionExpired: false,
   status: null,
   checkedAt: "",
   nextAttemptAt: null,
-  statusLabel: "waiting",
-  message: "Primo controllo in attesa",
+  statusLabel: "disabled",
+  message: "Mantenimento automatico disattivato",
 };
 const activity: ActivityItem[] = [];
 let activityLogWrite: Promise<void> = Promise.resolve();
@@ -1104,7 +1103,7 @@ async function refreshSnapshotRemoteData() {
         chromeCdpUrl: config.CHROME_CDP_URL,
         screenshotDirectory: config.ERROR_SCREENSHOT_DIR,
         operationLogPath: operationLogPath(),
-        sisterKeepAliveEnabled: config.SISTER_KEEPALIVE_ENABLED,
+        sisterKeepAliveEnabled: false,
         sisterKeepAliveInterval: `${config.SISTER_KEEPALIVE_MIN_SECONDS}-${config.SISTER_KEEPALIVE_MAX_SECONDS} secondi`,
       };
       if (archivedDatabaseConfigurationNeedsRefresh()) {
@@ -3033,7 +3032,6 @@ function handleRunnerEvent(event: RunnerEvent) {
     };
     pushActivity("Ricerca SISTER salvata nell'archivio", "success");
   } else if (event.type === "sister-keepalive") {
-    updateKeepAliveState(event.result);
     return;
   } else if (event.type === "property-progress") {
     propertyProgress = {
@@ -3101,86 +3099,6 @@ function friendlyStepLabel(step: string) {
     verified: "verifica finale", completed: "lavorazione completa",
   };
   return labels[step] ?? step.replaceAll("_", " ");
-}
-
-function updateKeepAliveState(result: SisterKeepAliveResult) {
-  const previousStatus = sisterKeepAlive.statusLabel;
-  sisterKeepAlive = {
-    ...result,
-    nextAttemptAt: sisterKeepAlive.nextAttemptAt,
-    statusLabel: result.ok ? "active" : result.sessionExpired ? "expired" : "error",
-  };
-  const activityItem = !result.ok && previousStatus !== sisterKeepAlive.statusLabel
-    ? pushActivity(result.message, result.sessionExpired ? "error" : "warning")
-    : undefined;
-  publishTransientUpdate({ sisterKeepAlive, activityItem });
-}
-
-function scheduleDesktopKeepAlive(delayMs?: number) {
-  if (keepAliveTimer) clearTimeout(keepAliveTimer);
-  let config: WorkerConfig;
-  try {
-    config = workerConfig();
-  } catch {
-    keepAliveTimer = setTimeout(() => scheduleDesktopKeepAlive(), 120_000);
-    keepAliveTimer.unref?.();
-    return;
-  }
-  if (!config.SISTER_KEEPALIVE_ENABLED) {
-    sisterKeepAlive = { ...sisterKeepAlive, statusLabel: "disabled", message: "Mantenimento sessione disattivato", nextAttemptAt: null };
-    publishTransientUpdate({ sisterKeepAlive });
-    return;
-  }
-  const delay = delayMs ?? nextKeepAliveDelay(config.SISTER_KEEPALIVE_MIN_SECONDS, config.SISTER_KEEPALIVE_MAX_SECONDS);
-  sisterKeepAlive = { ...sisterKeepAlive, nextAttemptAt: new Date(Date.now() + delay).toISOString() };
-  keepAliveTimer = setTimeout(() => void runDesktopKeepAlive(), delay);
-  keepAliveTimer.unref?.();
-  publishTransientUpdate({ sisterKeepAlive });
-}
-
-async function runDesktopKeepAlive() {
-  try {
-    const config = workerConfig();
-    if (streetRunActive || networkRunActive || portoniActive || workerV2?.active || operationReservation === "worker-v2") {
-      sisterKeepAlive = {
-        ...sisterKeepAlive,
-        statusLabel: "disabled",
-        message: "Sessione SISTER già gestita dalla lavorazione in corso",
-        checkedAt: new Date().toISOString(),
-      };
-      publishTransientUpdate({ sisterKeepAlive });
-      return;
-    }
-    if (activeJobId && !stepRequiresSister(currentStep)) {
-      sisterKeepAlive = {
-        ...sisterKeepAlive,
-        ok: false,
-        sessionExpired: false,
-        status: null,
-        statusLabel: "disabled",
-        message: "Non necessaria durante l'import CRM",
-        checkedAt: new Date().toISOString(),
-      };
-      publishTransientUpdate({ sisterKeepAlive });
-      return;
-    }
-    const tabs = await connectToSisterChrome(config.CHROME_CDP_URL, config.SISTER_TAB_MATCH);
-    try {
-      updateKeepAliveState(await pingSisterSession(tabs.sisterPage, config.SISTER_KEEPALIVE_URL));
-    } finally {
-      await tabs.browser.close().catch(() => undefined);
-    }
-  } catch (error) {
-    updateKeepAliveState({
-      ok: false,
-      sessionExpired: false,
-      status: null,
-      checkedAt: new Date().toISOString(),
-      message: error instanceof Error ? error.message : String(error),
-    });
-  } finally {
-    scheduleDesktopKeepAlive();
-  }
 }
 
 async function resetCrmAfterSkippedCase() {
@@ -4386,7 +4304,6 @@ app.whenReady().then(async () => {
   await loadDiagnosticErrors();
   registerIpc();
   await createWindow();
-  scheduleDesktopKeepAlive(3_000);
   /* La coda si carica in sottofondo: se il registro non risponde la finestra
    * si apre lo stesso e l'errore si legge nel pannello, non blocca l'avvio. */
   void refreshStreetRegistryPreview().then(() => publishState()).catch(() => undefined);
@@ -4398,7 +4315,6 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   agencyScan?.abort();
   stopStreetRegistryLeaseHeartbeat();
-  if (keepAliveTimer) clearTimeout(keepAliveTimer);
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
   if (browserCheckTimer) clearTimeout(browserCheckTimer);
   if (updateCheckTimer) clearTimeout(updateCheckTimer);
