@@ -833,6 +833,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       .or(this.page.locator('button').filter({has:this.page.locator('svg[data-key="filterList"],lightning-icon[icon-name="utility:filterList"]')})).filter({ visible: true });
   }
 
+  private async propertyFilterDrawerOpen(): Promise<boolean> {
+    const trigger = this.filterButton();
+    if (await trigger.count() === 1 && await trigger.getAttribute("aria-expanded") === "false") return false;
+    const inputs = this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index] input:visible');
+    return inputs.evaluateAll(elements => elements.some(input => {
+      const rect = input.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < window.innerWidth;
+    }));
+  }
+
   private async assertSearchHealthy(requestFailed: boolean, writeOutcomeUncertain = false): Promise<void> {
     const alerts = await this.page.locator('[role="alert"]:visible, .slds-notify_toast.slds-theme_error:visible').allTextContents();
     if (requestFailed || alerts.some(text => /errore|error|riprova|impossibile|non disponibile/i.test(text))) {
@@ -1632,15 +1642,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       }
 
       const filterHosts = this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index]');
-      const addressHost = () => this.page.locator('lightning-input[c-queryviewerfilters_queryviewerfilters][data-index="9"]');
-      const drawerIsOpen = async () => {
-        const address = addressHost().locator("input").filter({ visible: true });
-        if (await address.count() !== 1) return false;
-        return address.evaluate((input) => {
-          const rect = input.getBoundingClientRect();
-          return rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth;
-        });
-      };
+      const drawerIsOpen = () => this.propertyFilterDrawerOpen();
       if (!(await drawerIsOpen())) {
         const trigger = await this.one(this.filterButton(), "Filtri immobili", 12_000);
         for (let attempt = 0; attempt < 3 && !(await drawerIsOpen()); attempt += 1) {
@@ -1850,19 +1852,7 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         }
         return this.filterIndexes?.get(normalized(label)) ?? fallback;
       };
-      const drawerIsOpen = async () => {
-        const trigger = this.filterButton();
-        if (await trigger.count() === 1 && await trigger.getAttribute("aria-expanded") === "false") return false;
-        // A custom-element host can remain visible while its input is hidden,
-        // and a translated drawer is "visible" to Playwright outside the
-        // viewport. Check the real address field, not the first host shell.
-        const address = filterHost(9).locator("input").filter({ visible: true });
-        if (await address.count() !== 1) return false;
-        return address.evaluate((input) => {
-          const rect = input.getBoundingClientRect();
-          return rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth;
-        });
-      };
+      const drawerIsOpen = () => this.propertyFilterDrawerOpen();
       const openDrawer = async () => {
         if (await drawerIsOpen()) return;
         const open = await this.one(this.filterButton(), "Filtri immobili", 12_000);
@@ -1942,6 +1932,12 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
         sheet?: string; parcel?: string; parcelDenomination?: string; subaltern?: string;
       };
       const search = async (filters: SearchFilters): Promise<string[]> => {
+        // readPropertySummary leaves Chrome on the candidate record. Re-enter
+        // the search view before opening the filters for an alternate lookup.
+        const currentPath = new URL(this.page.url()).pathname.replace(/\/$/, "");
+        if (currentPath !== new URL(this.url(PROPERTY_SEARCH)).pathname) {
+          await openSearchView();
+        }
         await openDrawer();
         for (const [label, fallback, value, optional] of [
           ["Indirizzo", 9, filters.address, false],
@@ -2001,7 +1997,6 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       /* Se il catasto non restituisce un'identità esatta, il riscontro per
        * indirizzo resta sempre attivo: è una protezione anti-duplicato, non
        * una modalità operativa disattivabile. */
-      if (found.size) await openSearchView();
       /* Cercare la sola via restituiva ogni immobile della via e ne apriva la
        * scheda uno per uno, anche quelli di un altro civico che `sameAddress`
        * avrebbe comunque scartato: un costo che cresceva a ogni immobile
@@ -2905,7 +2900,10 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
 
   async readActivityHistory(propertyId:string,clientId:string){
     return this.action('Storico attività',()=>readCrmActivityHistory(this.page,{propertyId,clientId,
-      propertyUrl:this.propertyUrl(propertyId),clientUrl:this.personUrl(clientId),assertSession:()=>this.assertSession(),stopOnPropertyCoverage:true}));
+      propertyUrl:this.propertyUrl(propertyId),clientUrl:this.personUrl(clientId),assertSession:()=>{
+        this.throwIfInterruptionRequested();
+        return this.assertSession();
+      },stopOnPropertyCoverage:true}));
   }
 
   private async readActivityEvidence(propertyId: string, description: string, status: string, scope?: { excludedIds: ReadonlySet<string>; submitted: boolean; activityId?:string;clientId?:string }): Promise<{

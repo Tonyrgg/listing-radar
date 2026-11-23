@@ -230,17 +230,22 @@ describe("Tecnocloud UI V2", () => {
     )?.index).toBe(1);
   });
 
-  it.each([1, 2])("rilegge tutti i %s riscontri catastali e attende i dettagli senza cercare tutta la via", async (count) => {
+  it.each([
+    { count: 1, alternate: false },
+    { count: 2, alternate: false },
+    { count: 1, alternate: true },
+  ])("rilegge i riscontri catastali ($count iniziali, denominazione alternativa: $alternate)", async ({ count, alternate }) => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
       const searches: string[] = [];
+      const addressIndex = alternate ? 19 : 9;
       await page.route("https://tecnocasa-group.my.site.com/**", (route) => {
         const pathname = new URL(route.request().url()).pathname;
         if (/\/immobile\/record-/.test(pathname)) return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
           <li class="slds-page-header__detail-block"><span class="slds-text-title">Indirizzo Completo Immobile</span><c-output-field>Via Guidone 10, 70032 BITONTO (BA)</c-output-field></li>
           <script>setTimeout(() => {
-            const fields = [['Catasto Foglio', '38'], ['Catasto Particella', '215'], ['Catasto Subalterno', '17']];
+            const fields = [['Catasto Foglio', '38'], ['Catasto Particella', '215'], ['Catasto Subalterno', '${alternate && !pathname.endsWith("record-exact") ? "18" : "17"}']];
             for (const [label, value] of fields) document.body.insertAdjacentHTML('beforeend', '<div><div><label>' + label + '</label></div><div class="slds-form-element__static">' + value + '</div></div>');
           }, 650);</script></body>` });
         if (pathname === '/applied') {
@@ -249,12 +254,17 @@ describe("Tecnocloud UI V2", () => {
         }
         return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
           <input placeholder="--- Seleziona ---" value="Immobili residenziali">
-          ${[1, 9, 26, 27, 28, 31].map(index => '<lightning-input c-queryviewerfilters_queryviewerfilters data-index="' + index + '"><input></lightning-input>').join('')}
+          ${[1, addressIndex, 26, 27, 28, 31].map(index => {
+            const field = '<lightning-input c-queryviewerfilters_queryviewerfilters data-index="' + index + '"><input></lightning-input>';
+            return index === addressIndex ? '<div>Indirizzo:<div><div>' + field + '</div></div></div>' : field;
+          }).join('')}
           <button id="apply">Applica</button><div id="results"></div>
           <script>document.querySelector('#apply').onclick = () => {
-            const values = [9,26,27,31].map(index => document.querySelector('[data-index="' + index + '"] input').value).join('|');
+            const values = [${addressIndex},26,27,28,31].map(index => document.querySelector('[data-index="' + index + '"] input').value).join('|');
             fetch('/applied?values=' + encodeURIComponent(values));
-            document.querySelector('#results').innerHTML = Array.from({length: ${count}}, (_, i) => '<lightning-input c-queryviewer_queryviewer data-id="record-' + i + '"><input type="checkbox"></lightning-input>').join('');
+            const ids = ${alternate} && document.querySelector('[data-index="28"] input').value
+              ? ['record-exact'] : Array.from({length: ${count}}, (_, i) => 'record-' + i);
+            document.querySelector('#results').innerHTML = ids.map(id => '<lightning-input c-queryviewer_queryviewer data-id="' + id + '"><input type="checkbox"></lightning-input>').join('');
           };</script></body>` });
       });
       await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
@@ -265,9 +275,10 @@ describe("Tecnocloud UI V2", () => {
         activity: { enabled: false, description: null, contactMode: "Contatto diretto", status: "Eseguito" },
       } };
       const found = await new TecnocloudUiV2Port(page).findPropertiesByCadastralIdentity(plan);
-      expect(found.map(item => item.id)).toEqual(Array.from({ length: count }, (_, i) => `record-${i}`));
-      expect(found.every(item => item.cadastral?.sheet === "38" && item.cadastral.parcel === "215" && item.cadastral.subaltern === "17")).toBe(true);
-      expect(searches).toEqual(["|38|215|17"]);
+      const ids = Array.from({ length: count }, (_, i) => `record-${i}`);
+      expect(found.map(item => item.id)).toEqual(alternate ? [...ids, "record-exact"] : ids);
+      expect(found.filter(item => item.cadastral?.subaltern === "17").map(item => item.id)).toEqual(alternate ? ["record-exact"] : ids);
+      expect(searches).toEqual(alternate ? ["|38|215||17", "|38||215|17"] : ["|38|215||17"]);
     } finally { await browser.close(); }
   }, 20_000);
 

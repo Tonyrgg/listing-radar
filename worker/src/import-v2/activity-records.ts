@@ -60,7 +60,7 @@ export function activityTaskFragments(body:string,expectedClientId?:string):Task
 export function mergeTaskFragment(target:Map<string,TaskFragment>,incoming:TaskFragment){
   const key=incoming.id.slice(0,15),prior=target.get(key);
   if(!prior){target.set(key,{...incoming});return;}
-  const next={...prior};
+  const next={...prior,conflicted:prior.conflicted||incoming.conflicted};
   for(const field of ['propertyId','clientId','description','status','activityDate','createdAt']as const){
     const v=incoming[field];if(v===undefined)continue;
     const old=next[field];

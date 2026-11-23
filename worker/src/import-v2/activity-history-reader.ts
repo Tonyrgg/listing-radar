@@ -3,13 +3,14 @@ import {activityTaskFragments,mergeTaskFragment,taskSnapshot,type TaskFragment} 
 import type {CrmActivityHistory} from './model.js';
 import {sameCrmRecordId} from '../core/crm-record-id.js';
 import {ImportV2Error} from './errors.js';
-import {readActivityDetailDom} from './activity-detail-reader.js';
+import {readActivityDetailDom,readActivityFields} from './activity-detail-reader.js';
 import {activityCoverage,activityDay,romeDay} from './activity-policy.js';
 import {activityResponseText} from './activity-response.js';
 
 const taskIds=(text:string)=>[...new Set([...text.matchAll(/\b00T[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?\b/g)].map(m=>m[0]))];
 const emptyList=/nessun[aeo]?\s+(?:attivit[aà]|element[oi]|record)|non (?:sono presenti|ci sono) attivit[aà]/i;
 const headerCount=/Attivit[aà](?: e appuntamenti)?\s*\((\d+)(\+)?\)/i;
+const historyHeading=/^\s*Attivit[aà](?: e appuntamenti)?\s*$/i;
 type Options={propertyId:string;clientId:string;propertyUrl:string;clientUrl:string;assertSession:()=>Promise<void>;stopOnPropertyCoverage?:boolean};
 
 /** Read the related list and open the exact Task when the summary omits fields. */
@@ -52,7 +53,10 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     pending.clear();
     failed=false;
     await page.goto(url,{waitUntil:'commit',timeout:20_000});
-    const cards=page.locator('c-activity-summary:visible,article:visible').filter({hasText:headerCount});
+    const cards=page.locator('c-activity-summary:visible,article:visible').filter({hasText:headerCount})
+      .or(page.locator('c-activity-summary:visible,article:visible').filter({
+        has:page.getByText(historyHeading,{exact:true}),hasText:emptyList,
+      }));
     let card=cards.filter({hasNot:cards});
     await card.waitFor({state:'visible',timeout:10_000});
     await settled(true);
@@ -61,7 +65,9 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     let declared=headerCount.exec(text)?.[1];
     let truncated=Boolean(headerCount.exec(text)?.[2]);
     const showAll=card.getByText(/^Visualizza tutt[oi]$/i).filter({visible:true});
-    if(await showAll.count()===1&&(truncated||declared===undefined||Number(declared)>taskIds(await card.innerHTML()).length)){
+    const previewIds=taskIds(await card.innerHTML());
+    if(await showAll.count()===1&&(truncated||declared===undefined||Number(declared)>previewIds.length
+      ||previewIds.some(id=>!taskSnapshot(fragments.get(id.slice(0,15))??{id},kind==='property')))){
       await showAll.click();await settled();
       const lwcList=page.locator('c-lwc-modal').filter({has:page.locator('.slds-modal__container:visible')}).filter({hasText:headerCount});
       const dialog=page.locator('[role="dialog"]:visible').filter({hasText:headerCount});
@@ -105,14 +111,26 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
         const control=taskControls.and(card.locator(`[data-recordid="${id}"]`));
         if(await control.count()!==1)continue;
         const close=page.getByRole('button',{name:'Chiudi',exact:true});
-        const before=await close.count();
-        await control.click({timeout:5000});
-        await settled();
+        const modalCandidates=page.locator('c-lwc-modal,[role="dialog"],.slds-modal').filter({has:close});
+        const modals=modalCandidates.filter({hasNot:modalCandidates});
+        const before=await modals.elementHandles();
+        const fresh=[];
+        try {
+          await control.click({timeout:5000});
+          await settled();
+          if(hasCoverage())return false;
+          for(let index=0,count=await modals.count();index<count;index++){
+            const modal=modals.nth(index);
+            if(await modal.evaluate((node,previous)=>!previous.includes(node),before))fresh.push(modal);
+          }
+        } finally { await Promise.allSettled(before.map(handle=>handle.dispose())); }
+        // Read only the dialog created by opening this exact Task. The list
+        // and unrelated dialogs can contain other record IDs and statuses.
+        if(fresh.length!==1)return false;
+        const modal=fresh[0]!;
+        mergeTaskFragment(fragments,await readActivityFields(modal,id));
         if(hasCoverage())return false;
-        // Tecnocloud stacks the Task modal above the list. Restore the exact
-        // list before opening another Task or going to the next page.
-        if(await close.count()!==before+1)return false;
-        await close.last().click({timeout:5000});
+        await modal.getByRole('button',{name:'Chiudi',exact:true}).click({timeout:5000});
         await settled();
       }
       const next=card.getByRole('button',{name:/^(?:Avanti|Successiv[oa])$/i});
@@ -138,7 +156,7 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
   }
   async function safeList(url:string,parentId:string,kind:'property'|'client'){
     try{return await list(url,parentId,kind);}
-    catch(error){await options.assertSession();if(error instanceof ImportV2Error&&error.options.global)throw error;console.info(JSON.stringify({action:'activity-history',kind,error:error instanceof Error?error.message:String(error)}));return false;}
+    catch(error){await options.assertSession();if(error instanceof ImportV2Error&&error.options.global)throw error;issues.push({scope:kind,missing:['elenco_completo']});console.info(JSON.stringify({action:'activity-history',kind,error:error instanceof Error?error.message:String(error)}));return false;}
   }
   try{
     const propertyComplete=await safeList(options.propertyUrl,options.propertyId,'property');

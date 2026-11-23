@@ -81,6 +81,36 @@ describe('complete CRM activity history',{timeout:15000},()=>{
    expect(await readCrmActivityHistory(page,options)).toMatchObject({records:[],propertyComplete:true,clientComplete:true});
   }finally{await page.close();}
  });
+ it('reads the exact Task from its new dialog when the server sends no detail fields',async()=>{
+  const page=await browser.newPage();
+  const createdAt=new Date().toISOString();
+  try {
+   await page.route(origin+'/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:`
+    <article><h2>Attività e appuntamenti (1)</h2>
+      <a data-recordid="${id}" data-objectname="Task" data-modalview="true"
+         onclick="document.querySelector('#detail').hidden=false">Attività</a>
+    </article>
+    <div id="detail" role="dialog" hidden>
+      <div><label>Correlato a</label><a href="/immobile/${property}">Immobile</a></div>
+      <div><label>Cliente</label><a href="/account/${client}">Cliente</a></div>
+      <div><label>Stato</label><p>Da eseguire</p></div>
+      <div><label>Data di creazione</label><p>${createdAt}</p></div>
+      <button onclick="document.querySelector('#detail').hidden=true">Chiudi</button>
+    </div>
+    <div role="dialog"><div><label>Stato</label><p>Eseguito</p></div><button>Chiudi</button></div>`}));
+   expect(await readCrmActivityHistory(page,options)).toMatchObject({propertyComplete:true,clientComplete:true,issues:[],
+    records:[{id,propertyId:property,clientId:client,status:'Da eseguire',createdAt}]});
+   expect(await page.locator('#detail').isVisible()).toBe(false);
+  }finally{await page.close();}
+ });
+ it('accepts a scoped, explicit empty history without a count in the title',async()=>{
+  const page=await browser.newPage();
+  try{
+   await page.route(origin+'/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',
+    body:'<article><h2>Attività e appuntamenti</h2><p>Nessuna attività presente</p></article>'}));
+   expect(await readCrmActivityHistory(page,options)).toMatchObject({records:[],propertyComplete:true,clientComplete:true});
+  }finally{await page.close();}
+ });
  it('follows the exact Task link to retrieve fields missing from a related-list response',async()=>{
   const page=await browser.newPage();try{
    await page.route(origin+'/**',async route=>{
