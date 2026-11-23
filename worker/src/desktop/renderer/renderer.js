@@ -191,7 +191,7 @@ const SECTION_LABELS = {
   operations: ["Registro operativo", "Lavorazioni"],
   refinement: ["Verifica e aggiornamento", "Rifinitura"],
   portoni: ["Raccolta territoriale", "Portoni"],
-  agencies: ["Cataloghi pubblici", "Agenzie"],
+  agencies: ["Cataloghi pubblici", "Agenzie e portali"],
   sync: ["Archivi del gestionale", "Sincronizzazione"],
   history: ["Memoria del worker", "Cronologia"],
   settings: ["Sistema", "Impostazioni"],
@@ -228,23 +228,25 @@ const esc = (value) =>
   );
 const timeFormatter = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
 let agencyReadRunning = false;
-let desktopAgencies = [];
+let desktopSources = [];
 function paintAgencyRead(progress) {
   const moving = progress?.phase === "catalog" || progress?.phase === "details";
   agencyReadRunning = moving;
-  $('agencyButtons').querySelectorAll('button').forEach(button => { button.disabled = moving; });
+  $('agencies').querySelectorAll('[data-agency-browse]').forEach(button => { button.disabled = moving; });
   $('agencyStop').classList.toggle('is-hidden', !moving);
-  const agency = desktopAgencies.find(source => source.id === progress?.source)?.label;
+  const source = desktopSources.find(item => item.id === progress?.source)?.label;
   const phase = { catalog:"Lettura catalogo", details:"Visita delle schede", done:"Visita completata", stopped:"Visita interrotta", blocked:"Sito bloccato", partial:"Visita incompleta" }[progress?.phase];
   const counts = progress?.pages ? `${progress.pages} pagine · ${progress.visited}/${progress.found} schede visitate${progress.failed ? ` · ${progress.failed} non lette` : ""}` : "";
-  $('agencyProgress').textContent = [agency, phase, counts, progress?.message].filter(Boolean).join(" · ") || "Pronto";
+  $('agencyProgress').textContent = [source, phase, counts, progress?.message].filter(Boolean).join(" · ") || "Pronto";
 }
 window.propertyWorker.onAgencyProgress?.(paintAgencyRead);
 void window.propertyWorker.getAgencySources?.().then(({sources,progress}) => {
-  desktopAgencies = sources;
-  $('agencyButtons').innerHTML = sources.map(source => `<button type="button" class="button secondary agency-source" data-agency-browse="${esc(source.id)}">${source.icon ? `<img alt="" src="./source-icons/${esc(source.icon)}">` : `<span class="agency-monogram" aria-hidden="true">${esc(source.label.slice(0,2).toUpperCase())}</span>`}<span>${esc(source.label)}</span></button>`).join("");
+  desktopSources = sources;
+  const button = source => `<button type="button" class="button secondary agency-source" data-agency-browse="${esc(source.id)}">${source.icon ? `<img alt="" src="./source-icons/${esc(source.icon)}">` : `<span class="agency-monogram" aria-hidden="true">${esc(source.label.slice(0,2).toUpperCase())}</span>`}<span>${esc(source.label)}</span></button>`;
+  $('agencyButtons').innerHTML = sources.filter(source => !source.portal).map(button).join("");
+  $('portalButtons').innerHTML = sources.filter(source => source.portal).map(button).join("");
   paintAgencyRead(progress);
-}).catch(() => { $('agencyProgress').textContent = "Elenco agenzie non disponibile."; });
+}).catch(() => { $('agencyProgress').textContent = "Elenco delle fonti non disponibile."; });
 const dateFormatter = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const fmtTime = (value) =>
   value
@@ -3464,6 +3466,19 @@ document.addEventListener("click", async (event) => {
   if (!target || (target.form && target.type === "submit")) return;
   event.preventDefault();
 
+  if (target.id === "agencyOpenChrome") {
+    target.disabled = true;
+    $('agencyChromeStatus').textContent = "Apertura del Chrome di lavoro…";
+    try {
+      await window.propertyWorker.openChrome();
+      $('agencyChromeStatus').textContent = "Chrome di lavoro pronto.";
+    } catch {
+      $('agencyChromeStatus').textContent = "Impossibile aprire il Chrome di lavoro.";
+    } finally {
+      target.disabled = false;
+    }
+    return;
+  }
   if (target.id === "agencyStop") {
     await window.propertyWorker.stopAgencyBrowse();
     $('agencyProgress').textContent = "Interruzione in corso…";

@@ -42,7 +42,7 @@
           <button class="nav-item is-active" data-scroll="operations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></svg><span><b>Lavorazioni</b><small>Acquisisci e importa</small></span></button>
           <button class="nav-item" data-scroll="refinement"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 9-9 5 5-9 9H4v-5ZM12 7l5 5M15 18h5"/></svg><span><b>Rifinitura</b><small>Aggiorna l'esistente</small></span></button>
           <button class="nav-item" data-scroll="portoni"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4h14v17M9 8h2M15 8h.01M9 12h2M15 12h.01M9 16h2M15 16h.01M3 21h18"/></svg><span><b>Portoni</b><small>Raccogli e stampa</small></span></button>
-          <button class="nav-item" data-scroll="agencies"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11h18M6 11v9h12v-9M4 5h16l1 6H3l1-6ZM10 20v-5h4v5"/></svg><span><b>Agenzie</b><small>Visita gli annunci</small></span></button>
+          <button class="nav-item" data-scroll="agencies"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11h18M6 11v9h12v-9M4 5h16l1 6H3l1-6ZM10 20v-5h4v5"/></svg><span><b>Agenzie e portali</b><small>Visita gli annunci</small></span></button>
           <p class="nav-group-label">Archivio</p>
           <button class="nav-item" data-scroll="sync"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-7M17 4l3 3-3 3M4 17h7M7 14l-3 3 3 3M6 7a7 7 0 0 1 11-2M18 17a7 7 0 0 1-11 2"/></svg><span><b>Sincronizzazione</b><small>Richieste e incarichi</small></span></button>
           <button class="nav-item" data-scroll="history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span><b>Cronologia</b><small id="historyNavHint">Lavori conservati</small></span></button>
@@ -483,8 +483,19 @@
         <details class="section" id="agencies">
           <summary><span>Cataloghi pubblici</span></summary>
           <div class="section-body agency-browser">
-            <p>Scegli un’agenzia per visitare il catalogo e le sue schede nel Chrome di lavoro.</p>
-            <div id="agencyButtons" class="agency-buttons"></div>
+            <div class="agency-toolbar">
+              <p>Scegli una fonte per visitare gli annunci nel Chrome di lavoro.</p>
+              <button id="agencyOpenChrome" type="button" class="button secondary">Apri Chrome di lavoro</button>
+            </div>
+            <p id="agencyChromeStatus" class="agency-chrome-status" role="status"></p>
+            <section class="agency-group" aria-labelledby="agencyHeading">
+              <h2 id="agencyHeading">Agenzie</h2>
+              <div id="agencyButtons" class="agency-buttons"></div>
+            </section>
+            <section class="agency-group" aria-labelledby="portalHeading">
+              <h2 id="portalHeading">Portali</h2>
+              <div id="portalButtons" class="agency-buttons"></div>
+            </section>
             <div class="agency-scan-bar">
               <p id="agencyProgress" role="status" aria-live="polite">Pronto</p>
               <button id="agencyStop" type="button" class="button secondary is-hidden">Interrompi</button>

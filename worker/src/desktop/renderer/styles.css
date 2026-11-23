@@ -2392,7 +2392,7 @@ body[data-worker-view="settings"] #settings::before {
 
 body[data-worker-view="refinement"] #refinement::before { content: "Rifinitura vie"; }
 body[data-worker-view="portoni"] #portoni::before { content: "Schede Portoni"; }
-body[data-worker-view="agencies"] #agencies::before { content: "Agenzie"; }
+body[data-worker-view="agencies"] #agencies::before { content: "Agenzie e portali"; }
 body[data-worker-view="sync"] #sync::before { content: "Sincronizza il gestionale"; }
 body[data-worker-view="history"] #history::before { content: "Cronologia dei lavori"; }
 body[data-worker-view="settings"] #settings::before { content: "Impostazioni e collegamenti"; }
@@ -2405,6 +2405,10 @@ body[data-worker-view="settings"] #settings::before { content: "Impostazioni e c
 .portoni-layout { display: grid; gap: 16px; }
 .agency-browser { display: grid; gap: 16px; }
 .agency-browser p { margin: 0; color: var(--lr-ink-2); }
+.agency-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.agency-chrome-status:empty { position: absolute; }
+.agency-group { display: grid; gap: 8px; }
+.agency-group h2 { margin: 0; font-size: 1rem; }
 .agency-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .agency-source { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
 .agency-source img, .agency-monogram { width: 23px; height: 23px; object-fit: contain; border-radius: 4px; flex: none; }

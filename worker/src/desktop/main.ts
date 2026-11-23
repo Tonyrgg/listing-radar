@@ -25,7 +25,7 @@ import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../serv
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { browseAgency, type AgencyProgress } from "../agency-browser/browse.js";
-import { agencySources } from "../agency-browser/sources.js";
+import { browserSources } from "../agency-browser/sources.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
@@ -3675,15 +3675,20 @@ async function openWorkChrome() {
   const { cdpUrl } = workBrowserConfiguration();
   const url = new URL(cdpUrl);
   if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname) || !url.port || url.pathname !== "/" || url.search || url.hash || url.username || url.password) throw new Error("Configura un Chrome di lavoro locale prima di aprirlo.");
-  let alreadyOpen = false;
-  try { alreadyOpen = (await fetch(`${url.origin}/json/version`, { signal: AbortSignal.timeout(1500) })).ok; }
-  catch { /* Start the work profile only when its endpoint is unavailable. */ }
+  const available = () => fetch(`${url.origin}/json/version`, { signal: AbortSignal.timeout(1000) })
+    .then(response => response.ok, () => false);
+  const alreadyOpen = await available();
   if (!alreadyOpen) {
     const executable = findChromeExecutable();
     if (!executable) throw new Error("Google Chrome non trovato");
     const child = spawn(executable, [`--remote-debugging-port=${url.port}`, "--user-data-dir=C:\\ChromeListingRadar"], { detached: true, stdio: "ignore", windowsHide: true });
     await new Promise<void>((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
     child.unref();
+    const deadline = Date.now() + 8000;
+    while (!await available()) {
+      if (Date.now() >= deadline) throw new Error("Chrome di lavoro avviato, collegamento non ancora disponibile.");
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
   }
   pushActivity(alreadyOpen ? "Chrome di lavoro già aperto" : "Chrome di lavoro avviato", "success");
   scheduleBrowserChecks(250);
@@ -3887,13 +3892,13 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:agency-sources", () => ({
-    sources: agencySources.map(({ id, label, icon }) => ({ id, label, icon })),
+    sources: browserSources.map(({ id, label, icon, portal }) => ({ id, label, icon, portal: Boolean(portal) })),
     progress: agencyProgress,
     running: Boolean(agencyScan),
   }));
   ipcMain.handle("desktop:agency-browse", async (_event, id: unknown) => {
-    const source = agencySources.find(entry => entry.id === id);
-    if (!source) throw new Error("Agenzia non riconosciuta.");
+    const source = browserSources.find(entry => entry.id === id);
+    if (!source) throw new Error("Fonte non riconosciuta.");
     if (agencyScan) throw new Error("C’è già una scansione in corso.");
     const controller = new AbortController();
     agencyScan = controller;
