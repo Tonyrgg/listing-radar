@@ -12,7 +12,7 @@ import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_MAX_BYTES, openTabIdentity, openTabSigna
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const requestSchema = z.object({ captures: z.array(z.object({
+const requestSchema = z.object({ acquisitionId: z.uuid().optional(), captures: z.array(z.object({
   url: z.url().max(2000), capturedAt: z.iso.datetime(),
   html: z.string().max(OPEN_TAB_MAX_BYTES).optional(), fields: z.record(z.string(),z.unknown()).optional(),
 })).min(1).max(6) });
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   const db = getSupabaseServiceClient();
   const repository = new PropertyLifecycleRepository(db);
   const radar = new PrivateRadarBridge(db);
-  const runs = new Map<string,{id:string;count:number;errors:number}>();
+  const runs = new Map<string,{id:string;count:number;errors:number;created:number;updated:number;unchanged:number;review:number}>();
   const results: OpenTabOutcome[] = [];
   for (const capture of data.captures) {
     const out = (state:OpenTabOutcome["state"],message?:string) => results.push({url:capture.url,state,message});
@@ -93,12 +93,15 @@ export async function POST(request: Request) {
       if(!identity){out("review","Identificativo della scheda non disponibile.");continue;}
       let listing;
       try {
-        listing=await adapter.normalize({item:{url,sourceKey:identity,externalId:identity,summary:{}},
+        listing=await adapter.normalize({item:{url,sourceKey:identity,externalId:identity,summary:{manualOpenTab:true}},
           observedAt:capture.capturedAt,response:{body:capture.html,headers:new Headers(),url,status:200,ok:true}});
       } catch {out("review","Il formato della pagina non consente una lettura verificabile.");continue;}
       const canonical = openTabSource(listing.source.canonicalUrl);
       if (!canonical || openTabIdentity(canonical) !== openTabIdentity(recognized) || listing.source.agencySlug !== adapter.agencySlug) {
-        out("review","L’identità pubblicata è diversa dalla scheda aperta.");continue;
+        out("review", canonical
+          ? "La pagina dichiara il codice di un altro annuncio."
+          : "La pagina non dichiara un riferimento verificabile per questo annuncio.");
+        continue;
       }
       if(source.id==="admaiora")listing=rehashNormalizedListing(listing,row=>({...row,source:{...row.source,sourceKey:row.source.externalId}}));
       if(listing.source.transactionType!=="SALE"||listing.location.scope==="OUT_OF_SCOPE"){out("skipped","Scheda fuori dall’ambito delle vendite monitorate.");continue;}
@@ -127,23 +130,35 @@ export async function POST(request: Request) {
       if(listing.location.scope!=="IN_SCOPE"){out("review","Località da verificare prima del salvataggio.");continue;}
       let run=runs.get(agency.id);
       if(!run){
-        run={id:await repository.createSyncRun({agencyId:agency.id,adapterKey:adapter.key,mode:"SYNC"}),count:0,errors:0};
+        run={id:await repository.createSyncRun({agencyId:agency.id,adapterKey:adapter.key,mode:"SYNC"}),count:0,errors:0,created:0,updated:0,unchanged:0,review:0};
         runs.set(agency.id,run);
       }
       run.count++;
       let saved;
       try { saved=await repository.persistObservation(agency.id,run.id,listing); }
       catch(error){run.errors++;throw error;}
-      if("deferred" in saved || saved.identityDecision.outcome==="REVIEW_REQUIRED"){out("review","Abbinamento immobile da verificare.");continue;}
-      out(saved.createdPublication?"new":saved.changed===false?"unchanged":"updated");
+      if ("deferred" in saved || saved.identityDecision.outcome === "REVIEW_REQUIRED") {
+        run.review++;
+        out("review","Abbinamento immobile da verificare.");
+        continue;
+      }
+      if (saved.createdPublication) { run.created++; out("new"); }
+      else if (saved.changed === false) { run.unchanged++; out("unchanged"); }
+      else { run.updated++; out("updated"); }
     } catch { out("error","Salvataggio non confermato. Puoi ripetere l’acquisizione."); }
   }
-  await Promise.allSettled([...runs.values()].map(run=>repository.finalizeSyncRun({
-    syncRunId:run.id,status:run.errors===0?"SUCCEEDED":run.errors===run.count?"FAILED":"PARTIAL",
-    healthState:"DEGRADED",inventoryComplete:false,absenceEvaluationAllowed:false,
-    expectedCount:null,structureFingerprint:"manual-open-tabs",diagnostics:{origin:"manual-open-tabs"},
-    counts:{discoveredCount:run.count,normalizedCount:run.count,inScopeCount:run.count,excludedCount:0,errorCount:run.errors,missingCount:0,transitionedCount:0},
-  })));
+  const summaries = await Promise.allSettled([...runs.values()].map(run => {
+    const confirmed = run.created + run.updated + run.unchanged;
+    return repository.finalizeSyncRun({
+      syncRunId:run.id,status:confirmed===run.count?"SUCCEEDED":run.errors===run.count?"FAILED":"PARTIAL",
+      healthState:"DEGRADED",inventoryComplete:false,absenceEvaluationAllowed:false,
+      expectedCount:null,structureFingerprint:"manual-open-tabs",
+      diagnostics:{origin:"manual-open-tabs",acquisitionId:data.acquisitionId,created:run.created,updated:run.updated,unchanged:run.unchanged,review:run.review},
+      counts:{discoveredCount:run.count,normalizedCount:run.count,inScopeCount:confirmed,excludedCount:0,errorCount:run.errors,missingCount:0,transitionedCount:0},
+    });
+  }));
+  const sourceReportPending = summaries.some(summary => summary.status === "rejected");
+  if (runs.size && !sourceReportPending) revalidatePath("/fonti");
   if(results.some(result=>result.state==="new"||result.state==="updated"||result.state==="review"))revalidatePath("/intelligence");
-  return Response.json({results});
+  return Response.json(sourceReportPending ? { results, sourceReportPending } : { results });
 }

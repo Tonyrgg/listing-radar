@@ -291,12 +291,26 @@ export function parseStudiSantiSitemap(
 export function normalizeStudiSantiDetail(document: SourceDocument): NormalizedListingV2 {
   const { body, headers, status: responseStatus, url: responseUrl } = document.response;
   const $ = load(body);
-  const canonical = canonicalUrl(
-    $("link[rel='canonical']").first().attr("href") ??
-      extractMeta($, "og:url") ??
-      document.item.url,
-    STUDI_SANTI_BASE_URL,
+  const href = $("link[rel='canonical']").first().attr("href");
+  const socialHref = extractMeta($, "og:url");
+  const pageReference = cleanAgencyReference(
+    cleanText($(".breadcrumb, .breadcrumbs").first().text())?.match(/Codice\s*:\s*([A-Z]\d+)/i)?.[1],
   );
+  let canonical = canonicalUrl(href ?? socialHref ?? document.item.url, STUDI_SANTI_BASE_URL);
+  if (document.item.summary.manualOpenTab === true) {
+    const published = new URL(canonical);
+    const opened = new URL(document.item.url);
+    const sameHost = published.hostname.replace(/^www\./i, "") === opened.hostname.replace(/^www\./i, "");
+    const officialUrl = sameHost && !published.port && !published.username && !published.password &&
+      ["https:", "http:"].includes(published.protocol);
+    if (officialUrl && /^\/(?:it(?:\/vendite)?)?\/?$/i.test(published.pathname)) {
+      const current = urlIdentity(opened.href);
+      if (current?.reference && pageReference?.toUpperCase() === current.reference) canonical = opened.href;
+    } else if (officialUrl && published.protocol === "http:") {
+      published.protocol = "https:";
+      canonical = published.href;
+    }
+  }
   const identity = urlIdentity(canonical) ?? urlIdentity(document.item.url);
   if (!identity) {
     throw new Error(`Studi Santi detail ${canonical} has no Miogest identity.`);
@@ -308,10 +322,7 @@ export function normalizeStudiSantiDetail(document: SourceDocument): NormalizedL
     throw new Error(`Studi Santi detail ${canonical} has no title.`);
   }
 
-  const reference =
-    cleanAgencyReference(
-      cleanText($(".breadcrumb, .breadcrumbs").first().text())?.match(/Codice\s*:\s*([A-Z]\d+)/i)?.[1],
-    ) ?? identity.reference;
+  const reference = pageReference ?? identity.reference;
   const address = cleanText($(".indirizzo").first().text());
   const sourceLocation = locationLabel($);
   const addressParts = parseAddress(address);

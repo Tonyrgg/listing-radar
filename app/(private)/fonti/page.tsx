@@ -11,6 +11,7 @@ import { formatDateTime, formatNumber } from "@/lib/formatting";
 import { vistaAgenzie } from "@/lib/property-lifecycle/read-models/server";
 import type { SourceHealth } from "@/components/ui/atoms";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { readManualOpenTabsSummaries } from "@/lib/property-lifecycle/read-models/manual-open-tabs";
 import { readExternalSourceStatus } from "@/lib/property-lifecycle/read-models/external";
 import {isPracticeIndexSource,TERRITORY_PROTOCOLS} from '@/lib/property-lifecycle/buildings/public-record-policy';
 
@@ -49,12 +50,13 @@ const tono: Record<SourceHealth, "action" | "warn" | "danger" | "neutral"> = {
 export default async function FontiPage() {
   await connection();
 
-  const [vista, external, recentRuns, municipalRuns, historyRuns] = await Promise.all([
+  const [vista, external, recentRuns, municipalRuns, historyRuns, manualRuns] = await Promise.all([
     vistaAgenzie(),
     Promise.resolve().then(() => readExternalSourceStatus(getSupabaseServiceClient())).catch(() => null),
     getSupabaseServiceClient().from("sync_runs").select("agency_id,health_state,diagnostics,absence_evaluation_allowed,inventory_complete").order("started_at",{ascending:false}).limit(100),
     getSupabaseServiceClient().from("building_data_import_runs").select("source_key,status,finished_at,grouped_records,input_rows,errors,health_state,pages,inventory_complete,structure_fingerprint,diagnostics").eq("run_kind","LIVE").order("started_at",{ascending:false}).limit(30),
     getSupabaseServiceClient().from("building_data_import_runs").select("history_year,status,input_rows,eligible_rows,grouped_records,inserted_records,updated_records,pages,diagnostics,finished_at,errors").eq("run_kind","HISTORY").order("history_year",{ascending:false}),
+    readManualOpenTabsSummaries(getSupabaseServiceClient()).catch(() => null),
   ]);
 
   if (!vista.available || !vista.data) {
@@ -99,7 +101,8 @@ export default async function FontiPage() {
 
   const lette = agenzie.filter((agency) => agency.salute === "healthy").length;
   const latest=new Map<string,{diagnostics:Record<string,unknown>;absence_evaluation_allowed:boolean;inventory_complete:boolean}>();
-  for(const run of recentRuns.data??[])if(!latest.has(run.agency_id))latest.set(run.agency_id,run);
+  for(const run of recentRuns.data??[])if(run.diagnostics?.origin !== "manual-open-tabs" && !latest.has(run.agency_id))latest.set(run.agency_id,run);
+  const manualByAgency = new Map((manualRuns ?? []).map(run => [run.agencyId,run]));
   const municipal=new Map<string,NonNullable<typeof municipalRuns.data>[number]>();
   for(const run of municipalRuns.data??[])if(!municipal.has(run.source_key))municipal.set(run.source_key,run);
 
@@ -154,6 +157,7 @@ export default async function FontiPage() {
               ? "risponde, ma non ha restituito nessun immobile"
               : spiegazione[String(agency.latestHealth ?? "").toUpperCase()];
             const run=latest.get(agency.id),diagnostics=run?.diagnostics??{};
+            const manual = manualByAgency.get(agency.id);
             const inventory=diagnostics.inventory as {reasons?:string[]}|undefined;
             const problems=typeof diagnostics.error==="string"?diagnostics.error:(inventory?.reasons??[]).filter(r=>/http_status|error|failed|missing|mismatch/i.test(r)).join(" · ");
 
@@ -171,6 +175,11 @@ export default async function FontiPage() {
                     {esclusi ? ` · ${formatNumber(esclusi)} fuori perimetro` : ""}
                   </Meta>
                   {problems?<p className="mt-1 break-words text-[length:var(--lr-text-meta)] text-[var(--lr-danger)]">{problems.includes("403")?"Il sito rifiuta la lettura automatica (HTTP 403). La fonte resta nel giro; gli annunci precedenti non vengono considerati assenti per questo errore.":`Ultimo problema: ${problems}`}</p>:null}
+                  {manual ? <Meta className="mt-1">
+                    Ultima acquisizione dal Worker {formatDateTime(manual.finishedAt)} · {manual.created} nuovi · {manual.updated} aggiornati · {manual.unchanged} invariati
+                    {manual.review ? ` · ${manual.review} abbinamenti da verificare` : ""}
+                    {manual.errors ? ` · ${manual.errors} errori` : ""}
+                  </Meta> : null}
                   {run?<Meta>{run.inventory_complete?"Inventario completo":"Inventario incompleto"} · {run.absence_evaluation_allowed?"Controllo assenze autorizzato dalla baseline":"Nessuna nuova assenza autorizzata"}</Meta>:null}
                 </div>
 

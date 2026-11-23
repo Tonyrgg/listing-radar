@@ -255,8 +255,30 @@ function paintOpenTabs(progress) {
     const count=items.filter(item=>item.state===key).length;
     return count ? [`${count} ${label}`] : [];
   });
-  $('openTabsProgress').textContent = [progress.total ? `${progress.processed}/${progress.total} schede` : "", ...counts, progress.message].filter(Boolean).join(" · ");
-  $('openTabsReport').hidden = !items.length;
+  $('openTabsProgress').textContent = [progress.message, progress.total ? `${progress.processed}/${progress.total} esiti disponibili` : ""].filter(Boolean).join(" · ");
+  const summary = $('openTabsSummary');
+  const byReason = new Map();
+  for (const item of items) {
+    if ((item.state === "review" || item.state === "error") && item.message) {
+      byReason.set(item.message, (byReason.get(item.message) ?? 0) + 1);
+    }
+  }
+  const confirmed = items.filter(item => ["new", "updated", "unchanged"].includes(item.state)).length;
+  const changed = items.filter(item => ["new", "updated"].includes(item.state)).length;
+  const reasons = [...byReason.entries()].sort((a,b) => b[1] - a[1]).slice(0, 3)
+    .map(([reason, count]) => `${count} × ${reason}`);
+  summary.hidden = !items.length;
+  summary.textContent = [
+    changed ? `${changed} salvate · ${confirmed} confermate in archivio`
+      : confirmed ? `${confirmed} già presenti, nessuna nuova modifica confermata` : "Nessun annuncio confermato in archivio",
+    counts.join(" · "),
+    progress.sourceReportPending ? "Riepilogo Fonti da aggiornare" : "",
+    !progress.running ? reasons.join(" ") : "",
+  ].filter(Boolean).join(" · ");
+  const report = $('openTabsReport');
+  report.hidden = !items.length;
+  if (!progress.running && byReason.size) report.open = true;
+  if (progress.running && !items.length) report.open = false;
   $('openTabsResults').innerHTML = items.map(item => `<li><strong>${esc(names[item.state])}</strong> · ${esc(item.url)}${item.message ? `<p>${esc(item.message)}</p>` : ""}</li>`).join("");
 }
 window.propertyWorker.onAgencyProgress?.(paintAgencyRead);

@@ -46,7 +46,11 @@ describe("Acquisizione delle schede già aperte", () => {
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 
-  it("salva una scheda di Studi Santi con alias www, senza valutare assenze", async () => {
+  it.each([
+    "https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/",
+    "http://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/",
+    "https://studisantiimmobiliare.it/it/Vendite/",
+  ])("salva la scheda Studi Santi con canonical %s quando il riferimento coincide", async declaredUrl => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
     mocks.publication.mockResolvedValue({data:null,error:null});
     mocks.persist.mockResolvedValue({createdPublication:true,identityDecision:{outcome:"NEW_PROPERTY"}});
@@ -55,9 +59,20 @@ describe("Acquisizione delle schede già aperte", () => {
     const canonical=html.match(/https?:\/\/[^"\s]+\/it\/Vendite\/bitonto\/[^"\s<>]+/i)?.[0];
     expect(canonical).toBeTruthy();
     const url=canonical!.replace("://studisantiimmobiliare.it","://www.studisantiimmobiliare.it").replace(/\/$/,"");
-    const result=await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
+    const declaredHtml = html.replaceAll(canonical!, declaredUrl);
+    const acquisitionId = "31ffba37-5b09-4283-8df6-eb17fbf09629";
+    const result=await POST(request(JSON.stringify({acquisitionId,captures:[{url,html:declaredHtml,capturedAt:new Date().toISOString()}]}),"fixture-key"));
     expect(await result.json()).toEqual({results:[{url,state:"new"}]});
     expect(mocks.persist).toHaveBeenCalledOnce();
-    expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({inventoryComplete:false,absenceEvaluationAllowed:false}));
+    expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({inventoryComplete:false,absenceEvaluationAllowed:false,diagnostics:expect.objectContaining({acquisitionId,created:1})}));
+  });
+
+  it("rifiuta il canonical di un altro annuncio e non scrive nell’archivio", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
+    const html = await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8");
+    const url = "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000779/3881";
+    const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
+    expect(await response.json()).toEqual({results:[{url,state:"review",message:"La pagina dichiara il codice di un altro annuncio."}]});
+    expect(mocks.persist).not.toHaveBeenCalled();
   });
 });

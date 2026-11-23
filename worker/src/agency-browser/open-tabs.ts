@@ -1,10 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { portalBlock } from "./browse.js";
 import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_LIMIT, OPEN_TAB_MAX_BYTES, openTabIdentity, openTabSignature, openTabSource,
   type OpenTabCapture, type OpenTabOutcome } from "./open-tab-contract.js";
 
-export type OpenTabProgress = { total: number; processed: number; results: OpenTabOutcome[]; running: boolean; message?: string };
+export type OpenTabProgress = { total: number; processed: number; results: OpenTabOutcome[]; running: boolean; message?: string; sourceReportPending?: boolean };
 
 type ChromeTarget = { type?: string; url?: string; webSocketDebuggerUrl?: string };
 type TabReading = { url: string; top: string; ready: boolean; html?: string; fields?: Record<string, unknown> };
@@ -87,19 +88,19 @@ async function readTab(address: URL, target: ChromeTarget, tab: NonNullable<Retu
   return capture;
 }
 
-async function upload(captures: OpenTabCapture[], endpoint: string, key: string, signal: AbortSignal): Promise<OpenTabOutcome[]> {
-  const body = JSON.stringify({ captures });
+async function upload(captures: OpenTabCapture[], endpoint: string, key: string, signal: AbortSignal, acquisitionId: string) {
+  const body = JSON.stringify({ captures, acquisitionId });
   const timestamp = Date.now().toString();
   const response = await fetch(endpoint, { method:"POST", redirect:"error", body,
     signal: AbortSignal.any([signal, AbortSignal.timeout(65_000)]),
     headers: { "Content-Type":"application/json", "X-Worker-Time":timestamp, "X-Worker-Signature":openTabSignature(key,timestamp,body) } });
   if (!response.ok) throw new Error(response.status === 401 ? "Autorizzazione Listing Radar non valida per questo Worker." : `Salvataggio non confermato da Listing Radar (HTTP ${response.status}).`);
-  const payload = await response.json() as {results?: OpenTabOutcome[]};
+  const payload = await response.json() as {results?: OpenTabOutcome[];sourceReportPending?:boolean};
   if (!Array.isArray(payload.results) || payload.results.length !== captures.length || payload.results.some((item,index) =>
     item.url !== captures[index]?.url || !["new","updated","unchanged","review","skipped","error"].includes(item.state))) {
     throw new Error("Risposta di salvataggio incompleta. Puoi ripetere l’acquisizione.");
   }
-  return payload.results;
+  return { results: payload.results, sourceReportPending: payload.sourceReportPending === true };
 }
 
 export async function acquireOpenTabs(
@@ -120,8 +121,10 @@ export async function acquireOpenTabs(
   });
   if (tabs.length > OPEN_TAB_LIMIT) throw new Error(`Trovate ${tabs.length} schede. L’acquisizione ne gestisce fino a ${OPEN_TAB_LIMIT} per volta.`);
   const results: OpenTabOutcome[] = [];
+  const acquisitionId = randomUUID();
+  let sourceReportPending = false;
   const emit = (running: boolean, message?: string) => send({
-    total: tabs.length, processed: results.length, results: [...results], running, message,
+    total: tabs.length, processed: results.length, results: [...results], running, message, sourceReportPending,
   });
   if (!tabs.length) {
     emit(false, targets.length
@@ -143,7 +146,9 @@ export async function acquireOpenTabs(
     emit(true, `Salvataggio di ${batch.length} schede in Listing Radar…`);
     try {
       key ??= input.key();
-      results.push(...await upload(batch, input.endpoint, key, signal));
+      const saved = await upload(batch, input.endpoint, key, signal, acquisitionId);
+      results.push(...saved.results);
+      sourceReportPending ||= saved.sourceReportPending;
     } catch (error) {
       failedSave = true;
       const message = signal.aborted ? "Salvataggio interrotto, esito da verificare."
@@ -175,7 +180,7 @@ export async function acquireOpenTabs(
       const capture = await readTab(address, target, detail, parser, signal);
       if (signal.aborted) break;
       const size = Buffer.byteLength(JSON.stringify(capture)) + 1;
-      if (batch.length >= 6 || batchBytes + size > OPEN_TAB_BATCH_BYTES - 32) await flush();
+      if (batch.length >= 6 || batchBytes + size > OPEN_TAB_BATCH_BYTES - 100) await flush();
       if (failedSave || signal.aborted) break;
       batch.push(capture);
       batchBytes += size;

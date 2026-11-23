@@ -116,6 +116,13 @@ await page.addInitScript(({ initialState, details }) => {
       { id: "excel", ok: true, detail: "File Excel pronto" },
       { id: "supabase", ok: true, detail: "Connesso" },
     ],
+    acquireOpenTabs: async () => ({
+      total: 2, processed: 2, running: false, message: "Acquisizione terminata.",
+      results: [
+        { url: "https://example.test/annuncio/1", state: "new" },
+        { url: "https://example.test/annuncio/2", state: "review", message: "La pagina dichiara il codice di un altro annuncio." },
+      ],
+    }),
     openChrome: async () => called("openChrome"), chooseExcel: async () => { called("chooseExcel"); return null; }, savePreferences: async (values) => {
       called("savePreferences");
       state = { ...state, preferences: { ...state.preferences, ...values } };
@@ -274,6 +281,12 @@ try {
   await page.screenshot({ path: path.join(output, "sync.png") });
   await page.locator(selector("agencies")).click();
   await page.locator("#agencyOpenChrome").waitFor();
+  await page.locator("#openTabsAcquire").click();
+  await page.locator("#openTabsSummary").waitFor();
+  assert((await page.locator("#openTabsSummary").innerText()).includes("1 confermate in archivio"), "Il riepilogo deve mostrare il salvataggio confermato");
+  assert(await page.locator("#openTabsReport").evaluate(report => report.open), "Gli esiti da verificare devono essere aperti");
+  assert((await page.locator("#openTabsResults").innerText()).includes("codice di un altro annuncio"), "La causa deve essere visibile");
+
   await page.locator(selector("worker-v2")).click();
   await page.screenshot({ path: path.join(output, "ready.png") });
   assert(errors.length === 0, errors.join(" | "));
