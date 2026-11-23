@@ -753,7 +753,7 @@ export class PropertyLifecycleRepository {
     syncRunId: string,
     listing: NormalizedListingV2,
     processedAssets: ProcessedAsset[] = [],
-    options: { failurePoint?: ObservationFailurePoint } = {},
+    options: { failurePoint?: ObservationFailurePoint; manualWorkerCapture?: boolean } = {},
   ): Promise<PersistedObservation|DeferredFallbackObservation> {
     listing=await enrichCachedPinAddress(this.db,listing);
     let primaryHost=this.primarySourceHosts.get(agencyId);
@@ -810,7 +810,7 @@ export class PropertyLifecycleRepository {
     const building = canonicalBuildingAddress(listing.location);
 
     const { data, error } = await this.db.rpc(
-      "persist_property_lifecycle_observation_atomic",
+      options.manualWorkerCapture ? "persist_worker_open_tab_observation" : "persist_property_lifecycle_observation_atomic",
       {
         p_agency_id: agencyId,
         p_sync_run_id: syncRunId,
@@ -824,8 +824,8 @@ export class PropertyLifecycleRepository {
       },
     );
     if (error) {
-      await this.recordObservationCommitFailure(syncRunId);
-      throwIfError(error);
+      await this.recordObservationCommitFailure(syncRunId).catch(() => undefined);
+      throw new Error(error.message, { cause: error });
     }
     const result = requiredData(
       data as {

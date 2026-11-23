@@ -1283,7 +1283,7 @@ async function stateSnapshot() {
    * la plancia si disegna subito con quello che c'e' in casa, e le sezioni
    * che vengono dal cloud si riempiono da sole appena arrivano: la lettura
    * chiama `publishState()` quando ha finito. */
-  if (!portoniActive && (!snapshotRemoteLoadedAt || Date.now() - snapshotRemoteLoadedAt > 10_000)) {
+  if (!portoniActive && !snapshotRemotePromise && (!snapshotRemoteLoadedAt || Date.now() - snapshotRemoteLoadedAt > 10_000)) {
     void refreshSnapshotRemoteData().then(() => publishState()).catch(() => undefined);
   }
   const {

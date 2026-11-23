@@ -28,13 +28,14 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const value=(key:string)=>typeof params[key]==="string"?params[key] as string:"";
   if(value('vista')==='notizie')return <div className="lr-radar-desk lr-news-desk"><PageHeader title="Situazioni dal territorio" description="Fatti, luoghi e documenti da verificare." actions={<SourceStatusDialog/>}/><IntelligenceNavigation view="notizie"/><PropertyNews params={params} now={await readNow()}/></div>;
   const requested=value("vista"),view:IntelligenceView=INTELLIGENCE_VIEWS.includes(requested as IntelligenceView)?requested as IntelligenceView:"mercato";
+  const defaultOnline = view === "mercato" && !value("esito");
   const favoriteIds=view==="preferiti"?await readFavoriteIds():undefined;
   const page=Math.max(1,Math.min(10000,Math.floor(Number(value("pagina"))||1)));
   const numeric=(key:string)=>value(key)===""?undefined:Number(value(key));
   const now=await readNow(),db=getSupabaseServiceClient();
   const sort=intelligenceSort(value("ordine"),value("direzione"),view);
   const [result,agencies,metrics,workAreas]=await Promise.all([
-    readCachedIntelligence({view,page,favoriteIds,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),workArea:value("zona_lavoro"),state:value("stato"),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
+    readCachedIntelligence({view,page,favoriteIds,sort:sort.key,direction:sort.ascending?"asc":"desc",query:value("q"),classification:value("esito"),agency:value("agenzia"),locality:value("localita"),zone:value("zona"),workArea:value("zona_lavoro"),state:value("stato") || (defaultOnline ? "ACTIVE" : ""),minimumAge:numeric("giorni"),minimumScore:view==="opportunita"?numeric("punteggio"):undefined,minimumReduction:numeric("ribasso"),propertyType:value("tipo"),minimumPrice:numeric("prezzo_min"),maximumPrice:numeric("prezzo_max"),minimumSqm:numeric("mq_min"),maximumSqm:numeric("mq_max"),reduced:value("ribassato"),source:value("fonte"),publicRecords:value("atti"),civic:value("civico"),street:value("via"),coordinates:value("coordinate"),locationPrecision:value("precisione")}).catch(()=>null),
     db.from("agencies").select("id,name").order("name"),
     view==="mercato"?readAgencyMarketIntelligence(db).catch(()=>[]):Promise.resolve([]),
     db.from("map_areas").select("id,name").order("name"),
@@ -43,7 +44,7 @@ export default async function IntelligencePage({searchParams}:{searchParams:Prom
   const photos:Record<string,string>=result?await readPropertyThumbnails(result.rows.map(r=>r.property_id)).catch(()=>({})):{};
   for(const row of result?.rows??[])if(!photos[row.property_id]&&privateGalleryImages([row.private_image_url]).length)photos[row.property_id]=row.private_image_url!;
   const field=(name:string,label:string,type="text",placeholder?:string)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><input className={controlClass()} name={name} defaultValue={value(name)} type={type} min={type==="number"?0:undefined} placeholder={placeholder}/></label>;
-  const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select aria-label={label} className={controlClass()} name={name} defaultValue={value(name)}><option value="">Tutti</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
+  const select=(name:string,label:string,options:Record<string,string>)=><label key={name} className="flex min-w-0 flex-col gap-1"><span className="text-[length:var(--lr-text-meta)] font-medium">{label}</span><select aria-label={label} className={controlClass()} name={name} defaultValue={value(name)}><option value="">{name === "stato" && defaultOnline ? "Online (predefinito)" : "Tutti"}</option>{Object.entries(options).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>;
   const filterDisplay=(key:string)=>{
     const raw=value(key);
     if(key==='zona_lavoro')return (workAreas.data??[]).find(a=>a.id===raw)?.name??'Zona selezionata';

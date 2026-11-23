@@ -180,7 +180,7 @@ export async function acquireOpenTabs(
       const capture = await readTab(address, target, detail, parser, signal);
       if (signal.aborted) break;
       const size = Buffer.byteLength(JSON.stringify(capture)) + 1;
-      if (batch.length >= 6 || batchBytes + size > OPEN_TAB_BATCH_BYTES - 100) await flush();
+      if (batch.length >= 4 || batchBytes + size > OPEN_TAB_BATCH_BYTES - 100) await flush();
       if (failedSave || signal.aborted) break;
       batch.push(capture);
       batchBytes += size;

@@ -229,6 +229,7 @@ const esc = (value) =>
 const timeFormatter = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
 let agencyReadRunning = false;
 let openTabsRunning = false;
+let displayedOpenTabResults = 0;
 let desktopSources = [];
 function updateAgencyButtons() {
   $('agencies').querySelectorAll('[data-agency-browse],#openTabsAcquire').forEach(button => { button.disabled = agencyReadRunning || openTabsRunning; });
@@ -279,7 +280,15 @@ function paintOpenTabs(progress) {
   report.hidden = !items.length;
   if (!progress.running && byReason.size) report.open = true;
   if (progress.running && !items.length) report.open = false;
-  $('openTabsResults').innerHTML = items.map(item => `<li><strong>${esc(names[item.state])}</strong> · ${esc(item.url)}${item.message ? `<p>${esc(item.message)}</p>` : ""}</li>`).join("");
+  if (items.length < displayedOpenTabResults) {
+    $('openTabsResults').replaceChildren();
+    displayedOpenTabResults = 0;
+  }
+  const pending = items.slice(displayedOpenTabResults);
+  if (pending.length) {
+    $('openTabsResults').insertAdjacentHTML("beforeend", pending.map(item => `<li><strong>${esc(names[item.state])}</strong> · ${esc(item.url)}${item.message ? `<p>${esc(item.message)}</p>` : ""}</li>`).join(""));
+    displayedOpenTabResults = items.length;
+  }
 }
 window.propertyWorker.onAgencyProgress?.(paintAgencyRead);
 window.propertyWorker.onOpenTabsProgress?.(paintOpenTabs);

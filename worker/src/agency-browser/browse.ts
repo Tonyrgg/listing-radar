@@ -1,4 +1,4 @@
-import { chromium, type Page, type Response } from "playwright";
+import type { Page, Response } from "playwright";
 import { setTimeout as delay } from "node:timers/promises";
 import { agencyHost, catalogLink, detailLink, localAgencyUrl, portalControlLink, type AgencySource } from "./sources.js";
 
@@ -363,6 +363,7 @@ export async function browseAgency(cdpUrl:string,source:AgencySource,signal:Abor
     emit("blocked",blockMessage(previousBlock));return;
   }
   blockedHosts.delete(host);
+  const { chromium } = await import("playwright");
   const browser=await chromium.connectOverCDP(endpoint.origin,{timeout:8000}).catch(()=>{throw new Error("Apri il Chrome di lavoro e riprova.")});
   let page:Page|undefined;
   let navigationGuard:Parameters<Page["route"]>[1]|undefined;

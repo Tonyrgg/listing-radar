@@ -25,7 +25,6 @@ import { TerritorySyncLoop } from "./sync-loop.js";
 import { synchronizeUntilAcknowledged } from './sync-barrier.js';
 import { SisterBulk } from "./sister-bulk.js";
 import {WorkerWorkAreas} from './work-areas.js';
-import * as XLSX from 'xlsx';
 import {buildZoneStreetDirectory} from './zone-streets.js';
 import { resolveSyncConflict } from "./sync-records.js";
 
@@ -224,7 +223,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         if(!application.hasActiveRun)await finishSharedSession();
         const after = await sync!.status(); return { ...after, changed: after.revision !== before?.revision };
       }
-      if (syncing || application.snapshot().activeRun) throw new Error("Attendi la fine dell'operazione in corso");
+      if (syncing || application.hasActiveRun) throw new Error("Attendi la fine dell'operazione in corso");
       syncing = true;
       try {
         if (options.onlineCredentials && options.live) sync = await openOnlineMemory(store, options.profileDirectory, options.onlineCredentials());
@@ -248,6 +247,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       if(!rows.length)throw new Error('Nessuna via da esportare');
       const target=await dialog.showSaveDialog({defaultPath:'vie-per-zona.xlsx',filters:[{name:'Excel',extensions:['xlsx']}]});
       if(target.canceled||!target.filePath)return {saved:false};
+      const XLSX = await import('xlsx');
       const sheet=XLSX.utils.json_to_sheet(rows);sheet['!cols']=[{wch:38},{wch:18},{wch:14},{wch:35},{wch:12},{wch:26},{wch:30},{wch:38}];
       const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,'Vie');
       await writeFile(target.filePath,XLSX.write(book,{type:'buffer',bookType:'xlsx'}));return{saved:true,count:rows.length};
@@ -350,7 +350,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       application,
       consumeDailyMemory,
       hasAcquisitionVersion: (jobId: string, version: string | undefined) => {
-        const record = store.read().history?.find(record => record.id === jobId);
+        const record = store.readSelected(state => state.history?.find(record => record.id === jobId));
         return Boolean(record && version && record.at === version);
       },
       get syncing() { return syncing; },

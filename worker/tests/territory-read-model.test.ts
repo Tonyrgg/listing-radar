@@ -47,8 +47,10 @@ describe("Proiezioni della memoria V2", () => {
   });
   it("riusa la mappa invariata, protegge la cache e aggiorna colori, commit e attività", async () => {
     const { app, store } = await setup();
-    const read = vi.spyOn(store, "read");
+    const read = vi.spyOn(store, "readProjected");
+    const fullRead = vi.spyOn(store, "read");
     const first = app.snapshot(); app.snapshot(); expect(read).toHaveBeenCalledTimes(1);
+    expect(fullRead).not.toHaveBeenCalled();
     first.streets[0]!.name = "corrotto"; first.queueKeys.push("inventato");
     expect(app.snapshot().streets[0]!.name).not.toBe("corrotto");
     expect(app.snapshot().queueKeys).toEqual([]);

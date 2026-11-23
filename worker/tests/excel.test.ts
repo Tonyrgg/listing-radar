@@ -1,10 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 
-import { ExcelContactsAdapter } from "../src/adapters/excel/index.js";
+import { ExcelContactsAdapter, verifyContactsFile } from "../src/adapters/excel/index.js";
 
 describe("lettore Excel recapiti", () => {
   it("legge le colonne reali e consolida tutte le righe con lo stesso CF", async () => {
@@ -17,7 +17,8 @@ describe("lettore Excel recapiti", () => {
       ];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Contatti");
-      XLSX.writeFile(workbook, filePath);
+      await writeFile(filePath, XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+      expect(await verifyContactsFile(filePath)).toEqual(Object.keys(rows[0]!));
 
       const adapter = new ExcelContactsAdapter(filePath);
       await adapter.load();

@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 
 import { matchesWorkerPortal, type WorkerPortal } from "../core/browser-page-matching.js";
 import { WorkerError } from "../core/errors.js";
@@ -217,6 +217,7 @@ export interface SisterChromeTab {
 export async function connectToSisterChrome(cdpUrl: string, sisterMatch: string): Promise<SisterChromeTab> {
   let browser: Browser;
   try {
+    const { chromium } = await import("playwright");
     browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
   } catch (error) {
     throw new WorkerError(
@@ -248,6 +249,7 @@ export async function connectToChrome(
 ): Promise<ChromeTabs> {
   let browser: Browser;
   try {
+    const { chromium } = await import("playwright");
     browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
   } catch (error) {
     throw new WorkerError(
@@ -294,6 +296,7 @@ export async function connectToChrome(
 export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Promise<CrmChromeTab> {
   let browser: Browser;
   try {
+    const { chromium } = await import("playwright");
     browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 10_000 });
   } catch (error) {
     throw new WorkerError(
@@ -358,6 +361,7 @@ async function connectToCrmArchiveChrome(
 ): Promise<RequestArchiveChrome> {
   let browser: Browser;
   try {
+    const { chromium } = await import("playwright");
     browser = await chromium.connectOverCDP(await resolveCdpEndpoint(cdpUrl), { timeout: 30_000 });
   } catch (error) {
     throw new WorkerError(

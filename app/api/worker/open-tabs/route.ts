@@ -42,10 +42,15 @@ export async function POST(request: Request) {
   const db = getSupabaseServiceClient();
   const repository = new PropertyLifecycleRepository(db);
   const radar = new PrivateRadarBridge(db);
-  const runs = new Map<string,{id:string;count:number;errors:number;created:number;updated:number;unchanged:number;review:number}>();
+  const runs = new Map<string,{id:string;count:number;errors:number;created:number;updated:number;unchanged:number;review:number; failureCodes:Record<string,number>}>();
   const results: OpenTabOutcome[] = [];
+  const deadline = Date.now() + 42_000;
   for (const capture of data.captures) {
     const out = (state:OpenTabOutcome["state"],message?:string) => results.push({url:capture.url,state,message});
+    if (Date.now() >= deadline) {
+      out("error","Limite di attesa raggiunto prima del salvataggio. Puoi riprovare questa scheda.");
+      continue;
+    }
     try {
       const recognized = openTabSource(capture.url);
       const age = Number(stamp) - Date.parse(capture.capturedAt);
@@ -135,13 +140,23 @@ export async function POST(request: Request) {
       if(listing.location.scope!=="IN_SCOPE"){out("review","Località da verificare prima del salvataggio.");continue;}
       let run=runs.get(agency.id);
       if(!run){
-        run={id:await repository.createSyncRun({agencyId:agency.id,adapterKey:adapter.key,mode:"SYNC"}),count:0,errors:0,created:0,updated:0,unchanged:0,review:0};
+        run={id:await repository.createSyncRun({agencyId:agency.id,adapterKey:adapter.key,mode:"SYNC"}),count:0,errors:0,created:0,updated:0,unchanged:0,review:0,failureCodes:{}};
         runs.set(agency.id,run);
       }
       run.count++;
       let saved;
-      try { saved=await repository.persistObservation(agency.id,run.id,listing); }
-      catch(error){run.errors++;throw error;}
+      try {
+        saved = await repository.persistObservation(agency.id, run.id, listing, [], { manualWorkerCapture: true });
+      } catch (error) {
+        run.errors++;
+        const code = error instanceof Error ? (error.cause as {code?: unknown} | undefined)?.code : undefined;
+        const category = typeof code === "string" && /^(?:[A-Z0-9]{5}|PGRST[0-9]{3})$/.test(code) ? code : "UNKNOWN";
+        run.failureCodes[category] = (run.failureCodes[category] ?? 0) + 1;
+        out("error", category === "57014" || category === "55P03"
+          ? "Il database ha interrotto il salvataggio per attesa. Puoi riprovare questa scheda."
+          : `Salvataggio non confermato. Riferimento database ${category === "UNKNOWN" ? "non disponibile" : category}.`);
+        continue;
+      }
       if ("deferred" in saved || saved.identityDecision.outcome === "REVIEW_REQUIRED") {
         run.review++;
         out("review","Abbinamento immobile da verificare.");
@@ -158,7 +173,7 @@ export async function POST(request: Request) {
       syncRunId:run.id,status:confirmed===run.count?"SUCCEEDED":run.errors===run.count?"FAILED":"PARTIAL",
       healthState:"DEGRADED",inventoryComplete:false,absenceEvaluationAllowed:false,
       expectedCount:null,structureFingerprint:"manual-open-tabs",
-      diagnostics:{origin:"manual-open-tabs",acquisitionId:data.acquisitionId,created:run.created,updated:run.updated,unchanged:run.unchanged,review:run.review},
+      diagnostics:{origin:"manual-open-tabs",acquisitionId:data.acquisitionId,created:run.created,updated:run.updated,unchanged:run.unchanged,review:run.review,failureCodes:run.failureCodes},
       counts:{discoveredCount:run.count,normalizedCount:run.count,inScopeCount:confirmed,excludedCount:0,errorCount:run.errors,missingCount:0,transitionedCount:0},
     });
   }));

@@ -79,6 +79,10 @@ export class TerritoryStore {
   readSelected<T>(select: (state: ReadonlyData<TerritoryState>) => T): MutableData<T> {
     return structuredClone(select(this.state)) as MutableData<T>;
   }
+  /** Present a synchronously computed projection without copying the input ledger. */
+  readProjected<T>(select: (state: Readonly<TerritoryState>) => T): T {
+    return structuredClone(select(this.state));
+  }
   async backupBeforeSharedRecovery() {
     try { await writeFile(`${this.filename}.before-shared-recovery.json`, JSON.stringify(this.state), { encoding: "utf8", mode: 0o600, flag: "wx" }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }

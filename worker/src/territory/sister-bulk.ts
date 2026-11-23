@@ -20,23 +20,25 @@ export class SisterBulk {
   }
   get active() { return this.execution !== null; }
   list() {
-    const state = this.store.read();
-    return { active: this.active, entries: state.streets.flatMap(street => {
+    return this.store.readProjected(state => {
+      const runs = new Map(state.runs.map(run => [run.id, run]));
+      return { active: this.active, entries: state.streets.flatMap(street => {
       const entry = state.memories[street.id]?.sisterQueue;
       if (!entry || street.outsideUrbanArea) return [];
-      const run = state.runs.find(r => r.id === entry.runId);
+      const run = entry.runId ? runs.get(entry.runId) : undefined;
       return [{ ...entry, streetId: street.id, name: street.name, municipality: street.locality,
         status: run?.state === 'completed' ? 'completed' : entry.status === 'running' && !this.active ? 'paused' : entry.status,
         anomalies: streetAcquisitionAnomalyCount(run?.checkpoint as SisterStreetRunCheckpoint | undefined), handled: run?.handled ?? 0, total: run?.total ?? null, error: entry.error ?? run?.error }];
     }).sort((a,b) => a.addedAt.localeCompare(b.addedAt) || a.streetId.localeCompare(b.streetId)) };
+    });
   }
   async put(value: unknown) {
     if (this.active || this.app.hasActiveRun) throw Error('Metti in pausa prima di modificare la coda Sister');
     const {streetId, search} = sisterQueueInput.parse(value);
     if (!search.searchText || !search.resultName) throw Error('Inserisci parola chiave e voce esatta Sister');
-    const street = this.store.read().streets.find(s => s.id === streetId);
+    const street = this.store.readSelected(state => state.streets.find(s => s.id === streetId));
     if (!street || street.linkedOfficialId || street.needsReview || street.outsideUrbanArea) throw Error('Scegli una via identificata');
-    const existing = this.store.read().memories[streetId]?.sisterQueue;
+    const existing = this.store.readSelected(state => state.memories[streetId]?.sisterQueue);
     if (existing?.runId) throw Error('Rimuovi la riga prima di preparare una nuova acquisizione; lo storico rimane conservato');
     await this.app.configureSisterStreet(streetId, search);
     await this.store.change(s => {

@@ -52,7 +52,10 @@ async function main() {
       .order("id").range(from,to)),
     readAll<Property>((from,to) => db.from("properties").select("id,property_state").order("id").range(from,to)),
   ]);
-  const listed = new Set(rows.filter(row => closedView.has(row.exit_classification)).map(row => row.property_id));
+  const unknownExitOnly = process.argv.includes("--unknown-exit-only");
+  const listed = new Set(rows.filter(row => unknownExitOnly
+    ? row.exit_classification === "UNKNOWN_EXIT" && row.state === "OFF_MARKET_NO_SALE_EVIDENCE"
+    : closedView.has(row.exit_classification)).map(row => row.property_id));
   const online = new Set([...agencies,...privates].filter(row => row.state === "ACTIVE").map(row => row.property_id));
   const protectedIds = new Set([
     ...agencies.map(row => row.property_id), ...privates.map(row => row.property_id),
@@ -68,6 +71,7 @@ async function main() {
   }
   console.log(JSON.stringify({
     checkedAt: new Date().toISOString(),
+    scope: unknownExitOnly ? "unknown_exit_only" : "closed_view",
     closedViewUnique: listed.size,
     protectedOnlineOrPending: listed.size - candidates.length,
     cleanupCandidates: candidates.length,

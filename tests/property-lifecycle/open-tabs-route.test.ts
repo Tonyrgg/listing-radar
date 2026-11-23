@@ -68,7 +68,7 @@ describe("Acquisizione delle schede già aperte", () => {
     expect(mocks.persist).toHaveBeenCalledOnce();
     expect(mocks.persist).toHaveBeenCalledWith("fixture-agency", "fixture-run", expect.objectContaining({
       source: expect.objectContaining({ externalId: "3902", agencyReference: "V000797", canonicalUrl: canonical!.replace(/\/$/,"") }),
-    }));
+    }), [], {manualWorkerCapture:true});
     expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({inventoryComplete:false,absenceEvaluationAllowed:false,diagnostics:expect.objectContaining({acquisitionId,created:1})}));
   });
 
@@ -95,6 +95,19 @@ describe("Acquisizione delle schede già aperte", () => {
     const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
     expect(await response.json()).toEqual({results:[{url,state:"review",message:"Nella scheda manca il codice necessario per confermare l’annuncio."}]});
     expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it("registra il codice del timeout senza esporre il dettaglio del database", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
+    mocks.publication.mockResolvedValue({data:null,error:null});
+    mocks.persist.mockRejectedValue(new Error("Messaggio database", { cause: { code: "57014" } }));
+    const html = await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8");
+    const url = "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902";
+    const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
+    expect(await response.json()).toEqual({results:[{url,state:"error",message:"Il database ha interrotto il salvataggio per attesa. Puoi riprovare questa scheda."}]});
+    expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      status: "FAILED", diagnostics: expect.objectContaining({ failureCodes: { "57014": 1 } }),
+    }));
   });
 
   it("rifiuta il codice visibile di un altro annuncio e non scrive nell’archivio", async () => {

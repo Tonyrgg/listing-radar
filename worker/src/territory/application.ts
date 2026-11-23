@@ -134,13 +134,12 @@ export class TerritoryApplication {
   isPaused = () => Boolean(this.active?.pause);
   snapshot() {
     const key = `${this.store.revision}:${this.presentationRevision}:${Math.floor(Date.now() / 60000)}:${this.active?.runId ?? ""}:${this.active?.currentKey ?? ""}:${this.fatalError ?? ""}`;
-    if (this.mapCache?.key !== key) this.mapCache = { key, snapshot: this.buildSnapshot() };
+    if (this.mapCache?.key !== key) this.mapCache = { key, snapshot: this.store.readProjected(state => this.buildSnapshot(state)) };
     const snapshot = structuredClone(this.mapCache.snapshot);
     if (snapshot.currentItem && this.active) { snapshot.currentItem.stage = this.active.stage ?? "queued"; snapshot.currentItem.attempt = this.active.attempt ?? 1; }
     return snapshot;
   }
-  private buildSnapshot() {
-    const state = this.store.read();
+  private buildSnapshot(state: Readonly<TerritoryState>) {
     const activeRun = this.active ? state.runs.find(r => r.id === this.active!.runId) : undefined;
     const currentKey = this.active?.currentKey;
     const currentSource = currentKey ? activeRun?.applySources?.[currentKey] : undefined;
@@ -151,7 +150,10 @@ export class TerritoryApplication {
     return { currentItem, revision: this.store.revision, presentationRevision: this.presentationRevision, minute: Math.floor(Date.now() / 60000), queueCount: Object.keys(state.importQueue ?? {}).length, queueKeys: Object.keys(state.importQueue ?? {}), quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).length, origin: this.provider.origin, error: this.fatalError, historyIssues: state.history?.reduce((n, job) => n + job.issues.length, 0) ?? 0, network: { official: state.streets.filter(s => s.catalogKind !== "network").length, paths: state.streets.filter(s => s.catalogKind === "network").length, linked: Object.keys(state.networkBindings ?? {}).length }, streets: streetSummaries(state), activeRun: activeRun ? {...publicRun(activeRun),activitySummary:runActivitySummary(state,activeRun),pendingActivitySaves:pendingRunActivities(state,activeRun)} : null };
   }
   detail(streetId: string) {
-    const state = this.store.read(); const requested = state.streets.find(s => s.id === streetId);
+    return this.store.readProjected(state => this.buildStreetDetail(state, streetId));
+  }
+  private buildStreetDetail(state: Readonly<TerritoryState>, streetId: string) {
+    const requested = state.streets.find(s => s.id === streetId);
     const street = requested?.linkedOfficialId ? state.streets.find(s => s.id === requested.linkedOfficialId) : requested;
     if (!street) throw new Error("Via non trovata");
     if(street.outsideUrbanArea)throw new Error('Via esterna ai centri abitati: conservata nello storico, esclusa dalle nuove lavorazioni');
@@ -192,7 +194,7 @@ export class TerritoryApplication {
     this.changed();
   }
   async annotate(streetId: string, note: string, attention: boolean) {
-    if (!this.store.read().streets.some(s => s.id === streetId)) throw new Error("Via non trovata");
+    if (!this.store.readSelected(state => state.streets.some(s => s.id === streetId))) throw new Error("Via non trovata");
     await this.store.change(s => {
       s.memories[streetId] = { ...s.memories[streetId], note, attention, updatedAt: now() };
       // An explicit flag change on the canonical dossier includes its linked traces.
@@ -329,7 +331,13 @@ export class TerritoryApplication {
   }
   async waitForCurrent() { await this.execution; }
   async waitForIdle() { await this.bulkExecution; await this.execution; }
-  unitDetail(key: string) { const state = this.store.read(), unit = state.units[key]; if (!unit) throw new Error("Immobile non trovato"); return this.presentUnit(unit, state); }
+  unitDetail(key: string) {
+    return this.store.readProjected(state => {
+      const unit = state.units[key];
+      if (!unit) throw new Error("Immobile non trovato");
+      return this.presentUnit(unit, state);
+    });
+  }
   private presentUnit(unit: Unit, state: TerritoryState, work = propertyWorkIndex(state)) {
     const source = effectiveSource(unit);
     const activityCheckpoint=state.checkpoints[source.sourcePropertyId];
@@ -341,9 +349,12 @@ export class TerritoryApplication {
     const activityAge = importAge(lastActivityDay);
     return { ...unit, lastActivityDay, activityAge, recentActivity: activityAge.tone === "recent", activityVerified,activityVerifiedAt:activityVerified?activityCheckpoint!.updatedAt:null, cloud: { property: state.cloudMemory?.properties[unit.key] ?? null, people: source.owners.map(o => ({ taxCode: o.taxCode, fullName: o.fullName, evidence: state.cloudMemory?.people[canonicalTaxCode(o.taxCode)] ?? null })) }, source, position: unitPosition(source), origin: latest(unit).origin, canWrite: this.provider.canWrite(unit.key, source), memory: unitMemory(unit), writePending, writeIssue };
   }
-  queryCatalog() { return queryCatalog(this.store.read()); }
+  queryCatalog() { return this.store.readProjected(queryCatalog); }
   query(input: unknown, limit = 100) {
-    const state = this.store.read(), query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query), work = propertyWorkIndex(state);
+    return this.store.readProjected(state => this.buildQuery(state, input, limit));
+  }
+  private buildQuery(state: Readonly<TerritoryState>, input: unknown, limit: number) {
+    const query = unitQuerySchema.parse(input), keys = queryUnitKeys(state, query), work = propertyWorkIndex(state);
     const queueKeys = keys.filter(key => {
       if (!queueStreet(state, state.units[key]!)) return false;
       if (importAge(work.activity.get(key) ?? null).tone !== "recent") return true;

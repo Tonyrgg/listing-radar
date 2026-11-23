@@ -1,3 +1,4 @@
+import {MarketContactSheet, type MarketContactFacts} from "./market-contact-sheet";
 import {RecordTools,TabNotice} from "./workspace-updates";
 import {getSourceLabel} from "@/lib/labels";
 import Link from "next/link";
@@ -8,7 +9,7 @@ import {intelligenceSort,type IntelligenceSort} from "@/lib/property-lifecycle/r
 import { Chip, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatDate, formatNumber, formatShouty } from "@/lib/formatting";
 import { EXIT_LABELS, marketAgeLabel, type IntelligenceRow, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
-import { opportunityReasonLabel, propertyStateLabel, humanize } from "@/lib/property-lifecycle/read-models/presentation";
+import { opportunityReasonLabel, propertyStateLabel, humanize, locationPrecisionLabel } from "@/lib/property-lifecycle/read-models/presentation";
 
 export const INTELLIGENCE_VIEW_COPY = {
  preferiti:{title:"Preferiti",description:"Gli immobili che hai salvato, con gli stessi dati aggiornati dell’archivio."},
@@ -32,8 +33,23 @@ function statusTone(row:IntelligenceRow):Tone {
 function characteristics(row:IntelligenceRow){
  return [row.property_type?humanize(row.property_type):null,row.surface_sqm!=null?formatNumber(row.surface_sqm)+" m²":null,row.rooms!=null?formatNumber(row.rooms)+" locali":null].filter(Boolean).join(" · ");
 }
+function marketContactFacts(row: IntelligenceRow): MarketContactFacts {
+ const text = (value: unknown) => typeof value === "string" ? value.trim() || null : null;
+ const floor = row.attributes?.floor;
+ const coordinates = typeof row.latitude === "number" && Math.abs(row.latitude) <= 90 &&
+  typeof row.longitude === "number" && Math.abs(row.longitude) <= 180 ? `${row.latitude}, ${row.longitude}` : null;
+ const street = [text(row.street_name), text(row.street_number)].filter(Boolean).join(" ");
+ const position = [...new Set([street, row.zone_name, row.locality].filter(Boolean))].join(", ") || null;
+ return {
+  owner: text(row.attributes?.ownerName),
+  civic: text(row.street_number), position, coordinates,
+  precision: row.location_precision ? locationPrecisionLabel(row.location_precision) : coordinates ? "Precisione del punto da verificare" : null,
+  floor: typeof floor === "number" && Number.isFinite(floor) ? String(floor) : text(floor),
+  rooms: typeof row.rooms === "number" && Number.isFinite(row.rooms) ? formatNumber(row.rooms) : null,
+ };
+}
 export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:IntelligenceRow[];view:IntelligenceView;now:number;photos?:Record<string,string>;query?:Record<string,string>}){
- const signals=view==="opportunita",showAgencyTenure=view!=="privati",sort=intelligenceSort(query.ordine,query.direzione,view);
+ const online=view==="mercato",signals=view==="opportunita",showAgencyTenure=view!=="privati",sort=intelligenceSort(query.ordine,query.direzione,view);
  const backQuery=new URLSearchParams({...query,vista:view});
  const detailUrl=(id:string)=>"/casa/"+id+"?"+new URLSearchParams({origine:view,ritorno:"/intelligence?"+backQuery});
  const heading=(key:IntelligenceSort,label:string,numeric=false)=>{
@@ -44,7 +60,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
  return <div className="lr-radar-register" role="region" aria-label="Registro immobili" tabIndex={0}>
   <table className="lr-radar-table">
    <caption className="sr-only">{INTELLIGENCE_VIEW_COPY[view].title}. Il prezzo è quello richiesto, non il prezzo di vendita. L’indice ordina gli indizi, non misura la probabilità di vendita.</caption>
-   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Sul mercato",true)}{showAgencyTenure?heading("giorni_agenzia","Giorni con agenzia",true):null}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}<th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
+   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Sul mercato",true)}{showAgencyTenure?heading("giorni_agenzia","Giorni con agenzia",true):null}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}{online?<th scope="col">Nominativo e immobile</th>:null}<th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
    <tbody>{rows.map(row=>{
     const age=marketAgeLabel(row.first_seen_at,row.earliest_market_evidence_at,row.sold_at??row.sold_observed_at??now);
     const end=row.sold_at??row.sold_observed_at;
@@ -65,6 +81,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
      <td className="lr-numeric">{formatNumber(row.drop_count??0)}</td>
      <td className="lr-table-source"><span title={row.agency_name}>{row.private_source&&row.agency_id==null?getSourceLabel(row.private_source):row.agency_name||"Da verificare"}</span><p className="lr-table-secondary" title="Ultima presenza rilevata">{row.private_seller_type&&row.agency_id==null?(row.private_seller_type==="private"?"Privato · ":"Da verificare · "):""}{formatDate(row.last_seen_at)}</p></td>
      <td className="lr-table-state"><Chip tone={statusTone(row)} dot>{EXIT_LABELS[row.exit_classification]??propertyStateLabel(row.property_state)}</Chip></td>
+     {online?<td>{row.state==="ACTIVE"?<MarketContactSheet label={formatShouty(row.address)} facts={marketContactFacts(row)}/>:null}</td>:null}
      <td><RecordTools id={row.property_id} tab={view==="venduti"?"usciti":view==="preferiti"?"mercato":view}/><Link href={detailUrl(row.property_id)} className="lr-table-open" aria-label={"Apri dossier: "+formatShouty(row.address)}><ChevronRight size={16} aria-hidden="true"/></Link></td>
     </tr>;
    })}</tbody>
