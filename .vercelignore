@@ -1,10 +1,14 @@
-# The only desktop module needed by the web is the pure zone geometry matcher.
+# Ship only the desktop modules shared with the web.
 worker/*
 !worker/src/
 worker/src/*
 !worker/src/territory/
 worker/src/territory/*
 !worker/src/territory/zone-streets.ts
+!worker/src/agency-browser/
+worker/src/agency-browser/*
+!worker/src/agency-browser/open-tab-contract.ts
+!worker/src/agency-browser/sources.ts
 .git/
 .next/
 node_modules/
