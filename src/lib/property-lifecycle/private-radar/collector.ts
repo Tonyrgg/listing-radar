@@ -2,6 +2,7 @@ import {isRentalOnlyOffer} from "./transaction";
 import {privateGalleryImages} from "../read-models/private-images";
 import { PropertyLifecycleRepository } from "../persistence/repository";
 import { BrowserFallbackHttpClient } from "@/lib/http/browser-fallback";
+import type { HttpResponse } from "@/lib/http/client";
 import { subitoRecords, subitoCapture, subitoId } from "../adapters/subito-publisher";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -22,6 +23,48 @@ export const PRIVATE_PORTALS = {
 } as const;
 export type PrivatePortal = keyof typeof PRIVATE_PORTALS;
 export interface PortalDiscovery { urls: string[]; next: string | null; records: number; }
+export const MANUAL_PRIVATE_SAMPLE = 25;
+const FILTERED_PRIVATE_LIMIT = 100;
+export function manualPrivateSearch(source: PrivatePortal) {
+  if(source==="immobiliare")return {url:new URL("da-privati/",PRIVATE_PORTALS[source].url).href,filtered:true};
+  return {url:PRIVATE_PORTALS[source].url,filtered:source==="casadaprivato"};
+}
+
+function localSearchUrl(url: URL, source: PrivatePortal): boolean {
+  const root=new URL(PRIVATE_PORTALS[source].url);
+  const base=root.pathname.replace(/\/$/,"");
+  return url.origin===root.origin&&!url.username&&!url.password&&
+    (url.pathname===base||url.pathname.startsWith(base+"/"));
+}
+const recentLabel=/^(?:più recenti|dal più recente|annunci più recenti|ordine cronologico|ordina per data|data più recente)$/i;
+
+/** Only follow search controls published by the current source for Bitonto.
+ * A portal may use a button without a URL or omit the control altogether. */
+export function privateSearchControl(html:string, pageUrl:string, source:PrivatePortal, kind:"private"|"recent"):string|null {
+  const $ = load(html);
+  const labels = kind==="private" ? /^(?:privati|solo privati|da privati|case da privati|annunci da privati)$/i : recentLabel;
+  for(const anchor of $("a[href]").toArray()){
+    if(!labels.test(($(anchor).attr("aria-label") ?? $(anchor).text()).trim()))continue;
+    try{
+      const url=new URL($(anchor).attr("href")!,pageUrl);
+      if(!localSearchUrl(url,source)||url.hash||url.href===pageUrl)continue;
+      return url.href;
+    }catch{ /* ignore invalid links */ }
+  }
+  return null;
+}
+
+function selectedRecentOrder(html:string):boolean {
+  const $=load(html);
+  return $("option[selected], [aria-selected='true'], [aria-checked='true'], button[aria-haspopup]").toArray()
+    .some(el=>recentLabel.test($(el).text().trim()));
+}
+
+function selectionRetained(requested:string,actual:string):boolean {
+  const from=new URL(requested),to=new URL(actual);
+  return from.pathname.replace(/\/$/,"")===to.pathname.replace(/\/$/,"") &&
+    [...from.searchParams].every(([key,value])=>to.searchParams.getAll(key).includes(value));
+}
 const privateHttp = new BrowserFallbackHttpClient({ timeoutMs: 15000, retries: 0, minIntervalMs: 1000 });
 export const readPrivateInventory = (url:string) => privateHttp.get(url);
 
@@ -39,7 +82,8 @@ export function discoverPrivateUrls(html: string, pageUrl: string, source: Priva
   if (href) {
     const url = new URL(href, pageUrl), root = new URL(profile.url);
     // Pagination must stay in the selected municipality and search category.
-    if (url.origin === origin && (url.pathname.startsWith(root.pathname) || url.pathname === root.pathname.replace(/\/$/, ""))) next = url.href;
+    const base=root.pathname.replace(/\/$/,"");
+    if (url.origin === origin && (url.pathname===base||url.pathname.startsWith(base+"/"))) next = url.href;
   }
   const records = urls.size;
   if (source === "subito") {
@@ -92,12 +136,13 @@ export function privateObservationFromCapture(source: PrivatePortal, url: string
   if (seller.sellerType === "agency" || isRentalOnlyOffer(capture) || /\basta\b/i.test(String(capture.title))) return null;
   const geography = resolveMonitoredGeography({ rawText: [text(capture.addressRaw), text(capture.zone), text(capture.title)].filter(Boolean).join(", "), latitude: number(capture.latitude), longitude: number(capture.longitude), coordinatesExact: false });
   if (geography.scope !== "IN_SCOPE") return null;
-  const date=privateEvidenceDate(capture.portalDeclaredDate,observedAt)??privateEvidenceDate(capture.metadataDatePublished,observedAt);
+  const declared=privateEvidenceDate(capture.portalDeclaredDate,observedAt);
+  const published=privateEvidenceDate(capture.metadataDatePublished,observedAt);
   const modified=privateEvidenceDate(capture.metadataDateModified,observedAt);
   return { direct: true, id, source, source_listing_id: sourceId, url, canonical_url: url,
     title: scrub(text(capture.title))!, description: scrub(text(capture.description))?.slice(0, 12000) ?? null,
     price: number(capture.price), sqm: number(capture.sqm), rooms: number(capture.rooms), floor: text(capture.floor), zone: text(capture.zone), address_raw: text(capture.addressRaw), latitude: number(capture.latitude), longitude: number(capture.longitude),
-    portal_declared_date: date, metadata_date_published: null, metadata_date_modified: modified, portal_sort_date:privateEvidenceDate(capture.portalSortDate,observedAt), first_seen_at: firstSeen, last_seen_at: observedAt, status: "active", seller_name: null, seller_type: seller.sellerType === "private" ? "private" : "unknown", seller_classification_confidence: seller.confidence,
+    portal_declared_date: declared, metadata_date_published: published, metadata_date_modified: modified, portal_sort_date:privateEvidenceDate(capture.portalSortDate,observedAt), first_seen_at: firstSeen, last_seen_at: observedAt, status: "active", seller_name: null, seller_type: seller.sellerType === "private" ? "private" : "unknown", seller_classification_confidence: seller.confidence,
     image_urls: privateGalleryImages(capture.imageUrls),
   };
 }
@@ -148,31 +193,61 @@ async function excludePublication(db: SupabaseClient, source: PrivatePortal, url
   check(saved.error); await repository.refreshPropertyIntelligence(current.data.property_id);
 }
 
-async function collect(db: SupabaseClient, assertOwnership: () => void): Promise<void> {
+async function collect(db: SupabaseClient, assertOwnership: () => void, manualPortal?: PrivatePortal): Promise<void> {
   const bridge=new PrivateRadarBridge(db);
-  for (const source of Object.keys(PRIVATE_PORTALS) as PrivatePortal[]) {
+  let incompleteManualScan=false;
+  for (const source of manualPortal?[manualPortal]:Object.keys(PRIVATE_PORTALS) as PrivatePortal[]) {
     assertOwnership();
-    let pages = 0, discovered = 0, failures = 0, next: string | null = PRIVATE_PORTALS[source].url;
+    const search=manualPortal ? manualPrivateSearch(source) : null;
+    let searchBasis=search?.url??null;
+    let filtered=search?.filtered??false, recent=false;
+    let pages = 0, discovered = 0, failures = 0, next: string | null = search?.url??PRIVATE_PORTALS[source].url;
     const visited = new Set<string>();
+    const selected = new Set<string>();
     const diagnostics: string[] = [];
     try {
       while (next && pages < 20 && !visited.has(next)) {
         assertOwnership(); visited.add(next);
-        const response = await readPrivateInventory(next);
+        const response: HttpResponse = await (manualPortal ? readSourceInBrowser(next) : readPrivateInventory(next));
         if (!response.ok) throw new Error(`Inventario HTTP ${response.status}`);
+        if(manualPortal&&(!localSearchUrl(new URL(response.url),source)||!selectionRetained(next,response.url))) {
+          throw new Error("Ricerca reindirizzata fuori dalla selezione verificata");
+        }
         assertOwnership();
+        if(manualPortal && pages===0) {
+          const filter: string|null=!filtered?privateSearchControl(response.body,response.url,source,"private"):null;
+          const sort: string|null=!filter&&!filtered&&!recent?privateSearchControl(response.body,response.url,source,"recent"):null;
+          if(filter&&!visited.has(filter)){filtered=true;next=filter;searchBasis=filter;continue;}
+          if(sort&&!visited.has(sort)){recent=true;next=sort;searchBasis=sort;continue;}
+          recent||=selectedRecentOrder(response.body);
+        }
         const page = discoverPrivateUrls(response.body, next, source);
         if (!page.records) throw new Error("Inventario senza annunci verificabili");
-        if(page.urls.length){
-          const saved = await db.from("private_radar_inbox").upsert(page.urls.map(url => ({ source, source_listing_id: PRIVATE_PORTALS[source].id.exec(new URL(url).pathname)![1], canonical_url: url })), { onConflict: "source,source_listing_id", ignoreDuplicates: true });
+        const limit=filtered?FILTERED_PRIVATE_LIMIT:MANUAL_PRIVATE_SAMPLE;
+        const urls=manualPortal?page.urls.filter(url=>!selected.has(url)).slice(0,Math.max(0,limit-selected.size)):page.urls;
+        if(urls.length){
+          const saved = await db.from("private_radar_inbox").upsert(urls.map(url => ({ source, source_listing_id: PRIVATE_PORTALS[source].id.exec(new URL(url).pathname)![1], canonical_url: url })), { onConflict: "source,source_listing_id", ignoreDuplicates: true });
           check(saved.error);
-        } discovered += page.urls.length; pages++; next = page.next;
+          for(const url of urls)selected.add(url);
+        } discovered += urls.length; pages++; next = page.next;
+        if(manualPortal&&selected.size>=limit){next=null;break;}
+        if(next&&searchBasis){
+          const basis=new URL(searchBasis),pageUrl=new URL(next);
+          if(!pageUrl.pathname.startsWith(basis.pathname.replace(/\/$/,""))||
+            ![...basis.searchParams].every(([key,value])=>pageUrl.searchParams.getAll(key).includes(value))){
+            throw new Error("Paginazione fuori dalla selezione verificata");
+          }
+        }
       }
       if (next) { failures++; diagnostics.push("Scansione limitata o paginazione ciclica; nessuna valutazione delle assenze"); }
     } catch (error) { assertOwnership(); failures++; diagnostics.push(error instanceof Error ? error.message : "Lettura non riuscita"); }
+    if(manualPortal)diagnostics.push(filtered ? "Ricerca dedicata ai privati" : recent ? "Ordine recente esplicito del portale" : "Campione del catalogo: ordine recente non verificato");
     // The inbox is the checkpoint: even if discovery fails, known due URLs can
     // still be inspected. A restart does not discard the already acquired queue.
-    const due = await db.from("private_radar_inbox").select("id,canonical_url,first_seen_at").eq("source", source).lte("next_check_at", new Date().toISOString()).order("last_checked_at", {ascending:true,nullsFirst:true}).order("next_check_at").order("id").limit(50);
+    const inbox = db.from("private_radar_inbox").select("id,canonical_url,first_seen_at").eq("source", source);
+    const due = manualPortal
+      ? selected.size ? await inbox.in("canonical_url",[...selected]).limit(FILTERED_PRIVATE_LIMIT) : {data:[],error:null}
+      : await inbox.lte("next_check_at", new Date().toISOString()).order("last_checked_at", {ascending:true,nullsFirst:true}).order("next_check_at").order("id").limit(50);
     check(due.error);
     for (const row of due.data ?? []) {
       assertOwnership();
@@ -198,14 +273,16 @@ async function collect(db: SupabaseClient, assertOwnership: () => void): Promise
     assertOwnership();
     const health = await db.from("private_radar_source_health").upsert({ source, checked_at: new Date().toISOString(), state: failures ? "DEGRADED" : "OBSERVED", pages_visited: pages, discovered_count: discovered, failed_count: failures, diagnostics, absence_authoritative: false }, { onConflict: "source" });
     check(health.error);
+    incompleteManualScan=Boolean(manualPortal&&failures);
   }
   assertOwnership();
   const refreshed = await db.rpc("refresh_radar_read_model");
   check(refreshed.error);
   if (refreshed.data !== true) throw new Error("Letture conservate, aggiornamento del registro Radar da riprovare");
+  if(incompleteManualScan)throw new Error("Lettura portale incompleta. Dati precedenti conservati.");
 }
 
-export async function collectPrivateRadar(db: SupabaseClient, assertJobOwnership = () => {}): Promise<void> {
+export async function collectPrivateRadar(db: SupabaseClient, assertJobOwnership = () => {}, portal?: PrivatePortal): Promise<void> {
   const owner = randomUUID();
   const claim = await db.rpc("claim_private_radar", { p_owner: owner });
   check(claim.error);
@@ -218,7 +295,7 @@ export async function collectPrivateRadar(db: SupabaseClient, assertJobOwnership
     }).catch(() => { lost = true; }).finally(() => { renewing = null; });
   }, 60_000);
   try {
-    await collect(db, () => { assertJobOwnership(); if (lost) throw new Error("Sessione Radar non più confermata"); });
+    await collect(db, () => { assertJobOwnership(); if (lost) throw new Error("Sessione Radar non più confermata"); },portal);
   } finally {
     clearInterval(heartbeat); await renewing;
     const released = await db.rpc("release_private_radar", { p_owner: owner });
