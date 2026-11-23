@@ -92,6 +92,7 @@ export interface PersistedObservation {
   identityDecision: IdentityDecision;
   createdProperty: boolean;
   createdPublication: boolean;
+  changed?: boolean;
 }
 export interface DeferredFallbackObservation {
   deferred:true;
@@ -860,6 +861,7 @@ export class PropertyLifecycleRepository {
       identityDecision,
       createdProperty: result.createdProperty,
       createdPublication: result.createdPublication,
+      changed: result.changed,
     };
   }
 

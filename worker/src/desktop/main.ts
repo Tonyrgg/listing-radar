@@ -25,6 +25,7 @@ import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../serv
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
 import { browseAgency, type AgencyProgress } from "../agency-browser/browse.js";
+import { acquireOpenTabs, type OpenTabProgress } from "../agency-browser/open-tabs.js";
 import { browserSources } from "../agency-browser/sources.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
@@ -201,6 +202,8 @@ const savePortoniSchema = z.object({ id: z.string().min(1), rows: z.array(porton
 let mainWindow: BrowserWindow | null = null;
 let agencyScan: AbortController | null = null;
 let agencyProgress: AgencyProgress | null = null;
+let openTabScan: AbortController | null = null;
+let openTabProgress: OpenTabProgress | null = null;
 let workerV2: WorkerV2Host | null = null;
 let preferences: Preferences = defaultPreferences;
 let activePrompts: DesktopPromptController | null = null;
@@ -3812,12 +3815,13 @@ function registerIpc() {
   ipcMain.handle("desktop:agency-sources", () => ({
     sources: browserSources.map(({ id, label, icon, portal }) => ({ id, label, icon, portal: Boolean(portal) })),
     progress: agencyProgress,
+    openTabs: openTabProgress,
     running: Boolean(agencyScan),
   }));
   ipcMain.handle("desktop:agency-browse", async (_event, id: unknown) => {
     const source = browserSources.find(entry => entry.id === id);
     if (!source) throw new Error("Fonte non riconosciuta.");
-    if (agencyScan) throw new Error("C’è già una scansione in corso.");
+    if (agencyScan || openTabScan) throw new Error("C’è già una lettura in corso.");
     const controller = new AbortController();
     agencyScan = controller;
     const update = (progress: AgencyProgress) => {
@@ -3835,6 +3839,30 @@ function registerIpc() {
     return agencyProgress;
   });
   ipcMain.handle("desktop:agency-stop", () => { agencyScan?.abort(); });
+  ipcMain.handle("desktop:open-tabs-acquire", async () => {
+    if (agencyScan || openTabScan) throw new Error("C’è già una lettura in corso.");
+    const controller = new AbortController();
+    openTabScan = controller;
+    const update = (progress: OpenTabProgress) => {
+      openTabProgress = progress;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:open-tabs-progress", progress);
+    };
+    try {
+      update({total:0,processed:0,results:[],running:true,message:"Collegamento al Chrome di lavoro…"});
+      await acquireOpenTabs({
+        cdpUrl: workBrowserConfiguration().cdpUrl,
+        endpoint: "https://listing-radar-mu.vercel.app/api/worker/open-tabs",
+        key: workerConfig().SUPABASE_SERVICE_ROLE_KEY,
+        parserDirectory: app.isPackaged ? path.join(process.resourcesPath,"listing-parsers") : path.resolve(workerRoot,"../extension/parsers"),
+        signal: controller.signal,
+      },update);
+    } catch(error) {
+      update({...(openTabProgress??{total:0,processed:0,results:[]}),running:false,
+        message: error instanceof Error?sanitizeSensitiveText(error.message):"Acquisizione non disponibile."});
+    } finally { openTabScan = null; }
+    return openTabProgress;
+  });
+  ipcMain.handle("desktop:open-tabs-stop", () => { openTabScan?.abort(); });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
@@ -4314,6 +4342,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   agencyScan?.abort();
+  openTabScan?.abort();
   stopStreetRegistryLeaseHeartbeat();
   if (healthCheckTimer) clearTimeout(healthCheckTimer);
   if (browserCheckTimer) clearTimeout(browserCheckTimer);

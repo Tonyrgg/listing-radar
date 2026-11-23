@@ -10,7 +10,7 @@ import { TrioAdapter } from "@/lib/property-lifecycle/adapters/trio";
 import { VistocasaAdapter } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 
-function basePropertyLifecycleAdapter(
+export function basePropertyLifecycleAdapter(
   adapterKey: string,
 ): PropertyLifecycleAdapter {
   switch (adapterKey) {

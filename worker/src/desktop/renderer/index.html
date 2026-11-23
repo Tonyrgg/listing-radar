@@ -484,6 +484,16 @@
               <button id="agencyOpenChrome" type="button" class="button secondary">Apri Chrome di lavoro</button>
             </div>
             <p id="agencyChromeStatus" class="agency-chrome-status" role="status"></p>
+            <section class="agency-group" aria-labelledby="openTabsHeading">
+              <h2 id="openTabsHeading">Annunci già aperti</h2>
+              <p>Apri gli annunci nel Chrome di lavoro. Il Worker legge le schede caricate, senza ricaricarle, e salva i risultati in Listing Radar.</p>
+              <div class="agency-scan-bar">
+                <button id="openTabsAcquire" type="button" class="button primary">Acquisisci schede aperte</button>
+                <button id="openTabsStop" type="button" class="button secondary is-hidden">Interrompi</button>
+              </div>
+              <p id="openTabsProgress" role="status"></p>
+              <details id="openTabsReport" hidden><summary>Esiti per annuncio</summary><ul id="openTabsResults"></ul></details>
+            </section>
             <section class="agency-group" aria-labelledby="agencyHeading">
               <h2 id="agencyHeading">Agenzie</h2>
               <div id="agencyButtons" class="agency-buttons"></div>

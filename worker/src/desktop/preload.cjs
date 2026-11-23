@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   openChrome: () => ipcRenderer.invoke("desktop:open-chrome"),
   getAgencySources: () => ipcRenderer.invoke("desktop:agency-sources"),
   browseAgency: (id) => ipcRenderer.invoke("desktop:agency-browse", id),
+  acquireOpenTabs: () => ipcRenderer.invoke("desktop:open-tabs-acquire"),
+  stopOpenTabs: () => ipcRenderer.invoke("desktop:open-tabs-stop"),
+  onOpenTabsProgress: (callback) => ipcRenderer.on("desktop:open-tabs-progress", (_event, progress) => callback(progress)),
   stopAgencyBrowse: () => ipcRenderer.invoke("desktop:agency-stop"),
   onAgencyProgress: (listener) => {
     const handler = (_event, progress) => listener(progress);

@@ -228,24 +228,46 @@ const esc = (value) =>
   );
 const timeFormatter = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
 let agencyReadRunning = false;
+let openTabsRunning = false;
 let desktopSources = [];
+function updateAgencyButtons() {
+  $('agencies').querySelectorAll('[data-agency-browse],#openTabsAcquire').forEach(button => { button.disabled = agencyReadRunning || openTabsRunning; });
+}
 function paintAgencyRead(progress) {
   const moving = progress?.phase === "catalog" || progress?.phase === "details";
   agencyReadRunning = moving;
-  $('agencies').querySelectorAll('[data-agency-browse]').forEach(button => { button.disabled = moving; });
+  updateAgencyButtons();
   $('agencyStop').classList.toggle('is-hidden', !moving);
   const source = desktopSources.find(item => item.id === progress?.source)?.label;
   const phase = { catalog:"Lettura catalogo", details:"Visita delle schede", done:"Visita completata", stopped:"Visita interrotta", blocked:"Sito bloccato", partial:"Visita incompleta" }[progress?.phase];
   const counts = progress?.pages ? `${progress.pages} pagine · ${progress.visited}/${progress.found} schede visitate${progress.failed ? ` · ${progress.failed} non lette` : ""}` : "";
   $('agencyProgress').textContent = [source, phase, counts, progress?.message].filter(Boolean).join(" · ") || "Pronto";
 }
+function paintOpenTabs(progress) {
+  if (!progress) return;
+  openTabsRunning = Boolean(progress.running);
+  updateAgencyButtons();
+  $('openTabsStop').classList.toggle('is-hidden', !openTabsRunning);
+  const names = {new:"Nuovo",updated:"Aggiornato",unchanged:"Invariato",review:"Da verificare",skipped:"Escluso",error:"Errore"};
+  const labels = {new:"nuovi",updated:"aggiornati",unchanged:"invariati",review:"da verificare",skipped:"esclusi",error:"errori"};
+  const items = progress.results || [];
+  const counts = Object.entries(labels).flatMap(([key,label]) => {
+    const count=items.filter(item=>item.state===key).length;
+    return count ? [`${count} ${label}`] : [];
+  });
+  $('openTabsProgress').textContent = [progress.total ? `${progress.processed}/${progress.total} schede` : "", ...counts, progress.message].filter(Boolean).join(" · ");
+  $('openTabsReport').hidden = !items.length;
+  $('openTabsResults').innerHTML = items.map(item => `<li><strong>${esc(names[item.state])}</strong> · ${esc(item.url)}${item.message ? `<p>${esc(item.message)}</p>` : ""}</li>`).join("");
+}
 window.propertyWorker.onAgencyProgress?.(paintAgencyRead);
-void window.propertyWorker.getAgencySources?.().then(({sources,progress}) => {
+window.propertyWorker.onOpenTabsProgress?.(paintOpenTabs);
+void window.propertyWorker.getAgencySources?.().then(({sources,progress,openTabs}) => {
   desktopSources = sources;
   const button = source => `<button type="button" class="button secondary agency-source" data-agency-browse="${esc(source.id)}">${source.icon ? `<img alt="" src="./source-icons/${esc(source.icon)}">` : `<span class="agency-monogram" aria-hidden="true">${esc(source.label.slice(0,2).toUpperCase())}</span>`}<span>${esc(source.label)}</span></button>`;
   $('agencyButtons').innerHTML = sources.filter(source => !source.portal).map(button).join("");
   $('portalButtons').innerHTML = sources.filter(source => source.portal).map(button).join("");
   paintAgencyRead(progress);
+  paintOpenTabs(openTabs);
 }).catch(() => { $('agencyProgress').textContent = "Elenco delle fonti non disponibile."; });
 const dateFormatter = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const fmtTime = (value) =>
@@ -3485,8 +3507,20 @@ document.addEventListener("click", async (event) => {
     await window.propertyWorker.stopAgencyBrowse();
     return;
   }
+  if (target.id === "openTabsAcquire") {
+    if (agencyReadRunning || openTabsRunning) return;
+    paintOpenTabs({running:true,results:[],message:"Collegamento al Chrome di lavoro…"});
+    try { paintOpenTabs(await window.propertyWorker.acquireOpenTabs()); }
+    catch { paintOpenTabs({running:false,results:[],message:"Impossibile avviare l’acquisizione."}); }
+    return;
+  }
+  if (target.id === "openTabsStop") {
+    $('openTabsProgress').textContent = "Interruzione in corso…";
+    await window.propertyWorker.stopOpenTabs();
+    return;
+  }
   if (target.dataset.agencyBrowse) {
-    if (agencyReadRunning) return;
+    if (agencyReadRunning || openTabsRunning) return;
     const source = target.dataset.agencyBrowse;
     paintAgencyRead({source,phase:"catalog",message:"Collegamento al Chrome di lavoro…"});
     try { paintAgencyRead(await window.propertyWorker.browseAgency(source)); }
