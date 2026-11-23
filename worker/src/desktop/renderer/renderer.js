@@ -191,6 +191,7 @@ const SECTION_LABELS = {
   operations: ["Registro operativo", "Lavorazioni"],
   refinement: ["Verifica e aggiornamento", "Rifinitura"],
   portoni: ["Raccolta territoriale", "Portoni"],
+  agencies: ["Cataloghi pubblici", "Agenzie"],
   sync: ["Archivi del gestionale", "Sincronizzazione"],
   history: ["Memoria del worker", "Cronologia"],
   settings: ["Sistema", "Impostazioni"],
@@ -226,6 +227,24 @@ const esc = (value) =>
       ],
   );
 const timeFormatter = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
+let agencyReadRunning = false;
+let desktopAgencies = [];
+function paintAgencyRead(progress) {
+  const moving = progress?.phase === "catalog" || progress?.phase === "details";
+  agencyReadRunning = moving;
+  $('agencyButtons').querySelectorAll('button').forEach(button => { button.disabled = moving; });
+  $('agencyStop').classList.toggle('is-hidden', !moving);
+  const agency = desktopAgencies.find(source => source.id === progress?.source)?.label;
+  const phase = { catalog:"Lettura catalogo", details:"Visita delle schede", done:"Visita completata", stopped:"Visita interrotta", blocked:"Sito bloccato", partial:"Visita incompleta" }[progress?.phase];
+  const counts = progress?.pages ? `${progress.pages} pagine · ${progress.visited}/${progress.found} schede visitate${progress.failed ? ` · ${progress.failed} non lette` : ""}` : "";
+  $('agencyProgress').textContent = [agency, phase, counts, progress?.message].filter(Boolean).join(" · ") || "Pronto";
+}
+window.propertyWorker.onAgencyProgress?.(paintAgencyRead);
+void window.propertyWorker.getAgencySources?.().then(({sources,progress}) => {
+  desktopAgencies = sources;
+  $('agencyButtons').innerHTML = sources.map(source => `<button type="button" class="button secondary agency-source" data-agency-browse="${esc(source.id)}">${source.icon ? `<img alt="" src="./source-icons/${esc(source.icon)}">` : `<span class="agency-monogram" aria-hidden="true">${esc(source.label.slice(0,2).toUpperCase())}</span>`}<span>${esc(source.label)}</span></button>`).join("");
+  paintAgencyRead(progress);
+}).catch(() => { $('agencyProgress').textContent = "Elenco agenzie non disponibile."; });
 const dateFormatter = new Intl.DateTimeFormat("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const fmtTime = (value) =>
   value
@@ -3444,6 +3463,20 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("button");
   if (!target || (target.form && target.type === "submit")) return;
   event.preventDefault();
+
+  if (target.id === "agencyStop") {
+    await window.propertyWorker.stopAgencyBrowse();
+    $('agencyProgress').textContent = "Interruzione in corso…";
+    return;
+  }
+  if (target.dataset.agencyBrowse) {
+    if (agencyReadRunning) return;
+    const source = target.dataset.agencyBrowse;
+    paintAgencyRead({source,phase:"catalog",message:"Collegamento al Chrome di lavoro…"});
+    try { paintAgencyRead(await window.propertyWorker.browseAgency(source)); }
+    catch { paintAgencyRead({source,phase:"partial",message:"Impossibile avviare la visita."}); }
+    return;
+  }
 
   if (target.id === "themeToggle") {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";

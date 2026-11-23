@@ -83,23 +83,6 @@ export async function enqueueGlobalLifecycleRefresh() {
   revalidateLifecycle();
 }
 
-export async function enqueueAgencyLifecycleRefresh(formData: FormData) {
-  await requireUser();
-  const slug = requiredText(formData, "agencySlug");
-  const db = getSupabaseServiceClient();
-  const repository = new PropertyLifecycleRepository(db);
-  const agency = await repository.getAgencyBySlug(slug);
-  await new LifecycleJobQueue(db).enqueue({
-    jobType: "DEEP_SYNC_AGENCY",
-    agencyId: agency.id,
-    priority: 100,
-    dedupeKey: `ui:DEEP_SYNC_AGENCY:${agency.slug}`,
-    payload: { requestedFrom: "LIFECYCLE_UI" },
-  });
-  revalidatePath(`/lifecycle/agencies/${slug}`);
-  revalidateLifecycle();
-}
-
 export async function recordPropertySaleOverride(formData: FormData) {
   const createdBy = await currentReviewerId();
   const propertyId = requiredText(formData, "propertyId");

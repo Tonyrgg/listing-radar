@@ -1,5 +1,4 @@
-import { collectPrivateRadar, PRIVATE_PORTALS, type PrivatePortal } from "@/lib/property-lifecycle/private-radar/collector";
-import { SourceBrowserHttpClient } from "@/lib/http/browser-fallback";
+import { collectPrivateRadar } from "@/lib/property-lifecycle/private-radar/collector";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createPropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/registry";
@@ -155,9 +154,7 @@ async function executeAgencySync(
   const agency = data as { adapter_key: string;enabled?:boolean };
   if(agency.enabled===false)return;
   const outcome=await runAgencySync({
-    adapter: job.payload.requestedFrom === "SOURCE_CONTROLS" && adapterFactory === createPropertyLifecycleAdapter
-      ? createPropertyLifecycleAdapter(agency.adapter_key, new SourceBrowserHttpClient())
-      : adapterFactory(agency.adapter_key),
+    adapter: adapterFactory(agency.adapter_key),
     repository: new PropertyLifecycleRepository(db),
     mode: syncMode(job.job_type),
     jobId: job.id,
@@ -314,15 +311,7 @@ export async function runLifecycleWorkerOnce(
         dependencies.fetcher ?? fetch,
       );
     } else if (job.job_type === "SYNC_PRIVATE_RADAR") {
-      const portal = job.payload.portal;
-      if (portal !== undefined && (typeof portal !== "string" || !Object.hasOwn(PRIVATE_PORTALS, portal))) {
-        throw new Error("Portale Radar non riconosciuto");
-      }
-      if (process.env.LIFECYCLE_PRIVATE_RADAR === "true") {
-        await collectPrivateRadar(dependencies.db, assertOwnership, portal as PrivatePortal | undefined);
-      } else if (portal !== undefined) {
-        throw new Error("Raccolta Radar privati disabilitata sul runner");
-      }
+      if (process.env.LIFECYCLE_PRIVATE_RADAR === "true") await collectPrivateRadar(dependencies.db, assertOwnership);
       await new PrivateRadarBridge(dependencies.db).sync();
     } else {
       throw new Error(`Job type ${job.job_type} is reserved but not implemented in milestone 1.`);

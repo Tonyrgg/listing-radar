@@ -5,8 +5,6 @@ import { connection } from "next/server";
 
 import { LifecycleSectionNav } from "@/components/lifecycle-section-nav";
 import { PageHeader } from "@/components/page-header";
-import { SourceScanControls } from "@/components/source-scan-controls";
-import { PRIVATE_PORTAL_LABELS, type SourceScanTarget } from "@/lib/property-lifecycle/jobs/source-scan-targets";
 import { Card, Chip, EmptyState, Label, Meta, Stripe, buttonClass } from "@/components/ui/primitives";
 import { Fonte } from "@/components/ui/atoms";
 import { formatDateTime, formatNumber } from "@/lib/formatting";
@@ -46,15 +44,6 @@ const tono: Record<SourceHealth, "action" | "warn" | "danger" | "neutral"> = {
   partial: "warn",
   broken: "danger",
   unknown: "neutral",
-};
-
-const agencyIcons: Record<string,string> = {
-  "ad-maiora-bitonto":"admaiora.png",
-  "futura-immobiliare-bitonto":"futura.png",
-  "garofalo-immobiliare-bitonto":"garofalo.png",
-  "iconacasa-bitonto":"iconacasa.ico",
-  "puntocasa-bitonto":"puntocasa.jpg",
-  "vistocasa-bitonto":"vistocasa.ico",
 };
 
 export default async function FontiPage() {
@@ -127,15 +116,6 @@ export default async function FontiPage() {
         nav={<LifecycleSectionNav />}
       />
 
-
-      <SourceScanControls
-        agencies={agenzie.map(({slug,name}):SourceScanTarget=>({
-          kind:"agency",key:slug,name,icon:agencyIcons[slug]&&`/brand/sources/${agencyIcons[slug]}`,
-        }))}
-        portals={Object.entries(PRIVATE_PORTAL_LABELS).map(([key,name]):SourceScanTarget=>({
-          kind:"portal",key,name,icon:key==="idealista"?undefined:`/brand/sources/${key}.ico`,
-        }))}
-      />
 
       {/* La regola non negoziabile del progetto, scritta dove serve. */}
       {agenzie.some(a=>a.salute==="broken") ? (

@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld("propertyWorker", {
   recordUiAction: (values) => ipcRenderer.invoke("desktop:record-ui-action", values),
   runChecks: () => ipcRenderer.invoke("desktop:run-checks"),
   openChrome: () => ipcRenderer.invoke("desktop:open-chrome"),
+  getAgencySources: () => ipcRenderer.invoke("desktop:agency-sources"),
+  browseAgency: (id) => ipcRenderer.invoke("desktop:agency-browse", id),
+  stopAgencyBrowse: () => ipcRenderer.invoke("desktop:agency-stop"),
+  onAgencyProgress: (listener) => {
+    const handler = (_event, progress) => listener(progress);
+    ipcRenderer.on("desktop:agency-progress", handler);
+    return () => ipcRenderer.removeListener("desktop:agency-progress", handler);
+  },
   runImportV2Diagnostics: () => ipcRenderer.invoke("desktop:run-import-v2-diagnostics"),
   chooseExcel: () => ipcRenderer.invoke("desktop:choose-excel"),
   chooseEnvironment: () => ipcRenderer.invoke("desktop:choose-environment"),

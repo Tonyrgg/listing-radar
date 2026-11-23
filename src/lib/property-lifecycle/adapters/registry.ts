@@ -1,4 +1,3 @@
-import type { HttpClient } from "@/lib/http/client";
 import { AdMaioraAdapter } from "@/lib/property-lifecycle/adapters/admaiora";
 import { FuturaAdapter } from "@/lib/property-lifecycle/adapters/futura";
 import { GarofaloAdapter } from "@/lib/property-lifecycle/adapters/garofalo";
@@ -12,36 +11,36 @@ import { VistocasaAdapter } from "@/lib/property-lifecycle/adapters/vistocasa";
 import type { PropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/types";
 
 function basePropertyLifecycleAdapter(
-  adapterKey: string, http?: HttpClient,
+  adapterKey: string,
 ): PropertyLifecycleAdapter {
   switch (adapterKey) {
     case "admaiora":
-      return new AdMaioraAdapter(http);
+      return new AdMaioraAdapter();
     case "futura":
-      return new FuturaAdapter(http);
+      return new FuturaAdapter();
     case "garofalo":
-      return new GarofaloAdapter(http);
+      return new GarofaloAdapter();
     case "iconacasa":
-      return new IconacasaAdapter(http);
+      return new IconacasaAdapter();
     case "momento":
-      return new MomentoAdapter(http);
+      return new MomentoAdapter();
     case "puntocasa":
-      return new PuntoCasaAdapter(http);
+      return new PuntoCasaAdapter();
     case "studiocasa":
-      return new StudioCasaAdapter(http);
+      return new StudioCasaAdapter();
     case "studisanti":
-      return new StudiSantiAdapter(http);
+      return new StudiSantiAdapter();
     case "trio":
-      return new TrioAdapter(http);
+      return new TrioAdapter();
     case "vistocasa":
-      return new VistocasaAdapter(http);
+      return new VistocasaAdapter();
     default:
       throw new Error(`Unsupported Property Lifecycle adapter: ${adapterKey}`);
   }
 }
 import {enrichPublicLocationEvidence} from './public-location-evidence';
 
-export function createPropertyLifecycleAdapter(key:string,http?:HttpClient):PropertyLifecycleAdapter {
- const adapter=basePropertyLifecycleAdapter(key,http);const normalize=adapter.normalize.bind(adapter);
+export function createPropertyLifecycleAdapter(key:string):PropertyLifecycleAdapter {
+ const adapter=basePropertyLifecycleAdapter(key);const normalize=adapter.normalize.bind(adapter);
  adapter.normalize=async document=>enrichPublicLocationEvidence(await normalize(document),document);return adapter;
 }

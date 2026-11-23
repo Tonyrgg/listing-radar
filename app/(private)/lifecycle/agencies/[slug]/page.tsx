@@ -1,10 +1,9 @@
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import { PendingSubmitButton } from "@/components/loading-controls";
 import { PageHeader } from "@/components/page-header";
 import { PropertyRow } from "@/components/property-row";
 import { Fonte, type SourceHealth } from "@/components/ui/atoms";
@@ -15,9 +14,7 @@ import { signPropertyPhotos } from "@/lib/lifecycle-photos";
 import { vistaAgenzia } from "@/lib/property-lifecycle/read-models/server";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
-import { enqueueAgencyLifecycleRefresh } from "../../actions";
 import { LifecycleUnavailable, ageDays } from "../../_components/ui";
-import styles from "../../lifecycle.module.css";
 
 export const metadata: Metadata = { title: "Cosa tiene questa agenzia" };
 
@@ -146,17 +143,6 @@ export default async function AgenziaPage({
                 <ExternalLink aria-hidden="true" className="size-4" />
               </a>
             ) : null}
-            <form action={enqueueAgencyLifecycleRefresh}>
-              <input type="hidden" name="agencySlug" value={slug} />
-              <PendingSubmitButton
-                type="submit"
-                pendingLabel="Metto in coda"
-                icon={<RefreshCw aria-hidden="true" className="size-4" />}
-                className={styles.secondaryAction}
-              >
-                Rileggi il loro sito
-              </PendingSubmitButton>
-            </form>
           </div>
         }
       />

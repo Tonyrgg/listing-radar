@@ -24,6 +24,8 @@ import { mergedRunIds } from "../services/run-merge.js";
 import { canCreateCompletedWorkRefinement, refinementSourceJobId } from "../services/refinement-seed.js";
 import { PropertyWorkerRunner, type RunnerEvent } from "../services/runner.js";
 import { connectToChrome, connectToSisterChrome } from "../services/chrome.js";
+import { browseAgency, type AgencyProgress } from "../agency-browser/browse.js";
+import { agencySources } from "../agency-browser/sources.js";
 import { buildPortoniRow, portoniDocumentHtml, portoniOwnerSummary, sortPortoniRows, type PortoniRow, type PortoniSheet } from "../services/portoni.js";
 import { MandateArchiveImporter, type MandateArchiveImportEvent } from "../services/mandate-archive-importer.js";
 import { RequestArchiveImporter, type RequestArchiveImportEvent } from "../services/request-archive-importer.js";
@@ -197,6 +199,8 @@ const portoniRowSchema = z.object({
 const savePortoniSchema = z.object({ id: z.string().min(1), rows: z.array(portoniRowSchema) });
 
 let mainWindow: BrowserWindow | null = null;
+let agencyScan: AbortController | null = null;
+let agencyProgress: AgencyProgress | null = null;
 let workerV2: WorkerV2Host | null = null;
 let preferences: Preferences = defaultPreferences;
 let activePrompts: DesktopPromptController | null = null;
@@ -3882,6 +3886,32 @@ function registerIpc() {
     await openWorkChrome();
     return true;
   });
+  ipcMain.handle("desktop:agency-sources", () => ({
+    sources: agencySources.map(({ id, label, icon }) => ({ id, label, icon })),
+    progress: agencyProgress,
+    running: Boolean(agencyScan),
+  }));
+  ipcMain.handle("desktop:agency-browse", async (_event, id: unknown) => {
+    const source = agencySources.find(entry => entry.id === id);
+    if (!source) throw new Error("Agenzia non riconosciuta.");
+    if (agencyScan) throw new Error("C’è già una scansione in corso.");
+    const controller = new AbortController();
+    agencyScan = controller;
+    const update = (progress: AgencyProgress) => {
+      agencyProgress = progress;
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:agency-progress", progress);
+    };
+    try {
+      update({source:source.id,phase:"catalog",pages:0,found:0,visited:0,failed:0,message:"Collegamento al Chrome di lavoro…"});
+      await browseAgency(workBrowserConfiguration().cdpUrl, source, controller.signal, update);
+    } catch (error) {
+      update({source:source.id,phase:"partial",pages:0,found:0,visited:0,failed:0,message:error instanceof Error?error.message:"Chrome di lavoro non disponibile"});
+    } finally {
+      agencyScan = null;
+    }
+    return agencyProgress;
+  });
+  ipcMain.handle("desktop:agency-stop", () => { agencyScan?.abort(); });
   ipcMain.handle("desktop:start-job", async (_event, values: { mode?: WorkerMode; dryRun?: boolean }) => {
     await runWorker({ mode: values.mode === "automatic" ? "automatic" : "assisted", dryRun: values.dryRun !== false });
     return true;
@@ -4361,6 +4391,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  agencyScan?.abort();
   stopStreetRegistryLeaseHeartbeat();
   if (keepAliveTimer) clearTimeout(keepAliveTimer);
   if (healthCheckTimer) clearTimeout(healthCheckTimer);

@@ -27,6 +27,6 @@ export function SourceStatusDialog(){
     <aside className="lr-reading-note">Una lettura bloccata conserva i dati precedenti e non dimostra la scomparsa di un annuncio. Gli URL raccolti non certificano la copertura completa. La data pubblica dell’annuncio è distinta dall’inizio del monitoraggio.</aside>
    </>:null}
   </div>
-  <footer><span>{data?`Controllato il ${date(data.checkedAt)}`:''}</span><Link href="/fonti#source-controls-heading" onClick={()=>dialog.current?.close()}>Scansiona una fonte</Link><button type="button" disabled={loading} className={buttonClass('secondary',{compact:true})} onClick={()=>void reload()}><RefreshCw size={14} aria-hidden="true"/>{loading?'Aggiornamento…':'Aggiorna'}</button></footer>
+  <footer><span>{data?`Controllato il ${date(data.checkedAt)}`:''}</span><Link href="/fonti" onClick={()=>dialog.current?.close()}>Apri tutte le fonti</Link><button type="button" disabled={loading} className={buttonClass('secondary',{compact:true})} onClick={()=>void reload()}><RefreshCw size={14} aria-hidden="true"/>{loading?'Aggiornamento…':'Aggiorna'}</button></footer>
  </dialog></>;
 }
