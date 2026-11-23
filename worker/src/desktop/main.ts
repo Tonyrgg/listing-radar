@@ -3852,7 +3852,12 @@ function registerIpc() {
       await acquireOpenTabs({
         cdpUrl: workBrowserConfiguration().cdpUrl,
         endpoint: "https://listing-radar-mu.vercel.app/api/worker/open-tabs",
-        key: workerConfig().SUPABASE_SERVICE_ROLE_KEY,
+        key: () => {
+          if (archivedDatabaseConfigurationNeedsRefresh()) throw new Error(ARCHIVED_DATABASE_CONFIGURATION_MESSAGE);
+          const key = (internalEnvironment().SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)?.trim();
+          if (!key) throw new Error("Manca la chiave dell’archivio in Impostazioni → Configurazione avanzata.");
+          return key;
+        },
         parserDirectory: app.isPackaged ? path.join(process.resourcesPath,"listing-parsers") : path.resolve(workerRoot,"../extension/parsers"),
         signal: controller.signal,
       },update);

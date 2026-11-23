@@ -46,7 +46,7 @@ describe("Acquisizione delle schede già aperte", () => {
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 
-  it("salva una scheda di Studi Santi con il parser esistente e senza valutare assenze", async () => {
+  it("salva una scheda di Studi Santi con alias www, senza valutare assenze", async () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
     mocks.publication.mockResolvedValue({data:null,error:null});
     mocks.persist.mockResolvedValue({createdPublication:true,identityDecision:{outcome:"NEW_PROPERTY"}});
@@ -54,7 +54,7 @@ describe("Acquisizione delle schede già aperte", () => {
     const html=await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8");
     const canonical=html.match(/https?:\/\/[^"\s]+\/it\/Vendite\/bitonto\/[^"\s<>]+/i)?.[0];
     expect(canonical).toBeTruthy();
-    const url=canonical!.replace(/\/$/,"");
+    const url=canonical!.replace("://studisantiimmobiliare.it","://www.studisantiimmobiliare.it").replace(/\/$/,"");
     const result=await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
     expect(await result.json()).toEqual({results:[{url,state:"new"}]});
     expect(mocks.persist).toHaveBeenCalledOnce();

@@ -7,7 +7,7 @@ import { basePropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/
 import { normalizedListingV2Schema, rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { PRIVATE_PORTALS, privateObservationFromCapture, type PrivatePortal } from "@/lib/property-lifecycle/private-radar/collector";
 import { PrivateRadarBridge } from "@/lib/property-lifecycle/private-radar/bridge";
-import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_MAX_BYTES, openTabSignature, openTabSource, type OpenTabOutcome } from "../../../../worker/src/agency-browser/open-tab-contract";
+import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_MAX_BYTES, openTabIdentity, openTabSignature, openTabSource, type OpenTabOutcome } from "../../../../worker/src/agency-browser/open-tab-contract";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -96,7 +96,8 @@ export async function POST(request: Request) {
         listing=await adapter.normalize({item:{url,sourceKey:identity,externalId:identity,summary:{}},
           observedAt:capture.capturedAt,response:{body:capture.html,headers:new Headers(),url,status:200,ok:true}});
       } catch {out("review","Il formato della pagina non consente una lettura verificabile.");continue;}
-      if(openTabSource(listing.source.canonicalUrl)?.url!==url||listing.source.agencySlug!==adapter.agencySlug){
+      const canonical = openTabSource(listing.source.canonicalUrl);
+      if (!canonical || openTabIdentity(canonical) !== openTabIdentity(recognized) || listing.source.agencySlug !== adapter.agencySlug) {
         out("review","L’identità pubblicata è diversa dalla scheda aperta.");continue;
       }
       if(source.id==="admaiora")listing=rehashNormalizedListing(listing,row=>({...row,source:{...row.source,sourceKey:row.source.externalId}}));

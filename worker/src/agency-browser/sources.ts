@@ -20,7 +20,7 @@ export const agencySources: readonly AgencySource[] = [
   { id:"momento", label:"Momento Casa", catalog:"https://www.trovacasa.it/agenzie-immobiliari/momento-casa-bitonto-tc-96100/annunci", detailPath:/^\/annunci\/[a-z]{2}-tc-96100-\d+\/?$/i,pageParameters:["page","pg","p"] },
   { id:"puntocasa", label:"Punto Casa", icon:"puntocasa.jpg", catalog:"https://www.puntocasagroup.it/acquista-la-tua-casa-2/", detailPath:/^\/property-item\/[^/]+\/?$/i,urlScope:/^\/acquista-la-tua-casa-2(?:\/page\/\d+)?\/?$/i },
   { id:"studiocasa", label:"Studio Casa", catalog:"https://www.casa.it/agenzie/studio-casa-bitonto-1098672/", detailPath:/^\/immobili\/\d+\/?$/i,pageParameters:["page","pg"],urlScope:/^\/agenzie\/studio-casa-bitonto-1098672(?:\/page\/\d+)?\/?$/i },
-  { id:"studisanti", label:"Studi Santi", catalog:"https://www.studisantiimmobiliare.it/it/Vendite/", detailPath:/^\/it\/vendite\/[^/]+\/[^/]+\/v\d+\/\d+\/?$/i,pageParameters:["p"],urlScope:/^\/it\/vendite(?:\/(?:pagina\/)?\d+)?\/?$/i },
+  { id:"studisanti", label:"Studi Santi", catalog:"https://www.studisantiimmobiliare.it/it/Vendite/", detailPath:/^\/it\/vendite\/[^/]+\/[^/]+\/[vm]\d+\/\d+\/?$/i,pageParameters:["p"],urlScope:/^\/it\/vendite(?:\/(?:pagina\/)?\d+)?\/?$/i },
   { id:"vistocasa", label:"Vistocasa", icon:"vistocasa.ico", catalog:"https://www.vistocasa.com/it/ricerca.aspx?catalogoproduttoriid=56", detailPath:/^\/it\/immobile\.aspx$/i,detailQuery:"articoliid" },
 ];
 

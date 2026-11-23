@@ -23,6 +23,15 @@ export function openTabSource(raw: string) {
   return null;
 }
 
+export function openTabIdentity(tab: NonNullable<ReturnType<typeof openTabSource>>) {
+  const url = new URL(tab.url);
+  if (tab.source.id === "studisanti") {
+    const listing = url.pathname.match(/\/([avm]\d+)\/(\d+)$/i);
+    if (listing?.[1] && listing[2]) return `studisanti:${listing[1].toLowerCase()}:${listing[2]}`;
+  }
+  return `${tab.source.id}:${agencyHost(url)}${url.pathname}${url.search}`;
+}
+
 export function openTabSignature(key: string, timestamp: string, body: string) {
   const purposeKey = createHmac("sha256", key).update("listing-radar:worker:open-tabs:v1").digest();
   return createHmac("sha256", purposeKey).update(timestamp).update("\n").update(body).digest("hex");

@@ -1,23 +1,69 @@
-import { chromium, type Page } from "playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { portalBlock } from "./browse.js";
-import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_LIMIT, OPEN_TAB_MAX_BYTES, openTabSignature, openTabSource,
+import { OPEN_TAB_BATCH_BYTES, OPEN_TAB_LIMIT, OPEN_TAB_MAX_BYTES, openTabIdentity, openTabSignature, openTabSource,
   type OpenTabCapture, type OpenTabOutcome } from "./open-tab-contract.js";
 
 export type OpenTabProgress = { total: number; processed: number; results: OpenTabOutcome[]; running: boolean; message?: string };
 
-async function bounded<T>(promise: Promise<T>) {
-  const timeout = new AbortController();
+type ChromeTarget = { type?: string; url?: string; webSocketDebuggerUrl?: string };
+type TabReading = { url: string; top: string; ready: boolean; html?: string; fields?: Record<string, unknown> };
+
+async function listTabs(address: URL, signal: AbortSignal): Promise<ChromeTarget[]> {
   try {
-    return await Promise.race([promise, delay(5_000, undefined, { signal: timeout.signal, ref: false }).then(() => {
-      throw new Error("Scheda sospesa o caricamento incompleto. Riaprila e acquisiscila di nuovo.");
-    })]);
-  } finally { timeout.abort(); }
+    const response = await fetch(new URL("/json/list", address), {
+      cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(4_000)]),
+    });
+    if (!response.ok) throw new Error();
+    const targets: unknown = await response.json();
+    if (!Array.isArray(targets)) throw new Error();
+    return targets;
+  } catch {
+    signal.throwIfAborted();
+    throw new Error("Chrome di lavoro non raggiungibile. Usa «Apri Chrome di lavoro» e verifica che gli annunci siano in quella finestra.");
+  }
 }
 
-async function readTab(page: Page, url: string, parser?: string): Promise<OpenTabCapture> {
+// Connect only to the selected open target. Never activate, navigate, or reload it.
+async function evaluateTab(address: URL, target: ChromeTarget, expression: string, signal: AbortSignal) {
+  const path = target.webSocketDebuggerUrl && URL.canParse(target.webSocketDebuggerUrl)
+    ? new URL(target.webSocketDebuggerUrl).pathname : "";
+  if (!/^\/devtools\/page\/[a-z0-9_-]+$/i.test(path)) throw new Error("Scheda non accessibile in questa finestra.");
+  const targetUrl = new URL(path, address.origin);
+  targetUrl.protocol = "ws:";
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(5_000)]);
+  deadline.throwIfAborted();
+  const socket = new WebSocket(targetUrl);
+  const message = "Scheda sospesa, chiusa o caricata solo in parte. Aprila nel Chrome di lavoro e riprova.";
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<TabReading>((resolve, reject) => {
+      const fail = () => reject(new Error(message));
+      onAbort = fail;
+      deadline.addEventListener("abort", fail, { once: true });
+      socket.addEventListener("error", fail, { once: true });
+      socket.addEventListener("close", fail, { once: true });
+      socket.addEventListener("open", () => {
+        socket.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+      }, { once: true });
+      socket.addEventListener("message", event => {
+        try {
+          const reply = JSON.parse(event.data);
+          if (reply.id !== 1) return;
+          const reading = reply.result?.result?.value;
+          if (!reading || typeof reading.url !== "string" || typeof reading.top !== "string") return fail();
+          resolve(reading);
+        } catch { fail(); }
+      });
+    });
+  } finally {
+    if (onAbort) deadline.removeEventListener("abort", onAbort);
+    socket.close();
+  }
+}
+
+async function readTab(address: URL, target: ChromeTarget, tab: NonNullable<ReturnType<typeof openTabSource>>,
+  parser: string | undefined, signal: AbortSignal): Promise<OpenTabCapture> {
   const expression = `(() => {
     const heading = document.querySelector("h1")?.innerText || "";
     const visible = document.body?.innerText || "";
@@ -31,11 +77,12 @@ async function readTab(page: Page, url: string, parser?: string): Promise<OpenTa
       doc.querySelectorAll("form,input,textarea,select,iframe,script:not([type='application/ld+json']),style").forEach(node => node.remove());
       return { url: location.href, top, ready: true, html: doc.outerHTML };`}
   })()`;
-  const observed = await bounded(page.evaluate<{url:string;top:string;ready:boolean;html?:string;fields?:Record<string,unknown>}>(expression));
-  if (openTabSource(observed.url)?.url !== url) throw new Error("L’indirizzo della scheda è cambiato durante la lettura.");
+  const observed = await evaluateTab(address, target, expression, signal);
+  const current = openTabSource(observed.url);
+  if (!current || openTabIdentity(current) !== openTabIdentity(tab)) throw new Error("L’indirizzo della scheda è cambiato durante la lettura.");
   if (portalBlock(200, observed.top)) throw new Error("Il portale mostra un blocco o una verifica.");
   if (!observed.ready) throw new Error("Dettaglio incompleto. Verifica che la scheda sia caricata.");
-  const capture = { url, capturedAt: new Date().toISOString(), html: observed.html, fields: observed.fields };
+  const capture = { url: tab.url, capturedAt: new Date().toISOString(), html: observed.html, fields: observed.fields };
   if (Buffer.byteLength(JSON.stringify(capture)) > OPEN_TAB_MAX_BYTES) throw new Error("Scheda troppo grande per una lettura verificabile.");
   return capture;
 }
@@ -55,59 +102,91 @@ async function upload(captures: OpenTabCapture[], endpoint: string, key: string,
   return payload.results;
 }
 
-export async function acquireOpenTabs(input: {cdpUrl:string;endpoint:string;key:string;parserDirectory:string;signal:AbortSignal},
-  send:(progress:OpenTabProgress)=>void) {
-  const {signal}=input;
-  const address=new URL(input.cdpUrl);
-  if (address.protocol!=="http:" || !["127.0.0.1","localhost"].includes(address.hostname) || !address.port) throw new Error("Indirizzo del Chrome di lavoro non valido.");
-  const browser = await chromium.connectOverCDP(address.origin,{timeout:8000}).catch(()=>{throw new Error("Apri il Chrome di lavoro con gli annunci che vuoi acquisire.");});
-  try {
-    const tabs=browser.contexts().flatMap(context=>context.pages()).flatMap(page=>{
-      const detail=openTabSource(page.url());
-      return detail?[{page,...detail}]:[];
-    });
-    if(tabs.length>OPEN_TAB_LIMIT)throw new Error(`Trovate ${tabs.length} schede. L’acquisizione ne gestisce fino a ${OPEN_TAB_LIMIT} per volta.`);
-    const results:OpenTabOutcome[]=[];
-    const emit=(running:boolean,message?:string)=>send({total:tabs.length,processed:results.length,results:[...results],running,message});
-    emit(true);
-    const parsers=new Map<string,string>();
-    const seen=new Set<string>();
-    let batch:OpenTabCapture[]=[];
-    let batchBytes=0;
-    let failedSave=false;
-    async function flush() {
-      if(!batch.length)return;
-      try { results.push(...await upload(batch,input.endpoint,input.key,signal)); }
-      catch(error) {
-        failedSave=true;
-        const message=signal.aborted ? "Salvataggio interrotto, esito da verificare." : error instanceof Error?error.message:"Salvataggio non confermato.";
-        results.push(...batch.map(capture=>({url:capture.url,state:"error" as const,message})));
-      }
-      batch=[];batchBytes=0;emit(true);
-    }
-    for(const { page, source, url } of tabs) {
-      if(signal.aborted||failedSave)break;
-      if(seen.has(url)){results.push({url,state:"skipped",message:"Scheda duplicata nel batch."});emit(true);continue;}
-      try {
-        if(page.isClosed())throw new Error("Scheda chiusa prima della lettura.");
-        let parser=parsers.get(source.id);
-        if(source.portal&&!parser){
-          const files=await Promise.all(["generic","shared",source.id,"portals"].map(name=>readFile(join(input.parserDirectory,name+".js"),"utf8")));
-          parser=files.join(";\n");parsers.set(source.id,parser);
-        }
-        const capture=await readTab(page,url,parser);
-        if(signal.aborted)break;
-        const size=Buffer.byteLength(JSON.stringify(capture))+1;
-        if(batch.length>=6||batchBytes+size>OPEN_TAB_BATCH_BYTES-32)await flush();
-        if(failedSave||signal.aborted)break;
-        batch.push(capture);batchBytes+=size;seen.add(url);
-      }catch(error){
-        results.push({url,state:"review",message:error instanceof Error?error.message.split("\n")[0]:"Scheda illeggibile."});emit(true);
-      }
-    }
-    if(!signal.aborted&&!failedSave)await flush();
-    emit(false,signal.aborted?"Acquisizione interrotta. Puoi ripeterla.":failedSave?"Acquisizione fermata dopo un errore di salvataggio. Puoi ripeterla.":tabs.length?"Acquisizione terminata.":"Apri almeno una scheda annuncio di una fonte riconosciuta.");
-  } finally {
-    await Promise.race([browser.close().catch(()=>undefined),delay(1500,undefined,{ref:false})]);
+export async function acquireOpenTabs(
+  input: { cdpUrl: string; endpoint: string; key: () => string; parserDirectory: string; signal: AbortSignal },
+  send: (progress: OpenTabProgress) => void,
+) {
+  const { signal } = input;
+  if (!URL.canParse(input.cdpUrl)) throw new Error("Indirizzo del Chrome di lavoro non valido.");
+  const address = new URL(input.cdpUrl);
+  if (address.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(address.hostname)
+    || !address.port || address.pathname !== "/" || address.search || address.hash || address.username || address.password) {
+    throw new Error("Indirizzo del Chrome di lavoro non valido.");
   }
+  const targets = (await listTabs(address, signal)).filter(target => target?.type === "page");
+  const tabs = targets.flatMap(target => {
+    const detail = typeof target.url === "string" ? openTabSource(target.url) : null;
+    return detail ? [{ target, detail }] : [];
+  });
+  if (tabs.length > OPEN_TAB_LIMIT) throw new Error(`Trovate ${tabs.length} schede. L’acquisizione ne gestisce fino a ${OPEN_TAB_LIMIT} per volta.`);
+  const results: OpenTabOutcome[] = [];
+  const emit = (running: boolean, message?: string) => send({
+    total: tabs.length, processed: results.length, results: [...results], running, message,
+  });
+  if (!tabs.length) {
+    emit(false, targets.length
+      ? `Chrome collegato. Nessun dettaglio annuncio riconosciuto tra ${targets.length} schede aperte. Apri i singoli annunci.`
+      : "Chrome collegato. Nessuna scheda aperta nel Chrome di lavoro.");
+    return;
+  }
+
+  emit(true, `Chrome collegato. Trovati ${tabs.length} dettagli da leggere.`);
+  const parsers = new Map<string, string>();
+  const seen = new Set<string>();
+  let batch: OpenTabCapture[] = [];
+  let batchBytes = 0;
+  let failedSave = false;
+  let key: string | undefined;
+
+  async function flush() {
+    if (!batch.length) return;
+    emit(true, `Salvataggio di ${batch.length} schede in Listing Radar…`);
+    try {
+      key ??= input.key();
+      results.push(...await upload(batch, input.endpoint, key, signal));
+    } catch (error) {
+      failedSave = true;
+      const message = signal.aborted ? "Salvataggio interrotto, esito da verificare."
+        : error instanceof Error ? error.message : "Salvataggio non confermato.";
+      results.push(...batch.map(capture => ({ url: capture.url, state: "error" as const, message })));
+    }
+    batch = [];
+    batchBytes = 0;
+  }
+
+  for (const [index, { target, detail }] of tabs.entries()) {
+    if (signal.aborted || failedSave) break;
+    const { source, url } = detail;
+    emit(true, `Lettura ${index + 1}/${tabs.length} · ${source.label}…`);
+    const identity = openTabIdentity(detail);
+    if (seen.has(identity)) {
+      results.push({ url, state: "skipped", message: "Scheda duplicata nel batch." });
+      continue;
+    }
+    try {
+      let parser = parsers.get(source.id);
+      if (source.portal && !parser) {
+        const files = await Promise.all(["generic", "shared", source.id, "portals"].map(
+          name => readFile(join(input.parserDirectory, name + ".js"), "utf8"),
+        ));
+        parser = files.join(";\n");
+        parsers.set(source.id, parser);
+      }
+      const capture = await readTab(address, target, detail, parser, signal);
+      if (signal.aborted) break;
+      const size = Buffer.byteLength(JSON.stringify(capture)) + 1;
+      if (batch.length >= 6 || batchBytes + size > OPEN_TAB_BATCH_BYTES - 32) await flush();
+      if (failedSave || signal.aborted) break;
+      batch.push(capture);
+      batchBytes += size;
+      seen.add(identity);
+    } catch (error) {
+      if (signal.aborted) break;
+      results.push({ url, state: "review", message: error instanceof Error ? error.message.split("\n")[0] : "Scheda illeggibile." });
+    }
+  }
+  if (!signal.aborted && !failedSave) await flush();
+  const saveError = results.find(item => item.state === "error")?.message;
+  emit(false, signal.aborted ? "Acquisizione interrotta. Puoi ripeterla."
+    : failedSave ? saveError ?? "Salvataggio non confermato." : "Acquisizione terminata.");
 }
