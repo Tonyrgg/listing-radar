@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { PropertyLifecycleRepository } from "@/lib/property-lifecycle/persistence/repository";
+import { StudiSantiDetailIdentityError } from "@/lib/property-lifecycle/adapters/studisanti";
 import { basePropertyLifecycleAdapter } from "@/lib/property-lifecycle/adapters/registry";
 import { normalizedListingV2Schema, rehashNormalizedListing } from "@/lib/property-lifecycle/contracts/normalized-listing";
 import { PRIVATE_PORTALS, privateObservationFromCapture, type PrivatePortal } from "@/lib/property-lifecycle/private-radar/collector";
@@ -95,7 +96,11 @@ export async function POST(request: Request) {
       try {
         listing=await adapter.normalize({item:{url,sourceKey:identity,externalId:identity,summary:{manualOpenTab:true}},
           observedAt:capture.capturedAt,response:{body:capture.html,headers:new Headers(),url,status:200,ok:true}});
-      } catch {out("review","Il formato della pagina non consente una lettura verificabile.");continue;}
+      } catch (error) {
+        out("review", error instanceof StudiSantiDetailIdentityError
+          ? error.message : "Il formato della pagina non consente una lettura verificabile.");
+        continue;
+      }
       const canonical = openTabSource(listing.source.canonicalUrl);
       if (!canonical || openTabIdentity(canonical) !== openTabIdentity(recognized) || listing.source.agencySlug !== adapter.agencySlug) {
         out("review", canonical

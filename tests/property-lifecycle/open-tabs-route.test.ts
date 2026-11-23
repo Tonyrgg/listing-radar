@@ -50,6 +50,8 @@ describe("Acquisizione delle schede già aperte", () => {
     "https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/",
     "http://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/",
     "https://studisantiimmobiliare.it/it/Vendite/",
+    "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000779/3881/",
+    "http://[canonical-non-valido",
   ])("salva la scheda Studi Santi con canonical %s quando il riferimento coincide", async declaredUrl => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
     mocks.publication.mockResolvedValue({data:null,error:null});
@@ -64,15 +66,43 @@ describe("Acquisizione delle schede già aperte", () => {
     const result=await POST(request(JSON.stringify({acquisitionId,captures:[{url,html:declaredHtml,capturedAt:new Date().toISOString()}]}),"fixture-key"));
     expect(await result.json()).toEqual({results:[{url,state:"new"}]});
     expect(mocks.persist).toHaveBeenCalledOnce();
+    expect(mocks.persist).toHaveBeenCalledWith("fixture-agency", "fixture-run", expect.objectContaining({
+      source: expect.objectContaining({ externalId: "3902", agencyReference: "V000797", canonicalUrl: canonical!.replace(/\/$/,"") }),
+    }));
     expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({inventoryComplete:false,absenceEvaluationAllowed:false,diagnostics:expect.objectContaining({acquisitionId,created:1})}));
   });
 
-  it("rifiuta il canonical di un altro annuncio e non scrive nell’archivio", async () => {
+  it("usa il dettaglio OG verificato quando il sito non mostra il codice e il canonical è generico", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
+    mocks.publication.mockResolvedValue({data:null,error:null});
+    mocks.persist.mockResolvedValue({createdPublication:true,identityDecision:{outcome:"NEW_PROPERTY"}});
+    const html = (await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8"))
+      .replace('rel="canonical" href="https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/"',
+        'rel="canonical" href="/it/Vendite/"')
+      .replace("Codice: V000797", "");
+    const url = "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902";
+    const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
+    expect(await response.json()).toEqual({results:[{url,state:"new"}]});
+    expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+
+  it("non considera l’URL aperto una prova sufficiente se manca un codice nella pagina", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
+    const html = (await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8"))
+      .replaceAll("https://studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902/", "/it/Vendite/")
+      .replace("Codice: V000797", "");
+    const url = "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000797/3902";
+    const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
+    expect(await response.json()).toEqual({results:[{url,state:"review",message:"Nella scheda manca il codice necessario per confermare l’annuncio."}]});
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it("rifiuta il codice visibile di un altro annuncio e non scrive nell’archivio", async () => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-key");
     const html = await readFile("tests/fixtures/property-lifecycle/studisanti-active-detail.html","utf8");
     const url = "https://www.studisantiimmobiliare.it/it/Vendite/bitonto/appartamento/v000779/3881";
     const response = await POST(request(JSON.stringify({captures:[{url,html,capturedAt:new Date().toISOString()}]}),"fixture-key"));
-    expect(await response.json()).toEqual({results:[{url,state:"review",message:"La pagina dichiara il codice di un altro annuncio."}]});
+    expect(await response.json()).toEqual({results:[{url,state:"review",message:"Il codice visibile nella scheda appartiene a un altro annuncio."}]});
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 });
