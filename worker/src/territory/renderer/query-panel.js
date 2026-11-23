@@ -6,6 +6,7 @@ import { unitHeadingHtml, ownerListHtml, comparisonHtml, unitImportHtml } from "
 export function createQueryPanel(context) {
   const { api, escape, feedback } = context, $ = id => document.getElementById(id);
   let pickers = {}, catalog, result = null, query = {}, selected = new Set(), limit = 100, generation = 0, loading = false;
+  let flashRunId = null, launchingFlash = false;
   const options = (rows, chosen = []) => rows.map(([id, label]) => `<option value="${escape(id)}" ${chosen.includes(id) ? "selected" : ""}>${escape(label)}</option>`).join("");
   const values = id => pickers[id].values();
   const safely = action => async event => { try { await action(event); } catch (error) { feedback(error.message, true); } };
@@ -42,16 +43,47 @@ export function createQueryPanel(context) {
     const focusKey = focus?.dataset?.querySelect;
     const running = context.snapshot()?.activeRun, busy = Boolean(running) || loading, changed = stale(), queued = new Set(context.snapshot()?.queueKeys || []), queueable = new Set(result.queueKeys), fresh = [...selected].filter(key => !queued.has(key)), canEnqueue = fresh.length && fresh.every(key => queueable.has(key));
     const paused = [...result.runs].reverse().find(r => r.operation !== "apply" && ["paused", "failed"].includes(r.state));
+    const flashRun = result.runs.find(r => r.id === flashRunId);
+    const flashAction = unit => {
+      const matches = unit.source.owners.filter(owner => {
+        const code = owner.taxCode.trim().toUpperCase();
+        return /^[A-Z0-9]{16}$/.test(code) && (!result.query.ownerTaxCodes.length || result.query.ownerTaxCodes.includes(code));
+      });
+      if (!unit.canWrite || queued.has(unit.key) || !matches.length) return "";
+      if (matches.length !== 1) return '<span class="meta">Filtra per un proprietario per usare Import flash.</span>';
+      const owner = matches[0];
+      return `<button class="primary" data-flash-unit="${escape(unit.key)}" data-flash-owner="${escape(owner.taxCode.trim().toUpperCase())}" ${busy || changed || launchingFlash ? "disabled" : ""}>Import flash · ${escape(owner.fullName)}</button>`;
+    };
     $("query-run").innerHTML = running?.query ? `<section class="run-item" role="status"><strong>${running.operation === "compare" ? "Confronto" : "Applicazione"} in corso</strong><p>${running.handled}/${running.total ?? "?"} immobili · ${running.selectionScope?.length ?? 1} vie</p><button id="q-pause">Metti in pausa</button></section>` : paused ? `<section class="run-item"><strong>Selezione conservata: ${paused.handled}/${paused.total} immobili</strong><p class="explanation">${escape(isBrowserWarning(paused.error || "") ? "Avanzamento conservato. Riprendi dopo aver aperto il browser di lavoro." : paused.error || "L’operazione può essere ripresa con la selezione e le opzioni iniziali.")}</p><button id="q-resume" ${busy ? "disabled" : ""}>${paused.operation === "compare" ? "Riprendi confronto" : "Apri coda"}</button></section>` : "";
     if ($("q-pause")) $("q-pause").onclick = safely(async () => { await api.pause(); await preview(true); });
+    if (flashRun && !running) {
+      const issues = Object.values(flashRun.skipped ?? {});
+      const message = flashRun.error || issues[0]?.reason || (flashRun.state === "completed" ? "Import flash completato" : "Import flash interrotto");
+      $("query-run").insertAdjacentHTML("afterbegin", `<p class="run-item" role="status">${escape(message)}</p>`);
+    }
     if ($("q-resume")) $("q-resume").onclick = safely(async () => { if (paused.operation === "apply") return context.openQueue(); await api.start({ streetId: paused.streetId, operation: paused.operation, resumeId: paused.id, selected: [] }); await preview(true); });
-    $("query-results").innerHTML = `<div class="query-results-heading"><div><h3>${result.total} ${result.total === 1 ? "immobile trovato" : "immobili trovati"}</h3><p class="meta">${selected.size} ${selected.size === 1 ? "selezionato" : "selezionati"} · ${catalog.owners.length} ${catalog.owners.length === 1 ? "proprietario distinto" : "proprietari distinti"} in archivio</p></div><div class="actions"><button id="q-select-all" ${busy || changed || !result.total ? "disabled" : ""}>Seleziona tutti (${result.total})</button><button id="q-clear" class="quiet" ${!selected.size ? "disabled" : ""}>Deseleziona</button></div></div><div class="units-grid">${result.units.map(u => `<article class="unit unit-register query-card" data-query-unit="${escape(u.key)}" data-selected="${selected.has(u.key)}"><div class="unit-register-row"><label class="unit-select-label"><input type="checkbox" aria-label="Seleziona ${escape(u.source.fullAddress)}" data-query-select="${escape(u.key)}" ${selected.has(u.key)?'checked':''} ${busy||queued.has(u.key)||!queueable.has(u.key)?'disabled':''}></label><div class="unit-identity">${unitHeadingHtml(u,escape,true)}</div><div class="unit-owner-preview"><span class="register-label">Intestatari · ${u.source.owners.length}</span><strong>${escape(u.source.owners[0]?.fullName||'Non disponibili')}</strong>${u.source.owners.length>1?`<span class="meta">e altri ${u.source.owners.length-1}</span>`:''}</div><div class="unit-outcome">${queued.has(u.key)?'<span class="status">In coda</span>':''}${unitImportHtml(u,escape,value=>new Date(value).toLocaleString('it-IT'))}</div></div><div class="unit-register-details"><details><summary>Intestatari e contatti</summary>${ownerListHtml(u.source.owners,escape,true)}</details><button class="quiet" data-query-open="${escape(u.key)}">Apri immobile →</button></div></article>`).join("") || '<p class="explanation">Nessun immobile corrisponde alla combinazione. Modifica i filtri oppure acquisisci le vie mancanti dalla mappa.</p>'}</div>${result.units.length < result.total ? `<button id="q-more">Mostra altri ${Math.min(100, result.total - result.units.length)}</button>` : ""}<div class="query-actions"><button id="q-compare" ${busy || changed || !selected.size ? "disabled" : ""}>Confronta selezionati (${selected.size})</button><button id="q-enqueue" class="primary" ${busy || changed || !canEnqueue ? "disabled" : ""}>Aggiungi alla coda (${fresh.length})</button></div><p class="explanation">La query seleziona gli immobili acquisiti. L’import in Tecnocloud parte soltanto dalla coda sulla mappa.</p>`;
+    $("query-results").innerHTML = `<div class="query-results-heading"><div><h3>${result.total} ${result.total === 1 ? "immobile trovato" : "immobili trovati"}</h3><p class="meta">${selected.size} ${selected.size === 1 ? "selezionato" : "selezionati"} · ${catalog.owners.length} ${catalog.owners.length === 1 ? "proprietario distinto" : "proprietari distinti"} in archivio</p></div><div class="actions"><button id="q-select-all" ${busy || changed || !result.total ? "disabled" : ""}>Seleziona tutti (${result.total})</button><button id="q-clear" class="quiet" ${!selected.size ? "disabled" : ""}>Deseleziona</button></div></div><div class="units-grid">${result.units.map(u => `<article class="unit unit-register query-card" data-query-unit="${escape(u.key)}" data-selected="${selected.has(u.key)}"><div class="unit-register-row"><label class="unit-select-label"><input type="checkbox" aria-label="Seleziona ${escape(u.source.fullAddress)}" data-query-select="${escape(u.key)}" ${selected.has(u.key)?'checked':''} ${busy||queued.has(u.key)||!queueable.has(u.key)?'disabled':''}></label><div class="unit-identity">${unitHeadingHtml(u,escape,true)}</div><div class="unit-owner-preview"><span class="register-label">Intestatari · ${u.source.owners.length}</span><strong>${escape(u.source.owners[0]?.fullName||'Non disponibili')}</strong>${u.source.owners.length>1?`<span class="meta">e altri ${u.source.owners.length-1}</span>`:''}</div><div class="unit-outcome">${queued.has(u.key)?'<span class="status">In coda</span>':''}${unitImportHtml(u,escape,value=>new Date(value).toLocaleString('it-IT'))}</div></div><div class="unit-register-details"><details><summary>Intestatari e contatti</summary>${ownerListHtml(u.source.owners,escape,true)}</details><div class="actions"><button class="quiet" data-query-open="${escape(u.key)}">Apri immobile →</button>${flashAction(u)}</div></div></article>`).join("") || '<p class="explanation">Nessun immobile corrisponde alla combinazione. Modifica i filtri oppure acquisisci le vie mancanti dalla mappa.</p>'}</div>${result.units.length < result.total ? `<button id="q-more">Mostra altri ${Math.min(100, result.total - result.units.length)}</button>` : ""}<div class="query-actions"><button id="q-compare" ${busy || changed || !selected.size ? "disabled" : ""}>Confronta selezionati (${selected.size})</button><button id="q-enqueue" class="primary" ${busy || changed || !canEnqueue ? "disabled" : ""}>Aggiungi alla coda (${fresh.length})</button></div><p class="explanation">La coda esclude gli immobili con attività verificata entro 30 giorni. Import flash avvia subito la lavorazione del nominativo e dell’immobile indicati.</p>`;
     if (focusKey) [...document.querySelectorAll("[data-query-select]")].find(input => input.dataset.querySelect === focusKey && !input.disabled)?.focus({ preventScroll: true });
     $("q-select-all").onclick = () => { selected = new Set(result.queueKeys.filter(key => !queued.has(key))); renderResults(); };
     $("q-clear").onclick = () => { selected.clear(); renderResults(); };
     document.querySelectorAll("[data-query-select]").forEach(input => { input.onchange = () => { input.checked ? selected.add(input.dataset.querySelect) : selected.delete(input.dataset.querySelect); renderResults(); }; });
     document.querySelectorAll("[data-query-unit]").forEach(card => { card.onclick = event => { if (!event.target.closest("input,label,button,a,summary,details") && !window.getSelection()?.toString()) card.querySelector("input:not(:disabled)")?.click(); }; });
     document.querySelectorAll("[data-query-open]").forEach(button => { button.onclick = safely(() => context.openUnit(result.units.find(u => u.key === button.dataset.queryOpen))); });
+    document.querySelectorAll("[data-flash-unit]").forEach(button => {
+      button.onclick = safely(async () => {
+        if (loading || stale() || launchingFlash || context.snapshot()?.activeRun) return;
+        const { flashUnit, flashOwner } = button.dataset;
+        launchingFlash = true;
+        renderResults();
+        try {
+          flashRunId = await api.start({ query: result.query, operation: "apply", selected: [flashUnit], flashOwner });
+          if (flashRunId) feedback("Import flash avviato");
+        } finally {
+          launchingFlash = false;
+          if (active()) await preview(true);
+        }
+      });
+    });
     if ($("q-more")) $("q-more").onclick = safely(async () => { limit += 100; await preview(true); });
     $("q-compare").onclick = safely(async () => {
       if (loading || stale()) return feedback("Aggiorna i risultati prima di procedere", true);

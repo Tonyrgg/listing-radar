@@ -318,10 +318,11 @@ export async function connectToCrmChrome(cdpUrl: string, crmMatch: string): Prom
       if (!context) throw new WorkerError("Nessun profilo Chrome disponibile", "session_expired");
       crmPage = await context.newPage();
       await crmPage.goto(CRM_WORKER_HOME_URL, {
-        waitUntil: "domcontentloaded",
+        waitUntil: "commit",
         timeout: 30_000,
       });
     }
+    await within(crmPage.bringToFront(), 1_000).catch(() => undefined);
     return { browser, pages, crmPage };
   } catch (error) { await browser.close().catch(() => undefined); throw error; }
 }

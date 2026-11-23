@@ -279,9 +279,10 @@ function revealSection(node) {
  * verso un nodo nascosto. Cio che non sta in una sezione di servizio
  * appartiene alla lavorazione. */
 function goTo(id) {
-  const node = revealSection(document.getElementById(id));
-  if (!node) return;
-  const view = id === 'worker-v2' ? id : node.closest("details.section")?.id ?? "operations";
+  const target = document.getElementById(id);
+  const view = id === 'worker-v2' ? id : target?.closest("details.section")?.id;
+  if (!["worker-v2", "agencies", "sync", "settings"].includes(view)) return;
+  const node = revealSection(target);
   document.body.dataset.workerView = view;
   markActiveNav(view);
   node.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -4370,7 +4371,7 @@ const runLauncher = document.querySelector(".run-launcher");
 if (acquisitionRegistry && runLauncher) runLauncher.before(acquisitionRegistry);
 if (newAcquisitionRules && runLauncher) runLauncher.prepend(newAcquisitionRules);
 renderThemeToggle();
-markActiveNav(document.body.dataset.workerView ?? "operations");
+markActiveNav(document.body.dataset.workerView ?? "worker-v2");
 setRunSlide(selectedRunSlide);
 window.propertyWorker
   .getState()

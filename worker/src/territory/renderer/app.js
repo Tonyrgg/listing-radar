@@ -209,7 +209,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     $("draft-status").hidden = !dirty;
   }
   const ready = (u) =>
-    u.canWrite && !snapshot.queueKeys.includes(u.key);
+    u.canWrite && (!u.recentActivity || u.writePending) && !snapshot.queueKeys.includes(u.key);
   function unitRows() {
     const needle = unitSearch.trim().toLocaleLowerCase("it");
     return sortUnits(detail.units.filter(
@@ -220,8 +220,8 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             .includes(needle)) &&
         (!unitFilter ||
           (unitFilter === "never"
-            ? !u.memory?.statistics.verifiedImports
-            : ["recent", "aging", "stale"].includes(unitFilter)
+            ? !u.lastActivityDay && !u.memory?.statistics.verifiedImports
+            : ["recent", "aging", "older", "stale"].includes(unitFilter)
               ? unitImportTone(u) === unitFilter
               : unitFilter === "ready"
             ? ready(u)
@@ -334,6 +334,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       acquired: token("--lr-data-1"),
       recent: token("--lr-ok"),
       aging: token("--lr-warn"),
+      older: token("--lr-data-4"),
       stale: token("--lr-danger"),
     };
   };
@@ -432,7 +433,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
         : d.imported
           ? "Data import non disponibile"
           : "Nessun import verificato";
-    const buckets = [["recent", "Cloud · entro 30 giorni", d.recent], ["aging", "Cloud · da 31 a 90 giorni", d.aging], ["stale", "Cloud · oltre 90 giorni", d.stale], ["acquired", "Acquisiti da SISTER · mai lavorati in Cloud", d.acquired], ["never", "Non ancora acquisiti", d.unacquired], ["never", "Import Cloud senza data", d.undated]].filter(([, , count]) => count > 0);
+    const buckets = [["recent", "Cloud · entro 30 giorni", d.recent], ["aging", "Cloud · da 31 a 60 giorni", d.aging], ["older", "Cloud · da 61 a 90 giorni", d.older], ["stale", "Cloud · oltre 90 giorni", d.stale], ["acquired", "Acquisiti da SISTER · mai lavorati in Cloud", d.acquired], ["never", "Non ancora acquisiti", d.unacquired], ["never", "Import Cloud senza data", d.undated]].filter(([, , count]) => count > 0);
     const percentage = count => d.total ? `${Number((count / d.total * 100).toFixed(1)).toLocaleString("it-IT")}%` : "";
     const distribution = d.total > 0 ? `<span class="import-distribution" role="img" aria-label="${escape(buckets.map(([, label, count]) => `${label}: ${percentage(count)}, ${count} immobili`).join("; "))}">${buckets.map(([tone, , count]) => `<span class="import-band ${tone}" style="flex-grow:${count}"></span>`).join("")}</span>` : "";
     const breakdown = d.total > 0 ? `<span class="import-breakdown">${buckets.map(([tone, label, count]) => `<span><span class="dot ${tone}" aria-hidden="true"></span>${label}<strong>${percentage(count)} · ${count}</strong></span>`).join("")}</span>` : "";
@@ -856,7 +857,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     } else if (tab === "units") {
       const rows = unitRows();
       $("detail-body").innerHTML =
-        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label class="unit-search-control" for="unit-search"><span class="sr-only">Cerca negli immobili</span>${icon("search")}<input id="unit-search" type="search" placeholder="Cerca civico, catasto o intestatario" value="${escape(unitSearch)}"></label><label class="unit-state-control" for="unit-filter"><span class="sr-only">Mostra immobili</span><select id="unit-filter" aria-label="Mostra immobili"><option value="">Tutti</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai lavorati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Import da 31 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label>${detail.units.length ? unitFiltersHtml() : ""}</div>${rows.length ? unitTableHtml(rows,{escape,selected,disabled:Boolean(snapshot.activeRun),queued:new Set(snapshot.queueKeys),expandedKey:expandedUnitKey,renderDetails:unitHtml,sort:unitSort}) : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o azzera i filtri." : "Aggiorna la lettura da SISTER."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}<footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p hidden id="selection-help"></p></footer>`;
+        `<div class="unit-toolbar" ${detail.units.length ? "" : "hidden"}><label class="unit-search-control" for="unit-search"><span class="sr-only">Cerca negli immobili</span>${icon("search")}<input id="unit-search" type="search" placeholder="Cerca civico, catasto o intestatario" value="${escape(unitSearch)}"></label><label class="unit-state-control" for="unit-filter"><span class="sr-only">Mostra immobili</span><select id="unit-filter" aria-label="Mostra immobili"><option value="">Tutti</option><option value="ready">Selezionabili (${counts.ready})</option><option value="never">Mai lavorati</option><option value="recent">Import entro 30 giorni</option><option value="aging">Lavorati da 31 a 60 giorni</option><option value="older">Lavorati da 61 a 90 giorni</option><option value="stale">Import oltre 90 giorni</option><option value="selected">Solo selezionati (${selected.size})</option></select></label>${detail.units.length ? unitFiltersHtml() : ""}</div>${rows.length ? unitTableHtml(rows,{escape,selected,disabled:Boolean(snapshot.activeRun),queued:new Set(snapshot.queueKeys),expandedKey:expandedUnitKey,renderDetails:unitHtml,sort:unitSort,rowMeta:u=>({disabled:!ready(u)})}) : `<div class="empty-state"><h3>${detail.units.length ? "Nessun immobile con questi filtri" : "Nessun immobile conservato"}</h3><p>${detail.units.length ? "Cambia ricerca o azzera i filtri." : "Aggiorna la lettura da SISTER."}</p>${detail.units.length ? '<button id="unit-empty-action">Azzera filtri immobili</button>' : ""}</div>`}<footer class="selection-bar" ${detail.units.length ? "" : "hidden"}><div><strong id="selection-count"></strong><span class="meta" id="selection-plan"></span></div><div class="actions"><button id="select-all" ${disabled}>Seleziona tutti</button><button id="clear-selection" class="quiet">Deseleziona</button><button id="enqueue" class="primary" ${disabled || !selected.size ? "disabled" : ""}>Aggiungi alla coda (${selected.size})</button><button id="street-open-queue" class="primary" data-open-queue hidden>Apri coda</button></div><p hidden id="selection-help"></p></footer>`;
       $("unit-filter").value = unitFilter;
       for (const id of ["unit-search", "unit-filter"])
         $(id).addEventListener(
@@ -890,7 +891,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
             "Salva o annulla le modifiche prima di cambiare selezione.",
             true,
           );
-        for (const u of rows) if (!snapshot.queueKeys.includes(u.key)) selected.add(u.key);
+        for (const u of rows) if (ready(u)) selected.add(u.key);
         renderDetail();
       };
       $("clear-selection").onclick = () => {
@@ -905,7 +906,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
       bindUnitFilters();
       $("enqueue").onclick = safe(async () => {
         if (dirty) return feedback("Salva o annulla le modifiche prima di aggiungere alla coda.", true);
-        const count = await api.enqueue({ keys: [...selected], streetId: selectedStreet });
+        const count = await api.enqueue({ keys: detail.units.filter(u=>selected.has(u.key)&&ready(u)).map(u=>u.key), streetId: selectedStreet });
         selected.clear(); await refresh(); feedback(`${count} immobili aggiunti alla coda.`);
       });
       $("detail-body").querySelectorAll('[data-unit-sort]').forEach(button=>{button.onclick=()=>{
@@ -1043,7 +1044,7 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
   function updateSelection() {
     if (!$("enqueue")) return;
     const records = detail.units.filter(u => selected.has(u.key)), visible = new Set(unitRows().map(u => u.key));
-    const fresh = records.filter(u => !snapshot.queueKeys.includes(u.key)), hidden = records.filter(u => !visible.has(u.key)).length;
+    const fresh = records.filter(ready), hidden = records.filter(u => !visible.has(u.key)).length;
     $("selection-count").textContent = `${unitRows().length !== detail.units.length ? `${unitRows().length} di ${detail.units.length} immobili · ` : ""}${selected.size} selezionati`;
     $("selection-plan").textContent = hidden ? `${hidden} selezionati fuori dai filtri` : "";
     $("enqueue").disabled = !fresh.length || Boolean(snapshot.activeRun);

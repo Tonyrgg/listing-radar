@@ -2,6 +2,7 @@ import {sameCrmRecordId} from '../core/crm-record-id.js';
 import type {ActivityEvidence,CrmActivitySnapshot,CrmActivityHistory,ImportV2Checkpoint,SourceOwner,SourceProperty} from './model.js';
 
 export const ACTIVITY_TIME_ZONE='Europe/Rome';
+const romeDateFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:ACTIVITY_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'});
 export function activityPrimaryOwner(owners:SourceOwner[]):SourceOwner{
   const result=owners.map((owner,index)=>({owner,index})).sort((a,b)=>(b.owner.sharePercentage??-1)-(a.owner.sharePercentage??-1)||a.index-b.index)[0]?.owner;
   if(!result)throw Error('Immobile senza intestatario principale');
@@ -9,7 +10,7 @@ export function activityPrimaryOwner(owners:SourceOwner[]):SourceOwner{
 }
 export function romeDay(now:Date):string{
   if(!Number.isFinite(now.getTime()))throw Error('Data attività non valida');
-  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:ACTIVITY_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+  const parts=romeDateFormatter.formatToParts(now);
   const part=(name:string)=>parts.find(p=>p.type===name)!.value;
   return `${part('year')}-${part('month')}-${part('day')}`;
 }

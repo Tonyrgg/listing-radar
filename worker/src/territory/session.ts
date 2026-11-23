@@ -300,12 +300,13 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("start", async value => {
       if(application.hasActiveRun) throw Error("Esiste già una lavorazione attiva");
       if (options.onlineCredentials && options.live) await ensureSynchronized();
-      const v = z.object({ queue: z.boolean().default(false), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
-      if (v.operation === "apply" && !v.queue) throw new Error("Avvia gli import dalla coda del Worker V2");
+      const v = z.object({ queue: z.boolean().default(false), flashOwner: z.string().regex(/^[A-Z0-9]{16}$/).optional(), streetId: id.optional(), query: unitQuerySchema.optional(), operation: z.enum(["scan", "compare", "apply"]), selected: z.array(id).max(10000).default([]), resumeId: id.optional(), settings: runSettingsSchema.optional() }).parse(value);
+      if (v.flashOwner && (v.operation !== "apply" || v.queue || !v.query || v.streetId || v.resumeId || v.settings || v.selected.length !== 1)) throw new Error("L’import flash richiede un proprietario e un immobile della query");
+      if (v.operation === "apply" && !v.queue && !v.flashOwner) throw new Error("Avvia dalla coda o scegli Import flash nella query");
       if (v.operation === "apply" && v.resumeId) throw new Error("Questo lavoro è terminato: scegli dalla coda gli immobili da lavorare");
       if (v.queue && (v.operation !== "apply" || v.query || v.streetId)) throw new Error("Selezione della coda non valida");
       if (!v.queue && (!v.query && !v.streetId || v.query && (v.operation === "scan" || v.resumeId))) throw new Error("Scegli una via per acquisire, oppure una query per confrontare e applicare");
-      if (options.live && v.operation === "apply") {
+      if (options.live && v.operation === "apply" && !v.flashOwner) {
         const state = store.read();
         const settings = runSettings(v.settings);
         const recoveries = v.selected.map(key => pendingUnitImport(state, key)).filter(r => r !== null);
@@ -321,6 +322,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         });
         if (result.response !== 1) return null;
       }
+      if (v.flashOwner && options.live) await options.openBrowser?.();
       if(options.onlineCredentials && options.live){
         if(application.hasActiveRun)throw new Error("C’è già una lavorazione attiva su questo PC.");
         if(operationLease?.held)await finishSharedSession();
@@ -331,7 +333,10 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       }
       options.beforeStart?.();
       try {
-        const run = v.queue ? await application.startQueue(v.selected, v.settings, v.resumeId) : v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings) : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
+        const run = v.flashOwner ? await application.startFlash(v.query, v.selected[0]!, v.flashOwner)
+          : v.queue ? await application.startQueue(v.selected, v.settings, v.resumeId)
+          : v.query ? await application.startQuery(v.query, v.operation as "compare" | "apply", v.selected, v.settings)
+          : await application.start(v.streetId!, v.operation, v.selected, v.resumeId, v.settings);
         void application.waitForIdle().finally(async () => {
           options.afterIdle?.();notify();
           try{await finishSharedSession();}catch(error){memoryError=error instanceof Error?error.message:"Sessione da sincronizzare";publish();}

@@ -92,16 +92,34 @@ describe('activity-driven queue results',()=>{
   const state=store.read();expect(state.virtualCrm[state.units[keys[1]!]!.crmId!]!.owners).toHaveLength(2);
   expect(Object.values(state.virtualActivities??{})).toHaveLength(1);
  });
- it('covers an activity earlier this month but creates a new one after the month changes',async()=>{
+ it('excludes verified properties from the queue through 30 days even when the month changes',async()=>{
   const{store,app,keys}=await setup();const key=keys[0]!;
   await app.enqueue([key]);await app.startQueue([key],{activityMode:'plain'});await app.waitForIdle();
   vi.setSystemTime(new Date('2026-11-20T10:00:00Z'));
-  await app.enqueue([key]);await app.startQueue([key],{activityMode:'plain'});await app.waitForIdle();
-  expect(runActivitySummary(store.read(),store.read().runs.at(-1)!)).toMatchObject({created:0,coveredProperty:1});
+  expect(await app.enqueue([key])).toBe(0);
+  expect(app.unitDetail(key)).toMatchObject({lastActivityDay:'2026-11-10',recentActivity:true});
+  expect(app.detail(street.id).street.progress.distribution).toMatchObject({recent:1,confirmedTone:'recent'});
   expect(Object.values(store.read().virtualActivities??{})).toHaveLength(1);
   vi.setSystemTime(new Date('2026-12-01T10:00:00Z'));
+  expect(await app.enqueue([key])).toBe(0);
+  vi.setSystemTime(new Date('2026-12-11T10:00:00Z'));
   await app.enqueue([key]);await app.startQueue([key],{activityMode:'plain'});await app.waitForIdle();
   expect(Object.values(store.read().virtualActivities??{})).toHaveLength(2);
+ });
+ it('runs flash directly for the nominated co-owner, preserving the complete archive and queue',async()=>{
+  const{store,app,keys}=await setup(),key=keys[0]!;
+  const source=app.unitDetail(key).source;
+  const contact={...source.owners[0]!,sourcePersonId:'flash-owner',taxCode:'VRDLCU82B02A893X',fullName:'Verdi Luca',sharePercentage:30};
+  await app.correct(key,{owners:[...source.owners,contact]},'');
+  await app.enqueue([keys[1]!]);
+  await app.startFlash({ownerTaxCodes:[contact.taxCode]},key,contact.taxCode);
+  await app.waitForIdle();
+  const state=store.read();
+  expect(Object.keys(state.importQueue??{})).toEqual([keys[1]]);
+  expect(state.runs.at(-1)?.imports?.[key]?.crmId).toBeTruthy();
+  expect(Object.values(state.virtualPeople).map(person=>person.taxCode)).toEqual([contact.taxCode]);
+  expect(app.unitDetail(key).source.owners).toHaveLength(source.owners.length+1);
+  expect(Object.values(state.virtualActivities??{})).toHaveLength(0);
  });
  it('defers an incomplete CRM activity read once without creating or counting a success',async()=>{
   const{store,keys}=await setup();let reads=0;

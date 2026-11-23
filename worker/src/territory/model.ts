@@ -1,5 +1,5 @@
 import type { CrmPropertySnapshot, ImportV2Checkpoint, SourceProperty } from "../import-v2/model.js";
-import { importProgress } from "./progress.js";
+import { importProgress, propertyWorkIndex } from "./progress.js";
 import type { RunSettings } from "./run-options.js";
 
 export type Geometry = { type: "LineString" | "MultiLineString"; coordinates: number[][] | number[][][] };
@@ -48,7 +48,7 @@ export function unitKey(source: SourceProperty): string {
   if (![values[0], values[2], values[3]].every(x => x?.trim())) throw new Error("Identità catastale incompleta");
   return values.map(x => String(x).trim().toUpperCase()).join("|");
 }
-export function streetSummary(state: TerritoryState, street: Street) {
+export function streetSummary(state: TerritoryState, street: Street, work = propertyWorkIndex(state), now = Date.now()) {
   const streetIds = relatedStreetIds(state, street.id);
   const pendingKeys = new Set(Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && q.unitKey).map(q => q.unitKey));
   const units = Object.values(state.units).filter(unit => unit.streetIds.some(id => streetIds.includes(id)) && !pendingKeys.has(unit.key));
@@ -68,7 +68,7 @@ export function streetSummary(state: TerritoryState, street: Street) {
   if (review || attention) status = "review";
   if (lastRun?.operation !== "apply" && (lastRun?.state === "paused" || lastRun?.state === "failed")) status = "paused";
   if (lastRun?.state === "running") status = "running";
-  return { ...street, acquisitionState: lastScan?.state ?? null, quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && streetIds.includes(q.streetId)).length, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds) };
+  return { ...street, acquisitionState: lastScan?.state ?? null, quarantineCount: Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt && streetIds.includes(q.streetId)).length, status, label: STATUS_LABELS[status], count: units.length, review, unresolved, lastScanAt: completeScan?.endedAt ?? null, lastObservationAt, registeredAt: memory?.registeredAt ?? null, attention, progress: importProgress(state, streetIds, now, work) };
 }
 export function relatedStreetIds(state: TerritoryState, id: string) { return [id, ...Object.entries(state.networkBindings ?? {}).filter(([, binding]) => binding.officialId === id).map(([networkId]) => networkId)]; }
 
@@ -82,5 +82,6 @@ export function streetSummaries(state: TerritoryState) {
     if (!group) members.set(canonical, group = {});
     group[unit.key] = unit;
   }
-  return state.streets.filter(s => !s.linkedOfficialId&&!s.outsideUrbanArea).map(street => streetSummary({ ...state, units: members.get(street.id) ?? {} }, street));
+  const now = Date.now(), work = propertyWorkIndex(state, now);
+  return state.streets.filter(s => !s.linkedOfficialId&&!s.outsideUrbanArea).map(street => streetSummary({ ...state, units: members.get(street.id) ?? {} }, street, work, now));
 }

@@ -27,12 +27,14 @@ import { icon } from "./icons.js";
 
 import { unitHistoryHtml } from "./unit-history.js";
 export function unitImportTone(unit, now = Date.now()) {
+  if (unit.lastActivityDay) return unit.activityAge.tone;
   if (!unit.memory?.statistics.verifiedImports) return 'acquired';
   const at = unit.memory.statistics.lastImportedAt;
   const age = at ? Math.floor((now - Date.parse(at)) / 86400000) : null;
-  return age === null || !Number.isFinite(age) || age < 0 ? 'never' : age <= 30 ? 'recent' : age <= 90 ? 'aging' : 'stale';
+  return age === null || !Number.isFinite(age) || age < 0 ? 'never' : age <= 30 ? 'recent' : age <= 60 ? 'aging' : age <= 90 ? 'older' : 'stale';
 }
 export function unitImportHtml(unit, escape, date) {
+  if(unit.lastActivityDay)return `<div class="unit-import-fact" data-import-tone="${unit.activityAge.tone}"><strong>${unit.recentActivity?'Attività verificata entro 30 giorni':'Attività verificata'}</strong><span>${escape(new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeZone:'Europe/Rome'}).format(new Date(unit.lastActivityDay)))}${unit.writePending?' · Altri dati da verificare':''}</span></div>`;
   if(unit.activityVerified)return `<div class="unit-import-fact" data-import-tone="recent"><strong>Attività verificata</strong><span>${unit.activityVerifiedAt?date(unit.activityVerifiedAt):''}${unit.writePending?' · Altri dati da verificare':''}</span></div>`;
   const stats = unit.memory?.statistics, at = stats?.lastImportedAt;
   const tone = unitImportTone(unit);

@@ -6,13 +6,14 @@ import { describe, expect, it } from "vitest";
 const rendererRoot = path.resolve(process.cwd(), "src", "desktop", "renderer");
 
 describe("Rifinitura vie", () => {
-  it("espone una pagina autonoma e comunica il confine esistente-solamente", async () => {
+  it("rimuove la rifinitura dalla navigazione e conserva la compatibilità dei dati legacy", async () => {
     const [html, renderer, preload] = await Promise.all([
       readFile(path.join(rendererRoot, "index.html"), "utf8"),
       readFile(path.join(rendererRoot, "renderer.js"), "utf8"),
       readFile(path.resolve(process.cwd(), "src", "desktop", "preload.cjs"), "utf8"),
     ]);
-    expect(html).toContain('data-scroll="refinement"');
+    for(const view of ["operations","refinement","portoni","history"])expect(html).not.toContain(`data-scroll="${view}"`);
+    expect(html).toContain('data-scroll="sync"');
     expect(html).toContain('id="refinement"');
     expect(html).toContain("Non crea nuove schede immobili");
     expect(html).toContain('id="refinementStart"');

@@ -254,282 +254,30 @@ await page.addInitScript(({ initialState, details }) => {
     listeners.forEach((callback) => callback(state));
   };
 }, { initialState: baseState, details: graph });
-await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
-await page.screenshot({ path: path.join(output, "ready.png"), fullPage: true });
-const readyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.setViewportSize({ width: 390, height: 844 });
-await page.screenshot({ path: path.join(output, "ready-mobile.png"), fullPage: true });
-const readyMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.setViewportSize({ width: 1440, height: 1000 });
-const sideNavigationVisible = await page.locator(".side-nav-shell").isVisible();
-const initialTheme = await page.locator("html").getAttribute("data-theme");
-await page.locator("#themeToggle").click();
-const lightThemeApplied = await page.locator("html").getAttribute("data-theme") === "light";
-await page.locator("#themeToggle").click();
-const darkThemeApplied = lightThemeApplied && await page.locator("html").getAttribute("data-theme") === "dark";
-await page.setViewportSize({ width: 1600, height: 1000 });
-await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
-const inspectorSelectionVisible = await page.locator("#inspectorTitle").getByText("BITONTO · Via Test", { exact: true }).count();
-await page.locator("#inspectorClose").click();
-const inspectorCloseWorks = await page.locator("body.inspector-closed").count() === 1 && !(await page.locator("#workspaceInspector").isVisible());
-await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .ledger-place').click();
-const inspectorReopens = await page.locator("#workspaceInspector").isVisible();
-await page.setViewportSize({ width: 1440, height: 1000 });
-const mergedRunSetup = await page.locator(".run-launcher > #runControls").count();
-const stoppedRunVisible = await page.getByText(/Interrotta · 2 eseguite.*1 aperta/).count();
-const exactAcquisitionCursorVisible = await page.getByText("Riparte dalla riga 3 di 150", { exact: true }).count();
-const exactAcquisitionOwnerVisible = await page.getByText(/Prossimo record: Mario Rossi/).count();
-await page.locator('.row-primary[data-resume-job="55555555-5555-4555-8555-555555555555"]').click();
-await page.locator("#importDialog").screenshot({ path: path.join(output, "resume-import.png") });
-const resumeProgressVisible = await page.getByText("Prima riga aperta: 1 di 3", { exact: true }).count();
-const nonContiguousProgressExplained = await page.getByText("Alcune righe successive sono già concluse perché le finestre Cloud lavorano in parallelo. Alla ripresa non verranno ripetute.", { exact: true }).count();
-const importKillerChoiceVisible = await page.locator('[data-import-activity="killer"]:visible').count();
-const lockedImportChoices = await page.locator("#importDialog [data-import-activity], #importCoOwnersToggle").evaluateAll((elements) => elements.every((element) => element.disabled));
-const resumableParallelChoice = !(await page.locator("#importParallelCloudToggle").isDisabled());
-const lockedImportExplanationVisible = await page.getByText("Attività e comproprietari restano quelli fissati alla partenza", { exact: false }).count();
-const importKillerHelpVisible = 0;
-await page.locator('[data-import-dialog="confirm"]').click();
-await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] .row-overflow > summary').click();
-await page.locator('[data-record-id="55555555-5555-4555-8555-555555555555"] [data-detail-job="55555555-5555-4555-8555-555555555555"]').click();
-await page.locator("#jobDetailDialog").screenshot({ path: path.join(output, "stopped-import-detail.png") });
-const detailRestartRowVisible = await page.getByText(/Prima riga aperta: 1 di 3/).count();
-const civicMarkersVisible = await page.locator("#jobDetailDialog .detail-row-civic").count();
-const detailAccordionsVisible = await page.locator("#jobDetailDialog .detail-accordion").count();
-const detailParallelChoiceVisible = await page.locator("#jobDetailParallelToggle").count();
-const civicMarkerHasPhantomP = await page.locator("#jobDetailDialog .detail-row-civic").evaluateAll((elements) => elements.some((element) => /\dP$/i.test(element.textContent?.replace(/\s+/g, "") ?? "")));
-const detailRowsOrdered = await page.locator("#jobDetailDialog .detail-property-list .import-detail-row").evaluateAll((rows) => {
-  const values = rows.map((row) => ({
-    rank: row.classList.contains("is-done") || row.classList.contains("is-anomaly") ? 0 : row.classList.contains("is-skipped") ? 1 : 2,
-    civic: Number(row.querySelector(".detail-row-civic")?.textContent?.match(/\d+/)?.[0] ?? Number.MAX_SAFE_INTEGER),
-  }));
-  return values.every((value, index) => !index || value.rank > values[index - 1].rank || (value.rank === values[index - 1].rank && value.civic >= values[index - 1].civic));
-});
-await page.locator("#jobDetailDialog .detail-accordion:first-child .detail-accordion-body").evaluate((body) => {
-  if (!body.querySelector(".acquisition-record-list")) {
-    body.innerHTML = `<section class="acquisition-detail"><header><div><h3>Acquisizione percorsa</h3><p>30 righe esaminate</p></div></header><div class="acquisition-record-list"></div></section>`;
+try {
+  await page.goto(pathToFileURL(path.join(workerRoot, "src", "desktop", "renderer", "index.html")).href);
+  await page.waitForFunction(version => document.querySelector("#versionLabel").textContent === "v" + version, baseState.version);
+  const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  const selector = (view) => `[data-scroll="${view}"]`;
+  const available = ["worker-v2", "agencies", "sync", "settings"];
+  const nav = await page.locator(".nav-item[data-scroll]").evaluateAll(items => items.map(item => item.dataset.scroll));
+  assert(JSON.stringify(nav) === JSON.stringify(available), "Voci di navigazione inattese");
+  assert(await page.locator("body").getAttribute("data-worker-view") === "worker-v2", "Il Worker deve partire dalla mappa");
+  for (const view of available) {
+    await page.locator(selector(view)).click();
+    await page.locator(`body[data-worker-view="${view}"] #${view}`).waitFor();
+    assert(!(await page.locator("#operationConsole, #refinement, #portoni, #history").evaluateAll(nodes => nodes.some(node => node.checkVisibility()))), "Una sezione dismessa è visibile");
   }
-  const list = body.querySelector(".acquisition-record-list");
-  const template = document.createElement("details");
-  template.className = "acquisition-record is-completed";
-  template.innerHTML = `<summary><span>1</span><span><b>VIA TEST n. 1</b><small>Mario Rossi</small></span><span class="completion-label">Acquisita</span><i>⌄</i></summary>`;
-  for (let index = 0; index < 30; index += 1) list.append(template.cloneNode(true));
-});
-await page.locator("#jobDetailDialog .detail-property-list").evaluate((list) => {
-  const row = list.lastElementChild;
-  if (!row) return;
-  for (let index = 0; index < 24; index += 1) list.append(row.cloneNode(true));
-});
-const detailListScrollability = await page.locator("#jobDetailDialog .acquisition-record-list, #jobDetailDialog .detail-property-list").evaluateAll((lists) => lists.map((list) => {
-  const overflowY = getComputedStyle(list).overflowY;
-  list.scrollTop = list.scrollHeight;
-  return {
-    overflowY,
-    clientHeight: list.clientHeight,
-    scrollHeight: list.scrollHeight,
-    scrollTop: list.scrollTop,
-    scrollable: ["auto", "scroll"].includes(overflowY) && list.scrollHeight > list.clientHeight && list.scrollTop > 0,
-  };
-}));
-const detailListsScrollable = detailListScrollability.length === 2 && detailListScrollability.every((list) => list.scrollable);
-await page.locator('[data-job-detail="close"]').last().click();
-await page.locator('[data-scroll="refinement"]').click();
-await page.locator("#refinement").screenshot({ path: path.join(output, "refinement.png") });
-const refinementVisible = await page.locator("#refinementStart:visible").count();
-const refinementBoundaryVisible = await page.getByText("Non crea nuove schede immobili.", { exact: false }).count();
-const refinementArchiveVisible = await page.getByText("Via Luigi Castellucci", { exact: true }).count();
-const refinementOriginBadgeVisible = await page.getByText("Lavorazione completata", { exact: true }).count();
-const refinementSeedStartVisible = await page.locator('[data-resume-acquisition="88888888-8888-4888-8888-888888888888"]:visible').count();
-const refinementOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.locator('[data-scroll="history"]').click();
-await page.locator("#diagnosticErrors").screenshot({ path: path.join(output, "automatic-run-auditor.png") });
-const automaticAuditorVisible = await page.getByText("Sorveglianza automatica · attiva su ogni run", { exact: true }).count();
-const automaticAuditorNoManualStart = await page.locator('#collaudoStart, [data-scroll="collaudo"]').count() === 0;
-const historyOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.locator('[data-scroll="portoni"]').click();
-await page.locator("#portoni").screenshot({ path: path.join(output, "portoni.png") });
-const portoniVisible = await page.locator("#portoniEditor:not(.is-hidden)").count();
-const portoniOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.locator("#portoniToggle").click();
-const portoniCollapsed = await page.locator("#portoniEditor.is-collapsed").count();
-await page.locator("#portoniToggle").click();
-const portoniFiltersVisible = await page.locator("#portoniFloorMode:visible").count();
-await page.locator('[data-scroll="operations"]').click();
-const runSlideHeights = {};
-for (const slide of ["civic", "street", "network"]) {
-  await page.locator(`[data-run-slide-target="${slide}"]`).click();
-  runSlideHeights[slide] = await page.locator(`[data-run-slide="${slide}"]`).evaluate((element) => element.getBoundingClientRect().height);
-  if (slide === "network") await page.locator(".run-launcher").screenshot({ path: path.join(output, "network-ready.png") });
+  await page.locator(selector("sync")).click();
+  await page.locator("#requestArchiveStart").waitFor();
+  await page.locator("#mandateArchiveStart").waitFor();
+  await page.screenshot({ path: path.join(output, "sync.png") });
+  await page.locator(selector("agencies")).click();
+  await page.locator("#agencyOpenChrome").waitFor();
+  await page.locator(selector("worker-v2")).click();
+  await page.screenshot({ path: path.join(output, "ready.png") });
+  assert(errors.length === 0, errors.join(" | "));
+  console.log(JSON.stringify({nav, startup:"worker-v2", sync:true, errors}));
+} finally {
+  await browser.close();
 }
-const runSlideHeightSpread = Math.max(...Object.values(runSlideHeights)) - Math.min(...Object.values(runSlideHeights));
-const networkPreparationOverflow = await page.locator('[data-run-slide="network"]').evaluate((element) => element.scrollHeight > element.clientHeight + 1);
-await page.locator('[data-run-slide-target="civic"]').click();
-await page.locator('[data-mode="automatic"]').click();
-const activityModeSelections = [];
-for (const mode of ["plain", "killer", "none", "direct_contact"]) {
-  await page.locator(`[data-activity-mode="${mode}"]`).click();
-  activityModeSelections.push(await page.locator(`[data-activity-mode="${mode}"]`).getAttribute("aria-checked"));
-}
-await page.locator("#parallelCloudToggle").check();
-const parallelCloudEnabled = await page.locator("#parallelCloudToggle").isChecked();
-await page.locator("#chromeButton").evaluate((button) => button.click());
-await page.locator("#startButton").click();
-await page.locator('[data-run-slide-target="street"]').click();
-await page.locator("#streetRunInput").fill("via borgo san francesco");
-await page.locator("#streetRunStart").click();
-await page.locator('[data-scroll="sync"]').click();
-await page.locator("#requestArchiveStart").click();
-await page.locator("#mandateArchiveStart").click();
-const commandMonitorAcknowledged = await page.getByText("Sincronizza archivio incarichi", { exact: true }).count();
-await page.evaluate(() => { const button = document.createElement("button"); button.id = "unroutedTestButton"; button.textContent = "Comando di prova non collegato"; document.body.appendChild(button); });
-await page.locator("#unroutedTestButton").click();
-await page.waitForFunction(() => window.__workerCalls().uiActions?.some((entry) => entry.action === "unroutedTestButton" && entry.status === "failed"));
-const unknownCommandFailureRecorded = (await page.evaluate(() => window.__workerCalls().uiActions.filter((entry) => entry.action === "unroutedTestButton" && entry.status === "failed").length));
-await page.locator('[data-scroll="operations"]').click();
-await page.evaluate(() => window.__showStreetRunState());
-await page.evaluate(() => window.__showStreetRunProgress());
-await page.locator('[data-scroll="sync"]').click();
-const navigationDuringRunVisible = await page.evaluate(() =>
-  document.body.dataset.workerView === "sync" && document.querySelector("#sync")?.open === true,
-);
-const secondaryActionsLocked = await page.locator("#sync").evaluate((section) =>
-  section.inert === false && document.querySelector("#requestArchiveStart")?.disabled === true,
-);
-await page.locator('[data-scroll="operations"]').click();
-await page.locator("#operationConsole").screenshot({ path: path.join(output, "street-run.png") });
-await page.locator("#stopAllButton").click();
-const streetRunProgressVisible = await page.getByText("Leggo gli intestatari 413 di 1743", { exact: false }).count();
-const streetMonitorText = await page.locator("#commandMonitor").innerText();
-const streetRunOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.setViewportSize({ width: 390, height: 844 });
-await page.locator("#operationConsole").screenshot({ path: path.join(output, "street-run-mobile.png") });
-const streetRunMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-await page.setViewportSize({ width: 1440, height: 1000 });
-await page.evaluate(() => window.__showPausedStreetRunState());
-await page.evaluate(() => window.__showPartialArchives());
-await page.locator('[data-scroll="sync"]').click();
-await page.locator("#requestArchiveNew").click();
-await page.locator("#mandateArchiveNew").click();
-await page.evaluate(() => window.__showDownloadingUpdate());
-await page.locator('[data-scroll="settings"]').click();
-await page.locator("#settings").evaluate((element) => { element.open = true; });
-await page.locator("#softwareUpdateCancel").click();
-await page.locator('[data-scroll="operations"]').click();
-await page.evaluate(() => window.__showRequestProgress());
-const requestMonitorVisible = await page.getByText("Importazione di 1.000 richieste", { exact: true }).count();
-await page.evaluate(() => window.__showMandateProgress());
-const mandateMonitorVisible = await page.getByText("Importazione di 250 incarichi", { exact: true }).count();
-/* Lo stato dei collegamenti vive nella pastiglia della testata; la barra
- * d'errore compare solo quando c'e qualcosa da sistemare. */
-await page.locator("#connectionPill").screenshot({ path: path.join(output, "connections.png") });
-await page.evaluate(() => window.__showPropertyState());
-await page.setViewportSize({ width: 1600, height: 1000 });
-const activeInspectorRunning = await page.locator("#workspaceInspector").getByText("In corso", { exact: true }).count();
-const activeInspectorCurrentRecord = await page.locator("#workspaceInspector").getByText("Via Borgo San Francesco 29 [2]", { exact: true }).count();
-const activeInspectorResumeHidden = await page.locator('#workspaceInspector button:has-text("Riprendi")').count() === 0;
-await page.locator("#workspaceInspector").screenshot({ path: path.join(output, "active-run-inspector.png") });
-await page.setViewportSize({ width: 1440, height: 1000 });
-await page.locator('#actionPanel [data-action="pause"]').click();
-await page.getByRole("button", { name: "Salta immobile" }).click();
-const workerCalls = await page.evaluate(() => window.__workerCalls());
-const propertyMonitorVisible = await page.getByText("Importazione di 7 immobili", { exact: true }).count();
-await page.screenshot({ path: path.join(output, "property-progress.png"), fullPage: false });
-await page.locator("#operationConsole").scrollIntoViewIfNeeded();
-await page.evaluate(() => {
-  const consoleTop = document.querySelector("#operationConsole")?.getBoundingClientRect().top ?? 0;
-  window.scrollBy(0, consoleTop - 72);
-});
-const operationPageScrollBefore = await page.evaluate(() => window.scrollY);
-await page.evaluate(() => window.__showLongPropertyState());
-await page.waitForFunction(() => document.querySelectorAll("#operationQueue .operation-queue-row").length === 40);
-await page.waitForTimeout(500);
-const operationQueueStability = await page.evaluate((pageScrollBefore) => {
-  const queue = document.querySelector("#operationQueue");
-  const current = queue?.querySelector(".operation-queue-row.is-current");
-  const main = document.querySelector("#operationConsoleMain");
-  if (!queue || !current || !main) return { pageDelta: Number.POSITIVE_INFINITY, mainScrollTop: -1, queueScrollTop: 0, centerDelta: Number.POSITIVE_INFINITY };
-  const queueRect = queue.getBoundingClientRect();
-  const currentRect = current.getBoundingClientRect();
-  return {
-    pageDelta: Math.abs(window.scrollY - pageScrollBefore),
-    mainScrollTop: main.scrollTop,
-    queueScrollTop: queue.scrollTop,
-    centerDelta: Math.abs((currentRect.top + currentRect.height / 2) - (queueRect.top + queueRect.height / 2)),
-  };
-}, operationPageScrollBefore);
-await page.locator("#operationConsole").screenshot({ path: path.join(output, "operation-long-queue.png") });
-await page.evaluate(() => window.__showRetryState());
-await page.screenshot({ path: path.join(output, "retry-monitor.png"), fullPage: false });
-const retryMonitorVisible = await page.locator("#retryMonitor:not(.is-hidden)").count();
-const retryAttemptVisible = await page.getByText("Prossimo tentativo 2 di 3", { exact: true }).count();
-await page.evaluate(() => window.__showUpdateState());
-await page.screenshot({ path: path.join(output, "update-available.png"), fullPage: true });
-await page.evaluate(() => window.__showCloudRestrictedState());
-const cloudPanelText = await page.locator("#actionPanel").textContent();
-const cloudRestrictionVisible = cloudPanelText?.includes("Le operazioni cloud restano ferme in sicurezza") === true;
-const runDisabledDuringRestriction = await page.locator("#startButton").isDisabled();
-const updaterEnabledDuringRestriction = await page.locator("#softwareUpdateAction").isEnabled();
-await page.evaluate(() => window.__showCompletedState());
-await page.screenshot({ path: path.join(output, "completed-import.png"), fullPage: true });
-const successHeading = await page.getByRole("heading", { name: "Import eseguito con successo" }).count();
-const staleErrorVisible = await page.getByText("La pagina del portale è diversa da quella attesa", { exact: false }).count();
-await page.locator('.completed-session [data-detail-job="33333333-3333-4333-8333-333333333333"]').evaluate((element) => element.click());
-const completedFilterVisible = await page.getByText("Civici 20–40", { exact: false }).count();
-const completedMergeVisible = await page.locator("#mergeRunSource, [data-merge-run]").count();
-await page.locator("#jobDetailDialog").screenshot({ path: path.join(output, "completed-run-detail.png") });
-await page.locator('#jobDetailDialog [data-job-detail="close"]').first().click();
-await page.evaluate(() => window.__showErrorState());
-await page.getByRole("button", { name: "Correggi dati qui sotto" }).click();
-await page.screenshot({ path: path.join(output, "recovery.png"), fullPage: true });
-await page.getByRole("button", { name: "Rimuovi questo immobile dalla lavorazione" }).first().click();
-await page.screenshot({ path: path.join(output, "recovery-remove-confirmation.png"), fullPage: true });
-const removalConfirmationVisible = await page.getByText("Rimuovere questo immobile dalla lavorazione?").count();
-const recoveryOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-console.log(JSON.stringify({ errors, readyOverflow, readyMobileOverflow, sideNavigationVisible, initialTheme, darkThemeApplied, inspectorSelectionVisible, mergedRunSetup, stoppedRunVisible, exactAcquisitionCursorVisible, exactAcquisitionOwnerVisible, resumeProgressVisible, nonContiguousProgressExplained, importKillerChoiceVisible, importKillerHelpVisible, lockedImportChoices, resumableParallelChoice, lockedImportExplanationVisible, detailRestartRowVisible, civicMarkersVisible, detailAccordionsVisible, detailParallelChoiceVisible, civicMarkerHasPhantomP, detailListScrollability, detailListsScrollable, refinementVisible, refinementBoundaryVisible, refinementArchiveVisible, refinementOriginBadgeVisible, refinementSeedStartVisible, refinementOverflow, automaticAuditorVisible, automaticAuditorNoManualStart, historyOverflow, portoniVisible, portoniOverflow, portoniCollapsed, portoniFiltersVisible, runSlideHeights, runSlideHeightSpread, networkPreparationOverflow, activityModeSelections, parallelCloudEnabled, navigationDuringRunVisible, secondaryActionsLocked, streetRunOverflow, streetRunMobileOverflow, streetRunProgressVisible, streetMonitorText, requestMonitorVisible, mandateMonitorVisible, propertyMonitorVisible, activeInspectorRunning, activeInspectorCurrentRecord, activeInspectorResumeHidden, operationQueueStability, retryMonitorVisible, retryAttemptVisible, commandMonitorAcknowledged, unknownCommandFailureRecorded, workerCalls, cloudRestrictionVisible, runDisabledDuringRestriction, updaterEnabledDuringRestriction, recoveryOverflow, successHeading, staleErrorVisible, completedFilterVisible, completedMergeVisible, removalConfirmationVisible, output }, null, 2));
-await browser.close();
-const failures = [
-  ...(errors.length ? [`Errori JavaScript: ${errors.join("; ")}`] : []),
-  ...(!sideNavigationVisible || initialTheme !== "dark" || !darkThemeApplied || inspectorSelectionVisible !== 1 || !inspectorCloseWorks || !inspectorReopens || mergedRunSetup !== 1 ? ["Guscio, tema, ispettore o configurazione unificata non funzionanti"] : []),
-  ...([readyOverflow, readyMobileOverflow, refinementOverflow, historyOverflow, portoniOverflow, streetRunOverflow, streetRunMobileOverflow, recoveryOverflow].some(Boolean)
-    ? ["Overflow orizzontale rilevato"] : []),
-  ...(runSlideHeightSpread > 1 ? ["Le tre run non hanno la stessa altezza"] : []),
-  ...(stoppedRunVisible !== 1 || resumeProgressVisible !== 1 || nonContiguousProgressExplained < 1 || detailRestartRowVisible < 1 || civicMarkersVisible < 1 ? ["Stato, civico o riga di ripartenza della run non visibili"] : []),
-  ...(exactAcquisitionCursorVisible !== 1 || exactAcquisitionOwnerVisible < 1 ? ["Checkpoint SISTER esatto o prossimo nominativo non visibili"] : []),
-  ...(importKillerChoiceVisible !== 1 || !lockedImportChoices || !resumableParallelChoice || lockedImportExplanationVisible < 1 ? ["Le impostazioni fisse o la concorrenza modificabile della run interrotta non sono corrette"] : []),
-  ...(detailAccordionsVisible !== 2 || detailParallelChoiceVisible !== 1 || civicMarkerHasPhantomP || !detailRowsOrdered ? ["Accordion SISTER/Cloud, toggle di ripresa, ordine o civici nel dettaglio non corretti"] : []),
-  ...(!detailListsScrollable ? ["Le liste SISTER e Import Cloud nel dettaglio non scorrono in modo indipendente"] : []),
-  ...(workerCalls.resumeJob !== 1 || workerCalls.resumeJobValues?.activityMode !== "plain" || workerCalls.resumeJobValues?.importCoOwners !== true || workerCalls.resumeJobValues?.parallelCrmWindows !== false
-    ? ["La ripresa non conserva le tre impostazioni originarie"] : []),
-  ...(portoniVisible !== 1 ? ["Editor Portoni non visibile"] : []),
-  ...(refinementVisible !== 1 || refinementBoundaryVisible < 1 || refinementArchiveVisible < 1 ? ["Pagina o archivio Rifinitura non visibile o confine operativo assente"] : []),
-  ...(refinementOriginBadgeVisible !== 1 || refinementSeedStartVisible !== 1 ? ["Badge o avvio della rifinitura derivata non visibile"] : []),
-  ...(automaticAuditorVisible !== 1 || !automaticAuditorNoManualStart ? ["La sorveglianza automatica non è integrata nella Cronologia o conserva ancora un avvio manuale"] : []),
-  ...(portoniCollapsed !== 1 || portoniFiltersVisible !== 1 ? ["Accordion o filtri Portoni non funzionanti"] : []),
-  ...(networkPreparationOverflow ? ["La preparazione rete proprietari richiede uno scroll interno"] : []),
-  ...(activityModeSelections.length !== 4 || activityModeSelections.some((selected) => selected !== "true") ? ["Le quattro modalità attività non confermano la selezione salvata"] : []),
-  ...(!parallelCloudEnabled ? ["La preferenza per due finestre Cloud non resta selezionata"] : []),
-  ...(!navigationDuringRunVisible ? ["Le pagine secondarie non restano consultabili durante una run"] : []),
-  ...(!secondaryActionsLocked ? ["L'avvio di un secondo motore non viene bloccato lasciando consultabile l'archivio"] : []),
-  ...(streetRunProgressVisible !== 1 ? ["Avanzamento interno long mode non visibile"] : []),
-  ...(!streetMonitorText.includes("Voce 413 di 1.743") ? ["Contatore voce/totale della long mode non visibile"] : []),
-  ...(requestMonitorVisible < 1 ? ["Totale import richieste non visibile"] : []),
-  ...(mandateMonitorVisible < 1 ? ["Totale import incarichi non visibile"] : []),
-  ...(propertyMonitorVisible !== 1 ? ["Totale import immobili non visibile"] : []),
-  ...(activeInspectorRunning !== 1 || activeInspectorCurrentRecord !== 1 || !activeInspectorResumeHidden
-    ? ["La sidebar della run attiva non mostra il record corrente o espone ancora la ripresa"] : []),
-  ...(!operationQueueStability || operationQueueStability.pageDelta > 10 || operationQueueStability.mainScrollTop !== 0 || operationQueueStability.queueScrollTop <= 0 || operationQueueStability.centerDelta > 2
-    ? ["La coda operativa muove ancora la colonna sinistra o non centra il record corrente"] : []),
-  ...(retryMonitorVisible !== 1 || retryAttemptVisible !== 1 ? ["Contatore tentativi e timer non visibili"] : []),
-  ...(commandMonitorAcknowledged !== 1 ? ["Conferma immediata del comando non visibile"] : []),
-  ...(unknownCommandFailureRecorded !== 1 ? ["Pulsante non collegato non segnalato come errore"] : []),
-  ...(!cloudRestrictionVisible || !runDisabledDuringRestriction || !updaterEnabledDuringRestriction
-    ? ["Stato HTTP 402 non separa correttamente blocco run e aggiornamenti"] : []),
-  ...(["openChrome", "startJob", "startStreetRun", "stopAll", "cancelUpdateDownload", "pauseJob", "skipProperty"].filter((name) => workerCalls[name] !== 1).map((name) => `Comando non eseguito esattamente una volta: ${name}`)),
-  ...(workerCalls.savePreferences !== 6 ? [`Le preferenze modalità/avvio non sono state salvate sei volte: ${workerCalls.savePreferences ?? 0}`] : []),
-  ...(["startRequestArchiveImport", "startMandateArchiveImport"].filter((name) => workerCalls[name] !== 2).map((name) => `Comando nuovo/ripresa non eseguito due volte: ${name}`)),
-  ...((workerCalls.uiActions?.filter((entry) => entry.status === "started").length ?? 0) < 8 ? ["Registro UI incompleto: mancano comandi ricevuti"] : []),
-  ...(successHeading !== 1 ? ["Riepilogo import completato non visibile"] : []),
-  ...(staleErrorVisible !== 0 ? ["Errore obsoleto ancora visibile"] : []),
-  ...(completedFilterVisible < 1 || completedMergeVisible !== 2 ? ["Filtri o controllo unione non visibili nel riepilogo della lavorazione conclusa"] : []),
-  ...(removalConfirmationVisible !== 1 ? ["Conferma rimozione immobile non visibile"] : []),
-];
-if (failures.length) throw new Error(failures.join(" | "));

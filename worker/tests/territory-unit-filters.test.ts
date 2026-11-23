@@ -31,7 +31,7 @@ describe("Filtri delle schede via", () => {
 describe("Fatto d’import del singolo immobile", () => {
   it("mostra età e colori dai successi verificati, indipendenti dalle run", () => {
     const now = Date.parse("2026-10-11T12:00:00Z");
-    for (const [days, expected] of [[0, "recent"], [30, "recent"], [31, "aging"], [90, "aging"], [91, "stale"]] as const) {
+    for (const [days, expected] of [[0, "recent"], [30, "recent"], [31, "aging"], [60,"aging"], [61,"older"], [90, "older"], [91, "stale"]] as const) {
       expect(unitImportTone(unit([1], "12", new Date(now - days * 86400000).toISOString()), now)).toBe(expected);
     }
     expect(unitImportTone(unit([1], "12", null), now)).toBe("acquired");

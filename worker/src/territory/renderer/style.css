@@ -300,6 +300,7 @@ h3 {
 .dot.aging {
   background: var(--lr-warn);
 }
+.dot.older { background: var(--lr-data-4); }
 .dot.stale {
   background: var(--lr-danger);
 }
@@ -389,6 +390,7 @@ h3 {
 }
 .import-band.recent { background: var(--lr-ok); }
 .import-band.aging { background: var(--lr-warn); }
+.import-band.older { background: var(--lr-data-4); }
 .import-band.stale { background: var(--lr-danger); }
 .import-band.acquired { background: var(--lr-data-1); }
 .queue-count { border-radius: var(--lr-radius-pill); background: var(--lr-raised); padding: 2px 7px; font-variant-numeric: tabular-nums; }

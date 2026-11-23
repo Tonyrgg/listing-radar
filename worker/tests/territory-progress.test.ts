@@ -88,7 +88,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     Object.assign(state.units[keys[4]!]!.observations[0]!, { importVerified: true, crmId: "crm", importedAt: null });
     // A found CRM ID and a mutable unit timestamp alone never prove an import.
     Object.assign(state.units[keys[5]!]!, { crmId: "found", importedAt: ago(0) });
-    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 2, stale: 1, never: 1, acquired: 1, unacquired: 0, undated: 1 });
+    expect(importProgress(state, [street.id], now).distribution).toMatchObject({ imported: 5, recent: 1, aging: 1, older: 1, stale: 1, never: 1, acquired: 1, unacquired: 0, undated: 1 });
   });
   it("conserva il blu per fonti in quarantena e distingue le righe dell'inventario ancora da leggere", () => {
     const { state, keys, scan } = fixture(100);
@@ -106,7 +106,7 @@ describe("Età e percentuale import nell'ultima acquisizione", () => {
     expect(importProgress(state, [street.id], now).distribution).toMatchObject({ total: 100, imported: 50, recent: 33, stale: 17, never: 50, acquired: 20, unacquired: 30 });
   });
   it("rispetta 30/31 e 90/91 giorni, senza colorare date mancanti o future", () => {
-    for (const [days, tone] of [[0, "recent"], [30, "recent"], [31, "aging"], [59, "aging"], [60, "aging"], [90, "aging"], [91, "stale"]] as const) expect(importAge(ago(days), now)).toEqual({ ageDays: days, tone });
+    for (const [days, tone] of [[0, "recent"], [30, "recent"], [31, "aging"], [59, "aging"], [60, "aging"], [61,"older"], [90, "older"], [91, "stale"]] as const) expect(importAge(ago(days), now)).toEqual({ ageDays: days, tone });
     for (const date of [null, "non-data", ago(-1)]) expect(importAge(date, now)).toEqual({ ageDays: null, tone: "never" });
   });
   it("3 import verificati su 10, cinque giorni fa, sono 30% e verde", () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,7 +14,7 @@ import { unitKey, type Run, type Street } from "../src/territory/model.js";
 
 const street: Street = { id: "proof", name: "Via sintetica", sisterName: "VIA SINTETICA", locality: "Bitonto", geometry: null, geometryEvidence: null, needsReview: false };
 const directories: string[] = [];
-afterEach(async () => { await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
+afterEach(async () => { vi.useRealTimers(); await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 async function setup() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "run-proof-")); directories.push(directory);
   const store = await TerritoryStore.open(directory, [street]);
@@ -33,6 +33,8 @@ const created = { created: 1, recovered: 0, coveredProperty:0,coveredClient:0,di
 
 describe("W02: prova immutabile del singolo import", () => {
   it("due run con attivita diverse, checkpoint sostituito e riavvio conservano i conteggi", async () => {
+    vi.useFakeTimers({toFake:["Date"]});
+    vi.setSystemTime(new Date("2026-10-25T10:00:00Z"));
     const { store, app, directory } = await setup();
     await app.start(street.id, "scan"); await app.waitForIdle();
     const key = Object.keys(store.read().units)[0]!;
@@ -40,6 +42,7 @@ describe("W02: prova immutabile del singolo import", () => {
     const first = store.read().runs.at(-1)!;
     expect(runActivitySummary(store.read(), first)).toEqual(created);
     const proof = structuredClone(first.imports![key]);
+    vi.setSystemTime(new Date("2026-11-25T10:00:00Z"));
     await app.enqueue([key]); await app.startQueue([key], { activityMode: "killer" }); await app.waitForIdle();
     const state = store.read(), second = state.runs.at(-1)!;
     expect(second.imports![key]!.proof!.itemId).not.toBe(proof!.proof!.itemId);
