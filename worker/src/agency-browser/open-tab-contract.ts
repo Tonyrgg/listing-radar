@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { agencyHost, browserSources, detailLink, localAgencyUrl } from "./sources.js";
+import { agencyHost, browserSources, detailLink, localAgencyUrl } from "./sources.ts";
 
 export const OPEN_TAB_LIMIT = 200;
 export const OPEN_TAB_MAX_BYTES = 650_000;
