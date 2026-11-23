@@ -6,6 +6,35 @@ let browser:Browser;
 beforeAll(async()=>{browser=await chromium.launch({channel:'chrome',headless:true});});afterAll(async()=>{await browser?.close();});
 const options={propertyId:property,clientId:client,propertyUrl:origin+'/property',clientUrl:origin+'/client',assertSession:async()=>{}};
 describe('complete CRM activity history',{timeout:15000},()=>{
+ it('reads an older Task from the real modal control without mistaking its due date for creation',async()=>{
+  const page=await browser.newPage();let opened=0;
+  try{
+   await page.route(origin+'/**',route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/activity-summary')return route.fulfill({json:{Id:id,WhatId:property,Cliente__c:client,ActivityDate:'2030-01-01'}});
+    if(path==='/activity-detail'){
+     opened++;
+     return route.fulfill({json:{actions:[{state:'SUCCESS',returnValue:{returnValue:{id,fields:{Id:{value:id},WhatId:{value:property},Cliente__c:{value:client},CreatedDate:{value:'2020-01-01T10:00:00Z'},Status:{value:'Eseguito'}}}}}]}});
+    }
+    return route.fulfill({contentType:'text/html; charset=utf-8',body:`
+      <c-activity-summary style="display:block"><h2>Attività e appuntamenti (1+)</h2>
+        <a onclick="document.querySelector('#all').hidden=false">Visualizza tutto</a>
+        <a data-recordid="${id}" data-objectname="Task" data-modalview="true">Anteprima</a>
+        <c-lwc-modal id="all" hidden><div class="slds-modal__container"><h2>Attività e appuntamenti (1)</h2></div>
+          <table><tbody><tr><td><a data-recordid="${id}" data-objectname="Task" data-modalview="true"
+            onclick="document.querySelector('#detail').hidden=false;fetch('/activity-detail')">Task</a></td></tr></tbody></table>
+          <button onclick="document.querySelector('#all').hidden=true">Chiudi</button>
+        </c-lwc-modal>
+        <c-lwc-modal id="detail" hidden><div class="slds-modal__container">Dettaglio attività</div>
+          <button onclick="document.querySelector('#detail').hidden=true">Chiudi</button>
+        </c-lwc-modal>
+      </c-activity-summary><script>fetch('/activity-summary')</script>`});
+   });
+   const history=await readCrmActivityHistory(page,options);
+   expect(history).toMatchObject({propertyComplete:true,clientComplete:true,issues:[],records:[{id,createdAt:'2020-01-01T10:00:00Z',status:'Eseguito'}]});
+   expect(opened).toBe(1);
+  }finally{await page.close();}
+ });
  it('uses recent activity from the preview without opening Show All or visiting the client', async () => {
   const page = await browser.newPage();
   let clientVisits = 0;

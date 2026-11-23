@@ -72,7 +72,7 @@ export function mergeTaskFragment(target:Map<string,TaskFragment>,incoming:TaskF
   target.set(key,next);
 }
 export function taskSnapshot(row:TaskFragment,allowUnknownClient=false):CrmActivitySnapshot|null{
-  if(row.conflicted||row.propertyId===undefined||!allowUnknownClient&&row.clientId===undefined||!row.status||!row.createdAt)return null;
+  if(row.conflicted||row.propertyId===undefined||!allowUnknownClient&&row.clientId===undefined||!row.status||!row.createdAt||!activityDay({createdAt:row.createdAt,activityDate:null}))return null;
   return {id:row.id,propertyId:row.propertyId,clientId:row.clientId??null,description:row.description??'',status:row.status,activityDate:row.activityDate??null,createdAt:row.createdAt};
 }
 

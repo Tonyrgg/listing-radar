@@ -12,8 +12,7 @@ const emptyList=/nessun[aeo]?\s+(?:attivit[aà]|element[oi]|record)|non (?:sono 
 const headerCount=/Attivit[aà](?: e appuntamenti)?\s*\((\d+)(\+)?\)/i;
 type Options={propertyId:string;clientId:string;propertyUrl:string;clientUrl:string;assertSession:()=>Promise<void>;stopOnPropertyCoverage?:boolean};
 
-/** No guessed API endpoint and no writes. Read the actual related list and,
- * when its Task payload omits fields, follow the Task's own visible link. */
+/** Read the related list and open the exact Task when the summary omits fields. */
 export async function readCrmActivityHistory(page:Page,options:Options):Promise<CrmActivityHistory>{
   const issues:NonNullable<CrmActivityHistory['issues']>=[];
   const fragments=new Map<string,TaskFragment>(),tasks=new Set<Promise<void>>(),pending=new Set<Request>();let failed=false;
@@ -53,7 +52,7 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     pending.clear();
     failed=false;
     await page.goto(url,{waitUntil:'commit',timeout:20_000});
-    const cards=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});
+    const cards=page.locator('c-activity-summary:visible,article:visible').filter({hasText:headerCount});
     let card=cards.filter({hasNot:cards});
     await card.waitFor({state:'visible',timeout:10_000});
     await settled(true);
@@ -61,29 +60,60 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     let text=await card.innerText();
     let declared=headerCount.exec(text)?.[1];
     let truncated=Boolean(headerCount.exec(text)?.[2]);
-    const showAll=card.getByRole('link',{name:/^Visualizza tutt[oi]$/i}).or(card.getByRole('button',{name:/^Visualizza tutt[oi]$/i})).or(card.locator('a').filter({hasText:/^Visualizza tutt[oi]$/i}));
+    const showAll=card.getByText(/^Visualizza tutt[oi]$/i).filter({visible:true});
     if(await showAll.count()===1&&(truncated||declared===undefined||Number(declared)>taskIds(await card.innerHTML()).length)){
       await showAll.click();await settled();
-      const modal=page.locator('[role="dialog"]:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?/i});
-      await modal.first().waitFor({state:'visible',timeout:5000}).catch(()=>undefined);
+      const lwcList=page.locator('c-lwc-modal').filter({has:page.locator('.slds-modal__container:visible')}).filter({hasText:headerCount});
+      const dialog=page.locator('[role="dialog"]:visible').filter({hasText:headerCount});
+      await lwcList.or(dialog).first().waitFor({state:'attached',timeout:5000}).catch(()=>undefined);
       await settled();
+      const modal=await lwcList.count()?lwcList:dialog;
       if(await modal.count()===1)card=modal;
       else {
-        const fresh=page.locator('article:visible').filter({hasText:/Attivit[aà](?: e appuntamenti)?\s*\(\d/i});card=fresh.filter({hasNot:fresh});
+        card=cards.filter({hasNot:cards});
       }
       if(await card.count()!==1)return false;
       text=await card.innerText();declared=headerCount.exec(text)?.[1]??declared;truncated=Boolean(headerCount.exec(text)?.[2]);
     }
     const listed=new Set<string>(),events=new Set<string>(),links=new Map<string,string>();let exhausted=false;
+    const day=romeDay(new Date());
+    const cutoff=kind==='property'?day.slice(0,7)+'-01':day;
+    const outsideWindow=(row:TaskFragment|undefined)=>{
+      if(!row||row.conflicted)return false;
+      const created=activityDay({createdAt:row.createdAt??null,activityDate:null});
+      return created!==null&&created<cutoff;
+    };
+    const resolved=(id:string)=>outsideWindow(fragments.get(id))||Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property'));
     for(let pageIndex=0;pageIndex<50;pageIndex++){
       const priorCount=listed.size+events.size;
       const html=await card.innerHTML();for(const id of taskIds(html))listed.add(id.slice(0,15));
+      // The full list can render inside an LWC shadow root. Its Task controls
+      // have a real record ID but intentionally have no href.
+      const taskControls=card.locator('a[data-objectname="Task"][data-recordid][data-modalview="true"]:visible');
+      const ids=await taskControls.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-recordid')??''));
+      for(const id of ids)if(taskIds(id).includes(id))listed.add(id.slice(0,15));
       for(const match of html.matchAll(/\b00U[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?\b/g))events.add(match[0].slice(0,15));
       if(pageIndex>0&&listed.size+events.size===priorCount)break;
       const anchors=await card.locator('a[href]').evaluateAll(nodes=>nodes.map(a=>({href:(a as HTMLAnchorElement).href,text:a.outerHTML})));
       for(const anchor of anchors)for(const id of taskIds(anchor.text)){
         const target=new URL(anchor.href,page.url());
         if(target.origin===new URL(page.url()).origin&&target.href.includes(id))links.set(id.slice(0,15),target.href);
+      }
+      for(const id of new Set(ids)){
+        const key=id.slice(0,15);
+        if(!listed.has(key)||resolved(key))continue;
+        const control=taskControls.and(card.locator(`[data-recordid="${id}"]`));
+        if(await control.count()!==1)continue;
+        const close=page.getByRole('button',{name:'Chiudi',exact:true});
+        const before=await close.count();
+        await control.click({timeout:5000});
+        await settled();
+        if(hasCoverage())return false;
+        // Tecnocloud stacks the Task modal above the list. Restore the exact
+        // list before opening another Task or going to the next page.
+        if(await close.count()!==before+1)return false;
+        await close.last().click({timeout:5000});
+        await settled();
       }
       const next=card.getByRole('button',{name:/^(?:Avanti|Successiv[oa])$/i});
       if(await next.count()!==1||await next.isDisabled()){exhausted=true;break;}
@@ -93,19 +123,16 @@ export async function readCrmActivityHistory(page:Page,options:Options):Promise<
     // belonging to another property/client seen elsewhere on the page.
     for(const [id,row]of fragments)if(kind==='property'?row.propertyId&&sameCrmRecordId(row.propertyId,parentId):row.clientId&&sameCrmRecordId(row.clientId,parentId))listed.add(id);
     const completeList=!truncated&&exhausted&&(declared!==undefined?listed.size+events.size===Number(declared):listed.size===0&&events.size===0&&emptyList.test(text));
-    const cutoff=kind==='property'?romeDay(new Date()).slice(0,7)+'-01':romeDay(new Date());
-    const outsideWindow=(row:TaskFragment|undefined)=>{const day=row?.createdAt?activityDay({createdAt:row.createdAt,activityDate:null}):null;return Boolean(day&&day<cutoff);};
     for(const id of listed){
-      if(outsideWindow(fragments.get(id)))continue;
-      if(taskSnapshot(fragments.get(id)??{id},kind==='property'))continue;
+      if(resolved(id))continue;
       const href=links.get(id);if(!href)continue;
       // No partial fields from a different Task can complete this one.
       await page.goto(href,{waitUntil:'commit',timeout:20_000});await settled();
       const detail=await readActivityDetailDom(page,id);if(detail)mergeTaskFragment(fragments,detail);
     }
-    const completeRecords=[...listed].every(id=>outsideWindow(fragments.get(id))||Boolean(taskSnapshot(fragments.get(id)??{id},kind==='property')));
+    const completeRecords=[...listed].every(resolved);
     if(!completeList)issues.push({scope:kind,missing:['elenco_completo']});
-    for(const id of listed){const r=fragments.get(id);if(outsideWindow(r)||taskSnapshot(r??{id},kind==='property'))continue;issues.push({scope:kind,taskId:id,missing:[...(!r?.createdAt?['data_creazione']:[]),...(r?.propertyId===undefined?['immobile_collegato']:[]),...(kind==='client'&&r?.clientId===undefined?['cliente_collegato']:[]),...(!r?.status?['stato']:[]),...(r?.conflicted?['valori_discordanti']:[])]});}
+    for(const id of listed){const r=fragments.get(id);if(resolved(id))continue;issues.push({scope:kind,taskId:id,missing:[...(!activityDay({createdAt:r?.createdAt??null,activityDate:null})?['data_creazione']:[]),...(r?.propertyId===undefined?['immobile_collegato']:[]),...(kind==='client'&&r?.clientId===undefined?['cliente_collegato']:[]),...(!r?.status?['stato']:[]),...(r?.conflicted?['valori_discordanti']:[])]});}
     console.info(JSON.stringify({action:'activity-history',kind,declared,truncated,listed:listed.size,events:events.size,exhausted,failed,completeList,completeRecords}));
     return !failed&&completeList&&completeRecords;
   }
