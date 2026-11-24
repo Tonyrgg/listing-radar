@@ -1483,8 +1483,34 @@ button[aria-busy="true"] {
 #territory-news-layers { display: flex; flex-wrap: wrap; gap: 10px 14px; }
 #territory-news-layers label { display: flex; align-items: center; gap: 4px; }
 .territory-map-pin { display: flex; align-items: center; justify-content: center; }
-.territory-map-pin span { display: grid; place-items: center; min-width: 17px; height: 23px; border: 1px solid #fff; border-radius: 9px; color: #fff; font-size: 11px; font-weight: 750; box-shadow: 0 1px 4px #0007; }
+.territory-map-pin span { display: grid; place-items: center; min-width: 20px; height: 20px; padding-inline: 4px; border: 2px solid #f5f8f6; border-radius: 100px; color: #f5f8f6; font-size: 11px; font-weight: 750; box-shadow: 0 1px 4px #17261f85; white-space: nowrap; }
+.territory-pin-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .territory-map-pin-categories { font-size: 11px; font-weight: 700; }
 .territory-news-popup { max-height: 290px; overflow: auto; min-width: 190px; }
 .territory-news-popup article + article { margin-top: 12px; }
 .territory-news-popup article p { margin: 5px 0; }
+.territory-pin-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 8px; }
+.territory-news-popup button {
+  min-height: 36px;
+  padding: 6px 10px;
+  color: #f5f8f6;
+  background: #203b32;
+  border: 1px solid #203b32;
+  border-radius: 5px;
+  line-height: 1.25;
+}
+.territory-news-popup button.territory-pin-flash { color: #203b32; background: #edf4ef; border-color: #a8bbb0; }
+.territory-news-popup button:hover { color: #f5f8f6; background: #305546; }
+.territory-news-popup button:focus-visible { outline: 2px solid #195e86; outline-offset: 2px; }
+#pin-review-dialog { width: min(700px, calc(100vw - 24px)); }
+#pin-review-form { padding: 16px; }
+.pin-review-tools, #pin-review-form footer { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.pin-review-tools input { width: 112px; margin-top: 4px; display: block; }
+#pin-review-candidates { max-height: min(36vh, 360px); overflow: auto; }
+.pin-review-row { display: grid; align-items: center; grid-template-columns: auto 1fr auto; gap: 12px; min-height: 52px; padding: 8px 4px; border-top: 1px solid currentColor; border-color: color-mix(in srgb, currentColor 16%, transparent); }
+.pin-review-row small { display: block; font-size: 12px; opacity: .82; }
+.pin-review-row:has(input:checked) { background: color-mix(in srgb, currentColor 8%, transparent); }
+.pin-review-score { font-variant-numeric: tabular-nums; }
+#pin-review-form footer { justify-content: flex-end; margin-top: 16px; }
+#pin-review-form footer label { margin-right: auto; }
+#pin-review-owner { width: 100%; min-width: 150px; display: block; margin-top: 4px; }

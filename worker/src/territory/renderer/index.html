@@ -141,6 +141,24 @@
       </div>
       <p id="memory-result" role="status"></p>
     </dialog>
+    <dialog id="pin-review-dialog" aria-labelledby="pin-review-title">
+      <header class="dialog-bar"><h2 id="pin-review-title">Import flash da mappa</h2><button type="button" id="pin-review-close">Chiudi</button></header>
+      <form id="pin-review-form">
+        <strong id="pin-review-address"></strong>
+        <p class="meta" id="pin-review-data"></p>
+        <div class="pin-review-tools">
+          <label for="pin-review-civic">Civico <input id="pin-review-civic" maxlength="35" placeholder="Es. 16/A" required></label>
+          <button id="pin-review-search" type="submit">Cerca unità SISTER</button>
+          <button id="pin-review-save" type="button">Salva civico</button>
+        </div>
+        <p id="pin-review-status" class="meta" role="status"></p>
+        <div id="pin-review-candidates"></div>
+        <footer>
+          <label id="pin-review-owner-label" hidden>Intestatario <select id="pin-review-owner"></select></label>
+          <button id="pin-review-start" type="button" class="primary" disabled>Collega e avvia Import flash</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog id="territory-news-dialog" aria-labelledby="territory-news-title">
       <header class="dialog-bar"><h2 id="territory-news-title">Notizie</h2><button id="territory-news-close">Chiudi</button></header>
       <form id="territory-news-form">

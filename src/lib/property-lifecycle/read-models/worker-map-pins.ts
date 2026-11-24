@@ -4,11 +4,12 @@ import { clipStreetToAreas, type StreetArea } from "../../../../worker/src/terri
 import { haversineDistanceMeters, streetRepresentativePoint, type StreetLineGeometry, type GeoPoint } from "@/lib/street-registry/metrics";
 import { inSavedArea } from "./area-filter";
 
-const fields = "property_id,address,street_name,street_number,locality,agency_name,agency_role,state,sale_status,exit_classification,opportunity_score,private_source,latest_asking_price,latitude,longitude,location_precision";
+const fields = "property_id,address,street_name,street_number,locality,agency_name,agency_role,state,sale_status,exit_classification,opportunity_score,private_source,latest_asking_price,latitude,longitude,location_precision,rooms,floor:attributes->>floor";
 type Row = {
   property_id: string; address: string; street_name: string | null; street_number: string | null; locality: string | null;
   agency_name: string | null; agency_role: string | null; state: string; sale_status: string; exit_classification: string;
   opportunity_score: number | null; private_source: string | null; latest_asking_price: number | null;
+  floor: string | null; rooms: number | null;
   latitude: number | null; longitude: number | null; location_precision: string | null;
 };
 type MarketLayer = "mercato" | "opportunita" | "privati";
@@ -103,6 +104,7 @@ export async function readWorkerMarketPins(db: SupabaseClient, zones: StreetArea
   const asPin = (row: Row, layers: MarketLayer[]) => layers.length ? placements(row, zones, streets, locations).map(placement => ({
     ...placement, layers, propertyId: row.property_id, title: row.address, street: row.street_name ?? row.address,
     civics: row.street_number ? [row.street_number] : [], price: row.latest_asking_price,
+    floor: row.floor, rooms: row.rooms,
     source: layers.includes("privati") ? row.private_source : row.agency_name,
   })) : [];
   return [

@@ -1,4 +1,6 @@
-import { fetchWorkerNews, matchNewsPins } from './news-pins.js';
+import { comparePinUnit } from './pin-candidates.js';
+import { createClient } from '@supabase/supabase-js';
+import { fetchWorkerNews, matchNewsPins, newsCivic } from './news-pins.js';
 import { dialog, ipcMain, shell, type BrowserWindow, type WebContents } from "electron";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -247,13 +249,67 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       const propertyId = z.string().uuid().parse(value);
       return shell.openExternal(`https://listing-radar-mu.vercel.app/casa/${propertyId}`);
     });
-    handle('news-pins', async () => {
+    function pinDb() {
+      if (!options.live || !options.onlineCredentials) throw new Error("Archivio dei pin condiviso non disponibile.");
+      const credentials = options.onlineCredentials();
+      return createClient(credentials.url, credentials.key, { auth: { persistSession: false } });
+    }
+    async function readPins() {
       if (!options.live || !options.onlineCredentials) return [];
       if (!newsSnapshot || Date.now() - newsSnapshot.at > 120_000) {
         const pins = await fetchWorkerNews(options.onlineCredentials().key);
         newsSnapshot = { at: Date.now(), pins };
       }
-      return store.readProjected(state => matchNewsPins(newsSnapshot!.pins, state));
+      const db = pinDb();
+      const byId = new Map<string, { civic: string; sister_unit_key: string | null }>();
+      const pageSize = 500;
+      for (let offset = 0; ; offset += pageSize) {
+        const links = await db.from("worker_pin_civic_links").select("property_id,civic,sister_unit_key")
+          .order("property_id").range(offset, offset + pageSize - 1);
+        if (links.error) throw new Error("Civici confermati non disponibili. Riprova.");
+        for (const link of links.data) byId.set(link.property_id, link);
+        if (links.data.length < pageSize) break;
+      }
+      const pins = newsSnapshot.pins.map(pin => {
+        const link = pin.propertyId ? byId.get(pin.propertyId) : null;
+        return link ? { ...pin, civics: [link.civic], confirmedCivic: link.civic, linkedUnit: link.sister_unit_key } : pin;
+      });
+      return store.readProjected(state => matchNewsPins(pins, state));
+    }
+    const pinReviewInput = z.object({ propertyId: z.string().uuid(), civic: z.string().trim().max(35).optional() });
+    async function reviewPin(value: z.infer<typeof pinReviewInput>) {
+      const pins = (await readPins()).filter(pin => pin.propertyId === value.propertyId);
+      const pin = pins.find(item => item.streetId) ?? pins[0];
+      if (!pin) throw new Error("Questo immobile non è più disponibile sulla mappa. Aggiorna i pin.");
+      const civic = value.civic ?? pin.civics[0] ?? "";
+      const canonical = civic ? newsCivic(civic) : null;
+      if (value.civic && !canonical) throw new Error("Indica un civico valido, ad esempio 16 o 16/A.");
+      const query = pin.streetId && canonical ? { streetIds: [pin.streetId], civic } : null;
+      const units = query ? application.query(query, 10000).units : [];
+      const candidates = units.map(unit => ({
+        key: unit.key, address: unit.source.fullAddress, cadastral: unit.source.cadastral,
+        owners: unit.source.owners.map(owner => ({ name: owner.fullName, taxCode: owner.taxCode.trim().toUpperCase() }))
+          .filter(owner => /^[A-Z0-9]{16}$/.test(owner.taxCode)),
+        writable: unit.canWrite && !unit.writePending, ...comparePinUnit(pin, unit.source),
+      })).sort((a, b) => b.score - a.score || a.address.localeCompare(b.address, "it", { numeric: true }));
+      return { pin, civic, query, candidates };
+    }
+    handle("news-pins", readPins);
+    handle("news-pin-review", value => reviewPin(pinReviewInput.parse(value)));
+    handle("news-pin-save", async value => {
+      const selection = pinReviewInput.extend({ civic: z.string().trim().min(1).max(35), unitKey: id.optional() }).parse(value);
+      const review = await reviewPin(selection);
+      if (selection.unitKey && !review.candidates.some(candidate => candidate.key === selection.unitKey))
+        throw new Error("L’unità selezionata non corrisponde più alla via e al civico.");
+      const sameCivic = newsCivic(review.pin.civics[0] ?? "") === newsCivic(selection.civic);
+      const linkedUnit = "linkedUnit" in review.pin ? review.pin.linkedUnit : null;
+      const unitKey = selection.unitKey ?? (sameCivic ? linkedUnit : null);
+      const saved = await pinDb().from("worker_pin_civic_links").upsert({
+        property_id: selection.propertyId, civic: selection.civic, sister_unit_key: unitKey,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "property_id" });
+      if (saved.error) throw new Error("Civico o collegamento non salvato. Riprova.");
+      return { query: review.query, unitKey };
     });
     handle('zone-directory',zoneDirectory);
     handle('zone-directory-export',async value=>{

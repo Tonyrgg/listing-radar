@@ -9,16 +9,18 @@ const pin = z.object({
   title: z.string(), street: z.string(), civics: z.array(z.string()).max(12), precision: z.enum(["building","street","published","address","area"]),
   layers: z.array(z.enum(["mercato","opportunita","privati","notizie"])).optional(),
   zoneIds: z.array(z.string()).optional(),
+  floor: z.string().nullable().optional(), rooms: z.number().nullable().optional(),
   propertyId: z.uuid().optional(), price: z.number().nullable().optional(), source: z.string().nullable().optional(),
   latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
 });
-type NewsPin = z.infer<typeof pin>;
+export type NewsPin = z.infer<typeof pin>;
 
 export function newsCivic(raw: string): string | null {
-  return addressIdentity(`VIA ${raw}`)?.civic ?? null;
+  const identity = addressIdentity(`VIA ${raw}`);
+  return identity?.street === "VIA" && identity.civic !== "NC" ? identity.civic : null;
 }
 
-export function matchNewsPins(pins: NewsPin[], state: Readonly<TerritoryState>) {
+export function matchNewsPins<T extends NewsPin>(pins: T[], state: Readonly<TerritoryState>) {
   const streets = new Map<string, Set<string>>();
   for (const street of state.streets) {
     if (street.linkedOfficialId || street.outsideUrbanArea || street.needsReview || street.catalogKind === "network") continue;

@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('territory', Object.freeze({
   exportZoneDirectory: ids => ipcRenderer.invoke('territory:zone-directory-export',ids),
   newsAreas: () => ipcRenderer.invoke("territory:news-areas"),
   newsOpenProperty: propertyId => ipcRenderer.invoke("territory:news-open-property", propertyId),
+  newsPinReview: input => ipcRenderer.invoke("territory:news-pin-review", input),
+  newsPinSave: input => ipcRenderer.invoke("territory:news-pin-save", input),
   newsPins: () => ipcRenderer.invoke('territory:news-pins'),
   zoneDirectory: () => ipcRenderer.invoke('territory:zone-directory'),
   sisterQueueRemove: value => ipcRenderer.invoke('territory:sister-queue-remove', value),

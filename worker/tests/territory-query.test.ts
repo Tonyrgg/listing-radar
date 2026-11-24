@@ -1,4 +1,5 @@
-import { matchNewsPins } from "../src/territory/news-pins.js";
+import { matchNewsPins, newsCivic } from "../src/territory/news-pins.js";
+import { comparePinUnit } from "../src/territory/pin-candidates.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -32,6 +33,18 @@ async function setup() {
   return { directory, store, app, routes, failOnce: () => { breakApply = true; } };
 }
 describe("query combinate e zone di vie", () => {
+  it("ordina le unità dello stesso civico con piano e vani confrontabili", async () => {
+    const { app } = await setup();
+    const { source } = app.detail("a").units[0]!;
+    const listing = { floor: "1°", rooms: 4 };
+    const unit = { ...source, category: "A/3", fullAddress: "Via a n. 16 Piano 1", consistency: "4 vani" };
+    expect(comparePinUnit(listing, unit)).toMatchObject({ score: 100, floors: [1], rooms: 4 });
+    expect(comparePinUnit(listing, { ...unit, consistency: null })).toMatchObject({ score: 85, rooms: null });
+    expect(comparePinUnit(listing, { ...unit, fullAddress: "Via a n. 16 Piano 2", consistency: "6 vani" })).toMatchObject({ score: 30 });
+    expect(comparePinUnit(listing, { ...unit, category: "C/6", consistency: "4" })).toMatchObject({ rooms: null });
+    expect(newsCivic("16/A")).toBe("16A");
+    expect(newsCivic("Via a 16")).toBeNull();
+  });
   it("indicizza uno stesso proprietario una sola volta senza perdere le letture originali", async () => {
     const { store } = await setup(), catalog = queryCatalog(store.read());
     expect(catalog.owners).toHaveLength(1); expect(catalog.owners[0]!.properties).toBe(10);
