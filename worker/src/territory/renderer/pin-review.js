@@ -28,7 +28,9 @@ export function createPinReview({ api, onSaved }) {
     ].filter(Boolean).join(" · ");
     civic.value = value;
     status.textContent = !value ? "Controlla il civico sulla mappa e inseriscilo qui."
-      : !query ? "Via SISTER non identificata. Puoi salvare il civico sulla mappa."
+      : !query ? pin.ambiguous
+        ? "Più vie corrispondono all’indirizzo. Apri la via corretta dalla mappa e verifica il civico."
+        : "Via assente dal catalogo del Worker. Puoi salvare il civico e cercare la via dalla mappa."
       : !candidates.length ? "Nessuna unità SISTER acquisita per questo civico."
       : `${candidates.length} unità trovate. La compatibilità ordina gli indizi. Verifica l’unità prima di collegarla.`;
     results.replaceChildren();
@@ -50,6 +52,11 @@ export function createPinReview({ api, onSaved }) {
       score.className = "pin-review-score";
       score.textContent = radio.disabled ? "Import non disponibile" : `${candidate.score}%`;
       info.append(title, details);
+      if (radio.disabled) {
+        const reason = document.createElement("small");
+        reason.textContent = candidate.blockedReason || (candidate.owners.length ? "Dati o autorizzazione da verificare" : "Intestatario importabile assente");
+        info.append(reason);
+      }
       if ("linkedUnit" in pin && pin.linkedUnit === candidate.key) {
         const linked = document.createElement("small");
         linked.textContent = "Unità già collegata";
@@ -66,7 +73,7 @@ export function createPinReview({ api, onSaved }) {
     updateActions();
     status.textContent = message;
     try { await operation(); }
-    catch (error) { status.textContent = error.message; }
+    catch (error) { status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, ""); }
     finally { busy = false; updateActions(); }
   }
 
@@ -106,9 +113,10 @@ export function createPinReview({ api, onSaved }) {
       onSaved(propertyId, value, unitKey);
       try {
         if (!query) throw new Error("Via o civico non più disponibili.");
-        await api.start({ query, operation: "apply", selected: [unitKey], flashOwner });
+        const runId = await api.start({ query, operation: "apply", selected: [unitKey], flashOwner });
+        if (!runId) throw new Error("Il Worker non ha confermato l’avvio.");
       } catch (error) {
-        throw new Error(`Collegamento salvato. Import flash non avviato. ${error.message}`);
+        throw new Error(`Collegamento salvato. Import flash non avviato. ${error.message.replace(/^Error invoking remote method '[^']+': Error: /, "")}`);
       }
       select(null);
       status.textContent = "Import flash avviato nel Chrome di lavoro. L’esito è disponibile nella cronologia del Worker.";

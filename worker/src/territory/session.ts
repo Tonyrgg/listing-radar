@@ -290,13 +290,16 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       const civic = value.civic ?? pin.civics[0] ?? "";
       const canonical = civic ? newsCivic(civic) : null;
       if (value.civic && !canonical) throw new Error("Indica un civico valido, ad esempio 16 o 16/A.");
-      const query = pin.streetId && canonical ? { streetIds: [pin.streetId], civic } : null;
+      const query = pin.streetIds.length && canonical ? { streetIds: pin.streetIds, civic } : null;
       const units = query ? application.query(query, 10000).units : [];
+      const queued = store.readProjected(state => new Set(Object.keys(state.importQueue ?? {})));
       const candidates = units.map(unit => ({
         key: unit.key, address: unit.source.fullAddress, cadastral: unit.source.cadastral,
         owners: unit.source.owners.map(owner => ({ name: owner.fullName, taxCode: owner.taxCode.trim().toUpperCase() }))
           .filter(owner => /^[A-Z0-9]{16}$/.test(owner.taxCode)),
-        writable: unit.canWrite && !unit.writePending, ...comparePinUnit(pin, unit.source),
+        writable: unit.canWrite && !unit.writePending && !unit.writeIssue && !queued.has(unit.key),
+        blockedReason: queued.has(unit.key) ? "Immobile già in coda" : unit.writeIssue || (unit.writePending ? "Salvataggio da verificare" : null),
+        ...comparePinUnit(pin, unit.source),
       })).sort((a, b) => b.score - a.score || a.address.localeCompare(b.address, "it", { numeric: true }));
       return { pin, civic, query, candidates };
     }
@@ -305,8 +308,8 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle("news-pin-save", async value => {
       const selection = pinReviewInput.extend({ civic: z.string().trim().min(1).max(35), unitKey: id.optional() }).parse(value);
       const review = await reviewPin(selection);
-      if (selection.unitKey && !review.candidates.some(candidate => candidate.key === selection.unitKey))
-        throw new Error("L’unità selezionata non corrisponde più alla via e al civico.");
+      if (selection.unitKey && !review.candidates.some(candidate => candidate.key === selection.unitKey && candidate.writable))
+        throw new Error("L’unità selezionata non è più disponibile per l’Import flash. Cerca di nuovo le unità.");
       const sameCivic = newsCivic(review.pin.civics[0] ?? "") === newsCivic(selection.civic);
       const linkedUnit = "linkedUnit" in review.pin ? review.pin.linkedUnit : null;
       const unitKey = selection.unitKey ?? (sameCivic ? linkedUnit : null);

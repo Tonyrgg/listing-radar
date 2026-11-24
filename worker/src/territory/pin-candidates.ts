@@ -6,7 +6,7 @@ function portalFloors(value: string | null | undefined) {
   const floor = value?.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLocaleLowerCase("it");
   if (!floor) return [];
   if (/^(?:t|terra|piano terra|rialzato|piano rialzato)$/.test(floor)) return [0];
-  const parsed = floor.match(/^(?:piano\s*)?(-?\d+)\s*(?:°|º|o|piano)?$/);
+  const parsed = floor.match(/^(?:piano\s*)?(-?\d+)\s*(?:°|º|o)?\s*(?:piano)?$/);
   return parsed ? [Number(parsed[1])] : [];
 }
 

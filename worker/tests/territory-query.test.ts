@@ -36,7 +36,7 @@ describe("query combinate e zone di vie", () => {
   it("ordina le unità dello stesso civico con piano e vani confrontabili", async () => {
     const { app } = await setup();
     const { source } = app.detail("a").units[0]!;
-    const listing = { floor: "1°", rooms: 4 };
+    const listing = { floor: "1° piano", rooms: 4 };
     const unit = { ...source, category: "A/3", fullAddress: "Via a n. 16 Piano 1", consistency: "4 vani" };
     expect(comparePinUnit(listing, unit)).toMatchObject({ score: 100, floors: [1], rooms: 4 });
     expect(comparePinUnit(listing, { ...unit, consistency: null })).toMatchObject({ score: 85, rooms: null });
@@ -44,6 +44,36 @@ describe("query combinate e zone di vie", () => {
     expect(comparePinUnit(listing, { ...unit, category: "C/6", consistency: "4" })).toMatchObject({ rooms: null });
     expect(newsCivic("16/A")).toBe("16A");
     expect(newsCivic("Via a 16")).toBeNull();
+  });
+  it("trova il civico dell’annuncio completo nelle acquisizioni della via con nome esteso", async () => {
+    const { store, app } = await setup();
+    const source = app.detail("a").units[0]!;
+    const wrongCivic = app.detail("a").units[1]!;
+    await app.correct(source.key, { address: "Via Borgo San Francesco n. 20 Piano 3" }, "");
+    await app.correct(wrongCivic.key, { address: "Via Borgo San Francesco n. 20/A Piano 3" }, "");
+    await store.change(state => {
+      Object.assign(state.streets.find(s => s.id === "a")!, {
+        name: "Via Borgo San Francesco", sisterName: "VIA BORGO SAN FRANCESCO", catalogKind: "network",
+      });
+      state.streets.push(
+        { ...street("1177"), name: "VIA BORGO S. FRANCESCO", sisterName: "VIA BORGO S FRANCESCO", catalogKind: "official" },
+        { ...street("1178"), name: "I TRAV. BORGO S. FRANCESCO", sisterName: "I TRAV BORGO S FRANCESCO", catalogKind: "official" },
+      );
+    });
+    const state = store.read();
+    const pin = { title: "Borgo San Francesco 20, Bitonto", street: "Borgo San Francesco 20, Bitonto",
+      civics: ["20"], precision: "address" as const, latitude: 41, longitude: 16 };
+    const [matched] = matchNewsPins([pin], state);
+    expect(matched).toMatchObject({ streetId: "a", streetIds: ["a", "1177"], matches: [{ civic: "20", count: 1 }] });
+    const query = { streetIds: matched!.streetIds, civic: "20" };
+    expect(queryUnitKeys(state, query)).toEqual([source.key]);
+    const runId = await app.startFlash(query, source.key, source.source.owners[0]!.taxCode);
+    await app.waitForIdle();
+    expect(store.read().runs.find(run => run.id === runId)).toMatchObject({
+      state: "completed", itemKeys: [source.key], imports: { [source.key]: { crmId: expect.any(String) } },
+    });
+    state.streets.push({ ...state.streets.at(-2)!, id: "ambiguous", locality: "Palombaio" });
+    expect(matchNewsPins([pin], state)).toMatchObject([{ streetIds: [], ambiguous: true }]);
   });
   it("indicizza uno stesso proprietario una sola volta senza perdere le letture originali", async () => {
     const { store } = await setup(), catalog = queryCatalog(store.read());
