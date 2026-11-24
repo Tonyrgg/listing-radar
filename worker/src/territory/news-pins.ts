@@ -4,9 +4,12 @@ import { normalizeSisterStreet } from "../core/street-scan.js";
 import { addressIdentity } from "../import-v2/identity.js";
 import { effectiveSource, type TerritoryState } from "./model.js";
 
-const endpoint = "/api/worker/territory-news";
+const endpoint = "/api/worker/territory-news?map=1";
 const pin = z.object({
-  title: z.string(), street: z.string(), civics: z.array(z.string()).max(12), precision: z.enum(["building","street"]),
+  title: z.string(), street: z.string(), civics: z.array(z.string()).max(12), precision: z.enum(["building","street","published","address","area"]),
+  layers: z.array(z.enum(["mercato","opportunita","privati","notizie"])).optional(),
+  zoneIds: z.array(z.string()).optional(),
+  propertyId: z.uuid().optional(), price: z.number().nullable().optional(), source: z.string().nullable().optional(),
   latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
 });
 type NewsPin = z.infer<typeof pin>;
@@ -56,6 +59,6 @@ export async function fetchWorkerNews(key: string) {
     redirect: "error", signal: AbortSignal.timeout(20_000),
     headers: { "X-Worker-Time": time, "X-Worker-Signature": openTabSignature(key, time, endpoint) },
   });
-  if (!response.ok) throw new Error("Notizie delle zone Tony non disponibili.");
-  return z.object({ pins: z.array(pin).max(300) }).parse(await response.json()).pins;
+  if (!response.ok) throw new Error("Pin delle zone non disponibili.");
+  return z.object({ pins: z.array(pin).max(10000) }).parse(await response.json()).pins;
 }

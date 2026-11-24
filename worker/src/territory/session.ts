@@ -1,5 +1,5 @@
 import { fetchWorkerNews, matchNewsPins } from './news-pins.js';
-import { dialog, ipcMain, type BrowserWindow, type WebContents } from "electron";
+import { dialog, ipcMain, shell, type BrowserWindow, type WebContents } from "electron";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -242,6 +242,11 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       return{...buildZoneStreetDirectory(streets.map(s=>({...s,count:counts.get(s.id)??0,...state.memories[s.id]?.sisterSearch})),areas.areas),fetchedAt:areas.fetchedAt,stale:areas.stale};
     };
     let newsSnapshot: { at: number; pins: Awaited<ReturnType<typeof fetchWorkerNews>> } | null = null;
+    handle('news-areas', () => workAreas.read());
+    handle('news-open-property', value => {
+      const propertyId = z.string().uuid().parse(value);
+      return shell.openExternal(`https://listing-radar-mu.vercel.app/casa/${propertyId}`);
+    });
     handle('news-pins', async () => {
       if (!options.live || !options.onlineCredentials) return [];
       if (!newsSnapshot || Date.now() - newsSnapshot.at > 120_000) {

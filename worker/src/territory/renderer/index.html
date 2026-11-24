@@ -66,7 +66,7 @@
               <button id="more-streets" class="load-more quiet" hidden>Mostra altre vie</button>
             </div>
           </div>
-          <button id="zone-streets-open">Vie per zona</button><button id="territory-news" aria-pressed="false">Notizie Tony</button><button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
+          <button id="zone-streets-open">Vie per zona</button><button id="territory-news" aria-haspopup="dialog">Notizie</button><button id="query-manager">Query immobili</button><button id="home">Centra Bitonto</button
           >
           <button id="sister-bulk-open">Acquisizioni Sister</button><button id="queue-manager">Coda <span id="queue-count" class="queue-count">0</span></button>
         </div>
@@ -140,6 +140,15 @@
         ><button id="memory-close">Chiudi</button>
       </div>
       <p id="memory-result" role="status"></p>
+    </dialog>
+    <dialog id="territory-news-dialog" aria-labelledby="territory-news-title">
+      <header class="dialog-bar"><h2 id="territory-news-title">Notizie</h2><button id="territory-news-close">Chiudi</button></header>
+      <form id="territory-news-form">
+        <fieldset><legend>Pin da mostrare</legend><div id="territory-news-layers"></div></fieldset>
+        <div id="territory-news-zones"></div>
+        <p id="territory-news-status" class="meta" role="status">Caricamento zone…</p>
+        <footer><button class="primary" id="territory-news-apply" disabled>Applica alla mappa</button></footer>
+      </form>
     </dialog>
     <dialog id="zone-streets-dialog" aria-labelledby="zone-streets-title">
       <header class="dialog-bar"><h2 id="zone-streets-title">Vie per zona</h2><button id="zone-streets-close">Chiudi</button></header>

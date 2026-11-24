@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { readNewsCandidates } from "@/lib/property-lifecycle/buildings/news-read-model";
+import { readWorkerMarketPins, zonesForPoint } from "@/lib/property-lifecycle/read-models/worker-map-pins";
 import { inSavedArea } from "@/lib/property-lifecycle/read-models/area-filter";
 import { streetRepresentativePoint, type StreetLineGeometry } from "@/lib/street-registry/metrics";
 import { clipStreetToAreas, type StreetArea } from "../../../../worker/src/territory/zone-streets";
@@ -11,33 +12,37 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function GET(request: Request) {
+  const mapMode = new URL(request.url).searchParams.get("map") === "1";
+  const scope = mapMode ? "/api/worker/territory-news?map=1" : "/api/worker/territory-news";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const time = request.headers.get("x-worker-time") ?? "";
   const signature = request.headers.get("x-worker-signature") ?? "";
   if (!key || !/^\d{13}$/.test(time) || Math.abs(Date.now() - Number(time)) > 120_000 ||
     !/^[0-9a-f]{64}$/.test(signature) ||
-    !timingSafeEqual(Buffer.from(signature), Buffer.from(openTabSignature(key, time, "/api/worker/territory-news")))) {
+    !timingSafeEqual(Buffer.from(signature), Buffer.from(openTabSignature(key, time, scope)))) {
     return Response.json({ error: "Accesso non autorizzato" }, { status: 401 });
   }
 
   try {
     const db = getSupabaseServiceClient();
-    const [news, zones] = await Promise.all([
-      readNewsCandidates(db, Date.now()),
-      db.from("map_areas").select("geometry,agent:agents!inner(name)").ilike("agent.name", "Tony"),
-    ]);
+    const newsRead = readNewsCandidates(db, Date.now());
+    let areaQuery = db.from("map_areas").select("id,name,geometry,agent:agents(name)");
+    if (!mapMode) areaQuery = db.from("map_areas").select("id,name,geometry,agent:agents!inner(name)").ilike("agent.name", "Tony");
+    const [news, zones] = await Promise.all([newsRead, areaQuery]);
     if (zones.error) throw zones.error;
+    const areas = zones.data.flatMap(({geometry, id, name}) => geometry
+      ? [{ geometry, id, name, agentName: null, color: "" } as StreetArea] : []);
+    if (!areas.length) return Response.json({ pins: [] });
+    const market = mapMode ? readWorkerMarketPins(db, areas) : Promise.resolve([]);
     const selected = news.filter(item => item.utility !== "ARCHIVE_ONLY" && item.anchor.street).slice(0, 300);
-    if (!selected.length || !zones.data.length) return Response.json({ pins: [] });
-    const areas = zones.data.flatMap(({geometry}, index) => geometry
-      ? [{ geometry, id: String(index), name: "Tony", agentName: "Tony", color: "" } as StreetArea] : []);
     const ids = (values: (string | null)[]) => [...new Set(values.filter((id): id is string => Boolean(id)))];
     const buildingIds = ids(selected.map(item => item.anchor.building_id));
     const streetIds = ids(selected.map(item => item.anchor.street_id));
-    const [buildings, streets, references] = await Promise.all([
+    const [marketPins, buildings, streets, references] = await Promise.all([
+      market,
       buildingIds.length ? db.from("buildings").select("id,location:locations!inner(latitude,longitude)").in("id", buildingIds) : { data: [], error: null },
       streetIds.length ? db.from("street_registry_streets").select("id,geometry").in("id", streetIds) : { data: [], error: null },
-      db.from("public_record_territorial_resolutions").select("record_id,references_json").in("record_id", ids(selected.map(item => item.anchor.record_id))),
+      selected.length ? db.from("public_record_territorial_resolutions").select("record_id,references_json").in("record_id", ids(selected.map(item => item.anchor.record_id))) : { data: [], error: null },
     ]);
     if (buildings.error || streets.error || references.error) throw new Error("Geometrie delle notizie non disponibili");
     const byBuilding = new Map(buildings.data.map(row => [row.id, Array.isArray(row.location) ? row.location[0] : row.location]));
@@ -62,10 +67,11 @@ export async function GET(request: Request) {
         title: item.title, street: anchor.street!,
         civics: [...new Set(civics)].slice(0, 12), precision: hasPoint ? "building" : "street",
         latitude: position.latitude, longitude: position.longitude,
+        layers: ["notizie"], zoneIds: zonesForPoint(position, areas),
       }];
     });
-    return Response.json({ pins }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ pins: [...pins, ...marketPins] }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
-    return Response.json({ error: "Notizie delle zone Tony temporaneamente non disponibili" }, { status: 503 });
+    return Response.json({ error: "Pin delle zone temporaneamente non disponibili" }, { status: 503 });
   }
 }
