@@ -1,3 +1,4 @@
+import { sameCrmRecordId } from "../core/crm-record-id.js";
 import {crmRecordKind} from "../import-v2/record-protection.js";
 import {confirmedActivityWork,freezeRunImport} from './activity-plan.js';
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
@@ -413,7 +414,9 @@ export class TerritoryApplication {
       // After any possible write the checkpoint stays active, with its original plan.
       if (checkpoint && ["queued", "planned"].includes(checkpoint.stage) && !checkpoint.crmPropertyId && !checkpoint.syncedPeople.length) delete state.checkpoints[source.sourcePropertyId];
       appendUnitEvent(unit, [run.id, key, "quarantined"], { kind: "import_quarantined", at, runId: run.id, origin: run.origin, message: reason });
-      (current.skipped ??= {})[key] = { at, reason, address: source.fullAddress }; current.handled = index + 1; current.waiting = null;
+      (current.skipped ??= {})[key] = { at, reason, address: source.fullAddress };
+      settleQueueImport(state, current, key);
+      current.handled = index + 1; current.waiting = null;
     }); this.changed();
   }
   private async readCandidates(run: Run, street: import("./model.js").Street, source: SourceProperty, attempt = 1) {
@@ -538,7 +541,8 @@ export class TerritoryApplication {
               const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
                 this.provider.rememberCloud?.(state);
                 appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,skipReplayableCheckpoints:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:()=>this.store.readSelected(state=>Object.values(state.checkpoints)),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
+              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,skipReplayableCheckpoints:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:(propertyId, clientId, taxCode)=>this.store.readSelected(state=>Object.values(state.checkpoints).filter(cp =>
+                sameCrmRecordId(cp.crmPropertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.propertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.clientId, clientId) || sameCrmRecordId(cp.activityEvidence?.coverage?.propertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.coverage?.clientId, clientId) || sameCrmRecordId(cp.activityWrite?.clientId, clientId) || cp.activityWrite?.clientTaxCode === taxCode || Boolean(cp.activityWrite?.submittedAt && !cp.activityWrite.clientTaxCode))),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
               const outcome = await engine.run(plan.source, (stage, retry) => {
                 if (this.active && (this.active.stage !== stage || this.active.attempt !== retry.attempt)) {
                   this.active.stage = stage; this.active.attempt = retry.attempt; this.changed();

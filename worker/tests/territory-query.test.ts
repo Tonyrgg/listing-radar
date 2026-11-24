@@ -1,3 +1,4 @@
+import { matchNewsPins } from "../src/territory/news-pins.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -51,6 +52,15 @@ describe("query combinate e zone di vie", () => {
     await app.saveZone("Centro rivisto", ["b"], zone);
     await expect(app.startQuery(criteria, "compare", [units[0]!.key])).rejects.toThrow("selezione non corrisponde");
     expect(() => queryUnitKeys(store.read(), { zoneIds: ["rimossa"] })).toThrow("zona");
+  });
+  it("apre da un pin solo le unità che corrispondono a via, civico e lettera", async () => {
+    const { app, store } = await setup();
+    const units = app.detail("a").units;
+    await app.correct(units[0]!.key, { address:"Via a N. 43/A Piano 1" }, "");
+    await app.correct(units[1]!.key, { address:"Via a N. 43/B Piano 1" }, "");
+    const pin = { title:"Atto di prova", street:"VIA A", civics:["43/A","99"], precision:"street" as const, latitude:41, longitude:16 };
+    expect(matchNewsPins([pin],store.read())).toMatchObject([{ streetId:"a", matches:[{ civic:"43/A",count:1 },{ civic:"99",count:0 }] }]);
+    expect(queryUnitKeys(store.read(),{ streetIds:["a"],civic:"43/A" })).toEqual([units[0]!.key]);
   });
   it("un import senza data resta importato ma non soddisfa un filtro di età", async () => {
     const { store } = await setup(), unit = Object.values(store.read().units)[0]!;

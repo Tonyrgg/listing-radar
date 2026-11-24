@@ -57,7 +57,7 @@ export type ImportV2EngineOptions = {
   skipReplayableCheckpoints?: boolean;
   calendarActivityPolicy?:boolean;
   /** Shared durable facts, including uncertain saves on other properties. */
-  relatedActivityCheckpoints?:()=>ImportV2Checkpoint[];
+  relatedActivityCheckpoints?:(propertyId:string,clientId:string,taxCode:string)=>ImportV2Checkpoint[];
   replaceUnlistedPrimary?: boolean;
   maxTransientAttempts: number;
   now?: () => Date;
@@ -175,7 +175,7 @@ export class ImportV2Engine {
   private readonly replaceUnlistedPrimary: boolean;
   private checkpointSaveElapsedMs = 0;
   private readonly calendarActivityPolicy:boolean;
-  private readonly relatedActivityCheckpoints?:()=>ImportV2Checkpoint[];
+  private readonly relatedActivityCheckpoints?:(propertyId:string,clientId:string,taxCode:string)=>ImportV2Checkpoint[];
   private readonly activityWriteGuard?:ActivityWriteGuard;
   private readonly requireSharedActivityGuard:boolean;
   private readonly skipUnchangedPeople:boolean;
@@ -505,7 +505,7 @@ export class ImportV2Engine {
           // need not suppress a task on an independently verified property and
           // primary client. The ordinary history and shared write guard apply.
           const property=await this.crm.readProperty(propertyId);
-          if(!sameCrmPropertyAddress(plan.source.fullAddress,property)||!sameCadastralIdentity(plan.source.cadastral,property.cadastral))throw error;
+          if(!sameCrmPropertyAddress(plan.source.fullAddress,property,{allowMissingCivic:true})||!sameCadastralIdentity(plan.source.cadastral,property.cadastral))throw error;
           const primary=this.primaryOwner(owners);
           assertOwnerships(property,this.desiredOwnerships([primary],checkpoint.syncedPeople),true);
           const handled=await withClientActivityLock(primary.taxCode,()=>this.completeActivity(checkpoint));
@@ -519,9 +519,11 @@ export class ImportV2Engine {
       }
       case "ownerships_synced": {
         const property = await this.crm.readProperty(this.requirePropertyId(checkpoint));
-        if (!sameCrmPropertyAddress(plan.source.fullAddress, property)
-          || !sameCadastralIdentity(plan.source.cadastral, property.cadastral)) {
-          throw new ImportV2Error("La rilettura dell'immobile non coincide con indirizzo e catasto SISTER", "verification_failed", { retryable: true });
+        if (!sameCadastralIdentity(plan.source.cadastral, property.cadastral)) {
+          throw new ImportV2Error("Catasto rilevato nel CRM diverso da SISTER dopo la lettura della scheda", "verification_failed", { retryable: true });
+        }
+        if (!sameCrmPropertyAddress(plan.source.fullAddress, property, { allowMissingCivic: true })) {
+          throw new ImportV2Error("Indirizzo rilevato nel CRM diverso da SISTER dopo la lettura della scheda", "verification_failed", { retryable: true });
         }
         assertOwnerships(property, this.desiredOwnerships(this.ownersInScope(plan.source.owners), checkpoint.syncedPeople), !this.includeCoOwners());
         return { ...checkpoint,
@@ -581,7 +583,7 @@ export class ImportV2Engine {
       const current=this.now(),day=romeDay(current);
       checkpoint.activityWrite={...checkpoint.activityWrite!,clientId,clientTaxCode:primary.taxCode,activityDay:checkpoint.activityWrite?.submittedAt?checkpoint.activityWrite.activityDay??day:day};
       await this.saveCheckpoint(checkpoint);
-      const related=this.relatedActivityCheckpoints?.()??[];
+      const related=this.relatedActivityCheckpoints?.(propertyId,clientId,primary.taxCode)??[];
       const proven=activityCoverage({records:[...verifiedClientActivities(clientId,current),...verifiedActivityFacts(related)],propertyComplete:false,clientComplete:false,checkedAt:current.toISOString()},propertyId,clientId,current);
       if(proven)return {...checkpoint,activityEvidence:{...proven,operationId:checkpoint.itemId},stage:NEXT_STAGE.verified};
       let history=await this.crm.readActivityHistory(propertyId,clientId);

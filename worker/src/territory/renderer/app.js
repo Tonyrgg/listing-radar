@@ -1701,6 +1701,64 @@ import { gradientStops, importGradientRenderer } from "./import-gradient.js";
     showAreas:areas=>{zoneShapes=areas;zoneRevision++;workAreaLayer.clearLayers();for(const area of areas)L.geoJSON(area.geometry,{pane:'work-areas',interactive:false,style:{color:area.color,weight:2,fillOpacity:.06},onEachFeature:(_feature,layer)=>layer.bindTooltip(escape(area.name))}).addTo(workAreaLayer);},
     fitArea:area=>{if(!area)return;const bounds=L.geoJSON(area.geometry).getBounds(),width=map.getSize().x,panel=$('zone-streets-dialog').getBoundingClientRect().width;if(bounds.isValid())map.fitBounds(bounds,{paddingTopLeft:[30,30],paddingBottomRight:[Math.min(panel+30,Math.max(30,width-300)),30],maxZoom:16});}
   });
+  const newsLayer = L.layerGroup().addTo(map);
+  const newsButton = $("territory-news");
+  newsButton.onclick = safe(async () => {
+    if (newsButton.getAttribute("aria-pressed") === "true") {
+      newsLayer.clearLayers();
+      newsButton.setAttribute("aria-pressed", "false");
+      return;
+    }
+    newsButton.disabled = true;
+    try {
+      const pins = await api.newsPins();
+      const grouped = new Map();
+      for (const pin of pins) {
+        const key = `${pin.latitude}|${pin.longitude}`;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(pin);
+      }
+      for (const group of grouped.values()) {
+        const [first] = group;
+        const content = document.createElement("div");
+        content.className = "territory-news-popup";
+        for (const pin of group) {
+          const article = document.createElement("article");
+          const heading = document.createElement("strong");
+          heading.textContent = pin.title;
+          const facts = document.createElement("p");
+          facts.textContent = [pin.street, pin.civics.join(", "), pin.precision === "street" ? "Punto indicativo lungo la via" : "Posizione dell’edificio"].filter(Boolean).join(" · ");
+          article.append(heading, facts);
+          for (const match of pin.matches) {
+            if (!match.count || !pin.streetId) continue;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = `Civico ${match.civic} · ${match.count} ${match.count === 1 ? "unità SISTER" : "possibili unità SISTER"}`;
+            button.onclick = safe(async () => {
+              map.closePopup();
+              await queryPanel.open({ streetIds: [pin.streetId], civic: match.civic });
+            });
+            article.append(button);
+          }
+          if (!pin.matches.some(match => match.count > 0)) {
+            const empty = document.createElement("p");
+            empty.textContent = "Nessuna corrispondenza SISTER per via e civico.";
+            article.append(empty);
+          }
+          content.append(article);
+        }
+        L.marker([first.latitude, first.longitude], {
+          title: `Notizie · ${first.street}`,
+          icon: L.divIcon({ className: "territory-news-pin", html: String(group.length), iconSize: [24,24], iconAnchor: [12,12] }),
+        }).bindPopup(content).addTo(newsLayer);
+      }
+      newsButton.setAttribute("aria-pressed", "true");
+      if (!pins.length) feedback("Nessuna notizia con posizione verificabile nelle zone Tony.");
+    } finally {
+      newsButton.disabled = false;
+    }
+  });
+
   $("queue-manager").onclick = safe(() => queuePanel.open());
   $("query-manager").onclick = safe(() => queryPanel.open());
   refresh().catch(archiveFailure);

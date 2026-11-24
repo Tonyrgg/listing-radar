@@ -17,19 +17,19 @@ afterEach(async () => { await Promise.all(directories.splice(0).map(d => rm(d, {
 async function setup() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "territory-queue-")); directories.push(directory);
   const store = await TerritoryStore.open(directory, streets);
-  let failure = false, phase = "";
+  let failure = false, blocked = false, phase = "";
   const routes: string[] = [];
   class Provider extends SimulationProvider {
     beginOperation(operation: string) { phase = operation; }
     override async candidates(street: Street, source: SourceProperty) {
-      if (phase === "apply") { routes.push(street.id); if (failure && street.id === "b") { failure = false; throw new ImportV2Error("Interruzione richiesta", "operator_pause", { global: true }); } }
+      if (phase === "apply") { routes.push(street.id); if (blocked && street.id === "a") throw new ImportV2Error("Identità non confermata", "ambiguous_identity"); if (failure && street.id === "b") { failure = false; throw new ImportV2Error("Interruzione richiesta", "operator_pause", { global: true }); } }
       return super.candidates(street, source);
     }
   }
   const app = new TerritoryApplication(store, new Provider(store, 0));
   for (const s of streets) { await app.start(s.id, "scan"); await app.waitForIdle(); }
   const keys = streets.map(s => app.detail(s.id).units[0]!.key);
-  return { app, store, directory, keys, routes, interrupt: () => { failure = true; } };
+  return { app, store, directory, keys, routes, blockFirst: () => { blocked = true; }, interrupt: () => { failure = true; } };
 }
 describe("Coda centrale degli import V2", () => {
   it("svuota anche casi bloccati e conserva dati, piani incerti e prove dopo il riavvio", async () => {
@@ -112,6 +112,16 @@ describe("Coda centrale degli import V2", () => {
     expect(store.read().runs.at(-1)!.handled).toBe(2);
     expect(Object.keys(store.read().runs.at(-1)!.imports!)).toEqual(keys);
     expect(routes).toEqual(["a", "b"]);
+  });
+  it("ritira subito gli accantonati e dopo lo stop riprende solo gli immobili ancora in coda", async () => {
+    const { app, directory, keys, blockFirst, interrupt, store } = await setup();
+    await app.enqueue(keys); blockFirst(); interrupt();
+    await app.startQueue(keys); await app.waitForIdle();
+    expect(store.read().runs.at(-1)).toMatchObject({ state: "stopped", skipped: { [keys[0]!]: { reason: "Identità non confermata" } } });
+    expect(app.importQueue().entries.map(entry => entry.key)).toEqual([keys[1]]);
+    expect(app.quarantineList().map(issue => issue.unitKey)).toContain(keys[0]);
+    const reopened = await TerritoryStore.open(directory, streets);
+    expect(Object.keys(reopened.read().importQueue!)).toEqual([keys[1]]);
   });
   it("chiude il batch interrotto e lascia liberi gli immobili non iniziati", async () => {
     const { app, keys, interrupt, store } = await setup();

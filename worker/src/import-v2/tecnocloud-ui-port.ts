@@ -263,9 +263,9 @@ function propertyDraft(plan: ImportV2Plan) {
     ?? ".";
   const floorToken = raw.match(/\bPIANO\s+((?:T|S\d+|\d+)(?:\s*-\s*(?:T|S\d+|\d+))*)/i)?.[1]?.replace(/\s+/g, "").toUpperCase() ?? "";
   const base = raw.replace(/\s+(?:EDIFICIO|SCALA|INTERNO|PIANO)\b.*$/i, "").replace(/\[\s*[^\]]+\s*\]\s*$/, "").trim();
-  const match = base.match(/^(.*?)\s+(?:N(?:\.|°|º)?\s*)?(\d+)(?:\s*\/?\s*([A-Z]))?$/i);
-  const street = match?.[1]?.trim() ?? base;
-  const civic = match?.[2] ?? ".";
+  const match = base.match(/^(.*?)\s+(?:N(?:\.|°|º)?\s*)?(\d+(?:\s*-\s*\d+)*)(?:\s*\/?\s*([A-Z]))?$/i);
+  const street = match?.[1]?.trim() ?? base.replace(/\s+(?:N[.°º]?\s*)?(?:SNC|NC|S\.?N\.?C\.?)$/i, "").trim();
+  const civic = match?.[2]?.replace(/\s+/g, "") ?? ".";
   const letter = match?.[3]?.toUpperCase() ?? "";
   const category = plan.source.category.toUpperCase().replace(/\s+/g, "").replace(/^([AC])(\d)/, "$1/$2");
   const type = category.startsWith("A/") ? "Appartamenti" : "Box / posti auto";

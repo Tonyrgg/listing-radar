@@ -1473,3 +1473,8 @@ button[aria-busy="true"] {
 .cloud-people { list-style: none; padding: 0; }
 .cloud-people > li { padding-block: 12px; border-top: 1px solid var(--lr-line-quiet); }
 .cloud-people > li > strong, .cloud-people > li > span { display: block; }
+
+.territory-news-pin { display: grid; place-items: center; border-radius: 50%; border: 2px solid #fff; background: #6639a0; color: #fff; font-weight: 750; box-shadow: 0 1px 5px #0009; }
+.territory-news-popup { max-height: 290px; overflow: auto; min-width: 190px; }
+.territory-news-popup article + article { margin-top: 12px; }
+.territory-news-popup article p { margin: 5px 0; }

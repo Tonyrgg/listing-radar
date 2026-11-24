@@ -1,3 +1,4 @@
+import { fetchWorkerNews, matchNewsPins } from './news-pins.js';
 import { dialog, ipcMain, type BrowserWindow, type WebContents } from "electron";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -240,6 +241,15 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       for(const unit of Object.values(state.units))for(const id of new Set(unit.streetIds.map(id=>canonical.get(id)??id)))counts.set(id,(counts.get(id)??0)+1);
       return{...buildZoneStreetDirectory(streets.map(s=>({...s,count:counts.get(s.id)??0,...state.memories[s.id]?.sisterSearch})),areas.areas),fetchedAt:areas.fetchedAt,stale:areas.stale};
     };
+    let newsSnapshot: { at: number; pins: Awaited<ReturnType<typeof fetchWorkerNews>> } | null = null;
+    handle('news-pins', async () => {
+      if (!options.live || !options.onlineCredentials) return [];
+      if (!newsSnapshot || Date.now() - newsSnapshot.at > 120_000) {
+        const pins = await fetchWorkerNews(options.onlineCredentials().key);
+        newsSnapshot = { at: Date.now(), pins };
+      }
+      return store.readProjected(state => matchNewsPins(newsSnapshot!.pins, state));
+    });
     handle('zone-directory',zoneDirectory);
     handle('zone-directory-export',async value=>{
       const ids=z.array(id).max(10000).parse(value),directory=await zoneDirectory();

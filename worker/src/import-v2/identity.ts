@@ -129,7 +129,7 @@ export function propertyNameToAddress(displayName: string): string {
   return hasPropertyPrefix && parts.length > 1 ? parts.slice(0, -1).join(" - ").trim() : withoutPrefix;
 }
 
-export function addressIdentity(value: unknown): AddressIdentity | null {
+export function addressIdentity(value: unknown, allowMissingCivic = false): AddressIdentity | null {
   let raw = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!raw) return null;
   raw = propertyNameToAddress(raw);
@@ -153,7 +153,10 @@ export function addressIdentity(value: unknown): AddressIdentity | null {
   const civicToken = String.raw`\d+(?:\s*\/?\s*[A-Z])?(?:\s*-\s*\d+(?:\s*\/?\s*[A-Z])?)*`;
   const civicMatch = normalized.match(new RegExp(`^(.*?)\\s+(?:N(?:UMERO)?\\s+)?(${civicToken})$`, "i"));
   const missingCivicMatch = normalized.match(/^(.*?)\s+(?:N\s+)?(?:S\s*N\s*C|SNC|NC)$/i);
-  if ((!civicMatch?.[1] || !civicMatch[2]) && !missingCivicMatch?.[1]) return null;
+  if ((!civicMatch?.[1] || !civicMatch[2]) && !missingCivicMatch?.[1]) {
+    if (!allowMissingCivic || !normalized || /\d$/.test(normalized)) return null;
+    return { street: normalized, civic: "NC", internal, location };
+  }
   return {
     street: (civicMatch?.[1] ?? missingCivicMatch?.[1] ?? "").trim(),
     civic: civicMatch?.[2] ? civicMatch[2].replace(/[\s/]/g, "").toUpperCase() : "NC",
@@ -179,9 +182,10 @@ export function sameAddress(left: unknown, right: unknown): boolean {
 export function sameCrmPropertyAddress(
   sourceAddress: unknown,
   candidate: Pick<CrmPropertySummary, "displayName" | "fullAddress" | "civicLetter">,
+  options: { allowMissingCivic?: boolean } = {},
 ): boolean {
-  const source = addressIdentity(sourceAddress);
-  const actual = addressIdentity(candidate.fullAddress ?? candidate.displayName);
+  const source = addressIdentity(sourceAddress, options.allowMissingCivic);
+  const actual = addressIdentity(candidate.fullAddress ?? candidate.displayName, options.allowMissingCivic);
   if (!source || !actual) return false;
   const letter = plainWords(candidate.civicLetter).replace(/[^A-Z0-9]/g, "");
   const actualCivic = letter && !actual.civic.endsWith(letter) ? `${actual.civic}${letter}` : actual.civic;
@@ -264,16 +268,16 @@ export function choosePropertyCandidate(source: SourceProperty, candidates: CrmP
   | { kind: "create"; candidate: null }
   | { kind: "exact" | "address_update" | "cadastral_update"; candidate: CrmPropertySummary } {
   const unique = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
+  const addressMatches = unique.filter((candidate) => sameCrmPropertyAddress(source.fullAddress, candidate));
+  if (preferRegistryDuplicates) {
+    const { candidate } = preferredCadastralCandidate(source, unique);
+    if (candidate) return { kind: sameCrmPropertyAddress(source.fullAddress, candidate) ? "exact" : "cadastral_update", candidate };
+  }
   if (!canonicalCadastralToken(source.cadastral.subaltern) && unique.some(candidate => candidate.cadastral
     && canonicalCadastralToken(candidate.cadastral.sheet) === canonicalCadastralToken(source.cadastral.sheet)
     && parcelTokens(source.cadastral).some(token => parcelTokens(candidate.cadastral!).includes(token))
     && canonicalCadastralToken(candidate.cadastral.subaltern))) {
     throw new ImportV2Error("Immobile senza subalterno: nel CRM sono presenti unità della stessa particella con subalterno. Corrispondenza da chiarire", "ambiguous_identity");
-  }
-  const addressMatches = unique.filter((candidate) => sameCrmPropertyAddress(source.fullAddress, candidate));
-  if (preferRegistryDuplicates) {
-    const { candidate } = preferredCadastralCandidate(source, unique);
-    if (candidate) return { kind: sameCrmPropertyAddress(source.fullAddress, candidate) ? "exact" : "cadastral_update", candidate };
   }
   if (!canonicalCadastralToken(source.cadastral.subaltern)) {
     const matching = unique.filter(candidate => sameCadastralIdentity({ ...source.cadastral, income: null }, candidate.cadastral ? { ...candidate.cadastral, income: null } : null));

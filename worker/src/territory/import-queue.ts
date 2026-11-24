@@ -33,7 +33,8 @@ export function pendingUnitImport(state: TerritoryState, key: string) {
 }
 /** Removal is tied to this enrollment, never to an older import of the same unit. */
 export function settleQueueImport(state: TerritoryState, run: Run, key: string) {
-  if (run.imports?.[key]?.crmId && state.importQueue?.[key]?.id === run.queueEntryIds?.[key]) delete state.importQueue![key];
+  const enrollment = run.queueEntryIds?.[key];
+  if (enrollment && (run.imports?.[key]?.crmId || run.skipped?.[key]) && state.importQueue?.[key]?.id === enrollment) delete state.importQueue![key];
 }
 export function hydrateImportQueue(state: TerritoryState, closeInterrupted = false) {
   state.importQueue ??= {};
@@ -51,7 +52,7 @@ export function hydrateImportQueue(state: TerritoryState, closeInterrupted = fal
       run.queueEntryIds = {};
       for (const key of run.itemKeys.slice(run.handled)) {
         const unit = state.units[key];
-        if (!unit || run.imports?.[key]?.crmId) continue;
+        if (!unit || run.imports?.[key]?.crmId || run.skipped?.[key]) continue;
         const street = queueStreet(state, unit, run.unitStreetIds?.[key] ?? run.streetId) ?? queueStreet(state, unit);
         const entry = state.importQueue[key] ??= { id: randomUUID(), key, streetId: street?.id ?? run.streetId, addedAt: run.startedAt };
         run.queueEntryIds[key] = entry.id;

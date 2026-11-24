@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { effectiveSource, type TerritoryState } from "./model.js";
 import { extractPropertyFloors } from "../core/network-exploration.js";
+import { addressIdentity } from "../import-v2/identity.js";
 import { unitMemory } from "./unit-memory.js";
 
 const ids = z.array(z.string().min(1).max(150)).max(10000).default([]);
@@ -9,6 +10,7 @@ export const unitQuerySchema = z.object({
   localities: z.array(z.enum(["Bitonto", "Palombaio", "Mariotto"])).max(3).default([]),
   categories: z.array(z.string().regex(/^[A-C]\/\d{1,2}$/)).max(50).default([]),
   floors: z.array(z.number().int().min(-10).max(100)).max(110).default([]),
+  civic: z.string().max(35).default(""),
   imports: z.enum(["any", "never", "imported"]).default("any"), olderThanDays: z.number().int().min(0).max(36500).nullable().default(null),
 }).strict();
 export type UnitQuery = z.infer<typeof unitQuerySchema>;
@@ -39,12 +41,14 @@ export function queryUnitKeys(state: TerritoryState, input: unknown, now = Date.
   const zoneStreets = new Set(query.zoneIds.flatMap(id => {
     const zone = state.zones?.[id]; if (!zone) throw new Error("Una zona della query non è più disponibile"); return zone.streetIds;
   }));
+  const civic = query.civic ? addressIdentity(`VIA ${query.civic}`)?.civic : null;
   const streets = new Map(state.streets.map(s => [s.id, s]));
   const quarantined = new Set(Object.values(state.quarantine ?? {}).filter(q => !q.resolvedAt).map(q => q.unitKey));
   for (const id of query.streetIds) if (!streets.has(id)) throw new Error("Una via della query non è più disponibile");
   return Object.values(state.units).filter(unit => {
     if (quarantined.has(unit.key)) return false;
     const source = effectiveSource(unit);
+    if (query.civic && (!civic || civic === "NC" || addressIdentity(source.fullAddress)?.civic !== civic)) return false;
     if (source.municipality.trim().toUpperCase() !== "BITONTO") return false;
     const streetIds = unit.streetIds.map(id => streets.get(id)?.linkedOfficialId ?? id);
     if(streetIds.length&&streetIds.every(id=>streets.get(id)?.outsideUrbanArea))return false;

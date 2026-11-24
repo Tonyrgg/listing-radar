@@ -88,6 +88,13 @@ describe("Import V2 identity", () => {
     expect(choosePropertyCandidate(input, [candidate]).kind).toBe("exact");
     expect(() => choosePropertyCandidate(input, [{ ...candidate, cadastral: source().cadastral }])).toThrow(/senza subalterno/);
     expect(() => choosePropertyCandidate(input, [candidate, { ...candidate, id: "sibling", cadastral: source().cadastral }])).toThrow(/senza subalterno/);
+    expect(choosePropertyCandidate(input, [candidate, { ...candidate, id: "sibling", cadastral: source().cadastral }], true)).toMatchObject({kind:"exact",candidate:{id:"blank"}});
+  });
+  it("ammette il civico mancante solo nella verifica di una scheda già identificata", () => {
+    const cloud = {displayName:"IM - Via Marsala . - Rossi",fullAddress:"Via Marsala ."};
+    expect(sameCrmPropertyAddress("VIA MARSALA Piano 1",cloud)).toBe(false);
+    expect(sameCrmPropertyAddress("VIA MARSALA Piano 1",cloud,{allowMissingCivic:true})).toBe(true);
+    expect(sameCrmPropertyAddress("VIA MARSALA n. 39 Piano 1",cloud,{allowMissingCivic:true})).toBe(false);
   });
   it("estrae dal nome CRM solo l'indirizzo e conserva l'interno tra quadre", () => {
     expect(propertyNameToAddress("IM - Via Publio Virgilio Marone 2 [25] - Abbadessa"))

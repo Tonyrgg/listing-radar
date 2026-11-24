@@ -187,7 +187,7 @@ const MAX_RIGHE_DIARIO = 300;
 const COMMAND_CANCELLED = Symbol("command-cancelled");
 const $ = (id) => document.getElementById(id);
 const SECTION_LABELS = {
-  'worker-v2': ["Territorio e archivio", "Worker V2"],
+  'worker-v2': ["Territorio e archivio", "Worker"],
   operations: ["Registro operativo", "Lavorazioni"],
   refinement: ["Verifica e aggiornamento", "Rifinitura"],
   portoni: ["Raccolta territoriale", "Portoni"],
@@ -353,7 +353,7 @@ async function updateWorkerV2Viewport() {
     if (version === workerV2Update) $('workerV2Retry').classList.add('is-hidden');
   } catch (error) {
     if (version !== workerV2Update) return;
-    $('workerV2Status').textContent = `Worker V2 non disponibile: ${error.message}. Chiudi l'eventuale laboratorio Territorio aperto e riprova.`;
+    $('workerV2Status').textContent = `Worker non disponibile: ${error.message}. Chiudi l'eventuale laboratorio Territorio aperto e riprova.`;
     $('workerV2Retry').classList.remove('is-hidden');
   }
 }

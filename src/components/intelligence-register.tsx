@@ -1,3 +1,4 @@
+import { displayPropertyAddress } from "@/lib/property-lifecycle/read-models/display-address";
 import {MarketContactSheet, type MarketContactFacts} from "./market-contact-sheet";
 import {RecordTools,TabNotice} from "./workspace-updates";
 import {getSourceLabel} from "@/lib/labels";
@@ -7,7 +8,7 @@ import { ChevronRight, TrendingDown, ArrowUp, ArrowDown, ChevronsUpDown } from "
 import { PropertyThumbnail } from "@/components/property-thumbnail";
 import {intelligenceSort,type IntelligenceSort} from "@/lib/property-lifecycle/read-models/intelligence-sorting";
 import { Chip, type Tone } from "@/components/ui/primitives";
-import { formatCurrency, formatDate, formatNumber, formatShouty } from "@/lib/formatting";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/formatting";
 import { EXIT_LABELS, marketAgeLabel, type IntelligenceRow, type IntelligenceView } from "@/lib/property-lifecycle/read-models/intelligence";
 import { opportunityReasonLabel, propertyStateLabel, humanize, locationPrecisionLabel } from "@/lib/property-lifecycle/read-models/presentation";
 
@@ -49,7 +50,7 @@ function marketContactFacts(row: IntelligenceRow): MarketContactFacts {
  };
 }
 export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:IntelligenceRow[];view:IntelligenceView;now:number;photos?:Record<string,string>;query?:Record<string,string>}){
- const online=view==="mercato",signals=view==="opportunita",showAgencyTenure=view!=="privati",sort=intelligenceSort(query.ordine,query.direzione,view);
+ const signals=view==="opportunita",showAgencyTenure=view!=="privati",sort=intelligenceSort(query.ordine,query.direzione,view);
  const backQuery=new URLSearchParams({...query,vista:view});
  const detailUrl=(id:string)=>"/casa/"+id+"?"+new URLSearchParams({origine:view,ritorno:"/intelligence?"+backQuery});
  const heading=(key:IntelligenceSort,label:string,numeric=false)=>{
@@ -60,8 +61,9 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
  return <div className="lr-radar-register" role="region" aria-label="Registro immobili" tabIndex={0}>
   <table className="lr-radar-table">
    <caption className="sr-only">{INTELLIGENCE_VIEW_COPY[view].title}. Il prezzo è quello richiesto, non il prezzo di vendita. L’indice ordina gli indizi, non misura la probabilità di vendita.</caption>
-   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Sul mercato",true)}{showAgencyTenure?heading("giorni_agenzia","Giorni con agenzia",true):null}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}{online?<th scope="col">Nominativo e immobile</th>:null}<th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
+   <thead><tr>{signals?heading("indice","Indice",true):null}{heading("immobile","Immobile")}{heading("zona","Zona")}{heading("prezzo","Prezzo richiesto",true)}{heading("metro","€/m²",true)}{heading("giorni","Sul mercato",true)}{showAgencyTenure?heading("giorni_agenzia","Giorni con agenzia",true):null}{heading("ribassi","Ribassi",true)}{heading("fonte","Fonte")}{heading("stato","Stato")}<th scope="col">Nominativo e immobile</th><th scope="col"><span className="sr-only">Apri</span></th></tr></thead>
    <tbody>{rows.map(row=>{
+    const address=displayPropertyAddress(row.address,row.street_name,row.street_number);
     const age=marketAgeLabel(row.first_seen_at,row.earliest_market_evidence_at,row.sold_at??row.sold_observed_at??now);
     const end=row.sold_at??row.sold_observed_at;
     const start=row.earliest_market_evidence_at&&Date.parse(row.earliest_market_evidence_at)<Date.parse(row.first_seen_at)?row.earliest_market_evidence_at:row.first_seen_at;
@@ -72,7 +74,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
     const unitPrice=row.surface_sqm&&row.latest_asking_price!=null?Math.round(row.latest_asking_price/row.surface_sqm):null;
     return <tr key={row.property_id}>
      {signals?<td className="lr-table-score"><span className="lr-score-box" data-level={row.opportunity_score!=null&&row.opportunity_score>=60?"high":"normal"} title={"Indice di priorità, non probabilità di vendita"+(row.identifiability_bonus?` · +${row.identifiability_bonus} per informazioni utili a individuare l’immobile`:"")}>{row.opportunity_score==null?"—":formatNumber(Math.round(row.opportunity_score))}</span></td>:null}
-     <td className="lr-table-identity"><div className="lr-table-property"><Link href={detailUrl(row.property_id)} aria-label={"Apri "+formatShouty(row.address)}><PropertyThumbnail src={photos[row.property_id]} address={formatShouty(row.address)} preview/></Link><div><Link href={detailUrl(row.property_id)} className="lr-table-address" title={formatShouty(row.address)}>{formatShouty(row.address)}</Link><p className="lr-table-secondary" title={signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · "):characteristics(row)}>{signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · ")||"Indizi da verificare":characteristics(row)}</p></div></div></td>
+     <td className="lr-table-identity"><div className="lr-table-property"><Link href={detailUrl(row.property_id)} aria-label={"Apri "+address}><PropertyThumbnail src={photos[row.property_id]} address={address} preview/></Link><div><Link href={detailUrl(row.property_id)} className="lr-table-address" title={address}>{address}</Link><p className="lr-table-secondary" title={signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · "):characteristics(row)}>{signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · ")||"Indizi da verificare":characteristics(row)}</p></div></div></td>
      <td className="lr-table-zone">{row.zone_name||row.locality||"Da verificare"}</td>
      <td className="lr-numeric lr-table-price"><strong>{formatCurrency(row.latest_asking_price)}</strong>{row.source_price_conflict?<p className="lr-table-warning">Fonti discordanti</p>:row.reduction_percent!=null&&row.reduction_percent>0?<p className="lr-table-reduction"><TrendingDown size={12} aria-hidden="true"/> −{formatNumber(row.reduction_percent)}%</p>:null}</td>
      <td className="lr-numeric">{unitPrice==null?"—":formatNumber(unitPrice)}</td>
@@ -81,8 +83,8 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
      <td className="lr-numeric">{formatNumber(row.drop_count??0)}</td>
      <td className="lr-table-source"><span title={row.agency_name}>{row.private_source&&row.agency_id==null?getSourceLabel(row.private_source):row.agency_name||"Da verificare"}</span><p className="lr-table-secondary" title="Ultima presenza rilevata">{row.private_seller_type&&row.agency_id==null?(row.private_seller_type==="private"?"Privato · ":"Da verificare · "):""}{formatDate(row.last_seen_at)}</p></td>
      <td className="lr-table-state"><Chip tone={statusTone(row)} dot>{EXIT_LABELS[row.exit_classification]??propertyStateLabel(row.property_state)}</Chip></td>
-     {online?<td>{row.state==="ACTIVE"?<MarketContactSheet label={formatShouty(row.address)} facts={marketContactFacts(row)}/>:null}</td>:null}
-     <td><RecordTools id={row.property_id} tab={view==="venduti"?"usciti":view==="preferiti"?"mercato":view}/><Link href={detailUrl(row.property_id)} className="lr-table-open" aria-label={"Apri dossier: "+formatShouty(row.address)}><ChevronRight size={16} aria-hidden="true"/></Link></td>
+     <td><MarketContactSheet label={address} facts={marketContactFacts(row)}/></td>
+     <td><RecordTools id={row.property_id} tab={view==="venduti"?"usciti":view==="preferiti"?"mercato":view}/><Link href={detailUrl(row.property_id)} className="lr-table-open" aria-label={"Apri dossier: "+address}><ChevronRight size={16} aria-hidden="true"/></Link></td>
     </tr>;
    })}</tbody>
   </table>

@@ -1,3 +1,4 @@
+import { displayPropertyAddress } from "@/lib/property-lifecycle/read-models/display-address";
 import {SavedListingSnapshots} from "@/components/saved-listing-snapshots";
 import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
 import {agencyTenureLabel,agencyDateSource,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
@@ -210,7 +211,7 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
  const publicPrivateDates=detail.privatePublications.filter(p=>p.firstPublicEvidenceAt&&Date.parse(p.firstPublicEvidenceAt)<Date.parse(p.firstSeenAt)).sort((a,b)=>Date.parse(a.firstPublicEvidenceAt!)-Date.parse(b.firstPublicEvidenceAt!));
  const privateDate=publicPrivateDates[0];
  const marketAnchor=[property.earliestMarketEvidenceAt,privateDate?.firstPublicEvidenceAt].filter((v):v is string=>!!v).sort()[0]??property.firstSeenAt;
- const indirizzo=formatShouty(property.address||property.title);
+ const indirizzo=displayPropertyAddress(property.address||property.title,detail.location?.streetName,detail.location?.streetNumber);
  const dove=[...new Set([detail.location?.streetName,detail.location?.locality,detail.location?.municipality||property.locality].filter(Boolean))].join(" · ");
  const euroAlMq=currentAsking!=null&&property.surfaceSqm?Math.round(currentAsking/property.surfaceSqm):null;
  const prove=proveDistinte(detail.evidence);
