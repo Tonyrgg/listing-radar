@@ -1,5 +1,6 @@
 import {privateGalleryImages} from "@/lib/property-lifecycle/read-models/private-images";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
+import { isPropertyThumbnailPath, VISUALS_BUCKET } from "@/lib/property-thumbnail-path";
 import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-models/types";
 
 /**
@@ -13,7 +14,6 @@ import type { LifecyclePropertySummary } from "@/lib/property-lifecycle/read-mod
  * Una casa si riconosce prima dalla foto che dall'indirizzo: senza questo, ogni
  * elenco di Segnali resta una lista di stringhe.
  */
-const BUCKET = "property-lifecycle-visuals";
 const DURATA_SECONDI = 60 * 30;
 
 export async function readPropertyThumbnails(ids: string[]): Promise<Record<string,string>> {
@@ -21,16 +21,24 @@ export async function readPropertyThumbnails(ids: string[]): Promise<Record<stri
   const db = getSupabaseServiceClient();
   const {data,error} = await db.from("properties").select("id,representative_image_paths").in("id",ids);
   if (error) return {};
-  const signed = await signPropertyPhotos((data??[]).map(p=>({id:p.id,representativeImagePaths:p.representative_image_paths??[]})));
-  const missing=ids.filter(id=>!signed.has(id));
+  const urls = new Map<string, string>();
+  const legacy: Array<Pick<LifecyclePropertySummary, "id" | "representativeImagePaths">> = [];
+  for (const property of data ?? []) {
+    const paths: string[] = property.representative_image_paths ?? [];
+    const path = paths[0];
+    if (path && isPropertyThumbnailPath(path)) urls.set(property.id, `/api/property-thumbnail?${new URLSearchParams({ path })}`);
+    else if (path) legacy.push({ id: property.id, representativeImagePaths: paths });
+  }
+  for (const [id, url] of await signPropertyPhotos(legacy)) urls.set(id, url);
+  const missing=ids.filter(id=>!urls.has(id));
   if(missing.length){
     const publications=await db.from("private_publications").select("property_id,metadata").in("property_id",missing).eq("state","ACTIVE").order("last_seen_at",{ascending:false});
     if(!publications.error)for(const row of publications.data??[]){
       const image=privateGalleryImages(row.metadata?.imageUrls)[0];
-      if(image&&!signed.has(row.property_id))signed.set(row.property_id,image);
+      if(image&&!urls.has(row.property_id))urls.set(row.property_id,image);
     }
   }
-  return Object.fromEntries(signed);
+  return Object.fromEntries(urls);
 }
 
 export async function signPropertyPhotos(
@@ -53,7 +61,7 @@ export async function signPropertyPhotos(
   try {
     const supabase = getSupabaseServiceClient();
     const { data, error } = await supabase.storage
-      .from(BUCKET)
+      .from(VISUALS_BUCKET)
       .createSignedUrls(
         richieste.map((item) => item.path),
         DURATA_SECONDI,

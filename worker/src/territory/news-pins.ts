@@ -5,9 +5,10 @@ import { addressIdentity } from "../import-v2/identity.js";
 import { effectiveSource, type TerritoryState } from "./model.js";
 
 const endpoint = "/api/worker/territory-news?map=1";
+const layer = z.enum(["mercato","opportunita","privati","notizie"]);
 const pin = z.object({
   title: z.string(), street: z.string(), civics: z.array(z.string()).max(12), precision: z.enum(["building","street","published","address","area"]),
-  layers: z.array(z.enum(["mercato","opportunita","privati","notizie"])).optional(),
+  layers: z.array(layer).optional(),
   zoneIds: z.array(z.string()).optional(),
   floor: z.string().nullable().optional(), rooms: z.number().nullable().optional(),
   propertyId: z.uuid().optional(), price: z.number().nullable().optional(), source: z.string().nullable().optional(),
@@ -61,6 +62,7 @@ export async function fetchWorkerNews(key: string) {
     redirect: "error", signal: AbortSignal.timeout(20_000),
     headers: { "X-Worker-Time": time, "X-Worker-Signature": openTabSignature(key, time, endpoint) },
   });
-  if (!response.ok) throw new Error("Pin delle zone non disponibili.");
-  return z.object({ pins: z.array(pin).max(10000) }).parse(await response.json()).pins;
+  if (response.status === 401) throw new Error("Questa postazione non è autorizzata a leggere i pin di Listing Radar.");
+  if (!response.ok) throw new Error("Pin delle zone temporaneamente non disponibili.");
+  return z.object({ pins: z.array(pin).max(10000), unavailable: z.array(layer).default([]) }).parse(await response.json());
 }

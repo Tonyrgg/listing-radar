@@ -79,11 +79,14 @@ export interface NewsSourceContext {
     hash: string;
     observedAt: string;
 }
-export interface NewsCandidate {
+export type NewsFact = Pick<FactNews, "event_id" | "record_id" | "event_type" | "event_date" |
+    "building_id" | "street_id" | "street" | "civic" | "fact" | "evidence_location" |
+    "classification_version" | "combination">;
+export interface NewsCandidate<T extends NewsFact = FactNews> {
     id: string;
-    anchor: FactNews;
-    facts: FactNews[];
-    context: FactNews[];
+    anchor: T;
+    facts: T[];
+    context: T[];
     utility: Utility;
     reason: string;
     group: string;
@@ -95,10 +98,10 @@ export interface NewsCandidate {
     sourceContext?: NewsSourceContext;
 }
 export function romeToday(now: number) { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); }
-export const administrativeDate = (r: FactNews) => r.fact.document_date ?? r.event_date;
-export function operationalFact(r: FactNews, now: number) { const d = administrativeDate(r); return !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && d >= NEWS_POLICY.start && d <= romeToday(now); }
+export const administrativeDate = (r: Pick<NewsFact, "fact" | "event_date">) => r.fact.document_date ?? r.event_date;
+export function operationalFact(r: NewsFact, now: number) { const d = administrativeDate(r); return !!d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && d >= NEWS_POLICY.start && d <= romeToday(now); }
 const transformative = new Set(['FRAZIONAMENTO', 'FUSIONE', 'CAMBIO_DESTINAZIONE_USO']);
-export function classifyNews(row: FactNews, context: FactNews[] = []): {
+export function classifyNews(row: NewsFact, context: NewsFact[] = []): {
     utility: Utility;
     reason: string;
     group: string;
@@ -136,7 +139,7 @@ export function classifyNews(row: FactNews, context: FactNews[] = []): {
     return out('ARCHIVE_ONLY', 'GENERIC_OR_ISOLATED_CONTEXT');
 }
 const titles: Record<string, string> = { FRAZIONAMENTO: 'Immobile diviso in più unità', FUSIONE: 'Unità riunite in un immobile', NUOVA_COSTRUZIONE: 'Nuovo fabbricato', DEMOLIZIONE_RICOSTRUZIONE: 'Fabbricato da ricostruire', SOPRAELEVAZIONE: 'Un nuovo piano da verificare', AMPLIAMENTO: 'Immobile in ampliamento', FINE_LAVORI: 'Lavori conclusi', SCA_AGIBILITA: 'Agibilità dopo una trasformazione', ALIENAZIONE: 'Alienazione di un immobile', DISMISSIONE: 'Patrimonio in dismissione', CESSAZIONE_ATTIVITA: 'Un’attività ha dichiarato la cessazione', TRASFERIMENTO_ATTIVITA: 'Possibile cambio del locale commerciale' };
-export function newsTitle(r: FactNews) {
+export function newsTitle(r: NewsFact) {
     if (r.event_type === 'BUILDABILITY_CHANGED') {
         const states: Record<string,string> = { NON_BUILDABLE: 'non edificabile', BUILDABLE: 'edificabile' };
         return r.fact.from_use && r.fact.to_use ? `Terreno: da ${states[r.fact.from_use] ?? 'stato precedente'} a ${states[r.fact.to_use] ?? 'stato da verificare'}` : 'Edificabilità da chiarire';
@@ -147,14 +150,14 @@ export function newsTitle(r: FactNews) {
     }
     return titles[r.event_type] ?? (/URBANISTIC|LOTTIZZAZIONE|ATTUATIVO|BUILDABILITY|EDIFICATORIO/.test(r.event_type) ? 'Trasformazione urbanistica dell’area' : r.event_type === 'SANATORIA' || r.event_type === 'CONDONO' ? 'Regolarizzazione amministrativa' : r.event_type.includes('MANUTENZIONE') ? 'Intervento di manutenzione' : 'Informazione amministrativa');
 }
-export function buildNewsCandidates(rows: FactNews[], now: number, sourceContexts: Record<string, NewsSourceContext> = {}) {
-    const real = rows.filter(r => !r.combination), groups = new Map<string, FactNews[]>();
+export function buildNewsCandidates<T extends NewsFact>(rows: T[], now: number, sourceContexts: Record<string, NewsSourceContext> = {}) {
+    const real = rows.filter(r => !r.combination), groups = new Map<string, T[]>();
     for (const r of real.filter(r => operationalFact(r, now))) {
         const list = groups.get(r.record_id) ?? [];
         list.push(r);
         groups.set(r.record_id, list);
     }
-    const result: NewsCandidate[] = [];
+    const result: NewsCandidate<T>[] = [];
     for (const [id, facts] of groups) {
         if(sourceContexts[id]?.disposition==='JUDICIAL_ARCHIVE_ONLY')continue;
         const first = facts[0], context = first.building_id ? real.filter(r => r.building_id === first.building_id && r.record_id !== id && administrativeDate(r) && administrativeDate(r)! <= administrativeDate(first)!) : [];

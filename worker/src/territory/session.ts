@@ -243,7 +243,7 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       for(const unit of Object.values(state.units))for(const id of new Set(unit.streetIds.map(id=>canonical.get(id)??id)))counts.set(id,(counts.get(id)??0)+1);
       return{...buildZoneStreetDirectory(streets.map(s=>({...s,count:counts.get(s.id)??0,...state.memories[s.id]?.sisterSearch})),areas.areas),fetchedAt:areas.fetchedAt,stale:areas.stale};
     };
-    let newsSnapshot: { at: number; pins: Awaited<ReturnType<typeof fetchWorkerNews>> } | null = null;
+    let newsSnapshot: (Awaited<ReturnType<typeof fetchWorkerNews>> & { at: number }) | null = null;
     handle('news-areas', () => workAreas.read());
     handle('news-open-property', value => {
       const propertyId = z.string().uuid().parse(value);
@@ -255,10 +255,15 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
       return createClient(credentials.url, credentials.key, { auth: { persistSession: false } });
     }
     async function readPins() {
-      if (!options.live || !options.onlineCredentials) return [];
-      if (!newsSnapshot || Date.now() - newsSnapshot.at > 120_000) {
-        const pins = await fetchWorkerNews(options.onlineCredentials().key);
-        newsSnapshot = { at: Date.now(), pins };
+      if (!options.live || !options.onlineCredentials) return { pins: [], unavailable: [] };
+      if (!newsSnapshot || Date.now() - newsSnapshot.at > (newsSnapshot.unavailable.length ? 20_000 : 120_000)) {
+        const fresh = await fetchWorkerNews(options.onlineCredentials().key);
+        // An unavailable level cannot replace markers from its last successful read.
+        const cachedPins = newsSnapshot?.pins.flatMap(pin => {
+          const layers = (pin.layers ?? ["notizie"]).filter(level => fresh.unavailable.includes(level));
+          return layers.length ? [{ ...pin, layers }] : [];
+        }) ?? [];
+        newsSnapshot = { at: Date.now(), pins: [...fresh.pins, ...cachedPins], unavailable: fresh.unavailable };
       }
       const db = pinDb();
       const byId = new Map<string, { civic: string; sister_unit_key: string | null }>();
@@ -274,11 +279,12 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
         const link = pin.propertyId ? byId.get(pin.propertyId) : null;
         return link ? { ...pin, civics: [link.civic], confirmedCivic: link.civic, linkedUnit: link.sister_unit_key } : pin;
       });
-      return store.readProjected(state => matchNewsPins(pins, state));
+      return { pins: store.readProjected(state => matchNewsPins(pins, state)), unavailable: newsSnapshot.unavailable };
     }
     const pinReviewInput = z.object({ propertyId: z.string().uuid(), civic: z.string().trim().max(35).optional() });
     async function reviewPin(value: z.infer<typeof pinReviewInput>) {
-      const pins = (await readPins()).filter(pin => pin.propertyId === value.propertyId);
+      const { pins: allPins } = await readPins();
+      const pins = allPins.filter(pin => pin.propertyId === value.propertyId);
       const pin = pins.find(item => item.streetId) ?? pins[0];
       if (!pin) throw new Error("Questo immobile non è più disponibile sulla mappa. Aggiorna i pin.");
       const civic = value.civic ?? pin.civics[0] ?? "";

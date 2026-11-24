@@ -139,7 +139,7 @@ export function createNewsMap({ L, map, api, escape, feedback, openCivic }) {
     submit.disabled = true;
     status.textContent = "Caricamento pin…";
     try {
-      const pins = next.pins.size && next.layers.size ? await api.newsPins() : [];
+      const { pins, unavailable } = next.pins.size && next.layers.size ? await api.newsPins() : { pins: [], unavailable: [] };
       if (!dialog.open) return;
       settings = next;
       outlines.clearLayers();
@@ -150,9 +150,13 @@ export function createNewsMap({ L, map, api, escape, feedback, openCivic }) {
         }).addTo(outlines);
       }
       const count = applyMarkers(pins);
-      if (settings.pins.size && settings.layers.size) feedback(count ? `${count} punti sulla mappa` : "Nessun pin per le zone e i livelli selezionati.");
+      if (settings.pins.size && settings.layers.size) {
+        const missing = unavailable.filter(layer => settings.layers.has(layer)).map(layer => layerInfo[layer].label);
+        if (missing.length) feedback(`Livelli non aggiornati: ${missing.join(", ")}. ${count} punti disponibili.`, true);
+        else feedback(count ? `${count} punti sulla mappa` : "Nessun pin per le zone e i livelli selezionati.");
+      }
       dialog.close();
-    } catch (error) { status.textContent = error.message; }
+    } catch (error) { status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, ""); }
     finally { submit.disabled = false; }
   };
 }

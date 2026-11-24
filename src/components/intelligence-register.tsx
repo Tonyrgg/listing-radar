@@ -6,6 +6,7 @@ import Link from "next/link";
 import {agencyDateSource} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ChevronRight, TrendingDown, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { PropertyThumbnail } from "@/components/property-thumbnail";
+import { privateGalleryImages } from "@/lib/property-lifecycle/read-models/private-images";
 import {intelligenceSort,type IntelligenceSort} from "@/lib/property-lifecycle/read-models/intelligence-sorting";
 import { Chip, type Tone } from "@/components/ui/primitives";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/formatting";
@@ -74,7 +75,7 @@ export function IntelligenceRegister({rows,view,now,photos={},query={}}:{rows:In
     const unitPrice=row.surface_sqm&&row.latest_asking_price!=null?Math.round(row.latest_asking_price/row.surface_sqm):null;
     return <tr key={row.property_id}>
      {signals?<td className="lr-table-score"><span className="lr-score-box" data-level={row.opportunity_score!=null&&row.opportunity_score>=60?"high":"normal"} title={"Indice di priorità, non probabilità di vendita"+(row.identifiability_bonus?` · +${row.identifiability_bonus} per informazioni utili a individuare l’immobile`:"")}>{row.opportunity_score==null?"—":formatNumber(Math.round(row.opportunity_score))}</span></td>:null}
-     <td className="lr-table-identity"><div className="lr-table-property"><Link href={detailUrl(row.property_id)} aria-label={"Apri "+address}><PropertyThumbnail src={photos[row.property_id]} address={address} preview/></Link><div><Link href={detailUrl(row.property_id)} className="lr-table-address" title={address}>{address}</Link><p className="lr-table-secondary" title={signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · "):characteristics(row)}>{signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · ")||"Indizi da verificare":characteristics(row)}</p></div></div></td>
+     <td className="lr-table-identity"><div className="lr-table-property"><Link href={detailUrl(row.property_id)} aria-label={"Apri "+address}><PropertyThumbnail src={photos[row.property_id]} fallbackSrc={privateGalleryImages([row.private_image_url])[0]} address={address} preview/></Link><div><Link href={detailUrl(row.property_id)} className="lr-table-address" title={address}>{address}</Link><p className="lr-table-secondary" title={signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · "):characteristics(row)}>{signals?(row.reasons??[]).map(opportunityReasonLabel).join(" · ")||"Indizi da verificare":characteristics(row)}</p></div></div></td>
      <td className="lr-table-zone">{row.zone_name||row.locality||"Da verificare"}</td>
      <td className="lr-numeric lr-table-price"><strong>{formatCurrency(row.latest_asking_price)}</strong>{row.source_price_conflict?<p className="lr-table-warning">Fonti discordanti</p>:row.reduction_percent!=null&&row.reduction_percent>0?<p className="lr-table-reduction"><TrendingDown size={12} aria-hidden="true"/> −{formatNumber(row.reduction_percent)}%</p>:null}</td>
      <td className="lr-numeric">{unitPrice==null?"—":formatNumber(unitPrice)}</td>

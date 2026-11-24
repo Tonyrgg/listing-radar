@@ -2,12 +2,13 @@
 import { useEffect,useId,useRef,useState } from "react";
 import {createPortal} from "react-dom";
 import {ImageOff} from "lucide-react";
-export function PropertyThumbnail({src,address,preview=false}:{src?:string;address:string;preview?:boolean}){
- const [failed,setFailed]=useState(false),[position,setPosition]=useState<{left:number;top:number;width:number;height:number}|null>(null);
+export function PropertyThumbnail({src,fallbackSrc,address,preview=false}:{src?:string;fallbackSrc?:string;address:string;preview?:boolean}){
+ const [failedUrls,setFailedUrls]=useState<string[]>([]),[position,setPosition]=useState<{left:number;top:number;width:number;height:number}|null>(null);
+ const imageUrl=[src,fallbackSrc].find(url=>url&&!failedUrls.includes(url));
  const host=useRef<HTMLSpanElement>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const id=useId();
  useEffect(()=>{
-  if(!preview||!src||failed)return;
+  if(!preview||!imageUrl)return;
   const node=host.current,link=node?.closest("a");
   function hide(){if(timer.current)clearTimeout(timer.current);setPosition(null)}
   function show(){
@@ -25,13 +26,13 @@ export function PropertyThumbnail({src,address,preview=false}:{src?:string;addre
   document.addEventListener("scroll",hide,true);
   const escape=(e:KeyboardEvent)=>{if(e.key==="Escape")hide()};document.addEventListener("keydown",escape);
   return()=>{hide();node?.removeEventListener("mouseenter",show);node?.removeEventListener("mouseleave",hide);link?.removeEventListener("focus",show);link?.removeEventListener("blur",hide);document.removeEventListener("scroll",hide,true);document.removeEventListener("keydown",escape)};
- },[preview,src,failed]);
- return <span ref={host} className="lr-property-thumbnail">{src&&!failed?<>
+ },[preview,imageUrl]);
+ return <span ref={host} className="lr-property-thumbnail">{imageUrl?<>
   {/* eslint-disable-next-line @next/next/no-img-element */}
-  <img src={src} alt={"Foto: "+address} width={76} height={64} loading="lazy" decoding="async" onError={()=>setFailed(true)}/>
+  <img src={imageUrl} alt={"Foto: "+address} width={76} height={64} loading="lazy" decoding="async" onError={()=>setFailedUrls(urls=>urls.includes(imageUrl)?urls:[...urls,imageUrl])}/>
   {position?createPortal(<span id={id} role="tooltip" className="lr-photo-preview" style={position}>
    {/* eslint-disable-next-line @next/next/no-img-element */}
-   <img src={src} alt={"Foto ingrandita: "+address}/><span>{address}</span>
+   <img src={imageUrl} alt={"Foto ingrandita: "+address}/><span>{address}</span>
   </span>,document.body):null}
  </>:<span title="Foto non disponibile"><ImageOff size={20} aria-hidden="true"/><span className="sr-only">Foto non disponibile</span></span>}</span>;
 }
