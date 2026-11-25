@@ -15,6 +15,8 @@ import type { CadastralOwner, CadastralProperty } from "../types.js";
 import type { RetryTelemetry } from "../core/retry-telemetry.js";
 import {
   exactStreetVariants,
+  matchingStreetVariants,
+  sisterStreetKeywords,
   normalizeSisterStreet,
   shouldStopStreetRun,
   splitSisterStreetInput,
@@ -377,6 +379,7 @@ export class SisterStreetRun {
   private readonly engine: "lavorazione" | "rifinitura" | "portoni";
   private sisterSearchText = "";
   private sisterResultName = "";
+  private lockedAddressLabel: string | undefined;
 
   constructor(private readonly page: Page, private readonly options: StreetRunOptions = {}) {
     this.adapter = new PlaywrightSisterAdapter(page, sisterSelectors, {
@@ -404,6 +407,7 @@ export class SisterStreetRun {
     this.sisterSearchText = (resume ? resume.runSettings?.sisterSearchText : this.options.sisterSearchText)?.trim() ?? "";
     this.sisterResultName = (resume ? resume.runSettings?.sisterResultName : this.options.sisterResultName)?.trim() ?? "";
     if (resume && normalizeSisterStreet(resume.requestedStreet) !== normalizeSisterStreet(requestedStreet)) throw new Error("Il checkpoint appartiene a una via diversa");
+    this.lockedAddressLabel = resume?.variants?.[0]?.text;
     await this.options.onProgress?.({
       phase: "preparing", variantIndex: 0, variantTotal: 0, variantSourceId: null,
       current: 0, total: 0, address: null,
@@ -411,6 +415,7 @@ export class SisterStreetRun {
     const variants = this.prepareSearchAutomatically
       ? await this.prepareStreetOrReuseOpenList(requestedStreet)
       : await this.readPreparedAddressList(requestedStreet, Boolean(resume));
+    this.lockedAddressLabel = variants[0]?.text;
     const normalizedRequestedStreet = normalizeSisterStreet(requestedStreet);
     if (resume && normalizeSisterStreet(resume.requestedStreet) !== normalizedRequestedStreet) {
       throw new Error("Il checkpoint appartiene a una via diversa");
@@ -729,52 +734,67 @@ export class SisterStreetRun {
     await this.assertSession();
     const select = this.page.locator(ADDRESS_SELECT);
     if (await select.count() === 1) {
-      const aperte = exactStreetVariants(this.sisterResultName || normalizeSisterStreet(requestedStreet), await readOptions(select));
+      const aperte = this.matchAutomaticAddress(requestedStreet, await readOptions(select));
       if (aperte.length) return aperte;
     }
     return this.prepareStreet(requestedStreet);
   }
 
+  private matchAutomaticAddress(requestedStreet: string, options: Array<{ text: string; value: string }>) {
+    return this.lockedAddressLabel
+      ? exactStreetVariants(this.lockedAddressLabel, options)
+      : matchingStreetVariants(this.sisterResultName || requestedStreet, options);
+  }
+
   private async prepareStreet(requestedStreet: string): Promise<SisterStreetVariant[]> {
     await this.ensureSearchForm();
     const form = this.page.locator(SEARCH_FORM);
-    const municipality = form.locator('select[name="comuneCat"]');
-    const municipalityOptions = await readOptions(municipality);
-    const bitonto = municipalityOptions.find((option) => normalizeSisterStreet(option.text) === "BITONTO");
-    if (!bitonto) throw new WorkerError("Comune di Bitonto non disponibile nella ricerca SISTER", "portal_error", { portal: "SISTER" }, true);
-    await municipality.selectOption(bitonto.value);
+    const target = this.lockedAddressLabel || this.sisterResultName || requestedStreet;
+    const toponyms = await readOptions(form.locator('select[name="toponimo"]'));
+    const parsed = splitSisterStreetInput(target, toponyms);
+    const all = toponyms.find(option => normalizeSisterStreet(option.text) === "TUTTI");
+    const preferred = this.sisterSearchText || parsed.addressText;
+    const searches = [
+      { text: preferred, toponym: parsed.toponymValue, mode: this.sisterSearchText ? "0" : "1" },
+      ...sisterStreetKeywords(parsed.addressText).slice(0, 2).map(text => ({
+        text, toponym: parsed.toponymValue, mode: "0",
+      })),
+      ...(all ? sisterStreetKeywords(parsed.addressText).slice(0, 1).map(text => ({
+        text, toponym: all.value, mode: "0",
+      })) : []),
+    ];
+    const attempted = new Set<string>();
+    for (const search of searches) {
+      const key = JSON.stringify([normalizeSisterStreet(search.text), search.toponym, search.mode]);
+      if (attempted.has(key)) continue;
+      if (attempted.size && this.options.isCancelled?.()) throw new WorkerError("Acquisizione in pausa", "paused", { portal: "SISTER" }, true);
+      attempted.add(key);
+      await this.ensureSearchForm();
+      const municipality = form.locator('select[name="comuneCat"]');
+      const bitonto = (await readOptions(municipality)).find(option => normalizeSisterStreet(option.text) === "BITONTO");
+      if (!bitonto) throw new WorkerError("Comune di Bitonto non disponibile nella ricerca SISTER", "portal_error", { portal: "SISTER" }, true);
+      await municipality.selectOption(bitonto.value);
+      await form.locator('select[name="toponimo"]').selectOption(search.toponym);
+      await form.locator('input[name="indirizzo"]').fill(search.text);
+      const exactMode = form.locator(`input[name="parIntera"][value="${search.mode}"]`);
+      if (await exactMode.count() !== 1) throw new WorkerError("Modalità di ricerca SISTER non riconosciuta", "portal_error", { portal: "SISTER" }, true);
+      await exactMode.check();
+      await clickAndWait(this.page, form.locator('input[name="ricerca"]'), "la ricerca della via");
+      await this.assertSession();
 
-    const toponym = form.locator('select[name="toponimo"]');
-    const parsed = splitSisterStreetInput(this.sisterResultName || requestedStreet, await readOptions(toponym));
-    await toponym.selectOption(parsed.toponymValue);
-    await form.locator('input[name="indirizzo"]').fill(this.sisterSearchText || parsed.addressText);
-    const exactMode = form.locator(`input[name="parIntera"][value="${this.sisterSearchText ? "0" : "1"}"]`);
-    if (await exactMode.count() !== 1) {
-      throw new WorkerError("Modalità di ricerca SISTER non riconosciuta", "portal_error", { portal: "SISTER" }, true);
+      const select = this.page.locator(ADDRESS_SELECT);
+      if (await select.count() === 1) {
+        const variants = this.matchAutomaticAddress(requestedStreet, await readOptions(select));
+        if (variants.length) return variants;
+      } else if (await form.locator('input[name="indirizzo"]').count() !== 1) {
+        // A search with no matches can display an intermediate error page.
+        await this.page.goBack({ waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => undefined);
+      }
     }
-    await exactMode.check();
-    await clickAndWait(this.page, form.locator('input[name="ricerca"]'), "la ricerca della via");
-    await this.assertSession();
-
-    const select = this.page.locator(ADDRESS_SELECT);
-    if (await select.count() !== 1) {
-      throw new WorkerError(
-        `Nessuna via selezionabile trovata per “${normalizeSisterStreet(requestedStreet)}”`,
-        "data_incomplete",
-        { portal: "SISTER", action: "street-run-address-options" },
-        true,
-      );
-    }
-    const variants = exactStreetVariants(parsed.requestedStreet, await readOptions(select));
-    if (!variants.length) {
-      throw new WorkerError(
-        `SISTER non ha restituito una corrispondenza testuale esatta per “${parsed.requestedStreet}”`,
-        "data_incomplete",
-        { portal: "SISTER", action: "street-run-exact-match" },
-        true,
-      );
-    }
-    return variants;
+    throw new WorkerError(
+      `Via da verificare: SISTER non ha restituito una voce univoca per “${normalizeSisterStreet(target)}”`,
+      "data_incomplete", { portal: "SISTER", action: "street-run-exact-match" }, true,
+    );
   }
 
   private async readPreparedAddressList(
@@ -869,7 +889,7 @@ export class SisterStreetRun {
       });
       try {
         await this.ensureAddressList(requestedStreet);
-        const liveOptions = exactStreetVariants(this.sisterResultName || requestedStreet, await readOptions(this.page.locator(ADDRESS_SELECT)));
+        const liveOptions = exactStreetVariants(variant.text, await readOptions(this.page.locator(ADDRESS_SELECT)));
         /* Il testo visibile puo' comparire piu' volte e, dopo un ritorno o una
          * ripreparazione, SISTER puo' anche riordinare le option. Il value
          * completo e' l'identita' piu' forte della voce scelta: usarlo prima

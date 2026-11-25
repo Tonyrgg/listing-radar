@@ -51,7 +51,7 @@ const labels = [
   [/^Territorio$/, "street"], [/^Proprietari e immobili$/, "users"], [/^Lavorazione$/, "download"],
 ];
 export function labelIcons(root) {
-  for (const element of root.querySelectorAll("button, summary, legend")) {
+  for (const element of root.querySelectorAll("button:not([data-no-icon]), summary, legend")) {
     if (element.querySelector(":scope > .ui-icon")) continue;
     const entry = labels.find(([pattern]) => pattern.test(element.textContent.trim()));
     if (entry) { element.insertAdjacentHTML("afterbegin", icon(entry[1])); element.classList.add("icon-label"); }

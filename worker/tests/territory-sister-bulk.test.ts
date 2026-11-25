@@ -126,6 +126,17 @@ it('does not retry a login failure or an explicit operator pause',async()=>{
  const app=new TerritoryApplication(store,provider),bulk=new SisterBulk(app,store,()=>{},0);bulk.start(async()=>{});await bulk.waitForIdle();expect(scan).toHaveBeenCalledOnce();
  scan.mockImplementation(async()=>{app.pause();return false;});bulk.start(async()=>{});await bulk.waitForIdle();expect(scan).toHaveBeenCalledTimes(2);expect(bulk.list().entries[1]!.status).toBe('ready');
 });
+it('continues past a street lookup failure and lets the operator correct it without losing the run', async () => {
+ const {store}=await fixture();const provider=new SimulationProvider(store,0),original=provider.scan.bind(provider);
+ provider.scan=async (...args)=>{if(args[0].id==='1')throw Error('Via da verificare: SISTER non ha restituito una voce univoca');return original(...args);};
+ const bulk=new SisterBulk(new TerritoryApplication(store,provider),store,()=>{},0);
+ bulk.start(async()=>{});await bulk.waitForIdle();
+ expect(bulk.list().entries).toMatchObject([{status:'paused',needsStreetReview:true,canEdit:true},{status:'completed'}]);
+ const old=store.read().runs.find(run=>run.streetId==='1');
+ await bulk.put({streetId:'1',search:{searchText:'GORIZ',resultName:'VIA GORIZIA'}});
+ expect(bulk.list().entries[0]).toMatchObject({status:'ready',searchText:'GORIZ'});
+ expect(store.read().runs.find(run=>run.id===old!.id)).toEqual(old);
+});
 it('keeps a completed street completed when its final online acknowledgement is retried',async()=>{
  const{bulk,store}=await fixture();let barriers=0;bulk.start(async()=>{if(++barriers===2)throw Error('Salvataggio online non confermato');});await bulk.waitForIdle();
  expect(store.read().runs).toHaveLength(2);expect(bulk.list().entries.every(e=>e.status==='completed'&&!e.error)).toBe(true);

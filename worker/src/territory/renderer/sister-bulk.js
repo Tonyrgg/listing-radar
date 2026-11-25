@@ -1,6 +1,6 @@
 export function createSisterBulk({api,escape,snapshot}) {
   const $=id=>document.getElementById(id), dialog=$('sister-bulk-dialog');
-  let timer, loading=false;
+  let timer, loading=false, lastQueue;
   const label=s=>`${s.name} · ${s.locality} [${s.id}]`;
   const act=fn=>async event=>{event?.preventDefault();try{await fn();$('sister-bulk-feedback').textContent='';await refresh();}catch(error){$('sister-bulk-feedback').textContent=error.message;}};
   async function refresh(){
@@ -8,12 +8,17 @@ export function createSisterBulk({api,escape,snapshot}) {
     loading=true;
     try {
       const data=await api.sisterQueue();if(!dialog.open)return;
+      const version=JSON.stringify(data);
+      if(version===lastQueue)return;
+      lastQueue=version;
       const states={ready:'Pronta',running:'In acquisizione',paused:'Da riprendere',completed:'Acquisita'};
-      $('sister-bulk-rows').innerHTML=data.entries.length?data.entries.map(e=>`<tr><td><strong>${escape(e.name)}</strong><small>${escape(e.municipality)} · ${escape(e.streetId)}</small></td><td>${escape(e.searchText)}</td><td>${escape(e.resultName)}</td><td>${states[e.status]} · ${e.handled}${e.total!==null?'/'+e.total:''}${e.anomalies?`<small>${e.anomalies} righe da verificare</small>`:''}${e.error?`<small>${escape(e.error)}</small>`:''}</td><td>${!e.runId?`<button data-sister-edit="${escape(e.streetId)}" ${data.active?'disabled':''}>Modifica</button>`:''}<button data-sister-remove="${escape(e.streetId)}" ${data.active?'disabled':''}>Rimuovi</button></td></tr>`).join(''):'<tr><td colspan="5">Nessuna via in coda. Scegli una via e compila la ricerca Sister.</td></tr>';
+      $('sister-bulk-rows').innerHTML=data.entries.length?data.entries.map(e=>`<tr><td><strong>${escape(e.name)}</strong><small>${escape(e.municipality)} · ${escape(e.streetId)}</small></td><td>${escape(e.searchText)}</td><td>${escape(e.matchedName || e.resultName)}</td><td><strong>${e.status==='paused'&&e.needsStreetReview?'Via da verificare':states[e.status]}</strong> · ${e.handled}${e.total!==null?'/'+e.total:''}${e.anomalies?`<small>${e.anomalies} righe da verificare</small>`:''}${e.error?`<small>${escape(e.error)}</small>`:''}</td><td>${e.canEdit?`<button data-no-icon data-sister-edit="${escape(e.streetId)}" ${data.active?'disabled':''}>Modifica</button>`:''}<button data-no-icon data-sister-remove="${escape(e.streetId)}" ${data.active?'disabled':''}>Rimuovi</button></td></tr>`).join(''):'<tr><td colspan="5">Aggiungi una via da qui o un’intera zona da «Vie per zona».</td></tr>';
       dialog.querySelectorAll('[data-sister-remove]').forEach(b=>b.onclick=act(()=>api.sisterQueueRemove(b.dataset.sisterRemove)));
       dialog.querySelectorAll('[data-sister-edit]').forEach(b=>b.onclick=()=>{const entry=data.entries.find(e=>e.streetId===b.dataset.sisterEdit),street=snapshot().streets.find(s=>s.id===entry.streetId);$('sister-bulk-street').value=label(street);$('sister-bulk-keyword').value=entry.searchText;$('sister-bulk-name').value=entry.resultName;$('sister-bulk-keyword').focus();});
       const completed=data.entries.filter(e=>e.status==='completed').length;
-      $('sister-bulk-summary').textContent=`${completed}/${data.entries.length} vie acquisite${data.active?' · giro in corso':''}${data.entries.some(e=>e.anomalies)?` · ${data.entries.reduce((sum,e)=>sum+(e.anomalies||0),0)} righe da verificare`:''}`;
+      const reviews=data.entries.filter(e=>e.status==='paused'&&e.needsStreetReview).length;
+      $('sister-bulk-summary').textContent=`${completed}/${data.entries.length} vie acquisite${reviews?` · ${reviews} vie da verificare`:''}${data.active?' · giro in corso':''}${data.entries.some(e=>e.anomalies)?` · ${data.entries.reduce((sum,e)=>sum+(e.anomalies||0),0)} immobili da verificare`:''}`;
+      $('sister-bulk-start').textContent=reviews>0&&completed+reviews===data.entries.length?'Riprova vie da verificare':'Avvia / riprendi il giro';
       $('sister-bulk-start').disabled=data.active||completed===data.entries.length;
       $('sister-bulk-pause').disabled=!data.active;
       for(const control of $('sister-bulk-form').elements)control.disabled=data.active;
@@ -22,7 +27,7 @@ export function createSisterBulk({api,escape,snapshot}) {
   $('sister-bulk-open').onclick=act(async()=>{
     if(!snapshot())throw Error('Attendi il caricamento delle vie');
     $('sister-bulk-streets').innerHTML=snapshot().streets.filter(s=>!s.linkedOfficialId&&!s.needsReview).map(s=>`<option value="${escape(label(s))}"></option>`).join('');
-    dialog.showModal();clearInterval(timer);timer=setInterval(()=>refresh().catch(e=>{$('sister-bulk-feedback').textContent=e.message;}),2000);
+    lastQueue=undefined;dialog.showModal();clearInterval(timer);timer=setInterval(()=>refresh().catch(e=>{$('sister-bulk-feedback').textContent=e.message;}),2000);
   });
   $('sister-bulk-close').onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>clearInterval(timer));

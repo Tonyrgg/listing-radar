@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   exactStreetVariants,
   hasReachedStreetEnd,
+  matchingStreetVariants,
+  sisterStreetKeywords,
   normalizeSisterStreet,
   shouldStopStreetRun,
   splitSisterStreetInput,
@@ -34,6 +36,26 @@ describe("scansione via SISTER", () => {
     ]);
     expect(variants.map((variant) => variant.sourceId)).toEqual(["542250", "557509"]);
     expect(new Set(variants.map((variant) => variant.key)).size).toBe(2);
+  });
+
+  it.each([
+    ["VIA VITO ACQUAFREDDA", "VIA ACQUAFREDDA"],
+    ["PIAZZA CADUTI DEL TERRORISMO", "PIAZZA CADUTI TERRORISMO"],
+    ["LARGO CALDAROLA", "LARGO MONS. ORONZO CALDAROLA"],
+    ["LARGO MONSIGNOR ORONZO CALDAROLA", "LARGO ORONZO CALDAROLA"],
+  ])("riconosce %s come %s senza prendere una traversa", (requested, label) => {
+    expect(matchingStreetVariants(requested, [
+      { text: `TRAVERSA ${label}`, value: "2#A" },
+      { text: label, value: "1#A" },
+    ])).toMatchObject([{ value: "1#A", text: label }]);
+  });
+
+  it("scarta le alternative ambigue e prende solo parole utili per cercare", () => {
+    expect(matchingStreetVariants("LARGO CALDAROLA", [
+      { text: "LARGO MONS ORONZO CALDAROLA", value: "1" },
+      { text: "LARGO ORONZO CALDAROLA", value: "2" },
+    ])).toEqual([]);
+    expect(sisterStreetKeywords("Largo Monsignor Oronzo Caldarola")).toEqual(["CALDAROLA", "ORONZO"]);
   });
 
   it("distingue due voci uguali anche quando condividono il primo identificativo SISTER", () => {

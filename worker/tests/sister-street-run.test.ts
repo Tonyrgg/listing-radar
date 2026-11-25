@@ -549,13 +549,19 @@ describe("preparazione automatica della via", () => {
    * preparazione scelga BITONTO, il toponimo giusto e la dizione esatta invece
    * di limitarsi a constatare che la pagina e' cambiata.
    */
-  function sisterFinto() {
+  function sisterFinto(caldarola = false) {
     const richieste: Array<Record<string, string>> = [];
     const server = createServer((request, response) => {
       response.setHeader("content-type", "text/html; charset=utf-8");
       const [percorso, query] = (request.url ?? "/").split("?");
       if (percorso === "/cerca") {
         richieste.push(Object.fromEntries(new URLSearchParams(query ?? "")));
+        if (caldarola) {
+          response.end(richieste.at(-1)?.indirizzo === "CALDAROLA" ? `<form name="SceltaIndirizzoForm">
+            <select name="indirizzoSel"><option value="77#LARGO">LARGO MONS. ORONZO CALDAROLA</option></select>
+          </form>` : "<p>Nessun indirizzo trovato</p>");
+          return;
+        }
         response.end(`<!doctype html><body>
           <form name="SceltaIndirizzoForm" action="/results">
             <select name="indirizzoSel">
@@ -571,7 +577,7 @@ describe("preparazione automatica della via", () => {
       response.end(`<!doctype html><body>
         <form name="ricercaIndForm" action="/cerca" method="get">
           <select name="comuneCat"><option value="">Scegli</option><option value="A893">BITONTO</option><option value="A662">BARI</option></select>
-          <select name="toponimo"><option value="0">TUTTI</option><option value="236">VIA</option><option value="812">VIALE</option></select>
+          <select name="toponimo"><option value="0">TUTTI</option><option value="236">VIA</option><option value="812">VIALE</option><option value="77">LARGO</option></select>
           <input name="indirizzo">
           <label><input name="parIntera" type="radio" value="0">Contiene</label>
           <label><input name="parIntera" type="radio" value="1">Dizione esatta</label>
@@ -581,6 +587,26 @@ describe("preparazione automatica della via", () => {
     });
     return { server, richieste };
   }
+
+  it("ripete la ricerca per cognome e seleziona la variante con titolo abbreviato", async () => {
+    const { server, richieste } = sisterFinto(true);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const browser = await chromium.launch({ headless: true, channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/`);
+      const checkpoint = await new SisterStreetRun(page, {
+        prepareSearchAutomatically: true, sisterSearchText: "MONSIGNOR",
+        isCancelled: () => richieste.length === 2,
+      }).run("LARGO CALDAROLA");
+      expect(richieste.map(r => r.indirizzo)).toEqual(["MONSIGNOR", "CALDAROLA"]);
+      expect(checkpoint.variants).toMatchObject([{ text: "LARGO MONS. ORONZO CALDAROLA", value: "77#LARGO" }]);
+    } finally {
+      await browser.close();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }, 20_000);
 
   it("compila comune, toponimo e dizione esatta, e tiene solo le omonimie esatte", async () => {
     const { server, richieste } = sisterFinto();

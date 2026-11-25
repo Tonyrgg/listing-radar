@@ -66,6 +66,33 @@ export function exactStreetVariants(
   });
 }
 
+const streetAliases: Record<string, string> = {
+  "VIA ACQUAFREDDA": "VIA VITO ACQUAFREDDA",
+  "PIAZZA CADUTI TERRORISMO": "PIAZZA CADUTI DEL TERRORISMO",
+  "LARGO CALDAROLA": "LARGO ORONZO CALDAROLA",
+};
+
+function streetAlias(name: string) {
+  const normalized = normalizeSisterStreet(name).replace(/^LARGO (?:MONS|MONSIGNOR|MONSIGNORE) /, "LARGO ");
+  return streetAliases[normalized] ?? normalized;
+}
+
+/** Choose a whole address label. A common search word is never proof of identity. */
+export function matchingStreetVariants(requested: string, options: Array<{ text: string; value: string }>) {
+  const exact = exactStreetVariants(requested, options);
+  if (exact.length) return exact;
+  const labels = new Set(options.filter(option => option.value && streetAlias(option.text) === streetAlias(requested))
+    .map(option => normalizeSisterStreet(option.text)));
+  return labels.size === 1 ? exactStreetVariants([...labels][0]!, options) : [];
+}
+
+export function sisterStreetKeywords(address: string) {
+  const ignored = new Set(["DEL", "DEI", "DELLE", "DELLA", "DEGLI", "MONS", "MONSIGNOR", "MONSIGNORE",
+    "VIA", "LARGO", "PIAZZA", "PIAZZALE", "VIALE", "CORSO", "VICO", "TRAVERSA", "CONTRADA", "STRADA", "TRAV"]);
+  return [...new Set(normalizeSisterStreet(address).split(" ").reverse()
+    .filter(word => word.length >= 3 && /[A-Z]/.test(word) && !/^[IVXLCDM]+$/.test(word) && !ignored.has(word)))];
+}
+
 export function updateVerifiedEmptyCounters(
   counters: Record<string, number>,
   variantKey: string,
