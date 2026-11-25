@@ -2,7 +2,7 @@ export function createSisterBulk({api,escape,snapshot}) {
   const $=id=>document.getElementById(id), dialog=$('sister-bulk-dialog');
   let timer, loading=false, lastQueue;
   const label=s=>`${s.name} · ${s.locality} [${s.id}]`;
-  const act=fn=>async event=>{event?.preventDefault();try{await fn();$('sister-bulk-feedback').textContent='';await refresh();}catch(error){$('sister-bulk-feedback').textContent=error.message;}};
+  const act=fn=>async event=>{event?.preventDefault();try{$('sister-bulk-feedback').textContent='';await fn();await refresh();}catch(error){$('sister-bulk-feedback').textContent=error.message.replace(/^Error invoking remote method '[^']+': Error: /,"");}};
   async function refresh(){
     if(!dialog.open||loading)return;
     loading=true;
@@ -21,6 +21,7 @@ export function createSisterBulk({api,escape,snapshot}) {
       $('sister-bulk-start').textContent=reviews>0&&completed+reviews===data.entries.length?'Riprova vie da verificare':'Avvia / riprendi il giro';
       $('sister-bulk-start').disabled=data.active||completed===data.entries.length;
       $('sister-bulk-pause').disabled=!data.active;
+      $('sister-bulk-clear').disabled=data.active||!data.entries.length;
       for(const control of $('sister-bulk-form').elements)control.disabled=data.active;
     }finally{loading=false;}
   }
@@ -43,4 +44,12 @@ export function createSisterBulk({api,escape,snapshot}) {
   });
   $('sister-bulk-start').onclick=act(()=>api.sisterQueueStart());
   $('sister-bulk-pause').onclick=act(()=>api.pause());
+  $('sister-bulk-clear').onclick=act(async()=>{
+    const button=$('sister-bulk-clear');
+    button.disabled=true;
+    try{
+      const removed=await api.sisterQueueClear();
+      if(removed)$('sister-bulk-feedback').textContent=removed===1?'Via rimossa dalla coda.':`${removed} vie rimosse dalla coda.`;
+    }finally{lastQueue=undefined;await refresh();}
+  });
 }

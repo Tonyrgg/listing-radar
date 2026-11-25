@@ -36,6 +36,34 @@ it('can prepare a completed zone again while retaining all earlier acquisition r
  expect(await bulk.putMany(['1','2'])).toMatchObject({added:2,alreadyQueued:0});
  expect(store.read().runs).toEqual(runs);expect(bulk.list().entries.every(e=>e.status==='ready'&&!e.runId)).toBe(true);
 });
+it('svuota solo la coda dopo conferma, conservando dati, ricerche e storico',async()=>{
+ const{bulk,store}=await fixture();
+ bulk.start(async()=>{});await bulk.waitForIdle();
+ const before=store.read();
+ const confirm=vi.fn(async()=>false);
+ expect(await bulk.clear(confirm)).toBe(0);
+ expect(confirm).toHaveBeenCalledWith(2);
+ expect(store.read()).toEqual(before);
+ expect(await bulk.clear(async()=>true)).toBe(2);
+ expect(bulk.list().entries).toEqual([]);
+ const after=store.read();
+ expect(after.runs).toEqual(before.runs);
+ expect(after.units).toEqual(before.units);
+ expect(after.memories['1']!.sisterSearch).toEqual(before.memories['1']!.sisterSearch);
+});
+it('protegge la coda attiva e le modifiche avvenute durante la conferma',async()=>{
+ const{bulk}=await fixture();
+ await expect(bulk.clear(async()=>{await bulk.remove('2');return true;})).rejects.toThrow('La coda è cambiata');
+ expect(bulk.list().entries).toHaveLength(1);
+ let release!:()=>void;
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ bulk.start(()=>gate);
+ const confirm=vi.fn(async()=>true);
+ try {
+   await expect(bulk.clear(confirm)).rejects.toThrow('Metti in pausa');
+   expect(confirm).not.toHaveBeenCalled();
+ } finally {bulk.pause();release();await bulk.waitForIdle();}
+});
 it('executes streets sequentially, preserves acknowledged completions and syncs the queue',async()=>{
   const {bulk,store,app}=await fixture();
   const barrier=vi.fn(async()=>{});

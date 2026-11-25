@@ -79,6 +79,22 @@ export class SisterBulk {
     if (this.active || this.app.hasActiveRun) throw Error('Metti in pausa prima di modificare la coda Sister');
     await this.store.change(s => { if(s.memories[streetId]) delete s.memories[streetId]!.sisterQueue; }); this.notify();
   }
+  async clear(confirm: (count: number) => Promise<boolean>) {
+    const checkIdle = () => {
+      if (this.active || this.app.hasActiveRun) throw Error('Metti in pausa il giro prima di svuotare la coda SISTER');
+    };
+    checkIdle();
+    const revision = this.store.revision;
+    const count = this.store.readProjected(state => Object.values(state.memories).filter(memory => memory.sisterQueue).length);
+    if (!count || !(await confirm(count))) return 0;
+    await this.store.change(state => {
+      checkIdle();
+      if (this.store.revision !== revision) throw Error('La coda è cambiata. Controllala e conferma di nuovo.');
+      for (const memory of Object.values(state.memories)) delete memory.sisterQueue;
+    });
+    this.notify();
+    return count;
+  }
   pause(reason?: string) { this.app.pause(reason); }
   start(beforeStreet: () => Promise<void>) {
     if (this.active || this.app.hasActiveRun) throw Error('Esiste già una lavorazione attiva');

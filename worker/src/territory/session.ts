@@ -336,6 +336,15 @@ export async function openTerritorySession(options: TerritorySessionOptions) {
     handle('sister-queue-put-many',value=>sisterBulk.putMany(z.array(id).min(1).max(3000).parse(value)));
     handle("sister-queue-put", value => sisterBulk.put(value));
     handle("sister-queue-remove", value => sisterBulk.remove(id.parse(value)));
+    handle("sister-queue-clear", () => sisterBulk.clear(async count => {
+      const { response } = await dialog.showMessageBox(options.parent, {
+        type: "warning", title: "Svuota coda SISTER",
+        message: count === 1 ? "Rimuovere la via dalla coda SISTER?" : `Rimuovere tutte le ${count} vie dalla coda SISTER?`,
+        detail: "Le acquisizioni e lo storico restano disponibili.",
+        buttons: ["Annulla", "Rimuovi tutte"], defaultId: 0, cancelId: 0,
+      });
+      return response === 1;
+    }));
     handle("sister-queue-start", async () => {
       if (application.hasActiveRun) throw Error("Esiste già una lavorazione attiva");
       if (options.onlineCredentials && options.live) {
