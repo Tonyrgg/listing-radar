@@ -3122,12 +3122,16 @@ export class TecnocloudUiV2Port implements TecnocloudV2Port {
       if(request?.client){
         const field=dialog.locator('c-input-field:has-text("Cliente")').filter({visible:true});
         const lookup=field.locator('c-lookup');
-        if(await lookup.count()===1)await this.fillPersonLookup(lookup,client,request.client.id,personLookupTerms(request.client.name,request.client.taxCode),dialog,1,'Cliente attività',request.client.phones);
-        const actual=await field.evaluate(element=>{
+        const selectedClientId=()=>field.evaluate(element=>{
           const component=element as HTMLElement&{value?:unknown};
           const nested=component.querySelector('c-lookup') as HTMLElement&{value?:unknown}|null;
           return typeof nested?.value==='string'?nested.value:typeof component.value==='string'?component.value:component.querySelector('[data-recordid]')?.getAttribute('data-recordid')??null;
         });
+        let actual = await selectedClientId();
+        if (!sameCrmRecordId(actual,request.client.id) && await lookup.count() === 1) {
+          await this.fillPersonLookup(lookup,client,request.client.id,personLookupTerms(request.client.name,request.client.taxCode),dialog,1,'Cliente attività',request.client.phones);
+          actual = await selectedClientId();
+        }
         if(!actual||!sameCrmRecordId(actual,request.client.id))throw new ImportV2Error('Il cliente dell’attività non coincide con l’intestatario previsto. Nessun salvataggio.','verification_failed');
       }
       await this.pick(dialog.locator('c-input-field:has-text("Modalit"):has-text("Contatto")').filter({ visible: true }), plan.source.activity.contactMode, "Modalità contatto");

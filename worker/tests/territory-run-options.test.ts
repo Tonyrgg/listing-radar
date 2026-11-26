@@ -47,12 +47,34 @@ describe("Opzioni operative V2, congelate per run", () => {
     expect(Object.values(store.read().runs.at(-1)!.applySources!).map(s => s.activity.description)).toEqual(["Non vende", "Ci abita", "Segreteria"]);
     expect(Object.values(store.read().virtualActivities!).map(a => a.activity.status)).toEqual(["Eseguito"]);
     expect(runActivitySummary(store.read(), store.read().runs.at(-1)!)).toEqual({ created: 1, recovered: 0, coveredProperty:0,coveredClient:2,disabled: 0, unconfirmed: 0 });
+    const finished = store.read().runs.at(-1)!;
+    expect(Object.keys(finished.dailyCovered ?? {})).toHaveLength(2);
+    expect(Object.keys(finished.imports ?? {})).toHaveLength(1);
+    for (const key of Object.keys(finished.dailyCovered!)) {
+      expect(store.read().checkpoints[finished.applySources![key]!.sourcePropertyId]).toBeUndefined();
+      expect(store.read().importQueue?.[key]).toBeUndefined();
+    }
     const summaryState = store.read(), summaryRun = summaryState.runs.at(-1)!;
     summaryRun.imports![keys[0]!]!.proof!.evidence!.operationId = "old-operation";
     expect(runActivitySummary(summaryState, summaryRun).unconfirmed).toBe(1);
     const reopened = await TerritoryStore.open(directory, [street]);
     expect(reopened.read().runs.at(-1)!.applySources).toEqual(store.read().runs.at(-1)!.applySources);
     expect(effectiveSource(reopened.read().units[keys[0]!]!).activity.enabled).toBe(false);
+  });
+  it("sceglie la telefonata se il numero compare soltanto nella rilettura del nominativo CRM", async () => {
+    const { store, app, key } = await setup();
+    await app.start(street.id, "apply", [key], undefined, { activityMode: "none" });
+    await app.waitForIdle();
+    await store.change(state => {
+      const person = Object.values(state.virtualPeople)[0]!;
+      person.phones = ["3330000000"];
+    });
+    await app.start(street.id, "apply", [key], undefined, { activityMode: "killer" });
+    await app.waitForIdle();
+    const state = store.read(), run = state.runs.at(-1)!;
+    expect(run.imports?.[key]?.proof?.activity.contactMode).toBe("Telefonata");
+    expect(run.applySources![key]!.activity.contactMode).toBe("Telefonata");
+    expect(runActivitySummary(state,run).created).toBe(1);
   });
   it("rifiuta intervalli invertiti, piani mancanti e modalità non supportate", () => {
     expect(() => runSettings({ filters: { minCivicNumber: 10, maxCivicNumber: 2 } })).toThrow("civico finale");

@@ -34,7 +34,7 @@ export function pendingUnitImport(state: TerritoryState, key: string) {
 /** Removal is tied to this enrollment, never to an older import of the same unit. */
 export function settleQueueImport(state: TerritoryState, run: Run, key: string) {
   const enrollment = run.queueEntryIds?.[key];
-  if (enrollment && (run.imports?.[key]?.crmId || run.skipped?.[key]) && state.importQueue?.[key]?.id === enrollment) delete state.importQueue![key];
+  if (enrollment && (run.imports?.[key]?.crmId || run.skipped?.[key] || run.dailyCovered?.[key]) && state.importQueue?.[key]?.id === enrollment) delete state.importQueue![key];
 }
 export function hydrateImportQueue(state: TerritoryState, closeInterrupted = false) {
   state.importQueue ??= {};

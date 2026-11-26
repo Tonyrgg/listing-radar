@@ -170,7 +170,7 @@ export function mergeTerritory(base: TerritoryState | undefined, local: Territor
   // An old offline enrollment cannot resurrect a confirmed removal or a success.
   for (const [key, entry] of Object.entries(merged.importQueue ?? {})) {
     const removedId = createHash("sha256").update(JSON.stringify([entry.id, "removed"])).digest("hex");
-    if (merged.units[key]?.journal?.some(e => e.id === removedId) || merged.runs.some(r => r.queueEntryIds?.[key] === entry.id && r.imports?.[key]?.crmId)) delete merged.importQueue![key];
+    if (merged.units[key]?.journal?.some(e => e.id === removedId) || merged.runs.some(r => r.queueEntryIds?.[key] === entry.id && (r.imports?.[key]?.crmId || r.dailyCovered?.[key]))) delete merged.importQueue![key];
   }
   return merged;
 }

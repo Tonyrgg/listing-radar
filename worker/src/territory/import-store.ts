@@ -32,6 +32,11 @@ export class TerritoryImportStore implements ImportV2Store {
     });
   }
   async save(checkpoint: ImportV2Checkpoint) { await this.ledger.change(state => {
+    if (checkpoint.stage === "people_resolved" && checkpoint.plan && this.runId) {
+      const run = state.runs.find(r => r.id === this.runId);
+      const frozen = run?.applySources?.[importKey(checkpoint.plan.source)];
+      if (frozen?.sourcePropertyId === checkpoint.propertyId) frozen.activity = structuredClone(checkpoint.plan.source.activity);
+    }
     state.checkpoints[checkpoint.propertyId] = structuredClone(checkpoint);
     this.remember(state, checkpoint, checkpoint.lastError ? "retry_scheduled" : "stage_completed", checkpoint.lastError ?? undefined);
     if (checkpoint.stage === "completed") this.completedEvent(state, checkpoint);

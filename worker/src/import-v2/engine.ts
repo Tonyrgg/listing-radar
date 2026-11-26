@@ -51,6 +51,7 @@ const NEXT_STAGE: Record<ImportV2Stage, ImportV2Stage> = {
 const timingMs = (elapsed: number) => Math.max(0, Math.round(elapsed * 1000) / 1000);
 
 export type ImportV2EngineOptions = {
+  resolvedActivity?: (source: SourceProperty, people: PersonResolution[]) => SourceProperty["activity"];
   activityWriteGuard?:ActivityWriteGuard;
   requireSharedActivityGuard?:boolean;
   skipUnchangedPeople?:boolean;
@@ -179,6 +180,7 @@ export class ImportV2Engine {
   private readonly activityWriteGuard?:ActivityWriteGuard;
   private readonly requireSharedActivityGuard:boolean;
   private readonly skipUnchangedPeople:boolean;
+  private readonly resolvedActivity: ImportV2EngineOptions["resolvedActivity"];
   private readonly skipReplayableCheckpoints: boolean;
   private readonly freshPeople=new Map<string,{at:number;matches:CrmPersonSnapshot[]}>();
   private readonly verifiedPeople = new Map<string, { at: number; id: string }>();
@@ -194,6 +196,7 @@ export class ImportV2Engine {
     private readonly store: ImportV2Store,
     options: Partial<ImportV2EngineOptions> = {},
   ) {
+    this.resolvedActivity = options.resolvedActivity;
     this.maxTransientAttempts = Math.max(1, options.maxTransientAttempts ?? 3);
     this.calendarActivityPolicy=options.calendarActivityPolicy===true;
     this.relatedActivityCheckpoints=options.relatedActivityCheckpoints;
@@ -320,6 +323,11 @@ export class ImportV2Engine {
         const replayableTransition = this.skipReplayableCheckpoints && !checkpoint.lastError && checkpoint.attempts === 0
           && (executedStage === "queued" || (executedStage === "people_synced" && !!checkpoint.propertyResolution));
         checkpoint = await this.executeStage(checkpoint);
+        if (checkpoint.stage === "people_resolved" && this.resolvedActivity && !checkpoint.activityWrite?.submittedAt && !checkpoint.activityEvidence) {
+          const source = checkpoint.plan!.source;
+          const activity = this.resolvedActivity(source, checkpoint.people);
+          if (activity !== source.activity) checkpoint.plan = buildPlan({ ...source, activity });
+        }
         operationDurationMs = timingMs(performance.now() - operationStartedAt - this.checkpointSaveElapsedMs);
         operationFinished = true;
         checkpoint.attempts = 0;

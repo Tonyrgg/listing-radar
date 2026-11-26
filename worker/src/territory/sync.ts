@@ -64,11 +64,13 @@ export class TerritorySync {
     }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; return { revision: 0, localHash: "", syncedAt: null }; }
   }
-  private async remember(revision: number, state: TerritoryState) {
+  private async remember(revision: number, state: TerritoryState, localHash = territoryDigest(state)) {
     const file = this.bindingFile;
-    await writeFile(`${file}.tmp`, JSON.stringify({ revision, localHash: territoryDigest(state), baseline: state, syncedAt: new Date().toISOString(), workspaceId: this.config.workspaceId, ownerId: this.config.ownerId, profileKind: this.config.profileKind, url: new URL(this.config.url).origin }), { mode: 0o600 });
+    const binding = { revision, localHash, baseline: state, syncedAt: new Date().toISOString(), workspaceId: this.config.workspaceId, ownerId: this.config.ownerId, profileKind: this.config.profileKind, url: new URL(this.config.url).origin };
+    await writeFile(`${file}.tmp`, JSON.stringify(binding), { mode: 0o600 });
     await rename(`${file}.tmp`, file);
-    this.bindingCache = null;
+    const info = await stat(file);
+    this.bindingCache = { stamp: `${info.mtimeMs}:${info.size}`, value: binding };
   }
   private async remote(): Promise<Remote | null> {
     const result = await this.client.from("territory_lab_workspaces").select("*").eq("id", this.config.workspaceId).eq("owner_id", this.config.ownerId).maybeSingle();
@@ -112,17 +114,24 @@ export class TerritorySync {
       if (binding.baseline && revision === binding.revision && !changes.length && this.cleanStoreRevision === this.store.revision) return { revision, changed: false };
       const local = this.store.read();
       validateState(local, this.config.profileKind);
-      const records = binding.baseline ? syncRecords(binding.baseline) : new Map<string, SyncRecord>();
-      for (const row of changes) {
-        if (!row || typeof row.collection !== "string" || typeof row.key !== "string") throw new Error("Aggiornamento online non riconosciuto");
-        const id = JSON.stringify([row.collection, row.key]);
-        if (row.deleted) records.delete(id); else records.set(id, row);
+      const capturedRevision = this.store.revision;
+      // With an acknowledged baseline and an unchanged server revision, the
+      // only changes are local. CAS on upload still detects concurrent writers.
+      let remote = binding.baseline;
+      let merged = local;
+      if (!remote || changes.length || revision !== binding.revision) {
+        const records = remote ? syncRecords(remote) : new Map<string, SyncRecord>();
+        for (const row of changes) {
+          if (!row || typeof row.collection !== "string" || typeof row.key !== "string") throw new Error("Aggiornamento online non riconosciuto");
+          const id = JSON.stringify([row.collection, row.key]);
+          if (row.deleted) records.delete(id); else records.set(id, row);
+        }
+        remote = recordsState(records);
+        if (revision) validateState(remote, this.config.profileKind);
+        merged = revision ? mergeTerritory(binding.baseline, local, remote, 'server') : local;
+        validateState(merged, this.config.profileKind);
+        if (!binding.baseline && revision) await this.store.backupBeforeSharedRecovery();
       }
-      const remote = recordsState(records);
-      if (revision) validateState(remote, this.config.profileKind);
-      const merged = revision ? mergeTerritory(binding.baseline, local, remote, 'server') : local;
-      validateState(merged, this.config.profileKind);
-      if (!binding.baseline && revision) await this.store.backupBeforeSharedRecovery();
       const patch = revision ? diffRecords(remote, merged) : [];
       let nextRevision = revision;
       if (!revision || patch.length) {
@@ -134,16 +143,18 @@ export class TerritorySync {
         nextRevision = Number(save.data);
         if (nextRevision !== revision + 1) throw new Error("Risposta online non confermata: archivio locale conservato");
       }
-      if (territoryDigest(local) !== territoryDigest(merged)) await this.store.change(current => {
+      const mergedHash = territoryDigest(merged);
+      const receivedChanges = local !== merged && territoryDigest(local) !== mergedHash;
+      if (receivedChanges) await this.store.change(current => {
         // Runs keep committing while the network is in flight. Rebase again inside
         // the same serial disk transaction so a new success can never be replaced.
         const next = mergeTerritory(local, current, merged, 'server');
         Object.assign(current, next);
       });
       // Exactly what was acknowledged, never a newer local checkpoint not sent yet.
-      if (nextRevision !== binding.revision || territoryDigest(merged) !== binding.localHash) await this.remember(nextRevision, merged);
-      this.cleanStoreRevision = territoryDigest(this.store.read()) === territoryDigest(merged) ? this.store.revision : null;
-      return { revision: nextRevision, changed: patch.length > 0 || territoryDigest(local) !== territoryDigest(merged) || !revision };
+      if (nextRevision !== binding.revision || mergedHash !== binding.localHash) await this.remember(nextRevision, merged, mergedHash);
+      this.cleanStoreRevision = !receivedChanges && capturedRevision === this.store.revision ? capturedRevision : null;
+      return { revision: nextRevision, changed: patch.length > 0 || receivedChanges || !revision };
     }
     throw new Error("Altra postazione in aggiornamento: riprovo automaticamente. Dati locali conservati.");
   }

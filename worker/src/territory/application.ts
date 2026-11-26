@@ -1,6 +1,6 @@
 import { sameCrmRecordId } from "../core/crm-record-id.js";
 import {crmRecordKind} from "../import-v2/record-protection.js";
-import {confirmedActivityWork,freezeRunImport} from './activity-plan.js';
+import {confirmedActivityWork,dailyClientProof,freezeRunImport} from './activity-plan.js';
 import { compareSourceProperties, unitPosition } from "./unit-order.js";
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
@@ -473,13 +473,27 @@ export class TerritoryApplication {
           error: finished ? null : scanError || "Lettura SISTER interrotta: riprendi dal punto conservato. Le anomalie dei singoli immobili restano in quarantena." });
       } else {
         for (let index = run.handled; index < run.itemKeys.length; index++) {
+          const key = run.itemKeys[index]!;
+          const planned = run.applySources?.[key];
+          if (run.operation === "apply" && planned?.activity.enabled && !run.unitSettings?.[key] && !this.isPaused()) {
+            const proof = this.store.readProjected(state => state.checkpoints[planned.sourcePropertyId] ? null : dailyClientProof(state, planned, new Date()));
+            if (proof) {
+              await this.store.change(state => {
+                const current = state.runs.find(r => r.id === run.id)!;
+                (current.dailyCovered ??= {})[key] = proof;
+                current.handled = index + 1;
+                settleQueueImport(state, current, key);
+              });
+              this.changed();
+              continue;
+            }
+          }
           // Do not begin another CRM item until the previous durable outcome
           // is acknowledged online. Failure stops outside the per-item retry.
           const preflightStarted = performance.now();
           await this.beforeNextItem?.();
           const preflightElapsed = performance.now() - preflightStarted;
           if (this.isPaused()) { await this.updateRun(run.id, { state: run.operation === "apply" ? "stopped" : "paused", waiting: null, endedAt: run.operation === "apply" ? now() : null }); return; }
-          const key = run.itemKeys[index]!;
           if (run.operation === "apply" && this.store.readSelected(state => Boolean(state.runs.find(r => r.id === run.id)?.imports?.[key]?.crmId))) {
             await this.store.change(s => settleQueueImport(s, s.runs.find(r => r.id === run.id)!, key));
             await this.updateRun(run.id, { handled: index + 1 }); continue;
@@ -541,7 +555,15 @@ export class TerritoryApplication {
               const engine = new ImportV2Engine(crm, new TerritoryImportStore(this.store, street.id, run.id, state => {
                 this.provider.rememberCloud?.(state);
                 appendUnitEvent(state.units[key]!, [run.id, key, "fresh_comparison"], { kind: "compared", at: assessment.checkedAt, runId: run.id, origin: run.origin, assessment, message: assessment.reason });
-              }), { calendarActivityPolicy:true,skipUnchangedPeople:true,skipReplayableCheckpoints:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:(propertyId, clientId, taxCode)=>this.store.readSelected(state=>Object.values(state.checkpoints).filter(cp =>
+              }), { resolvedActivity: (source, people) => {
+                if (!source.activity.enabled || source.activity.contactMode !== "Contatto diretto") return source.activity;
+                if (!people.some(p => p.matches.some(m => m.phones.some(phone => phone.trim())))) return source.activity;
+                const owners = source.owners.map(owner => {
+                  const matches = people.find(p => p.taxCode === owner.taxCode)?.matches ?? [];
+                  return { ...owner, contacts: { ...owner.contacts, phones: [...owner.contacts.phones, ...matches.flatMap(m => m.phones)] } };
+                });
+                return sourceForApply({ ...source, owners }, settings, true, index + 1).activity;
+              }, calendarActivityPolicy:true,skipUnchangedPeople:true,skipReplayableCheckpoints:true,activityWriteGuard:this.provider.activityWriteGuard?.(),requireSharedActivityGuard:this.origin==='live',relatedActivityCheckpoints:(propertyId, clientId, taxCode)=>this.store.readSelected(state=>Object.values(state.checkpoints).filter(cp =>
                 sameCrmRecordId(cp.crmPropertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.propertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.clientId, clientId) || sameCrmRecordId(cp.activityEvidence?.coverage?.propertyId, propertyId) || sameCrmRecordId(cp.activityEvidence?.coverage?.clientId, clientId) || sameCrmRecordId(cp.activityWrite?.clientId, clientId) || cp.activityWrite?.clientTaxCode === taxCode || Boolean(cp.activityWrite?.submittedAt && !cp.activityWrite.clientTaxCode))),isInterruptionRequested: this.isPaused, requireExistingProperty: requireExisting, includeCoOwners: settings.includeCoOwners, replaceUnlistedPrimary: settings.replaceUnlistedPrimary, preferRegistryDuplicates: true, propertyCandidates: async () => narrowed });
               const outcome = await engine.run(plan.source, (stage, retry) => {
                 if (this.active && (this.active.stage !== stage || this.active.attempt !== retry.attempt)) {

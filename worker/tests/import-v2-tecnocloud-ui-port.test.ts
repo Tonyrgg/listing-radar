@@ -43,7 +43,7 @@ describe("Ricerca nominativo nel lookup", () => {
     const browser = await chromium.launch({ headless: true, channel: "chrome" });
     try {
       const page = await browser.newPage();
-      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<body></body>" }));
+      await page.route("https://tecnocasa-group.my.site.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<body><h1>IM - VIA TEST</h1><div>Indirizzo Completo Immobile</div><label>Catasto Foglio</label></body>" }));
       await page.goto("https://tecnocasa-group.my.site.com/CRMImmobiliareLightning/s/");
       const port = new TecnocloudUiV2Port(page);
       const owners = [
@@ -55,12 +55,12 @@ describe("Ricerca nominativo nel lookup", () => {
       const sync = vi.spyOn(internal, "syncPrimaryOwnership").mockResolvedValue(false);
       const add = vi.spyOn(internal, "addOwnership").mockResolvedValue();
       const remove = vi.spyOn(internal, "deleteOwnership").mockResolvedValue();
-      await port.replaceManagedOwnerships("property", [...owners].reverse().map((o, i) => ({ ...o, fullName: o.personId, phones: [], role: i === 0 ? "Proprietario Principale" : "Comproprietario" })));
-      expect(sync.mock.calls[0]?.[1]).toMatchObject({ personId: "mario", role: "Proprietario Principale" });
+      const result = await port.replaceManagedOwnerships("property", [...owners].reverse().map((o, i) => ({ ...o, fullName: o.personId, phones: [], role: i === 0 ? "Proprietario Principale" : "Comproprietario" })));
+      expect(result.owners.find(o => o.role === "Proprietario Principale")?.personId).toBe("mario");
       expect(add).not.toHaveBeenCalled();
       expect(remove).not.toHaveBeenCalled();
       await expect(port.replaceManagedOwnerships("property", [{ personId: "other", taxCode: "BNCNNA80B42A893X", fullName: "Other", phones: [], sharePercentage: 100, role: "Proprietario Principale" }])).rejects.toThrow(/senza cambiare proprietario/);
-      expect(sync).toHaveBeenCalledTimes(1);
+      expect(sync).not.toHaveBeenCalled();
     } finally { await browser.close(); }
   });
   it("affianca all'ordine SISTER quello che il gestionale usa per proporre i record", () => {
@@ -1484,6 +1484,7 @@ describe("Tecnocloud UI V2", () => {
           return;
         }
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <h1>IM - VIA TEST 10</h1><label>Catasto Foglio</label>
           <div>Indirizzo Completo Immobile</div>
           <article id="activity"><h2>Attivita e appuntamenti (${savedDescription ? "1+" : "0"})</h2>${savedDescription ? `<div>Ricerca - Eseguito</div><div>Descrizione ${savedDescription}</div>` : '<button id="new">Nuovo</button>'}</article>
           <section id="form" role="dialog" hidden>
@@ -1558,6 +1559,7 @@ describe("Tecnocloud UI V2", () => {
           return;
         }
         await route.fulfill({ contentType: "text/html", body: `<!doctype html><body>
+          <h1>IM - VIA TEST 10</h1><label>Catasto Foglio</label>
           <div>Indirizzo Completo Immobile</div>
           <article><h2>Attivita e appuntamenti (0)</h2><button id="new" onclick="window.created=true">Nuovo</button></article>
           <script>fetch('/activity-data')</script>

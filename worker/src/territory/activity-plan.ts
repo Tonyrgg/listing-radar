@@ -3,12 +3,28 @@ import type { Run, TerritoryState } from "./model.js";
 import { unitKey } from "./model.js";
 import { sameCrmRecordId } from "../core/crm-record-id.js";
 import { isDeepStrictEqual } from "node:util";
-import {validActivityCoverage,verifiedActivityFacts} from '../import-v2/activity-policy.js';
+import {activityPrimaryOwner,romeDay,validActivityCoverage,verifiedActivityFacts} from '../import-v2/activity-policy.js';
 
 export function confirmedActivityWork(checkpoint:ImportV2Checkpoint):boolean{
  const e=checkpoint.activityEvidence,source=checkpoint.plan?.source;
  return Boolean(source?.activity.enabled&&checkpoint.crmPropertyId&&e?.operationId===checkpoint.itemId&&verifiedActivityFacts([checkpoint]).length
   &&(e.outcome==='covered'?validActivityCoverage(e,checkpoint.crmPropertyId):e.expectedStatus===source.activity.status&&sameCrmRecordId(e.propertyId,checkpoint.crmPropertyId)));
+}
+
+/** Only a verified CRM Task linked to the same exact tax code can settle another queue entry. */
+export function dailyClientProof(state: Readonly<TerritoryState>, source: NonNullable<ImportV2Checkpoint["plan"]>["source"], at: Date) {
+  if (!source.activity.enabled || !source.owners.length) return null;
+  const taxCode = activityPrimaryOwner(source.owners).taxCode.trim().toUpperCase();
+  if (!/^[A-Z0-9]{16}$/.test(taxCode)) return null;
+  const day = romeDay(at);
+  for (const cp of Object.values(state.checkpoints)) {
+    const person = cp.syncedPeople.find(p => p.taxCode === taxCode);
+    if (!person || !confirmedActivityWork(cp)) continue;
+    const fact = verifiedActivityFacts([cp])[0];
+    if (fact?.createdAt === day && sameCrmRecordId(fact.clientId, person.crmPersonId))
+      return { activityId: fact.id, clientId: person.crmPersonId, activityDay: day };
+  }
+  return null;
 }
 
 /** Called inside the completion transaction, before any journal/queue success. */
@@ -38,7 +54,7 @@ export function canEnableQueuedActivity(checkpoint: ImportV2Checkpoint): boolean
 }
 
 export function runActivitySummary(_state: TerritoryState, run: Run) {
-  const summary = { created: 0, recovered: 0, coveredProperty:0,coveredClient:0,disabled: 0, unconfirmed: 0 };
+  const summary = { created: 0, recovered: 0, coveredProperty:0,coveredClient:Object.keys(run.dailyCovered ?? {}).length,disabled: 0, unconfirmed: 0 };
   for (const [key, imported] of Object.entries(run.imports ?? {})) {
     const source = run.applySources?.[key];
     const proof = imported.proof, evidence = proof?.evidence;
