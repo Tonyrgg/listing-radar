@@ -334,3 +334,16 @@ dialog[open].is-closing { transform:translateX(36px);opacity:0;pointer-events:no
 @media(max-width:760px) { .sister-bulk-form { grid-template-columns:1fr; } .sister-bulk-body { padding:16px; } }
 
 .zone-streets-group tbody th>button{min-height:24px;padding:0;border:0;display:block;text-align:left;font-weight:550}
+
+.worker-register .work-section-title,.worker-register .query-intro h2{font-size:19px;font-weight:650;line-height:1.25;margin:0}
+.worker-register .street-inspector .tabs{display:flex;gap:6px;padding-block:7px;background:var(--lr-canvas)}
+.worker-register .street-inspector .tabs [aria-selected=true]{background:var(--lr-raised);color:var(--lr-ink);font-weight:700}
+.worker-register .street-inspector .detail-header h2{letter-spacing:-.025em}
+.worker-register .bulk-list-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--register-rule);padding-top:18px}
+.worker-register #sister-bulk-summary{font-variant-numeric:tabular-nums;color:var(--lr-ink-2);margin:0}
+.worker-register #sister-bulk-dialog .form-actions{position:sticky;bottom:0;padding:12px 0;background:var(--lr-canvas);border-top:1px solid var(--register-rule)}
+.worker-register #sister-bulk-clear{margin-left:auto}
+.worker-register .query-work-filters{padding-block:12px;border-block:1px solid var(--register-rule)}
+.worker-register .query-work-filters>summary{cursor:pointer;font-weight:600}
+.worker-register .workflow-steps li[aria-current=step]{color:var(--lr-ink);font-weight:700;background:var(--lr-raised)}
+.worker-register .query-intro h2{margin-bottom:4px}

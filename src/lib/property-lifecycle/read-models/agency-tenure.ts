@@ -16,3 +16,18 @@ export function currentAgencyAssignment(overrides:Array<{key:string;value:unknow
  const value=row?.value as {role?:string;agencyName?:string;startedAt?:string|null}|undefined;
  return value?.role==='OUR_AGENCY'?value:null;
 }
+
+const agencyVerification: Record<string,string> = {
+ "ad-maiora-bitonto":"Incrocia la scheda WordPress con la pubblicazione della stessa agenzia sul portale. Per il civico confronta indirizzo, riferimento e caratteristiche.",
+ "futura-immobiliare-bitonto":"Confronta il pin del dettaglio Agesta con la via dichiarata. Per la data cerca la pubblicazione dell’articolo.",
+ "vistocasa-bitonto":"Usa il pin della singola scheda e confrontalo con l’indirizzo. Per datare la presenza cerca una pubblicazione datata dello stesso riferimento.",
+ "studi-santi-bitonto":"Confronta riferimento MioGest e indirizzo della scheda. La data nel nome di una foto riguarda il file fotografico.",
+ "studio-casa-bitonto":"Confronta la scheda dell’agenzia con quella del portale usando il riferimento. Verifica separatamente indirizzo e data di pubblicazione.",
+ "puntocasa-bitonto":"Verifica la via nella scheda WordPress. Il mese nella cartella delle foto data il caricamento del file.",
+ "garofalo-immobiliare-bitonto":"Verifica indirizzo e riferimento nella scheda Flazio. La data di creazione documenta l’età della scheda.",
+ "iconacasa-bitonto":"Confronta indirizzo e riferimento nella scheda ufficiale. La data di pubblicazione documenta la presenza sul sito.",
+ "momento-casa-bitonto":"Verifica che la scheda TrovaCasa indichi Momento Casa e lo stesso immobile. Confronta indirizzo e data dichiarati dal portale.",
+};
+export function agencyVerificationMethod(slug:string) {
+ return agencyVerification[slug] ?? "Confronta riferimento, indirizzo e data nella pubblicazione originale della stessa agenzia.";
+}

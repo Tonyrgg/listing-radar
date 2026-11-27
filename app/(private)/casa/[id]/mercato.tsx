@@ -1,7 +1,8 @@
+import {nextPropertyCheck} from "@/lib/property-lifecycle/read-models/next-check";
 import { displayPropertyAddress } from "@/lib/property-lifecycle/read-models/display-address";
 import {SavedListingSnapshots} from "@/components/saved-listing-snapshots";
 import {QuickSaleDecision} from "@/components/casa/quick-sale-decision";
-import {agencyTenureLabel,agencyDateSource,currentAgencyAssignment} from '@/lib/property-lifecycle/read-models/agency-tenure';
+import {agencyTenureLabel,agencyDateSource,currentAgencyAssignment,agencyVerificationMethod} from '@/lib/property-lifecycle/read-models/agency-tenure';
 import { ArrowLeft, CheckCircle2, FileCheck2, MapPin } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -151,6 +152,7 @@ function ChiLaTiene({ detail,now }: Readonly<{ detail: LifecyclePropertyDetail;n
             {agencyDateSource(agency.startSource)}{agency.startedAt?' · '+formatDate(agency.startedAt):''}{agency.startUrl?<>{' · '}<a href={agency.startUrl} target="_blank" rel="noreferrer">Fonte</a></>:null}
             {agency.reference ? ` · rif. ${agency.reference}` : ""}
           </Meta>
+          <details className="lr-method"><summary>Come verificare questa fonte</summary><p>{agencyVerificationMethod(agency.slug)}</p></details>
         </div>
       ))}
 
@@ -225,6 +227,9 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
  const sourcePrice=detail.publicationPrices?.find(p=>p.publicationId===(detail.marketObservation?.publicationId??detail.publications[0]?.id));
  const sourceCount=detail.publications.length+detail.privatePublications.length;
  const context=dossierContext(owned?'mercato':origin,owned?'ACTIVE':detail.marketObservation?.classification,property.saleStatus);
+ const check=nextPropertyCheck({classification:detail.marketObservation?.classification,saleStatus:property.saleStatus,priceConflict:detail.marketObservation?.priceConflict??false,
+   precision:detail.location?.precision,civic:detail.location?.streetNumber,verifiedPosition:detail.location?.manuallyVerified,hasAgency:Boolean(owned||currentObservedAgency),
+   agencyStart:owned?owned.startedAt:currentObservedAgency?.startedAt,privateSellerUnknown:detail.privatePublications.length>0&&!currentObservedAgency&&!owned&&detail.privatePublications.every(p=>p.sellerType!=="private")});
  const returnHref=dossierReturn(returnTo,context.view);
  const historyUrl=(page:number)=>"?"+new URLSearchParams({origine:context.view,ritorno:returnHref,storia:String(page)})+"#storico";
  const historyFirst=context.view==="usciti"||context.view==="venduti";
@@ -234,11 +239,12 @@ export function SchedaMercato({detail,user,now,children,origin,returnTo}:Readonl
   <header className="lr-case-header"><div><Link href={returnHref} className="lr-case-back"><ArrowLeft size={14} aria-hidden="true"/> Torna a {context.label}</Link><span className="lr-case-context-label">{context.label} · {context.view==="opportunita"?"Analisi":context.view==="venduti"?"Esito":context.view==="usciti"?"Storico":"Scheda immobile"}</span><h1>{indirizzo}</h1><p>{dove||"Posizione da verificare"}</p></div><Stato forma={formaFromPropertyState(property.propertyState)}>{propertyStateLabel(property.propertyState)}</Stato></header>
   <div className="lr-case-grid">
    <div className="lr-case-main" aria-label="Dossier dell’immobile">
+    <section id="prossimo-controllo" className="lr-next-check"><div><span>Prossimo controllo</span><h2>{check.label}</h2><p>{check.detail}</p></div><nav aria-label="Azioni sul ciclo di vita"><a href={"#"+check.target}>{check.target==="storico"?"Vedi storico e prove":"Esamina le fonti"} ↓</a>{user?<a href="#correggi">Registra una conferma</a>:null}</nav></section>
     <section id="panoramica" className="lr-case-overview">
      <div className="lr-case-identity"><div><h2>{context.title}</h2><p>{context.description}</p></div><div className="lr-case-price"><strong>{formatCurrency(currentAsking)}</strong><span className="lr-case-price-label">{context.view==="venduti"||context.view==="usciti"?"Ultimo prezzo richiesto":"Prezzo richiesto"}</span><span>{euroAlMq!=null?formatNumber(euroAlMq)+" €/m²":"Prezzo richiesto"}</span></div></div>
      <div className="lr-case-tags">{[property.propertyType?humanize(property.propertyType):null,property.surfaceSqm!=null?formatNumber(property.surfaceSqm)+" m²":null,property.rooms!=null?formatNumber(property.rooms)+" locali":null].filter(Boolean).map(t=><span key={t}>{t}</span>)}</div>
 
-     {context.view!=="mercato"?<section className="lr-case-focus" aria-label={"Sintesi "+context.label}>
+     {context.view!=="mercato"&&context.view!=="privati"?<section className="lr-case-focus" aria-label={"Sintesi "+context.label}>
       <div className="lr-case-focus-heading"><h3>{context.view==="opportunita"?"Perché compare tra le opportunità":context.view==="venduti"?context.outcome:"Cosa è successo all’annuncio"}</h3>{context.view==="opportunita"&&detail.opportunity?.score!=null?<span>Indice {formatNumber(detail.opportunity.score)}/100</span>:null}</div>
       {context.view==="opportunita"?<><ul>{indizi.length?indizi.map(reason=><li key={reason}>{opportunityReasonLabel(reason)}</li>):<li>La motivazione della segnalazione resta da verificare.</li>}</ul><p>Questi indizi non dimostrano intenzione di vendere o scadenza dell’incarico.</p></>:<>
        <dl className="lr-case-outcome-facts">{context.view!=="venduti"?<div><dt>Classificazione attuale</dt><dd>{context.outcome}</dd></div>:null}<div><dt>Ultima presenza</dt><dd>{formatDate(property.lastSeenAt)}</dd></div><div><dt>{context.view==="venduti"?(manualSale?"Conferma manuale registrata":"Segnale di vendita"):"Classificazione rilevata"}</dt><dd>{formatDate(context.view==="venduti"?saleDate:detail.marketObservation?.classifiedAt)}</dd></div></dl>

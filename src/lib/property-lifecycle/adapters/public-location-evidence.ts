@@ -35,8 +35,10 @@ export function enrichPublicLocationEvidence(listing:NormalizedListingV2,documen
   const visit=(entry:unknown,parentMatched=false)=>{
     if(Array.isArray(entry)){entry.forEach(value=>visit(value,parentMatched));return;}
     const obj=asFields(entry);if(!obj)return;
-    const match=[obj.url,obj["@id"]].filter(v=>typeof v==="string").every(v=>sameUrl(v,canonical))&&
-      (parentMatched||sameUrl(obj.url,canonical)||sameUrl(obj["@id"],canonical));
+    const pageRef = asFields(obj.mainEntityOfPage);
+    const identities = [obj.url, obj["@id"], typeof obj.mainEntityOfPage === "string" ? obj.mainEntityOfPage : pageRef?.["@id"], pageRef?.url]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    const match = (parentMatched || identities.length > 0) && identities.every(value => sameUrl(value, canonical));
     if(/Apartment|House|Residence|RealEstateListing|SingleFamilyResidence|Accommodation/i.test(JSON.stringify(obj["@type"]??""))){
       add("PROPERTY_JSONLD_ADDRESS",obj.address);
       add("PROPERTY_JSONLD_GEO",obj.geo);
